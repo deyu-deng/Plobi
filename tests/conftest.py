@@ -378,6 +378,19 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #     fake vault the three lines above just built.
     monkeypatch.delenv("VAULT_ROOT", raising=False)
 
+    # 3e. …and blind the **registry** copy of that pin, for the same reason.
+    #     The resolver reads HKCU\Environment when the env var is absent or stale
+    #     (2026-11-03: long-lived processes started before the re-pin were still
+    #     resolving the old home). If that read stayed live here, every test on
+    #     this machine would resolve ``Vault/…`` to the user's REAL vault — the
+    #     exact hazard 3d exists to prevent, one layer deeper.
+    try:
+        from plobi.mind import paths as _mind_paths
+
+        monkeypatch.setattr(_mind_paths, "_pinned_vault_root", lambda: None)
+    except Exception:  # pragma: no cover - the import must never break the suite
+        pass
+
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with
     #    C.UTF-8 locale; local dev often doesn't. Pin everything.
     monkeypatch.setenv("TZ", "UTC")

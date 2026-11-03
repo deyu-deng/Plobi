@@ -54,6 +54,17 @@ def sibling_vault(tmp_path):
     return vault
 
 
+@pytest.fixture(autouse=True)
+def no_machine_registry_pin(monkeypatch):
+    """这台机器的注册表里**真钉着**一个 ``VAULT_ROOT``（人读面的家）。
+
+    不把它按掉，这一档的断言就随「谁在跑测试」变——同一个 env 断言在钉过的机器上
+    读注册表那份、在没钉过的机器上读 env 那份，测试就成了机器的快照。
+    要测注册表那一支的档，自己再 monkeypatch 一次（见下面那两档）。
+    """
+    monkeypatch.setattr(paths, "_pinned_vault_root", lambda: None)
+
+
 # --- the resolver itself -----------------------------------------------------
 
 
@@ -96,6 +107,46 @@ def test_resolve_roots_reads_the_env_once_and_never_guesses(mind, sibling_vault,
     # a pinned pointer that does not exist yet is still the pointer
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault / "nope"))
     assert resolve_roots(mind).vault == sibling_vault / "nope"
+
+
+# --- the stale inherited pointer (Windows: 进程在改钉之前就起来了) --------------
+
+
+def test_a_stale_inherited_pointer_defers_to_the_registry_pin(mind, sibling_vault, monkeypatch):
+    """env 里那个家已经不在了，而注册表那份钉的还在 ⇒ 认注册表那份。
+
+    2026-11-03 实测：人读面从 ``<PLOBI_HOME>/vault`` 搬到 ``<PLOBI_HOME>`` 本体后，
+    长驻的桌面 app 仍按继承来的旧值找 ``<PLOBI_HOME>/vault/notes`` ⇒ 日记页与笔记页
+    同时报「读不到 vault」。跟 ``plobi_constants`` 为 ``PLOBI_HOME`` 做的那件事同形。
+    """
+    gone = sibling_vault / "vault"          # 搬走之前的那一处
+    monkeypatch.setenv("VAULT_ROOT", str(gone))
+    monkeypatch.setattr(paths, "_pinned_vault_root", lambda: str(sibling_vault))
+    assert resolve_roots(mind).vault == sibling_vault
+    assert real_target(VAULT_LOGICAL, mind) == sibling_vault / "notes"
+
+
+def test_the_env_still_wins_when_its_target_is_there(mind, sibling_vault, monkeypatch):
+    """env 指的目录**还在** ⇒ 用 env。用户可能故意临时指到别处，env 是当下的选择。"""
+    monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
+    monkeypatch.setattr(paths, "_pinned_vault_root", lambda: str(sibling_vault.parent))
+    assert resolve_roots(mind).vault == sibling_vault
+
+
+def test_a_pointer_to_a_surface_not_built_yet_is_still_the_pointer(mind, sibling_vault, monkeypatch):
+    """注册表也没钉（或钉的是同一个）⇒ 仍用 env。新装时表面还没建出来，指针照样算数。"""
+    monkeypatch.setenv("VAULT_ROOT", str(sibling_vault / "nope"))
+    monkeypatch.setattr(paths, "_pinned_vault_root", lambda: None)
+    assert resolve_roots(mind).vault == sibling_vault / "nope"
+    monkeypatch.setattr(paths, "_pinned_vault_root", lambda: str(sibling_vault / "nope"))
+    assert resolve_roots(mind).vault == sibling_vault / "nope"
+
+
+def test_no_env_at_all_falls_back_to_the_registry_pin(mind, sibling_vault, monkeypatch):
+    """长驻进程在改钉之前起来 ⇒ env 里压根没有这一项 ⇒ 读注册表那份钉的。"""
+    monkeypatch.delenv("VAULT_ROOT", raising=False)
+    monkeypatch.setattr(paths, "_pinned_vault_root", lambda: str(sibling_vault))
+    assert resolve_roots(mind).vault == sibling_vault
 
 
 def test_base_for_does_not_touch_the_disk(mind, sibling_vault):

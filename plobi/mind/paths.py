@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
@@ -176,15 +177,77 @@ class Roots:
         return self.mind
 
 
+def _pinned_vault_root() -> Optional[str]:
+    """Windows: the ``VAULT_ROOT`` that was pinned into the user env (HKCU\\Environment).
+
+    ``setx``／``[Environment]::SetEnvironmentVariable`` 只对**之后启动**的进程生效。
+    长驻进程（桌面 app、CodeBuddy、计划任务、旧 shell）在改钉之前就起来了 ⇒ 它的
+    env 里还是**旧值**。
+
+    2026-11-03 实测撞上这一型：人读面从 ``<PLOBI_HOME>/vault`` 搬到 ``<PLOBI_HOME>``
+    本体之后，注册表里是新的，长驻的桌面 app 却还按继承来的旧值去找
+    ``<PLOBI_HOME>/vault/notes`` ⇒ 日记页与笔记页同时报「读不到 vault」。
+    同一个家在两种进程里解析到两个地方——这正是
+    :func:`plobi_constants.get_plobi_home` 早就为 ``PLOBI_HOME`` 修过的那一类
+    （那边读注册表兜底，见 ``_pinned_home_from_registry``）。这里同形同治。
+
+    非 Windows / 读不到 ⇒ ``None``（行为与改动前逐位相同）。
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            value, _ = winreg.QueryValueEx(key, VAULT_ROOT_ENV)
+    except (OSError, FileNotFoundError, ImportError):
+        return None
+    text = str(value or "").strip()
+    return text or None
+
+
+def _vault_pointer() -> Optional[Path]:
+    """人读面现在物理上住在哪：先看继承来的 env，再看注册表那份钉的。
+
+    env 与注册表不一致时，**只有「env 指的那个目录已经不在了」才改读注册表**：
+
+    - env 指的目录还在 ⇒ 用 env（env 是当下的选择，用户可能故意临时指到别处）；
+    - env 指的目录不在、注册表那份在 ⇒ env 是**继承来的陈旧值**，改读注册表
+      （这台机器上长驻进程的常态，见 :func:`_pinned_vault_root`）；
+    - env 指的目录不在、注册表也没钉或也一样 ⇒ 仍用 env。这条保住「指针先钉、
+      表面后建」那条设计（新装时表面还没建出来，指针照样算数），也保住「不静默换家」。
+
+    返回 ``None`` = 压根没钉 ⇒ 人读面按老布局落在 ``<MIND_ROOT>/Vault``。
+    """
+    env = os.environ.get(VAULT_ROOT_ENV, "").strip()
+    pinned = _pinned_vault_root()
+
+    if not env:
+        # 没钉过：注册表那份是唯一的钉（长驻进程在改钉之前起来 ⇒ env 里压根没有这一项）。
+        return Path(pinned) if pinned else None
+
+    candidate = Path(env)
+    if pinned and pinned != env:
+        try:
+            stale = not candidate.exists()
+        except OSError:
+            stale = False
+        if stale and Path(pinned).exists():
+            return Path(pinned)
+    return candidate
+
+
 def resolve_roots(explicit_mind: Path | str | None = None) -> Optional[Roots]:
     mind = resolve_root(explicit_mind)
     if mind is None:
         return None
-    env = os.environ.get(VAULT_ROOT_ENV, "").strip()
     # A pinned pointer that does not exist yet is still the pointer: the surface
     # may be legitimately empty on a fresh setup, and silently falling back to
-    # ``<mind>/Vault`` would hand writers two different homes.
-    return Roots(mind=mind, vault=Path(env) if env else None)
+    # ``<mind>/Vault`` would hand writers two different homes.  (The one
+    # exception is a pointer whose directory is *gone* while the registry pin is
+    # alive — that is a stale inherited value, not a fresh setup; see
+    # :func:`_vault_pointer`.)
+    return Roots(mind=mind, vault=_vault_pointer())
 
 
 def real_target(relative: str, root: Union[Path, Roots, None] = None) -> Path:
@@ -246,9 +309,9 @@ def _roots_or(root: Union[Path, Roots, None]) -> Roots:
     if isinstance(root, Roots):
         return root
     if root is not None:
-        return Roots(mind=Path(root),
-                     vault=Path(os.environ[VAULT_ROOT_ENV]) if os.environ.get(VAULT_ROOT_ENV, "").strip()
-                     else None)
+        # 同一份解析，别在这里另读一遍 env（那条 raw 读法不认识注册表那份钉，
+        # 也不认识「继承来的旧值」——两处口径一散，就是「同一个家两种进程两个地方」）。
+        return Roots(mind=Path(root), vault=_vault_pointer())
     roots = resolve_roots()
     if roots is None:
         raise MindUnavailable("MIND_ROOT is not set and no Mind vault was found")
