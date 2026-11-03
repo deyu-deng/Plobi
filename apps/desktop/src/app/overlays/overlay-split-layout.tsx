@@ -77,7 +77,10 @@ export function OverlayMain({ children, className }: OverlayMainProps) {
       className={cn(
         // Narrow: the OverlayNav dropdown bar already clears the titlebar, so
         // drop the tall top pad to a normal gap below it.
-        'mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-transparent pb-3 pt-[calc(var(--titlebar-height)/2+1rem)] max-[47.5rem]:pt-2',
+        // `.dl-page`：正文那一列是"页"，比外壳的画布亮一档——导航与详情这才分得开
+        // （用户 11-03：「侧栏不应该是玻璃质感的吗」）。上下留 8px 让画布透出来，
+        // 宽与内缩仍走 PAGE_MAX_W / PAGE_INSET_X，命令中心那一屏一个字不动。
+        'dl-page mx-auto my-2 flex min-h-0 w-full flex-1 flex-col overflow-hidden pb-3 pt-[calc(var(--titlebar-height)/2+0.75rem)] max-[47.5rem]:pt-2',
         PAGE_MAX_W,
         PAGE_INSET_X,
         className

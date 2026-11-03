@@ -878,10 +878,20 @@ text-* variant utilities. */ .btn-arc {
 }
 
 @layer components {
+  /* 导条平时不占视觉：只有正在滑的那一块才亮出来，停手 800ms 淡出（用户 11-03）。
+     `data-scrolling` 由 `lib/scroll-activity.ts` 全局挂/摘，不用每个滚动区各接一遍。
+     ⚠️ Chromium 里 `scrollbar-color` 一旦给了值就走"标准滚动条"，`::-webkit-scrollbar-thumb`
+     会被忽略——所以可见性只能由 `scrollbar-color` 说话，下面那几条 webkit 规则只是兜底。 */
   .scrollbar-dt,
   .scrollbar-dt * {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--dt-midground) 18%, transparent) transparent;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.25s ease;
+  }
+
+  .scrollbar-dt[data-scrolling='true'],
+  .scrollbar-dt [data-scrolling='true'] {
+    scrollbar-color: color-mix(in srgb, var(--dt-midground) 28%, transparent) transparent;
   }
 
   .scrollbar-dt::-webkit-scrollbar,
@@ -899,14 +909,21 @@ text-* variant utilities. */ .btn-arc {
 
   .scrollbar-dt::-webkit-scrollbar-thumb,
   .scrollbar-dt *::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--dt-midground) 18%, transparent);
+    background: transparent;
     border-radius: 9999rem;
     border: 0.125rem solid transparent;
     background-clip: padding-box;
+    transition: background-color 0.25s ease;
   }
 
-  .scrollbar-dt::-webkit-scrollbar-thumb:hover,
-  .scrollbar-dt *::-webkit-scrollbar-thumb:hover {
+  .scrollbar-dt[data-scrolling='true']::-webkit-scrollbar-thumb,
+  .scrollbar-dt [data-scrolling='true']::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--dt-midground) 28%, transparent);
+    background-clip: padding-box;
+  }
+
+  .scrollbar-dt[data-scrolling='true']::-webkit-scrollbar-thumb:hover,
+  .scrollbar-dt [data-scrolling='true']::-webkit-scrollbar-thumb:hover {
     background: color-mix(in srgb, var(--dt-midground) 40%, transparent);
     background-clip: padding-box;
   }
@@ -2034,6 +2051,26 @@ text-* variant utilities. */ .btn-arc {
     border-radius: var(--dl-shell-radius);
     corner-shape: squircle;
     box-shadow: var(--dl-card-shadow);
+  }
+
+  /* 浮层外壳的"画布"那一层（用户 11-03：设置里侧栏和详情没区分开，侧栏该是玻璃质感）。
+     外壳涂画布底、左导航不涂色 ⇒ 导航就是压在画布上的玻璃；正文那一列再吃 `.dl-page`
+     成为"页"，卡再白一档——四级表面，和主窗口那套同源。 */
+  .dl-canvas {
+    background-color: var(--theme-background-seed, var(--dl-surface-canvas));
+    background-image: var(--theme-asset-bg, var(--theme-shell-canvas, var(--dl-shell-canvas)));
+    border: 1px solid var(--dl-card-line);
+    border-radius: var(--dl-shell-radius);
+    corner-shape: squircle;
+    box-shadow: var(--dl-card-shadow);
+  }
+
+  /* 浮层里正文那一块：比画布亮一档的"页"，圆角与外壳同一枚。 */
+  .dl-page {
+    background: var(--dl-page-bg);
+    border: 1px solid var(--dl-card-line);
+    border-radius: var(--dl-shell-radius);
+    corner-shape: squircle;
   }
 }
 

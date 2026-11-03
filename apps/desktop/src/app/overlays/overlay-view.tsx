@@ -69,10 +69,10 @@ export function OverlayView({
     >
       <div
         className={cn(
-          // 外壳是"一张页"（`.dl-sheet`）：与主窗口卡同一份圆角/边/阴影，但底色比卡暗一档，
-          // 里面的分组卡（`.dl-card`，白）才浮得起来。（用户 11-02 那两张 Qoder 截图照出来的
-          // 就是这三级表面：画布 → 页 → 卡。）
-          'dl-sheet relative flex h-full min-h-0 flex-col overflow-hidden',
+          // 外壳是"画布"那一层（`.dl-canvas`）：左导航不涂色，压在画布上就是玻璃质感；
+          // 正文那一列吃 `.dl-page` 成为"页"，屏里的分组卡再白一档（用户 11-03：
+          // 「设置界面侧栏和详情区还是没区分开，侧栏不应该是玻璃质感的吗」）。
+          'dl-canvas relative flex h-full min-h-0 flex-col overflow-hidden',
           rootClassName
         )}
       >

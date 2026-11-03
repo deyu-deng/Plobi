@@ -1,13 +1,14 @@
 import { useStore } from '@nanostores/react'
 import type { CSSProperties, ReactNode } from 'react'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 
 import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
-import { cn } from '@/lib/utils'
 import { FloatingPet } from '@/components/pet/floating-pet'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { useMediaQuery } from '@/hooks/use-media-query'
+import { startScrollActivityWatch } from '@/lib/scroll-activity'
+import { cn } from '@/lib/utils'
 import {
   $fileBrowserOpen,
   $panesFlipped,
@@ -87,6 +88,9 @@ export function AppShell({
   const fileBrowserWidthOverride = useStore($paneWidthOverride(FILE_BROWSER_PANE_ID))
   const connection = useStore($connection)
   const viewportFullscreen = useSyncExternalStore(subscribeWindowSize, viewportIsFullscreen, () => false)
+  // 导条只在真正在滑的那一块上出现，停手就淡掉（用户 11-03）。一处全局接线：
+  // 侧栏、正文、工作台与浮层里的每个 `overflow-y-auto` 都吃到，新加的也不会漏。
+  useEffect(() => startScrollActivityWatch(), [])
   const isFullscreen = Boolean(connection?.isFullscreen) || viewportFullscreen
   // Every secondary window (new-session scratch, subagent watch, cmd-click
   // pop-out) is a compact side panel — none of them carry the full titlebar

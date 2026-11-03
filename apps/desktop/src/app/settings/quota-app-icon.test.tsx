@@ -18,13 +18,33 @@ describe('QuotaAppIcon', () => {
     expect(container.querySelector('title')?.textContent ?? '').toBe('')
   })
 
-  it('falls back to the initial for a brand with no published glyph', () => {
-    // Antigravity and Kiro are in that group on purpose: drawing a third-party logo for
-    // them would be Plobi claiming an identity the brand owner withheld.
-    const { container } = render(<QuotaAppIcon id="kiro_cli" name="Kiro" />)
+  it('官方标志抓得到的那几家，上屏的就是它自己的标志', () => {
+    // 用户 11-03：「感觉你用的是伪图标，直接用真实的图标」。这三家都从各家官网取。
+    // 小文件会被 Vite 内联成 data URI，所以判据是"是一枚 SVG、且三家各不相同"，
+    // 不是文件名——写文件名等于把打包方式当契约。
+    const sources: string[] = []
 
+    for (const id of ['kiro_cli', 'qoder', 'antigravity']) {
+      const { container } = render(<QuotaAppIcon id={id} name={id} />)
+      const img = container.querySelector('img')
+
+      expect(img, `${id} 没有渲染官方标志`).not.toBeNull()
+      expect(img?.getAttribute('alt')).toBe('')
+      expect(decodeURIComponent(img?.getAttribute('src') ?? '')).toMatch(/^data:image\/svg\+xml|^.*\.svg$/)
+      sources.push(img?.getAttribute('src') ?? '')
+    }
+
+    expect(new Set(sources).size, '三家渲染了同一枚标志').toBe(3)
+  })
+
+  it('确实拿不到官方标志的，才退回品牌色底 + 首字母', () => {
+    // Codex 停在这一档：openai.com 与 developers.openai.com 在这台都回 403。
+    // 宁可首字母，也不画一个假 logo 替它认领身份。
+    const { container } = render(<QuotaAppIcon id="codex_cli" name="Codex" />)
+
+    expect(container.querySelector('img')).toBeNull()
     expect(container.querySelector('svg')).toBeNull()
-    expect(screen.getByText('K')).toBeTruthy()
+    expect(screen.getByText('C')).toBeTruthy()
   })
 
   it('stays out of the accessibility tree either way', () => {
