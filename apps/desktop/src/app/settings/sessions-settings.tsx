@@ -6,13 +6,13 @@ import { deleteSession, listAllProfileSessions, setSessionArchived } from '@/plo
 import { useI18n } from '@/i18n'
 import { sessionTitle } from '@/lib/chat-runtime'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, ArchiveOff, FolderOpen, Loader2, Trash2 } from '@/lib/icons'
+import { ArchiveOff, FolderOpen, Loader2, Trash2 } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 import { untombstoneSessions } from '@/store/projects'
 import { applyConfiguredDefaultProjectDir, ensureDefaultWorkspaceCwd, setSessions } from '@/store/session'
 import type { SessionInfo } from '@/types/plobi'
 
-import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
+import { EmptyState, ListRow, LoadingState, Pill, SettingsContent, SettingsGroup } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
 
 const ARCHIVED_FETCH_LIMIT = 200
@@ -114,14 +114,13 @@ export function SessionsSettings() {
     <SettingsContent>
       <DefaultProjectDirSetting />
 
-      <SectionHeading
-        icon={Archive}
-        meta={sessions.length ? String(sessions.length) : undefined}
+      {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名与说明在卡**上方**，原来那枚条数
+          徽标跟着组名走，落在抬头右侧；卡内相邻两行之间一条虚线。 */}
+      <SettingsGroup
+        action={sessions.length ? <Pill>{String(sessions.length)}</Pill> : null}
+        description={s.archivedIntro}
         title={s.archivedTitle}
-      />
-      <p className="mb-2 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-        {s.archivedIntro}
-      </p>
+      >
 
       {sessions.length === 0 ? (
         <EmptyState description={s.emptyArchivedDesc} title={s.emptyArchivedTitle} />
@@ -170,6 +169,7 @@ export function SessionsSettings() {
           })}
         </div>
       )}
+      </SettingsGroup>
     </SettingsContent>
   )
 }
@@ -262,11 +262,7 @@ function DefaultProjectDirSetting() {
   }, [s])
 
   return (
-    <div className="mb-6">
-      <SectionHeading icon={FolderOpen} title={s.defaultDirTitle} />
-      <p className="mb-2 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-        {s.defaultDirDesc}
-      </p>
+    <SettingsGroup description={s.defaultDirDesc} title={s.defaultDirTitle}>
       <ListRow
         action={
           <div className="flex items-center gap-3">
@@ -284,6 +280,6 @@ function DefaultProjectDirSetting() {
         description={dir || s.defaultsTo(fallback || '~')}
         title={dir ? dir : s.notSet}
       />
-    </div>
+    </SettingsGroup>
   )
 }

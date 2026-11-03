@@ -24,7 +24,7 @@ import { enumOptionsFor, getNested, prettyName, setNested } from './helpers'
 import { MemoryConnect } from './memory/connect'
 import { MemoryLedgers } from './memory/ledgers'
 import { ModelSettings, ModelSettingsSkeleton } from './model-settings'
-import { EmptyState, ListRow, LoadingState, SettingsContent } from './primitives'
+import { EmptyState, ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import { ProviderConfigPanel } from './provider-config-panel'
 
 // On the Voice page, only surface the sub-fields of the *selected* TTS/STT
@@ -447,7 +447,9 @@ export function ConfigSettings({
       {visibleFields.length === 0 ? (
         <EmptyState description={c.emptyDesc} title={c.emptyTitle} />
       ) : (
-        <div className="grid gap-1">
+        /* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：这一屏是通用渲染器，好几个导航项共用，
+           没有第二个组名可叫 ⇒ 卡不带抬头，行与行之间虚线分隔。 */
+        <SettingsGroup>
           {visibleFields.map(([key, field]) => (
             <div className="scroll-mt-6 rounded-lg" id={`setting-field-${key}`} key={key}>
               <ConfigField
@@ -478,7 +480,7 @@ export function ConfigSettings({
               ) : null}
             </div>
           ))}
-        </div>
+        </SettingsGroup>
       )}
       <input
         accept=".json,application/json"

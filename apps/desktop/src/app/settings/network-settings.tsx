@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
-import { Globe } from '@/lib/icons'
 import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, getNetworkSubscription, importNetworkPool, importNetworkSubscription, saveNetworkEgress } from '@/plobi'
 import type {
   NetworkEgressBlock,
@@ -13,7 +12,7 @@ import type {
   NetworkStatus
 } from '@/types/plobi'
 
-import { ListRow, SectionHeading, SettingsContent } from './primitives'
+import { ListRow, SettingsContent, SettingsGroup } from './primitives'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
 
@@ -442,12 +441,13 @@ export function NetworkSettings() {
     <SettingsContent>
       {/* 标题不摆 `engine.state`：`running-ours` 这类机器词不许上屏（用户 10-27 令），
           而引擎在不在跑已经由底栏那枚图标的颜色和面板上的点说了。 */}
-      <div title={copy.intro}>
-        <SectionHeading icon={Globe} title={copy.title} />
-      </div>
       {!loaded ? (
-        <p className="text-sm text-(--ui-text-danger)">{copy.notLoaded}</p>
+        <p className="mb-2 text-sm text-(--ui-text-danger)">{copy.notLoaded}</p>
       ) : null}
+
+      {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名在卡**上方**，卡内相邻两行之间一条虚线。
+          那句 intro 讲的是机制，按 10-27 的文案纪律仍只在悬停里，不上屏。 */}
+      <SettingsGroup title={<span title={copy.intro}>{copy.title}</span>}>
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
@@ -727,6 +727,7 @@ export function NetworkSettings() {
           {copy.refused}: {error}
         </p>
       ) : null}
+      </SettingsGroup>
     </SettingsContent>
   )
 }

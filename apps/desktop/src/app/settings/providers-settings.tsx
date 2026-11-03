@@ -17,7 +17,7 @@ import { SearchField } from '@/components/ui/search-field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Check, ChevronDown, ChevronRight, Globe, KeyRound, Loader2, Plus, Terminal, Trash2 } from '@/lib/icons'
+import { Check, ChevronDown, ChevronRight, KeyRound, Loader2, Plus, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
 import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
@@ -35,7 +35,7 @@ import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
-import { ListRow, LoadingState, SettingsContent } from './primitives'
+import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import { QuotaAppIcon } from './quota-app-icon'
 import { buildLoginCards, cardControl, cardDetail, type LoginCard, type RoutingVerdict } from './quota-login-cards'
 
@@ -578,12 +578,9 @@ function DesktopQuotasView() {
 
   return (
     <SettingsContent>
-      <div className="grid gap-1">
-        <SettingsCategoryHeading icon={Globe} title={dq.title} />
-        <p className="-mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-          {dq.intro}
-        </p>
-      </div>
+      {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名与那句说明在卡**上方**，
+          卡内相邻两行之间一条虚线。OAuth 那一屏与 API 密钥那一屏不在此列（见各自注释）。 */}
+      <SettingsGroup description={dq.intro} title={dq.title}>
 
       {authCatalog === null ? (
         // The screen does not guess what is on this machine, so while the shell has
@@ -611,6 +608,7 @@ function DesktopQuotasView() {
           ))}
         </div>
       )}
+      </SettingsGroup>
     </SettingsContent>
   )
 }

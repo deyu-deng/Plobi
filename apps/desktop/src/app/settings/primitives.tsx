@@ -65,9 +65,9 @@ export function SettingsGroup({
         </header>
       )}
       <div className={cn('dl-card px-4', (title || description || action) && 'mt-2')}>
-        <div className="flex flex-col [&>*+*]:border-t [&>*+*]:border-dashed [&>*+*]:border-(--ui-stroke-tertiary)">
-          {children}
-        </div>
+        {/* 虚线分隔不写在这里：判据落在"行"自己身上（`.dl-card [data-slot=settings-row]` 那条
+            CSS），这样通用渲染器、骨架屏、自带 grid 包层的屏都不用为了加分隔线重排缩进。 */}
+        <div className="flex flex-col">{children}</div>
       </div>
     </section>
   )
@@ -180,7 +180,7 @@ export function ListRow({
     //
     // 控件那一列改成 `auto`（Qoder 实测：控件靠右、不预留一条固定宽）。以前那条
     // `minmax(15rem,22rem)` 让一颗开关后面拖着 240px 空白，一行读起来是断的。
-    <div className="@container">
+    <div className="@container" data-slot="settings-row">
       <div
         className={cn(
           'grid gap-3 py-[var(--dl-row-pad-y)]',

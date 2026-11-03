@@ -15,7 +15,7 @@ import { notify, notifyError } from '@/store/notifications'
 import { $profiles, refreshActiveProfile } from '@/store/profile'
 
 import { CONTROL_TEXT } from './constants'
-import { EmptyState, ListRow, LoadingState, Pill, SettingsContent } from './primitives'
+import { EmptyState, ListRow, LoadingState, Pill, SettingsContent, SettingsGroup } from './primitives'
 
 type Mode = 'local' | 'remote' | 'cloud'
 type AuthMode = 'oauth' | 'token'
@@ -710,16 +710,13 @@ export function GatewaySettings() {
 
   return (
     <SettingsContent>
-      <div className="mb-5">
-        <div className="flex items-center gap-2 text-[length:var(--conversation-text-font-size)] font-medium">
-          <Globe className="size-4 text-muted-foreground" />
-          {g.title}
-          {state.envOverride ? <Pill tone="primary">{g.envOverride}</Pill> : null}
-        </div>
-        <p className="mt-2 max-w-2xl text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-          {g.intro}
-        </p>
-      </div>
+      {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名与说明在卡**上方**，env 覆盖那枚
+          徽标跟着组名走落在抬头右侧；卡内相邻两行之间一条虚线。 */}
+      <SettingsGroup
+        action={state.envOverride ? <Pill tone="primary">{g.envOverride}</Pill> : null}
+        description={g.intro}
+        title={g.title}
+      >
 
       {namedProfiles.length > 0 ? (
         <div className="mb-5 grid gap-2">
@@ -1086,6 +1083,7 @@ export function GatewaySettings() {
           />
         ) : null}
       </div>
+      </SettingsGroup>
     </SettingsContent>
   )
 }
