@@ -29,6 +29,7 @@ import {
   writeDesktopFileText
 } from '@/lib/desktop-fs'
 import { Check, Pencil, X } from '@/lib/icons'
+import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { shikiLanguageForFilename } from '@/lib/markdown-code'
 import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
@@ -338,10 +339,29 @@ const MARKDOWN_COMPONENTS = {
   code: MarkdownCode
 }
 
-function MarkdownPreview({ text }: { text: string }) {
+/**
+ * 公式：和聊天里那套同一份插件（`$x$` 单美元内联 + KaTeX 结果记忆化）。
+ *
+ * 不挂它的时候 Streamdown 只做 markdown，`$...$` 原样当文字输出——用户 11-03 在
+ * `大物小测-公式卡.md` 里看到的就是一整页裸 LaTeX。预览与聊天用同一个渲染器，
+ * 数学能力没理由只在聊天里有。
+ *
+ * 模块级建一次：插件自带 KaTeX 结果的 LRU 缓存，挂在组件里每次渲染重建就白建了。
+ */
+const PREVIEW_MATH_PLUGIN = createMemoizedMathPlugin({ singleDollarTextMath: true })
+const MARKDOWN_PLUGINS = { math: PREVIEW_MATH_PLUGIN }
+
+/** 导出只给 `preview-markdown.test.tsx` 用：验 `$…$` 真的进了 KaTeX 而不是原样输出。 */
+export function MarkdownPreview({ text }: { text: string }) {
   return (
     <div className="preview-markdown mx-auto max-w-3xl px-4 py-3 text-sm text-foreground" data-selectable-text="true">
-      <Streamdown components={MARKDOWN_COMPONENTS} controls={false} mode="static" parseIncompleteMarkdown={false}>
+      <Streamdown
+        components={MARKDOWN_COMPONENTS}
+        controls={false}
+        mode="static"
+        parseIncompleteMarkdown={false}
+        plugins={MARKDOWN_PLUGINS}
+      >
         {text}
       </Streamdown>
     </div>
