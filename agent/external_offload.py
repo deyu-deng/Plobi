@@ -71,6 +71,19 @@ AGENT_QODER = "qoder"
 AGENT_OPENCODE = "opencode"
 AGENT_CLINE = "cline"
 AGENT_GEMINI = "gemini"
+#: 11-02 移出额度栏（quota_hub/config.yaml 不再注册这三条 spawn CLI 腿）：codex / claude
+#: 归外包这一栏。提示词形状沿用 2026-10-25 接入时对它们各自 `--help` 的实测记录
+#: （config 里的 args_template），外包通道多走的是权限旗标那一档。
+AGENT_CODEX = "codex"
+AGENT_CLAUDE = "claude"
+CODEX_COMMAND_ENV = "PLOBI_OFFLOAD_CODEX_COMMAND"
+CODEX_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CODEX_EXTRA_ARGS"
+#: `codex exec --help`：`--full-auto` = 自动批准所有权限请求（沙箱内写文件 OK）。
+CODEX_AUTO_ENV = "PLOBI_OFFLOAD_CODEX_FULL_AUTO"
+CLAUDE_COMMAND_ENV = "PLOBI_OFFLOAD_CLAUDE_COMMAND"
+CLAUDE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CLAUDE_EXTRA_ARGS"
+#: `claude --help`：`--dangerously-skip-permissions` = 跳过全部权限提示（官方措辞）。
+CLAUDE_SKIP_ENV = "PLOBI_OFFLOAD_CLAUDE_SKIP_PERMISSIONS"
 CLINE_COMMAND_ENV = "PLOBI_OFFLOAD_CLINE_COMMAND"
 CLINE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CLINE_EXTRA_ARGS"
 CLINE_YOLO_ENV = "PLOBI_OFFLOAD_CLINE_YOLO"
@@ -234,6 +247,23 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         # 没测过它是否"exit 0 但没落盘"，所以不套那条判据（与 Qoder 同理）。
         artifact_required=False,
         argv_template=("run", "--format", "json", "{flags}", "{extra}", "{task}"),
+    ),
+    AGENT_CODEX: ExternalAgentSpec(
+        AGENT_CODEX, "codex", CODEX_COMMAND_ENV, CODEX_EXTRA_ARGS_ENV,
+        # `exec [flags] [prompt]`：提示词是位置参数；`--json` 出机器读的流，
+        # `--skip-git-repo-check` 让它在非 git 的私有 cwd 也能跑。外包要写产物，
+        # 所以不沿用网关那格的 `--sandbox read-only`。
+        skip_flag=("--full-auto",), skip_permissions_env=CODEX_AUTO_ENV,
+        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
+        artifact_required=False,
+        argv_template=("exec", "--json", "--skip-git-repo-check", "{flags}", "{extra}", "{task}"),
+    ),
+    AGENT_CLAUDE: ExternalAgentSpec(
+        AGENT_CLAUDE, "claude", CLAUDE_COMMAND_ENV, CLAUDE_EXTRA_ARGS_ENV,
+        # `claude -p "prompt" --output-format json`：与默认 argv_template 一致，不另写。
+        skip_flag=("--dangerously-skip-permissions",), skip_permissions_env=CLAUDE_SKIP_ENV,
+        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
+        artifact_required=False,
     ),
     AGENT_QODER: ExternalAgentSpec(
         AGENT_QODER, "qodercli", QODER_COMMAND_ENV, QODER_EXTRA_ARGS_ENV,

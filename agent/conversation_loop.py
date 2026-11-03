@@ -936,6 +936,27 @@ def run_conversation(
                     if isinstance(_base, str):
                         api_msg["content"] = _base + "\n\n" + "\n\n".join(_injections)
 
+            # Inject current wall-clock time into the current turn's user
+            # message — API-call-time only, same discipline as the ephemeral
+            # context block above. The system prompt pins only the
+            # conversation-start date (byte-stable prefix cache), so without
+            # this the model has no sense of "now". The original message in
+            # `messages` is never mutated, so UI bubbles and persistence stay
+            # clean — the time note never appears on the user's screen.
+            if idx == current_turn_user_idx and msg.get("role") == "user":
+                try:
+                    from plobi_time import now as _plobi_now
+                    _turn_now = _plobi_now()
+                    _time_note = (
+                        f"[Current time: {_turn_now.strftime('%Y-%m-%d %H:%M')} "
+                        f"{_turn_now.tzinfo}]"
+                    )
+                    _base = api_msg.get("content", "")
+                    if isinstance(_base, str):
+                        api_msg["content"] = _time_note + "\n" + _base
+                except Exception:
+                    pass
+
             # For ALL assistant messages, pass reasoning back to the API
             # This ensures multi-turn reasoning context is preserved
             agent._copy_reasoning_content_for_api(msg, api_msg)

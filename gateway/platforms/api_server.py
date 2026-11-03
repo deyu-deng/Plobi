@@ -1255,6 +1255,67 @@ class APIServerAdapter(BasePlatformAdapter):
         except Exception:
             return None
 
+    def _apply_agent_toolset_prefs(
+        self, enabled_toolsets: List[str], session_id: Optional[str]
+    ) -> List[str]:
+        """这个 Agent 自己在 Capacity 里关掉的工具集，桌面这条腿也要真的关掉。
+
+        2026-11-02 用户要把 L2 从"自己干活"改成"派活"，去 Capacity 里关它的工具。
+        那个开关写的是**名册行的** ``disabled_toolsets``
+        （``PUT /api/agents/:id/tool-prefs``，见 ``plobi/console/router.py``），
+        而这里以前只读全局 ``platform_toolsets.api_server``——关掉等于没关，
+        屏上开关翻绿了、下一轮 L2 手上还是全套工具。名册行是 per-agent 偏好的
+        真源（裁定 42 §42.2 / 裁 166），读侧就该叠上，与 ``profile_config_overlay``
+        对 ``agent.disabled_toolsets`` 的口径一致。
+
+        名字对不上就**原样放行**：这一层只做减法，不替用户判断哪个名字才算数——
+        全局表里没有的名字本来也减不掉任何东西。
+        """
+        # 会话行优先；chat completions 走指纹派生（_derive_chat_session_id）时可能
+        # 没有落库行，回落会话级 ContextVar（_run_agent 已把请求体 agent 字段经
+        # _bind_api_server_session 写入 PLOBI_AGENT_ID），保证两条腿一致。
+        agent_id = ""
+        if session_id:
+            try:
+                row = self._ensure_session_db().get_session(session_id) or {}
+                agent_id = str(row.get("agent_id") or "").strip()
+            except Exception as exc:  # noqa: BLE001 - 读不到会话归属别改工具集
+                logger.debug("api_server: session lookup for toolset prefs failed: %s", exc)
+        if not agent_id:
+            try:
+                from gateway.session_context import get_session_env
+
+                agent_id = (get_session_env("PLOBI_AGENT_ID") or "").strip()
+            except Exception:
+                agent_id = ""
+        if not agent_id:
+            return enabled_toolsets
+
+        try:
+            from plobi.agents.registry import load_registry
+
+            registry = load_registry()
+            entry = registry.get(agent_id) or registry.get(agent_id.lower())
+        except Exception as exc:  # noqa: BLE001 - 名册读不出来就按全局走
+            logger.debug("api_server: registry lookup for %r failed: %s", agent_id, exc)
+            return enabled_toolsets
+
+        if entry is None:
+            return enabled_toolsets
+        disabled = {str(name).casefold() for name in (entry.disabled_toolsets or ())}
+        if not disabled:
+            return enabled_toolsets
+
+        kept = [name for name in enabled_toolsets if name.casefold() not in disabled]
+        dropped = [name for name in enabled_toolsets if name.casefold() in disabled]
+        if dropped:
+            logger.debug(
+                "api_server: %s disabled toolsets %s for this session",
+                agent_id,
+                ", ".join(sorted(dropped)),
+            )
+        return kept
+
     def _create_agent(
         self,
         ephemeral_system_prompt: Optional[str] = None,
@@ -1359,6 +1420,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+        enabled_toolsets = self._apply_agent_toolset_prefs(enabled_toolsets, session_id)
 
         max_iterations = _current_max_iterations()
 
@@ -2241,6 +2303,19 @@ class APIServerAdapter(BasePlatformAdapter):
         model_name = body.get("model", self._model_name)
         created = int(time.time())
 
+        # 会话级 Agent 身份（P1 注入审计修复）：前端在为某个 Agent 开的会话里
+        # 发消息时带上 ``agent`` / ``agent_id``（名册 name 或旧家名），这里翻成
+        # 不可变的 name 随本轮注入——per-agent 工具 / 技能黑名单、memory / soul
+        # 都按它走。不传 = L1，与裁定 178 乙案同一约定。
+        try:
+            from plobi.mind.identity import resolve_agent_name
+
+            chat_agent_id = resolve_agent_name(
+                str(body.get("agent") or body.get("agent_id") or "")
+            )
+        except Exception:  # noqa: BLE001 - 名册读不到就当没绑定（L1）
+            chat_agent_id = ""
+
         # Per-client model routing: if the requested model matches a
         # configured model_routes alias, this request's agent is created
         # with that route's model/provider instead of the global default.
@@ -2329,6 +2404,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
                 route=route,
+                agent_id=chat_agent_id,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks.
@@ -2349,6 +2425,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 session_id=session_id,
                 gateway_session_key=gateway_session_key,
                 route=route,
+                agent_id=chat_agent_id,
             )
 
         idempotency_key = request.headers.get("Idempotency-Key")
@@ -4042,6 +4119,7 @@ class APIServerAdapter(BasePlatformAdapter):
         chat_id: str = "",
         session_key: str = "",
         session_id: str = "",
+        agent_id: str = "",
     ) -> list:
         """Bind session contextvars for an API-server agent run.
 
@@ -4052,6 +4130,13 @@ class APIServerAdapter(BasePlatformAdapter):
         forgetting to mark the channel as non-delivering. There is no
         ``async_delivery`` parameter to get wrong; the stateless HTTP path can
         never wake the agent after the turn ends, on ANY route.
+
+        ``agent_id`` is the roster-row identity the frontend commissioned this
+        session for (empty = L1). It is carried through the session
+        contextvars (``PLOBI_AGENT_ID``) instead of ``os.environ`` so
+        concurrent api-server turns for different Agents never cross-contaminate;
+        per-agent tool/skill blacklists and memory/soul resolution read it
+        downstream (P1 注入审计修复).
 
         Returns reset tokens; pass them to ``clear_session_vars`` in a
         ``finally`` block (the binding is request-scoped and must not outlive
@@ -4065,6 +4150,7 @@ class APIServerAdapter(BasePlatformAdapter):
             chat_id=chat_id,
             session_key=session_key,
             session_id=session_id,
+            agent_id=agent_id,
             async_delivery=False,
         )
 
@@ -4081,6 +4167,7 @@ class APIServerAdapter(BasePlatformAdapter):
         agent_ref: Optional[list] = None,
         gateway_session_key: Optional[str] = None,
         route: Optional[Dict[str, Any]] = None,
+        agent_id: str = "",
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
@@ -4092,6 +4179,11 @@ class APIServerAdapter(BasePlatformAdapter):
         request's ``model`` field) that overrides the global model/provider
         for this specific request.
 
+        *agent_id* is the roster-row identity this turn is acting as
+        (empty = L1). It seeds the session contextvars so per-agent tool/skill
+        blacklists and memory/soul resolution apply to THIS turn only, without
+        touching the process-global env (P1 注入审计修复).
+
         If *agent_ref* is a one-element list, the AIAgent instance is stored
         at ``agent_ref[0]`` before ``run_conversation`` begins.  This allows
         callers (e.g. the SSE writer) to call ``agent.interrupt()`` from
@@ -4102,10 +4194,26 @@ class APIServerAdapter(BasePlatformAdapter):
         def _run():
             from gateway.session_context import clear_session_vars
 
+            # 会话级身份解析：显式传参优先（chat completions 的 body agent 字段）；
+            # 没传但挂了会话（/api/sessions/... 路径）时从会话行 agent_id 继承——
+            # 建会话时前端带上名册 name，后续每一轮都自动落在那个 Agent 上。
+            eff_agent_id = agent_id
+            if not eff_agent_id and session_id:
+                try:
+                    db = self._ensure_session_db()
+                    row = db.get_session(session_id) if db is not None else None
+                    if row:
+                        from plobi.mind.identity import resolve_agent_name
+
+                        eff_agent_id = resolve_agent_name(str(row.get("agent_id") or "")) or ""
+                except Exception:  # noqa: BLE001 - DB 读不到就当没绑定（L1）
+                    eff_agent_id = ""
+
             tokens = self._bind_api_server_session(
                 chat_id=session_id or "",
                 session_key=gateway_session_key or session_id or "",
                 session_id=session_id or "",
+                agent_id=eff_agent_id,
             )
             try:
                 agent = self._create_agent(

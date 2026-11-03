@@ -1664,6 +1664,19 @@ def _get_platform_tools(
 
     platform_toolsets = config.get("platform_toolsets") or {}
     toolset_names = platform_toolsets.get(platform)
+    # Desktop (api_server) sessions follow the cli list when not explicitly
+    # configured: the UI's global Tools toggles persist to
+    # ``platform_toolsets.cli``, so without this the desktop injection would
+    # stay on the full ``plobi-api-server`` default and the switch would show
+    # off while the agent still holds the tool. An explicit api_server list
+    # still wins (this only fills the gap for the unconfigured case).
+    if (
+        (toolset_names is None or not isinstance(toolset_names, list))
+        and platform == "api_server"
+    ):
+        cli_list = platform_toolsets.get("cli")
+        if isinstance(cli_list, list) and cli_list:
+            toolset_names = list(cli_list)
     # Track whether the user explicitly saved a toolset list for this platform
     # (vs. falling back to the platform default). An explicit composite (e.g.
     # ``plobi-discord``) is an opt-in to the platform's native default-off

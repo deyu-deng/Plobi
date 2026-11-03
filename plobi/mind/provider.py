@@ -105,13 +105,17 @@ PROFILE_MAX_CHARS_PER_SECTION = 800
 PROFILE_PROJECT_LIMIT = 3
 
 
-def _profile_block(root: Path) -> str:
+def _profile_block(root: Path, *, include_persona: bool = True) -> str:
     """画像/项目状态的窄切读取（无模型、纯文件）。
 
     来源：``<MIND_ROOT>/persona/profile.md``（详版画像；用户 10-24：画像不是 skill，是脑的一部分）
     + ``<MIND_ROOT>/<项目>/plan.md``/
     ``progress.md``（MindReader，大写 Plobi 是当前项目写入位）。为空返回
     ``""``——调用方据此跳过注入，不产生空块。
+
+    ``include_persona=False`` 时只取项目简报、跳过用户画像段：画像已由稳定
+    记忆段 USER PROFILE 承载，两处同时注入构成同源双份（L1 注入审计 P4，
+    2533 字符重叠），prefetch 走窄切只补项目进度，不再重复画像。
     """
     from plobi.mind.reader import MindReader
 
@@ -120,7 +124,7 @@ def _profile_block(root: Path) -> str:
         return ""
 
     sections: List[str] = []
-    if ctx.persona:
+    if include_persona and ctx.persona:
         persona = ctx.persona.strip()
         if len(persona) > PROFILE_MAX_CHARS_PER_SECTION:
             persona = persona[:PROFILE_MAX_CHARS_PER_SECTION].rstrip() + "…"
@@ -477,13 +481,17 @@ class MindProvider(MemoryProvider):
 
     # -- recall (per-turn, injected as context) --------------------------
 
-    def _profile_summary(self) -> str:
-        """画像摘要（WP-MIND 读接缝）。任何失败都降级为告警 + 空串。"""
+    def _profile_summary(self, *, include_persona: bool = True) -> str:
+        """画像摘要（WP-MIND 读接缝）。任何失败都降级为告警 + 空串。
+
+        ``include_persona=False`` 只保留项目简报，画像交给 USER PROFILE 段
+        （见 :func:`_profile_block`，审计 P4 防双份）。
+        """
         try:
             root = _resolve_root()
             if not root.is_dir():
                 return ""
-            return _profile_block(root)
+            return _profile_block(root, include_persona=include_persona)
         except Exception as exc:  # noqa: BLE001 - recall must never crash a turn
             logger.warning("[mind] profile summary read failed (non-fatal): %s", exc)
             return ""
@@ -500,11 +508,13 @@ class MindProvider(MemoryProvider):
         empty string when nothing relevant is found.
         """
         parts: List[str] = []
-        profile = self._profile_summary()
+        # 审计 P4：画像段与稳定记忆 USER PROFILE 同源双份，prefetch 只补项目简报。
+        profile = self._profile_summary(include_persona=False)
         if profile:
             parts.append(profile)
             logger.info(
-                "[mind] prefetch includes profile summary (%d chars)", len(profile)
+                "[mind] prefetch includes project briefs, persona deferred to USER PROFILE (%d chars)",
+                len(profile),
             )
 
         root = _resolve_root()

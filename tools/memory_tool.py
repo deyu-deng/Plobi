@@ -96,6 +96,16 @@ def resolve_agent_slug(slug: Optional[str] = None) -> str:
     """
     raw = (os.environ.get("PLOBI_AGENT_ID", "") if slug is None else slug) or ""
     raw = raw.strip()
+    # 桌面正路的进程 env 没有 PLOBI_AGENT_ID（那是 spawn 出去的子会话才有的）。
+    # 会话级身份先看 gateway/session_context 的 PLOBI_AGENT_ID ContextVar——前端
+    # 开 Agent 会话时由 api_server 写入；有它就不用再走会话行反推（P1 审计修复）。
+    if not raw and slug is None:
+        try:
+            from gateway.session_context import get_session_env
+
+            raw = (get_session_env("PLOBI_AGENT_ID") or "").strip()
+        except Exception:  # noqa: BLE001 - 读不到就当没绑定
+            raw = ""
     # 身份有两种写法：名册 name（不可变的 slug）与 profile 家名（`l2-course-…`）。
     # 家名是旧口径，profile 退休之后桌面那些会话一个都没绑上（现核：`sessions.agent_id`
     # 全空、`memory/agents/` 只有 l1 一份）⇒ 这里把家名先翻成名册 name，

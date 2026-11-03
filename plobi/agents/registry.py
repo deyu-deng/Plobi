@@ -1532,6 +1532,19 @@ def _active_agent_profile_name() -> str:
     agent_id = (os.environ.get("PLOBI_AGENT_ID") or "").strip()
     if agent_id:
         return agent_id
+    # 桌面 / api-server 会话的进程 env 没有 PLOBI_AGENT_ID（那是 spawn 出去的子会话
+    # 才有的）；会话级身份由前端开 Agent 会话时经 api_server 写入
+    # ``gateway/session_context`` 的 ``PLOBI_AGENT_ID`` ContextVar 透传到这里。
+    # 有它才谈得上 per-agent 黑名单 / 模型 / cwd 覆盖（P1 审计：桌面正路此前全落空）。
+    try:
+        from gateway.session_context import get_session_env
+
+        agent_id = get_session_env("PLOBI_AGENT_ID")
+    except Exception:
+        agent_id = ""
+    agent_id = (agent_id or "").strip()
+    if agent_id:
+        return agent_id
     try:
         from plobi_constants import get_plobi_home
 
@@ -2799,6 +2812,16 @@ def build_l2_identity_soul_block(
         "（把活交给本机别的 AI 软件），也优先外包。你自己做的是判断、拆解、验收、"
         "把结果收成一句人话。工具没给或专家起不来，就如实说一句「这个我现在做不了」，"
         "再退回自己扛——不要一声不响全自己干。"
+    )
+    # 11-02：上一版只写了「能派的就派」——那是一句品德，不是一个判据，模型照样
+    # 自己上手。用户这一轮点名要的是**界线**，所以这里给一条它每件事都能自问的：
+    # 要不要动文件/跑命令/开浏览器。另外把「派完这一轮就交不出东西」这个真实的
+    # 心理诱因堵掉（delegate_task 是后台的，模型会因此觉得自己没交付）。
+    lines.append(
+        "- 界线只有一条：**这件事要不要动文件、跑命令、开浏览器**。要动，就派出去；"
+        "不动的那些——判断、拆解、验收、跟用户把话说清楚——才是你自己的活。"
+        "「派完这一轮就交不出成品」不是自己动手的理由：派完先回一句「已经派下去了，"
+        "结果回来我接着看」，这就是交付。"
     )
     lines += [
         "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",

@@ -31,6 +31,7 @@ import ipaddress
 import json
 import logging
 import os
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,6 +60,56 @@ def _watchdog():
     from agent.egress import watchdog
 
     return watchdog
+
+
+#: Spawn the standalone guard detached so it survives Plobi's tree-kill on quit.
+def _start_guard(home: str | Path | None = None) -> bool:
+    """Launch the detached proxy guard (covers the hard-kill / crash case).
+
+    The guard is ``DETACHED_PROCESS``, i.e. not in Plobi's process tree, so the
+    desktop's ``taskkill /T /F`` on quit cannot take it with the engine. It polls
+    for a dead loopback proxy and hands the machine back — see ``proxy_guard.py``.
+    """
+    guard = Path(__file__).resolve().parent / "proxy_guard.py"
+    try:
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
+        subprocess.Popen(
+            [sys.executable, str(guard), "--home", str(_home(home))],
+            creationflags=flags,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 - guard is a best-effort safety net
+        log.warning("system proxy: 独立守卫没起来（%s）——Plobi 硬退出时可能留死代理", exc)
+        return False
+
+
+def _stop_guard(home: str | Path | None = None) -> None:
+    """Best-effort: kill the detached guard (e.g. when `proxy off` restores cleanly)."""
+    pid_path = _home(home) / "runtime" / "proxy-guard.pid"
+    if not pid_path.exists():
+        return
+    try:
+        old = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        old = None
+    try:
+        if old is not None:
+            subprocess.run(
+                ["taskkill", "/PID", str(old), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except OSError:
+        pass
+    try:
+        pid_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _home(home: str | Path | None = None) -> Path:
@@ -329,6 +380,10 @@ def enable(table: Optional[Table] = None, *, home: str | Path | None = None, app
     alive, detail = _watchdog().start(home=home)
     if not alive:
         log.warning("system proxy: 看门狗没起来（%s）——引擎掉了就只能靠人发现", detail)
+    # Detached survivor: if Plobi is hard-killed, this guard (not in our process tree)
+    # restores the system proxy so Marvis/DingTalk/browsers don't read "no internet".
+    if not _start_guard(home=home):
+        log.warning("system proxy: 独立守卫没起来——Plobi 硬退出时可能留死代理")
     log.warning("system proxy: Plobi 接管了系统代理（PAC %s）——回退：plobi network proxy off", p.pac_path)
     return p
 
@@ -393,6 +448,7 @@ def disable(*, home: str | Path | None = None) -> tuple[bool, str]:
     _notify_wininet()
     backup.unlink(missing_ok=True)
     _watchdog().stop(home=home)
+    _stop_guard(home=home)
     return True, f"已还原接管前的系统代理设置：{was}"
 
 

@@ -92,6 +92,14 @@ _SESSION_UI_SESSION_ID: ContextVar = ContextVar("PLOBI_UI_SESSION_ID", default=_
 _SESSION_MESSAGE_ID: ContextVar = ContextVar("PLOBI_SESSION_MESSAGE_ID", default=_UNSET)
 
 _SESSION_PROFILE: ContextVar = ContextVar("PLOBI_SESSION_PROFILE", default=_UNSET)
+# Which roster row this session is acting as (desktop/api-server sessions that
+# the frontend commissions for a specific Agent). Mirrors the env var of the
+# same name used by spawned sub-sessions, but carried through ContextVars so a
+# concurrent multi-session host never cross-contaminates (same rationale as
+# the other PLOBI_SESSION_* vars above). Read by
+# ``plobi.agents.registry._active_agent_profile_name`` / ``tools.memory_tool``
+# when the process env has no PLOBI_AGENT_ID.
+_SESSION_AGENT_ID: ContextVar = ContextVar("PLOBI_AGENT_ID", default=_UNSET)
 
 # Whether the current session's delivery channel can route an ASYNC completion
 # back to the agent AFTER the current turn ends (i.e. wake a fresh turn).
@@ -133,6 +141,7 @@ _VAR_MAP = {
     "PLOBI_UI_SESSION_ID": _SESSION_UI_SESSION_ID,
     "PLOBI_SESSION_MESSAGE_ID": _SESSION_MESSAGE_ID,
     "PLOBI_SESSION_PROFILE": _SESSION_PROFILE,
+    "PLOBI_AGENT_ID": _SESSION_AGENT_ID,
     "PLOBI_CRON_AUTO_DELIVER_PLATFORM": _CRON_AUTO_DELIVER_PLATFORM,
     "PLOBI_CRON_AUTO_DELIVER_CHAT_ID": _CRON_AUTO_DELIVER_CHAT_ID,
     "PLOBI_CRON_AUTO_DELIVER_THREAD_ID": _CRON_AUTO_DELIVER_THREAD_ID,
@@ -166,6 +175,7 @@ def set_session_vars(
     session_id: str = "",
     message_id: str = "",
     profile: str = "",
+    agent_id: str = "",
     cwd: str = "",
     async_delivery: bool = True,
     ui_session_id: str = "",
@@ -203,6 +213,7 @@ def set_session_vars(
         _SESSION_UI_SESSION_ID.set(ui_session_id),
         _SESSION_MESSAGE_ID.set(message_id),
         _SESSION_PROFILE.set(profile),
+        _SESSION_AGENT_ID.set(agent_id),
         _SESSION_ASYNC_DELIVERY.set(bool(async_delivery)),
     ]
     try:
@@ -238,6 +249,7 @@ def clear_session_vars(tokens: list) -> None:
         _SESSION_UI_SESSION_ID,
         _SESSION_MESSAGE_ID,
         _SESSION_PROFILE,
+        _SESSION_AGENT_ID,
     ):
         var.set("")
     # Reset async-delivery capability to the "never set" sentinel rather than a
