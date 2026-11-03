@@ -347,7 +347,7 @@ export const zh: Translations = {
       offload: '外包',
       about: '关于',
       notifications: '通知',
-      network: 'VPN',
+      network: '代理',
       capabilities: '能力总入口'
     },
     sources: {
@@ -569,10 +569,10 @@ export const zh: Translations = {
       saved: '已保存',
       status: '当前状态',
       systemProxy: '接管本机的系统代理（整机）',
-      title: '代理（VPN）',
+      title: '代理',
       type: '类型',
       url: '代理地址',
-      allowForeignRetry: '与其他 VPN 并行打开',
+      allowForeignRetry: '与其他代理软件并行打开',
       credMovedToEnv: (names) => `凭据已写进根 .env，表里只留这些名字：${names}`,
       engineNotRead: '引擎还没读到',
       importPasted: '导入粘贴的配置',
@@ -3472,9 +3472,9 @@ export const zh: Translations = {
       // 10-29 23:5x 实测：登录是好的、节点也是好的，上游对每个模型都回 429
       // RESOURCE_EXHAUSTED —— 那个账号的额度用完了。
       quota_exhausted: '那个账号的额度用完了，等它恢复再试',
-      // 设置→VPN 那个节点没配或没起来；两者都不是凭据问题。
-      no_proxy: '还没配 VPN 节点，这条渠道连不上',
-      proxy_unreachable: 'VPN 节点没应答——把它起起来再试',
+      // 设置→代理 那个节点没配或没起来；两者都不是凭据问题。
+      no_proxy: '还没配代理节点，这条渠道连不上',
+      proxy_unreachable: '代理节点没应答——把它起起来再试',
       // 不是网关那边的理由：是你自己按了断开连接，所以这里不赖那个软件或这台机器。
       disconnected: '你把它关掉了',
       unknown: reason => `不可用（${reason}）`

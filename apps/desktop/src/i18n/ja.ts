@@ -287,7 +287,7 @@ export const ja = defineLocale({
       offload: '外部委託',
       about: '情報',
       notifications: '通知',
-      network: 'VPN'
+      network: 'プロキシ'
     },
     sources: {
       categories: {
@@ -509,10 +509,10 @@ export const ja = defineLocale({
       saved: '保存しました',
       status: '現在',
       systemProxy: 'このマシンのシステムプロキシを引き取る',
-      title: 'プロキシ（VPN）',
+      title: 'プロキシ',
       type: 'タイプ',
       url: 'プロキシ URL',
-      allowForeignRetry: '他の VPN と並べて有効にする',
+      allowForeignRetry: '他のプロキシと並べて有効にする',
       credMovedToEnv: (names) => `認証情報はルートの .env に保存しました。テーブルには次の名前だけを記録：${names}`,
       engineNotRead: 'エンジンをまだ読み取っていません',
       importPasted: '貼り付けた設定を取り込む',
@@ -3223,8 +3223,8 @@ export const ja = defineLocale({
       // 10-29 23:5x 実測：サインインもノードも正常なのに、どのモデルも 429
       // RESOURCE_EXHAUSTED を返した — そのアカウントの残り枠を使い切った状態。
       quota_exhausted: 'そのアカウントの残り枠を使い切りました。回復したらまた使えます',
-      no_proxy: 'VPN ノードが未設定のため、このチャネルには接続できません',
-      proxy_unreachable: 'VPN ノードが応答していません。起動してから再試行してください',
+      no_proxy: 'プロキシノードが未設定のため、このチャネルには接続できません',
+      proxy_unreachable: 'プロキシノードが応答していません。起動してから再試行してください',
       // ハブ側の理由ではありません。ユーザーが自分で切断した状態なので、そのアプリ
       // でもこのマシンでもなく、「あなたが切りました」とそのまま伝えます。
       disconnected: 'あなたが切りました',

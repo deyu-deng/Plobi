@@ -280,7 +280,7 @@ export const zhHant = defineLocale({
       offload: '外包',
       about: '關於',
       notifications: '通知',
-      network: 'VPN'
+      network: '代理'
     },
     sources: {
       categories: {
@@ -501,10 +501,10 @@ export const zhHant = defineLocale({
       saved: '已儲存',
       status: '目前狀態',
       systemProxy: '接管本機的系統代理（整機）',
-      title: '代理（VPN）',
+      title: '代理',
       type: '類型',
       url: '代理位置',
-      allowForeignRetry: '與其他 VPN 並行開啟',
+      allowForeignRetry: '與其他代理軟體並行開啟',
       credMovedToEnv: (names) => `憑證已寫進根 .env，表裡只留這些名字：${names}`,
       engineNotRead: '引擎還沒讀到',
       importPasted: '匯入貼上的設定',
@@ -3125,8 +3125,8 @@ export const zhHant = defineLocale({
       // 10-29 23:5x 實測：登入是好的、節點也是好的，上游對每個模型都回 429
       // RESOURCE_EXHAUSTED —— 那個帳號的額度用完了。
       quota_exhausted: '那個帳號的額度用完了，等它恢復再試',
-      no_proxy: '還沒設定 VPN 節點，這條通道連不上',
-      proxy_unreachable: 'VPN 節點沒有回應——把它啟動後再試',
+      no_proxy: '還沒設定代理節點，這條通道連不上',
+      proxy_unreachable: '代理節點沒有回應——把它啟動後再試',
       // 不是網關那邊的理由：是你自己按了中斷連線，所以這裡不賴那個軟體或這台機器。
       disconnected: '你把它關掉了',
       unknown: reason => `不可用（${reason}）`

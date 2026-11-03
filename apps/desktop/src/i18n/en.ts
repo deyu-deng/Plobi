@@ -359,7 +359,7 @@ export const en: Translations = {
       offload: 'Offload',
       about: 'About',
       notifications: 'Notifications',
-      network: 'VPN',
+      network: 'Proxy',
       capabilities: 'Capabilities'
     },
     sources: {
@@ -581,11 +581,11 @@ export const en: Translations = {
       saved: 'Saved',
       status: 'Right now',
       systemProxy: 'Take over this machine\'s system proxy',
-      title: 'Proxy (VPN)',
+      title: 'Proxy',
       type: 'Type',
       server: 'Address',
       url: 'Proxy URL',
-      allowForeignRetry: 'Start it alongside the other VPN',
+      allowForeignRetry: 'Start it alongside the other proxy',
       credMovedToEnv: (names) => `Credentials went to the root .env; the table keeps only these names: ${names}`,
       engineNotRead: 'The engine has not been read yet',
       importPasted: 'Import the pasted config',
@@ -3339,9 +3339,9 @@ export const en: Translations = {
       // Measured 2026-10-29 23:5x: the sign-in was fine and the node was fine, and every
       // model answered 429 RESOURCE_EXHAUSTED — that account's allowance was spent.
       quota_exhausted: 'that account has used up its quota — it will work again once it resets',
-      // The node configured in Settings → VPN is missing or down; both are not credential problems.
-      no_proxy: 'no VPN node is configured yet, so this channel cannot be reached',
-      proxy_unreachable: 'the VPN node is not answering — start it, then try again',
+      // The node configured in Settings → Proxy is missing or down; both are not credential problems.
+      no_proxy: 'no proxy node is configured yet, so this channel cannot be reached',
+      proxy_unreachable: 'the proxy node is not answering — start it, then try again',
       // Not a hub reason: the user pressed Disconnect themselves, so this says so
       // rather than blaming the app or the machine.
       disconnected: 'you turned it off',
