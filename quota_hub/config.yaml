@@ -93,35 +93,10 @@ providers:
     accounts:
       - { id: desktop-store }
 
-  # 2026-10-25 接入：四条订阅 CLI（Codex / Claude Code / OpenCode / Kiro / Cline）。
-  # 共同点：用户自己已登录的 CLI 被当成一次性子进程驱动；没装那个二进制就 0 账号
-  # 自动停用，不影响其它腿。prompt 对这批 CLI 是位置参数，所以用 args_template
-  # 声明位置；{model_flag} 只在真解析出模型时展开。都跑在私有 cwd（不碰工作树）。
-  # 额度：codex / claude / opencode 读各自本机凭据 + 官方 usage 端点；kiro/cline
-  # 没有统一的本机额度端点，宁可空着也不编一个数。
-  # ⚠️ 这三条（codex / claude / opencode）在这台机器上**没装**（`which` 现核为空）。
-  # 它们的模型名有两份抄本——这里的 `models` 与各自 provider 类的默认值，内容相同；
-  # 所以只进 `/v1/models` 的完整表、不进选择框（`selectable=false`）。要真正断掉抄本
-  # 得类和这里一起改（`test_cli_apps` 钉着对应的 argv），别只删一边——删了也没变化。
-  codex_cli:
-    enabled: true
-    binary: codex
-    args_template: ["exec", "{model_flag}", "{prompt}", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]
-    model_flag: "--model"
-    timeout: 300
-    models: [codex_cli/gpt-5.4, codex_cli/gpt-5.4-mini, codex_cli/gpt-5.3-codex]
-    model_map: { codex_cli/gpt-5.4: gpt-5.4, codex_cli/gpt-5.4-mini: gpt-5.4-mini, codex_cli/gpt-5.3-codex: gpt-5.3-codex }
-    accounts: [{ id: codex-default }]
-
-  claude_code_cli:
-    enabled: true
-    binary: claude
-    args_template: ["{model_flag}", "-p", "{prompt}", "--output-format", "json"]
-    model_flag: "--model"
-    timeout: 300
-    models: [claude_code_cli/sonnet-4-6, claude_code_cli/opus-4-6, claude_code_cli/haiku-4-5]
-    model_map: { claude_code_cli/sonnet-4-6: claude-sonnet-4-6, claude_code_cli/opus-4-6: claude-opus-4-6, claude_code_cli/haiku-4-5: claude-haiku-4-5 }
-    accounts: [{ id: claude-default }]
+  # 2026-11-02 移出额度栏：codex / claude / opencode（CLI spawn 形态）不再占额度卡片，
+  # 归入外包设置名册（agent/external_offload.py 的 EXTERNAL_AGENTS）。provider 类与
+  # registry.PROVIDER_CLASSES 映射保留，仅 config 不再注册这三条腿。
+  # 额度：kiro / cline 读各自本机凭据，没有统一的本机额度端点，宁可空着也不编一个数。
 
   # OpenCode Zen（裁定 204）：读本机 OAuth（~/.local/share/opencode/opencode.db 的 credential 表），
   # 打它自己的 OpenAI 兼容口；模型名取它 /models 的自报清单，上游不报就没有模型，不回退到申报表。
@@ -139,38 +114,24 @@ providers:
     # 原来这里写死的是 `/zen/v1`，而那是被现成实现当"旧基座"迁移掉的一条：非 CLI 流量在上面
     # 一律按额度耗尽处理（429 FreeUsageLimitError）。要指别处再显式加 base_url / models_url。
 
-  opencode_cli:
-    enabled: true
-    binary: opencode
-    args_template: ["run", "{model_flag}", "{prompt}"]
-    model_flag: "--model"
-    timeout: 300
-    models: [opencode_cli/default]
-    model_map: { opencode_cli/default: "" }
-    accounts: [{ id: opencode-default }]
-
   kiro_cli:
     enabled: true
     # 10-31：嘴换成它自己的流式 API（`transport: api`，见 providers/apps/kiro/http.py）。
     # 现核：目录 5 个模型；一个真回合 200 / 1619 字节 / 10 帧，toolUseEvent 把我们给的
     # 函数名流回来，metadataEvent{"stopReason":"TOOL_USE"} 收尾。删掉这行就回到 spawn。
     transport: api
-    binary: kiro-cli
-    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
-    model_flag: "--model"
     timeout: 300
     models: [kiro_cli/default]
     model_map: { kiro_cli/default: "" }
     accounts: [{ id: kiro-default }]
 
-  # Cline 走它自己的 ACP 口（`cline --acp`，10-29 实测 3.0.74）：模型名由它 `session/new`
-  # 自报，工具面由 `mcpServers` 交进去，登录状态也由它自己说（没登录时它回
-  # "Authentication required"）。`--json` 那种一坨 stdout 的形态带不回 tool_calls，
-  # 即便他哪天登上了，选择框也只会把它判成 `no_tools` 而不予列出。
+  # Cline 走它自己的 OpenAI 兼容口（`api.cline.bot/api/v1`，10-31 实测 0.7-7.1s 回
+  # tool_calls，见 providers/apps/cline/http.py）：凭据在就是纯 HTTP 腿，没有 ACP spawn
+  # 回退；没凭据时卡片请用户跑 `cline auth`（在窗口里）。登录所需的命令名由 provider
+  # 类常量提供（binary/login_args），config 不再携带 spawn 残留。
   # 不写 models：名单由这条腿现读，读不到就是零条，不抄一份会过期的。
   cline_cli:
     enabled: true
-    binary: cline
     timeout: 300
     accounts: [{ id: cline-default }]
 

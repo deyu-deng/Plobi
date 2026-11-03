@@ -23,9 +23,9 @@ The frames settled what two third-party implementations disagreed about:
 * rate limits ride HTTP 200 with `application/json`, not an event-stream — reading a
   prelude there is the misleading failure the reference projects both warn about.
 
-Tools therefore come back natively; the spawn path (`kiro-cli chat --no-interactive`) runs
-its own agent and returns only prose, so this leg takes its place whenever the credential
-is live and falls back to it when it is not.
+Tools therefore come back natively; this leg is pure HTTP — without a credential it
+raises `UpstreamError(reauth=True)` and the card asks the owner to run `kiro-cli login`.
+There is no spawn path to fall back on.
 """
 from __future__ import annotations
 
@@ -336,28 +336,22 @@ def _json_or_text(value: Any) -> Any:
 
 
 class KiroHttpMixin:
-    """Serves the `kiro_cli` leg over Kiro's own streaming API when its session is live.
+    """Serves the `kiro_cli` leg over Kiro's own streaming API — the only door.
 
-    The operator's switch is config: `transport: api` turns this door on, and anything else
-    (including nothing) leaves the leg exactly the spawn path it was - the same convention
-    `transport: acp` uses in the registry, so choosing a leg's mouth never means editing a
-    table. It also keeps a test from reading whoever's `data.sqlite3` happens to be here.
+    The credential itself is the door: no `transport` switch, because there is no second
+    mouth to choose. Without a credential every entry point degrades explicitly (verdicts
+    say `no_credential`, chat raises `UpstreamError(reauth=True)`, catalogue says `None`),
+    and the card asks the owner to run Kiro's own login.
     """
-
-    def _http_enabled(self) -> bool:
-        return str(self.config.get("transport") or "").strip().lower() == "api"
 
     def _auth(self) -> dict[str, Any]:
         """The last readable session, kept across a locked read.
 
         Measured 2026-10-31: kiro-cli holds the database open, and a read that lands
-        inside its write returns nothing. Without this, the leg would fall back to the
-        spawn path mid-conversation - and the two mouths offer *different model ids*, so a
-        transient lock would silently change what the picker means. A failed read is not
-        evidence the session ended.
+        inside its write returns nothing. Without this, a transient lock would look like
+        the session ended and a live card would start asking the owner to log in again.
+        A failed read is not evidence the session ended.
         """
-        if not self._http_enabled():
-            return {}
         data = read_stored_auth(self.config)
         if data.get("access_token"):
             self._auth_cached = data
@@ -380,13 +374,13 @@ class KiroHttpMixin:
     def signed_in(self) -> tuple[bool, str]:
         if self._auth().get("access_token"):
             return True, "ok"
-        return super().signed_in()
+        return False, "no_credential"
 
     def credential_health(self) -> tuple[bool, str]:
         data = self._auth()
         token = data.get("access_token")
         if not token:
-            return super().credential_health()
+            return False, "no_credential"
         expires = data.get("expires_at")
         if expires and time.time() >= float(expires) - _LEASE_SKEW:
             # kiro-cli renews this itself; the screen already says "打开那个应用一次就能续上".
@@ -395,12 +389,22 @@ class KiroHttpMixin:
 
     # --- accounts / catalogue -------------------------------------------
     async def discover_accounts(self) -> list[Account]:
-        accounts = await super().discover_accounts()
         data = self._auth()
-        if data.get("access_token") and accounts:
-            accounts[0].cred.access_token = str(data["access_token"])
-            accounts[0].cred.extra["kiro_profile_arn"] = data.get("profile_arn", "")
-            accounts[0].cred.extra["kiro_region"] = data.get("region", "")
+        if not data.get("access_token"):
+            return []
+        raw = self.config.get("accounts") or [{}]
+        accounts = [
+            Account(
+                id=str(a.get("id") or f"{self.name}-default"),
+                provider=self.name,
+                label=str(a.get("label") or self.display_name or ""),
+            )
+            for a in raw
+        ]
+        for acc in accounts:
+            acc.cred.access_token = str(data["access_token"])
+            acc.cred.extra["kiro_profile_arn"] = data.get("profile_arn", "")
+            acc.cred.extra["kiro_region"] = data.get("region", "")
         return accounts
 
     async def ensure_fresh(self, acc: Account) -> None:
@@ -443,7 +447,7 @@ class KiroHttpMixin:
 
     async def refresh_models(self, acc: Account) -> list[str] | None:
         if not self._auth().get("access_token"):
-            return await super().refresh_models(acc)
+            return None
         try:
             await self.ensure_fresh(acc)
         except UpstreamError:
@@ -488,7 +492,7 @@ class KiroHttpMixin:
     # --- request path ----------------------------------------------------
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         if not self._auth().get("access_token"):
-            return await super().chat(acc, oai_req)
+            raise UpstreamError(401, "kiro: no credential, run `kiro-cli login`", reauth=True)
         content: list[str] = []
         calls: dict[str, dict] = {}
         finish = ""
@@ -524,9 +528,7 @@ class KiroHttpMixin:
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         if not self._auth().get("access_token"):
-            async for chunk in super().chat_stream(acc, oai_req):
-                yield chunk
-            return
+            raise UpstreamError(401, "kiro: no credential, run `kiro-cli login`", reauth=True)
         await self.ensure_fresh(acc)
         model_id = self._model_id(str(oai_req.get("model") or ""))
         body = {"conversationState": build_conversation(oai_req, model_id),

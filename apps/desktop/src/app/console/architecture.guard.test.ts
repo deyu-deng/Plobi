@@ -35,6 +35,7 @@ async function collectFiles(dir: string, pred: (name: string) => boolean): Promi
 
   async function walk(current: string) {
     let entries
+
     try {
       entries = await readdir(current, { withFileTypes: true })
     } catch {
@@ -46,6 +47,7 @@ async function collectFiles(dir: string, pred: (name: string) => boolean): Promi
 
       if (entry.isDirectory()) {
         await walk(full)
+
         continue
       }
 
@@ -86,6 +88,7 @@ describe('ARCH-UI-MASTER §3.5 — banned resurrected console shells', () => {
 
   it('does not introduce parallel New*Rail / ConsoleSidebar / console-v2 under app/', async () => {
     const allTsx = await collectFiles(appDir, name => name.endsWith('.tsx') || name.endsWith('.ts'))
+
     const offenders = allTsx.filter(file => {
       const base = file.replace(/\\/g, '/').split('/').pop() ?? ''
       const rel = relative(appDir, file).replace(/\\/g, '/')
@@ -106,22 +109,46 @@ describe('ARCH-UI-MASTER §3.5 — banned resurrected console shells', () => {
 })
 
 describe('ARCH-UI-MASTER §3.6 — single ChatSurface owner', () => {
-  it('exactly one production console module imports useIncrementalExternalStoreRuntime', async () => {
+  /**
+   * 2026-11-01 起判据换成「谁都不许自己造」：用户要求点一条外包会话 / 一个专家时
+   * 直接复用对话卡片（`chat/conversation-pane.tsx`），于是 console 里出现了第二个
+   * 要渲染 Thread 的地方。做法不是让它照抄一遍「缓存 + 仓库 + 增量 store」，
+   * 而是把那段固定搭配收进 `@/lib/chat-runtime` 的 `useChatMessageRuntime`——
+   * 于是 console 里**一个**运行时所有者都没有，唯一的实现在 lib 里。
+   *
+   * 这条守卫因此更强：将来谁再在 console 里 import 这个底层钩子，直接红。
+   */
+  const IMPORTS_RUNTIME = /^\s*import\s+.+useIncrementalExternalStoreRuntime/
+
+  async function runtimeOwners(dir: string): Promise<string[]> {
     const files = await collectFiles(
-      consoleDir,
+      dir,
       name => (name.endsWith('.tsx') || name.endsWith('.ts')) && !name.includes('.test.')
     )
+
     const owners: string[] = []
-    const importRe = /^\s*import\s+.+useIncrementalExternalStoreRuntime/
 
     for (const file of files) {
       const source = await readFile(file, 'utf8')
 
-      if (source.split('\n').some(line => importRe.test(line))) {
+      if (source.split('\n').some(line => IMPORTS_RUNTIME.test(line))) {
         owners.push(relative(desktopRoot, file).replace(/\\/g, '/'))
       }
     }
 
-    expect(owners).toEqual(['src/app/console/chat/chat-surface.tsx'])
+    return owners
+  }
+
+  it('console 里没有任何模块自己造运行时', async () => {
+    const owners = await runtimeOwners(consoleDir)
+
+    expect(
+      owners,
+      `console 里又冒出造运行时的地方（该走 @/lib/chat-runtime 的 useChatMessageRuntime）：\n${owners.join('\n')}`
+    ).toEqual([])
+  })
+
+  it('运行时只有一处实现，就在 lib/chat-runtime', async () => {
+    expect(await runtimeOwners(join(desktopRoot, 'src', 'lib'))).toEqual(['src/lib/chat-runtime.ts'])
   })
 })

@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Agent } from '@/app/console/types'
+import { $openConversation, closeConversation } from '@/store/conversation-view'
 
 import { SidebarStrip, STRIP_HOVER_CLOSE_MS } from './sidebar-strip'
 
@@ -13,6 +14,8 @@ import { SidebarStrip, STRIP_HOVER_CLOSE_MS } from './sidebar-strip'
  *    一打开就把 `document.body` 的 pointer-events 设成 `none`（dismissable-layer），
  *    底下那只鼠标立刻收到一次 pointerleave，于是「开 → 被关 → 再开」自己跟自己打。
  *    第二条就是照这个根因写的判据。
+ *
+ * 11-01 又加了三件：中段换成无文字开关、外包那一页有自己的两枚浮窗、底部入口贴着底栏。
  */
 
 const onCreateAgent = vi.fn()
@@ -25,7 +28,17 @@ vi.mock('@/i18n', () => ({
       console: {
         agentCategories: { projects: '项目', research: '研究' },
         agentsEmptyDesc: '还没有 Agent',
-        newAgent: '新建 Agent'
+        backToSecretary: '回到秘书',
+        expertRoleBrowser: '浏览器',
+        expertRoleComputer: '电脑',
+        expertRoleFile: '文件',
+        expertRoleSoftware: '软件',
+        expertsTitle: '专家',
+        externalSessionsEmpty: '还没有会话',
+        newAgent: '新建 Agent',
+        offloadsTitle: '外包',
+        tabAgents: '智能体',
+        tabOutsourced: '外包'
       },
       sidebar: { nav: {} }
     }
@@ -52,7 +65,8 @@ const AGENT = {
 } as unknown as Agent
 
 function renderStrip(
-  groups: { agents: Agent[]; category: string }[] = [{ agents: [AGENT], category: 'projects' }]
+  groups: { agents: Agent[]; category: string }[] = [{ agents: [AGENT], category: 'projects' }],
+  over: Partial<React.ComponentProps<typeof SidebarStrip>> = {}
 ) {
   return render(
     <>
@@ -67,6 +81,7 @@ function renderStrip(
         onNavigate={onNavigate}
         onNavigateAgent={onNavigateAgent}
         sharedItems={[]}
+        {...over}
       />
     </>
   )
@@ -86,8 +101,21 @@ function unhover(element: Element) {
   fireEvent.pointerLeave(element, { relatedTarget: document.body })
 }
 
+beforeEach(() => {
+  closeConversation()
+  // 外包那一页会自己读两路数据（专家 / 外部会话）；这一档给它们一个空表。
+  Object.defineProperty(window, 'plobiDesktop', {
+    configurable: true,
+    value: {
+      ...(window.plobiDesktop || {}),
+      api: vi.fn().mockResolvedValue({ data: { experts: [], projects: [], reason: '', sessions: [] }, ok: true })
+    }
+  })
+})
+
 afterEach(() => {
   cleanup()
+  closeConversation()
   document.body.style.pointerEvents = ''
   vi.clearAllMocks()
 })
@@ -171,5 +199,113 @@ describe('左栏收起态图标条', () => {
       expect(opened).toHaveLength(1)
       expect(opened[0]?.textContent).toContain('研究')
     })
+  })
+})
+
+describe('收起态：中段开关与外包两枚浮窗（用户 11-01）', () => {
+  it('中段是一枚**无文字**的开关，点一下就把名单换成外包', () => {
+    const onChangeMiddleView = vi.fn()
+
+    renderStrip(undefined, { activeAgentId: 'l2-a', middleView: 'agents', onChangeMiddleView })
+
+    const toggle = screen.getByRole('switch')
+
+    expect(toggle.textContent, '开关上印了字').toBe('')
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+
+    fireEvent.click(toggle)
+    expect(onChangeMiddleView).toHaveBeenCalledWith('outsourced')
+  })
+
+  it('停在「外包」那一页时，中段是专家与外包两枚图标（不是五类 Agent）', async () => {
+    renderStrip(undefined, { activeAgentId: 'l2-a', middleView: 'outsourced', onChangeMiddleView: vi.fn() })
+
+    expect(screen.getByRole('button', { name: '专家' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '外包' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '项目' })).toBeNull()
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('悬浮「专家」就能挑一个专家，不用先展开左栏', async () => {
+    const api = window.plobiDesktop.api as unknown as ReturnType<typeof vi.fn>
+
+    api.mockImplementation(({ path }: { path: string }) =>
+      path.endsWith('/experts')
+        ? Promise.resolve({
+          data: {
+            experts: [{
+              goal: '整理三份资料', id: 'kid-1', messages: 2, model: 'glm', parent_session_id: 'p',
+              role: 'file', started_at: 1, status: 'running', tool_calls: 1
+            }]
+          },
+          ok: true
+        })
+        : Promise.resolve({ data: { experts: [], projects: [], reason: '', sessions: [] }, ok: true })
+    )
+
+    renderStrip(undefined, { activeAgentId: 'l2-a', middleView: 'outsourced', onChangeMiddleView: vi.fn() })
+
+    hover(screen.getByRole('button', { name: '专家' }))
+
+    // 浮窗里是四类角色的名册，没跑过的灰着。
+    const menu = await screen.findByRole('menu')
+
+    expect(menu.textContent).toContain('文件')
+    expect(menu.textContent).toContain('电脑')
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: /文件/ }))
+
+    await waitFor(() =>
+      expect($openConversation.get()).toEqual(expect.objectContaining({ kind: 'expert', sessionId: 'kid-1' }))
+    )
+  })
+
+  it('悬浮「外包」就能挑一条会话，点它是交给主区那张卡片', async () => {
+    const api = window.plobiDesktop.api as unknown as ReturnType<typeof vi.fn>
+
+    api.mockImplementation(({ path }: { path: string }) =>
+      path.endsWith('/external-sessions')
+        ? Promise.resolve({
+          data: {
+            projects: [],
+            reason: '',
+            sessions: [{
+              id: 's-1', project: '', related: true, sendable: true,
+              title: '先读 README', updated_at: '2026-10-27T10:00:00.000Z', vendor: 'qoder'
+            }]
+          },
+          ok: true
+        })
+        : Promise.resolve({ data: { experts: [], projects: [], reason: '', sessions: [] }, ok: true })
+    )
+
+    renderStrip(undefined, { activeAgentId: 'l2-a', middleView: 'outsourced', onChangeMiddleView: vi.fn() })
+
+    hover(screen.getByRole('button', { name: '外包' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /先读 README/ }))
+
+    await waitFor(() =>
+      expect($openConversation.get()).toEqual(
+        expect.objectContaining({ kind: 'external', sessionId: 's-1', vendor: 'qoder' })
+      )
+    )
+  })
+
+  it('Capabilities / Artifacts 在底栏上方单独一块——收起前后不跳位置', () => {
+    const { container } = renderStrip(undefined, {
+      agentActions: [
+        { icon: 'extensions', id: 'capabilities', label: '能力', onClick: vi.fn() },
+        { icon: 'archive', id: 'artifacts', label: '产物', onClick: vi.fn() }
+      ]
+    })
+
+    const blocks = Array.from(container.querySelectorAll('[data-slot="sidebar-strip"] > div'))
+
+    // 三块自上而下：可滚动的图标区 / 本 Agent 的入口 / 底部收敛区。
+    expect(blocks).toHaveLength(3)
+    expect(blocks[0]?.getAttribute('data-stub')).toBeNull()
+    expect(blocks[1]?.textContent).toBe('')
+    expect(blocks[1]?.querySelectorAll('button')).toHaveLength(2)
+    expect(blocks[2]?.querySelector('[data-stub="statusbar"]')).not.toBeNull()
   })
 })

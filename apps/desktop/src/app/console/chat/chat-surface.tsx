@@ -24,9 +24,9 @@
  * mounted across L1 ↔ L2; the live session store swaps the transcript.
  */
 
-import { AssistantRuntimeProvider, type ThreadMessage } from '@assistant-ui/react'
+import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { showsTransition } from '@/app/chat/agent-enter'
 import { $agentEnter } from '@/app/chat/agent-enter-store'
@@ -36,9 +36,7 @@ import { prefersReducedMotion, threadSwapAnimation } from '@/app/chat/thread-swa
 import { $consoleAgents } from '@/app/console/store/agents'
 import { Thread } from '@/components/assistant-ui/thread'
 import { useI18n } from '@/i18n'
-import type { ChatMessage } from '@/lib/chat-messages'
-import { createToolMergeCache, toBranchableMessageRepository } from '@/lib/chat-runtime'
-import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
+import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { cn } from '@/lib/utils'
 import { $gatewaySwapTarget } from '@/store/profile'
 import { $busy, $messages, $messagesEmpty } from '@/store/session'
@@ -63,34 +61,23 @@ function ChatRuntimeBoundary({
 }) {
   const messages = useStore($messages)
   const busy = useStore($busy)
-  const runtimeMessageCacheRef = useRef(new WeakMap<ChatMessage, ThreadMessage>())
-  const toolMergeCacheRef = useRef(createToolMergeCache())
 
-  const runtimeMessageRepository = useMemo(
-    () =>
-      toBranchableMessageRepository(messages, {
-        runtimeMessageCache: runtimeMessageCacheRef.current,
-        toolMergeCache: toolMergeCacheRef.current
-      }),
-    [messages]
-  )
-
-  const runtime = useIncrementalExternalStoreRuntime<ThreadMessage>({
+  // 造运行时这件事只有一处（`@/lib/chat-runtime` 的 useChatMessageRuntime）：
+  // 这一面与「外面的对话」那张卡片共用同一套缓存、仓库与增量 store。
+  const runtime = useChatMessageRuntime({
     isRunning: busy,
-    messageRepository: runtimeMessageRepository,
+    messages,
     onCancel: async () => {
       cancel?.()
     },
     onNew: async () => {
       // Submission is owned by the composer below, like the base ChatBar.
-    },
+    }
     // Console chat deliberately does not support edit/reload yet — the base
     // session's branch/restore flow is not wired into the console shell.
     // Without these callbacks the UI hides the edit/reload affordances
     // (capabilities are gated on `onEdit !== undefined` / `onReload !== undefined`).
     // Wire them when the console gains a real session-branch RPC.
-    onEdit: undefined,
-    onReload: undefined
   })
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>

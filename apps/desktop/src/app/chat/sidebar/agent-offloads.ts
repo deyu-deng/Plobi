@@ -14,6 +14,9 @@
 
 import type { OffloadRound } from '@/types/plobi'
 
+import type { ExternalSession } from './external-sessions'
+import { VENDOR_ORDER, vendorLabel } from './external-sessions'
+
 /**
  * 台账里那一族回执字段（`reply`/`reply_status`/`reply_to`）。`OffloadRound` 由别的
  * 认领方持有，这里只做**结构扩展**，不往共享类型档里加行。
@@ -55,7 +58,86 @@ export function groupRoundsByTarget(rounds: readonly OffloadRoundWithReply[]): O
     .sort((a, b) => a.target.localeCompare(b.target))
 }
 
+/**
+ * 外包那一格的一张表（用户 11-01）：
+ * **L2 自己派出去的那几轮** 和 **你在那家软件里的会话** 是同一件事的两面，都是「外包给谁」，
+ * 所以按对象（那家软件）分组只分一次，两路条目挂在同一个组下面。10-28 之前它们是上下
+ * 两格（「外包给」+「外部会话」），同一个对象在屏上出现两回，读起来像两个概念。
+ */
+export type OutsourcedGroup = {
+  /** 那家软件的名字（`vendorLabel` 翻过，屏上直接可用）。 */
+  label: string
+  rounds: OffloadRoundWithReply[]
+  sessions: ExternalSession[]
+  vendor: string
+}
+
+const UNKNOWN_VENDOR = 'unknown'
+
+/** ISO 串的比较只用来排序，读不出就是 0（不编一个时间）。 */
+function timeOf(iso?: string): number {
+  const parsed = Date.parse(iso ?? '')
+
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function vendorRank(vendor: string): number {
+  const index = VENDOR_ORDER.indexOf(vendor)
+
+  return index < 0 ? VENDOR_ORDER.length : index
+}
+
+export function groupOutsourced(
+  rounds: readonly OffloadRoundWithReply[],
+  sessions: readonly ExternalSession[]
+): OutsourcedGroup[] {
+  const byVendor = new Map<string, OutsourcedGroup>()
+
+  const slot = (raw: string): OutsourcedGroup => {
+    const vendor = (raw || '').trim() || UNKNOWN_VENDOR
+    const found = byVendor.get(vendor)
+
+    if (found) {
+      return found
+    }
+
+    const created: OutsourcedGroup = { label: vendorLabel(vendor), rounds: [], sessions: [], vendor }
+    byVendor.set(vendor, created)
+
+    return created
+  }
+
+  for (const round of rounds) {
+    slot(round.agent ?? '').rounds.push(round)
+  }
+
+  for (const session of sessions) {
+    slot(session.vendor ?? '').sessions.push(session)
+  }
+
+  return [...byVendor.values()]
+    .map(group => ({
+      ...group,
+      rounds: [...group.rounds].sort((a, b) => timeOf(b.ts) - timeOf(a.ts)),
+      sessions: [...group.sessions].sort((a, b) => timeOf(b.updated_at) - timeOf(a.updated_at)),
+    }))
+    .sort((a, b) => vendorRank(a.vendor) - vendorRank(b.vendor) || a.label.localeCompare(b.label))
+}
+
+export type OutsourcedItem =
+  | { at: number, kind: 'round', round: OffloadRoundWithReply }
+  | { at: number, kind: 'session', session: ExternalSession }
+
+/** 一组里两路条目按时间倒序并排——同一组里它们平等，不按来源分先后。 */
+export function outsourcedItems(group: OutsourcedGroup): OutsourcedItem[] {
+  return [
+    ...group.rounds.map(round => ({ at: timeOf(round.ts), kind: 'round' as const, round })),
+    ...group.sessions.map(session => ({ at: timeOf(session.updated_at), kind: 'session' as const, session })),
+  ].sort((a, b) => b.at - a.at)
+}
+
 export type JumpReason = '' | 'no-artifact'
+
 export type JumpPlan = {
   kind: 'none' | 'reveal' | 'resume'
   reason: JumpReason

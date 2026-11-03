@@ -47,10 +47,6 @@ function payload(rounds: OffloadRoundWithReply[], unattributedReason = '') {
 
 const openExternal = vi.fn()
 
-function countIn(button: HTMLElement): string {
-  return (button.textContent || '').replace(/[^0-9]/g, '')
-}
-
 beforeEach(() => {
   openExternal.mockReset()
   openExternal.mockResolvedValue(undefined)
@@ -77,26 +73,31 @@ async function renderPanel(rounds: OffloadRoundWithReply[], unattributedReason =
   getAgentOffloads.mockResolvedValue(payload(rounds, unattributedReason))
   const view = render(<AgentOffloadPanel agentId="l2-aura" />)
 
-  await waitFor(() => expect(screen.queryByText(/Reading the offload ledger/)).toBeNull())
+  // 台账没读完时整格是 null（连「专家」抽屉都没有），等它上桌再断言——
+  // 之前等的是加载句，而加载句早就不画了，于是等了个空。
+  await screen.findByText('Experts')
 
   return view
 }
 
 describe('AgentOffloadPanel', () => {
-  it('按外包对象分组：组头给出名字与轮次数', async () => {
+  it('按外包对象分组：一家软件一行（图标 + 名字 + 折角）', async () => {
     await renderPanel([round(), round({ ts: '2026-10-12T00:00:00+00:00' }), round({ agent: 'agy' })])
 
-    const codebuddy = screen.getByRole('button', { name: /codebuddy/ })
+    // 11-01：软件行不再重复会话数——那个数在一级抽屉头上已经有了。
+    // （`SiCodebuddy` 自带一个 <title>CodeBuddy</title>，所以名字会出现两遍，别按整串比。）
+    const codebuddy = screen.getByRole('button', { name: /CodeBuddy/ })
 
-    expect(within_count(codebuddy)).toBe('2')
-    expect(within_count(screen.getByRole('button', { name: /agy/ }))).toBe('1')
+    expect(codebuddy.textContent).toContain('CodeBuddy')
+    expect(codebuddy.textContent).not.toMatch(/\d/)
+    expect(screen.getByRole('button', { name: /agy/ })).toBeTruthy()
   })
 
   it('点组头才展开，展开后这一段活、权限档与花费都在', async () => {
     await renderPanel([round()])
 
     expect(screen.queryByText('把今天的读数写成页')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
     const text = row.textContent || ''
@@ -127,7 +128,7 @@ describe('AgentOffloadPanel', () => {
 
   it('按积分记账的一行显示积分，不显示"花费未知"也不显示 $0', async () => {
     await renderPanel([round({ cost_status: 'credits_only', usage: { total_cost_usd: 0, total_credits: 3.775 } })])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
 
@@ -138,7 +139,7 @@ describe('AgentOffloadPanel', () => {
 
   it('它写回来的回执原文就在行里，不用再跳去外部软件去猜', async () => {
     await renderPanel([round({ reply: '# Sindri — 工作目录', reply_status: 'filed' })])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
 
@@ -147,7 +148,7 @@ describe('AgentOffloadPanel', () => {
 
   it('点一行是把落盘的产物交给主进程打开（file:// 而不是裸路径）', async () => {
     await renderPanel([round()])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     fireEvent.click(await screen.findByRole('button', { name: /把今天的读数写成页/ }))
 
@@ -157,7 +158,7 @@ describe('AgentOffloadPanel', () => {
 
   it('没产物的一行不可点，也不会假装去开', async () => {
     await renderPanel([round({ artifacts: [], failure: '没登录，起不来' })])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
 
@@ -170,7 +171,7 @@ describe('AgentOffloadPanel', () => {
 
   it('有会话号的一行：点它是交给后端那个白名单口，不碰 openExternal', async () => {
     await renderPanel([round({ external_session: '01a1248d-3b15-738e', external_session_source: 'result.session_id' })])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
 
@@ -188,7 +189,7 @@ describe('AgentOffloadPanel', () => {
   it('后端拒了这一跳，就把后端那句话说出来，不甩 JSON 给用户', async () => {
     offloadResume.mockRejectedValue(new Error('400: {"ok":false,"error":"这一家还没有实测过的回跳旗标"}'))
     await renderPanel([round({ external_session: '01a1248d-3b15' })])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     fireEvent.click(await screen.findByRole('button', { name: /把今天的读数写成页/ }))
 
@@ -200,22 +201,19 @@ describe('AgentOffloadPanel', () => {
   it('空表不再留整句：后端给了归属原因也不在栏里铺一行解释', async () => {
     await renderPanel([], '这一条没有绑定目录')
 
-    // 10-28 起这一格空着就是空着（屏上不放解释句）：表头仍在，但既不说原因，也不说「还没外包过」。
-    expect(await screen.findByText('Offloaded to')).toBeTruthy()
+    // 10-28 起这一格空着就是空着（屏上不放解释句）；11-01 起空表连表头也不留——
+    // 中段那枚切换已经说了这是「外包」这一页。
     expect(screen.queryByText('这一条没有绑定目录')).toBeNull()
+    expect(screen.queryByText('Outsourced')).toBeNull()
   })
 
   it('主进程打不开就当场写明打不开，不留"点了没反应"', async () => {
     openExternal.mockRejectedValue(new Error('Invalid external URL'))
     await renderPanel([round()])
-    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+    fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     fireEvent.click(await screen.findByRole('button', { name: /把今天的读数写成页/ }))
 
     expect(await screen.findByText(/could not open/i)).toBeTruthy()
   })
 })
-
-function within_count(button: HTMLElement): string {
-  return (button.textContent || '').replace(/[^0-9]/g, '')
-}

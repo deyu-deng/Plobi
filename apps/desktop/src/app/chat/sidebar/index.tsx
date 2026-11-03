@@ -19,8 +19,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Sidebar,
   SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem
@@ -33,18 +31,18 @@ import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
-import type { Agent } from '../../console/types'
 import { createAgent } from '../../console/api'
 import { $consoleAgents, $consoleAgentsError, $consoleAgentsLoading, refreshConsoleAgents } from '../../console/store/agents'
+import type { Agent } from '../../console/types'
 import {
   agentRoute,
   type AppView,
   ARTIFACTS_ROUTE,
+  DIARY_ROUTE,
   HOME_ROUTE,
+  KNOWLEDGE_ROUTE,
   MESSAGING_ROUTE,
   type ShellLevel,
-  DIARY_ROUTE,
-  KNOWLEDGE_ROUTE,
   SKILLS_ROUTE
 } from '../../routes'
 import type { SidebarNavItem } from '../../types'
@@ -59,7 +57,6 @@ import {
 } from './agent-groups'
 import { AgentOffloadPanel } from './agent-offload-panel'
 import { categoryIcon } from './category-icons'
-import { SidebarStrip } from './sidebar-strip'
 import {
   AGENT_COLOR_CHOICES,
   AGENT_ICON_CHOICES,
@@ -74,6 +71,8 @@ import {
 } from './create-agent'
 import { sidebarNavForLevel } from './nav-level'
 import { ProjectDialog } from './project-dialog'
+import { SidebarSegment, type SidebarSegmentItem } from './sidebar-segment'
+import { SidebarStrip } from './sidebar-strip'
 
 export const SIDEBAR_NAV: SidebarNavItem[] = [
   {
@@ -109,6 +108,9 @@ const NAV_BUTTON_DISABLED = 'cursor-default hover:border-transparent hover:bg-tr
 // Same idiom the rest of the shell already uses: `chrome.tsx` applies
 // `[&_.codicon]:leading-none` and `codiconIcon()` bakes `leading-none` in.
 const NAV_ICON = 'size-4 shrink-0 leading-none text-[color-mix(in_srgb,currentColor_72%,transparent)]'
+
+/** 左栏中段的两种内容（用户 11-01）。 */
+type MiddleView = 'agents' | 'outsourced'
 
 interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   /** 底部收敛区那一排（系统工具 + 状态图标）：10-31 起住在左栏底部。 */
@@ -146,9 +148,13 @@ export function ChatSidebar({
   // `console/store/agents` cache — a render cache whose truth is the backend
   // `GET /api/agents` (WP-BE-1).
   const secretaryAgents = useStore($consoleAgents)
-  // 换一个 Agent 就退出「外包」那一页（它不是全局开关，也不改导航）。
+  // 左栏中段有两种内容（用户 11-01）：智能体名单 / 这一摊的外包。
+  // 10-31 之前「外包」是整页替换（要从底部那颗 send 点进来、再点返回），
+  // 现在它是中段分段控件的一格——上面的导航行始终在，两页来回切。
+  const [middleView, setMiddleView] = useState<MiddleView>('agents')
+  // 换一个 Agent 就回到名单：外包是「这一个 L2 的」，不是全局开关。
   useEffect(() => {
-    setShowOffload(false)
+    setMiddleView('agents')
   }, [l2Id])
   const secretaryAgentsLoading = useStore($consoleAgentsLoading)
   // 读失败与「名册真的空」必须长成两张脸：前者要留着上一栏并给一句人话＋重试，
@@ -198,7 +204,6 @@ export function ChatSidebar({
 
   const workingSessionIdSet = useMemo(() => new Set(workingSessionIds), [workingSessionIds])
 
-  const [showOffload, setShowOffload] = useState(false)
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [createAgentName, setCreateAgentName] = useState('')
   const [createAgentBusy, setCreateAgentBusy] = useState(false)
@@ -332,6 +337,7 @@ export function ChatSidebar({
   ])
 
   const expanded = contentVisible
+
   // 收起条上五类图标是固定的（用户 10-31），没有 Agent 的类型也占一个位；
   // 展开的列表仍只显示真有名册的组。
   const stripGroups = useMemo<AgentCategoryGroupData<Agent>[]>(
@@ -341,13 +347,29 @@ export function ChatSidebar({
       ),
     [agentCategoryGroups]
   )
+
   const sharedItems = useMemo(
     () => navItems.filter(item => item.id === 'knowledge' || item.id === 'messaging' || item.id === 'diary'),
     [navItems]
   )
+
   const capabilitiesHref = navItems.find(item => item.id === 'skills')?.route ?? SKILLS_ROUTE
-  const agentActions = useMemo(() => {
-    const actions = [
+
+  // 中段那枚切换：选中那一格才展开成「图标 + 名词」（参照物是用户给的「终端 / 通用」）。
+  const middleTabs = useMemo<SidebarSegmentItem<MiddleView>[]>(
+    () => [
+      { icon: 'organization', id: 'agents', label: c.tabAgents },
+      { icon: 'send', id: 'outsourced', label: c.tabOutsourced }
+    ],
+    [c.tabAgents, c.tabOutsourced]
+  )
+
+  // 底部这两枚是「本 Agent 的」入口，和上面那排图标同一个形状。
+  //
+  // 这里曾经还有第三枚「外包」（send）——11-01 把外包做进中段那枚分段控件之后
+  // 它就只剩一个重复的入口，用户点名去掉（「这下面这个外包图标可以去掉了」）。
+  const agentActions = useMemo(
+    () => [
       {
         icon: 'extensions',
         id: 'capabilities',
@@ -360,14 +382,9 @@ export function ChatSidebar({
         label: s.nav.artifacts,
         onClick: () => navigate(ARTIFACTS_ROUTE)
       }
-    ]
-
-    if (l2Id) {
-      actions.push({ icon: 'send', id: 'offload', label: s.nav.offload, onClick: () => setShowOffload(true) })
-    }
-
-    return actions
-  }, [capabilitiesHref, l2Id, navigate, s.nav.artifacts, s.nav.offload, s.nav.skills])
+    ],
+    [capabilitiesHref, navigate, s.nav.artifacts, s.nav.skills]
+  )
 
   const sharedActive = (id: string) =>
     (id === 'knowledge' && currentView === 'knowledge') ||
@@ -387,56 +404,67 @@ export function ChatSidebar({
     >
       {expanded ? (
         <SidebarContent className="min-h-0 gap-0 bg-transparent px-2.5">
-          {showOffload && l2Id ? (
-            <div className="min-h-0 flex-1 overflow-y-auto pt-2">
-              <AgentOffloadPanel agentId={l2Id} onBack={() => setShowOffload(false)} />
-            </div>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-              <SidebarMenu className="gap-px pt-2">
+          {/* 顶上这几行是导航，不参与滚动（用户 11-03：侧栏应该只有中间 Agent 那一段能上下滑）。 */}
+          <div className="shrink-0">
+            <SidebarMenu className="gap-px pt-2">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  aria-label={c.newAgent}
+                  className={NAV_BUTTON}
+                  onClick={openCreateAgent}
+                  tooltip={c.newAgent}
+                  type="button"
+                >
+                  <Codicon className={NAV_ICON} name="add" />
+                  <span className="min-w-0 flex-1 truncate">{c.newAgentLabel}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {l2Id && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    aria-label={c.newAgent}
                     className={NAV_BUTTON}
-                    onClick={openCreateAgent}
-                    tooltip={c.newAgent}
+                    onClick={() => navigate(HOME_ROUTE)}
+                    tooltip={c.backToSecretary}
                     type="button"
                   >
-                    <Codicon className={NAV_ICON} name="add" />
-                    <span className="min-w-0 flex-1 truncate">{c.newAgentLabel}</span>
+                    <Codicon className={NAV_ICON} name="arrow-left" />
+                    <span className="min-w-0 flex-1 truncate">{c.backToSecretary}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+              )}
 
-                {l2Id && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      className={NAV_BUTTON}
-                      onClick={() => navigate(HOME_ROUTE)}
-                      tooltip={c.backToSecretary}
-                      type="button"
-                    >
-                      <Codicon className={NAV_ICON} name="arrow-left" />
-                      <span className="min-w-0 flex-1 truncate">{c.backToSecretary}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )}
+              {sharedItems.map(item => (
+                <SidebarMenuItem key={item.id}>
+                  <SidebarMenuButton
+                    className={cn(NAV_BUTTON, sharedActive(item.id) && NAV_BUTTON_ACTIVE)}
+                    onClick={() => onNavigate(item)}
+                    tooltip={s.nav[item.id] ?? item.label}
+                    type="button"
+                  >
+                    <item.icon className={NAV_ICON} />
+                    <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
 
-                {sharedItems.map(item => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      className={cn(NAV_BUTTON, sharedActive(item.id) && NAV_BUTTON_ACTIVE)}
-                      onClick={() => onNavigate(item)}
-                      tooltip={s.nav[item.id] ?? item.label}
-                      type="button"
-                    >
-                      <item.icon className={NAV_ICON} />
-                      <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+            <div aria-hidden="true" className="my-2 h-px bg-(--ui-stroke-tertiary)" />
 
-                <div aria-hidden="true" className="my-2 h-px bg-(--ui-stroke-tertiary)" />
+            {/* 中段：名单 ↔ 外包 来回切（用户 11-01）。只有打开了某个 L2 才有外包这一页。 */}
+            {l2Id && (
+              <div className="pb-1.5">
+                <SidebarSegment items={middleTabs} onChange={setMiddleView} value={middleView} />
+              </div>
+            )}
+          </div>
 
+          {/* 只有中段（名单／外包）滚：导航那几行钉在顶上不动（用户 11-03）。 */}
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            {middleView === 'outsourced' && l2Id ? (
+              <AgentOffloadPanel agentId={l2Id} />
+            ) : (
+              <SidebarMenu className="gap-px">
                 {secretaryAgentsError && (
                   <div className="mb-1 flex items-start gap-2 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
                     <span className="min-w-0 flex-1" title={secretaryAgentsError}>
@@ -474,11 +502,11 @@ export function ChatSidebar({
                   ))
                 )}
               </SidebarMenu>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* 本 Agent 的两个入口贴在底部、和下面那排图标同一条底边（用户 10-31）。 */}
-          {!showOffload && agentActions.length > 0 ? (
+          {agentActions.length > 0 ? (
             <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-1 py-1">
               <SidebarMenu className="gap-px">
                 {agentActions.map(action => (
@@ -508,6 +536,9 @@ export function ChatSidebar({
           agentActions={agentActions}
           footerItems={footerItems}
           groups={stripGroups}
+          middleView={middleView}
+          onBackToSecretary={l2Id ? () => navigate(HOME_ROUTE) : undefined}
+          onChangeMiddleView={setMiddleView}
           onCreateAgent={openCreateAgent}
           onNavigate={onNavigate}
           onNavigateAgent={id => navigate(agentRoute(id))}

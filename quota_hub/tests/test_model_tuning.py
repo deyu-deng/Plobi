@@ -137,7 +137,7 @@ def _qoder(rows: list[dict]) -> QoderProvider:
 def _kiro(rows: list[dict]) -> KiroCliProvider:
     # Kiro's management door is the bare host: the operation travels in `X-Amz-Target`.
     stub = _Stub({"management": (200, {"models": rows})})
-    prov = KiroCliProvider({"binary": "kiro-cli", "transport": "api"}, stub)
+    prov = KiroCliProvider({"binary": "kiro-cli"}, stub)
     prov._auth = lambda: {"access_token": "AT", "region": "us-east-1",  # type: ignore[method-assign]
                           "profile_arn": "arn:aws:kd:1"}
     prov.ensure_fresh = lambda acc: asyncio.sleep(0)  # type: ignore[method-assign]

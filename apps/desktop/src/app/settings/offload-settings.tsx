@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { vendorLabel } from '@/app/chat/sidebar/external-sessions'
-import { OffloadVendorAvatar } from '@/app/chat/sidebar/offload-vendor-icon'
+import { OffloadVendorIcon } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
 import { AlertCircle, CheckCircle2, HelpCircle, Package, RefreshCw } from '@/lib/icons'
@@ -117,7 +117,7 @@ export function OffloadSettings() {
             hint={agent.version || undefined}
             title={
               <span className="flex items-center gap-2">
-                <OffloadVendorAvatar vendor={agent.name} />
+                <OffloadVendorIcon vendor={agent.name} />
                 <span>{agent.name}</span>
                 <LoginMark agent={agent} label={loginText(agent)} />
               </span>
@@ -142,7 +142,7 @@ export function OffloadSettings() {
             }
             title={
               <span className="flex items-center gap-2">
-                <OffloadVendorAvatar vendor={source.vendor} />
+                <OffloadVendorIcon vendor={source.vendor} />
                 <span>{vendorLabel(source.vendor)}</span>
               </span>
             }

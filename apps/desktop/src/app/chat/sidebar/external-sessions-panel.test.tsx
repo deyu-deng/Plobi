@@ -1,8 +1,22 @@
 // @vitest-environment jsdom
+/**
+ * 外部会话那一族的行为：读 / 说 / 改名 / 归档 / 删除 / 待判断。
+ *
+ * 11-01 起它们不再是一整格独立面板，而是并进「外包」那一格（`AgentOffloadPanel`）的同一张
+ * 按软件分组的表里（用户：「Agent 自己外包的和我在别的 AI 软件里面的对话其实是平等的」），
+ * 所以这一档渲染的是那个面板。
+ *
+ * 同一次改形里，点一行**不再弹窗**：它把这条会话交给 `$openConversation`，主区用对话卡片
+ * （`ConversationPane`）显示。于是「读到什么、能不能说话、改名/归档/删除」这些断言搬到
+ * `app/console/chat/conversation-pane.test.tsx`——这一档只负责「列表对不对、点下去交出去的是
+ * 不是那一条」。
+ */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ExternalSessionsPanel } from './external-sessions-panel'
+import { $openConversation, closeConversation } from '@/store/conversation-view'
+
+import { AgentOffloadPanel } from './agent-offload-panel'
 
 const api = vi.fn()
 const getApi = () => api
@@ -26,21 +40,9 @@ const LIST = {
   }
 }
 
-const TRANSCRIPT = {
-  ok: true,
-  data: {
-    id: 'aaaaaaaa-1111',
-    project: 'D:/Projects/Sindri',
-    vendor: 'qoder',
-    messages: [
-      { role: 'user', text: '先读 README' },
-      { role: 'assistant', text: '读完了，标题是 Sindri' }
-    ]
-  }
-}
-
 beforeEach(() => {
   api.mockReset()
+  closeConversation()
   Object.defineProperty(window, 'plobiDesktop', {
     configurable: true,
     value: { ...(window.plobiDesktop || {}), api }
@@ -49,24 +51,17 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  closeConversation()
   vi.clearAllMocks()
 })
 
-function route(sendReply = '第二句回话') {
-  api.mockImplementation(({ path }: { path: string }) => {
-    if (path.endsWith('/external-sessions')) {
-      return Promise.resolve(LIST)
-    }
-
-    if (path.endsWith('/send')) {
-      return Promise.resolve({ ok: true, data: { reply: sendReply, credits: 1.2, cost_status: 'credits_only' } })
-    }
-
-    return Promise.resolve(TRANSCRIPT)
-  })
+/** 只数「外部会话」这一路的读：这一格现在同时读台账与专家名单，混着数会多算。 */
+function sessionReads(): number {
+  return api.mock.calls.filter(([arg]) => String((arg as { path?: string })?.path ?? '').endsWith('/external-sessions'))
+    .length
 }
 
-describe('ExternalSessionsPanel', () => {
+describe('外部会话（并进外包那一格）', () => {
   it('标题旁只留一个数；待判断的收在眼睛图标里', async () => {
     api.mockImplementation(({ path }: { path: string }) => {
       if (path.endsWith('/external-sessions')) {
@@ -76,96 +71,88 @@ describe('ExternalSessionsPanel', () => {
         ] } })
       }
 
-      return Promise.resolve(TRANSCRIPT)
+      return Promise.resolve({ ok: true, data: {} })
     })
-    render(<ExternalSessionsPanel agentId="Sindri" />)
+    render(<AgentOffloadPanel agentId="Sindri" />)
 
-    expect(await screen.findByText('External conversations')).toBeTruthy()
+    expect(await screen.findByText('Outsourced')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Unjudged' })).toBeTruthy()
   })
 
-  it('按项目列出会话，点一条在 Plobi 里读 transcript（不跳外部软件）', async () => {
-    route()
-    render(<ExternalSessionsPanel agentId="Sindri" />)
+  it('点一条不是弹窗：把这条会话交给主区那张对话卡片', async () => {
+    api.mockResolvedValue(LIST)
+    render(<AgentOffloadPanel agentId="Sindri" />)
 
     fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
     fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
 
-    expect(await screen.findByText('读完了，标题是 Sindri')).toBeTruthy()
+    expect($openConversation.get()).toEqual({
+      agentId: 'Sindri',
+      kind: 'external',
+      sendable: true,
+      sessionId: 'aaaaaaaa-1111',
+      title: '先读 README，把标题写进回执文件',
+      vendor: 'qoder'
+    })
+    // 左栏自己不再读正文：正文归主区，左栏只管挑。
     expect(api).toHaveBeenCalledWith(expect.objectContaining({
       path: '/api/agents/Sindri/external-sessions'
     }))
-    expect(api).toHaveBeenCalledWith(expect.objectContaining({
-      path: '/api/agents/Sindri/external-sessions/qoder/aaaaaaaa-1111'
+    expect(api).not.toHaveBeenCalledWith(expect.objectContaining({
+      path: expect.stringContaining('/external-sessions/qoder/aaaaaaaa-1111')
     }))
   })
 
-  it('能在这个面板里说一句，回复接在 transcript 后面', async () => {
-    route()
-    render(<ExternalSessionsPanel agentId="Sindri" />)
-    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
-    fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
-    await screen.findByText('读完了，标题是 Sindri')
+  it('那家软件不支持从这里说话时，交出去的 `sendable` 是 false（主区据此收起输入框）', async () => {
+    api.mockResolvedValue({ ok: true, data: { projects: [], reason: '', sessions: [
+      { ...LIST.data.sessions[0], id: 'conv_1', sendable: false, title: 'Computor', vendor: 'marvis' }
+    ] } })
+    render(<AgentOffloadPanel agentId="Sindri" />)
 
-    fireEvent.change(screen.getByPlaceholderText('Say something to it…'), { target: { value: '标题再念一遍' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Marvis/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Computor/ }))
 
-    expect(await screen.findByText('第二句回话')).toBeTruthy()
-    expect(api).toHaveBeenCalledWith(expect.objectContaining({
-      body: { text: '标题再念一遍' },
-      method: 'POST',
-      path: '/api/agents/Sindri/external-sessions/qoder/aaaaaaaa-1111/send'
-    }))
-  })
-
-  it('后端拒了就把那句话说出来，不甩 JSON', async () => {
-    route()
-    api.mockImplementation(({ path }: { path: string }) => {
-      if (path.endsWith('/external-sessions')) {
-        return Promise.resolve(LIST)
-      }
-
-      if (path.endsWith('/send')) {
-        return Promise.reject(new Error('400: {"ok":false,"error":"这次没有登进去"}'))
-      }
-
-      return Promise.resolve(TRANSCRIPT)
+    expect($openConversation.get()).toEqual({
+      agentId: 'Sindri',
+      kind: 'external',
+      sendable: false,
+      sessionId: 'conv_1',
+      title: 'Computor',
+      vendor: 'marvis'
     })
-    render(<ExternalSessionsPanel agentId="Sindri" />)
-    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
-    fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
-    await screen.findByText('读完了，标题是 Sindri')
-
-    fireEvent.change(screen.getByPlaceholderText('Say something to it…'), { target: { value: 'hi' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-
-    expect(await screen.findByText(/这次没有登进去/)).toBeTruthy()
-    expect(screen.queryByText(/\{"ok"/)).toBeNull()
   })
 
   it('开着这一格时每 5 秒重读：L2 在聊天里标完，左栏自己收窄', async () => {
     vi.useFakeTimers()
+
     try {
-      getApi().mockImplementation(() => Promise.resolve(LIST))
-      render(<ExternalSessionsPanel agentId="Sindri" />)
+      getApi().mockResolvedValue(LIST)
+      render(<AgentOffloadPanel agentId="Sindri" />)
 
       await act(async () => { await vi.advanceTimersByTimeAsync(0) })
-      const first = getApi().mock.calls.length
+      const first = sessionReads()
       await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
 
-      expect(getApi().mock.calls.length).toBe(first + 1)
+      // 这一格现在同时读两路（台账 + 外部会话），所以只数会话这一路。
+      expect(sessionReads()).toBe(first + 1)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('空表整格不出现，屏上不放解释句', async () => {
+  it('空表不出现任何一行，屏上不放解释句', async () => {
     api.mockResolvedValue({ ok: true, data: { projects: [], reason: '这一条没有绑定目录', sessions: [], vendor: 'qoder' } })
-    const { container } = render(<ExternalSessionsPanel agentId="Sindri" />)
+    render(<AgentOffloadPanel agentId="Sindri" />)
 
-    await waitFor(() => expect(api).toHaveBeenCalled())
-    await waitFor(() => expect(container.firstChild).toBeNull())
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/agents/Sindri/offloads' }))
+    )
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.queryByText('这一条没有绑定目录')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Qoder/ })).toBeNull()
   })
+
   it('L2 标过无关的不出现；还没判断的收在开关里', async () => {
     api.mockImplementation(({ path }: { path: string }) => {
       if (path.endsWith('/external-sessions')) {
@@ -176,9 +163,9 @@ describe('ExternalSessionsPanel', () => {
         ] } })
       }
 
-      return Promise.resolve(TRANSCRIPT)
+      return Promise.resolve({ ok: true, data: {} })
     })
-    render(<ExternalSessionsPanel agentId="Sindri" />)
+    render(<AgentOffloadPanel agentId="Sindri" />)
     fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
 
     expect(await screen.findByText('相关的一条')).toBeTruthy()
@@ -187,24 +174,6 @@ describe('ExternalSessionsPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Unjudged/ }))
     expect(await screen.findByText('待判断的一条')).toBeTruthy()
-  })
-
-  it('只读的那家不给输入框，明确说不能从这里说话', async () => {
-    api.mockImplementation(({ path }: { path: string }) => {
-      if (path.endsWith('/external-sessions')) {
-        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
-          { ...LIST.data.sessions[0], id: 'conv_1', sendable: false, title: 'Computor', vendor: 'marvis' }
-        ] } })
-      }
-
-      return Promise.resolve({ ok: true, data: { id: 'conv_1', messages: [{ role: 'user', text: 'Computor' }], project: '', vendor: 'marvis' } })
-    })
-    render(<ExternalSessionsPanel agentId="Sindri" />)
-    fireEvent.click(await screen.findByRole('button', { name: /Marvis/ }))
-    fireEvent.click(await screen.findByRole('button', { name: /Computor/ }))
-
-    expect(await screen.findByText('You cannot speak to this app from Plobi yet.')).toBeTruthy()
-    expect(screen.queryByPlaceholderText('Say something to it…')).toBeNull()
   })
 
   it('归档的收在「已归档」里，不在主列表', async () => {
@@ -216,9 +185,9 @@ describe('ExternalSessionsPanel', () => {
         ] } })
       }
 
-      return Promise.resolve(TRANSCRIPT)
+      return Promise.resolve({ ok: true, data: {} })
     })
-    render(<ExternalSessionsPanel agentId="Sindri" />)
+    render(<AgentOffloadPanel agentId="Sindri" />)
 
     fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
     expect(await screen.findByText('活着的一条')).toBeTruthy()
@@ -228,45 +197,21 @@ describe('ExternalSessionsPanel', () => {
     expect(await screen.findByText('归档的一条')).toBeTruthy()
   })
 
-  it('改名走 PATCH：只改我们这一侧', async () => {
-    route()
-    render(<ExternalSessionsPanel agentId="Sindri" />)
-    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
-    fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
-    await screen.findByText('读完了，标题是 Sindri')
+  it('归档那条也能点开（收回来的东西不该变成死的）', async () => {
+    api.mockImplementation(({ path }: { path: string }) => {
+      if (path.endsWith('/external-sessions')) {
+        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
+          { ...LIST.data.sessions[0], id: 'a2', related: true, archived: true, title: '归档的一条' }
+        ] } })
+      }
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
-    fireEvent.change(screen.getByDisplayValue(/先读 README/), { target: { value: '新名字' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      return Promise.resolve({ ok: true, data: {} })
+    })
+    render(<AgentOffloadPanel agentId="Sindri" />)
 
-    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
-      body: { title: '新名字' },
-      method: 'PATCH',
-      path: '/api/agents/Sindri/external-sessions/qoder/aaaaaaaa-1111'
-    })))
+    fireEvent.click(await screen.findByRole('button', { name: 'Archived' }))
+    fireEvent.click(await screen.findByRole('button', { name: /归档的一条/ }))
+
+    expect($openConversation.get()).toEqual(expect.objectContaining({ kind: 'external', sessionId: 'a2' }))
   })
-
-  it('删除先要确认，删完说「移到回收站」并给恢复', async () => {
-    route()
-    render(<ExternalSessionsPanel agentId="Sindri" />)
-    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
-    fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
-    await screen.findByText('读完了，标题是 Sindri')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm?' }))
-
-    expect(await screen.findByText('Moved to trash')).toBeTruthy()
-    expect(api).toHaveBeenCalledWith(expect.objectContaining({
-      method: 'DELETE',
-      path: '/api/agents/Sindri/external-sessions/qoder/aaaaaaaa-1111'
-    }))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
-    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
-      method: 'POST',
-      path: expect.stringContaining('/aaaaaaaa-1111/restore')
-    })))
-  })
-
 })

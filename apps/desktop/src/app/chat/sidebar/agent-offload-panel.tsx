@@ -4,29 +4,47 @@ import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { getAgentOffloads, offloadResume } from '@/plobi'
+import { openConversation } from '@/store/conversation-view'
 
-import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
+import { externalHandleOf, groupOutsourced, jumpTargetFor, outsourcedItems, roundFacts } from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
-import { SidebarCount, SidebarSectionHeader } from './chrome'
-import { ExpertPanel } from './expert-panel'
-import { ExternalSessionsPanel } from './external-sessions-panel'
-import { OffloadVendorAvatar } from './offload-vendor-icon'
+import { SidebarDrawerRow } from './chrome'
+import { ExpertRoleRow, useAgentExperts } from './expert-panel'
+import { EXPERT_ROLES, latestRun, runsOfRole } from './expert-roles'
+import { vendorLabel } from './external-sessions'
+import { ExternalSessionRow, useExternalSessions } from './external-sessions-panel'
+import { OffloadVendorIcon } from './offload-vendor-icon'
 
 /**
- * 点进一个 L2 时，左栏这一格换成**它把活外包给了谁**（WP-L2-OUTSOURCE-ENTRY 入口面③）。
+ * 点进一个 L2 时，左栏中段可以切到这一格：**这一摊的活派给了谁**。
  *
- * 数据来自 `GET /api/agents/:id/offloads`（按目录归属，见 `plobi/console/router.py` 的
- * `agent_offloads`）。一行点下去能到哪儿由 `jumpTargetFor()` 决定——跳不进外部软件自己
- * 那条会话时就退成"打开这一轮落盘的东西"，再没有就把这行标成不可点并说清为什么。
+ * 11-01 第二次改形（用户三张图定点）：
+ *
+ * 1. 两个一级**抽屉**：「专家」和「外包」，都是「矢量图标 + 名词 + 计数 + 折角」，
+ *    和分类行同一套形状——不再是那种小字分区标题。
+ * 2. 「专家」下面放的是**四类角色的名册**（文件 / 浏览器 / 软件 / 电脑），不是会话流水
+ *    （用户 11-01：「专家下面不要放会话了」）。点一行就打开这个角色最近那条会话——
+ *    用户选定的形态是「一个专家一张嘴」。
+ * 3. 「外包」下面还是三级：抽屉 → 那家软件 → 它底下这一摊的所有会话。
+ * 4. 点一行**不再弹窗**：交给 `$openConversation`，主区用对话卡片显示（`ConversationPane`）。
+ *
+ * 两路数据各自自读：台账（`GET /api/agents/:id/offloads`）与外部会话
+ * （`GET /api/agents/:id/external-sessions`）。
  */
 /** 开着这一格时的重读间隔。台账是一行一个 JSON，读它比轮询一次网络便宜得多。 */
 const REFRESH_MS = 5000
 
-export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack?: () => void }) {
+export function AgentOffloadPanel({ agentId }: { agentId: string }) {
   const { t } = useI18n()
   const c = t.console
   const [rounds, setRounds] = useState<null | OffloadRoundWithReply[]>(null)
-  const [openTarget, setOpenTarget] = useState<null | string>(null)
+  const [expertsOpen, setExpertsOpen] = useState(true)
+  const [outsourcedOpen, setOutsourcedOpen] = useState(true)
+  const [openVendor, setOpenVendor] = useState<null | string>(null)
+  const [showUnknown, setShowUnknown] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const experts = useAgentExperts(agentId)
+  const { data } = useExternalSessions(agentId)
 
   useEffect(() => {
     let cancelled = false
@@ -59,69 +77,174 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
     }
   }, [agentId])
 
+  const all = data?.sessions ?? []
+  const live = all.filter(session => !session.archived)
+  const archived = all.filter(session => session.archived)
+  const related = live.filter(session => session.related === true)
+  const unknown = live.filter(session => session.related === null)
+  // 一条相关的都没有时，先把「待判断」摆出来（按应用分组）——否则第一次打开只是一句空话。
+  const visible = showUnknown ? [...related, ...unknown] : related
+  const groups = groupOutsourced(rounds ?? [], visible)
+  const shownCount = groups.reduce((sum, group) => sum + group.rounds.length + group.sessions.length, 0)
+  // 抽屉头上的数 = 这一格**点得到**的全部东西：展开着的那些 + 眼睛后面那批 + 已归档的。
+  //
+  // 归档与待判断必须算进来（11-01 修）：只数展开着的那部分时，一旦把最后一条会话归档，
+  // 抽屉当场消失——「已归档」那个开关跟着没了，收回去的东西再也捞不回来。
+  const total = shownCount + (showUnknown ? 0 : unknown.length) + archived.length
+
   if (rounds === null) {
     return null
   }
 
-  const groups = groupRoundsByTarget(rounds)
-
   return (
     <div className="flex flex-col gap-px">
-      <ExpertPanel agentId={agentId} />
+      {/* 专家：四类角色的名册。**不放会话**——会话是点开这一行之后主区里的事。
+          一个都没派过时不印「0」：名册照样在，只是四行都灰着。 */}
+      <SidebarDrawerRow
+        count={experts.length || undefined}
+        icon="person"
+        label={c.expertsTitle}
+        onToggle={() => setExpertsOpen(value => !value)}
+        open={expertsOpen}
+      >
+        <div className="flex flex-col gap-px pl-4">
+          {EXPERT_ROLES.map(role => {
+            const runs = runsOfRole(experts, role.key)
+            const latest = latestRun(runs)
 
-      <SidebarSectionHeader
-        action={
-          onBack ? (
-            <button
-              aria-label={c.offloadsBackToList}
-              className="shrink-0 text-[0.7rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
-              onClick={onBack}
-              type="button"
-            >
-              <Codicon name="arrow-left" size="0.8125rem" />
-            </button>
-          ) : undefined
-        }
-        collapsible={false}
-        label={c.offloadsTitle}
-        meta={rounds.length > 0 ? rounds.length : ''}
-        onToggle={() => undefined}
-        open
-      />
-
-      {groups.map(group => {
-        const open = openTarget === group.target
-
-        return (
-          <div key={group.target}>
-            <button
-              className="group/offload flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
-              onClick={() => setOpenTarget(open ? null : group.target)}
-              title={group.target}
-              type="button"
-            >
-              <OffloadVendorAvatar vendor={group.target} />
-              <span className="min-w-0 flex-1 truncate">{group.target}</span>
-              <SidebarCount>{group.rounds.length}</SidebarCount>
-              <Codicon
-                className="shrink-0 text-(--ui-text-tertiary) opacity-60"
-                name={open ? 'chevron-down' : 'chevron-right'}
-                size="0.75rem"
+            return (
+              <ExpertRoleRow
+                key={role.key}
+                onOpen={() =>
+                  latest &&
+                  openConversation({
+                    agentId,
+                    kind: 'expert',
+                    running: latest.status === 'running',
+                    sessionId: latest.id,
+                    title: latest.goal || latest.id
+                  })}
+                role={role}
+                runs={runs}
               />
-            </button>
+            )
+          })}
+        </div>
+      </SidebarDrawerRow>
 
-            {open && (
-              <div className="flex flex-col gap-px pl-5">
-                {group.rounds.map(round => (
-                  <OffloadRoundRow key={`${round.ts}-${round.cwd}`} round={round} />
-                ))}
+      {total > 0 && (
+        <SidebarDrawerRow
+          count={total}
+          icon="send"
+          label={c.offloadsTitle}
+          onToggle={() => setOutsourcedOpen(value => !value)}
+          open={outsourcedOpen}
+        >
+          <div className="flex flex-col gap-px pl-4">
+            {groups.map(group => {
+              const expanded = openVendor === group.vendor
+
+              return (
+                <div key={group.vendor}>
+                  {/* 软件行：**这家软件自己的图标 + 名字 + 折角**（用户 11-01：
+                      「外包软件的抽屉就显示软件对应的图标就行了…还是要有名称和折角的」）。
+                      不再放会话数——那个数在一级抽屉头上已经有了，这里重复一遍只是噪音。 */}
+                  <button
+                    className="group/outsourced flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
+                    onClick={() => setOpenVendor(expanded ? null : group.vendor)}
+                    title={group.label}
+                    type="button"
+                  >
+                    <OffloadVendorIcon vendor={group.vendor} />
+                    <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                    <Codicon
+                      className="shrink-0 text-(--ui-text-tertiary) opacity-60"
+                      name={expanded ? 'chevron-down' : 'chevron-right'}
+                      size="0.75rem"
+                    />
+                  </button>
+
+                  {expanded && (
+                    <div className="flex flex-col gap-px pl-5">
+                      {outsourcedItems(group).map(item =>
+                        item.kind === 'round' ? (
+                          <OffloadRoundRow key={`${item.round.ts}-${item.round.cwd}`} round={item.round} />
+                        ) : (
+                          <ExternalSessionRow
+                            key={`${item.session.vendor}-${item.session.id}`}
+                            onOpen={() =>
+                              openConversation({
+                                agentId,
+                                kind: 'external',
+                                sendable: item.session.sendable,
+                                sessionId: item.session.id,
+                                title: item.session.title || item.session.id.slice(0, 8),
+                                vendor: item.session.vendor
+                              })}
+                            session={item.session}
+                          />
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {unknown.length > 0 && (
+              <button
+                aria-label={showUnknown ? c.externalSessionsHideUnknown : c.externalSessionsShowUnknown}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-control-hover-background)',
+                  showUnknown ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'
+                )}
+                onClick={() => setShowUnknown(value => !value)}
+                title={showUnknown ? c.externalSessionsHideUnknown : c.externalSessionsShowUnknown}
+                type="button"
+              >
+                <Codicon name={showUnknown ? 'eye' : 'eye-closed'} size="0.75rem" />
+                {unknown.length}
+              </button>
+            )}
+
+            {archived.length > 0 && (
+              <div className="flex flex-col gap-px">
+                <button
+                  aria-label={c.externalSessionsArchived}
+                  className={cn(
+                    'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-control-hover-background)',
+                    showArchived ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'
+                  )}
+                  onClick={() => setShowArchived(value => !value)}
+                  title={c.externalSessionsArchived}
+                  type="button"
+                >
+                  <Codicon name="archive" size="0.75rem" />
+                  {archived.length}
+                </button>
+                {showArchived &&
+                  archived.map(session => (
+                    <ExternalSessionRow
+                      key={`archived-${session.vendor}-${session.id}`}
+                      muted
+                      onOpen={() =>
+                        openConversation({
+                          agentId,
+                          kind: 'external',
+                          sendable: session.sendable,
+                          sessionId: session.id,
+                          title: session.title || session.id.slice(0, 8),
+                          vendor: session.vendor
+                        })}
+                      session={session}
+                      trailing={vendorLabel(session.vendor)}
+                    />
+                  ))}
               </div>
             )}
           </div>
-        )
-      })}
-
-      <ExternalSessionsPanel agentId={agentId} />
+        </SidebarDrawerRow>
+      )}
     </div>
   )
 }

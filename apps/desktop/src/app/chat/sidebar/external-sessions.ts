@@ -114,8 +114,13 @@ export function titleOf(session: ExternalSession): string {
 
 export type VendorGroup = { sessions: ExternalSession[], vendor: string }
 
-/** 按软件分组；组内新的在前，组间按固定顺序（不跟着条数跳）。 */
-const VENDOR_ORDER = ['qoder', 'codebuddy', 'marvis', 'cursor', 'agy']
+/**
+ * 按软件分组；组内新的在前，组间按固定顺序（不跟着条数跳）。
+ *
+ * 外包那一格把「L2 自己派出去的」和「你在那家软件里的会话」并进同一张表（用户 11-01：
+ * 两者平等），所以这个顺序表也归它用——两处排序必须同一份，否则合并后行会跳。
+ */
+export const VENDOR_ORDER = ['qoder', 'codebuddy', 'marvis', 'cursor', 'agy']
 
 export function groupByVendor(sessions: readonly ExternalSession[]): VendorGroup[] {
   const byVendor = new Map<string, ExternalSession[]>()

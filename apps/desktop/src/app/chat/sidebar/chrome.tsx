@@ -81,6 +81,56 @@ export function SidebarSectionHeader({
   )
 }
 
+/**
+ * 一级抽屉行（用户 11-01：「专家」「外包」也要长成矢量图标 + 名词的抽屉）。
+ *
+ * 和分类行同一个形状（`agent-category-group.tsx` 的组头）：图标 + 名词 + 计数 + 折角。
+ * 区别只在于它自己不跳页——点一下只开合，内容由调用方塞进来（二级、三级都挂在 children 里）。
+ */
+export function SidebarDrawerRow({
+  children,
+  count,
+  icon,
+  label,
+  onToggle,
+  open
+}: {
+  children: React.ReactNode
+  /** 没东西可数时传 `undefined`：屏上不印一个「0」（用户 11-01：不要噪音）。 */
+  count?: number
+  /** Codicon 名。 */
+  icon: string
+  label: string
+  onToggle: () => void
+  open: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-px">
+      <button
+        aria-expanded={open}
+        className="group/drawer flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="grid size-4 shrink-0 place-items-center">
+          <Codicon name={icon} size="0.875rem" />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {count === undefined ? null : (
+          <span className="shrink-0 text-[0.68rem] font-medium text-(--ui-text-quaternary)">{count}</span>
+        )}
+        <Codicon
+          className="shrink-0 text-(--ui-text-tertiary) opacity-60"
+          name={open ? 'chevron-down' : 'chevron-right'}
+          size="0.75rem"
+        />
+      </button>
+
+      {open ? <div className="flex flex-col gap-px">{children}</div> : null}
+    </div>
+  )
+}
+
 // ── Row geometry (session row is canonical — everything composes these) ─────
 //
 // Height lives ONLY on SidebarRowShell (min-h-[1.625rem]). Inset children

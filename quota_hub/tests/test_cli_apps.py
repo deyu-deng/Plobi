@@ -34,7 +34,15 @@ def _account(provider: str, token: str = "x") -> Account:
     return Account(id="a", provider=provider, cred=Credential(access_token=token))
 
 
-def test_all_five_disable_cleanly_without_their_binary():
+def test_all_five_disable_cleanly_without_their_binary(monkeypatch, tmp_path):
+    # Cline is a pure-HTTP leg now: no token means no seat, so the test must not
+    # read this machine's real Cline credential.
+    for var in ("CLINE_API_KEY", "CLINEPASS_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("CLINE_PROVIDERS_JSON", "/nonexistent/cline-providers.json")
+    # Kiro is a pure-HTTP leg too: point it at a missing database so the test
+    # never sees this machine's real kiro-cli credential.
+    monkeypatch.setenv("KIRO_DATA_SQLITE", str(tmp_path / "missing-kiro.sqlite3"))
     classes = (
         (CodexCliProvider, "codex_cli"),
         (ClaudeCodeCliProvider, "claude_code_cli"),
@@ -78,16 +86,10 @@ def test_claude_invocation_puts_model_before_print_mode():
     ]
 
 
-def test_kiro_default_model_does_not_invent_a_model_flag():
-    prov = KiroCliProvider({"binary": "kiro-cli"}, None)
-    prov.binary_path = "kiro-cli"
-    argv = prov.build_invocation(
-        _account("kiro_cli"),
-        {"model": "kiro_cli/default", "messages": [{"role": "user", "content": "hi"}]},
+def test_kiro_invocation_is_gone_because_http_replaced_it():
+    assert not hasattr(KiroCliProvider, "build_invocation"), (
+        "Kiro answers over its own streaming API now; a `--json` argv shape would be a second, unused door"
     )
-    assert "--model" not in argv, argv
-    assert argv[-1] == "[user]\nhi"
-    assert "--no-interactive" in argv and "--trust-all-tools" in argv
 
 
 def test_cline_invocation_is_gone_because_acp_replaced_it():
@@ -337,14 +339,6 @@ def test_claude_full_spawn_reads_the_json_result(tmp_path):
     out = _spawn_chat(prov, "claude_code_cli/sonnet-4-6")
     assert out["choices"][0]["message"]["content"] == "CLAUDE<<[user]\nhello world>>"
     assert out["usage"]["total_tokens"] == 6
-
-
-def test_kiro_full_spawn_strips_the_terminal_frame(tmp_path):
-    prov = KiroCliProvider(_fake_cfg("kiro", tmp_path), None)
-    out = _spawn_chat(prov, "kiro_cli/default")
-    content = out["choices"][0]["message"]["content"]
-    assert content == "KIRO<<[user]\nhello world>>"
-    assert "banner" not in content
 
 
 def test_opencode_full_spawn_returns_plain_text(tmp_path):

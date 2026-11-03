@@ -138,8 +138,54 @@ export function EgressPanel() {
   const engineOk = status?.engine?.state === 'running-ours'
   const nodes = status?.membership?.nodes ?? Object.keys(block.nodes ?? {})
   const groups = status?.membership?.groups ?? {}
-  const groupNames = Object.keys(groups)
-  const shown = useMemo(() => (filter ? nodes.filter(name => (groups[filter] ?? []).includes(name)) : nodes), [filter, groups, nodes])
+  /**
+   * 筛选片只放**真的分过类**的组。
+   *
+   * 订阅带来的组有两种：一种是兜底（`POOL`，46/46，成员＝全部节点），一种才是分类
+   * （日本 18 / 香港 11 / 新加坡 3 …）。兜底那种与上面那颗「全部」是同一个过滤器，
+   * 摆两遍只会让这一行看起来没分过类；而按表里的原始顺序（乌克兰 1、俄罗斯 1、
+   * 加拿大 1…）排在前面，屏幕上就先看到一串只有一颗节点的地区 —— 用户 11-01 第三次
+   * 看这个浮窗就是这么说的：「分类没分好」。所以：滤掉兜底、只留**真能筛出东西**的
+   * 组（≥2 个成员）、按成员数从多到少排。一颗节点的地区不是分类，是那颗节点本身。
+   */
+  const groupNames = useMemo(() => {
+    const all = new Set(nodes)
+    return Object.keys(groups)
+      .filter(name => {
+        const members = groups[name] ?? []
+        const catchAll = members.length === all.size && members.every(member => all.has(member))
+
+        return !catchAll && members.length >= 2
+      })
+      .sort((a, b) => (groups[b]?.length ?? 0) - (groups[a]?.length ?? 0) || a.localeCompare(b))
+  }, [groups, nodes])
+
+  /**
+   * 卡片按**所在的最小组**（＝地区）聚在一起，组的大小从多到少。
+   *
+   * 订阅给的顺序是「香港W01 / 日本W01 / 香港W02 / 日本W02…」，照它排，两列时每一行
+   * 都混着两个地区（用户 11-01 的截图就是那样）；三列也只是碰巧。聚起来之后，同一片
+   * 地区连成一段，读法与上面那排筛选片一致。
+   */
+  const ordered = useMemo(() => {
+    const size = new Map<string, number>()
+    nodes.forEach(name => {
+      let best = Number.POSITIVE_INFINITY
+      groupNames.forEach(group => {
+        const members = groups[group] ?? []
+        if (members.includes(name) && members.length < best) best = members.length
+      })
+      //: 不在任何筛选组里的节点（只属于自己的那一颗）排到最后：`Infinity` 不能直接拿去
+      //: 相减 —— `Infinity - Infinity` 是 `NaN`，比较器返回 `NaN` 等于没有排序。
+      size.set(name, best === Number.POSITIVE_INFINITY ? -1 : best)
+    })
+    return [...nodes].sort((a, b) => (size.get(b) ?? -1) - (size.get(a) ?? -1) || a.localeCompare(b))
+  }, [groupNames, groups, nodes])
+
+  const shown = useMemo(
+    () => (filter ? ordered.filter(name => (groups[filter] ?? []).includes(name)) : ordered),
+    [filter, groups, ordered]
+  )
 
   /** 注册表那一半单独一次调用：它拒绝时那句话不许只进日志——表的声明与机器的事实是两份读数。 */
   const moveProxy = useCallback(async (enabled: boolean) => {
@@ -349,7 +395,9 @@ export function EgressPanel() {
       ) : (
         <div className="grid min-w-0 grid-cols-1 gap-2 px-3 py-3">
           {groupNames.length > 0 ? (
-            <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+            //: 换行而不是横向滚动：横向滚 + 藏滚动条时，最后一颗被面板边缘切一半，
+            //: 与「被裁了」长得一模一样（用户 11-01 已经为这个形态提过两次）。
+            <div className="flex flex-wrap gap-1.5">
               <button
                 className={`shrink-0 rounded-full border border-(--stroke-nous) px-2.5 py-1 text-xs ${
                   filter === '' ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'

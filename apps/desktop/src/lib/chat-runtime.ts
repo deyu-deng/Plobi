@@ -1,11 +1,13 @@
-import { ExportedMessageRepository, type ThreadMessage } from '@assistant-ui/react'
+import { ExportedMessageRepository, type ExternalStoreAdapter, type ThreadMessage } from '@assistant-ui/react'
+import { useMemo, useRef } from 'react'
 
 import type { QuickModelOption } from '@/app/chat/composer/types'
 import type { ClientSessionState, CommandDispatchResponse } from '@/app/types'
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { type ChatMessage, type ChatMessagePart, chatMessageText, textPart } from '@/lib/chat-messages'
-import { stripInternalDirectives } from '@/lib/visible-user-text'
+import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { normalize } from '@/lib/text'
+import { stripInternalDirectives } from '@/lib/visible-user-text'
 import type { ComposerAttachment } from '@/store/composer'
 import { quotaProviders } from '@/store/desktop-quotas'
 import type { ModelOptionsResponse, SessionInfo } from '@/types/plobi'
@@ -448,6 +450,57 @@ export function toBranchableMessageRepository(
   }
 
   return ExportedMessageRepository.fromBranchableArray(items, { headId })
+}
+
+/**
+ * 一份消息表 → 一条 assistant-ui 运行时。**全应用只有这一处造运行时**。
+ *
+ * 2026-11-01 用户要求「点一条外包会话/一个专家，直接复用对话卡片，不要弹窗」之后，
+ * 主区多了第二种要渲染 Thread 的地方（`app/console/chat/conversation-pane.tsx`）。
+ * 与其让两个文件各写一遍「缓存 + 仓库 + 增量 store」（那正是架构守卫
+ * `single ChatSurface owner` 要防的事），不如把这段固定搭配收在这里：
+ * 两边传的是**消息与回调**，不是运行时细节。
+ *
+ * 刻意不填的 `onEdit` / `onReload` 会保持 `undefined`——界面据此隐藏改写/重载那两枚
+ * 按钮（能力是挂在 `onEdit !== undefined` 上的），所以调用方不传就等于不要。
+ */
+export function useChatMessageRuntime({
+  isRunning,
+  messages,
+  onCancel,
+  onEdit,
+  onNew,
+  onReload
+}: {
+  isRunning: boolean
+  messages: ChatMessage[]
+  onCancel?: ExternalStoreAdapter<ThreadMessage>['onCancel']
+  onEdit?: ExternalStoreAdapter<ThreadMessage>['onEdit']
+  onNew?: ExternalStoreAdapter<ThreadMessage>['onNew']
+  onReload?: ExternalStoreAdapter<ThreadMessage>['onReload']
+}) {
+  const runtimeMessageCacheRef = useRef(new WeakMap<ChatMessage, ThreadMessage>())
+  const toolMergeCacheRef = useRef(createToolMergeCache())
+
+  const messageRepository = useMemo(
+    () =>
+      toBranchableMessageRepository(messages, {
+        runtimeMessageCache: runtimeMessageCacheRef.current,
+        toolMergeCache: toolMergeCacheRef.current
+      }),
+    [messages]
+  )
+
+  return useIncrementalExternalStoreRuntime<ThreadMessage>({
+    isRunning,
+    messageRepository,
+    onCancel,
+    onEdit,
+    // 适配器类型里 `onNew` 是必填的；没人接手时给一个空实现（这两张卡片的提交都
+    // 归各自的输入区管，不走 assistant-ui 的 append）。
+    onNew: onNew ?? (async () => undefined),
+    onReload
+  })
 }
 
 // A settled assistant message with only tool calls — no prose, no reasoning.

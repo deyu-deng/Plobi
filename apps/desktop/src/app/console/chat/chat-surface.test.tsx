@@ -121,15 +121,18 @@ describe('ChatSurface (spec §3.6: one conversation component)', () => {
 })
 
 // Acceptance item added by spec §3.6: grep the console domain and assert there
-// is exactly ONE chat rendering implementation. Both centers must be
-// instantiations of `ChatSurface`; no other console file may own a runtime,
-// transcript, or composer.
+// is exactly ONE chat rendering implementation.
+//
+// 2026-11-01：用户要求「点一条外包会话/一个专家就复用对话卡片」，于是 console 里
+// 多了第二个渲染 Thread 的面（`conversation-pane.tsx`）。它没有照抄运行时——
+// 两个面都调 `@/lib/chat-runtime` 的 `useChatMessageRuntime`，所以 console 里
+// 运行时所有者是 **0**，唯一实现在 lib 里（`architecture.guard.test.ts` 管那一半）。
 describe('spec §3.6 single-implementation guard', () => {
   // vitest jsdom reports `import.meta.url` as http, so anchor on cwd
   // (the desktop app root) instead of the module URL.
   const consoleDir = join(process.cwd(), 'src', 'app', 'console')
 
-  it('has exactly one console module owning the chat runtime', async () => {
+  it('no console module owns the chat runtime (there is one, in @/lib/chat-runtime)', async () => {
     const files = await collectTsx(consoleDir)
     const owners = []
 
@@ -141,8 +144,7 @@ describe('spec §3.6 single-implementation guard', () => {
       }
     }
 
-    expect(owners).toHaveLength(1)
-    expect(owners[0]?.endsWith('chat-surface.tsx')).toBe(true)
+    expect(owners, `console 里又冒出造运行时的地方：\n${owners.join('\n')}`).toEqual([])
   })
 })
 

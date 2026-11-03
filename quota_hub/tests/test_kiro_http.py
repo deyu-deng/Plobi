@@ -57,7 +57,7 @@ def _provider(config: dict, routes: dict, seen: list) -> KiroCliProvider:
         return httpx.Response(200, json=payload)
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler), trust_env=False)
-    return KiroCliProvider({"transport": "api", "binary": "kiro-cli", **config}, http)
+    return KiroCliProvider({"binary": "kiro-cli", **config}, http)
 
 
 def _account() -> Account:
@@ -68,14 +68,15 @@ def _account() -> Account:
     return acc
 
 
-def test_the_door_is_the_operators_switch_and_the_lease_is_a_separate_question(tmp_path, store):
+def test_the_credential_itself_is_the_door_and_the_lease_is_a_separate_question(tmp_path, store):
     prov = _provider({"data_sqlite": store}, {}, [])
     assert prov._auth()["access_token"] == "at-test"
     assert prov._auth()["region"] == "eu-central-1", "region comes from the profile ARN, not a default"
     assert prov.credential_health() == (True, "ok")
 
     off = KiroCliProvider({"data_sqlite": store, "binary": "kiro-cli"}, None)
-    assert off._auth() == {}, "config decides the mouth; the default stays the spawn path"
+    assert off._auth()["access_token"] == "at-test", "the door is the credential itself, no config switch"
+    assert off.credential_health() == (True, "ok"), "reading the lease needs no HTTP client"
 
     con = sqlite3.connect(store)
     con.execute("UPDATE auth_kv SET value = ? WHERE key = 'kirocli:social:token'",
@@ -203,12 +204,24 @@ def test_kiros_token_counts_arrive_on_their_own_frame(store):
     assert out["usage"] == {"prompt_tokens": 1234, "completion_tokens": 56, "total_tokens": 1290}, out["usage"]
 
 
-def test_a_locked_read_does_not_change_which_mouth_the_leg_uses(tmp_path, store):
-    """The two mouths offer different model ids, so flipping them mid-session is not a
-    harmless fallback (measured: kiro-cli holds this database open while it runs)."""
+def test_a_locked_read_does_not_lose_the_cached_lease(tmp_path, store):
+    """A refused read is not evidence the session ended (measured: kiro-cli holds
+    this database open while it runs); the last readable lease keeps serving."""
     prov = _provider({"data_sqlite": store}, {}, [])
     assert prov._auth()["access_token"] == "at-test"
     missing = tmp_path / "gone.sqlite3"          # what a refused read looks like
     prov.config["data_sqlite"] = str(missing)
     assert prov._auth()["access_token"] == "at-test", "a failed read is not evidence the session ended"
     assert prov.credential_health() == (True, "ok")
+
+
+def test_without_a_credential_every_door_degrades_explicitly(tmp_path):
+    prov = KiroCliProvider({"data_sqlite": str(tmp_path / "missing.sqlite3"), "binary": "kiro-cli"}, None)
+    assert prov.signed_in() == (False, "no_credential")
+    assert prov.credential_health() == (False, "no_credential")
+    assert asyncio.run(prov.discover_accounts()) == []
+    assert asyncio.run(prov.refresh_models(_account())) is None
+    with pytest.raises(UpstreamError) as caught:
+        asyncio.run(prov.chat(_account(), {"model": "kiro_cli/default",
+                                           "messages": [{"role": "user", "content": "hi"}]}))
+    assert caught.value.status == 401 and caught.value.reauth

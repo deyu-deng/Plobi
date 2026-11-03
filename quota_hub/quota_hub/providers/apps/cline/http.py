@@ -19,7 +19,8 @@ Measured 2026-10-31 against this account (no secret printed, credential read onl
 
 Two credential sources, in order: a key he minted (config ``api_key`` or
 ``CLINE_API_KEY``/``CLINEPASS_API_KEY``), then the access token Cline's own app keeps
-refreshing. With neither, this leg stays on the ACP path it had before.
+refreshing. With neither, the leg raises ``UpstreamError(401, reauth=True)`` on a turn
+and the card asks him to run Cline's own login - there is no ACP spawn to fall back on.
 """
 from __future__ import annotations
 
@@ -125,10 +126,24 @@ class ClineHttpMixin:
 
     # --- accounts --------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:
-        accounts = await super().discover_accounts()
+        """The credential question only: no credential, no seat.
+
+        There is no ACP spawn to fall back on - a Cline session exists exactly when a
+        token does. The config may still name seats (`accounts`); each gets the live
+        token so the rest of the hub treats this leg like the pure-HTTP door it is.
+        """
         token = self._live_credential()
-        if token and accounts:
-            accounts[0].cred.access_token = token
+        if not token:
+            return []
+        raw = self.config.get("accounts") or [{}]
+        accounts = [
+            Account(id=str(a.get("id") or f"{self.name}-default"),
+                    provider=self.name,
+                    label=str(a.get("label") or self.display_name or ""))
+            for a in raw
+        ]
+        for acc in accounts:
+            acc.cred.access_token = token
         return accounts
 
     async def ensure_fresh(self, acc: Account) -> None:
@@ -165,7 +180,7 @@ class ClineHttpMixin:
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         token = self._live_credential()
         if not token:
-            return await super().chat(acc, oai_req)
+            raise UpstreamError(401, "cline: no credential, run `cline auth`", reauth=True)
         acc.cred.access_token = token
         body = {**oai_req, "model": self._upstream_model(oai_req.get("model", "")), "stream": False}
         res = await self.http.post(f"{self._base}/chat/completions", headers=self._headers(acc), json=body)
@@ -179,9 +194,7 @@ class ClineHttpMixin:
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         token = self._live_credential()
         if not token:
-            async for chunk in super().chat_stream(acc, oai_req):
-                yield chunk
-            return
+            raise UpstreamError(401, "cline: no credential, run `cline auth`", reauth=True)
         acc.cred.access_token = token
         body = {**oai_req, "model": self._upstream_model(oai_req.get("model", "")), "stream": True}
         async with self.http.stream("POST", f"{self._base}/chat/completions",
@@ -206,7 +219,7 @@ class ClineHttpMixin:
     async def refresh_models(self, acc: Account) -> list[str] | None:
         token = self._live_credential()
         if not token:
-            return await super().refresh_models(acc)
+            return None
         acc.cred.access_token = token
         try:
             res = await self.http.get(f"{self._base}/models", headers=self._headers(acc))
@@ -218,7 +231,7 @@ class ClineHttpMixin:
         short = [m for m in ids if m and not m.startswith(_FREE_POOL_PREFIX)]
         if not short:
             return None
-        self.served_models = tuple(f"{self.model_prefix}/{m}" for m in short)
+        self.served_models = tuple(f"{self._prefix()}/{m}" for m in short)
         return short
 
     def _http_error(self, res: httpx.Response) -> UpstreamError:

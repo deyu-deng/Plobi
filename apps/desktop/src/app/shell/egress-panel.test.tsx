@@ -282,8 +282,49 @@ describe('左下底栏那一格', () => {
     const panel = screen.getByTestId('egress-panel')
     expect(panel.className).toContain('w-[32rem]')
 
-    const grid = screen.getByRole('button', { name: copy.panelAll }).parentElement?.nextElementSibling
-    expect(grid?.className).toContain('grid-cols-3')
+    const grid = screen.getByTestId('egress-panel').querySelector('.grid-cols-3')
+    expect(grid).toBeTruthy()
+  })
+
+  it('分类片滤掉兜底组、按成员数排；卡片按地区聚在一起', async () => {
+    // 订阅给的顺序是「香港W01 / 日本W01 / 香港W02 …」，照它铺，每一行都混着两个地区；
+    // 而 `POOL`（成员＝全部）与「全部」是同一个过滤器，摆进筛选片只会看着没分类。
+    const inSubOrder = ['🇭🇰 香港W01', '🇯🇵 日本W01', '🇩🇪 德国W01', '🇭🇰 香港W02', '🇯🇵 日本W02', '🇯🇵 日本W03']
+    getNetworkStatus.mockResolvedValue(
+      status({
+        membership: {
+          groups: {
+            POOL: inSubOrder,
+            香港: ['🇭🇰 香港W01', '🇭🇰 香港W02'],
+            日本: ['🇯🇵 日本W01', '🇯🇵 日本W02', '🇯🇵 日本W03'],
+            //: 一颗节点的地区不是分类，是那颗节点本身 —— 它不该占一格筛选片。
+            德国: ['🇩🇪 德国W01']
+          },
+          nodes: inSubOrder
+        }
+      })
+    )
+    render(<EgressPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: copy.tabNodes }))
+
+    expect(screen.queryByRole('button', { name: 'POOL' })).toBeNull()
+    const chips = [...(screen.getByRole('button', { name: copy.panelAll }).parentElement?.children ?? [])].map(
+      element => element.textContent
+    )
+    expect(chips).toEqual([copy.panelAll, '日本', '香港'])
+
+    const cards = screen
+      .getAllByRole('button')
+      .filter(button => /W0\d/.test(button.textContent ?? ''))
+      .map(button => button.getAttribute('title'))
+    expect(cards).toEqual([
+      '🇯🇵 日本W01',
+      '🇯🇵 日本W02',
+      '🇯🇵 日本W03',
+      '🇭🇰 香港W01',
+      '🇭🇰 香港W02',
+      '🇩🇪 德国W01'
+    ])
   })
 
   it('载体那两颗按钮不换行：窄了就省略，不许把面板撑破', async () => {

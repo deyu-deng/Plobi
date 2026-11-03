@@ -5,7 +5,8 @@ real token. The point of these tests is that the oddities are *measured*, so a f
 "cleanup" that normalizes them fails loudly:
 
   ids come back inside ``{"data": ...}`` · ``cline-free/*`` is refused · ``expiresAt`` is
-  milliseconds · with no credential the leg must keep the ACP behaviour it had before.
+  milliseconds · with no credential the leg raises ``UpstreamError(401, reauth=True)``
+  and makes no HTTP call.
 """
 from __future__ import annotations
 
@@ -14,10 +15,10 @@ import json
 import time
 
 import httpx
+import pytest
 
-from quota_hub.providers.acp import AcpProvider
 from quota_hub.providers.apps.cline import ClineCliProvider
-from quota_hub.providers.base import Account
+from quota_hub.providers.base import Account, UpstreamError
 
 BASE = "https://api.cline.bot/api/v1"
 TOOL_CALL = {"id": "call_1", "type": "function", "function": {"name": "plobi_probe_read", "arguments": "{}"}}
@@ -118,18 +119,23 @@ def test_the_lease_is_milliseconds_and_the_two_verdicts_stay_separate(tmp_path):
     assert prov._live_credential() == ""
 
 
-def test_with_no_credential_the_leg_is_the_acp_session_it_used_to_be(monkeypatch):
-    marker = {"id": "from-acp"}
-
-    async def _fake_chat(self, acc, oai_req):
-        return marker
-
-    monkeypatch.setattr(AcpProvider, "chat", _fake_chat)
+def test_with_no_credential_the_leg_raises_reauth_and_makes_no_http_call(monkeypatch):
     monkeypatch.setenv("CLINE_PROVIDERS_JSON", "/nonexistent/cline-providers.json")
     for var in ("CLINE_API_KEY", "CLINEPASS_API_KEY"):
         monkeypatch.delenv(var, raising=False)
 
     prov, seen = _provider({f"POST {BASE}/chat/completions": _completion("x")}, {})
     assert prov.signed_in() == (False, "no_desktop_credential")
-    out = asyncio.run(prov.chat(_account(), {"model": "cline_cli/anything", "messages": []}))
-    assert out is marker and seen == [], "no token means no HTTP call"
+
+    with pytest.raises(UpstreamError) as excinfo:
+        asyncio.run(prov.chat(_account(), {"model": "cline_cli/anything", "messages": []}))
+    assert excinfo.value.status == 401 and excinfo.value.reauth
+
+    async def _drive_stream():
+        async for _ in prov.chat_stream(_account(), {"model": "cline_cli/anything", "messages": []}):
+            pass
+
+    with pytest.raises(UpstreamError) as stream_exc:
+        asyncio.run(_drive_stream())
+    assert stream_exc.value.status == 401 and stream_exc.value.reauth
+    assert seen == [], "no token means no HTTP call"

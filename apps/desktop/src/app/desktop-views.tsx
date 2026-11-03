@@ -1,10 +1,13 @@
 import { useStore } from '@nanostores/react'
+import { useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
+import { $openConversation, closeConversation } from '@/store/conversation-view'
 import { $shellCards } from '@/store/layout'
 
 import { ChatSurface, type ChatSurfaceProps } from './console/chat/chat-surface'
+import { ConversationPane } from './console/chat/conversation-pane'
 import type { ChatScope } from './console/chat/scope'
 import { HOME_ROUTE } from './routes'
 import type { CardEdgeControls } from './shell/card-edge-controls'
@@ -31,9 +34,30 @@ export function SecretaryCenterPane({
   submit?: ChatSurfaceProps['submit']
 }) {
   const shellCards = useStore($shellCards)
+  const conversation = useStore($openConversation)
+  const scopeId = chatScope?.kind === 'agent' ? chatScope.id : null
+
+  // 换了 Agent（或离开这一摊）就把那条「外面的对话」关掉：否则转一圈回来，
+  // 主区还会停在上次那条外包会话上——用户这次并没有点它。
+  useEffect(() => {
+    if (conversation && conversation.agentId !== scopeId) {
+      closeConversation()
+    }
+  }, [conversation, scopeId])
 
   if (!chatScope) {
     return <Navigate replace to={HOME_ROUTE} />
+  }
+
+  // 外面的那条对话（外部软件会话 / 一个专家）占的就是这张卡（用户 11-01：不要弹窗）。
+  const active = chatScope.kind === 'agent' && conversation?.agentId === chatScope.id ? conversation : null
+
+  if (active) {
+    return (
+      <div className={cn('flex h-full min-h-0 flex-col', !shellCards && 'pt-[var(--titlebar-height)]')}>
+        <ConversationPane conversation={active} showHeader={shellCards} />
+      </div>
+    )
   }
 
   return (

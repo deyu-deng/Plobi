@@ -1,28 +1,28 @@
 import { useEffect, useState } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-import { SidebarSectionHeader } from './chrome'
-import { elapsedText, getAgentExperts, getExpertLog, goalLine, logLine } from './expert-runs'
-import type { ExpertLogMessage, ExpertRun, ExpertRunsData } from './expert-runs'
+import type { ExpertRoleSpec } from './expert-roles'
+import { elapsedText, getAgentExperts } from './expert-runs'
+import type { ExpertRun, ExpertRunsData } from './expert-runs'
 
 /**
- * 左栏那一格「专家」（WP-L3-EXPERTS，用户 10-28 口径）：
- * 临时专家**不进名册**，但 L2 一派出去，这里就出现一行；点开是它自己的**工作日志**。
+ * L2 派出去的临时专家（WP-L3-EXPERTS，用户 10-28 口径）。
  *
- * 名单与日志都读同一个状态库：专家就是一条 `source=subagent` 的子会话，
- * 日志复用 `/api/sessions/:id/messages`。正在干的时候每 3.5 秒自读。
- * 没派过整格就不出现——屏上不放句子。
+ * 11-01 起它不再是「一整格面板 + 点开弹窗」，而是「专家」那枚抽屉里的**角色名册**：
+ * 四类角色（文件 / 浏览器 / 软件 / 电脑）各占一行，**这里不放会话流水**
+ * （用户 11-01：「专家下面不要放会话了。应该放五个专家对应的图标和名称」——后端是四类）。
+ *
+ * 点一行就打开这个角色最近那条会话：用户选定的形态是「一个专家一张嘴」。
+ * 名单与日志都读同一个状态库——专家就是一条 `source=subagent` 的子会话。
  */
-export function ExpertPanel({ agentId }: { agentId: string }) {
-  const { t } = useI18n()
-  const c = t.console
+/** 名单自读间隔：正在干的那一行会自己冒出状态点、自己收尾。 */
+const REFRESH_MS = 3500
+
+export function useAgentExperts(agentId: string): ExpertRun[] {
   const [data, setData] = useState<null | ExpertRunsData>(null)
-  const [open, setOpen] = useState<null | ExpertRun>(null)
-  const [show, setShow] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -46,7 +46,7 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
     }
 
     load(true)
-    const timer = setInterval(() => load(false), 3500)
+    const timer = setInterval(() => load(false), REFRESH_MS)
 
     return () => {
       cancelled = true
@@ -54,158 +54,55 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
     }
   }, [agentId])
 
-  const experts = data?.experts ?? []
-
-  if (experts.length === 0) {
-    return null
-  }
-
-  const running = experts.filter(expert => expert.status === 'running').length
-
-  return (
-    <div className="flex flex-col gap-px">
-      <SidebarSectionHeader
-        label={c.expertsTitle}
-        meta={running > 0 ? `${running}/${experts.length}` : experts.length}
-        onToggle={() => setShow(value => !value)}
-        open={show}
-      />
-
-      {show &&
-        experts.map(expert => (
-          <button
-            className="grid min-h-[1.625rem] grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md pl-2 pr-1 text-left hover:bg-(--ui-control-hover-background)"
-            key={expert.id}
-            onClick={() => setOpen(expert)}
-            title={expert.goal}
-            type="button"
-          >
-            <span
-              className={cn(
-                'size-1.5 rounded-full',
-                expert.status === 'running' ? 'animate-pulse bg-(--ui-accent)' : 'bg-(--ui-stroke-tertiary)'
-              )}
-            />
-            <RoleIcon role={expert.role} />
-            <span className="min-w-0 truncate text-[0.8125rem] leading-none text-(--ui-text-secondary)">
-              {goalLine(expert)}
-            </span>
-            <span className="flex items-center gap-1 text-[0.62rem] text-(--ui-text-quaternary)">
-              {expert.status === 'running' && elapsedText(expert)}
-              {expert.tool_calls > 0 && (
-                <span className="flex items-center gap-0.5">
-                  <Codicon name="tools" size="0.6875rem" />
-                  {expert.tool_calls}
-                </span>
-              )}
-            </span>
-          </button>
-        ))}
-
-      {open && <ExpertLog expert={open} onClose={() => setOpen(null)} />}
-    </div>
-  )
+  return data?.experts ?? []
 }
 
-const ROLE_ICONS: Record<string, { icon: string, label: 'expertRoleBrowser' | 'expertRoleComputer' | 'expertRoleFile' | 'expertRoleSoftware' }> = {
-  browser: { icon: 'globe', label: 'expertRoleBrowser' },
-  computer: { icon: 'device-desktop', label: 'expertRoleComputer' },
-  file: { icon: 'file', label: 'expertRoleFile' },
-  software: { icon: 'terminal', label: 'expertRoleSoftware' }
-}
-
-function RoleIcon({ role }: { role?: string }) {
+/**
+ * 一行专家角色：矢量图标 + 名词（+ 跑过几次 / 正在干的状态点）。
+ *
+ * 和一级抽屉行同一套行高与内距，只是缩进在抽屉里；点它是「打开这张嘴」而不是展开，
+ * 所以没有折角——折角是「还有下一层」的承诺，这里没有下一层。
+ */
+export function ExpertRoleRow({
+  onOpen,
+  role,
+  runs
+}: {
+  onOpen: () => void
+  role: ExpertRoleSpec
+  runs: ExpertRun[]
+}) {
   const { t } = useI18n()
-  const spec = role ? ROLE_ICONS[role] : undefined
-
-  if (!spec) {
-    return <span className="size-3.5" />
-  }
+  const running = runs.find(run => run.status === 'running')
+  const idle = runs.length === 0
 
   return (
-    <span className="grid size-3.5 place-items-center text-(--ui-text-tertiary)" title={t.console[spec.label]}>
-      <Codicon name={spec.icon} size="0.8125rem" />
-    </span>
-  )
-}
-
-function ExpertLog({ expert, onClose }: { expert: ExpertRun, onClose: () => void }) {
-  const { t } = useI18n()
-  const c = t.console
-  const [messages, setMessages] = useState<null | ExpertLogMessage[]>(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-
-    const load = () => {
-      getExpertLog(expert.id)
-        .then(body => {
-          if (!cancelled) {
-            setMessages(body?.messages ?? [])
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setError(c.expertsLoadFailed)
-          }
-        })
-    }
-
-    load()
-    const timer = expert.status === 'running' ? setInterval(load, 2000) : undefined
-
-    return () => {
-      cancelled = true
-
-      if (timer) {
-        clearInterval(timer)
-      }
-    }
-  }, [expert.id, expert.status, c.expertsLoadFailed])
-
-  // 第一条用户消息就是任务书本身；标题已经写着同一句话，不再在正文里占一大块。
-  const lines = (messages ?? []).slice(1)
-  const ready = messages !== null && lines.length === 0 && !error
-
-  return (
-    <Dialog onOpenChange={next => { if (!next) {onClose()} }} open>
-      <DialogContent className="flex max-h-[70vh] max-w-xl flex-col gap-2">
-        <DialogHeader>
-          <DialogTitle className="truncate text-[0.8125rem]">{goalLine(expert)}</DialogTitle>
-        </DialogHeader>
-
-        <div className="flex min-h-[160px] flex-1 flex-col gap-1 overflow-y-auto">
-          {messages === null && !error && (
-            <span className="text-[0.72rem] text-(--ui-text-tertiary)">{c.expertsLoading}</span>
-          )}
-          {error && <span className="text-[0.72rem] text-(--ui-red)">{error}</span>}
-          {ready && <span className="text-[0.72rem] text-(--ui-text-tertiary)">{c.expertsEmpty}</span>}
-          {lines.map((message, index) => {
-            const line = logLine(message)
-
-            if (!line.text) {
-              return null
-            }
-
-            return (
-              <div
-                className={cn(
-                  'whitespace-pre-wrap text-[0.74rem] leading-snug',
-                  line.kind === 'tool'
-                    ? 'font-mono text-[0.68rem] text-(--ui-text-quaternary)'
-                    : message.role === 'user'
-                      ? 'text-(--ui-text-tertiary)'
-                      : 'text-(--ui-text)'
-                )}
-                key={`${message.role}-${index}`}
-              >
-                {line.text.length > 1200 ? `${line.text.slice(0, 1200)}…` : line.text}
-              </div>
-            )
-          })}
-        </div>
-      </DialogContent>
-    </Dialog>
+    <button
+      aria-disabled={idle || undefined}
+      className={cn(
+        'flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium transition-colors duration-100 ease-out',
+        idle
+          ? 'cursor-default text-(--ui-text-quaternary)'
+          : 'text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none'
+      )}
+      disabled={idle}
+      onClick={onOpen}
+      title={running ? `${t.console[role.labelKey]} · ${elapsedText(running)}` : t.console[role.labelKey]}
+      type="button"
+    >
+      <span className="grid size-4 shrink-0 place-items-center">
+        <Codicon name={role.icon} size="0.875rem" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{t.console[role.labelKey]}</span>
+      {runs.length > 1 ? (
+        <span className="shrink-0 text-[0.68rem] font-medium text-(--ui-text-quaternary)">{runs.length}</span>
+      ) : null}
+      {running ? (
+        <span
+          aria-label={t.console.expertsRunning}
+          className="size-1.5 shrink-0 animate-pulse rounded-full bg-(--ui-accent)"
+        />
+      ) : null}
+    </button>
   )
 }
