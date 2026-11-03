@@ -1,7 +1,7 @@
 """脑仓门禁不许把**外层代码仓**当成本仓审（裁定 72 尾巴① / REQUIREMENTS R-013 边角②）。
 
 `plobi/mind/project_declarations.py` 会拿 `MIND_ROOT` 当 cwd 跑那个库自己的 `verifier.py`，
-还要往 `AGENTS.md` 与 `Vault/projects/INDEX.md` 里写。`resolve_root()` 只保证"这个目录存在"，
+还要往 `AGENTS.md` 与 `Vault/dossiers/projects/INDEX.md` 里写。`resolve_root()` 只保证"这个目录存在"，
 不保证"这个目录就是它自己那个仓的顶层"。于是有一个真实形状能咬人：`MIND_ROOT` 指到一块
 **自己不是 git 仓、又嵌在别的仓里**的目录时，`git rev-parse --show-toplevel` 给出的是那个外层仓
 ——门禁审错了对象，声明也写进了别人的仓。
@@ -31,9 +31,9 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def _make_vault(root: Path, *, with_gate: bool = False) -> Path:
-    """一块看起来像脑仓的目录：Vault/projects/<p> + AGENTS.md。（verifier 不在场时用 with_gate=False）"""
+    """一块看起来像脑仓的目录：Vault/dossiers/projects/<p> + AGENTS.md。（verifier 不在场时用 with_gate=False）"""
     vault = root / "mind"
-    (vault / "Vault" / "projects" / "Plobi").mkdir(parents=True)
+    (vault / "Vault" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (vault / "AGENTS.md").write_text(
         "# Mind\n\n## 1. 项目（1）\n\n- Plobi — 本项目\n", encoding="utf-8"
     )

@@ -1872,7 +1872,7 @@ MEMORY_WRITE_SCHEMA = {
         "nothing is dropped silently. APPROVAL: with the user's approval switch on (memory.write_approval), every location's write is staged — nothing lands until they nod on the card in the chat, and a staged result is terminal (do not repeat the call).\n\n"
         "'source' is how memory stays small: the relative path of the page a person can "
         "read (under vault/ or mind/) plus its date, e.g. "
-        "'vault/projects/Plobi/plan.md 2026-10-19'. It is appended to each entry that has "
+        "'vault/dossiers/projects/Plobi/plan.md 2026-10-19'. It is appended to each entry that has "
         "no pointer yet. Never paste the page's content or base64 into memory, and never "
         "rewrite the vault to point back at memory — memory points at the human-facing "
         "page, that direction is the design.\n\n"
@@ -1946,7 +1946,7 @@ MEMORY_SCHEMA = {
             },
             "source": {
                 "type": "string",
-                "description": "Provenance pointer for add/replace: a relative path under vault/ or mind/ with its date, e.g. 'vault/projects/Plobi/plan.md 2026-10-19'."
+                "description": "Provenance pointer for add/replace: a relative path under vault/ or mind/ with its date, e.g. 'vault/dossiers/projects/Plobi/plan.md 2026-10-19'."
             },
             "old_text": {
                 "type": "string",

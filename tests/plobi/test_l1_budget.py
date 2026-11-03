@@ -714,11 +714,11 @@ def vault(tmp_path, monkeypatch):
 
     root = tmp_path / "Mind"
     (root / "Vault" / "meta").mkdir(parents=True)
-    (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
+    (root / "Vault" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     (root / "Vault" / "meta" / "Persona.md").write_text("我是邓德宇。", encoding="utf-8")
-    (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
-    (root / "Vault" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
     return root
 

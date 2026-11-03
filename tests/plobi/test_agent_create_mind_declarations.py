@@ -1,7 +1,7 @@
-"""建完 Mind 项目树，脑仓自己那两处声明必须跟着走（AGENTS.md §1 + Vault/projects/INDEX.md）。
+"""建完 Mind 项目树，脑仓自己那两处声明必须跟着走（AGENTS.md §1 + Vault/dossiers/projects/INDEX.md）。
 
 钉这件事的理由不在产品代码里，在脑仓自己的门禁里：``Loom/scripts/verifier.py`` 的
-``check_projects()`` 把「§1 声明的清单 ≠ ``Vault/projects`` 磁盘」判成 **BLOCKER**（退出码 1），
+``check_projects()`` 把「§1 声明的清单 ≠ ``Vault/dossiers/projects`` 磁盘」判成 **BLOCKER**（退出码 1），
 而 ``mind/.githooks/pre-commit`` 已经装上。只建目录不补声明 = 用户在脑仓的下一次提交被我们造的洞
 拦住。所以这里断的都是**关系**，不是名单：
 
@@ -9,7 +9,7 @@
 * 重名被拒 → 三处声明与磁盘**一个字节都没动**；
 * INDEX 生成失败 / 门禁不放行 → 目录、名册行、§1 那行全部还原，不留孤儿；
 * 声明里写的是**磁盘上那个名字**（Mind §5：大小写按项目名本身、多词以 ``-`` 连接），不是小写 slug；
-* 库不带脑仓门禁（只有 ``Vault/projects`` 的假库）→ 照旧只建三件套，不自己造一份 AGENTS.md/INDEX。
+* 库不带脑仓门禁（只有 ``Vault/dossiers/projects`` 的假库）→ 照旧只建三件套，不自己造一份 AGENTS.md/INDEX。
 
 MIND_ROOT 一律指到 tmp 里的假库；真正的脑仓（``MIND_ROOT`` 指到的那个，自带 ``.git``）是用户的数据，
 测试往里写一个目录就是污染他的库（这里只**读**那个仓里的 ``verifier.py`` 一份，复制进临时根去当被测的生成器）。
@@ -124,7 +124,7 @@ def make_plan(directory: Path, name: str) -> None:
 def build_brain(
     root: Path, *, disk: list[str], generator: Path, declared: list[str] | None = None
 ) -> Path:
-    """一个「装了门禁」的 Mind 根：AGENTS.md §1 + Loom/scripts/verifier.py + Vault/projects。
+    """一个「装了门禁」的 Mind 根：AGENTS.md §1 + Loom/scripts/verifier.py + Vault/dossiers/projects。
 
     ``disk`` 是盘上真有的项目目录，``declared`` 是 §1 那行此刻写着的那些——两者故意可以不一致
     （存量漂移），用来验「对齐到盘」而不是「在旧名单上加一项」。

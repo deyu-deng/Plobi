@@ -100,7 +100,7 @@ def test_resolve_roots_reads_the_env_once_and_never_guesses(mind, sibling_vault,
 
 def test_base_for_does_not_touch_the_disk(mind, sibling_vault):
     split = Roots(mind=mind, vault=sibling_vault)
-    assert split.base_for("Vault/projects/Plobi") == sibling_vault
+    assert split.base_for("Vault/dossiers/projects/Plobi") == sibling_vault
     assert split.base_for("Loom/raw") == mind
     assert Roots(mind=mind).base_for("Vault/notes") == mind / "Vault"
 
@@ -200,9 +200,9 @@ def test_notes_view_reports_a_missing_surface_instead_of_zero_notes(mind, monkey
 
 def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vault, monkeypatch):
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
-    (sibling_vault / "projects" / "SRTP").mkdir(parents=True)
+    (sibling_vault / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
     entry = types.SimpleNamespace(
-        name="srtp", mind_subtree="Vault/projects/SRTP", category="research", role="l2_course"
+        name="srtp", mind_subtree="Vault/dossiers/projects/SRTP", category="research", role="l2_course"
     )
     from plobi.mind.notes_view import agent_aliases
 
@@ -211,10 +211,10 @@ def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vaul
 
 
 def test_a_research_tree_is_a_known_owner_too(mind, sibling_vault, monkeypatch):
-    """Counting only ``Vault/projects`` would report ``research/SRTP`` as a note
+    """Counting only ``Vault/dossiers/projects`` would report ``research/SRTP`` as a note
     tagged with an owner nobody registered — the sidebar's dangling-tag card."""
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
-    (sibling_vault / "research" / "SRTP").mkdir(parents=True)
+    (sibling_vault / "dossiers" / "research" / "SRTP").mkdir(parents=True)
     assert "SRTP" in known_names(mind, [])
 
 
@@ -223,20 +223,20 @@ def test_a_tree_lands_in_its_category_folder_and_a_stale_pointer_adopts_it(
 ):
     """``category=research`` must not mint a second ``projects/SRTP`` beside the
     real tree. Live shape on 2026-10-16 08:35: the roster still said
-    ``Vault/projects/SRTP`` after the move, so registering the 分身 wrote three
+    ``Vault/dossiers/projects/SRTP`` after the move, so registering the 分身 wrote three
     boilerplate files into a brand-new folder on the human surface."""
     from plobi.mind.project_tree import ensure_project_tree
 
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
 
     write = ensure_project_tree(raw_name="SRTP", category="research", mind_root=mind)
-    assert write.relative == "Vault/research/SRTP"
-    assert (sibling_vault / "research" / "SRTP" / "plan.md").is_file()
-    assert not (sibling_vault / "projects" / "SRTP").exists()
+    assert write.relative == "Vault/dossiers/research/SRTP"
+    assert (sibling_vault / "dossiers" / "research" / "SRTP" / "plan.md").is_file()
+    assert not (sibling_vault / "dossiers" / "projects" / "SRTP").exists()
 
     adopted = ensure_project_tree(raw_name="SRTP", category="projects", mind_root=mind)
-    assert (adopted.reused, adopted.relative) == (True, "Vault/research/SRTP")
-    assert not (sibling_vault / "projects" / "SRTP").exists()
+    assert (adopted.reused, adopted.relative) == (True, "Vault/dossiers/research/SRTP")
+    assert not (sibling_vault / "dossiers" / "projects" / "SRTP").exists()
 
 
 def test_the_seeder_reads_trees_from_every_category_folder(
@@ -249,7 +249,7 @@ def test_the_seeder_reads_trees_from_every_category_folder(
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
     monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / ".plobi"))
-    tree = sibling_vault / "research" / "Wealth-Lab"
+    tree = sibling_vault / "dossiers" / "research" / "Wealth-Lab"
     tree.mkdir(parents=True)
     (tree / "plan.md").write_text(
         "---\nproject: Wealth-Lab\ntitle: Wealth-Lab\ngroup: research\n"
@@ -267,7 +267,7 @@ def test_the_seeder_reads_trees_from_every_category_folder(
     )
     assert seeded, "the tree under research/ was not discovered at all"
     entry = next(e for e in reg.entries() if e.mind_subtree.endswith("Wealth-Lab"))
-    assert entry.mind_subtree == "Vault/research/Wealth-Lab"
+    assert entry.mind_subtree == "Vault/dossiers/research/Wealth-Lab"
     assert entry.category == "research"
 
 

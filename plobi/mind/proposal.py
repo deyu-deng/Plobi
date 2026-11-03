@@ -138,7 +138,7 @@ def never_auto(logical: str, mode: str) -> str:
         return "rewrites-the-user's-own-record"
     if "/profile/" in low or "persona" in low:
         return "rewrites-the-persona"
-    if low.startswith("vault/projects/mind") or low == "vault/projects/mind":
+    if low.startswith("vault/dossiers/projects/mind") or low == "vault/dossiers/projects/mind":
         return "deleted-project"
     return ""
 
@@ -208,7 +208,7 @@ def category_of(logical: str) -> str:
     """Coarse class used by the trust ledger — derived from the path, never model-guessed."""
     low = logical.lower()
     for marker, name in (("vault/notes", "notes"), ("vault/diary", "diary"),
-                         ("vault/meta/profile", "persona"), ("vault/projects", "project-docs"),
+                         ("vault/meta/profile", "persona"), ("vault/dossiers/projects", "project-docs"),
                          ("loom/raw", "digests"), ("loom/wiki", "wiki")):
         if marker in low or low.startswith(marker):
             return name

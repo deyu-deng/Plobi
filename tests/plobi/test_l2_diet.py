@@ -419,10 +419,10 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     mind_root = tmp_path / "mind"
     mind_root.mkdir()
     (mind_root / "AGENTS.md").write_text("# mind", encoding="utf-8")
-    (mind_root / "Vault" / "projects").mkdir(parents=True)
+    (mind_root / "Vault" / "dossiers" / "projects").mkdir(parents=True)
 
     for name in ("Plobi", "Animation"):
-        proj = mind_root / "Vault" / "projects" / name
+        proj = mind_root / "Vault" / "dossiers" / "projects" / name
         proj.mkdir()
         (proj / "plan.md").write_text(
             "---\n"

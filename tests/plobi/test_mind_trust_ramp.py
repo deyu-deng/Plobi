@@ -21,7 +21,7 @@ AGENDA = "Loom/wiki/daily/2026-10-23.md"
 def roots(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
     vault = tmp_path / "Vault"
-    (vault / "projects" / "Plobi").mkdir(parents=True)
+    (vault / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (vault / "diary").mkdir()
     (vault / "meta" / "profile").mkdir(parents=True)
     mind.mkdir()

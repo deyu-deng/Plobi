@@ -53,7 +53,7 @@ def notes(tmp_path, monkeypatch):
     )
     (root / "INDEX.md").write_text("# Mind · Knowledge Index\n", encoding="utf-8")
     (root / ".hidden.md").write_text("不该出现\n", encoding="utf-8")
-    (vault / "projects").mkdir()
+    (vault / "dossiers" / "projects").mkdir(parents=True)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("VAULT_ROOT", str(vault))
@@ -131,7 +131,7 @@ def test_read_note_returns_body(notes):
 
 def test_traversal_and_non_markdown_are_refused(notes):
     assert nl.read_note("Vault/notes/../../config.yaml") is None
-    assert nl.read_note("Vault/projects/Aura/plan.md") is None
+    assert nl.read_note("Vault/dossiers/projects/Aura/plan.md") is None
     assert nl.read_note("Vault/notes/数学 Math/微积分.txt") is None
     assert nl.read_note("") is None
 

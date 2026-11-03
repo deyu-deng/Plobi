@@ -42,7 +42,7 @@ def _isolated_state(tmp_path, monkeypatch):
     """Fresh registry + tracker per test; nothing leaks into the real home."""
     monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
     monkeypatch.setattr("plobi.agents.registry.default_path", lambda: tmp_path / "projects.yaml")
-    # R-013 扩写（2026-10-06）：建 project 分身现在要在 Mind 立项（Vault/projects/<名>
+    # R-013 扩写（2026-10-06）：建 project 分身现在要在 Mind 立项（Vault/dossiers/projects/<名>
     # + 三件套）。MIND_ROOT 指到 tmp 里一个**存在**的假库（resolve_root 只认存在的目录），
     # 否则每个 project 用例都会往真的脑仓里写目录。
     (tmp_path / "mind").mkdir(parents=True, exist_ok=True)

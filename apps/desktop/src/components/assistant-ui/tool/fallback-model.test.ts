@@ -811,7 +811,7 @@ describe('buildToolView plobi_secretary_ask project_status (WP-PROJECT-CARD, 裁
     category: 'projects',
     has_mind: true,
     id: 'plobi',
-    mind_subtree: 'Vault/projects/Plobi',
+    mind_subtree: 'Vault/dossiers/projects/Plobi',
     name: 'Plobi',
     plan_excerpt: '',
     progress_excerpt: '',

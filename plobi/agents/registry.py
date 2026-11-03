@@ -13,7 +13,7 @@
         profile: l2-agenda          # 对应 plobi profile（省略 = 用 agent 名）
         provider: deepseek          # 可选覆盖默认路由；省略 = 用 DEFAULT_ROUTES
         model: deepseek-chat
-        mind_subtree: Vault/projects/Plobi   # 相对 MIND_ROOT（L2 直读）
+        mind_subtree: Vault/dossiers/projects/Plobi   # 相对 MIND_ROOT（L2 直读）
         skills: [morning-report, message-digest]
         description: 日程闭环 Agent
 
@@ -64,7 +64,7 @@ DEFAULT_CATEGORY = "butler"
 UNBOUND_CATEGORIES: tuple[str, ...] = ("butler",)
 
 # R-013 扩写（2026-10-06）：哪几类分身是「Mind 里的一个项目」——只有这两类建册时
-# 要在 ``Vault/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
+# 要在 ``Vault/dossiers/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
 # **裁定 121 二要我明判的那一格：``courses`` 不进这里。** 三条理由：① 课程条目是
 # 日程侧的数据，不是要写文档/代码的工作区，挂到脑仓没有消费方；② 脑仓自带 `.git` 与
 # 独立远端，`Code` 的闸门碰不到它（裁定 72）——为一个品类去那仓造目录要单独动作，
@@ -753,9 +753,9 @@ class AgentRegistry:
     ) -> str:
         """哪条**没归档**的分身已经挂着这棵 Mind 树（大小写归一比，没有则空串）。
 
-        一个项目一棵树：``Vault/projects/Nymo`` 挂了 ``Nymo`` 之后再建一条挂同一棵树的分身，
+        一个项目一棵树：``Vault/dossiers/projects/Nymo`` 挂了 ``Nymo`` 之后再建一条挂同一棵树的分身，
         就是用户 2026-10-06 报的「左栏两个 nymo」。比的是归一后的整串相对路径——不分大小写的
-        盘上 ``Vault/projects/nymo`` 与 ``Vault/projects/Nymo`` 也是同一棵树。
+        盘上 ``Vault/dossiers/projects/nymo`` 与 ``Vault/dossiers/projects/Nymo`` 也是同一棵树。
         """
         needle = (relative or "").strip().casefold()
         if not needle:
@@ -1630,7 +1630,7 @@ def agenda_template_entry() -> AgentEntry:
         name=AGENDA_TEMPLATE_NAME,
         role=AGENDA_TEMPLATE_ROLE,
         profile=AGENDA_TEMPLATE_PROFILE,
-        mind_subtree="Vault/projects/Plobi",
+        mind_subtree="Vault/dossiers/projects/Plobi",
         skills=("plobi-l2-resident",),
         description="日程采集 → SQLite → 看板 → 钉钉 闭环",
     )

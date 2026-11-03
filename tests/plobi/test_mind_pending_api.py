@@ -25,7 +25,7 @@ def client(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
     vault = tmp_path / "Vault"
     (mind / "wiki" / "daily").mkdir(parents=True)
-    (vault / "projects").mkdir(parents=True)
+    (vault / "dossiers" / "projects").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("VAULT_ROOT", str(vault))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))

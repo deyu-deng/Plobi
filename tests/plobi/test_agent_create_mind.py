@@ -30,7 +30,7 @@ import plobi.console.router as console_router
 from plobi.delegation.tracker import SubagentTracker, set_tracker
 from plobi.mind.project_tree import ENTRY_FILE_NAMES
 
-VAULT_PROJECTS = "Vault/projects"
+VAULT_PROJECTS = "Vault/dossiers/projects"
 
 
 @pytest.fixture()
@@ -152,16 +152,16 @@ def test_research_category_projects_under_the_research_group(client, mind_home, 
     )
     assert response.status_code == 200, response.json()
     root = tmp_path / "mind"
-    # 分类决定这棵树住在哪个文件夹：research 的落 ``Vault/research/``，不再挤进 ``projects/``。
-    plan = (root / "Vault" / "research" / "Wealth-Lab" / "plan.md").read_text(
+    # 分类决定这棵树住在哪个文件夹：research 的落 ``Vault/dossiers/research/``，不再挤进 ``projects/``。
+    plan = (root / "Vault" / "dossiers" / "research" / "Wealth-Lab" / "plan.md").read_text(
         encoding="utf-8"
     )
     # 活项目里 research 那一类的配对是 type=research + group=research（Wealth-Lab/SRTP）。
     assert "type: research" in plan
     assert "group: research" in plan
-    assert not (root / "Vault" / "projects" / "Wealth-Lab").exists()
+    assert not (root / "Vault" / "dossiers" / "projects" / "Wealth-Lab").exists()
     saved = AgentRegistry.load(mind_home.path).get("wealth-lab")
-    assert saved is not None and saved.mind_subtree == "Vault/research/Wealth-Lab"
+    assert saved is not None and saved.mind_subtree == "Vault/dossiers/research/Wealth-Lab"
 
 
 def test_butler_create_does_not_touch_mind(client, mind_home, tmp_path):

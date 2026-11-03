@@ -49,16 +49,16 @@ def vault(tmp_path, monkeypatch):
     """临时 Mind vault：persona + 大写 Plobi 项目（当前写入位）。"""
     root = tmp_path / "Mind"
     (root / "persona").mkdir(parents=True)
-    (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
+    (root / "Vault" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     # 详版画像在脑里（用户 10-24：vault 不进记忆系统；USER.md 是精简版）
     (root / "persona" / "profile.md").write_text(
         "我是小龟，浙大本科生。", encoding="utf-8"
     )
-    (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text(
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text(
         "# Plobi\n北极星：人只负责审核和提想法。", encoding="utf-8"
     )
-    (root / "Vault" / "projects" / "Plobi" / "progress.md").write_text(
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text(
         "M1 推进中，Wave B 完成。", encoding="utf-8"
     )
     # mind_sync/MindWriter 走 plobi.mind.paths.resolve_root（env 优先）——
@@ -108,10 +108,10 @@ def test_prefetch_without_vault_returns_empty(provider, monkeypatch):
 def test_profile_block_is_bounded(tmp_path, monkeypatch):
     root = tmp_path / "Mind"
     (root / "Vault" / "meta").mkdir(parents=True)
-    (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
+    (root / "Vault" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     (root / "Vault" / "meta" / "Persona.md").write_text("p" * 5000, encoding="utf-8")
-    (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text("q" * 5000, encoding="utf-8")
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("q" * 5000, encoding="utf-8")
     block = MIND_MOD._profile_block(root)
     assert len(block) < 3000  # 每段 800 截断，窄切不淹上下文
     assert "…" in block

@@ -38,7 +38,7 @@ ROSTER_YAML = (
     "    role: l2_project\n"
     "    profile: aura\n"
     "    category: projects\n"
-    "    mind_subtree: Vault/projects/Aura\n"
+    "    mind_subtree: Vault/dossiers/projects/Aura\n"
     "    description: 名册上的那一行\n"
     "  agenda:\n"
     "    role: l2_agenda\n"
@@ -126,7 +126,7 @@ def full_home(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    tree = vault / "projects" / "Aura"
+    tree = vault / "dossiers" / "projects" / "Aura"
     tree.mkdir(parents=True, exist_ok=True)
     (tree / "plan.md").write_text(
         "---\ntype: engineering\nbelongs: Aura\n---\n\n# 计划\n", encoding="utf-8"
@@ -207,13 +207,13 @@ def test_rename_moves_every_identity_keyed_artifact(full_home):
     ext = json.loads((full_home / "external_sessions" / "index.json").read_text(encoding="utf-8"))
     assert list(ext) == ["AuraPrime"]
     # 笔记的 belongs: 与 Mind 子树目录＋那一格
-    note = (full_home.parent / "vault" / "projects" / "AuraPrime" / "plan.md").read_text(
+    note = (full_home.parent / "vault" / "dossiers" / "projects" / "AuraPrime" / "plan.md").read_text(
         encoding="utf-8"
     )
     assert "belongs: AuraPrime" in note
     from plobi.agents.registry import load_registry
 
-    assert load_registry().agents["AuraPrime"].mind_subtree == "Vault/projects/AuraPrime"
+    assert load_registry().agents["AuraPrime"].mind_subtree == "Vault/dossiers/projects/AuraPrime"
     # config 那两格
     config_text = (full_home / "config.yaml").read_text(encoding="utf-8")
     assert "default_assignee: AuraPrime" in config_text
@@ -268,7 +268,7 @@ def test_failure_midway_rolls_everything_back(full_home, monkeypatch):
 
     state_db = get_plobi_state_home() / "state.db"
     assert "Aura" in [r[0] for r in _rows(state_db, "select agent_id from sessions")]
-    assert (full_home.parent / "vault" / "projects" / "Aura" / "plan.md").is_file()
+    assert (full_home.parent / "vault" / "dossiers" / "projects" / "Aura" / "plan.md").is_file()
 
 
 def test_rename_refuses_while_a_card_is_running(full_home):

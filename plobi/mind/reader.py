@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # 应该是 mind 的一个部分」）。它从 skills/profile/SKILL.md 搬到了 persona/，与 skills 这条线彻底脱钩；
 # 精简版仍是 L0 的 USER.md。
 PERSONA_RELATIVE = "persona/profile.md"
-PROJECTS_RELATIVE = "Vault/projects"
+PROJECTS_RELATIVE = "Vault/dossiers/projects"
 
 # Cap on what any single read may contribute to a prompt.
 MAX_EXCERPT_CHARS = 4000

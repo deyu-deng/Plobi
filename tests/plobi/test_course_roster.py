@@ -101,7 +101,7 @@ class TestCoursesCategoryIsRosterData:
         assert "courses" in AGENT_CATEGORIES
         assert _normalize_category("Courses") == "courses", "拼大小写都要认，否则静默降级成 butler"
         assert "courses" not in MIND_PROJECT_CATEGORIES, (
-            "我明判的那一格：课程条目不在脑仓 Vault/projects/ 立项（那是另一个仓、要单独动作）"
+            "我明判的那一格：课程条目不在脑仓 Vault/dossiers/projects/ 立项（那是另一个仓、要单独动作）"
         )
 
     def test_courses_binding_is_per_entry_not_a_shared_default(self) -> None:

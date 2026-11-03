@@ -5,7 +5,7 @@ Three rules from the North Star contract:
 - the vault path is resolved from ``MIND_ROOT``; **no drive letters in code**
   (Docs/SPEC-FINAL.md, Mind path rule)
 - writes stay inside the prefixes Mind's own verifier tolerates; creating a new
-  ``Vault/projects/<x>`` or a skill under ``$PLOBI_HOME/skills`` would require editing Mind's
+  ``Vault/dossiers/projects/<x>`` or a skill under ``$PLOBI_HOME/skills`` would require editing Mind's
   AGENTS.md declarations, which no agent may do automatically
 - ``Vault/…`` / ``Loom/…`` are **logical** paths (ruling 2026-10-14, decisions.md
   in the brain). The human-facing surface may sit in a sibling repository, so a
@@ -30,15 +30,15 @@ VAULT_ROOT_ENV = "VAULT_ROOT"
 
 SAFE_PREFIXES: tuple[str, ...] = (
     # 人读面上的产物：一个 Agent 的档案就是它自己那一格（用户 2026-10-25 拍「白名单放开到
-    # 全部项目＋研究」——此前只有 ``Vault/projects/Plobi`` 一家，其余 11 个项目与整个
-    # ``Vault/research`` 的写在 ``safe_target`` 就抛 ``UnsafeMindPath``，而 writer 按 skip
+    # 全部项目＋研究」——此前只有 ``Vault/dossiers/projects/Plobi`` 一家，其余 11 个项目与整个
+    # ``Vault/dossiers/research`` 的写在 ``safe_target`` 就抛 ``UnsafeMindPath``，而 writer 按 skip
     # 记账、屏上看不见，这就是档案停在 09-28 的机械原因）。
     # 这一格宽的是**路径**，不是**权限**：写仍过 L1 那道闸（裁 199），日记／画像／删除永不自动。
-    "Vault/projects",
-    "Vault/research",
-    "Vault/courses",
-    "Vault/butler",
-    "Vault/events",
+    "Vault/dossiers/projects",
+    "Vault/dossiers/research",
+    "Vault/dossiers/courses",
+    "Vault/dossiers/butler",
+    "Vault/dossiers/events",
     "Vault/meta",
     "Vault/notes",
     "Vault/diary",
@@ -56,7 +56,7 @@ SAFE_PREFIXES: tuple[str, ...] = (
 # 记忆系统的活动面 = 上面那张表里属于**脑**的那几格。
 #
 # ``SAFE_PREFIXES`` 比这一格宽，而且必须宽：课程分身往 ``Vault/notes/<课>/`` 写学科笔记、
-# 名册往 ``Vault/research/<项目>`` 登记，那些是**人读面上的产物**，走同一个 MindWriter 的
+# 名册往 ``Vault/dossiers/research/<项目>`` 登记，那些是**人读面上的产物**，走同一个 MindWriter 的
 # 管道路由（裁定 72／126 的两仓拆分＋跨仓 git），不是记忆。
 # 用户 2026-10-24/25 两次判「vault 不要进记忆系统」「摘要往 vault 写算越界」，落到代码上
 # 就是这一格：记忆的**召回**与**记忆写入**只认 ``Loom/…``，从结构上派生、不另列一张会漂的表。
@@ -90,7 +90,7 @@ def is_memory_zone(logical: str) -> bool:
 # 打勾回复要进 vault 的 git 且入库看得见」。两条合起来只剩一个落点：vault。
 #
 # 落点在**脑里**（``Loom/wiki/daily``）：用户 2026-10-24「vault 不进记忆系统，往 vault 写算越界」，
-# 所以 AI 写的那份回脑、随定时推上私有远端。此前它曾经在 `Vault/projects/Plobi/daily`：2026-10-24 把
+# 所以 AI 写的那份回脑、随定时推上私有远端。此前它曾经在 `Vault/dossiers/projects/Plobi/daily`：2026-10-24 把
 # 「项目快照」与「AI 摘要」两条各写一份的路合成了一条——内容本来就是同一个渲染器的同一段话，
 # 分成两份的后果是用户要批两遍。这一格不是 ``Vault/diary``／``Vault/notes``：那两格是人写的
 # 日记与学科笔记，AI 去那儿放评价性文字正是老注释忌讳的「人读面混进 AI 元评论」。这一格

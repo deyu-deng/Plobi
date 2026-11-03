@@ -21,7 +21,7 @@ from plobi.mind.writer import MindWriter
 def roots(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
     vault = tmp_path / "Vault"
-    (vault / "projects" / "Plobi").mkdir(parents=True)
+    (vault / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     mind.mkdir()
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("VAULT_ROOT", str(vault))

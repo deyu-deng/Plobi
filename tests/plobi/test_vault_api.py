@@ -21,7 +21,7 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Vault/projects/Aura
+        mind_subtree: Vault/dossiers/projects/Aura
         project_path: D:/projects/Aura
       电工电子学:
         role: l2_course
@@ -35,8 +35,8 @@ def live(monkeypatch, tmp_path):
     mind = tmp_path / "mind"
     vault = tmp_path / "vault"
     (mind / "wiki").mkdir(parents=True)
-    (vault / "projects" / "Aura").mkdir(parents=True)
-    (vault / "projects" / "Aura" / "plan.md").write_text("# Aura\n\n目标。\n", encoding="utf-8")
+    (vault / "dossiers" / "projects" / "Aura").mkdir(parents=True)
+    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text("# Aura\n\n目标。\n", encoding="utf-8")
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("VAULT_ROOT", str(vault))

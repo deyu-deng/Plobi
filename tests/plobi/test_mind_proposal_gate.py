@@ -116,7 +116,7 @@ def test_the_unrecoverable_kinds_are_flagged_never_auto():
     assert never_auto("Vault/notes/new.md", "create") == ""
     assert never_auto("Vault/notes/x.md", "squash") == "unknown-mode"
     # classification is derived from the path, never from what the model believes
-    assert category_of("Vault/projects/SRTP/plan.md") == "project-docs"
+    assert category_of("Vault/dossiers/projects/SRTP/plan.md") == "project-docs"
     assert category_of("Loom/raw/chat-logs/digested/x.md") == "digests"
 
 

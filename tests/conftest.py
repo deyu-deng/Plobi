@@ -367,7 +367,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #     MindWriter's ``_git_toplevel`` guard then refuses to commit into it,
     #     which is exactly what we want in a test.
     fake_mind = tmp_path / "mind_vault"
-    (fake_mind / "Vault" / "projects").mkdir(parents=True)
+    (fake_mind / "Vault" / "dossiers" / "projects").mkdir(parents=True)
     (fake_mind / "AGENTS.md").write_text("# Mind — fake vault for tests\n", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(fake_mind))
 

@@ -22,7 +22,7 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Vault/projects/Aura
+        mind_subtree: Vault/dossiers/projects/Aura
     """
 ).lstrip()
 
@@ -47,7 +47,7 @@ def notes(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     (mind / "wiki").mkdir(parents=True)
     (vault / "notes" / "数学 Math").mkdir(parents=True)
-    (vault / "projects").mkdir()
+    (vault / "dossiers" / "projects").mkdir(parents=True)
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("VAULT_ROOT", str(vault))
@@ -111,7 +111,7 @@ def test_new_topic_folders_are_not_invented_by_a_write(notes):
 
 def test_the_gate_only_covers_notes(notes):
     # 档案与索引件不走这一道：一条都没有 = 交给闸门与 verifier 去管。
-    assert validate_note("Vault/projects/Aura/progress.md", "随便什么", notes) == []
+    assert validate_note("Vault/dossiers/projects/Aura/progress.md", "随便什么", notes) == []
     assert validate_note("Vault/notes/INDEX.md", "# 索引\n", notes) == []
     assert validate_note("Vault/notes/数学 Math/x.txt", "x", notes)
 

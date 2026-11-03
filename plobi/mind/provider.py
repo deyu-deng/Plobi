@@ -21,7 +21,7 @@ Why core and not a plugin?
 
 Compliance boundary (CRITICAL — see plan §3/§5):
   Mind's git pre-commit verifier BLOCKS commits where:
-    (1) Vault/projects top-level dir names != AGENTS.md §1 declaration, OR
+    (1) Vault/dossiers/projects top-level dir names != AGENTS.md §1 declaration, OR
     (2) （技能已不在脑仓：2026-10-25 迁到 $PLOBI_HOME/skills，本条对脑不再适用）
   **记忆**的读写只在 ``MEMORY_ZONES``（脑里的 ``Loom/wiki/*``）内——人读面 ``Vault/…``
   不属于记忆系统（用户 10-24「vault 不要进记忆系统」、10-25「算越界」）。宽的那张
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # --- Compliance boundary -------------------------------------------------
 # Real writes MUST resolve under one of these relative prefixes (relative to
 # MIND_ROOT). These are the zones Mind's verifier does NOT block. Do not add
-# Vault/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
+# Vault/dossiers/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
 # own AGENTS.md declarations, which this plugin must never do automatically.
 # NOTE: the Plobi project zone is the official capitalised ``Plobi`` dir —
 # the lowercase ``plobi`` dir is a legacy Plobi archive and must never be
@@ -247,7 +247,7 @@ class MindProvider(MemoryProvider):
                 "name": VAULT_READ_TOOL,
                 "description": (
                     "Read one file of the human-readable surface by its LOGICAL path, "
-                    "``Vault/...`` — a dossier (``Vault/projects/Aura/progress.md``), a note "
+                    "``Vault/...`` — a dossier (``Vault/dossiers/projects/Aura/progress.md``), a note "
                     "(``Vault/notes/...``), today's diary (``Vault/diary/<date>-<Weekday>.md``). "
                     "Only paths inside that surface resolve; anything else comes back as an "
                     "error, never as an empty file. The brain's own pages are a different tool: "
@@ -258,7 +258,7 @@ class MindProvider(MemoryProvider):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Vault/projects/Aura/plan.md",
+                            "description": "Logical path on the human surface, e.g. Vault/dossiers/projects/Aura/plan.md",
                         }
                     },
                     "required": ["path"],
@@ -268,7 +268,7 @@ class MindProvider(MemoryProvider):
                 "name": VAULT_WRITE_TOOL,
                 "description": (
                     "Overwrite one file on the human-readable surface (``Vault/...``) by its "
-                    "LOGICAL path, e.g. ``Vault/projects/Aura/progress.md``. This is how a "
+                    "LOGICAL path, e.g. ``Vault/dossiers/projects/Aura/progress.md``. This is how a "
                     "dossier stays current: rewrite the whole file, keeping its frontmatter "
                     "and bumping ``updated`` to today. Notes under ``Vault/notes/`` carry a "
                     "hard contract: frontmatter must carry title, tags and a `belongs` key "
@@ -285,7 +285,7 @@ class MindProvider(MemoryProvider):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Vault/research/SRTP/progress.md",
+                            "description": "Logical path on the human surface, e.g. Vault/dossiers/research/SRTP/progress.md",
                         },
                         "content": {
                             "type": "string",
@@ -323,7 +323,7 @@ class MindProvider(MemoryProvider):
                     "LOGICAL path — the zones this tool may touch are the memory system's own "
                     "pages (concepts, entities, sources, comparisons, daily, memory). Keep the "
                     "file's frontmatter. Notes for the user (``Vault/notes/``) and dossiers "
-                    "(``Vault/projects/``) are a different tool: ``vault_write``. The write is "
+                    "(``Vault/dossiers/projects/``) are a different tool: ``vault_write``. The write is "
                     "checked by the trust gate; the result says whether it landed, went to the "
                     "pending queue (with an id), or was refused, and why. Never report success "
                     "the model did not read back."

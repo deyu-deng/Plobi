@@ -34,8 +34,8 @@ def brain(tmp_path, monkeypatch):
     vault = tmp_path / "Vault"
     (mind / "wiki" / "concepts").mkdir(parents=True)
     (mind / "wiki" / "meta").mkdir(parents=True)
-    (vault / "projects" / "Plobi").mkdir(parents=True)
-    (vault / "courses" / "电路分析").mkdir(parents=True)
+    (vault / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
+    (vault / "dossiers" / "courses" / "电路分析").mkdir(parents=True)
     (mind / "wiki" / "meta" / "schema.json").write_text(
         json.dumps(_SCHEMA, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))

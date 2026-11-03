@@ -148,7 +148,7 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 
     The agent's own name plus the last segment of its Mind subtree (that is the
     project's registered name), so ``belongs: SRTP`` matches an agent named
-    ``srtp`` hanging ``Vault/projects/SRTP``.
+    ``srtp`` hanging ``Vault/dossiers/research/SRTP``.
     """
     candidates = [getattr(entry, "name", "") or ""]
     subtree = str(getattr(entry, "mind_subtree", "") or "").strip("/")
@@ -158,7 +158,7 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 
 
 # Every L2 category folder a tree may live in, as logical paths. Listing only
-# ``Vault/projects`` would silently make ``research/SRTP`` — and after the move any
+# ``Vault/dossiers/projects`` would silently make ``research/SRTP`` — and after the move any
 # course, butler or event tree — an "owner nobody registered", which the sidebar
 # reports as a dangling ``belongs:`` tag instead of a note list. Same list the
 # writer uses (:data:`plobi.mind.project_tree.TREE_ROOT_RELATIVES`), not a copy of it.

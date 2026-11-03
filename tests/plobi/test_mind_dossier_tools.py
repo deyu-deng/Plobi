@@ -37,10 +37,10 @@ def roots(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    (vault / "projects" / "Aura").mkdir(parents=True)
-    (vault / "research" / "SRTP").mkdir(parents=True)
+    (vault / "dossiers" / "projects" / "Aura").mkdir(parents=True)
+    (vault / "dossiers" / "research" / "SRTP").mkdir(parents=True)
     (vault / "notes").mkdir()
-    (vault / "projects" / "Aura" / "progress.md").write_text(
+    (vault / "dossiers" / "projects" / "Aura" / "progress.md").write_text(
         textwrap.dedent(
             """\
             # Aura · 进度
@@ -59,15 +59,15 @@ def roots(tmp_path, monkeypatch):
 
 def test_every_dossier_home_is_now_writable(roots):
     _mind, _vault, _provider = roots
-    assert is_safe_relative("Vault/projects/Aura/progress.md") is True
-    assert is_safe_relative("Vault/research/SRTP/progress.md") is True
-    assert is_safe_relative("Vault/courses/电工电子学/requirements.md") is True
+    assert is_safe_relative("Vault/dossiers/projects/Aura/progress.md") is True
+    assert is_safe_relative("Vault/dossiers/research/SRTP/progress.md") is True
+    assert is_safe_relative("Vault/dossiers/courses/电工电子学/requirements.md") is True
 
 
 def test_widening_vault_does_not_widen_the_memory_surface(roots):
     _mind, _vault, _provider = roots
     # 记忆的读写只认脑里那几格；人读面再宽也不是记忆区（用户 10-24/25 两次判）。
-    assert is_memory_zone("Vault/projects/Aura/progress.md") is False
+    assert is_memory_zone("Vault/dossiers/projects/Aura/progress.md") is False
     assert is_memory_zone("Vault/notes") is False
     assert is_memory_zone("Loom/wiki/daily/2026-10-25.md") is True
 
@@ -104,11 +104,11 @@ def test_the_four_tools_are_atomic(roots):
 def test_vault_read_returns_the_file_or_says_it_is_missing(roots):
     _mind, _vault, provider = roots
 
-    ok = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/projects/Aura/progress.md"}))
+    ok = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/dossiers/projects/Aura/progress.md"}))
     assert ok["success"] is True
     assert "上一句还停在九月" in ok["content"]
 
-    missing = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/projects/Aura/plan.md"}))
+    missing = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/dossiers/projects/Aura/plan.md"}))
     assert missing["success"] is False
     assert "还不存在" in missing["error"]
 
@@ -133,16 +133,16 @@ def test_vault_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, mo
 
     result = json.loads(
         provider.handle_tool_call(
-            "vault_write", {"path": "Vault/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
+            "vault_write", {"path": "Vault/dossiers/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
         )
     )
     assert result["success"] is False
     assert result["staged"] is True
     assert result["pending_id"] == "deadbeef"
     assert "approve" in result["detail"]
-    assert staged == [["Vault/research/SRTP/progress.md"]]
+    assert staged == [["Vault/dossiers/research/SRTP/progress.md"]]
     # 待批就是待批：盘上不许有半个字节
-    assert not (vault / "research" / "SRTP" / "progress.md").exists()
+    assert not (vault / "dossiers" / "research" / "SRTP" / "progress.md").exists()
 
 
 def test_vault_write_lands_when_the_gate_opens(roots, monkeypatch):
@@ -156,23 +156,23 @@ def test_vault_write_lands_when_the_gate_opens(roots, monkeypatch):
 
     result = json.loads(
         provider.handle_tool_call(
-            "vault_write", {"path": "Vault/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
+            "vault_write", {"path": "Vault/dossiers/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
         )
     )
     assert result["success"] is True, result
-    assert (vault / "projects" / "Aura" / "progress.md").read_text(encoding="utf-8").startswith("# Aura · 进度")
+    assert (vault / "dossiers" / "projects" / "Aura" / "progress.md").read_text(encoding="utf-8").startswith("# Aura · 进度")
 
 
 def test_vault_write_refuses_empty_oversized_and_unknown_tools(roots):
     _mind, _vault, provider = roots
 
-    empty = json.loads(provider.handle_tool_call("vault_write", {"path": "Vault/projects/Aura/plan.md", "content": "  "}))
+    empty = json.loads(provider.handle_tool_call("vault_write", {"path": "Vault/dossiers/projects/Aura/plan.md", "content": "  "}))
     assert empty["success"] is False and "non-empty" in empty["error"]
 
     big = json.loads(
         provider.handle_tool_call(
             "vault_write",
-            {"path": "Vault/projects/Aura/plan.md", "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1)},
+            {"path": "Vault/dossiers/projects/Aura/plan.md", "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1)},
         )
     )
     assert big["success"] is False and "too large" in big["error"]
@@ -198,8 +198,8 @@ def test_each_tool_touches_only_its_own_surface(roots):
     cross = [
         ("vault_read", "Mind/wiki/concepts/plobi-gate.md"),
         ("vault_write", "Mind/wiki/concepts/plobi-gate.md"),
-        ("mind_read", "Vault/projects/Aura/progress.md"),
-        ("mind_write", "Vault/projects/Aura/progress.md"),
+        ("mind_read", "Vault/dossiers/projects/Aura/progress.md"),
+        ("mind_write", "Vault/dossiers/projects/Aura/progress.md"),
     ]
     for tool, path in cross:
         result = call(tool, path)

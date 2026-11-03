@@ -99,7 +99,7 @@ def belongs_authority(roots=None) -> List[str]:
     if not base:
         return names
     for sub in ("projects", "courses"):
-        directory = Path(base) / sub
+        directory = Path(base) / "dossiers" / sub
         if not directory.is_dir():
             continue
         for entry in sorted(directory.iterdir()):

@@ -38,7 +38,7 @@ def vault(tmp_path):
     root = tmp_path / "Mind"
     notes = root / NOTE_ROOT
     notes.mkdir(parents=True)
-    (root / "Vault" / "projects" / "SRTP").mkdir(parents=True)
+    (root / "Vault" / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
 
     (notes / "Rust 所有权.md").write_text(
@@ -77,7 +77,7 @@ def test_missing_note_root_is_reported_not_empty(tmp_path):
 
 def test_belongs_matches_through_agent_subtree(vault):
     scan = scan_notes(vault)
-    entry = _entry("srtp", "Vault/projects/SRTP")
+    entry = _entry("srtp", "Vault/dossiers/projects/SRTP")
 
     matched = notes_for(scan, agent_aliases(entry))
 
@@ -101,7 +101,7 @@ def test_payload_carries_an_openable_absolute_path(vault):
 
 def test_unregistered_belongs_is_surfaced_not_dropped(vault):
     scan = scan_notes(vault)
-    known = known_names(vault, [_entry("srtp", "Vault/projects/SRTP")])
+    known = known_names(vault, [_entry("srtp", "Vault/dossiers/projects/SRTP")])
 
     assert unknown_belongs(scan, known) == ["Ghost"]
 
@@ -159,8 +159,8 @@ def test_agent_notes_route_shapes(monkeypatch, vault):
     from plobi.console import router
 
     registry = types.SimpleNamespace(
-        get=lambda agent_id: _entry(agent_id, "Vault/projects/SRTP") if agent_id == "srtp" else None,
-        live_entries=lambda: [_entry("srtp", "Vault/projects/SRTP")],
+        get=lambda agent_id: _entry(agent_id, "Vault/dossiers/projects/SRTP") if agent_id == "srtp" else None,
+        live_entries=lambda: [_entry("srtp", "Vault/dossiers/projects/SRTP")],
     )
     monkeypatch.setattr(router, "get_registry", lambda: registry)
     monkeypatch.setattr("plobi.mind.paths.resolve_root", lambda *a, **k: vault)

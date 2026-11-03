@@ -46,12 +46,12 @@ _REAL_MIND_COMMIT = MindWriter._commit
 def vault(tmp_path, monkeypatch):
     root = tmp_path / "Mind"
     (root / "persona").mkdir(parents=True)
-    (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
+    (root / "Vault" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     # 详版画像在脑里（用户 10-24：vault 不进记忆系统；USER.md 是精简版）
     (root / "persona" / "profile.md").write_text("我是邓德宇。", encoding="utf-8")
-    (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
-    (root / "Vault" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
+    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
     return root
 
@@ -63,7 +63,7 @@ def vault(tmp_path, monkeypatch):
     "relative",
     [
         "Loom/wiki/daily/2026-08-25.md",
-        "Vault/projects/Plobi/notes.md",
+        "Vault/dossiers/projects/Plobi/notes.md",
         "Vault/inbox/idea.md",
     ],
 )
@@ -92,7 +92,7 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     "relative",
     [
         "AGENTS.md",                       # would rewrite Mind's own contract
-        "vault/projects/Aura/plan.md",     # 逻辑前缀大小写敏感：小写 vault 不是那格
+        "vault/dossiers/projects/Aura/plan.md",  # 逻辑前缀大小写敏感：小写 vault 不是那格
         "Loom/skills/whatever/SKILL.md",   # skill count declaration
         "../outside.md",
         "/etc/passwd",
@@ -111,10 +111,10 @@ def test_dossier_homes_are_open_after_2026_10_25():
     （``writer.py:228-234``），比静默 skip 至少是看得见的。立项仍然只有
     ``plobi/mind/project_tree.py`` 那一把手（它会同步 AGENTS.md §1 与 INDEX.md）。
     """
-    assert is_safe_relative("Vault/projects/新项目/plan.md") is True
-    assert is_safe_relative("Vault/research/新课题/progress.md") is True
+    assert is_safe_relative("Vault/dossiers/projects/新项目/plan.md") is True
+    assert is_safe_relative("Vault/dossiers/research/新课题/progress.md") is True
     # 放开的是路径，不是记忆面：vault 再宽也不进记忆系统（用户 10-24/25 两次判）。
-    assert is_memory_zone("Vault/projects/新项目/plan.md") is False
+    assert is_memory_zone("Vault/dossiers/projects/新项目/plan.md") is False
 
 
 def test_safe_target_rejects_traversal(vault):
@@ -594,7 +594,7 @@ def test_reader_is_quiet_when_vault_absent(tmp_path):
 
 
 def test_reader_skips_empty_project_dirs(vault):
-    (vault / "Vault" / "projects" / "empty").mkdir()
+    (vault / "Vault" / "dossiers" / "projects" / "empty").mkdir()
     assert [p.name for p in MindReader(vault).projects()] == ["Plobi"]
 
 
