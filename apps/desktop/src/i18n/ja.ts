@@ -2935,6 +2935,8 @@ export const ja = defineLocale({
 
   assistant: {
     thread: {
+      // 他自己打的那条（用户 11-03：「用户的也要」）。与下一行同一人称：あなた。
+      me: 'あなた',
       askedByMe: 'あなたからの依頼',
       askedBySecretary: '秘書が代理で依頼',
       askedByUnrecorded: '依頼者が記録されていません（既存記録より前）',

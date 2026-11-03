@@ -17,6 +17,8 @@ import {
 import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts'
 import { StreamStallIndicator } from '@/components/assistant-ui/thread/status'
 import { formatMessageTimestamp } from '@/components/assistant-ui/thread/timestamp'
+import type { ThreadSpeaker } from '@/components/assistant-ui/thread/types'
+import { MESSAGE_AVATAR, MESSAGE_BYLINE } from '@/components/assistant-ui/thread/user-message'
 import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { Codicon } from '@/components/ui/codicon'
@@ -52,7 +54,8 @@ interface MessageActionProps {
 export const AssistantMessage: FC<{
   onBranchInNewChat?: (messageId: string) => void
   onDismissError?: (messageId: string) => void
-}> = ({ onBranchInNewChat, onDismissError }) => {
+  speaker?: ThreadSpeaker
+}> = ({ onBranchInNewChat, onDismissError, speaker }) => {
   const messageId = useAuiState(s => s.message.id)
   // `useMessageRuntime` never existed in @assistant-ui/react 0.15.x — the
   // message client off the AUI root is the runtime (same getState shape).
@@ -114,6 +117,21 @@ export const AssistantMessage: FC<{
       data-streaming={isRunning ? 'true' : undefined}
       ref={enterRef}
     >
+      {speaker ? (
+        // 抬头那一行：一枚头像 + 名字（用户 11-03「气泡上面旁边或者侧边加上 Agent 的名字
+        // 和头像」）。字形与颜色取名册那一行，与左栏同一份身份；那一行没选图标就退回 hubot。
+        <div className="flex items-center gap-1.5 pb-1" data-slot="aui_assistant-byline">
+          <span
+            aria-hidden
+            className={cn(MESSAGE_AVATAR, 'size-5')}
+            data-slot="aui_assistant-avatar"
+            style={speaker.color ? { borderColor: speaker.color, color: speaker.color } : undefined}
+          >
+            <Codicon name={speaker.icon || 'hubot'} size="0.75rem" />
+          </span>
+          <span className={MESSAGE_BYLINE}>{speaker.name}</span>
+        </div>
+      ) : null}
       <div
         className="wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground"
         data-slot="aui_assistant-message-content"

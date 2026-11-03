@@ -2867,6 +2867,8 @@ export const zhHant = defineLocale({
 
   assistant: {
     thread: {
+      // 他自己打的那条（用户 11-03：「用户的也要」）。
+      me: '我',
       askedByMe: '我發起的',
       askedBySecretary: '秘書代我發起',
       askedByUnrecorded: '發起方未記錄（早於現有記錄）',

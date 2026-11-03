@@ -9,7 +9,7 @@ import {
 } from '@/components/assistant-ui/thread/status'
 import { SystemMessage } from '@/components/assistant-ui/thread/system-message'
 import { ThreadTimeline } from '@/components/assistant-ui/thread/timeline'
-import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
+import { type RestoreMessageTarget, type ThreadSpeaker } from '@/components/assistant-ui/thread/types'
 import { UserEditComposer } from '@/components/assistant-ui/thread/user-edit-composer'
 import { UserMessage } from '@/components/assistant-ui/thread/user-message'
 import { Intro, type IntroProps } from '@/components/chat/intro'
@@ -32,6 +32,9 @@ export const Thread: FC<{
   onRestoreToMessage?: (messageId: string, target?: RestoreMessageTarget) => Promise<void> | void
   sessionId?: string | null
   sessionKey?: string | null
+  /** 这一面的说话人（Agent 那一侧的抬头）。不给就没有抬头那一行——Legacy `chat/index.tsx`
+   *  那一壳不传，`console/chat/chat-surface.tsx` 这一面传。 */
+  assistantSpeaker?: ThreadSpeaker
 }> = ({
   clampToComposer = false,
   cwd = null,
@@ -43,7 +46,8 @@ export const Thread: FC<{
   onDismissError,
   onRestoreToMessage,
   sessionId = null,
-  sessionKey
+  sessionKey,
+  assistantSpeaker
 }) => {
   const { t } = useI18n()
   const copy = t.assistant.thread
@@ -74,7 +78,11 @@ export const Thread: FC<{
   const messageComponents = useMemo(
     () => ({
       AssistantMessage: () => (
-        <AssistantMessage onBranchInNewChat={onBranchInNewChat} onDismissError={onDismissError} />
+        <AssistantMessage
+          onBranchInNewChat={onBranchInNewChat}
+          onDismissError={onDismissError}
+          speaker={assistantSpeaker}
+        />
       ),
       SystemMessage,
       UserEditComposer: () => <UserEditComposer cwd={cwd} gateway={gateway} sessionId={sessionId} />,
@@ -85,7 +93,7 @@ export const Thread: FC<{
         />
       )
     }),
-    [cwd, gateway, onBranchInNewChat, onCancel, onDismissError, onRestoreToMessage, requestRestoreConfirm, sessionId]
+    [assistantSpeaker, cwd, gateway, onBranchInNewChat, onCancel, onDismissError, onRestoreToMessage, requestRestoreConfirm, sessionId]
   )
 
   const emptyPlaceholder = intro ? (

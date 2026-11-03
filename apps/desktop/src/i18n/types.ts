@@ -2661,6 +2661,9 @@ export interface Translations {
 
   assistant: {
     thread: {
+      /** 自己那条消息旁边的署名（用户 11-03：「用户的也要」）。与下面那三枚 `askedBy*`
+       *  不是一回事：那三枚说"这条是谁发起的"，这一个说"这条是谁打的"。 */
+      me: string
       /** 用户消息上的发起方徽标（`messages.asked_by`）。 */
       askedByMe: string
       askedBySecretary: string

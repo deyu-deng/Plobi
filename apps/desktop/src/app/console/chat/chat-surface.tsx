@@ -34,7 +34,9 @@ import { ChatSwapOverlay } from '@/app/chat/chat-swap-overlay'
 import { ChatBar } from '@/app/chat/composer'
 import { prefersReducedMotion, threadSwapAnimation } from '@/app/chat/thread-swap'
 import { $consoleAgents } from '@/app/console/store/agents'
+import { secretaryShellLabel } from '@/app/desktop-controller-utils'
 import { Thread } from '@/components/assistant-ui/thread'
+import type { ThreadSpeaker } from '@/components/assistant-ui/thread/types'
 import { useI18n } from '@/i18n'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { cn } from '@/lib/utils'
@@ -146,6 +148,16 @@ export function ChatSurface({
       ? (agents.find(agent => agent.id === scope.id)?.name || scope.id || '').trim()
       : ''
 
+  // 每条回答的署名（用户 11-03：「消息要加在气泡上面旁边或者侧边加上 Agent 的名字和
+  // 头像」）。名字与卡片抬头、窗口标题同一份推导（裁定 16 的 `secretaryShellLabel`），
+  // 字形与颜色取名册那一行——与左栏那一列同一份身份，这里再造一套就会两处漂。
+  const rosterRow = scope.kind === 'agent' ? agents.find(agent => agent.id === scope.id) : undefined
+  const assistantSpeaker: ThreadSpeaker = {
+    color: rosterRow?.color,
+    icon: rosterRow?.icon,
+    name: secretaryShellLabel(scope.kind === 'agent' ? { l2: scope.id } : 'l1', t.console.chiefSecretary, agents)
+  }
+
   const showEmpty =
     messagesEmpty && !busy && !showsTransition(enter) && !gatewaySwapTarget
 
@@ -160,7 +172,7 @@ export function ChatSurface({
             否则内容一长（或输入框长高）整块会被撑开、刚发的那条被顶出视口
             ——「发完消息 Plobi 那条被从屏幕里顶掉」就是这个形状。 */}
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          <Thread clampToComposer />
+          <Thread assistantSpeaker={assistantSpeaker} clampToComposer />
           {showEmpty && (
             <div
               className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center"

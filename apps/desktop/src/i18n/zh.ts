@@ -3216,6 +3216,8 @@ export const zh: Translations = {
 
   assistant: {
     thread: {
+      // 他自己打的那条（用户 11-03：「用户的也要」）。中文这一屏用「我」——他拍的那一格。
+      me: '我',
       askedByMe: '我发起的',
       askedBySecretary: '秘书代我发起',
       askedByUnrecorded: '发起方未记录（早于现有记录）',

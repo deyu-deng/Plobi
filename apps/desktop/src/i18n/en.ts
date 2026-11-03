@@ -3065,6 +3065,8 @@ export const en: Translations = {
 
   assistant: {
     thread: {
+      // 他自己打的那条（用户 11-03：「用户的也要」）。英语那一屏称呼读的人做主语：You。
+      me: 'You',
       askedByMe: 'From you',
       askedBySecretary: 'Asked by the secretary',
       askedByUnrecorded: 'Initiator not recorded (older message)',

@@ -32,10 +32,11 @@ const OWNER_BUBBLE = cn(MESSAGE_SURFACE, 'bg-(--dt-user-bubble)')
 /** 别人发来的消息（右、中性色）。 */
 const EXTERNAL_BUBBLE = cn(MESSAGE_SURFACE, 'bg-(--ui-chat-surface-background)')
 
-const MESSAGE_AVATAR =
+/** 抬头那一行与头像那一枚的尺，两侧共用（`assistant-message.tsx` 也拿这两条，别再量一遍）。 */
+export const MESSAGE_AVATAR =
   'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) text-[10px] font-medium text-(--ui-text-secondary)'
 
-const MESSAGE_BYLINE = 'px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)'
+export const MESSAGE_BYLINE = 'px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)'
 
 const MESSAGE_SYSTEM_LINE = cn(
   MESSAGE_MAX_WIDTH,
@@ -427,6 +428,13 @@ export const UserMessage: FC<{
                 </span>
               </div>
             )}
+            {/* 自己的消息也署名（用户 11-03：「用户的也要」）：名字在气泡上方靠右那一行，
+                头像在它右边那一列——与上面那枚「谁发起的」同一形状，但说的是身份不是来源。 */}
+            <div className="flex items-center justify-end gap-1">
+              <span className={MESSAGE_BYLINE} data-slot="aui_user-byline">
+                {copy.me}
+              </span>
+            </div>
             <div className="relative flex w-full justify-end">
               {readOnly || !canEdit ? (
                 // Spectator transcript, and any runtime without an `onEdit` (the
@@ -465,9 +473,8 @@ export const UserMessage: FC<{
                   </button>
                 </ActionBarPrimitive.Edit>
               )}
-              {/* 自己的消息也署名（用户 11-03：「用户的也要」）。这一笔先上头像——一枚中性
-                  人形、不带品牌色；名字那一格要一个「我」字的新文案，而五份语言目录此刻压在
-                  别人手上，所以名字随下一个能签 i18n 的窗口补，不硬塞一句现成的长话。 */}
+              {/* 中性人形一枚、不带品牌色：他自己那一侧不需要身份图标，名字已经在气泡
+                  上方那一行（`aui_user-byline`）。 */}
               <div aria-hidden className={cn(MESSAGE_AVATAR, 'self-start')} data-slot="aui_user-avatar">
                 <Codicon name="person" size="0.75rem" />
               </div>
