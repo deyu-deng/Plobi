@@ -44,6 +44,16 @@ function userMessage(id: string, askedBy?: string): ThreadMessage {
   } as ThreadMessage
 }
 
+/** 刚发进来、`kind` / `asked_by` 还没落到 metadata 的那一趟代问（截图里就是这一型）。 */
+const LIVE_RELAY: ThreadMessage = {
+  attachments: [],
+  content: [{ text: '【plobi代问】\n提问人：plobi——替他统筹各项目的那一个。', type: 'text' }],
+  createdAt,
+  id: 'live-relay',
+  metadata: { custom: {} },
+  role: 'user'
+} as ThreadMessage
+
 const ASSISTANT_MESSAGE: ThreadMessage = {
   content: [{ text: 'done', type: 'text' }],
   createdAt,
@@ -96,20 +106,7 @@ describe('消息两侧的署名', () => {
   })
 
   it('刚进来的代问（两列还没落到 metadata）也不署成他：读正文那一行的前缀', () => {
-    const { container } = render(
-      <Harness
-        messages={[
-          {
-            attachments: [],
-            content: [{ text: '【plobi代问】\n提问人：plobi——替他统筹各项目的那一个。', type: 'text' }],
-            createdAt,
-            id: 'live-relay',
-            metadata: { custom: {} },
-            role: 'user'
-          } as ThreadMessage
-        ]}
-      />
-    )
+    const { container } = render(<Harness messages={[LIVE_RELAY]} />)
 
     expect(container.querySelector('[data-slot="aui_user-byline"]')).toBeNull()
     // 外部说话人那一格：名字是前缀里的那一个，不是「You」。
@@ -133,5 +130,20 @@ describe('消息两侧的署名', () => {
     const { container } = render(<Harness messages={[ASSISTANT_MESSAGE]} />)
 
     expect(container.querySelector('[data-slot="aui_assistant-byline"]')).toBeNull()
+  })
+
+  it('自己打的与别人代问的：动作都在气泡下方那一行，同一个槽', () => {
+    const { container } = render(<Harness messages={[userMessage('own'), LIVE_RELAY]} />)
+
+    // 两条气泡各一行。原来代问那条没有这一行——引用挂在气泡**侧面**、复制整颗都没有
+    // （用户 11-04：「是不是用户发的信息和 Agent 发给 Agent 的信息气泡样式没有利用一样的组件」）。
+    const rows = container.querySelectorAll('[data-slot="aui_message-actions"]')
+
+    expect(rows).toHaveLength(2)
+
+    for (const row of rows) {
+      expect(row.querySelector('[aria-label="Copy"]')).toBeTruthy()
+      expect(row.querySelector('[aria-label="Quote"]')).toBeTruthy()
+    }
   })
 })

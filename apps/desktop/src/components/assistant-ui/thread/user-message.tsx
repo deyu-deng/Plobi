@@ -59,7 +59,7 @@ export function StickyHumanMessageContainer({
     // while attachments below it scroll away.
     <>
       <div
-        className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-1"
+        className="group/message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-1"
         data-message-id={messageId}
         data-role="user"
         data-slot="aui_user-message-root"
@@ -86,6 +86,12 @@ export const USER_BUBBLE_BASE_CLASS =
     'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto [-webkit-app-region:no-drag]',
     OWNER_BUBBLE,
   )
+
+/** 气泡**下方**那一行动作：平时不显示，悬浮或键盘聚焦到这一条才抬起来（用户 11-03）。
+ *  自己打的与别人代问的共用这一份形状，差别只在挂哪几颗键（用户 11-04：「其他 Agent 发的
+ *  话的引用图标不是在气泡下面呢……是不是两侧没用同一个组件」——原来确实没用同一个）。 */
+export const MESSAGE_ACTION_ROW =
+  'flex items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100'
 
 export const USER_ACTION_ICON_BUTTON_CLASS =
   'grid place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
@@ -309,19 +315,12 @@ export const UserMessage: FC<{
 
     return (
       <div
-        className="group/external flex w-full items-start justify-end gap-2 py-1"
+        className="group/message flex w-full items-start justify-end gap-2 py-1"
         data-kind={externalSpeaker.kind}
         data-message-id={messageId}
         data-role="user"
         data-slot="aui_external-message"
       >
-        <div className="mt-px flex shrink-0 flex-col items-center gap-0.5">
-          <QuoteButton
-            className="opacity-0 group-hover/external:opacity-100"
-            id={messageId}
-            text={quoted?.text ?? split.body}
-          />
-        </div>
         <div className={cn('flex min-w-0 flex-col items-end', MESSAGE_MAX_WIDTH)}>
           <div className={MESSAGE_BYLINE} data-slot="aui_message-byline" title={label}>
             {label}
@@ -346,6 +345,10 @@ export const UserMessage: FC<{
                 <UserMessageText className="wrap-anywhere" key={`text-${index}`} text={segment.text} />
               ),
             )}
+          </div>
+          <div className={MESSAGE_ACTION_ROW} data-slot="aui_message-actions">
+            <CopyButton appearance="icon" label={copy.copy} text={split.body} />
+            <QuoteButton id={messageId} text={quoted?.text ?? split.body} />
           </div>
         </div>
         <div
@@ -489,8 +492,8 @@ export const UserMessage: FC<{
                   `pointer-events-none`，靠 `group-hover` / `group-focus-within` 抬起来。
                   原来那两颗停止/回到此处是绝对定位压在气泡右下角的，正是要拆掉的"重合"。 */}
               <div
-                className="flex items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none transition-opacity group-hover/user-message:pointer-events-auto group-hover/user-message:opacity-100 group-focus-within/user-message:pointer-events-auto group-focus-within/user-message:opacity-100"
-                data-slot="aui_user-message-actions"
+                className={MESSAGE_ACTION_ROW}
+                data-slot="aui_message-actions"
               >
                 {showStop ? (
                   <button

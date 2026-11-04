@@ -2,12 +2,28 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { SkillsView } from '@/app/skills'
-import { codiconIcon } from '@/components/ui/codicon'
 import { SearchField } from '@/components/ui/search-field'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Download, Globe, Info, KeyRound, Layers3, Package, RefreshCw, Send, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
+import {
+  Archive,
+  Bell,
+  Download,
+  Globe,
+  Info,
+  KeyRound,
+  Layers3,
+  LayoutGrid,
+  Package,
+  RefreshCw,
+  Send,
+  Settings2,
+  Upload,
+  Users,
+  Wrench,
+  Zap
+} from '@/lib/icons'
 import { getPlobiConfigDefaults, getPlobiConfigRecord, savePlobiConfig } from '@/plobi'
 import { notifyError } from '@/store/notifications'
 
@@ -168,9 +184,10 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       // 四张**全局**表。它是全局真源本身，不是某个 Agent 的减法视图——所以渲染
       // 在设置 overlay 里，而不是跳出去、也不进任何 Agent 的界面。
       active: activeView === 'capabilities',
-      // 与主界面左栏那一格同一枚字形（用户 11-03：两处 Capabilities 图标不一样，
-      // 主界面那个语义更贴切）——同一件事在两个地方不该画两种样子。
-      icon: codiconIcon('extensions'),
+      // 语义跟着主界面那一格走（四格扩展），家族跟着这一屏走（用户 11-04：「颜色深浅
+      // 和样式还是不统一」——这一列原来混了两家：13 枚 Tabler 描边 + 2 枚 codicon 字体，
+      // 字号与笔画粗细不是一个量级）。同一列里只许一家。
+      icon: LayoutGrid,
       id: 'capabilities',
       label: t.settings.nav.capabilities,
       onSelect: () => setActiveView('capabilities' as SettingsViewId)
@@ -180,7 +197,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       children: [
         {
           active: activeView === 'providers' && providerView === 'accounts',
-          icon: codiconIcon('account'),
+          icon: Users,
           id: 'pview:accounts',
           label: t.settings.nav.providerAccounts,
           onSelect: () => openProviderView('accounts')

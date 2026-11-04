@@ -4,7 +4,7 @@ import { TabDropdown } from '@/components/ui/tab-dropdown'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
-import { PAGE_INSET_X, PAGE_MAX_W } from '../layout-constants'
+import { PAGE_INSET_X } from '../layout-constants'
 
 // The wide rail and the narrow dropdown swap at exactly the width where
 // OverlaySplitLayout drops to a single column, so the rail never stacks.
@@ -77,11 +77,11 @@ export function OverlayMain({ children, className }: OverlayMainProps) {
       className={cn(
         // Narrow: the OverlayNav dropdown bar already clears the titlebar, so
         // drop the tall top pad to a normal gap below it.
-        // `.dl-page`：正文那一列是"页"，比外壳的画布亮一档——导航与详情这才分得开
-        // （用户 11-03：「侧栏不应该是玻璃质感的吗」）。上下留 8px 让画布透出来，
-        // 宽与内缩仍走 PAGE_MAX_W / PAGE_INSET_X，命令中心那一屏一个字不动。
-        'dl-page mx-auto my-2 flex min-h-0 w-full flex-1 flex-col overflow-hidden pb-3 pt-[calc(var(--titlebar-height)/2+0.75rem)] max-[47.5rem]:pt-2',
-        PAGE_MAX_W,
+        // 「页」就是右侧那一张白卡：上下顶到浮层边缘、右沿贴住浮层，与左导航之间只有
+        // 一道 1px 接缝（用户 11-04：「感觉这不是一个侧栏加右边的白色卡片，而是一个
+        // 白色卡片浮在玻璃底座中间」——原来 `mx-auto my-2` + 75rem 上限在宽窗口里正是
+        // 那个形状）。可读宽度不再靠压卡片，走内容自己的 `--dl-measure-page`。
+        'dl-page flex min-h-0 w-full flex-1 flex-col overflow-hidden border-l border-(--dl-card-line) pb-4 pt-[calc(var(--titlebar-height)/2+0.75rem)] max-[47.5rem]:border-l-0 max-[47.5rem]:pt-2',
         PAGE_INSET_X,
         className
       )}
@@ -111,9 +111,13 @@ export function OverlayNavItem({ active, icon: Icon, label, nested, onClick, tra
     >
       <Icon
         className={cn(
-          'shrink-0',
-          nested ? 'size-3.5' : 'size-4',
-          active ? 'text-foreground/80' : 'text-muted-foreground/80'
+          // 一个尺寸一格、一个颜色一档（用户 11-04：「颜色深浅和样式还是不统一」）。
+          // 深浅原来有两处：图标比同一行的文字暗一档（`muted-foreground/80`），选中态
+          // 又叠一层 80% 透明——现在图标跟着文字那一档走，选中就是前景色。
+          // `[&_.codicon]` 那一手是防呆：这一列万一混进一枚字体图标，字号也钉在同一格。
+          'size-4 shrink-0 text-(--ui-text-secondary) [&_.codicon]:text-[1rem]',
+          nested && 'size-3.5',
+          active && 'text-foreground'
         )}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>

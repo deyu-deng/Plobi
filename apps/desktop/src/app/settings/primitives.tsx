@@ -14,7 +14,7 @@ export function SettingsContent({ children }: { children: ReactNode }) {
     <section className="min-h-0 overflow-hidden">
       {/* 正文尺收到 820px 居中（Qoder 实测 `max-w-[820px]`）：设置是一行一行的读物流，
           跟着窗口铺到 1200px 时"标题—控件"之间那条空档会宽到看不出是一对。
-          别的浮层暂时还吃 `PAGE_MAX_W`，一块一块搬。 */}
+          尺收在内容这一层，不靠压窄右边那张白卡（那张卡是贴边的，不是浮在中间的）。 */}
       <div
         className={cn(
           'mx-auto h-full min-h-0 w-full max-w-[var(--dl-measure-page)] overflow-y-auto pb-20',
