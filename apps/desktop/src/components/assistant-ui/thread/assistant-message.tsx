@@ -197,7 +197,7 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, getMessageText,
         data-slot="aui_msg-actions"
       >
         <QuoteButton id={messageId} text={getMessageText()} />
-        <CopyButton appearance="icon" buttonSize="icon" label={copy.copy} text={getMessageText} />
+        <CopyButton appearance="icon" label={copy.copy} text={getMessageText} />
         {canReload && (
           <ActionBarPrimitive.Reload asChild>
             <TooltipIconButton onClick={() => triggerHaptic('submit')} tooltip={copy.refresh}>

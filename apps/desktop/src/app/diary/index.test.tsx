@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,7 +45,13 @@ function entryFixture(date: string, text: string): DiaryEntry {
 
 function withProviders(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+  // 这一页头顶那枚「返回」走 `useNavigate`（用户 11-03：退回去太麻烦），所以渲染时
+  // 得有一个 router——生产里它挂在 AppShell 的 Routes 下。
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </MemoryRouter>
+  )
 }
 
 beforeEach(() => {
@@ -71,6 +78,14 @@ describe('DiaryView', () => {
     expect(await screen.findByText('今天写的第一段。')).toBeTruthy()
     expect(screen.getByText(EARLIER.slice(5))).toBeTruthy()
     expect(fetchDiaryEntry).toHaveBeenCalledWith(TODAY)
+  })
+
+  it('头顶有一枚回对话的返回键', async () => {
+    withProviders(<DiaryView />)
+
+    const back = await screen.findByRole('button', { name: 'Back' })
+
+    expect(back.innerHTML).toContain('codicon-arrow-left')
   })
 
   it('switches to another day and reads that day', async () => {

@@ -46,7 +46,11 @@ const buttonVariants = cva(
         micro:
           "h-auto gap-0.5 px-1 py-0 text-xs leading-4 font-normal has-[>svg]:px-0.5 [&_svg:not([class*='size-'])]:size-3",
         icon: 'size-9 rounded-sm',
-        'icon-xs': "size-6 rounded-sm [&_svg:not([class*='size-'])]:size-3",
+        // The 24px icon button — one glyph size for the whole chrome (14px), whichever
+        // family the glyph comes from. Before this the SVG branch was forced to 12px
+        // while a codicon `<i>` kept the stylesheet's 16px, so two buttons of the same
+        // nominal size carried visibly different marks (user 11-03: "大小也没有统一").
+        'icon-xs': "size-6 rounded-sm [&_svg:not([class*='size-'])]:size-3.5 [&_.codicon]:text-[0.875rem]",
         'icon-sm': 'size-8 rounded-sm',
         'icon-lg': 'size-10 rounded-sm',
         'icon-titlebar':

@@ -1,12 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
+import { HOME_ROUTE } from '../routes'
 import { fetchDiaryEntry, fetchDiaryIndex, todayISO } from './api'
 import { DiaryEditor } from './editor'
 
@@ -24,6 +27,7 @@ export function DiaryView() {
   const { t } = useI18n()
   const d = t.diary
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [date, setDate] = useState(todayISO)
 
   const index = useQuery({ queryKey: ['surface-diary'], queryFn: fetchDiaryIndex, staleTime: 30_000 })
@@ -51,6 +55,17 @@ export function DiaryView() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-(--ui-editor-surface-background)">
       <header className="flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) px-3 py-2 pt-[calc(var(--titlebar-height)+0.5rem)]">
+        {/* 回对话那条路（用户 11-03）：日记这一页没有分页壳，返回键自备一枚。 */}
+        <Button
+          aria-label={t.common.back}
+          className="shrink-0 text-(--ui-text-tertiary)"
+          onClick={() => navigate(HOME_ROUTE)}
+          size="icon-xs"
+          title={t.common.back}
+          variant="ghost"
+        >
+          <Codicon name="arrow-left" />
+        </Button>
         <h1 className="text-sm font-semibold">{d.title}</h1>
         <span className="text-[0.68rem] text-muted-foreground/70">{dayLabel(date)}</span>
         <span className="ml-auto flex items-center gap-1">

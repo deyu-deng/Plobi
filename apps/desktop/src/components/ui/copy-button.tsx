@@ -224,7 +224,9 @@ export function CopyButton({
       className={className}
       disabled={disabled}
       onClick={event => void copy(event)}
-      size={buttonSize ?? (appearance === 'icon' ? 'icon' : 'default')}
+      // `icon` appearance is the dense action row (bubble footer): the same 24px box as
+      // every other action icon, not the 36px standalone `icon` size it used to take.
+      size={buttonSize ?? (appearance === 'icon' ? 'icon-xs' : 'default')}
       type="button"
       variant={buttonVariant}
     >

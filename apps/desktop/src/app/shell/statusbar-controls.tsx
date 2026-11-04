@@ -255,7 +255,10 @@ function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label
                 item.onSelect?.({ shiftKey: false })
               }}
             >
-              <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">
+              <span
+                aria-hidden="true"
+                className="grid size-4 shrink-0 place-items-center [&_.codicon]:text-[0.875rem]! [&_svg]:size-3.5!"
+              >
                 {item.icon}
               </span>
               <span className="min-w-0 flex-1 truncate">
@@ -294,7 +297,23 @@ function StatusbarItemView({
 
   const content = (
     <>
-      {item.icon}
+      {item.icon ? (
+        dock ? (
+          // 图标条里每一格都装进同一条 16px 的列，并把字形钉成 14px（用户 11-03：
+          // 「底下的那一行图标也参差不齐、样式不统一」）。两台字形家族量出来的不是一个
+          // 大小：lucide 的 SVG 原先被各格写成 12px，codicon 是字体字形、自带 16px 且
+          // 只认内联 fontSize——不在这里强制，同一排就会出现两种重量。`!` 是因为
+          // Codicon 内部用 style 写 fontSize，普通类压不过它。
+          <span
+            aria-hidden
+            className="grid size-4 shrink-0 place-items-center [&_.codicon]:text-[0.875rem]! [&_svg]:size-3.5!"
+          >
+            {item.icon}
+          </span>
+        ) : (
+          item.icon
+        )
+      ) : null}
       {(item.label && (!dock || item.variant === 'text')) ? <span className="truncate">{item.label}</span> : null}
       {(item.detail && (!dock || item.variant === 'text')) ? (
         <span className="truncate text-muted-foreground/80">{item.detail}</span>

@@ -32,7 +32,9 @@ export const QuoteButton: FC<{ id?: string; text: string; className?: string }> 
     <button
       aria-label="Quote"
       className={cn(
-        'grid size-5 place-items-center rounded text-(--ui-text-quaternary) transition-colors hover:bg-(--chrome-action-hover) hover:text-(--ui-text-secondary)',
+        // 24px 命中区 + 14px 字形：与同一条动作行里的停止/复制/刷新同一把尺
+        // （用户 11-03：「很多矢量图标大小没有统一」，那一行原来是 20/36 两种）。
+        'grid size-6 place-items-center rounded-sm text-(--ui-text-quaternary) transition-colors hover:bg-(--chrome-action-hover) hover:text-(--ui-text-secondary)',
         className
       )}
       onClick={() => setQuoteTarget({ id, text: quoteSelectedText() })}
@@ -43,7 +45,7 @@ export const QuoteButton: FC<{ id?: string; text: string; className?: string }> 
       }}
       type="button"
     >
-      <Codicon name="comment" size="0.75rem" />
+      <Codicon name="comment" size="0.875rem" />
     </button>
   )
 }

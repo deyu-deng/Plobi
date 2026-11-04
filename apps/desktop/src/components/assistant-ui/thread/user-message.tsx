@@ -90,7 +90,7 @@ export const USER_BUBBLE_BASE_CLASS =
 export const USER_ACTION_ICON_BUTTON_CLASS =
   'grid place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
 
-export const USER_ACTION_ICON_SIZE = '0.6875rem'
+export const USER_ACTION_ICON_SIZE = '0.875rem'
 export const StopGlyph = <StopFilled aria-hidden className="size-3.5 -translate-y-px" />
 
 // Background-process notifications are injected into the conversation as user
@@ -492,7 +492,7 @@ export const UserMessage: FC<{
                 {showStop ? (
                   <button
                     aria-label={copy.stop}
-                    className={cn('size-5', USER_ACTION_ICON_BUTTON_CLASS)}
+                    className={cn('size-6', USER_ACTION_ICON_BUTTON_CLASS)}
                     onClick={event => {
                       event.preventDefault()
                       event.stopPropagation()
@@ -530,7 +530,6 @@ export const UserMessage: FC<{
                 {hasBody && !readOnly ? (
                   <CopyButton
                     appearance="icon"
-                    buttonSize="icon"
                     label={copy.copy}
                     text={messageText}
                   />

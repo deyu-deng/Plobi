@@ -1,8 +1,14 @@
 import type { ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 
+import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
 import { SearchField } from '@/components/ui/search-field'
 import { ResponsiveTabs } from '@/components/ui/tab-dropdown'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+
+import { HOME_ROUTE } from './routes'
 
 // Tabs are data, not nodes: the shell owns their presentation so every page
 // gets the same behavior — a centered TextTab row on wide viewports that
@@ -68,6 +74,8 @@ export function PageSearchShell({
   ...props
 }: PageSearchShellProps) {
   const hasTabs = (tabs?.length ?? 0) > 0
+  const navigate = useNavigate()
+  const { t } = useI18n()
 
   return (
     <section
@@ -90,23 +98,34 @@ export function PageSearchShell({
         (see app-shell.tsx), so window dragging still works here.
       */}
       <div className="shrink-0">
-        {(hasTabs || !searchHidden) && (
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 pb-2 pt-[calc(var(--titlebar-height)+0.5rem)]">
-            <div className="flex min-w-0 items-center justify-start">
-              {!searchHidden && (
-                <SearchField
-                  containerClassName="max-w-[45vw]"
-                  hints={searchHints}
-                  onChange={onSearchChange}
-                  placeholder={searchPlaceholder}
-                  value={searchValue}
-                />
-              )}
-            </div>
-            {hasTabs ? <ShellTabs activeTab={activeTab} onTabChange={onTabChange} tabs={tabs!} /> : <span />}
-            <div className="flex min-w-0 items-center justify-end">{searchTrailingAction}</div>
+        {/* 这一行一直在：即便这一页既没搜索也没分页，也要有一条回对话的路（用户 11-03：
+            「打开左侧边栏上部分的组件，有些没有返回操作，退回原聊天界面太麻烦了」）。
+            返回键在最左、与搜索同一行——Qoder 那几个页面也是这个位置。 */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 pb-2 pt-[calc(var(--titlebar-height)+0.5rem)]">
+          <div className="flex min-w-0 items-center justify-start gap-1">
+            <Button
+              aria-label={t.common.back}
+              className="shrink-0 text-(--ui-text-tertiary)"
+              onClick={() => navigate(HOME_ROUTE)}
+              size="icon-xs"
+              title={t.common.back}
+              variant="ghost"
+            >
+              <Codicon name="arrow-left" />
+            </Button>
+            {!searchHidden && (
+              <SearchField
+                containerClassName="max-w-[45vw]"
+                hints={searchHints}
+                onChange={onSearchChange}
+                placeholder={searchPlaceholder}
+                value={searchValue}
+              />
+            )}
           </div>
-        )}
+          {hasTabs ? <ShellTabs activeTab={activeTab} onTabChange={onTabChange} tabs={tabs!} /> : <span />}
+          <div className="flex min-w-0 items-center justify-end">{searchTrailingAction}</div>
+        </div>
         {filters ? <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-2">{filters}</div> : null}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background)">{children}</div>
