@@ -13,26 +13,20 @@ import { useStore } from '@nanostores/react'
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query'
-import { persistString, persistStringRecord, storedString, storedStringRecord } from '@/lib/storage'
-import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { persistString, storedString } from '@/lib/storage'
 
 import { hexToRgb, mix, readableOn } from './color'
 import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 import { $userThemes, resolveTheme } from './user-themes'
 
-// Legacy global skin (pre per-profile themes). Still the inheritance fallback
-// for any profile without its own assignment, so single-profile users and old
-// installs are unaffected.
+// Appearance is ONE value for this machine, not one per agent (user 11-04, after
+// seeing the whole window re-skin on an agent switch: "这个东西肯定是 profile 的回归。
+// 我们已经取消 profile 这个概念了"). The two per-profile tables and the
+// last-active-profile pin that used to feed the boot paint are gone; the keys
+// below are the only ones this module reads or writes.
 const SKIN_KEY = 'plobi-desktop-theme-v2'
 const MODE_KEY = 'plobi-desktop-mode-v1'
-// Per-profile skin + light/dark mode assignments: { [profileKey]: value }. A
-// profile inherits the global default until it's given its own appearance.
-const PROFILE_SKINS_KEY = 'plobi-desktop-profile-themes-v1'
-const PROFILE_MODES_KEY = 'plobi-desktop-profile-modes-v1'
-// Last active profile, recorded so the boot-time paint can pick that profile's
-// theme before the gateway reports which profile actually launched.
-const LAST_PROFILE_KEY = 'plobi-desktop-active-profile-v1'
 const RETIRED_SKINS = new Set(['nous-light', 'default', 'gold'])
 
 export type ThemeMode = 'light' | 'dark' | 'system'
@@ -48,29 +42,14 @@ const normalizeSkin = (name: string | null): string =>
 const normalizeMode = (value: string | null): ThemeMode =>
   value === 'light' || value === 'dark' || value === 'system' ? value : 'light'
 
-// ─── Per-profile appearance persistence ─────────────────────────────────────
-// Skin and mode are each stored per profile. "default" isn't a real profile —
-// it *is* the legacy global slot, so it reads/writes the global directly. Named
-// profiles get their own entry and fall back to that global until assigned, so
-// unassigned profiles and pre-per-profile installs stay on the global value.
-const profilePref = <T extends string>(record: string, legacy: string, normalize: (v: string | null) => T) => ({
-  resolve: (profile: string): T => normalize(storedStringRecord(record)[profile] ?? storedString(legacy)),
-  assign: (profile: string, value: T): void => {
-    if (profile === 'default') {
-      persistString(legacy, value)
-    } else {
-      persistStringRecord(record, { ...storedStringRecord(record), [profile]: value })
-    }
-  }
+// ─── Appearance persistence (one value, machine-wide) ───────────────────────
+const appearancePref = <T extends string>(key: string, normalize: (v: string | null) => T) => ({
+  resolve: (): T => normalize(storedString(key)),
+  assign: (value: T): void => persistString(key, value)
 })
 
-export const skinPref = profilePref(PROFILE_SKINS_KEY, SKIN_KEY, normalizeSkin)
-export const modePref = profilePref(PROFILE_MODES_KEY, MODE_KEY, normalizeMode)
-
-// Last active profile — lets the boot paint pick its appearance before the
-// gateway reports which profile actually launched.
-const readBootProfileKey = () => normalizeProfileKey(storedString(LAST_PROFILE_KEY))
-const rememberActiveProfileKey = (profile: string) => persistString(LAST_PROFILE_KEY, profile)
+export const skinPref = appearancePref(SKIN_KEY, normalizeSkin)
+export const modePref = appearancePref(MODE_KEY, normalizeMode)
 
 // ─── Color math (for synthesised light variants of dark-only skins) ────────
 // hexToRgb / mix / readableOn live in ./color so the VS Code converter shares
@@ -263,14 +242,11 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 const syncNativeTheme = (pref: ThemeMode, rendered: 'light' | 'dark') =>
   window.plobiDesktop?.setNativeTheme?.(pref === 'system' ? 'system' : rendered)
 
-// Boot-time paint to avoid a flash before <ThemeProvider> mounts. Use the last
-// active profile's appearance so a non-default profile relaunch paints its own
-// skin + light/dark mode.
+// Boot-time paint to avoid a flash before <ThemeProvider> mounts.
 if (typeof window !== 'undefined') {
-  const profile = readBootProfileKey()
-  const pref = modePref.resolve(profile)
+  const pref = modePref.resolve()
   const resolved = resolveMode(pref)
-  const theme = deriveTheme(skinPref.resolve(profile), resolved)
+  const theme = deriveTheme(skinPref.resolve(), resolved)
   applyTheme(theme, resolved)
   syncNativeTheme(pref, renderedModeFor(theme.colors, resolved))
 }
@@ -309,11 +285,6 @@ const ThemeContext = createContext<ThemeContextValue>({
 })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // Skin + mode are assigned per profile; the active profile drives which
-  // appearance shows. Single-profile users only ever see "default", so their
-  // behavior is unchanged.
-  const profileKey = normalizeProfileKey(useStore($activeGatewayProfile))
-
   // Built-ins + user-installed themes. Reactive so an import shows up live in
   // the palette, settings grid, and `/skin` without a reload.
   const userThemes = useStore($userThemes)
@@ -329,20 +300,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   )
 
   const [themeName, setThemeNameState] = useState(() =>
-    typeof window === 'undefined' ? DEFAULT_SKIN_NAME : skinPref.resolve(readBootProfileKey())
+    typeof window === 'undefined' ? DEFAULT_SKIN_NAME : skinPref.resolve()
   )
 
   const [mode, setModeState] = useState<ThemeMode>(() =>
-    typeof window === 'undefined' ? 'light' : modePref.resolve(readBootProfileKey())
+    typeof window === 'undefined' ? 'light' : modePref.resolve()
   )
-
-  // Follow profile switches: paint the profile's assigned skin + mode and
-  // remember it for the next boot's first paint.
-  useEffect(() => {
-    rememberActiveProfileKey(profileKey)
-    setThemeNameState(skinPref.resolve(profileKey))
-    setModeState(modePref.resolve(profileKey))
-  }, [profileKey])
 
   const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
   const resolvedMode = resolveMode(mode, systemDark)
@@ -357,19 +320,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // material, titlebar, new-window pre-paint background).
   useEffect(() => syncNativeTheme(mode, renderedMode), [mode, renderedMode])
 
-  // Assign to whichever profile is live right now (read fresh so the callbacks
-  // stay stable across profile switches).
-  const liveProfile = () => normalizeProfileKey($activeGatewayProfile.get())
-
   const setTheme = useCallback((name: string) => {
     const next = normalizeSkin(name)
     setThemeNameState(next)
-    skinPref.assign(liveProfile(), next)
+    skinPref.assign(next)
   }, [])
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next)
-    modePref.assign(liveProfile(), next)
+    modePref.assign(next)
   }, [])
 
   // The light/dark toggle (Shift+X by default) is owned by the keybind runtime
