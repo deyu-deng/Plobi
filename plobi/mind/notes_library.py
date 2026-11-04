@@ -1,15 +1,23 @@
-"""知识库：``surface/notes`` 的只读目录（WP-VAULT-AGENTS-VIEW，用户 10-24 重排）。
+"""知识库：``Surface/notes`` 的目录、读取与**人工写入**（WP-VAULT-AGENTS-VIEW / WP-NOTES-WORKBENCH）。
 
 用户把那面墙定成「知识库」，里面**只放笔记**——研究/课程的文档不进这里，只有标题的壳也不进（用户 10-27：「只留有内容的」）。
-这个模块只做三件事：扫、给元数据、按路径读一篇正文；不建目录、不搬文件、不改笔记。
+扫、给元数据、按路径读一篇正文，以及人在笔记栏里编辑后整篇存回（2026-11-04：「Plobi 也可以编辑，
+我以后不想打开 Obsidian 了」）。不搬文件、不删笔记、不建主题以外的东西。
 
-路径安全：对外只认 ``Surface/notes/...`` 这种逻辑路径，读之前再解析一次并确认落点在
+路径安全：对外只认 ``Surface/notes/...`` 这种逻辑路径，读**和写**之前都再解析一次并确认落点在
 ``<SURFACE_ROOT>/notes`` 之内——前端传来的字符串永远当不可信输入。
+
+注意 :mod:`plobi.mind.notes_contract` 那道闸**只管 Agent 写**，明写「不管人自己写」；
+所以 :func:`save_note` 不调用 ``validate_note``。人写的笔记可以没有 frontmatter、可以有多个
+一级标题，那是人的自由；但路径越界、写坏文件、覆盖别人刚改过的字，这里一律拦。
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -181,12 +189,17 @@ def build_library() -> dict[str, Any]:
     }
 
 
-def resolve_note(logical: str) -> Path | None:
-    """把 ``Surface/notes/...`` 解析成盘上的文件；越界或不是 md 一律 None。"""
+def _safe_note_target(logical: str) -> Path | None:
+    """纯路径校验：逻辑前缀 / .md / 无 ``..`` 与隐藏段 / 落点仍在 notes 根内。
+
+    读和写共用**同一份**判据——两处各写一套，早晚漂成「读得到但写不进去」或反过来。
+    前端传来的字符串永远当不可信输入。
+    """
     raw = (logical or "").strip().replace("\\", "/")
     if not raw.startswith(NOTES_LOGICAL_ROOT + "/") or not raw.endswith(".md"):
         return None
-    if ".." in raw.split("/"):
+    parts = raw.split("/")
+    if any(part in ("", ".", "..") or part.startswith(".") for part in parts):
         return None
     root = _notes_root()
     try:
@@ -194,7 +207,13 @@ def resolve_note(logical: str) -> Path | None:
         candidate.relative_to(root.resolve())
     except (MindUnavailable, ValueError, OSError):
         return None
-    return candidate if candidate.is_file() else None
+    return candidate
+
+
+def resolve_note(logical: str) -> Path | None:
+    """把 ``Surface/notes/...`` 解析成盘上的文件；越界或不是 md 一律 None。"""
+    candidate = _safe_note_target(logical)
+    return candidate if candidate is not None and candidate.is_file() else None
 
 
 def read_note(logical: str) -> dict[str, Any] | None:
@@ -211,3 +230,121 @@ def read_note(logical: str) -> dict[str, Any] | None:
         "text": text,
         "chars": len(text),
     }
+
+
+# 现存最长的一篇约 208 KB（《人工智能基础》），留足余量但不许把几个 GB 塞进来。
+MAX_NOTE_BYTES = 4 * 1024 * 1024
+_GIT_TIMEOUT = 30
+
+
+class NoteConflict(RuntimeError):
+    """编辑器打开之后，盘上这篇被别的程序改过了——不许整篇覆盖掉那些字。"""
+
+
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        timeout=_GIT_TIMEOUT,
+    )
+
+
+def _commit_note(root: Path, relative: str) -> dict[str, Any]:
+    """只提交这一篇。git 不可用／没变化都不算保存失败，落盘已经完成了。"""
+    blank = {"committed": False, "commit": "", "detail": ""}
+    try:
+        inside = _git(root, "rev-parse", "--is-inside-work-tree")
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return {**blank, "detail": "notes root is not a git repository"}
+        added = _git(root, "add", "--", relative)
+        if added.returncode != 0:
+            return {**blank, "detail": added.stderr.strip() or "git add failed"}
+        staged = _git(root, "diff", "--cached", "--quiet", "--", relative)
+        if staged.returncode == 0:
+            return {**blank, "detail": "unchanged"}
+        if staged.returncode != 1:
+            return {**blank, "detail": staged.stderr.strip() or "git diff failed"}
+        done = _git(root, "commit", "-m", f"note: {relative}", "--", relative)
+        if done.returncode != 0:
+            return {**blank, "detail": (done.stderr or done.stdout).strip() or "git commit failed"}
+        head = _git(root, "rev-parse", "--short", "HEAD")
+        return {"committed": True, "commit": head.stdout.strip(), "detail": ""}
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("notes: commit skipped: %s", exc)
+        return {**blank, "detail": str(exc)}
+
+
+def save_note(
+    logical: str,
+    text: str,
+    *,
+    base_text: str | None = None,
+    commit: bool = True,
+) -> dict[str, Any]:
+    """把人在笔记栏里写的整篇存回 ``Surface/notes/...``；文件不存在就是新建。
+
+    ``base_text`` 是编辑器打开时那份原文。带上它，保存前先比一次盘上现状：
+    长笔记**不做**日记那种「按行合并」——2919 行的文章按行猜哪些是别人新加的，
+    猜错的代价是丢字，所以盘上不一致就直接拒绝，让人自己决定怎么处理。
+
+    不调用 :func:`plobi.mind.notes_contract.validate_note`：那道闸管的是 Agent 写，
+    模块头注里明写「不管人自己写」。人写的笔记可以没有 frontmatter、可以有多个
+    一级标题；这里只管路径安全、原子写、不覆盖别人的改动。
+    """
+    if not isinstance(text, str):
+        raise ValueError("text must be a string")
+    path = _safe_note_target(logical)
+    if path is None:
+        raise ValueError(f"note path is outside {NOTES_LOGICAL_ROOT}/ or is not a .md file")
+    encoded = text.encode("utf-8")
+    if len(encoded) > MAX_NOTE_BYTES:
+        raise ValueError(f"note is too large ({len(encoded)} bytes > {MAX_NOTE_BYTES})")
+
+    existed = path.is_file()
+    if base_text is not None:
+        if existed:
+            try:
+                disk = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                raise ValueError(f"cannot re-read {path} before saving: {exc}") from exc
+            if disk != base_text:
+                raise NoteConflict("笔记在别处被改过了，先重新打开再看一眼")
+        elif base_text.strip():
+            # 前端以为在编辑一篇，盘上却没有——多半是被删/被改名了。
+            raise NoteConflict("这篇笔记已经不在盘上了，先重新打开再看一眼")
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(f"cannot create note directory: {exc}") from exc
+
+    # 原样写回，不补末尾换行、不改 frontmatter、不碰 [[wikilink]] 与代码块。
+    handle, tmp = tempfile.mkstemp(prefix=".note-", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(encoded)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+    root = _notes_root().resolve()
+    result = _commit_note(root, path.relative_to(root).as_posix()) if commit else {
+        "committed": False,
+        "commit": "",
+        "detail": "",
+    }
+    return {
+        "path": logical.strip().replace("\\", "/"),
+        "fsPath": str(path),
+        "bytes": len(encoded),
+        "created": not existed,
+        **result,
+    }
+
+
+def note_template(title: str) -> str:
+    """新建笔记的起手式：字段给齐，但**不替人决定**归属与关联。"""
+    clean = (title or "").strip() or "未命名"
+    return f"---\ntitle: {clean}\ntags: []\nbelongs: []\n---\n\n# {clean}\n\n"

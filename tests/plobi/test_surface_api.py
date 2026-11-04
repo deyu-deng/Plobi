@@ -73,3 +73,108 @@ def test_roster_failure_is_503(monkeypatch, tmp_path):
     response = asyncio.run(surface_api.list_surface_agents())
     assert response.status_code == 503
     assert "root gone" in json.loads(response.body)["error"]
+
+
+# ── 笔记栏：人在 Plobi 里编辑后整篇存回（WP-NOTES-WORKBENCH）─────────────────
+
+
+@pytest.fixture()
+def notes_live(live, monkeypatch):
+    """notes/ 下先有一篇带 frontmatter 的长笔记；git 提交那一段不进单测。"""
+    root = live / "surface" / "notes" / "数学"
+    root.mkdir(parents=True)
+    (root / "微积分.md").write_text("---\ntitle: 微积分\n---\n\n## 第1章 极限\n\n原文", encoding="utf-8")
+    monkeypatch.setattr(
+        "plobi.mind.notes_library._commit_note",
+        lambda *a, **k: {"committed": False, "commit": "", "detail": "test"},
+    )
+    return root
+
+
+def _put(path, **body):
+    return asyncio.run(surface_api.put_surface_note(body, path))
+
+
+def test_save_note_writes_exact_bytes_without_adding_a_newline(notes_live):
+    text = "---\ntitle: 微积分\n---\n\n## 第1章 极限\n\n改过的正文"
+    response = _put("Surface/notes/数学/微积分.md", text=text)
+    assert response["ok"] is True
+    assert response["data"]["created"] is False
+    assert (notes_live / "微积分.md").read_text(encoding="utf-8") == text
+
+
+def test_save_note_rejects_a_stale_base_with_409(notes_live):
+    response = _put(
+        "Surface/notes/数学/微积分.md",
+        text="完全不同的新正文",
+        base="---\ntitle: 微积分\n---\n\n## 第1章 极限\n\n我打开时看到的是旧的",
+    )
+    assert response.status_code == 409
+    assert json.loads(response.body)["ok"] is False
+    assert "原文" in (notes_live / "微积分.md").read_text(encoding="utf-8")
+
+
+def test_create_makes_a_new_note_and_its_folder(notes_live):
+    response = _put("Surface/notes/物理/新的一章.md", text="# 新的一章\n", base="", create=True)
+    assert response["ok"] is True
+    assert response["data"]["created"] is True
+    assert (notes_live.parent / "物理" / "新的一章.md").read_text(encoding="utf-8") == "# 新的一章\n"
+
+
+def test_saving_an_unknown_path_without_create_is_404_not_a_new_file(notes_live):
+    response = _put("Surface/notes/数学/拼错了.md", text="不该被静默新建")
+    assert response.status_code == 404
+    assert not (notes_live / "拼错了.md").exists()
+
+
+def test_save_note_refuses_escapes_and_non_markdown(notes_live):
+    for bad in (
+        "Surface/notes/../../outside.md",
+        "Surface/diary/2026-11-04.md",
+        "Surface/notes/数学/微积分.txt",
+        "Surface/notes/.obsidian/workspace.md",
+    ):
+        response = _put(bad, text="x", create=True)
+        assert response.status_code == 400, bad
+    assert not (notes_live.parent.parent / "outside.md").exists()
+
+
+def test_save_note_requires_a_text_string(notes_live):
+    response = _put("Surface/notes/数学/微积分.md", text=["不是字符串"])
+    assert response.status_code == 400
+
+
+def test_note_template_keeps_frontmatter_minimal():
+    from plobi.mind.notes_library import note_template
+
+    text = note_template("线性代数")
+    assert text.startswith("---\n")
+    assert "title: 线性代数" in text
+    assert "belongs: []" in text
+    assert text.rstrip().endswith("# 线性代数")
+
+
+def test_http_roundtrip_binds_body_and_query(notes_live):
+    """Body(...) + Query(...) 混用只能走真 ASGI 才测得出来；直接调函数会漏。"""
+    from urllib.parse import quote
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from plobi.mind.surface_api import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    client = TestClient(app)
+    path = "Surface/notes/数学/微积分.md"
+    url = "/api/surface/notes/content?path=" + quote(path)
+    original = notes_live.joinpath("微积分.md").read_text(encoding="utf-8")
+
+    assert client.get(url).json()["data"]["text"] == original
+    saved = client.put(url, json={"text": "改过的正文", "base": original})
+    assert saved.status_code == 200 and saved.json()["ok"] is True
+    assert client.get(url).json()["data"]["text"] == "改过的正文"
+
+    stale = client.put(url, json={"text": "不该覆盖", "base": original})
+    assert stale.status_code == 409
+    assert client.get(url).json()["data"]["text"] == "改过的正文"

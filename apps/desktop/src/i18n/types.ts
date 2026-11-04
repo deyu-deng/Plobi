@@ -1145,6 +1145,17 @@ export interface Translations {
     noMatchDesc: string
     readOnly: string
     updated: string
+    outline: string
+    edit: string
+    source: string
+    preview: string
+    save: string
+    saving: string
+    cancel: string
+    newNote: string
+    create: string
+    saveFailed: string
+    unsaved: string
     milestones: (done: number, total: number) => string
     workDir: string
     copyPath: string
@@ -1673,6 +1684,12 @@ export interface Translations {
     expertsTitle: string
     expertsRunning: string
     expertsEmpty: string
+    /** 名册上点了但这一类角色还没被派过活（卡片里那句说明）。 */
+    expertsIdleHint: string
+    /** 专家卡片底部那条：这个专家派出去时用哪个模型。 */
+    expertModelHint: string
+    /** 没给这个角色单独配模型时显示的那一颗（＝继承父 Agent）。 */
+    expertModelFollow: string
     expertsLoading: string
     expertsLoadFailed: string
     expertsLog: string
@@ -1689,6 +1706,9 @@ export interface Translations {
     externalSessionsDeleteConfirm: string
     externalSessionsDeleted: string
     externalSessionsRestore: string
+    /** 人工判一条外部会话跟这个 Agent 有没有关系（用户 11-04：勾/叉就在那一行上）。 */
+    externalSessionsMarkRelated: string
+    externalSessionsMarkUnrelated: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string
     offloadsOpenFailed: string
