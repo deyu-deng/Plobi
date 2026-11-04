@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { fetchVaultAgent } from '@/app/vault/api'
+import { fetchVaultAgent } from '@/app/surface/api'
 import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
@@ -23,11 +23,11 @@ const SECTION_HEAD =
 
 export function AgentProgressPane({ agentId }: { agentId: string }) {
   const { t } = useI18n()
-  const v = t.vault
+  const v = t.surface
   const [open, setOpen] = useState<string | null>(null)
 
   const page = useQuery({
-    queryKey: ['vault-agent', agentId],
+    queryKey: ['surface-agent', agentId],
     queryFn: () => fetchVaultAgent(agentId),
     staleTime: 0
   })

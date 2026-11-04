@@ -3,7 +3,7 @@
 Milestone M1 needs two things only: who the user is, and what their projects
 are currently about. Reads are unrestricted by the write prefixes (reading has
 no concurrency problem) but are deliberately *narrow* — the contract forbids
-pouring the whole vault into a model's context.
+pouring the whole surface into a model's context.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # 应该是 mind 的一个部分」）。它从 skills/profile/SKILL.md 搬到了 persona/，与 skills 这条线彻底脱钩；
 # 精简版仍是 L0 的 USER.md。
 PERSONA_RELATIVE = "persona/profile.md"
-PROJECTS_RELATIVE = "Vault/dossiers/projects"
+PROJECTS_RELATIVE = "Surface/dossiers/projects"
 
 # Cap on what any single read may contribute to a prompt.
 MAX_EXCERPT_CHARS = 4000
@@ -72,7 +72,7 @@ class MindReader:
             return ""
         path = real_target(PERSONA_RELATIVE, root)
         if not path.is_file():
-            # Loud on purpose: this pointer used to name a file the real vault never
+            # Loud on purpose: this pointer used to name a file the real surface never
             # had, while the test fixture created that phantom path — so the slice was
             # silently empty in production and green in tests.
             logger.warning("Mind persona slice missing: %s", path)

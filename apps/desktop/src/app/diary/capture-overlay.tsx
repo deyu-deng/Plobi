@@ -39,7 +39,7 @@ export function DiaryCaptureOverlay() {
     try {
       await captureDiaryLine(todayISO(), line)
       closeDiaryCapture()
-      void queryClient.invalidateQueries({ queryKey: ['vault-diary'] })
+      void queryClient.invalidateQueries({ queryKey: ['surface-diary'] })
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc))
     } finally {

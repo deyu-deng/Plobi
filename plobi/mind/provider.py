@@ -1,4 +1,4 @@
-"""Mind memory provider — Plobi ↔ Mind second-brain vault adapter.
+"""Mind memory provider — Plobi ↔ Mind second-brain surface adapter.
 
 ============================================================================
 STATUS: IMPLEMENTED (P0).
@@ -12,7 +12,7 @@ below. All writes funnel through :class:`plobi.mind.writer.MindWriter`
 Full spec + evidence:  Docs/specs/memory-adapter.md  (repo root)
 Mind repo (official):  ``mind/`` (lowercase, inside the repository;
                        env ``MIND_ROOT`` overrides — never hardcode drive letters)
-Mind verifier:         Loom/scripts/verifier.py (inside the Mind repo)
+Mind verifier:         Mind/scripts/verifier.py (inside the Mind repo)
 
 Why core and not a plugin?
   裁定 42.3／用户 2026-10-25「不要再是插件形态了」：本提供者现在是内核的官方记忆面
@@ -21,10 +21,10 @@ Why core and not a plugin?
 
 Compliance boundary (CRITICAL — see plan §3/§5):
   Mind's git pre-commit verifier BLOCKS commits where:
-    (1) Vault/dossiers/projects top-level dir names != AGENTS.md §1 declaration, OR
+    (1) Surface/dossiers/projects top-level dir names != AGENTS.md §1 declaration, OR
     (2) （技能已不在脑仓：2026-10-25 迁到 $PLOBI_HOME/skills，本条对脑不再适用）
-  **记忆**的读写只在 ``MEMORY_ZONES``（脑里的 ``Loom/wiki/*``）内——人读面 ``Vault/…``
-  不属于记忆系统（用户 10-24「vault 不要进记忆系统」、10-25「算越界」）。宽的那张
+  **记忆**的读写只在 ``MEMORY_ZONES``（脑里的 ``Mind/wiki/*``）内——人读面 ``Surface/…``
+  不属于记忆系统（用户 10-24「surface 不要进记忆系统」、10-25「算越界」）。宽的那张
   ``SAFE_PREFIXES`` 只服务管道写入（课程笔记、名册登记），别把两者当同一张表。
   Writing outside either risks BLOCKING Mind's commits or polluting the brain.
 """
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # --- Compliance boundary -------------------------------------------------
 # Real writes MUST resolve under one of these relative prefixes (relative to
 # MIND_ROOT). These are the zones Mind's verifier does NOT block. Do not add
-# Vault/dossiers/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
+# Surface/dossiers/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
 # own AGENTS.md declarations, which this plugin must never do automatically.
 # NOTE: the Plobi project zone is the official capitalised ``Plobi`` dir —
 # the lowercase ``plobi`` dir is a legacy Plobi archive and must never be
@@ -66,25 +66,25 @@ logger = logging.getLogger(__name__)
 # security checks to diverge.
 
 # 两对读写工具，一面一对（用户 2026-10-29 拍「读写都给，真对称」）。
-# ``vault_*`` 只碰人读面，``mind_*`` 只碰脑自己那一面；两枚工具各自的面由**工具身份**决定，
+# ``surface_*`` 只碰人读面，``mind_*`` 只碰脑自己那一面；两枚工具各自的面由**工具身份**决定，
 # 不是一颗给模型猜的 ``surface`` 参数（裁 185）。
-VAULT_READ_TOOL = "vault_read"
-VAULT_WRITE_TOOL = "vault_write"
+SURFACE_READ_TOOL = "surface_read"
+SURFACE_WRITE_TOOL = "surface_write"
 MIND_READ_TOOL = "mind_read"
 MIND_WRITE_TOOL = "mind_write"
-VAULT_LOGICAL_PREFIX = "Vault/"
+SURFACE_LOGICAL_PREFIX = "Surface/"
 VAULT_READ_MAX_CHARS = 24_000
 VAULT_WRITE_MAX_CHARS = 60_000
-# 盘上没有 ``Loom`` 这一层——脑仓摊平之后顶层就是 ``wiki/ raw/ persona/``（现核）。
-# ``Loom/`` 是**内部与存量**的旧拼法（待批队列、信任账、脑仓自己那份 AGENTS.md 里都写着它），
-# 所以给人和模型看的说法用 ``Mind/``，进 paths 之前在这一格归一；把 ``Loom/`` 全线改名是另一把刀
+# 盘上没有 ``Mind`` 这一层——脑仓摊平之后顶层就是 ``wiki/ raw/ persona/``（现核）。
+# ``Mind/`` 是**内部与存量**的旧拼法（待批队列、信任账、脑仓自己那份 AGENTS.md 里都写着它），
+# 所以给人和模型看的说法用 ``Mind/``，进 paths 之前在这一格归一；把 ``Mind/`` 全线改名是另一把刀
 # （登记在 `Docs/reference/agent-register.md`，要连 writer／CLI／脑仓那份文件一起动）。
 BRAIN_SPOKEN_PREFIX = "Mind/"
-BRAIN_LOGICAL_PREFIX = "Loom/"
+BRAIN_LOGICAL_PREFIX = "Mind/"
 
 
 def _to_logical(path: str) -> str:
-    """模型说的 ``Mind/…`` → 内部用的 ``Loom/…``。"""
+    """模型说的 ``Mind/…`` → 内部用的 ``Mind/…``。"""
     if path.startswith(BRAIN_SPOKEN_PREFIX):
         return BRAIN_LOGICAL_PREFIX + path[len(BRAIN_SPOKEN_PREFIX) :]
     return path
@@ -201,7 +201,7 @@ def _render_digest(messages: List[Dict[str, Any]]) -> str:
 
 
 class MindProvider(MemoryProvider):
-    """Plobi memory provider that bridges to the Mind vault.
+    """Plobi memory provider that bridges to the Mind surface.
 
     内核模块（裁定 198：官方脑不是插件形态）——`plugins/memory/mind/` 只剩注册壳与 CLI。
     """
@@ -220,7 +220,7 @@ class MindProvider(MemoryProvider):
     # -- required abstract methods ---------------------------------------
 
     def is_available(self) -> bool:
-        """Report availability if MIND_ROOT resolves to a real vault."""
+        """Report availability if MIND_ROOT resolves to a real surface."""
         return _resolve_root().is_dir()
 
     def initialize(self, session_id: str, **kwargs) -> None:
@@ -237,18 +237,18 @@ class MindProvider(MemoryProvider):
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """两对原子工具：一面一对（WP-MIND-DOSSIER-WRITE；用户 10-29 拍「读写都给，真对称」）。
 
-        裁定 185：一枚工具只干一件事——所以是 ``vault_read``／``vault_write``／``mind_read``／
+        裁定 185：一枚工具只干一件事——所以是 ``surface_read``／``surface_write``／``mind_read``／
         ``mind_write`` 四只手，不是一颗带 ``action`` 或 ``surface`` 的开关：哪一面由**工具身份**决定。
         写一律走 :class:`MindWriter`，因此过 L1 那道闸：这台 ``mind_write_auto_approve`` 关着时
         落不了盘，就照实回「已进待批 + id」。
         """
         return [
             {
-                "name": VAULT_READ_TOOL,
+                "name": SURFACE_READ_TOOL,
                 "description": (
                     "Read one file of the human-readable surface by its LOGICAL path, "
-                    "``Vault/...`` — a dossier (``Vault/dossiers/projects/Aura/progress.md``), a note "
-                    "(``Vault/notes/...``), today's diary (``Vault/diary/<date>-<Weekday>.md``). "
+                    "``Surface/...`` — a dossier (``Surface/dossiers/projects/Aura/progress.md``), a note "
+                    "(``Surface/notes/...``), today's diary (``Surface/diary/<date>-<Weekday>.md``). "
                     "Only paths inside that surface resolve; anything else comes back as an "
                     "error, never as an empty file. The brain's own pages are a different tool: "
                     "``mind_read`` — recalled content from there already arrives in your context."
@@ -258,19 +258,19 @@ class MindProvider(MemoryProvider):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Vault/dossiers/projects/Aura/plan.md",
+                            "description": "Logical path on the human surface, e.g. Surface/dossiers/projects/Aura/plan.md",
                         }
                     },
                     "required": ["path"],
                 },
             },
             {
-                "name": VAULT_WRITE_TOOL,
+                "name": SURFACE_WRITE_TOOL,
                 "description": (
-                    "Overwrite one file on the human-readable surface (``Vault/...``) by its "
-                    "LOGICAL path, e.g. ``Vault/dossiers/projects/Aura/progress.md``. This is how a "
+                    "Overwrite one file on the human-readable surface (``Surface/...``) by its "
+                    "LOGICAL path, e.g. ``Surface/dossiers/projects/Aura/progress.md``. This is how a "
                     "dossier stays current: rewrite the whole file, keeping its frontmatter "
-                    "and bumping ``updated`` to today. Notes under ``Vault/notes/`` carry a "
+                    "and bumping ``updated`` to today. Notes under ``Surface/notes/`` carry a "
                     "hard contract: frontmatter must carry title, tags and a `belongs` key "
                     "(`[]` = public knowledge, otherwise registered agent names), may carry "
                     "`relates` for agents whose tasks use it, have exactly one top-level "
@@ -285,7 +285,7 @@ class MindProvider(MemoryProvider):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Vault/dossiers/research/SRTP/progress.md",
+                            "description": "Logical path on the human surface, e.g. Surface/dossiers/research/SRTP/progress.md",
                         },
                         "content": {
                             "type": "string",
@@ -303,7 +303,7 @@ class MindProvider(MemoryProvider):
                     "comparisons, the daily summary, memory notes. This is the AI-facing "
                     "surface: what is written here is mostly machine product, not prose for "
                     "the user. Only paths inside those zones resolve; the human surface "
-                    "(``Vault/...``) is a different tool: ``vault_read``."
+                    "(``Surface/...``) is a different tool: ``surface_read``."
                 ),
                 "parameters": {
                     "type": "object",
@@ -322,8 +322,8 @@ class MindProvider(MemoryProvider):
                     "Overwrite one page on the brain's OWN surface (``Mind/wiki/...``) by its "
                     "LOGICAL path — the zones this tool may touch are the memory system's own "
                     "pages (concepts, entities, sources, comparisons, daily, memory). Keep the "
-                    "file's frontmatter. Notes for the user (``Vault/notes/``) and dossiers "
-                    "(``Vault/dossiers/projects/``) are a different tool: ``vault_write``. The write is "
+                    "file's frontmatter. Notes for the user (``Surface/notes/``) and dossiers "
+                    "(``Surface/dossiers/projects/``) are a different tool: ``surface_write``. The write is "
                     "checked by the trust gate; the result says whether it landed, went to the "
                     "pending queue (with an id), or was refused, and why. Never report success "
                     "the model did not read back."
@@ -350,12 +350,12 @@ class MindProvider(MemoryProvider):
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         """Serve the four tools; anything else is an explicit no-op.
 
-        哪一面由工具身份决定——``vault_*`` 只给人读面，``mind_*`` 只给脑那一面。
+        哪一面由工具身份决定——``surface_*`` 只给人读面，``mind_*`` 只给脑那一面。
         """
-        if tool_name == VAULT_READ_TOOL:
-            return json.dumps(self._tool_read(args, (VAULT_LOGICAL_PREFIX,)), ensure_ascii=False)
-        if tool_name == VAULT_WRITE_TOOL:
-            return json.dumps(self._tool_write(args, (VAULT_LOGICAL_PREFIX,)), ensure_ascii=False)
+        if tool_name == SURFACE_READ_TOOL:
+            return json.dumps(self._tool_read(args, (SURFACE_LOGICAL_PREFIX,)), ensure_ascii=False)
+        if tool_name == SURFACE_WRITE_TOOL:
+            return json.dumps(self._tool_write(args, (SURFACE_LOGICAL_PREFIX,)), ensure_ascii=False)
         if tool_name == MIND_READ_TOOL:
             return json.dumps(self._tool_read(args, MEMORY_ZONES), ensure_ascii=False)
         if tool_name == MIND_WRITE_TOOL:
@@ -379,7 +379,7 @@ class MindProvider(MemoryProvider):
             "error": (
                 f"{_to_spoken(logical)} 不在这一枚工具的面里。能碰的形状只有："
                 + "、".join(f"`{_to_spoken(a)}`" for a in allowed)
-                + "——人读面（档案／笔记／日记）用 ``vault_*``，脑那一面用 ``mind_*``。"
+                + "——人读面（档案／笔记／日记）用 ``surface_*``，脑那一面用 ``mind_*``。"
             ),
         }
 
@@ -541,7 +541,7 @@ class MindProvider(MemoryProvider):
 
         Lightweight synchronous warm-up: runs the keyword search now and
         caches the formatted result so the next ``prefetch(query)`` hits the
-        cache instead of scanning the vault again.
+        cache instead of scanning the surface again.
         """
         if not query:
             return
@@ -563,7 +563,7 @@ class MindProvider(MemoryProvider):
         """WP-MIND 写接缝：每会话每天一次，把当日日程摘要发进 Mind。
 
         走既有 ``plobi.agenda.mind_sync`` 通道（MindWriter 串行服务、无模型
-        渲染、目标 ``Loom/wiki/daily/<date>.md``（vault 不进记忆系统））。不新增 API、
+        渲染、目标 ``Mind/wiki/daily/<date>.md``（surface 不进记忆系统））。不新增 API、
         不并行写。任何失败只降级为日志告警，绝不阻塞主对话流；非 primary
         上下文（cron/flush）直接跳过，运行时状态真源始终是 SQLite（ADR-0007）。
         """
@@ -579,7 +579,7 @@ class MindProvider(MemoryProvider):
             result = publish_project_daily_summary()
             if result.ok:
                 logger.info(
-                    "[mind] daily agenda summary published to Loom/wiki/daily"
+                    "[mind] daily agenda summary published to Mind/wiki/daily"
                 )
             else:
                 logger.warning(
@@ -598,8 +598,8 @@ class MindProvider(MemoryProvider):
     ) -> None:
         """每轮**不再**往脑里落第二份聊天原文（裁定 198，用户 10-23 10:0x）。
 
-        旧腿是 ``Loom/raw/chat-logs/exports/<会话>.md`` 逐轮 append——那是旧 Mind 形态
-        （单层 ``Loom/`` ＋ Mac↔Win 靠 git 传原文）的处理区。现在会话的正本是单库
+        旧腿是 ``Mind/raw/chat-logs/exports/<会话>.md`` 逐轮 append——那是旧 Mind 形态
+        （单层 ``Mind/`` ＋ Mac↔Win 靠 git 传原文）的处理区。现在会话的正本是单库
         ``state.db``（裁定 180 行级归属），再抄一份进**带远端**的脑仓，等于把裁定 157
         那句「聊天原文不上云」每天往前推一次。现核：那批文件的写者只有这里，
         **读侧一个都没有**（``retrieval.py`` 不扫 ``raw/``），所以关掉这条腿不丢任何检索能力。
@@ -617,7 +617,7 @@ class MindProvider(MemoryProvider):
     def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
         """会话收尾不再往脑的原料区写 digest（裁定 198）；这里是**有意的空操作**。
 
-        旧腿写 ``Loom/raw/chat-logs/digested/<日期>/<会话>-digest.md``。它和 turn note 同一个病：
+        旧腿写 ``Mind/raw/chat-logs/digested/<日期>/<会话>-digest.md``。它和 turn note 同一个病：
         正本在 ``state.db``，脑仓不该收第二份拷贝，而且现核也没有任何读侧。
         digest 这件事本身没有作废——它的归宿是 L1 那道闸（计划＋sha256＋你点头）之后进正典，
         归 ``WP-MEMORY-LAYERING``。:func:`_render_digest` 因此保留给那一刀，别当死代码删掉。
@@ -636,12 +636,12 @@ class MindProvider(MemoryProvider):
         """Mirror Plobi MEMORY.md/USER.md writes into the brain (L2 canon).
 
         - ``remove`` actions never delete from the second brain (log only).
-        - concept/entity/source-kind metadata routes to ``Loom/wiki/concepts/``
+        - concept/entity/source-kind metadata routes to ``Mind/wiki/concepts/``
           (``plobi-<slug>.md``); everything else lands in
-          ``Loom/wiki/memory/<slug>.md``. vault 不进记忆系统（用户 10-24）。
+          ``Mind/wiki/memory/<slug>.md``. surface 不进记忆系统（用户 10-24）。
         - 双重检查：既要落在**记忆区**（:func:`is_memory_zone` ⇒ ``MEMORY_ZONES``，
           前缀表里属于脑的那半），也要过管道闸 ``_is_safe``。所以一条指向
-          ``Vault/…`` 的记忆写入会被拒——尽管管道服务确实有正当理由往那儿写课程笔记。
+          ``Surface/…`` 的记忆写入会被拒——尽管管道服务确实有正当理由往那儿写课程笔记。
 
         Triggered by MemoryManager.notify_memory_tool_write (verified caller
         at tool_executor.py:1301 / agent_runtime_helpers.py:2298).
@@ -660,10 +660,10 @@ class MindProvider(MemoryProvider):
             meta = metadata or {}
             kind = str(meta.get("kind", "")).lower()
             if kind in ("concept", "entity", "source") or "concepts" in str(target).lower():
-                rel = f"Loom/wiki/concepts/plobi-{slug}.md"
+                rel = f"Mind/wiki/concepts/plobi-{slug}.md"
                 page_type = kind if kind in ("concept", "entity", "source") else "concept"
             else:
-                rel = f"Loom/wiki/memory/{slug}.md"
+                rel = f"Mind/wiki/memory/{slug}.md"
                 page_type = "synthesis"
 
             if not is_memory_zone(rel) or not _is_safe(real_target(rel, root), root):

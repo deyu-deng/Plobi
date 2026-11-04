@@ -116,9 +116,9 @@ def test_a_cell_may_have_both_a_command_and_a_manual_note(tmp_path, capsys):
     # 这台的实际写法：venv 里的 python.exe，别因为它不是 `python` 就判成命令头不在白名单
     "cd Code && .venv/Scripts/python.exe scripts/plobi/check_test_baseline.py --from-log D:/Temp/gate-selfcheck-1018/full.log",
     # 列远端是只读的（本线自己的判据就要跑它）；改远端另说
-    "git -C D:/Data/AppData/plobi/vault remote -v",
+    "git -C D:/Data/AppData/plobi/surface remote -v",
     # 「应该是 0 条」那种探针：包进 test 才是「判据成立⇒rc=0」，裸 grep 出 0 会报假红
-    "test $(grep -c VAULT_ROOT Docs/DECISIONS.md) = 0",
+    "test $(grep -c SURFACE_ROOT Docs/DECISIONS.md) = 0",
     # 前端那一族真写法：tsx 跑单个 .test.ts，路径里有 `electron/` 目录名，不许因此判成「要起桌面」
     "cd Code/apps/desktop && node_modules/.bin/tsx --test apps/desktop/electron/chatlog-keys.test.ts",
     "ls Code/scripts/plobi",
@@ -142,7 +142,7 @@ def test_readonly_commands_pass_the_whitelist(cmd):
     ("cd Code/apps/desktop && npx vitest run", "装包"),
     ("cd Code/apps/desktop && vitest run --environment jsdom", "没指到单个测试文件"),
     ("cd Code && pytest tests/plobi/test_mind_proposal_gate.py", "禁直调 pytest"),
-    ("git -C D:/Data/AppData/plobi/vault remote set-url origin https://x/y.git", "改远端"),
+    ("git -C D:/Data/AppData/plobi/surface remote set-url origin https://x/y.git", "改远端"),
     ("git -C D:/Data/AppData/plobi/mind remote -v", None),
 ])
 def test_writing_or_heavy_commands_are_refused_with_a_reason(cmd, frag):

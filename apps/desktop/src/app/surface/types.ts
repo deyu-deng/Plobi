@@ -1,4 +1,4 @@
-export interface VaultDocMeta {
+export interface SurfaceDocMeta {
   key: string
   label: string
   filename: string
@@ -8,13 +8,13 @@ export interface VaultDocMeta {
   path: string
 }
 
-export interface VaultDocPage extends VaultDocMeta {
+export interface SurfaceDocPage extends SurfaceDocMeta {
   fsPath: string
   text: string
   truncated: boolean
 }
 
-export interface VaultAgent {
+export interface SurfaceAgent {
   id: string
   name: string
   displayName: string
@@ -31,15 +31,15 @@ export interface VaultAgent {
   updated: string
   summary: string
   milestones: { done: number; total: number }
-  docs: VaultDocMeta[]
+  docs: SurfaceDocMeta[]
 }
 
-export interface VaultAgentPage extends Omit<VaultAgent, 'docs'> {
-  docs: VaultDocPage[]
+export interface SurfaceAgentPage extends Omit<SurfaceAgent, 'docs'> {
+  docs: SurfaceDocPage[]
 }
 
-export interface VaultIndex {
+export interface SurfaceIndex {
   roster: string
-  agents: VaultAgent[]
+  agents: SurfaceAgent[]
   totals: { agents: number; withHome: number; withoutHome: number }
 }

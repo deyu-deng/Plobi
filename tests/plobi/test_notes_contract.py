@@ -22,7 +22,7 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Vault/dossiers/projects/Aura
+        mind_subtree: Surface/dossiers/projects/Aura
     """
 ).lstrip()
 
@@ -44,23 +44,23 @@ GOOD = textwrap.dedent(
 @pytest.fixture()
 def notes(tmp_path, monkeypatch):
     mind = tmp_path / "mind"
-    vault = tmp_path / "vault"
+    surface = tmp_path / "surface"
     (mind / "wiki").mkdir(parents=True)
-    (vault / "notes" / "数学 Math").mkdir(parents=True)
-    (vault / "dossiers" / "projects").mkdir(parents=True)
+    (surface / "notes" / "数学 Math").mkdir(parents=True)
+    (surface / "dossiers" / "projects").mkdir(parents=True)
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
-    return vault / "notes"
+    return surface / "notes"
 
 
 def test_a_well_formed_note_passes(notes):
-    assert validate_note("Vault/notes/数学 Math/傅里叶.md", GOOD, notes) == []
+    assert validate_note("Surface/notes/数学 Math/傅里叶.md", GOOD, notes) == []
 
 
 def test_missing_frontmatter_names_the_three_required_keys(notes):
-    problems = validate_note("Vault/notes/数学 Math/x.md", "# 只有正文\n", notes)
+    problems = validate_note("Surface/notes/数学 Math/x.md", "# 只有正文\n", notes)
     assert any("frontmatter" in p for p in problems)
 
 
@@ -68,23 +68,23 @@ def test_each_missing_field_is_reported_on_its_own(notes):
     body = "# 傅里叶级数\n\n正文。\n"
     without_tags = "---\ntitle: 傅里叶级数\nbelongs: [Aura]\n---\n\n" + body
     without_belongs = "---\ntitle: 傅里叶级数\ntags: [数学]\n---\n\n" + body
-    assert any("`tags`" in p for p in validate_note("Vault/notes/数学 Math/a.md", without_tags, notes))
-    problems = validate_note("Vault/notes/数学 Math/b.md", without_belongs, notes)
+    assert any("`tags`" in p for p in validate_note("Surface/notes/数学 Math/a.md", without_tags, notes))
+    problems = validate_note("Surface/notes/数学 Math/b.md", without_belongs, notes)
     assert any("`belongs`" in p for p in problems)
 
 
 def test_belongs_must_name_a_registered_agent(notes):
     content = GOOD.replace("belongs: [Aura]", "belongs: [不存在的分身]")
-    problems = validate_note("Vault/notes/数学 Math/c.md", content, notes)
+    problems = validate_note("Surface/notes/数学 Math/c.md", content, notes)
     assert any("不存在的分身" in p for p in problems)
 
 
 def test_one_topic_per_note_and_the_heading_must_match_the_title(notes):
     two_headings = GOOD.replace("一段正文。", "一段正文。\n\n# 另一个主题\n\n第二段。")
-    assert any("一级标题" in p for p in validate_note("Vault/notes/数学 Math/d.md", two_headings, notes))
+    assert any("一级标题" in p for p in validate_note("Surface/notes/数学 Math/d.md", two_headings, notes))
 
     mismatched = GOOD.replace("title: 傅里叶级数", "title: 拉普拉斯变换")
-    assert any("不一致" in p for p in validate_note("Vault/notes/数学 Math/e.md", mismatched, notes))
+    assert any("不一致" in p for p in validate_note("Surface/notes/数学 Math/e.md", mismatched, notes))
 
 
 def test_headings_inside_a_code_fence_are_examples_not_headings(notes):
@@ -97,49 +97,49 @@ def test_headings_inside_a_code_fence_are_examples_not_headings(notes):
         "一段正文。",
         "```\n# 一级标题\n# 另一个一级标题\n```\n\n~~~\n# 还有一个\n~~~\n\n一段正文。",
     )
-    assert validate_note("Vault/notes/数学 Math/fence.md", fenced, notes) == []
+    assert validate_note("Surface/notes/数学 Math/fence.md", fenced, notes) == []
 
 
 def test_topic_readme_is_an_index_not_a_note(notes):
-    assert validate_note("Vault/notes/数学 Math/README.md", "# 这一目录的索引\n", notes) == []
+    assert validate_note("Surface/notes/数学 Math/README.md", "# 这一目录的索引\n", notes) == []
 
 
 def test_new_topic_folders_are_not_invented_by_a_write(notes):
-    problems = validate_note("Vault/notes/新发明主题/x.md", GOOD, notes)
+    problems = validate_note("Surface/notes/新发明主题/x.md", GOOD, notes)
     assert any("新发明主题" in p for p in problems)
 
 
 def test_the_gate_only_covers_notes(notes):
     # 档案与索引件不走这一道：一条都没有 = 交给闸门与 verifier 去管。
-    assert validate_note("Vault/dossiers/projects/Aura/progress.md", "随便什么", notes) == []
-    assert validate_note("Vault/notes/INDEX.md", "# 索引\n", notes) == []
-    assert validate_note("Vault/notes/数学 Math/x.txt", "x", notes)
+    assert validate_note("Surface/dossiers/projects/Aura/progress.md", "随便什么", notes) == []
+    assert validate_note("Surface/notes/INDEX.md", "# 索引\n", notes) == []
+    assert validate_note("Surface/notes/数学 Math/x.txt", "x", notes)
 
 
 def test_public_knowledge_declares_an_empty_belongs(notes):
     """用户 2026-10-27：`belongs` 这一格必须在，但可以是 []（＝公共知识）。"""
     public = GOOD.replace("belongs: [Aura]", "belongs: []")
-    assert validate_note("Vault/notes/数学 Math/傅里叶.md", public, notes) == []
+    assert validate_note("Surface/notes/数学 Math/傅里叶.md", public, notes) == []
 
     absent = GOOD.replace("belongs: [Aura]\n", "")
-    problems = validate_note("Vault/notes/数学 Math/傅里叶.md", absent, notes)
+    problems = validate_note("Surface/notes/数学 Math/傅里叶.md", absent, notes)
     assert any("belongs" in p for p in problems)
 
 
 def test_relates_is_the_second_axis_and_must_be_real(notes):
     """微积分这种：不属于谁，但很多 Agent 的任务用得上 —— 关联记在 `relates`。"""
     linked = GOOD.replace("belongs: [Aura]", "belongs: []\nrelates: [Aura]")
-    assert validate_note("Vault/notes/数学 Math/傅里叶.md", linked, notes) == []
+    assert validate_note("Surface/notes/数学 Math/傅里叶.md", linked, notes) == []
 
     empty_relates = GOOD.replace("belongs: [Aura]", "belongs: []\nrelates: []")
-    assert any("relates" in p for p in validate_note("Vault/notes/数学 Math/a.md", empty_relates, notes))
+    assert any("relates" in p for p in validate_note("Surface/notes/数学 Math/a.md", empty_relates, notes))
 
     fake = GOOD.replace("belongs: [Aura]", "belongs: []\nrelates: [没这个分身]")
-    problems = validate_note("Vault/notes/数学 Math/b.md", fake, notes)
+    problems = validate_note("Surface/notes/数学 Math/b.md", fake, notes)
     assert any("没这个分身" in p for p in problems)
 
 
-def test_vault_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monkeypatch):
+def test_surface_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monkeypatch):
     provider = MindProvider()
     provider.initialize("sess-notes", agent_context="primary")
     monkeypatch.setattr(
@@ -148,8 +148,8 @@ def test_vault_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monk
 
     result = json.loads(
         provider.handle_tool_call(
-            "vault_write",
-            {"path": "Vault/notes/数学 Math/拉普拉斯.md", "content": "# 拉普拉斯\n\n没有 frontmatter。\n"},
+            "surface_write",
+            {"path": "Surface/notes/数学 Math/拉普拉斯.md", "content": "# 拉普拉斯\n\n没有 frontmatter。\n"},
         )
     )
     assert result["success"] is False

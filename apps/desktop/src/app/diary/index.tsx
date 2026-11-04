@@ -26,9 +26,9 @@ export function DiaryView() {
   const queryClient = useQueryClient()
   const [date, setDate] = useState(todayISO)
 
-  const index = useQuery({ queryKey: ['vault-diary'], queryFn: fetchDiaryIndex, staleTime: 30_000 })
+  const index = useQuery({ queryKey: ['surface-diary'], queryFn: fetchDiaryIndex, staleTime: 30_000 })
   const entry = useQuery({
-    queryKey: ['vault-diary', date],
+    queryKey: ['surface-diary', date],
     queryFn: () => fetchDiaryEntry(date),
     staleTime: Infinity
   })
@@ -102,8 +102,8 @@ export function DiaryView() {
               exists={entry.data.exists}
               key={date}
               onSaved={() => {
-                void queryClient.invalidateQueries({ queryKey: ['vault-diary'] })
-                void queryClient.invalidateQueries({ exact: true, queryKey: ['vault-diary', date] })
+                void queryClient.invalidateQueries({ queryKey: ['surface-diary'] })
+                void queryClient.invalidateQueries({ exact: true, queryKey: ['surface-diary', date] })
               }}
             />
           )}

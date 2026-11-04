@@ -266,9 +266,9 @@ TOOLSETS = {
         "includes": []
     },
 
-    "vault": {
-        "description": "The human-readable archive (Vault/): dossiers, notes, diary — read one file and rewrite it",
-        "tools": ["vault_read", "vault_write"],
+    "surface": {
+        "description": "The human-readable archive (Surface/): dossiers, notes, diary — read one file and rewrite it",
+        "tools": ["surface_read", "surface_write"],
         "includes": []
     },
 

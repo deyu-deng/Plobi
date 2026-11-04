@@ -1258,17 +1258,17 @@ export const en: Translations = {
     merged: n => `merged ${n} jotted line${n === 1 ? '' : 's'}`,
     mergedInto: (merged, saved) => `${merged} · ${saved}`
   },
-  vault: {
+  surface: {
     title: 'Knowledge',
     subtitle: (agents, withHome) => `${agents} agents · ${withHome} with dossiers`,
     searchPlaceholder: 'Search notes…',
     all: 'All',
     loading: 'Loading…',
-    loadFailed: 'Could not read the vault',
+    loadFailed: 'Could not read the surface',
     retry: 'Retry',
     refresh: 'Refresh',
     emptyTitle: 'No notes yet',
-    emptyDesc: 'Notes under vault/notes appear here.',
+    emptyDesc: 'Notes under surface/notes appear here.',
     noMatchTitle: 'Nothing matches',
     noMatchDesc: 'Try another category or a shorter search.',
     readOnly: 'Read-only',

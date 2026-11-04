@@ -1,6 +1,6 @@
 """Notes-view index + route (WP-MIND-NOTES-VIEW).
 
-Shapes this suite is built around, all of them seen in the real vault:
+Shapes this suite is built around, all of them seen in the real surface:
 a note whose file starts with a BOM, paths carrying spaces and CJK, notes with no
 frontmatter at all, and malformed YAML fences. None of those may turn into a
 silent "no notes".
@@ -24,7 +24,7 @@ from plobi.mind.notes_view import (
     unknown_belongs,
 )
 
-NOTE_ROOT = "Vault/notes/数学 Math"
+NOTE_ROOT = "Surface/notes/数学 Math"
 
 
 def _entry(name: str, subtree: str = "", category: str = "projects") -> types.SimpleNamespace:
@@ -34,11 +34,11 @@ def _entry(name: str, subtree: str = "", category: str = "projects") -> types.Si
 
 
 @pytest.fixture()
-def vault(tmp_path):
+def surface(tmp_path):
     root = tmp_path / "Mind"
     notes = root / NOTE_ROOT
     notes.mkdir(parents=True)
-    (root / "Vault" / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
+    (root / "Surface" / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
 
     (notes / "Rust 所有权.md").write_text(
@@ -57,8 +57,8 @@ def vault(tmp_path):
 # --- tallying ---------------------------------------------------------------
 
 
-def test_scan_counts_every_file_not_just_the_readable_ones(vault):
-    scan = scan_notes(vault)
+def test_scan_counts_every_file_not_just_the_readable_ones(surface):
+    scan = scan_notes(surface)
 
     assert scan.scanned == 4
     assert scan.parsed == 2  # the BOM note parses; the other two do not
@@ -75,46 +75,46 @@ def test_missing_note_root_is_reported_not_empty(tmp_path):
 # --- matching ---------------------------------------------------------------
 
 
-def test_belongs_matches_through_agent_subtree(vault):
-    scan = scan_notes(vault)
-    entry = _entry("srtp", "Vault/dossiers/projects/SRTP")
+def test_belongs_matches_through_agent_subtree(surface):
+    scan = scan_notes(surface)
+    entry = _entry("srtp", "Surface/dossiers/projects/SRTP")
 
     matched = notes_for(scan, agent_aliases(entry))
 
     assert [note.title for note in matched] == ["Rust 所有权"]
-    assert matched[0].path == "Vault/notes/数学 Math/Rust 所有权.md"
+    assert matched[0].path == "Surface/notes/数学 Math/Rust 所有权.md"
     assert matched[0].chars > 0
 
 
-def test_payload_carries_an_openable_absolute_path(vault):
+def test_payload_carries_an_openable_absolute_path(surface):
     """The desktop hands this to its file-preview normaliser, so it must resolve."""
-    payload = build_view(vault, _entry("SRTP"), [_entry("SRTP")])
+    payload = build_view(surface, _entry("SRTP"), [_entry("SRTP")])
 
     note = payload["notes"][0]
 
     assert Path(note["fsPath"]).is_absolute()
     assert Path(note["fsPath"]).is_file()
-    # Display path stays vault-relative — the two are not interchangeable.
+    # Display path stays surface-relative — the two are not interchangeable.
     assert not note["path"].startswith("/")
     assert not Path(note["path"]).is_absolute()
 
 
-def test_unregistered_belongs_is_surfaced_not_dropped(vault):
-    scan = scan_notes(vault)
-    known = known_names(vault, [_entry("srtp", "Vault/dossiers/projects/SRTP")])
+def test_unregistered_belongs_is_surfaced_not_dropped(surface):
+    scan = scan_notes(surface)
+    known = known_names(surface, [_entry("srtp", "Surface/dossiers/projects/SRTP")])
 
     assert unknown_belongs(scan, known) == ["Ghost"]
 
 
-def test_no_aliases_matches_nothing(vault):
-    assert notes_for(scan_notes(vault), []) == []
+def test_no_aliases_matches_nothing(surface):
+    assert notes_for(scan_notes(surface), []) == []
 
 
 # --- budget ----------------------------------------------------------------
 
 
 def test_entry_cap_reports_what_it_cut(tmp_path):
-    notes = tmp_path / "Vault" / "notes"
+    notes = tmp_path / "Surface" / "notes"
     notes.mkdir(parents=True)
     for index in range(MAX_ENTRIES + 5):
         (notes / f"n{index}.md").write_text(
@@ -130,7 +130,7 @@ def test_entry_cap_reports_what_it_cut(tmp_path):
 
 
 def test_payload_byte_cap_holds_below_the_declared_limit(tmp_path):
-    notes = tmp_path / "Vault" / "notes"
+    notes = tmp_path / "Surface" / "notes"
     notes.mkdir(parents=True)
     for index in range(40):
         (notes / f"n{index}.md").write_text(
@@ -155,15 +155,15 @@ def test_unconfigured_brain_raises_instead_of_empty_list():
 # --- route ------------------------------------------------------------------
 
 
-def test_agent_notes_route_shapes(monkeypatch, vault):
+def test_agent_notes_route_shapes(monkeypatch, surface):
     from plobi.console import router
 
     registry = types.SimpleNamespace(
-        get=lambda agent_id: _entry(agent_id, "Vault/dossiers/projects/SRTP") if agent_id == "srtp" else None,
-        live_entries=lambda: [_entry("srtp", "Vault/dossiers/projects/SRTP")],
+        get=lambda agent_id: _entry(agent_id, "Surface/dossiers/projects/SRTP") if agent_id == "srtp" else None,
+        live_entries=lambda: [_entry("srtp", "Surface/dossiers/projects/SRTP")],
     )
     monkeypatch.setattr(router, "get_registry", lambda: registry)
-    monkeypatch.setattr("plobi.mind.paths.resolve_root", lambda *a, **k: vault)
+    monkeypatch.setattr("plobi.mind.paths.resolve_root", lambda *a, **k: surface)
 
     payload = router.agent_notes("srtp")
 

@@ -21,7 +21,7 @@ vi.mock('@/components/chat/compact-markdown', () => ({
 import { KnowledgeView } from './index'
 
 const NOTE: NoteMeta = {
-  path: 'Vault/notes/数学 Math/微积分.md',
+  path: 'Surface/notes/数学 Math/微积分.md',
   title: '微积分笔记',
   topic: '数学 Math',
   tags: ['math'],
@@ -32,7 +32,7 @@ const NOTE: NoteMeta = {
 }
 
 const DRAWING: NoteMeta = {
-  path: 'Vault/notes/工程 Engineer/图学.md',
+  path: 'Surface/notes/工程 Engineer/图学.md',
   title: '工程图学',
   topic: '工程 Engineer',
   tags: [],
@@ -43,7 +43,7 @@ const DRAWING: NoteMeta = {
 }
 
 const LIBRARY: NotesLibrary = {
-  root: 'X:/vault/notes',
+  root: 'X:/surface/notes',
   notes: [NOTE, DRAWING],
   topics: [
     { name: '数学 Math', count: 1 },
@@ -98,7 +98,7 @@ describe('KnowledgeView', () => {
     await waitFor(() => expect(screen.getByTestId('markdown')).toBeTruthy())
 
     fireEvent.click(screen.getByText('工程图学'))
-    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Vault/notes/工程 Engineer/图学.md'))
+    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Surface/notes/工程 Engineer/图学.md'))
     expect(fetchNotes).toHaveBeenCalledTimes(1)
   })
 
@@ -115,7 +115,7 @@ describe('KnowledgeView', () => {
     fetchNotes.mockRejectedValue(new Error('notes root missing'))
     renderView()
 
-    expect(await screen.findByText('Could not read the vault')).toBeTruthy()
+    expect(await screen.findByText('Could not read the surface')).toBeTruthy()
     expect(screen.getByText('notes root missing')).toBeTruthy()
   })
 })

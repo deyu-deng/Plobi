@@ -23,18 +23,18 @@ from plobi.mind.writer import MindWriter
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
-    vault = tmp_path / "Vault"
+    surface = tmp_path / "Surface"
     (mind / "wiki" / "daily").mkdir(parents=True)
-    (vault / "dossiers" / "projects").mkdir(parents=True)
+    (surface / "dossiers" / "projects").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
     app = FastAPI()
     register_memory_pending_api(app)
     return TestClient(app), mind
 
 
-def _stage(rel="Loom/wiki/daily/2026-10-27.md", content="# 日程摘要\n"):
+def _stage(rel="Mind/wiki/daily/2026-10-27.md", content="# 日程摘要\n"):
     result = MindWriter(require_approval=True, commit=False).write_one(rel, content)
     return result.pending_id, rel
 
@@ -48,8 +48,8 @@ def test_an_expired_paper_is_listed_as_expired_and_a_click_lands_nothing(client)
     item = got["items"][0]
     assert item["id"] == pending_id
     assert item["expired"] is False, "刚出的计划不该被判过期"
-    # 屏幕上不写逻辑前缀 Loom/（用户 2026-10-29「不是已经没有 Loom 这个概念了吗」）
-    assert item["paths"] == [rel[len("Loom/"):] if rel.startswith("Loom/") else rel]
+    # 屏幕上不写逻辑前缀 Mind/（用户 2026-10-29「不是已经没有 Mind 这个概念了吗」）
+    assert item["paths"] == [rel[len("Mind/"):] if rel.startswith("Mind/") else rel]
 
     # 时间往前推过 TTL（6h）：这张纸作废，屏幕上要看得见"过期"，点它也不落一个字
     store = Path(os.environ["PLOBI_HOME"]) / "pending" / "memory" / f"{pending_id}.json"
@@ -84,8 +84,8 @@ def test_prune_clears_only_expired_papers_and_keeps_a_copy(client):
     import json
 
     http, _mind = client
-    live_id, _rel = _stage("Loom/wiki/daily/2026-10-29.md")
-    dead_id, _rel2 = _stage("Loom/wiki/daily/2026-10-28.md")
+    live_id, _rel = _stage("Mind/wiki/daily/2026-10-29.md")
+    dead_id, _rel2 = _stage("Mind/wiki/daily/2026-10-28.md")
 
     store = Path(os.environ["PLOBI_HOME"]) / "pending" / "memory" / f"{dead_id}.json"
     record = json.loads(store.read_text(encoding="utf-8"))

@@ -88,7 +88,7 @@ def _add_entry_args(parser) -> None:
     parser.add_argument(
         "--mind-subtree",
         default=None,
-        help="Mind project subtree relative to MIND_ROOT, e.g. Vault/projects/Plobi",
+        help="Mind project subtree relative to MIND_ROOT, e.g. Surface/projects/Plobi",
     )
     parser.add_argument(
         "--skills",

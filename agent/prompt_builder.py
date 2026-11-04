@@ -175,10 +175,10 @@ MEMORY_GUIDANCE = (
 
 DIARY_GUIDANCE = (
     "The user keeps a diary on the human surface: "
-    "`Vault/diary/<YYYY-MM-DD-Weekday>.md`. Throughout the day they drop one-line "
+    "`Surface/diary/<YYYY-MM-DD-Weekday>.md`. Throughout the day they drop one-line "
     "jots at the end of today's page (`- HH:MM …`); they also sit down and write it "
     "properly. Nothing is pushed into your context when they do — read it with "
-    "`vault_read` when it actually matters: the evening check-in, or any question about "
+    "`surface_read` when it actually matters: the evening check-in, or any question about "
     "how their day went or how they felt about something.\n"
     "It is their writing, not yours: never quote it back at them verbatim, never "
     "summarise it into a note somewhere else, and never write into it without their "

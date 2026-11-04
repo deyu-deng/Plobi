@@ -76,9 +76,9 @@ describe('splitSpeakerPrefix', () => {
 
 describe('splitFilePointers', () => {
   it('pulls file pointers out of the paragraph', () => {
-    expect(splitFilePointers('先看这段\n[文件] vault/proj/note.md\n看完再说')).toEqual([
+    expect(splitFilePointers('先看这段\n[文件] surface/proj/note.md\n看完再说')).toEqual([
       { kind: 'text', text: '先看这段' },
-      { kind: 'file', path: 'vault/proj/note.md' },
+      { kind: 'file', path: 'surface/proj/note.md' },
       { kind: 'text', text: '看完再说' }
     ])
   })

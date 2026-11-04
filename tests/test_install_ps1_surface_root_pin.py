@@ -1,9 +1,9 @@
 """The installer must pin BOTH memory roots (WP-INSTALL-MINDROOT, second half).
 
 Why this exists: `install.ps1` already pinned MIND_ROOT, and my 2026-10-14 split added a
-second root (`VAULT_ROOT`) that only I had pinned, by hand, in the registry. A machine
+second root (`SURFACE_ROOT`) that only I had pinned, by hand, in the registry. A machine
 installed by the installer therefore gets half the memory surface: `plobi/mind/paths.py`
-resolves the brain but refuses a `Vault/…` write once the old in-brain surface is gone.
+resolves the brain but refuses a `Surface/…` write once the old in-brain surface is gone.
 That is not a missing convenience variable — it is a functional half-machine.
 
 Two tests, per the "每格≤两条" rule: one pins the mechanism (same home, same API and
@@ -44,18 +44,18 @@ def _function_body(name: str) -> str:
     raise AssertionError(f"unterminated function {name}")
 
 
-def test_vault_root_is_pinned_by_the_same_mechanism_as_the_brain():
+def test_surface_root_is_pinned_by_the_same_mechanism_as_the_brain():
     body = _function_body("Set-MindRootEnv")
 
-    assert re.search(r'Join-Path\s+\$PlobiHomePath\s+"vault"', body), (
-        "VAULT_ROOT must be derived as <the chosen home>/vault, same single home source"
+    assert re.search(r'Join-Path\s+\$PlobiHomePath\s+"surface"', body), (
+        "SURFACE_ROOT must be derived as <the chosen home>/surface, same single home source"
     )
-    assert '[Environment]::SetEnvironmentVariable("VAULT_ROOT", $vaultRoot, $Scope)' in body
-    assert '[Environment]::GetEnvironmentVariable("VAULT_ROOT", $Scope)' in body
-    assert re.search(r"if \(-not \$existingVault -or \$existingVault -ne \$vaultRoot\)", body), (
+    assert '[Environment]::SetEnvironmentVariable("SURFACE_ROOT", $surfaceRoot, $Scope)' in body
+    assert '[Environment]::GetEnvironmentVariable("SURFACE_ROOT", $Scope)' in body
+    assert re.search(r"if \(-not \$existingSurface -or \$existingSurface -ne \$surfaceRoot\)", body), (
         "same do-not-rewrite-if-equal guard as the MIND_ROOT pin, so re-running is idempotent"
     )
-    assert "$env:VAULT_ROOT" in body, "the just-set value must be visible to this process too"
+    assert "$env:SURFACE_ROOT" in body, "the just-set value must be visible to this process too"
 
     # one home, one place: no second default, no drive letters (ruling 48.1 / 79)
     assert "LOCALAPPDATA" not in body
@@ -84,7 +84,7 @@ def test_running_the_installer_step_pins_both_roots(tmp_path: Path):
                                                     "function Set-MindRootEnv", 1)
         + f"\nSet-MindRootEnv -PlobiHomePath '{home}' -Scope Process\n"
         + 'Write-Output "MIND:$env:MIND_ROOT"\n'
-        + 'Write-Output "VAULT:$env:VAULT_ROOT"\n',
+        + 'Write-Output "VAULT:$env:SURFACE_ROOT"\n',
         encoding="ascii",
     )
     done = subprocess.run([_POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass",
@@ -93,10 +93,10 @@ def test_running_the_installer_step_pins_both_roots(tmp_path: Path):
     assert done.returncode == 0, out
 
     mind = str(home / "mind")
-    vault = str(home / "vault")
+    surface = str(home / "surface")
     assert f"MIND:{mind}" in out, out
-    assert f"VAULT:{vault}" in out, out
-    assert f"OK:Set VAULT_ROOT={vault}" in out, out
+    assert f"VAULT:{surface}" in out, out
+    assert f"OK:Set SURFACE_ROOT={surface}" in out, out
     # two roots are siblings under one home -- the whole point of deriving, not listing
     assert Path(out.split("VAULT:")[1].splitlines()[0].strip()).parent == home
     assert "not at" in out and "no remote by design" in out, (

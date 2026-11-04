@@ -7,7 +7,7 @@ that *can* be regenerated. A backup set that skips the irreplaceable repo is not
 a backup set. The brain's location is read from ``MIND_ROOT`` only; nothing in
 this file hardcodes a drive letter.
 
-Since 2026-10-14 the human-facing surface is a repo of its own (``VAULT_ROOT``)
+Since 2026-10-14 the human-facing surface is a repo of its own (``SURFACE_ROOT``)
 and it is the *more* irreplaceable half — diary, profile and notes, and it is not
 pushed anywhere. Same discipline as the brain: read the env pointer, no guessing
 a fallback location, and a missing pointer is a loud failure, not a skip.
@@ -32,12 +32,12 @@ DESKTOP = CODE.parent
 WORKSPACE = DESKTOP.parent
 
 MIN_ENV_VAR = "MIND_ROOT"
-VAULT_ENV_VAR = "VAULT_ROOT"
+VAULT_ENV_VAR = "SURFACE_ROOT"
 
 
 def repos() -> dict[str, Path | None]:
     mind = os.environ.get(MIN_ENV_VAR, "").strip()
-    vault = os.environ.get(VAULT_ENV_VAR, "").strip()
+    surface = os.environ.get(VAULT_ENV_VAR, "").strip()
     return {
         "code": CODE,
         "docs": DESKTOP / "Docs",
@@ -46,7 +46,7 @@ def repos() -> dict[str, Path | None]:
         # to sit is what let it hide inside the code checkout in the first place.
         "mind": Path(mind) if mind else None,
         # 人看的面：日记/画像/笔记，且不推任何远端——这份之外只剩 bundles 里的副本。
-        "vault": Path(vault) if vault else None,
+        "surface": Path(surface) if surface else None,
     }
 
 

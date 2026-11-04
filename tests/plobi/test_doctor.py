@@ -405,7 +405,7 @@ def test_credential_refs_red_when_reference_was_never_expanded(monkeypatch, tmp_
     assert "GLM_API_KEY" in row["detail"], "得点名是哪个键"
     assert "改法" in row["detail"], "红必须说清改哪一处，不许只报状态"
     assert SECRET_STANDIN not in json.dumps(row, ensure_ascii=False), "行里不许出现任何凭据值"
-    assert "op://" in row["detail"] and "Vault" not in row["detail"], (
+    assert "op://" in row["detail"] and "Surface" not in row["detail"], (
         "只报形态与键名，不把引用指向的库/条目结构抄进表里"
     )
 

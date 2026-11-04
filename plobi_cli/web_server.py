@@ -385,12 +385,12 @@ from plobi.console.router import router as _console_router  # noqa: E402
 
 app.include_router(_console_router, prefix="/api", tags=["console"])
 
-# Vault dossier (WP-VAULT-AGENTS-VIEW): one page per L2 agent — the roster row
+# Surface dossier (WP-VAULT-AGENTS-VIEW): one page per L2 agent — the roster row
 # plus its two or three standard documents, read-only. Kept in its own module so
 # the console module stays the projection of §5 and nothing else.
-from plobi.mind.vault_api import router as _vault_router  # noqa: E402
+from plobi.mind.surface_api import router as _surface_router  # noqa: E402
 
-app.include_router(_vault_router, prefix="/api", tags=["vault"])
+app.include_router(_surface_router, prefix="/api", tags=["surface"])
 
 # 待确认那批纸的读口/批口（WP-MIND-PENDING-VISIBLE，用户 10-27「先让它进人眼」）：
 # 摘要每天进闸、6 小时作废、只有 CLI 看得见 ⇒ 屏幕上得有一个数和一个面板。

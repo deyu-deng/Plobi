@@ -57,13 +57,13 @@ export function shiftDay(day: string, delta: number): string {
 }
 
 export async function fetchDiaryIndex(): Promise<DiaryIndex> {
-  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/vault/diary', timeoutMs: READ_TIMEOUT_MS })
+  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/surface/diary', timeoutMs: READ_TIMEOUT_MS })
   return unwrapEnvelope<DiaryIndex>(payload, 'diary')
 }
 
 export async function fetchDiaryEntry(date: string): Promise<DiaryEntry> {
   const payload = await window.plobiDesktop.api<unknown>({
-    path: `/api/vault/diary/${encodeURIComponent(date)}`,
+    path: `/api/surface/diary/${encodeURIComponent(date)}`,
     timeoutMs: READ_TIMEOUT_MS
   })
   return unwrapEnvelope<DiaryEntry>(payload, 'diary')
@@ -71,7 +71,7 @@ export async function fetchDiaryEntry(date: string): Promise<DiaryEntry> {
 
 export async function saveDiaryEntry(date: string, text: string, base?: string): Promise<DiarySaveResult> {
   const payload = await window.plobiDesktop.api<unknown>({
-    path: `/api/vault/diary/${encodeURIComponent(date)}`,
+    path: `/api/surface/diary/${encodeURIComponent(date)}`,
     method: 'PUT',
     body: base === undefined ? { text } : { text, base },
     timeoutMs: WRITE_TIMEOUT_MS
@@ -81,7 +81,7 @@ export async function saveDiaryEntry(date: string, text: string, base?: string):
 
 export async function captureDiaryLine(date: string, line: string): Promise<DiaryCaptureResult> {
   const payload = await window.plobiDesktop.api<unknown>({
-    path: `/api/vault/diary/${encodeURIComponent(date)}/capture`,
+    path: `/api/surface/diary/${encodeURIComponent(date)}/capture`,
     method: 'POST',
     body: { line },
     timeoutMs: WRITE_TIMEOUT_MS

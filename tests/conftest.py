@@ -360,34 +360,34 @@ def _hermetic_environment(tmp_path, monkeypatch):
     (fake_plobi_home / "skills").mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(fake_plobi_home))
 
-    # 3c. Redirect MIND_ROOT to a per-test fake vault. The brain is the one store
+    # 3c. Redirect MIND_ROOT to a per-test fake surface. The brain is the one store
     #     that cannot be regenerated from code (ruling 72), so a test reaching the
     #     real one is an experiment on user data — same shape as the PLOBI_HOME
     #     leak (ruling 75 / WP-UNINSTALL-USERENV). Deliberately NOT a git repo:
     #     MindWriter's ``_git_toplevel`` guard then refuses to commit into it,
     #     which is exactly what we want in a test.
     fake_mind = tmp_path / "mind_vault"
-    (fake_mind / "Vault" / "dossiers" / "projects").mkdir(parents=True)
-    (fake_mind / "AGENTS.md").write_text("# Mind — fake vault for tests\n", encoding="utf-8")
+    (fake_mind / "Surface" / "dossiers" / "projects").mkdir(parents=True)
+    (fake_mind / "AGENTS.md").write_text("# Mind — fake surface for tests\n", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(fake_mind))
 
-    # 3d. Blank VAULT_ROOT too. Since the 2026-10-14 split the human surface is a
+    # 3d. Blank SURFACE_ROOT too. Since the 2026-10-14 split the human surface is a
     #     sibling repo pinned in HKCU\Environment, so a test inheriting it would
-    #     resolve ``Vault/…`` to the user's REAL vault and write fake project trees
-    #     into it. Unset, the resolver answers ``<MIND_ROOT>/Vault`` — which is the
-    #     fake vault the three lines above just built.
-    monkeypatch.delenv("VAULT_ROOT", raising=False)
+    #     resolve ``Surface/…`` to the user's REAL surface and write fake project trees
+    #     into it. Unset, the resolver answers ``<MIND_ROOT>/Surface`` — which is the
+    #     fake surface the three lines above just built.
+    monkeypatch.delenv("SURFACE_ROOT", raising=False)
 
     # 3e. …and blind the **registry** copy of that pin, for the same reason.
     #     The resolver reads HKCU\Environment when the env var is absent or stale
     #     (2026-11-03: long-lived processes started before the re-pin were still
     #     resolving the old home). If that read stayed live here, every test on
-    #     this machine would resolve ``Vault/…`` to the user's REAL vault — the
+    #     this machine would resolve ``Surface/…`` to the user's REAL surface — the
     #     exact hazard 3d exists to prevent, one layer deeper.
     try:
         from plobi.mind import paths as _mind_paths
 
-        monkeypatch.setattr(_mind_paths, "_pinned_vault_root", lambda: None)
+        monkeypatch.setattr(_mind_paths, "_pinned_surface_root", lambda: None)
     except Exception:  # pragma: no cover - the import must never break the suite
         pass
 

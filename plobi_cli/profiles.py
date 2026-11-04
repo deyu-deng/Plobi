@@ -1369,7 +1369,7 @@ def _trust_pairs_for(path: Path, old_key: str, new_key: str) -> List[list]:
 
 
 def _mind_subtree_dir(subtree: str) -> Optional[Path]:
-    """名册行上那棵子树的**物理**目录（逻辑路径 ``Vault/<类>/<名>`` 解析过来）。"""
+    """名册行上那棵子树的**物理**目录（逻辑路径 ``Surface/<类>/<名>`` 解析过来）。"""
     if not (subtree or "").strip():
         return None
     try:

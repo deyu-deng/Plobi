@@ -811,7 +811,7 @@ describe('buildToolView plobi_secretary_ask project_status (WP-PROJECT-CARD, 裁
     category: 'projects',
     has_mind: true,
     id: 'plobi',
-    mind_subtree: 'Vault/dossiers/projects/Plobi',
+    mind_subtree: 'Surface/dossiers/projects/Plobi',
     name: 'Plobi',
     plan_excerpt: '',
     progress_excerpt: '',
@@ -846,12 +846,12 @@ describe('buildToolView plobi_secretary_ask project_status (WP-PROJECT-CARD, 裁
     setRuntimeI18nLocale('zh')
     const view = status({
       seeded_plobi: true,
-      projects: [project({ id: 'plobi', name: 'Plobi' }), project({ id: 'loom', name: 'Loom', weekly_hours: 6 })]
+      projects: [project({ id: 'plobi', name: 'Plobi' }), project({ id: 'mind', name: 'Mind', weekly_hours: 6 })]
     })
 
     expect(view.title).toBe('各项目 · 2')
     // 配节奏的副标题：项目名 · 每周 Nh。
-    expect(view.subtitle).toBe('Plobi · 每周 12h / Loom · 每周 6h')
+    expect(view.subtitle).toBe('Plobi · 每周 12h / Mind · 每周 6h')
     // 仍是答，不是派工。
     expect(view.subtitle).not.toContain('日程秘书')
   })

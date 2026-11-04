@@ -2,29 +2,29 @@
 
 用户 2026-10-06 的要求（R-013 扩写）：「每创建一个 project 类型的 L2 agent，mind 里面
 要自动创建对应的文件夹和相关文件。如果有出现重名的就直接禁止创建。」这里只负责「建」
-的那一半——照 ``Vault/dossiers/projects/`` 里活项目的形状生成目录 + 三件套；「禁止重名」的判据
+的那一半——照 ``Surface/dossiers/projects/`` 里活项目的形状生成目录 + 三件套；「禁止重名」的判据
 在 :func:`plobi.agents.registry.registration_blocker`，两处不许各写一套。
 
 形状是抄来的，不是发明的（Mind ``AGENTS.md`` §4 场景二：按用户给定名称建目录，初始化
 ``plan.md`` / ``progress.md`` / ``research.md`` 三件套）：
 
-* ``plan.md`` 的 frontmatter 键 = Mind 的 ``Loom/scripts/verifier.py`` 重生成
-  ``Vault/dossiers/projects/INDEX.md`` 时实际读的那几个（project / title / type / group / cloud /
+* ``plan.md`` 的 frontmatter 键 = Mind 的 ``Mind/scripts/verifier.py`` 重生成
+  ``Surface/dossiers/projects/INDEX.md`` 时实际读的那几个（project / title / type / group / cloud /
   status / created / updated / tech / summary），段落取活项目里公认的那七节
   （Goal / Roadmap / Milestones / Status / Decisions / Risks / References）。
 * ``cloud`` 写项目名本身、不写盘符——2026-09-28 那轮元数据修正（见 Nymo / Personal-Website
   的 ``progress.md`` 留痕）把设备事实从这一格里清出去了，新建的格子里不能再塞回去。
-* Mind ``AGENTS.md`` §5「Vault 禁止 AI 元注释」：生成体里不写「最后更新：」「来源：」。
+* Mind ``AGENTS.md`` §5「Surface 禁止 AI 元注释」：生成体里不写「最后更新：」「来源：」。
 
 本模块自己不碰的两样（同一次创建里由 :mod:`plobi.mind.project_declarations` 紧跟着办，
 Mind ``AGENTS.md`` §6「结构变更后必须更新本文件 §1」那条现在落到工具上）：
-``Vault/dossiers/projects/INDEX.md``（只由 Mind 自己的 ``verifier.py --fix-projects`` 生成，不另写一套）
+``Surface/dossiers/projects/INDEX.md``（只由 Mind 自己的 ``verifier.py --fix-projects`` 生成，不另写一套）
 和 Mind ``AGENTS.md`` §1 的项目清单声明。少了这两步，脑仓自己的 verifier 会把这次立项判成
 BLOCKER（声明 ≠ 磁盘），用户在脑仓的下一次提交就被他自己装的 pre-commit 拦住。
 
 写入不走 :func:`plobi.mind.paths.safe_target`：那份前缀表管的是**AI 随笔**能落哪（memory
-adapter 只准往 Loom 消化区写字），这里落的是用户点「新建项目分身」时要求建的立项卡。
-约束换成两条更硬的：目标必须解析进 ``<VAULT_ROOT>`` 那五个分类文件夹之一之内（防穿越），
+adapter 只准往 Mind 消化区写字），这里落的是用户点「新建项目分身」时要求建的立项卡。
+约束换成两条更硬的：目标必须解析进 ``<SURFACE_ROOT>`` 那五个分类文件夹之一之内（防穿越），
 已有文件一个字都不覆盖（重名走禁止，不走覆盖）。
 """
 
@@ -37,17 +37,17 @@ from typing import Sequence
 
 from .paths import real_target, resolve_root
 
-PROJECTS_RELATIVE = "Vault/dossiers/projects"
+PROJECTS_RELATIVE = "Surface/dossiers/projects"
 # The L2 categories are the human surface's folders (``Docs/specs/memory-adapter.md``
-# §12.3), so a project tree lives under ``Vault/<category>``. Names come from
+# §12.3), so a project tree lives under ``Surface/<category>``. Names come from
 # ``registry.AGENT_CATEGORIES``; an unknown category falls back to ``projects``
 # rather than inventing a sixth folder.
 TREE_ROOT_RELATIVES: tuple[str, ...] = (
-    "Vault/dossiers/projects",
-    "Vault/dossiers/research",
-    "Vault/dossiers/courses",
-    "Vault/dossiers/butler",
-    "Vault/dossiers/events",
+    "Surface/dossiers/projects",
+    "Surface/dossiers/research",
+    "Surface/dossiers/courses",
+    "Surface/dossiers/butler",
+    "Surface/dossiers/events",
 )
 ENTRY_FILE_NAMES: tuple[str, ...] = ("plan.md", "progress.md", "research.md")
 
@@ -60,8 +60,8 @@ _CATEGORY_TO_PLAN_META: dict[str, tuple[str, str]] = {
 
 
 def tree_root_for(category: str) -> str:
-    """Which ``Vault/<folder>`` a project tree of this L2 category lives in."""
-    candidate = f"Vault/dossiers/{(category or '').strip().lower()}"
+    """Which ``Surface/<folder>`` a project tree of this L2 category lives in."""
+    candidate = f"Surface/dossiers/{(category or '').strip().lower()}"
     return candidate if candidate in TREE_ROOT_RELATIVES else PROJECTS_RELATIVE
 
 
@@ -78,7 +78,7 @@ class ProjectTreeWrite:
     """一次立项的落地结果，带着「怎么撤销自己」的账。
 
     ``reused`` = 磁盘上早有这棵树（含 ``plan.md``），我们一个字没写；``relative`` 用的是
-    **磁盘上真实的那个名字**，不是我们传进去的大小写——不分大小写的盘上 ``Vault/dossiers/projects/Nymo``
+    **磁盘上真实的那个名字**，不是我们传进去的大小写——不分大小写的盘上 ``Surface/dossiers/projects/Nymo``
     和请求里的 ``nymo`` 是同一个目录，注册表里必须记那一个名字，否则下一轮播种机认不出它。
     """
 
@@ -255,8 +255,8 @@ def _existing_tree(root: Path, dir_name: str) -> tuple[str, Path] | None:
 
     The roster may still carry a ``mind_subtree`` from before the two-root move.
     Without this lookup the create path would mint a second ``<Name>/`` next to
-    the real one — which is how ``Vault/dossiers/projects/SRTP`` reappeared beside
-    ``Vault/dossiers/research/SRTP`` on 2026-10-16.
+    the real one — which is how ``Surface/dossiers/projects/SRTP`` reappeared beside
+    ``Surface/dossiers/research/SRTP`` on 2026-10-16.
     """
     for relative in TREE_ROOT_RELATIVES:
         base = real_target(relative, root)
@@ -276,10 +276,10 @@ def ensure_project_tree(
     mind_root: Path | str | None = None,
     today: str = "",
 ) -> ProjectTreeWrite:
-    """在 ``<VAULT_ROOT>/<分类>/<目录名>`` 建出三件套，返回这次写了什么。
+    """在 ``<SURFACE_ROOT>/<分类>/<目录名>`` 建出三件套，返回这次写了什么。
 
     分类文件夹就是 L2 那五栏（:data:`TREE_ROOT_RELATIVES`），所以 ``category=research``
-    的项目落在 ``Vault/dossiers/research/``，不再一律挤进 ``Vault/dossiers/projects/``。
+    的项目落在 ``Surface/dossiers/research/``，不再一律挤进 ``Surface/dossiers/projects/``。
 
     规则：盘上任何分类文件夹里已经有这棵树（带 ``plan.md``）就**只认领**，哪怕注册表那一格
     还指着搬家前的旧路径；够不着 Mind 就抛（调用方按创建失败处理，不留孤儿行）；认领时一个字

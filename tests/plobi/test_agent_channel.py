@@ -190,7 +190,7 @@ def test_say_refuses_bad_parts(CH, monkeypatch, db):
     for parts, why in (
         ([], "至少要有一段"),
         ([{"text": ""}], "是空的"),
-        ([{"path": "vault/x;base64,AAAA"}], "不是文件内容"),
+        ([{"path": "surface/x;base64,AAAA"}], "不是文件内容"),
     ):
         out = json.loads(CH.handle_say({"to": "Nymo", "parts": parts}))
         assert out["ok"] is False and why in out["error"], (parts, out)
@@ -204,12 +204,12 @@ def test_say_file_pointer_stays_a_pointer(CH, monkeypatch, db, tmp_path):
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
 
     out = json.loads(
-        CH.handle_say({"to": "Nymo", "parts": [{"text": "看这个", "path": "vault/material.txt"}]})
+        CH.handle_say({"to": "Nymo", "parts": [{"text": "看这个", "path": "surface/material.txt"}]})
     )
 
     assert out["ok"] is True
     delivered = db.appended[0][2]
-    assert "[文件] vault/material.txt" in delivered
+    assert "[文件] surface/material.txt" in delivered
     assert "这是正文" not in delivered, "文件内容不许被内联进消息"
 
 

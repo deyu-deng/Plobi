@@ -171,7 +171,7 @@ def test_writing_the_global_scope_stages_with_hashes_and_writes_nothing(mem_root
     out = mt.memory_tool(
         action="add", target="global",
         content="这台机的后端测试入口只有 scripts/run_tests.sh",
-        source="vault/dossiers/projects/Plobi/plan.md",
+        source="surface/dossiers/projects/Plobi/plan.md",
         store=store,
     )
     result = json.loads(out)
@@ -191,7 +191,7 @@ def test_writing_the_global_scope_stages_with_hashes_and_writes_nothing(mem_root
     assert mt.apply_memory_pending(payload, store)["success"] is True
     written = (mem_root / "memory" / "GLOBAL.md").read_text(encoding="utf-8")
     assert "run_tests.sh" in written
-    assert "出处 vault/dossiers/projects/Plobi/plan.md" in written
+    assert "出处 surface/dossiers/projects/Plobi/plan.md" in written
 
 
 def test_global_stays_approval_only_even_with_the_write_gate_off(mem_root):
@@ -345,10 +345,10 @@ def test_l1_does_not_read_its_own_status_back_at_itself(mem_root):
 def test_source_pointer_lands_in_the_entry_with_a_date(mem_root):
     store = _store_for("aura")
     out = mt.memory_tool(action="add", target="memory", content="课表按 calendar_name 全等",
-                         source="vault/dossiers/projects/Plobi/plan.md", store=store)
+                         source="surface/dossiers/projects/Plobi/plan.md", store=store)
     assert json.loads(out)["success"] is True
     text = store._path_for("memory").read_text(encoding="utf-8")
-    assert "〔出处 vault/dossiers/projects/Plobi/plan.md · " in text
+    assert "〔出处 surface/dossiers/projects/Plobi/plan.md · " in text
     assert "〕" in text
 
 
@@ -367,7 +367,7 @@ def test_source_pointer_works_in_the_batch_shape_too(mem_root):
 
 def test_absolute_or_traversing_source_is_not_turned_into_a_pointer():
     assert mt.entry_with_source("结论", "/etc/passwd") == "结论"
-    assert mt.entry_with_source("结论", "vault/../secrets.md") == "结论"
+    assert mt.entry_with_source("结论", "surface/../secrets.md") == "结论"
     assert mt.entry_with_source("结论", r"C:\vault\x.md") == "结论"
     assert mt.entry_with_source("结论", None) == "结论"
 
@@ -463,13 +463,13 @@ def test_read_then_write_is_the_whole_round_trip(mem_root):
     store = _store_for("aura")
     assert json.loads(mt.memory_write(scope="self",
                                        parts=["课表按 calendar_name 全等", "作业按 evidence.course_id"],
-                                       source="vault/dossiers/projects/Plobi/plan.md",
+                                       source="surface/dossiers/projects/Plobi/plan.md",
                                        store=store))["success"] is True
 
     read = json.loads(mt.memory_read(scope="self", store=_store_for("aura")))
     assert len(read["entries"]) == 2
     assert read["entries"][0].startswith("课表按 calendar_name 全等")
-    assert "出处 vault/dossiers/projects/Plobi/plan.md" in read["entries"][0]
+    assert "出处 surface/dossiers/projects/Plobi/plan.md" in read["entries"][0]
     assert read["path"] == str(store._path_for("memory"))
 
     # 整份替换：只留一条，另一条就离开 L0（这次有位置 ⇒ 不算被挤出去）
@@ -508,7 +508,7 @@ def test_global_write_is_the_same_verb_and_lands_in_the_pending_layer(mem_root):
     store = _store_for("aura")
     result = json.loads(mt.memory_write(
         scope="global", parts=["这台机的后端测试唯一入口是 scripts/run_tests.sh"],
-        source="vault/dossiers/projects/Plobi/plan.md", store=store))
+        source="surface/dossiers/projects/Plobi/plan.md", store=store))
     assert result["staged"] is True
     assert not (mem_root / "memory" / "GLOBAL.md").exists()
     payload = wa.get_pending(wa.MEMORY, result["pending_id"])["payload"]

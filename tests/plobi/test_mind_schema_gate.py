@@ -31,17 +31,17 @@ _SCHEMA = {
 @pytest.fixture()
 def brain(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
-    vault = tmp_path / "Vault"
+    surface = tmp_path / "Surface"
     (mind / "wiki" / "concepts").mkdir(parents=True)
     (mind / "wiki" / "meta").mkdir(parents=True)
-    (vault / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
-    (vault / "dossiers" / "courses" / "电路分析").mkdir(parents=True)
+    (surface / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
+    (surface / "dossiers" / "courses" / "电路分析").mkdir(parents=True)
     (mind / "wiki" / "meta" / "schema.json").write_text(
         json.dumps(_SCHEMA, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
-    return mind, vault
+    return mind, surface
 
 
 def _write(mind, rel, content):
@@ -52,7 +52,7 @@ def _write(mind, rel, content):
 def test_illegal_values_and_an_unpointable_belongs_are_refused_before_they_land(brain):
     mind, _vault = brain
 
-    refused = _write(mind, "Loom/wiki/concepts/bad.md",
+    refused = _write(mind, "Mind/wiki/concepts/bad.md",
                      "---\ntype: bogus\nstatus: reviewed-by-alien\nbelongs: [NoSuchProject]\n---\n\n# bad\n")
 
     assert refused.ok is False
@@ -64,7 +64,7 @@ def test_illegal_values_and_an_unpointable_belongs_are_refused_before_they_land(
     assert not (mind / "wiki" / "concepts" / "bad.md").exists(), "被拒的一字节都不该落盘"
 
     # 同一条 belongs 换成真源里现取得到的名字就通过：闸挡的是指不出去，不是不认识路径
-    ok = _write(mind, "Loom/wiki/concepts/good.md",
+    ok = _write(mind, "Mind/wiki/concepts/good.md",
                 "---\ntype: concept\nbelongs: [Plobi]\n---\n\n# good\n")
     assert ok.ok, ok.detail
     assert (mind / "wiki" / "concepts" / "good.md").is_file()
@@ -73,7 +73,7 @@ def test_illegal_values_and_an_unpointable_belongs_are_refused_before_they_land(
 def test_a_new_canon_page_missing_a_required_key_is_refused_while_appends_still_pass(brain):
     mind, _vault = brain
 
-    refused = _write(mind, "Loom/wiki/sources/nobody-said.md", "# 一份来源资料，没有 frontmatter\n")
+    refused = _write(mind, "Mind/wiki/sources/nobody-said.md", "# 一份来源资料，没有 frontmatter\n")
     assert refused.ok is False
     detail = refused.detail or ""
     assert "缺必填键" in detail or "没有 frontmatter" in detail, detail
@@ -81,13 +81,13 @@ def test_a_new_canon_page_missing_a_required_key_is_refused_while_appends_still_
     assert not (mind / "wiki" / "sources" / "nobody-said.md").exists()
 
     # 先按词表建起来，再 append 一段话：拿历史页旧账挡当前这次追加＝噪音，不是牙
-    assert _write(mind, "Loom/wiki/sources/src.md",
+    assert _write(mind, "Mind/wiki/sources/src.md",
                   "---\ntype: source\nstatus: unreviewed\n---\n\n# src\n").ok
     appended = MindWriter(mind, require_approval=False, commit=False, run_verifier=False).write_one(
-        "Loom/wiki/sources/src.md", "\n补一段\n", mode="append")
+        "Mind/wiki/sources/src.md", "\n补一段\n", mode="append")
     assert appended.ok, appended.detail
 
     # 词表读不到时不装死也不停腿：退到内置副本，记忆这条腿照常写得动
     (mind / "wiki" / "meta" / "schema.json").unlink()
     assert mind_schema.load_schema(mind)["page_types"] == mind_schema.FALLBACK["page_types"]
-    assert _write(mind, "Loom/wiki/memory/note.md", "# 镜像条目\n").ok
+    assert _write(mind, "Mind/wiki/memory/note.md", "# 镜像条目\n").ok

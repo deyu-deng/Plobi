@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 BELONGS_KEY = "belongs"
 
-# Where notes live, as a LOGICAL path: ``Vault/notes`` resolves through
+# Where notes live, as a LOGICAL path: ``Surface/notes`` resolves through
 # :func:`plobi.mind.paths.real_target`, so the 2026-10-14 two-root move needs no
-# edit here — the human surface answers against ``VAULT_ROOT`` once that pointer is
-# pinned, and against ``<MIND_ROOT>/Vault`` until then. Exactly one entry is listed
+# edit here — the human surface answers against ``SURFACE_ROOT`` once that pointer is
+# pinned, and against ``<MIND_ROOT>/Surface`` until then. Exactly one entry is listed
 # because keeping both would be the "new and old layout coexisting" the ruling forbids.
-NOTE_ROOTS: tuple[str, ...] = ("Vault/notes",)
+NOTE_ROOTS: tuple[str, ...] = ("Surface/notes",)
 
 MAX_ENTRIES = 200
 MAX_PAYLOAD_BYTES = 64 * 1024
@@ -43,7 +43,7 @@ MAX_UNKNOWN_NAMES = 50
 
 
 class BrainNotConfigured(RuntimeError):
-    """MIND_ROOT is unset or does not point at a vault."""
+    """MIND_ROOT is unset or does not point at a surface."""
 
 
 @dataclass
@@ -52,7 +52,7 @@ class NoteEntry:
     title: str
     chars: int
     belongs: tuple[str, ...] = ()
-    # Absolute on-disk path. `path` is vault-relative (what a human reads); the
+    # Absolute on-disk path. `path` is surface-relative (what a human reads); the
     # desktop needs the real location to hand to its file-preview normaliser, and
     # it cannot reconstruct it without knowing MIND_ROOT.
     fs_path: str = ""
@@ -87,7 +87,7 @@ def _belongs_of(frontmatter: dict[str, Any]) -> tuple[str, ...]:
 def _read_note(path: Path) -> tuple[Optional[dict[str, Any]], int]:
     """Return ``(frontmatter or None, character count)`` from one read.
 
-    ``utf-8-sig`` matters: this vault has a note whose file starts with a BOM, so a
+    ``utf-8-sig`` matters: this surface has a note whose file starts with a BOM, so a
     plain utf-8 read would leave ``\ufeff`` in front of the fence and the block would
     silently count as absent.
     """
@@ -148,7 +148,7 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 
     The agent's own name plus the last segment of its Mind subtree (that is the
     project's registered name), so ``belongs: SRTP`` matches an agent named
-    ``srtp`` hanging ``Vault/dossiers/research/SRTP``.
+    ``srtp`` hanging ``Surface/dossiers/research/SRTP``.
     """
     candidates = [getattr(entry, "name", "") or ""]
     subtree = str(getattr(entry, "mind_subtree", "") or "").strip("/")
@@ -158,7 +158,7 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 
 
 # Every L2 category folder a tree may live in, as logical paths. Listing only
-# ``Vault/dossiers/projects`` would silently make ``research/SRTP`` — and after the move any
+# ``Surface/dossiers/projects`` would silently make ``research/SRTP`` — and after the move any
 # course, butler or event tree — an "owner nobody registered", which the sidebar
 # reports as a dangling ``belongs:`` tag instead of a note list. Same list the
 # writer uses (:data:`plobi.mind.project_tree.TREE_ROOT_RELATIVES`), not a copy of it.
@@ -211,7 +211,7 @@ def _budgeted(notes: list[NoteEntry]) -> tuple[list[NoteEntry], int, bool]:
 def build_view(root: Optional[Path], entry: Any, registry_entries: Iterable[Any]) -> dict:
     """One agent's notes-view payload. Raises when the brain is not configured."""
     if root is None:
-        raise BrainNotConfigured("MIND_ROOT is not set and no Mind vault was found")
+        raise BrainNotConfigured("MIND_ROOT is not set and no Mind surface was found")
 
     scan = scan_notes(root)
     matched = notes_for(scan, agent_aliases(entry))

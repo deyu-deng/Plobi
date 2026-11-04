@@ -49,10 +49,10 @@ LEGACY_SCOPES = (("MEMORY.md", "global"), ("USER.md", "user"))
 
 # 拆出来的每条事实该指回哪一份真源（相对指针，不许多处第二份全文）。
 # global → 仓内文档索引（这些纪律的真源就是 Docs/，机器可核：文件在那儿）；
-# user → 脑仓里那份人读画像的逻辑路径（Vault/… 是召回与写入共用的逻辑前缀）。
+# user → 脑仓里那份人读画像的逻辑路径（Surface/… 是召回与写入共用的逻辑前缀）。
 SOURCE_BY_SCOPE = {
     "global": "Docs/README.md",
-    "user": "Vault/meta/profile/profile.md",
+    "user": "Surface/meta/profile/profile.md",
 }
 
 

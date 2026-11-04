@@ -2088,21 +2088,21 @@ function Set-MindRootEnv {
     # human-facing surface is its own repo and -- by that same ruling -- it has NO
     # remote, so saying "restore it from its own git repository" here would be a lie:
     # the only thing it can come back from is a bundle in bundles/keep.
-    # Leaving VAULT_ROOT unset is also not neutral: plobi/mind/paths.py refuses a
-    # Vault/ write once the old in-brain surface is gone, so an installer that pinned
+    # Leaving SURFACE_ROOT unset is also not neutral: plobi/mind/paths.py refuses a
+    # Surface/ write once the old in-brain surface is gone, so an installer that pinned
     # only the brain would hand over a machine with half the memory surface missing.
-    $vaultRoot = Join-Path $PlobiHomePath "vault"
-    $existingVault = [Environment]::GetEnvironmentVariable("VAULT_ROOT", $Scope)
-    if (-not $existingVault -or $existingVault -ne $vaultRoot) {
-        [Environment]::SetEnvironmentVariable("VAULT_ROOT", $vaultRoot, $Scope)
-        Write-Success "Set VAULT_ROOT=$vaultRoot"
+    $surfaceRoot = Join-Path $PlobiHomePath "surface"
+    $existingSurface = [Environment]::GetEnvironmentVariable("SURFACE_ROOT", $Scope)
+    if (-not $existingSurface -or $existingSurface -ne $surfaceRoot) {
+        [Environment]::SetEnvironmentVariable("SURFACE_ROOT", $surfaceRoot, $Scope)
+        Write-Success "Set SURFACE_ROOT=$surfaceRoot"
     } else {
-        Write-Info "VAULT_ROOT already configured"
+        Write-Info "SURFACE_ROOT already configured"
     }
-    $env:VAULT_ROOT = $vaultRoot
+    $env:SURFACE_ROOT = $surfaceRoot
 
-    if (-not (Test-Path -LiteralPath $vaultRoot)) {
-        Write-Info "The human surface is not at $vaultRoot yet -- it has no remote by design; restore it from bundles/keep (scripts/backup_repos.py writes those bundles)."
+    if (-not (Test-Path -LiteralPath $surfaceRoot)) {
+        Write-Info "The human surface is not at $surfaceRoot yet -- it has no remote by design; restore it from bundles/keep (scripts/backup_repos.py writes those bundles)."
     }
 }
 

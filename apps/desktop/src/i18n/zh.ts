@@ -1436,17 +1436,17 @@ export const zh: Translations = {
     merged: n => `并回 ${n} 条随手记`,
     mergedInto: (merged, saved) => `${merged} · ${saved}`
   },
-  vault: {
+  surface: {
     title: '知识库',
     subtitle: (agents, withHome) => `${agents} 个 Agent · ${withHome} 个已有档案`,
     searchPlaceholder: '搜索笔记…',
     all: '全部',
     loading: '加载中…',
-    loadFailed: '读不到 vault 档案',
+    loadFailed: '读不到 surface 档案',
     retry: '重试',
     refresh: '刷新',
     emptyTitle: '还没有笔记',
-    emptyDesc: 'vault/notes 下的笔记会出现在这里。',
+    emptyDesc: 'surface/notes 下的笔记会出现在这里。',
     noMatchTitle: '没有匹配的',
     noMatchDesc: '换个类别，或把搜索词缩短一点。',
     readOnly: '只读',

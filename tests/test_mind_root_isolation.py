@@ -39,7 +39,7 @@ def test_default_brain_is_the_per_test_vault(tmp_path: Path) -> None:
 
 def test_explicit_per_test_brain_overrides_the_default(tmp_path: Path, monkeypatch) -> None:
     mine = tmp_path / "my_own_vault"
-    (mine / "Vault" / "dossiers" / "projects").mkdir(parents=True)
+    (mine / "Surface" / "dossiers" / "projects").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mine))
 
     assert str(resolve_root()) == str(mine)
@@ -62,9 +62,9 @@ def test_no_test_writes_into_the_machines_real_brain(tmp_path: Path) -> None:
         pytest.skip("这台没登记 MIND_ROOT，没有可比对的真脑")
 
     real = Path(_MACHINE_MIND)
-    before = {p.name for p in (real / "Vault" / "dossiers" / "projects").glob("*")} if (real / "Vault" / "dossiers" / "projects").is_dir() else set()
+    before = {p.name for p in (real / "Surface" / "dossiers" / "projects").glob("*")} if (real / "Surface" / "dossiers" / "projects").is_dir() else set()
 
     resolve_root()  # 每条测试都会走这条路；这里只验"走一次不会碰真脑"
 
-    after = {p.name for p in (real / "Vault" / "dossiers" / "projects").glob("*")} if (real / "Vault" / "dossiers" / "projects").is_dir() else set()
+    after = {p.name for p in (real / "Surface" / "dossiers" / "projects").glob("*")} if (real / "Surface" / "dossiers" / "projects").is_dir() else set()
     assert after == before, f"真脑被写了：{after ^ before}"

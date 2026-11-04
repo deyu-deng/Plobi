@@ -3,7 +3,7 @@
 为什么需要这一格（``Docs/specs/memory-adapter.md`` §12.6「两条别抄」第 2 条／§12.7 第 1 条）：
 claude-obsidian 自己的 ``page_schema.py`` 记着一起事故——一个 ``type:`` 值在四处声明，并集十二个、
 交集两个，而它的 ``lint_engine`` 只检查字段在不在、从不检查值有没有意义。我们把取值真源放进
-**脑里**（``Loom/wiki/meta/schema.json``，随定时推上私有远端，属于 L2 正典的一部分），
+**脑里**（``Mind/wiki/meta/schema.json``，随定时推上私有远端，属于 L2 正典的一部分），
 两侧读同一份：
 
 - 脑侧 ``scripts/verifier.py`` 的 ``check_page_schema()`` —— 提交前的门（存量缺键＝WARN，值不合法＝BLOCKER）；
@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_LOGICAL = "Loom/wiki/meta/schema.json"
+SCHEMA_LOGICAL = "Mind/wiki/meta/schema.json"
 
 FALLBACK: Dict[str, Any] = {
     "checked_dirs": ["wiki/concepts", "wiki/entities", "wiki/sources",
@@ -95,7 +95,7 @@ def belongs_authority(roots=None) -> List[str]:
 
     roots = roots if roots is not None else resolve_roots()
     names: List[str] = []
-    base = getattr(roots, "vault", None)
+    base = getattr(roots, "surface", None)
     if not base:
         return names
     for sub in ("projects", "courses"):

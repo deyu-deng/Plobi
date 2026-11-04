@@ -1,4 +1,4 @@
-"""日记：``vault/diary/YYYY-MM-DD-Weekday.md`` 的读与写（WP-VAULT-AGENTS-VIEW）。
+"""日记：``surface/diary/YYYY-MM-DD-Weekday.md`` 的读与写（WP-VAULT-AGENTS-VIEW）。
 
 用户 10-24 拍：日记就在 Plobi 里写，存原位置，保存时自动提交一笔。
 文件名与旧日记保持同一形状（日期 + 英文星期），正文仍是纯 markdown，不加 frontmatter——
@@ -22,7 +22,7 @@ from .paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
 
-DIARY_LOGICAL_ROOT = "Vault/diary"
+DIARY_LOGICAL_ROOT = "Surface/diary"
 MAX_DIARY_BYTES = 512 * 1024
 
 
@@ -166,7 +166,7 @@ def save_entry(value: str, text: str, *, commit: bool = True, base_text: str | N
     result = {"committed": False, "commit": "", "detail": ""}
     if commit:
         try:
-            # git 的相对路径是相对 VAULT_ROOT 的仓根，不是逻辑前缀 `Vault/`。
+            # git 的相对路径是相对 SURFACE_ROOT 的仓根，不是逻辑前缀 `Surface/`。
             result = _commit_one(root, path.relative_to(root).as_posix(), day)
         except Exception as exc:  # git 不可用不该吞掉已经落盘的那篇
             logger.warning("diary: commit skipped: %s", exc)

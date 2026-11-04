@@ -24,7 +24,7 @@ chat. L1 only receives your summaries.
 ## Steps
 
 1. **Read your project context** — the Mind subtree (e.g.
-   `Vault/projects/<project>/plan.md`). Use the Mind reader; do not guess
+   `Surface/projects/<project>/plan.md`). Use the Mind reader; do not guess
    paths or hardcode drive letters.
 2. **Work the board** — you own the `kanban_*` lifecycle tools: read your
    column, claim, close. To hand something to another agent or ask L1, use

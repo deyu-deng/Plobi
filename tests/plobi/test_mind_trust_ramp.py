@@ -14,22 +14,22 @@ import pytest
 from plobi.mind import proposal as L1
 from plobi.mind.writer import MindWriter, WriteRequest
 
-AGENDA = "Loom/wiki/daily/2026-10-23.md"
+AGENDA = "Mind/wiki/daily/2026-10-23.md"
 
 
 @pytest.fixture()
 def roots(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
-    vault = tmp_path / "Vault"
-    (vault / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
-    (vault / "diary").mkdir()
-    (vault / "meta" / "profile").mkdir(parents=True)
+    surface = tmp_path / "Surface"
+    (surface / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
+    (surface / "diary").mkdir()
+    (surface / "meta" / "profile").mkdir(parents=True)
     mind.mkdir()
     home = tmp_path / "home"
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(home))
-    return vault, home
+    return surface, home
 
 
 def _writer(auto: bool) -> MindWriter:
@@ -38,7 +38,7 @@ def _writer(auto: bool) -> MindWriter:
 
 def test_diary_and_persona_are_never_auto(roots, tmp_path):
     """攒再多也不放行：日记与画像的「改写过去」不在自动档里（永不自动）。"""
-    vault, home = roots
+    surface, home = roots
     ledger = L1.TrustLedger(path=home / "l1-trust.json")
     for _ in range(30):
         ledger.record("adopted", "diary", "l1")
@@ -46,10 +46,10 @@ def test_diary_and_persona_are_never_auto(roots, tmp_path):
         ledger.record("adopted", L1.category_of(AGENDA), "l1")
 
     assert _writer(True)._gate_refusals(
-        [WriteRequest("Vault/diary/2026-04-16-Thursday.md", "追加一段")]
+        [WriteRequest("Surface/diary/2026-04-16-Thursday.md", "追加一段")]
     ) != []
     assert _writer(True)._gate_refusals(
-        [WriteRequest("Vault/meta/profile/profile.md", "改画像")]
+        [WriteRequest("Surface/meta/profile/profile.md", "改画像")]
     ) != []
     # 同一格攒满 30 次 ⇒ 不再拦（这才叫「会移动的门槛」）。类别由路径定，别猜名字。
     assert _writer(True)._gate_refusals([WriteRequest(AGENDA, "摘要")]) == []
@@ -87,6 +87,6 @@ def test_delete_style_ops_have_no_automatic_route_yet(roots):
     所以真正拦删除的地方是「writer 里没有 delete 这条腿」。这条测试保证哪天有人加删除，
     必须同时给 never_auto 加一条，否则这里会红。
     """
-    assert L1.never_auto("Vault/diary/x.md", "overwrite") == "rewrites-the-user's-own-record"
-    assert L1.never_auto("Loom/wiki/daily/a.md", "overwrite") == ""
+    assert L1.never_auto("Surface/diary/x.md", "overwrite") == "rewrites-the-user's-own-record"
+    assert L1.never_auto("Mind/wiki/daily/a.md", "overwrite") == ""
     assert "delete" not in L1.MODES, "加了删除操作就得同步给 never_auto 补一条，不能让它自动"

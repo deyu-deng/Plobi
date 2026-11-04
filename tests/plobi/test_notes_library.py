@@ -12,8 +12,8 @@ from plobi.mind import notes_library as nl
 @pytest.fixture()
 def notes(tmp_path, monkeypatch):
     mind = tmp_path / "mind"
-    vault = tmp_path / "vault"
-    root = vault / "notes"
+    surface = tmp_path / "surface"
+    root = surface / "notes"
     (mind / "wiki").mkdir(parents=True)
     (root / "数学 Math").mkdir(parents=True)
     (root / "工程 Engineer").mkdir(parents=True)
@@ -53,10 +53,10 @@ def notes(tmp_path, monkeypatch):
     )
     (root / "INDEX.md").write_text("# Mind · Knowledge Index\n", encoding="utf-8")
     (root / ".hidden.md").write_text("不该出现\n", encoding="utf-8")
-    (vault / "dossiers" / "projects").mkdir(parents=True)
+    (surface / "dossiers" / "projects").mkdir(parents=True)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     return root
 
 
@@ -66,11 +66,11 @@ def test_library_lists_only_notes(notes):
     # INDEX.md 是目录件不是笔记（和 notes_contract 那一闸同一口径），别让它混进知识库里。
     assert data["totals"]["listed"] == 3
     assert {row["path"] for row in data["notes"]} >= {
-        "Vault/notes/数学 Math/微积分.md",
-        "Vault/notes/工程 Engineer/图学.md",
-        "Vault/notes/根目录笔记.md",
+        "Surface/notes/数学 Math/微积分.md",
+        "Surface/notes/工程 Engineer/图学.md",
+        "Surface/notes/根目录笔记.md",
     }
-    assert all(row["path"] != "Vault/notes/INDEX.md" for row in data["notes"])
+    assert all(row["path"] != "Surface/notes/INDEX.md" for row in data["notes"])
     assert all(".hidden" not in row["path"] for row in data["notes"])
     assert {t["name"] for t in data["topics"]} == {"数学 Math", "工程 Engineer", "未分类"}
 
@@ -79,7 +79,7 @@ def test_an_empty_shell_is_not_shown_but_counted(notes):
     """用户 2026-10-27：「只留有内容的」。屏上不出、但数字要留着——藏了几篇要数得出。"""
     data = nl.build_library()
 
-    assert "Vault/notes/数学 Math/空壳.md" not in {row["path"] for row in data["notes"]}
+    assert "Surface/notes/数学 Math/空壳.md" not in {row["path"] for row in data["notes"]}
     assert data["totals"]["hidden"] == 1
     assert data["totals"]["scanned"] == 4  # 扫到 4 篇（INDEX 不算），列 3 藏 1
 
@@ -92,7 +92,7 @@ def test_a_code_heavy_note_is_not_judged_by_its_fences(notes):
         "```python\n" + "print('示范')\n" * 40 + "```\n\n就这一句。\n",
         encoding="utf-8",
     )
-    assert "Vault/notes/工具 Tools/骨架.md" not in {
+    assert "Surface/notes/工具 Tools/骨架.md" not in {
         row["path"] for row in nl.build_library()["notes"]
     }
 
@@ -101,18 +101,18 @@ def test_title_tags_and_excerpt_come_from_the_file(notes):
     data = nl.build_library()
     by_path = {row["path"]: row for row in data["notes"]}
 
-    calculus = by_path["Vault/notes/数学 Math/微积分.md"]
+    calculus = by_path["Surface/notes/数学 Math/微积分.md"]
     assert calculus["title"] == "微积分笔记"
     assert calculus["tags"] == ["math", "微积分"]
     assert calculus["belongs"] == ["Aura"]
     assert calculus["updated"] == "2026-09-20"
     assert calculus["excerpt"] == "极限与连续的第一段。数列极限是先固定 ε 再找 N，N 依赖 ε 而不是反过来；"
 
-    drawing = by_path["Vault/notes/工程 Engineer/图学.md"]
+    drawing = by_path["Surface/notes/工程 Engineer/图学.md"]
     assert drawing["title"] == "工程图学"
     assert drawing["excerpt"].startswith("正投影是三视图的基础")
 
-    fallback = by_path["Vault/notes/根目录笔记.md"]
+    fallback = by_path["Surface/notes/根目录笔记.md"]
     assert fallback["title"] == "根目录笔记"
     assert fallback["topic"] == "未分类"
 
@@ -123,16 +123,16 @@ def test_tags_are_unioned_and_sorted(notes):
 
 
 def test_read_note_returns_body(notes):
-    page = nl.read_note("Vault/notes/数学 Math/微积分.md")
+    page = nl.read_note("Surface/notes/数学 Math/微积分.md")
     assert page is not None
     assert "极限与连续" in page["text"]
     assert page["fsPath"].endswith("微积分.md")
 
 
 def test_traversal_and_non_markdown_are_refused(notes):
-    assert nl.read_note("Vault/notes/../../config.yaml") is None
-    assert nl.read_note("Vault/dossiers/projects/Aura/plan.md") is None
-    assert nl.read_note("Vault/notes/数学 Math/微积分.txt") is None
+    assert nl.read_note("Surface/notes/../../config.yaml") is None
+    assert nl.read_note("Surface/dossiers/projects/Aura/plan.md") is None
+    assert nl.read_note("Surface/notes/数学 Math/微积分.txt") is None
     assert nl.read_note("") is None
 
 
@@ -140,7 +140,7 @@ def test_missing_root_is_an_error_not_an_empty_list(tmp_path, monkeypatch):
     mind = tmp_path / "mind"
     mind.mkdir()
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(tmp_path / "nowhere"))
+    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "nowhere"))
 
     with pytest.raises(nl.MindUnavailable):
         nl.build_library()

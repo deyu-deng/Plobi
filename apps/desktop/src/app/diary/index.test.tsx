@@ -29,7 +29,7 @@ const EARLIER = shiftDay(TODAY, -3)
 
 function indexFixture(): DiaryIndex {
   return {
-    root: 'X:/vault/diary',
+    root: 'X:/surface/diary',
     today: TODAY,
     entries: [
       { date: EARLIER, weekday: 'Monday', filename: `${EARLIER}-Monday.md`, chars: 120, updated: EARLIER },

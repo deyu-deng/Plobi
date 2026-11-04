@@ -1,4 +1,4 @@
-"""vault 档案的 HTTP 面：两条路由的信封与状态码（WP-VAULT-AGENTS-VIEW）。
+"""surface 档案的 HTTP 面：两条路由的信封与状态码（WP-VAULT-AGENTS-VIEW）。
 
 直接调路由函数（不经过 ASGI），把"空表 / 读失败 / 名字不在名册"三种答案分开钉住。
 """
@@ -12,7 +12,7 @@ import textwrap
 import pytest
 
 from plobi.mind import agent_dossier as ad
-from plobi.mind import vault_api
+from plobi.mind import surface_api
 
 ROSTER = textwrap.dedent(
     """
@@ -21,7 +21,7 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Vault/dossiers/projects/Aura
+        mind_subtree: Surface/dossiers/projects/Aura
         project_path: D:/projects/Aura
       电工电子学:
         role: l2_course
@@ -33,19 +33,19 @@ ROSTER = textwrap.dedent(
 @pytest.fixture()
 def live(monkeypatch, tmp_path):
     mind = tmp_path / "mind"
-    vault = tmp_path / "vault"
+    surface = tmp_path / "surface"
     (mind / "wiki").mkdir(parents=True)
-    (vault / "dossiers" / "projects" / "Aura").mkdir(parents=True)
-    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text("# Aura\n\n目标。\n", encoding="utf-8")
+    (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
+    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text("# Aura\n\n目标。\n", encoding="utf-8")
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
     return tmp_path
 
 
 def test_list_route_returns_every_agent(live):
-    response = asyncio.run(vault_api.list_vault_agents())
+    response = asyncio.run(surface_api.list_surface_agents())
     body = response if isinstance(response, dict) else json.loads(response.body)
     assert body["ok"] is True
     assert {row["id"] for row in body["data"]["agents"]} == {"Aura", "电工电子学"}
@@ -53,14 +53,14 @@ def test_list_route_returns_every_agent(live):
 
 
 def test_detail_route_returns_bodies(live):
-    response = asyncio.run(vault_api.get_vault_agent("Aura"))
+    response = asyncio.run(surface_api.get_surface_agent("Aura"))
     body = response if isinstance(response, dict) else json.loads(response.body)
     assert body["ok"] is True
     assert "目标。" in body["data"]["docs"][0]["text"]
 
 
 def test_unknown_agent_is_404_not_an_empty_page(live):
-    response = asyncio.run(vault_api.get_vault_agent("不存在"))
+    response = asyncio.run(surface_api.get_surface_agent("不存在"))
     assert response.status_code == 404
     assert json.loads(response.body)["ok"] is False
 
@@ -70,6 +70,6 @@ def test_roster_failure_is_503(monkeypatch, tmp_path):
     monkeypatch.setattr(
         ad, "build_index", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("root gone"))
     )
-    response = asyncio.run(vault_api.list_vault_agents())
+    response = asyncio.run(surface_api.list_surface_agents())
     assert response.status_code == 503
     assert "root gone" in json.loads(response.body)["error"]

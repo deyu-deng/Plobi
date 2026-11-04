@@ -5,9 +5,9 @@ renders the digest, Mind persists it.
 
 Two targets (MIND_ADAPTER_PLAN.md 写接缝）：
 
-- ``Loom/raw/chat-logs/digested/<date>/agenda.md`` — daily AI-authored log
+- ``Mind/raw/chat-logs/digested/<date>/agenda.md`` — daily AI-authored log
   (the historical channel, kept for chat-log digests);
-- ``Loom/wiki/daily/<date>.md`` — the current-project daily
+- ``Mind/wiki/daily/<date>.md`` — the current-project daily
   snapshot inside the official brain's Plobi subtree (user-approved write
   zone; the lowercase ``plobi`` archive stays read-only).
 
@@ -31,7 +31,7 @@ from .service import AgendaService, get_service
 
 logger = logging.getLogger(__name__)
 
-PROJECT_DAILY_PREFIX = "Loom/wiki/daily"
+PROJECT_DAILY_PREFIX = "Mind/wiki/daily"
 
 #: 任务书 WP-L1-BUDGET §3 红线：mind 摘要路径抛任何异常都会让主回合去撞
 #: Plobi memory 工具补课——所以这里在 ``publish_*`` 里把 SubprocessError /
@@ -89,7 +89,7 @@ def publish_daily_summary(
         sink = writer or get_writer()
 
         if not sink.available:
-            logger.info("mind: vault not configured; skipping agenda digest")
+            logger.info("mind: surface not configured; skipping agenda digest")
             return WriteResult(ok=False, written=[], skipped=[rel], detail="mind unavailable")
 
         return sink.write_one(rel, agenda.daily_summary(day))
@@ -117,7 +117,7 @@ def publish_project_daily_summary(
     writer: Optional[MindWriter] = None,
     day: Optional[datetime] = None,
 ) -> WriteResult:
-    """当日日程摘要 → ``Loom/wiki/daily/<date>.md``（WP-MIND 写接缝；vault 不进记忆系统）。
+    """当日日程摘要 → ``Mind/wiki/daily/<date>.md``（WP-MIND 写接缝；surface 不进记忆系统）。
 
     - 无模型：内容是 ``AgendaService.daily_summary`` 的确定性渲染，真源
       仍是 agenda.db（SQLite，ADR-0007），Mind 里只是当日快照；
@@ -138,7 +138,7 @@ def publish_project_daily_summary(
         agenda = service or get_service()
         sink = writer or get_writer()
         if not sink.available:
-            logger.info("mind: vault not configured; skipping project daily summary")
+            logger.info("mind: surface not configured; skipping project daily summary")
             return WriteResult(ok=False, written=[], skipped=[rel], detail="mind unavailable")
 
         result = sink.write_one(rel, agenda.daily_summary(day))

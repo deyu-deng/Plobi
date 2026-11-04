@@ -58,9 +58,9 @@ def _repo(tmp_path: Path, name: str) -> Path:
 @pytest.fixture()
 def roots(tmp_path):
     mind = _repo(tmp_path, "mind")
-    vault = _repo(tmp_path, "vault")
-    (vault / "notes").mkdir()
-    return mind_paths.Roots(mind=mind, vault=vault)
+    surface = _repo(tmp_path, "surface")
+    (surface / "notes").mkdir()
+    return mind_paths.Roots(mind=mind, surface=surface)
 
 
 class _FakeWriter:
@@ -75,25 +75,25 @@ class _FakeWriter:
 
 
 def test_approval_is_bound_to_the_root_it_was_granted_against(roots):
-    plan = build_plan([Change("Loom/wiki/concepts/rust.md", "所有权那一套")], roots=roots)
+    plan = build_plan([Change("Mind/wiki/concepts/rust.md", "所有权那一套")], roots=roots)
     writer = _FakeWriter()
 
     assert apply_plan(plan, approved=approve(plan), roots=roots, writer=writer).ok
-    assert writer.calls == ["Loom/wiki/concepts/rust.md"]
+    assert writer.calls == ["Mind/wiki/concepts/rust.md"]
 
     # same plan, same digest, different object: the brain moved somewhere else
     moved = _repo(roots.mind.parent, "elsewhere-mind")
-    moved_roots = mind_paths.Roots(mind=moved, vault=roots.vault)
+    moved_roots = mind_paths.Roots(mind=moved, surface=roots.surface)
     report = apply_plan(plan, approved=approve(plan), roots=moved_roots, writer=writer)
     assert not report.ok
     assert report.denied and "root-identity-changed" in report.denied[0].reason
-    assert writer.calls == ["Loom/wiki/concepts/rust.md"], "被拒之后一字节都不该再写"
+    assert writer.calls == ["Mind/wiki/concepts/rust.md"], "被拒之后一字节都不该再写"
 
 
 def test_a_human_edit_makes_the_plan_stale_instead_of_beaten(roots):
-    target = roots.vault / "notes" / "mech.md"
-    plan = build_plan([Change("Vault/notes/mech.md", "牛顿第二定律")], roots=roots)
-    assert plan.old_shas["Vault/notes/mech.md"] == ABSENT
+    target = roots.surface / "notes" / "mech.md"
+    plan = build_plan([Change("Surface/notes/mech.md", "牛顿第二定律")], roots=roots)
+    assert plan.old_shas["Surface/notes/mech.md"] == ABSENT
 
     target.write_text("我自己先写了一版\n", encoding="utf-8")
     report = apply_plan(plan, approved=approve(plan), roots=roots, writer=_FakeWriter())
@@ -101,7 +101,7 @@ def test_a_human_edit_makes_the_plan_stale_instead_of_beaten(roots):
 
 
 def test_expired_plan_is_void_not_late(roots):
-    plan = build_plan([Change("Vault/notes/ttl.md", "x")], roots=roots)
+    plan = build_plan([Change("Surface/notes/ttl.md", "x")], roots=roots)
     frozen = plan.digest
     assert is_expired(plan, now=plan.created_at + 10) is False
     assert is_expired(plan, now=plan.created_at + proposal.PLAN_TTL_SECONDS + 10) is True
@@ -111,13 +111,13 @@ def test_expired_plan_is_void_not_late(roots):
 
 
 def test_the_unrecoverable_kinds_are_flagged_never_auto():
-    assert never_auto("Vault/diary/2026-10-15.md", "overwrite") == "rewrites-the-user's-own-record"
-    assert never_auto("Vault/meta/profile/profile.md", "overwrite") == "rewrites-the-persona"
-    assert never_auto("Vault/notes/new.md", "create") == ""
-    assert never_auto("Vault/notes/x.md", "squash") == "unknown-mode"
+    assert never_auto("Surface/diary/2026-10-15.md", "overwrite") == "rewrites-the-user's-own-record"
+    assert never_auto("Surface/meta/profile/profile.md", "overwrite") == "rewrites-the-persona"
+    assert never_auto("Surface/notes/new.md", "create") == ""
+    assert never_auto("Surface/notes/x.md", "squash") == "unknown-mode"
     # classification is derived from the path, never from what the model believes
-    assert category_of("Vault/dossiers/projects/SRTP/plan.md") == "project-docs"
-    assert category_of("Loom/raw/chat-logs/digested/x.md") == "digests"
+    assert category_of("Surface/dossiers/projects/SRTP/plan.md") == "project-docs"
+    assert category_of("Mind/raw/chat-logs/digested/x.md") == "digests"
 
 
 def test_the_ramp_moves_both_ways_and_survives_a_reload(tmp_path):
@@ -143,8 +143,8 @@ def test_the_ramp_moves_both_ways_and_survives_a_reload(tmp_path):
 
 def test_building_a_plan_touches_neither_repo(roots):
     before = dirty_repos(roots)
-    build_plan([Change("Vault/notes/ghost.md", "只读不写")], roots=roots)
-    build_plan([Change("Loom/wiki/concepts/ghost.md", "也只读")], roots=roots)
+    build_plan([Change("Surface/notes/ghost.md", "只读不写")], roots=roots)
+    build_plan([Change("Mind/wiki/concepts/ghost.md", "也只读")], roots=roots)
     assert dirty_repos(roots) == before == [], "dry-run 留下脏工作树就是污染"
 
 
@@ -157,14 +157,14 @@ def test_the_persona_pointer_resolves_into_the_brain(roots, tmp_path, monkeypatc
 
     落点已改（用户 2026-10-25：「用户画像在 mind 里面有详细的信息，users 是精简版」）：
     详版住在**脑里**的 ``persona/profile.md``，随定时推上私有远端；不再是指向
-    ``Vault/meta/profile`` 的那根指针——画像不是技能，也不在人读面上。
+    ``Surface/meta/profile`` 的那根指针——画像不是技能，也不在人读面上。
     """
     from plobi.mind import reader as mind_reader
 
     persona = mind_paths.real_target(mind_reader.PERSONA_RELATIVE, roots)
     assert persona == roots.mind / "persona" / "profile.md"
 
-    monkeypatch.setenv("VAULT_ROOT", str(roots.vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(roots.surface))
     reader = mind_reader.MindReader(roots.mind)
 
     persona.parent.mkdir(parents=True, exist_ok=True)

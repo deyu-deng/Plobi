@@ -20,12 +20,12 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Vault/dossiers/projects/Aura
+        mind_subtree: Surface/dossiers/projects/Aura
         project_path: D:/projects/Aura
       SRTP:
         role: l2_research
         category: research
-        mind_subtree: Vault/dossiers/research/SRTP
+        mind_subtree: Surface/dossiers/research/SRTP
         project_path: D:/Research/01-SRTP
       电工电子学:
         role: l2_course
@@ -34,7 +34,7 @@ ROSTER = textwrap.dedent(
       agenda:
         role: l1_secretary
         category: butler
-        mind_subtree: Vault/dossiers/butler
+        mind_subtree: Surface/dossiers/butler
     """
 ).lstrip()
 
@@ -61,23 +61,23 @@ summary: 一句摘要。
 @pytest.fixture()
 def roots(tmp_path, monkeypatch):
     mind = tmp_path / "mind"
-    vault = tmp_path / "vault"
+    surface = tmp_path / "surface"
     (mind / "wiki").mkdir(parents=True)
-    (vault / "dossiers" / "projects" / "Aura").mkdir(parents=True)
-    (vault / "dossiers" / "research" / "SRTP").mkdir(parents=True)
-    (vault / "dossiers" / "butler").mkdir(parents=True)
+    (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
+    (surface / "dossiers" / "research" / "SRTP").mkdir(parents=True)
+    (surface / "dossiers" / "butler").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     roster = tmp_path / "projects.yaml"
     roster.write_text(ROSTER, encoding="utf-8")
-    return tmp_path, vault, roster
+    return tmp_path, surface, roster
 
 
 def test_index_shape_and_categories(roots):
-    _, vault, roster = roots
-    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
-    (vault / "dossiers" / "projects" / "Aura" / "progress.md").write_text("# p\n", encoding="utf-8")
-    (vault / "dossiers" / "research" / "SRTP" / "plan.md").write_text("# s\n", encoding="utf-8")
+    _, surface, roster = roots
+    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    (surface / "dossiers" / "projects" / "Aura" / "progress.md").write_text("# p\n", encoding="utf-8")
+    (surface / "dossiers" / "research" / "SRTP" / "plan.md").write_text("# s\n", encoding="utf-8")
 
     data = ad.build_index(roster)
     by_name = {row["id"]: row for row in data["agents"]}
@@ -89,7 +89,7 @@ def test_index_shape_and_categories(roots):
     assert [d["key"] for d in aura["docs"]] == ["plan", "progress"]
     assert all(d["exists"] for d in aura["docs"])
     assert aura["categoryLabel"] == "项目"
-    assert aura["homeLabel"] == "Vault/dossiers/projects/Aura"
+    assert aura["homeLabel"] == "Surface/dossiers/projects/Aura"
     assert aura["workPath"] == "D:/projects/Aura"
 
     srtp = by_name["SRTP"]
@@ -104,8 +104,8 @@ def test_index_shape_and_categories(roots):
 
 
 def test_milestones_status_and_summary(roots):
-    _, vault, roster = roots
-    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    _, surface, roster = roots
+    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
 
     aura = {row["id"]: row for row in ad.build_index(roster)["agents"]}["Aura"]
     assert aura["milestones"] == {"done": 2, "total": 4}
@@ -115,8 +115,8 @@ def test_milestones_status_and_summary(roots):
 
 
 def test_plan_without_frontmatter_still_has_excerpt(roots):
-    _, vault, roster = roots
-    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text(
+    _, surface, roster = roots
+    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(
         "# Aura\n\n> 引用不算\n\n第一段正文。\n", encoding="utf-8"
     )
 
@@ -126,8 +126,8 @@ def test_plan_without_frontmatter_still_has_excerpt(roots):
 
 
 def test_read_agent_returns_bodies(roots):
-    _, vault, roster = roots
-    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    _, surface, roster = roots
+    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
 
     page = ad.read_agent("Aura", roster)
     assert page is not None
@@ -145,8 +145,8 @@ def test_read_agent_returns_bodies(roots):
 
 
 def test_read_only_leaves_disk_and_roster_untouched(roots):
-    tmp, vault, roster = roots
-    (vault / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    tmp, surface, roster = roots
+    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
 
     def snapshot() -> dict[str, tuple[int, int]]:
         return {
@@ -163,8 +163,8 @@ def test_read_only_leaves_disk_and_roster_untouched(roots):
 
 
 def test_truncates_oversized_doc(roots, monkeypatch):
-    _, vault, roster = roots
-    big = vault / "dossiers" / "projects" / "Aura" / "plan.md"
+    _, surface, roster = roots
+    big = surface / "dossiers" / "projects" / "Aura" / "plan.md"
     big.write_text("x" * (ad.MAX_DOC_BYTES + 10), encoding="utf-8")
     monkeypatch.setattr(ad, "MAX_DOC_BYTES", 64)
     monkeypatch.setattr(ad, "LIST_SCAN_BYTES", 64)
@@ -176,7 +176,7 @@ def test_truncates_oversized_doc(roots, monkeypatch):
 
 
 def test_missing_mind_root_reports_no_home(roots, monkeypatch):
-    _, vault, roster = roots
+    _, surface, roster = roots
     monkeypatch.delenv("MIND_ROOT", raising=False)
     monkeypatch.setattr(ad, "real_target", lambda *a, **k: (_ for _ in ()).throw(ad.MindUnavailable("no root")))
 

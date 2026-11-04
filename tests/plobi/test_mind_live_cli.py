@@ -36,16 +36,16 @@ def _init_repo(root: Path) -> Path:
 @pytest.fixture()
 def two_brain_repos(tmp_path, monkeypatch):
     mind = _init_repo(tmp_path / "mind")
-    vault = _init_repo(tmp_path / "vault")
+    surface = _init_repo(tmp_path / "surface")
     (mind / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     _git(mind, "add", "AGENTS.md")
     _git(mind, "commit", "-m", "seed")
-    _git(vault, "commit", "--allow-empty", "-m", "seed")
+    _git(surface, "commit", "--allow-empty", "-m", "seed")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
-    return mind, vault
+    return mind, surface
 
 
 def test_digest_on_disk_but_untracked_is_not_reported_as_committed(two_brain_repos, monkeypatch):
@@ -53,7 +53,7 @@ def test_digest_on_disk_but_untracked_is_not_reported_as_committed(two_brain_rep
 
     import plobi_cli.mind_commands as mind_cli
 
-    # 摘要在脑里（Loom → MIND_ROOT）：写错根就测成「缺席」而不是「未入库」
+    # 摘要在脑里（Mind → MIND_ROOT）：写错根就测成「缺席」而不是「未入库」
     mind, _vault = two_brain_repos
     day = datetime.now().date().isoformat()
     digest = mind / "wiki" / "daily" / f"{day}.md"
@@ -108,7 +108,7 @@ def test_persona_status_says_when_the_condensed_copy_lags(tmp_path, monkeypatch)
     user_md.write_text("邓德彧（小龟）…\n", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("PLOBI_HOME", str(home))
-    roots = Roots(mind=mind, vault=None)
+    roots = Roots(mind=mind, surface=None)
 
     # 精简版与详版同日 ⇒ 别喊
     now = time.time()

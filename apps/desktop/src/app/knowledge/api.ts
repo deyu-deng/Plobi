@@ -29,13 +29,13 @@ export interface NotePage {
 const TIMEOUT_MS = 20_000
 
 export async function fetchNotes(): Promise<NotesLibrary> {
-  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/vault/notes', timeoutMs: TIMEOUT_MS })
+  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/surface/notes', timeoutMs: TIMEOUT_MS })
   return unwrapEnvelope<NotesLibrary>(payload, 'notes')
 }
 
 export async function fetchNote(path: string): Promise<NotePage> {
   const payload = await window.plobiDesktop.api<unknown>({
-    path: `/api/vault/notes/content?path=${encodeURIComponent(path)}`,
+    path: `/api/surface/notes/content?path=${encodeURIComponent(path)}`,
     timeoutMs: TIMEOUT_MS
   })
   return unwrapEnvelope<NotePage>(payload, 'note')

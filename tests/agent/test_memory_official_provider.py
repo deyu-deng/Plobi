@@ -91,7 +91,7 @@ def test_cli_registry_declares_the_official_provider_first():
     # 脑不需要 API key；要暴露的是两个环境指针
     assert not any(f.is_secret for f in mind.fields)
     fallbacks = {fb for f in mind.fields for fb in f.env_fallbacks}
-    assert {"MIND_ROOT", "VAULT_ROOT"} <= fallbacks
+    assert {"MIND_ROOT", "SURFACE_ROOT"} <= fallbacks
 
 
 def test_desktop_dropdown_offers_the_official_provider():

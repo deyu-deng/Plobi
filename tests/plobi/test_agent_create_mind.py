@@ -30,7 +30,7 @@ import plobi.console.router as console_router
 from plobi.delegation.tracker import SubagentTracker, set_tracker
 from plobi.mind.project_tree import ENTRY_FILE_NAMES
 
-VAULT_PROJECTS = "Vault/dossiers/projects"
+VAULT_PROJECTS = "Surface/dossiers/projects"
 
 
 @pytest.fixture()
@@ -79,12 +79,12 @@ def live_registry() -> AgentRegistry:
     return console_router.get_registry()
 
 
-def vault(root: Path) -> Path:
+def surface(root: Path) -> Path:
     return root / VAULT_PROJECTS
 
 
 def tree_names(root: Path) -> list[str]:
-    base = vault(root)
+    base = surface(root)
     if not base.is_dir():
         return []
     return sorted(p.name for p in base.iterdir())
@@ -98,7 +98,7 @@ def register(registry: AgentRegistry, name: str, **raw) -> None:
 
 
 def make_tree(root: Path, name: str, *, plan: str = "") -> None:
-    directory = vault(root) / name
+    directory = surface(root) / name
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "plan.md").write_text(
         plan or f"---\nproject: {name}\n---\n\n# {name}\n", encoding="utf-8"
@@ -126,13 +126,13 @@ def test_project_create_makes_the_mind_tree_and_mounts_it(client, mind_home, tmp
     # 行上带出挂了哪棵树；目录名用用户打出来的那个（保留大小写），不是 slug。
     assert row["mindSubtree"] == f"{VAULT_PROJECTS}/Stithy"
 
-    directory = vault(tmp_path / "mind") / "Stithy"
+    directory = surface(tmp_path / "mind") / "Stithy"
     assert directory.is_dir()
     for name in ENTRY_FILE_NAMES:
         assert (directory / name).is_file(), f"{name} 没建出来"
 
     plan = (directory / "plan.md").read_text(encoding="utf-8")
-    # frontmatter 的键 = Mind 的 ``Loom/scripts/verifier.py`` 重生成 INDEX 时读的那几个。
+    # frontmatter 的键 = Mind 的 ``Mind/scripts/verifier.py`` 重生成 INDEX 时读的那几个。
     for key in ("project", "title", "type", "group", "cloud", "status",
                 "created", "updated", "tech", "summary"):
         assert f"\n{key}:" in plan, f"{key} 这一格没了"
@@ -152,16 +152,16 @@ def test_research_category_projects_under_the_research_group(client, mind_home, 
     )
     assert response.status_code == 200, response.json()
     root = tmp_path / "mind"
-    # 分类决定这棵树住在哪个文件夹：research 的落 ``Vault/dossiers/research/``，不再挤进 ``projects/``。
-    plan = (root / "Vault" / "dossiers" / "research" / "Wealth-Lab" / "plan.md").read_text(
+    # 分类决定这棵树住在哪个文件夹：research 的落 ``Surface/dossiers/research/``，不再挤进 ``projects/``。
+    plan = (root / "Surface" / "dossiers" / "research" / "Wealth-Lab" / "plan.md").read_text(
         encoding="utf-8"
     )
     # 活项目里 research 那一类的配对是 type=research + group=research（Wealth-Lab/SRTP）。
     assert "type: research" in plan
     assert "group: research" in plan
-    assert not (root / "Vault" / "dossiers" / "projects" / "Wealth-Lab").exists()
+    assert not (root / "Surface" / "dossiers" / "projects" / "Wealth-Lab").exists()
     saved = AgentRegistry.load(mind_home.path).get("wealth-lab")
-    assert saved is not None and saved.mind_subtree == "Vault/dossiers/research/Wealth-Lab"
+    assert saved is not None and saved.mind_subtree == "Surface/dossiers/research/Wealth-Lab"
 
 
 def test_butler_create_does_not_touch_mind(client, mind_home, tmp_path):
@@ -259,7 +259,7 @@ def test_existing_mind_tree_is_claimed_not_overwritten(client, mind_home, tmp_pa
     """Mind 里已有这棵树（用户自己立的项）：只认领，一个字都不覆盖。"""
     root = tmp_path / "mind"
     make_tree(root, "Orbit", plan="---\nproject: Orbit\n---\n\n# Orbit\n\n用户自己写的\n")
-    before = (vault(root) / "Orbit" / "plan.md").read_text(encoding="utf-8")
+    before = (surface(root) / "Orbit" / "plan.md").read_text(encoding="utf-8")
 
     response = client.post(
         "/api/agents", json={"id": "orbit", "name": "Orbit", "category": "projects"}
@@ -267,7 +267,7 @@ def test_existing_mind_tree_is_claimed_not_overwritten(client, mind_home, tmp_pa
 
     assert response.status_code == 200, response.json()
     assert response.json()["data"]["mindSubtree"] == f"{VAULT_PROJECTS}/Orbit"
-    after = (vault(root) / "Orbit" / "plan.md").read_text(encoding="utf-8")
+    after = (surface(root) / "Orbit" / "plan.md").read_text(encoding="utf-8")
     assert after == before
 
 
@@ -322,7 +322,7 @@ def test_unreachable_mind_fails_the_create_and_leaves_no_orphan_row(
     client, mind_home, tmp_path, monkeypatch
 ):
     # resolve_root 只认存在的目录：指向一个不存在的库就是「Mind 够不着」。
-    monkeypatch.setenv("MIND_ROOT", str(tmp_path / "no-such-vault"))
+    monkeypatch.setenv("MIND_ROOT", str(tmp_path / "no-such-surface"))
 
     response = client.post(
         "/api/agents", json={"id": "orbit", "name": "Orbit", "category": "projects"}
@@ -348,7 +348,7 @@ def test_registry_write_failure_leaves_no_row_and_no_tree(client, mind_home, tmp
     # 名册没写成：内存里那条也撤掉，刚建的树收回，Mind 里不留没主的目录。
     assert live_registry().get("orbit") is None
     assert tree_names(tmp_path / "mind") == []
-    assert not (vault(tmp_path / "mind") / "Orbit").exists()
+    assert not (surface(tmp_path / "mind") / "Orbit").exists()
 
 
 # --------------------------------------------------------------------------- #

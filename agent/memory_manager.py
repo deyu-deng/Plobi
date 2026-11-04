@@ -105,20 +105,20 @@ def resolve_memory_provider_name(configured: object) -> str:
     return name
 
 # 10-31（WP-TOOLSET-INBOUND-2）：memory-provider 的工具按门类归户。
-# vault_* 只碰人读面（Vault/），mind_* 只碰脑面（Mind/）——用户在 Tools 页
+# surface_* 只碰人读面（Surface/），mind_* 只碰脑面（Mind/）——用户在 Tools 页
 # 可以分别开关，所以这里要一张 工具名 → 门类 的表来过滤。
 _PROVIDER_TOOL_TOOLSET = {
-    "vault_read": "vault",
-    "vault_write": "vault",
+    "surface_read": "surface",
+    "surface_write": "surface",
     "mind_read": "mind",
     "mind_write": "mind",
 }
 _PROVIDER_TOOLSETS = frozenset(_PROVIDER_TOOL_TOOLSET.values())
 
 # 任一门类命中就把 provider 工具放出来。``memory`` 是总开关（旧行为：开了它
-# 全部 provider 工具都下发）；``vault`` / ``mind`` 是新拆的两个细分门类。
+# 全部 provider 工具都下发）；``surface`` / ``mind`` 是新拆的两个细分门类。
 # 复合门类（如 ``plobi-acp``）解析出来的工具名里含 ``memory`` 也算命中。
-_GATE_TOOLSETS = ("memory", "vault", "mind")
+_GATE_TOOLSETS = ("memory", "surface", "mind")
 _GATE_TOOL_NAMES = ("memory", *_PROVIDER_TOOL_TOOLSET.keys())
 
 
@@ -146,8 +146,8 @@ def _enabled_tool_names(enabled_toolsets: Optional[List[str]]) -> Optional[set]:
 def memory_provider_tools_enabled(enabled_toolsets: Optional[List[str]]) -> bool:
     """Return whether external memory-provider tools should be exposed.
 
-    10-31（WP-TOOLSET-INBOUND-2）：vault / mind 各自成门类了，所以这里不再只认
-    ``memory``——只开 ``vault`` 或 ``mind`` 的 profile 同样应该拿到 provider 的工具。
+    10-31（WP-TOOLSET-INBOUND-2）：surface / mind 各自成门类了，所以这里不再只认
+    ``memory``——只开 ``surface`` 或 ``mind`` 的 profile 同样应该拿到 provider 的工具。
     逐个工具归哪个门类由 :data:`_PROVIDER_TOOL_TOOLSET` 决定，真正的过滤在
     :func:`add_memory_provider_tools`。
     """
@@ -212,7 +212,7 @@ def inject_memory_provider_tools(agent: Any) -> int:
         tool_name = schema["name"]
         if tool_name in existing_tool_names:
             continue
-        # 10-31：vault_* / mind_* 各自归门类——所属门类没开就不下发。
+        # 10-31：surface_* / mind_* 各自归门类——所属门类没开就不下发。
         # 这样 Tools 页上关掉「档案」就真的关掉了，而不是关了还在。
         owner = _PROVIDER_TOOL_TOOLSET.get(tool_name)
         if owner and enabled_names is not None and tool_name not in enabled_names:

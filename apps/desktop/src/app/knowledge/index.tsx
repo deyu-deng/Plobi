@@ -61,12 +61,12 @@ function NoteRow({ active, note, onSelect }: { active: boolean; note: NoteMeta; 
 
 export function KnowledgeView() {
   const { t } = useI18n()
-  const v = t.vault
+  const v = t.surface
   const [topic, setTopic] = useState('all')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
 
-  const library = useQuery({ queryKey: ['vault-notes'], queryFn: fetchNotes, staleTime: 0 })
+  const library = useQuery({ queryKey: ['surface-notes'], queryFn: fetchNotes, staleTime: 0 })
   const notes = library.data?.notes ?? []
   const topics = library.data?.topics ?? []
 
@@ -92,7 +92,7 @@ export function KnowledgeView() {
   }, [selected, visible])
 
   const page = useQuery({
-    queryKey: ['vault-note', selected],
+    queryKey: ['surface-note', selected],
     queryFn: () => fetchNote(selected as string),
     enabled: Boolean(selected),
     staleTime: 0

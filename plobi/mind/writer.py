@@ -1,4 +1,4 @@
-"""Serialized, model-free writer for the Mind vault.
+"""Serialized, model-free writer for the Mind surface.
 
 Why it exists: L2 agents read Mind directly (cheap) but must not write it
 concurrently — parallel commits into one git repo trip Mind's verifier. Routing
@@ -32,7 +32,7 @@ from .paths import (
 
 logger = logging.getLogger(__name__)
 
-VERIFIER_RELATIVE = "Loom/scripts/verifier.py"
+VERIFIER_RELATIVE = "Mind/scripts/verifier.py"
 
 
 @dataclass
@@ -281,8 +281,8 @@ class MindWriter:
     def _commit(self, root: Path, paths: list[str]) -> tuple[bool, str]:
         """Commit each written file into the repository that actually owns it.
 
-        Since the two-root split a logical ``Vault/…`` file lives under ``VAULT_ROOT``
-        — a different repository than the brain — so ``git add Vault/…`` run inside
+        Since the two-root split a logical ``Surface/…`` file lives under ``SURFACE_ROOT``
+        — a different repository than the brain — so ``git add Surface/…`` run inside
         ``MIND_ROOT`` matched nothing and every AI write stayed untracked
         (``WP-MIND-LIVE``, found live on 2026-10-16). Group by the file's own
         top-level and hand git a path relative to *that* repo.
@@ -314,7 +314,7 @@ class MindWriter:
             details.append(
                 "commit skipped: "
                 + ", ".join(orphans)
-                + " 不在脑自己的仓里（MIND_ROOT/VAULT_ROOT 之外）"
+                + " 不在脑自己的仓里（MIND_ROOT/SURFACE_ROOT 之外）"
             )
         if len(details) == 1 and not orphans:
             # One repo owned the whole batch: say exactly what that repo said.
@@ -337,7 +337,7 @@ class MindWriter:
         except OSError as exc:
             logger.warning("mind: commit skipped: cannot resolve %s: %s", toplevel, exc)
             return None
-        for candidate in (roots.mind, roots.vault):
+        for candidate in (roots.mind, roots.surface):
             if candidate is None:
                 continue
             try:

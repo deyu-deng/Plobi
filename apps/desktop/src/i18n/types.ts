@@ -1130,7 +1130,7 @@ export interface Translations {
     merged: (n: number) => string
     mergedInto: (merged: string, saved: string) => string
   }
-  vault: {
+  surface: {
     title: string
     subtitle: (agents: number, withHome: number) => string
     searchPlaceholder: string

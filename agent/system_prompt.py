@@ -223,7 +223,7 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         tool_guidance.append(MEMORY_GUIDANCE)
     if "session_search" in agent.valid_tool_names:
         tool_guidance.append(SESSION_SEARCH_GUIDANCE)
-    if "vault_read" in agent.valid_tool_names:
+    if "surface_read" in agent.valid_tool_names:
         tool_guidance.append(DIARY_GUIDANCE)
     if "skill_manage" in agent.valid_tool_names:
         tool_guidance.append(SKILLS_GUIDANCE)

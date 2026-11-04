@@ -21,12 +21,12 @@ _VAULT_SENTINEL = "这一段只在人读面上"
 @pytest.fixture()
 def brain(tmp_path, monkeypatch):
     mind = tmp_path / "Mind"
-    vault = tmp_path / "Vault"
+    surface = tmp_path / "Surface"
     (mind / "wiki" / "concepts").mkdir(parents=True)
-    (vault / "notes").mkdir(parents=True)
+    (surface / "notes").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
-    return mind, vault
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    return mind, surface
 
 
 def _page(path: Path, hits: int, *, extra: str = "") -> None:
@@ -40,8 +40,8 @@ def _page(path: Path, hits: int, *, extra: str = "") -> None:
 
 def test_recall_only_reads_the_brain_never_the_human_surface(brain):
     """人读面里再多的关键词命中也不进上下文（MEMORY_ZONES 只含脑那一半）；目录页也不挤占预算。"""
-    mind, vault = brain
-    _page(vault / "notes" / "人写的笔记.md", 40, extra=_VAULT_SENTINEL)     # strongest, wrong repo
+    mind, surface = brain
+    _page(surface / "notes" / "人写的笔记.md", 40, extra=_VAULT_SENTINEL)     # strongest, wrong repo
     _page(mind / "wiki" / "concepts" / "储能.md", 3)                        # weaker, but it is canon
     _page(mind / "wiki" / "concepts" / "INDEX.md", 30, extra="目录：什么都提一句")  # 泛指页，最会抢分
 

@@ -864,7 +864,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     R-013: ``project_path`` is optional; when absent the registry seeds it from
     the category default. The bound folder is created on disk if missing.
     R-013 扩写（2026-10-06）: a ``projects`` / ``research`` row is registered in
-    Mind first — ``Vault/dossiers/projects/<项目名>`` with its 三件套 — and the registry
+    Mind first — ``Surface/dossiers/projects/<项目名>`` with its 三件套 — and the registry
     only gets written once that tree exists, so no row ever claims a subtree that
     is not on disk. Mind unreachable / unwritable means the create fails.
     裁定 19: ``category=events`` requires ``source_event_id`` pointing to a
@@ -1048,8 +1048,8 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
                 f"Mind 里 ``{tree.relative}`` 已经挂在智能体「{owner}」名下——同一个项目不登记"
                 f"第二条：要推进它就是去编辑「{owner}」，真另起一个项目请换一个项目名。",
             )
-        # 建完必须同步脑仓自己那两处声明（``AGENTS.md`` §1 那一行 + ``Vault/dossiers/projects/INDEX.md``）：
-        # 脑仓的门禁 ``Loom/scripts/verifier.py`` 把「§1 声明 ≠ 磁盘」判成 BLOCKER，pre-commit
+        # 建完必须同步脑仓自己那两处声明（``AGENTS.md`` §1 那一行 + ``Surface/dossiers/projects/INDEX.md``）：
+        # 脑仓的门禁 ``Mind/scripts/verifier.py`` 把「§1 声明 ≠ 磁盘」判成 BLOCKER，pre-commit
         # 就在跑它——只建目录不同步声明，用户在脑仓的下一次提交会被这个**我们**造的洞拦下。
         # 顺序固定在落册之前：同步不成 = 这次创建不成，树收回、名册一个字都不写。
         try:

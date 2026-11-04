@@ -1,13 +1,13 @@
 """笔记的硬约束（WP-NOTES-CONTRACT，用户 2026-10-25 答「硬约束，不合规拒写」）。
 
-约束只管 **Agent 往 ``Vault/notes`` 写的那一手**，不管人自己写（人写不需要闸门）。
+约束只管 **Agent 往 ``Surface/notes`` 写的那一手**，不管人自己写（人写不需要闸门）。
 不合规一律拒写并逐条说清缺了什么——不是"照样写、屏上标黄"，也不是"先只补字段"。
 
 五条规则，都是从这台的真实现状里挑出来的（现核 2026-10-27：79 篇笔记里 68 篇有 frontmatter、
 63 篇有 tags，但**只有 8 篇有 `belongs`**（全是大学物理那 8 章）⇒ 「某个 Agent 的笔记」
 那一面几乎是空的，而 ``plobi/mind/notes_library.py`` 与档案页就是靠 `belongs` 认归属的）：
 
-1. 必须落在 ``Vault/notes/<已有主题>/`` 下——主题目录得先在盘上，不许顺手发明新主题。
+1. 必须落在 ``Surface/notes/<已有主题>/`` 下——主题目录得先在盘上，不许顺手发明新主题。
 2. frontmatter 必填 ``title``／``tags``（至少一个）／``belongs``；``belongs`` **这一格必须在，
    但可以是空列表** —— 空＝公共知识（不属于任何 Agent）。名字必须是名册里活着的。
 3. ``relates`` 可选：谁的任务用得上这篇（可多于一方，例如微积分同时被理论力学、SRTP、
@@ -26,7 +26,7 @@ from typing import Any
 
 import yaml
 
-NOTES_LOGICAL_ROOT = "Vault/notes"
+NOTES_LOGICAL_ROOT = "Surface/notes"
 # `belongs` 这一格**必须在**，但值可以是空列表 —— 空＝公共知识（谁都能读，不属于谁）。
 # 用户 2026-10-27：「允许空＝公共知识」＋「微积分现在很多 Agent 的任务就和它有关」
 # ⇒ 归属与关联拆成两根轴：`belongs` 是谁的资产，`relates` 是谁的任务用得上（可多于一方）。
@@ -99,7 +99,7 @@ def _heading_lines(body: str) -> list[str]:
 def validate_note(logical: str, content: str, notes_root: Path | None = None) -> list[str]:
     """不合规的原因列表；空列表 = 可以写。
 
-    ``notes_root`` 是 ``Vault/notes`` 落到盘上的那一格；不传就自己解析一次。
+    ``notes_root`` 是 ``Surface/notes`` 落到盘上的那一格；不传就自己解析一次。
     """
     path = (logical or "").strip().replace("\\", "/")
     if not path.startswith(NOTES_LOGICAL_ROOT + "/"):

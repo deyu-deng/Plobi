@@ -463,7 +463,7 @@ export function CommandPalette() {
             run: go(CRON_ROUTE)
           },
           { action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) },
-          { action: 'nav.knowledge', icon: NotebookTabs, id: 'nav-knowledge', label: t.vault.title, run: go(KNOWLEDGE_ROUTE) },
+          { action: 'nav.knowledge', icon: NotebookTabs, id: 'nav-knowledge', label: t.surface.title, run: go(KNOWLEDGE_ROUTE) },
           { action: 'nav.diary', icon: Pencil, id: 'nav-diary', label: t.diary.title, run: go(DIARY_ROUTE) },
           {
             icon: Starmap,

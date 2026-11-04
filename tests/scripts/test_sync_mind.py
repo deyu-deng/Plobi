@@ -21,7 +21,7 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "sync_mind.py"
 
 RC_OK, RC_DIVERGED, RC_NOT_BRAIN, RC_NO_REMOTE, RC_DIRTY = 0, 20, 21, 22, 23
 ENV = {
-    k: v for k, v in os.environ.items() if k not in ("MIND_ROOT", "VAULT_ROOT")
+    k: v for k, v in os.environ.items() if k not in ("MIND_ROOT", "SURFACE_ROOT")
 }
 ENV.update(
     GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",

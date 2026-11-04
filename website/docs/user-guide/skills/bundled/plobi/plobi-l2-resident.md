@@ -42,7 +42,7 @@ chat. L1 only receives your summaries.
 ## Steps
 
 1. **Read your project context** — the Mind subtree (e.g.
-   `Vault/projects/<project>/plan.md`). Use the Mind reader; do not guess
+   `Surface/projects/<project>/plan.md`). Use the Mind reader; do not guess
    paths or hardcode drive letters.
 2. **Work the board** — `plobi_master_status` / `plobi_master_dispatch`
    for your tasks; close tasks via kanban lifecycle tools (you are a worker,

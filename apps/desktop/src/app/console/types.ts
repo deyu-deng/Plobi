@@ -105,7 +105,7 @@ export interface Agent {
   notNavigableReason?: string
   /**
    * R-013 扩写（2026-10-06）：这条分身在 Mind 里挂的项目子树（后端
-   * `mind_subtree`，如 `Vault/dossiers/projects/Nymo`）。没挂就是空串——左栏那对
+   * `mind_subtree`，如 `Surface/dossiers/projects/Nymo`）。没挂就是空串——左栏那对
    * `Nymo`/`nymo` 之所以伪装成两个项目，正因为真数据里只有一条挂了 Mind，
    * 这一格透出去才辨得出「同一个项目登记了两条」。
    */
@@ -278,7 +278,7 @@ export type ConsoleAgendaEvent = AgendaEvent
 export interface AgentNote {
   belongs: string[]
   chars: number
-  /** Vault-relative, for display. */
+  /** Surface-relative, for display. */
   path: string
   /** Absolute on disk — what the preview pane needs to open the note. */
   fsPath: string

@@ -34,10 +34,10 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
             from plobi.mind import proposal as L1
 
             plan = L1.Plan.from_json(payload.get("plan") or "")
-            # 屏幕上不写逻辑前缀：`Loom/` 那一层物理上早没了（10-14 平铺），
+            # 屏幕上不写逻辑前缀：`Mind/` 那一层物理上早没了（10-14 平铺），
             # 它只是账本里的稳定字符串。用户 2026-10-29 问「不是已经没有 Loom 这个概念了吗」
             # ——他是在待批那一屏上看到的，那是我把内部名字印了上去。
-            paths = [c.logical_path[len("Loom/"):] if c.logical_path.startswith("Loom/") else c.logical_path
+            paths = [c.logical_path[len("Mind/"):] if c.logical_path.startswith("Mind/") else c.logical_path
                      for c in plan.changes]
             expired = L1.is_expired(plan)
             summary = f"{len(plan.changes)} 项 · {plan.digest[:12]}"

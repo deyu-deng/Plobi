@@ -1,10 +1,10 @@
-"""知识库：``vault/notes`` 的只读目录（WP-VAULT-AGENTS-VIEW，用户 10-24 重排）。
+"""知识库：``surface/notes`` 的只读目录（WP-VAULT-AGENTS-VIEW，用户 10-24 重排）。
 
 用户把那面墙定成「知识库」，里面**只放笔记**——研究/课程的文档不进这里，只有标题的壳也不进（用户 10-27：「只留有内容的」）。
 这个模块只做三件事：扫、给元数据、按路径读一篇正文；不建目录、不搬文件、不改笔记。
 
-路径安全：对外只认 ``Vault/notes/...`` 这种逻辑路径，读之前再解析一次并确认落点在
-``<VAULT_ROOT>/notes`` 之内——前端传来的字符串永远当不可信输入。
+路径安全：对外只认 ``Surface/notes/...`` 这种逻辑路径，读之前再解析一次并确认落点在
+``<SURFACE_ROOT>/notes`` 之内——前端传来的字符串永远当不可信输入。
 """
 
 from __future__ import annotations
@@ -21,11 +21,11 @@ from .paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
 
-NOTES_LOGICAL_ROOT = "Vault/notes"
+NOTES_LOGICAL_ROOT = "Surface/notes"
 MAX_NOTES = 800
 EXCERPT_CHARS = 120
 # 一条「是不是壳」的形状线，不是内容好坏的评分线：只有标题、或标题下一句「待补」的那种不进屏。
-# 真正薄的那 9 篇是用户 2026-10-27 逐档勾掉删的（vault `5ef55ab`），别指望这条线替那次判断。
+# 真正薄的那 9 篇是用户 2026-10-27 逐档勾掉删的（surface `5ef55ab`），别指望这条线替那次判断。
 # 这台现存笔记最低那一档是 1890 净字（ArkTS），所以这条线今天一篇都不藏。
 MIN_NOTE_NET_CHARS = 30
 
@@ -182,7 +182,7 @@ def build_library() -> dict[str, Any]:
 
 
 def resolve_note(logical: str) -> Path | None:
-    """把 ``Vault/notes/...`` 解析成盘上的文件；越界或不是 md 一律 None。"""
+    """把 ``Surface/notes/...`` 解析成盘上的文件；越界或不是 md 一律 None。"""
     raw = (logical or "").strip().replace("\\", "/")
     if not raw.startswith(NOTES_LOGICAL_ROOT + "/") or not raw.endswith(".md"):
         return None

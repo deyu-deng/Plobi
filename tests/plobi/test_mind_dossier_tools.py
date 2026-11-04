@@ -1,10 +1,10 @@
-"""两对读写工具：一面一对（vault_* 给人读面，mind_* 给脑那一面）。
+"""两对读写工具：一面一对（surface_* 给人读面，mind_* 给脑那一面）。
 
 用户 2026-10-25：「档案严重过时了……Agent 会自己维护吗？」两答＝给模型一枚写档案的手、
-白名单放开到全部项目与研究。用户 2026-10-29 再拍两问：名字要按读者分（``vault_write`` 才
+白名单放开到全部项目与研究。用户 2026-10-29 再拍两问：名字要按读者分（``surface_write`` 才
 对得上盘上那个根），并且**读写都给、真对称**。这里钉住四件事：**能写了**（以前静默 skip）、
 **一枚工具只碰一面**（越面当场拒，不装作读不到）、**闸门关着时不许谎报落盘**（裁 199）、
-**给人看的拼法不许出现盘上没有的那个词**（脑那一面对模型叫 ``Mind/…``，``Loom/…`` 是内部与
+**给人看的拼法不许出现盘上没有的那个词**（脑那一面对模型叫 ``Mind/…``，``Mind/…`` 是内部与
 存量的旧拼法）。
 """
 
@@ -24,7 +24,7 @@ from plobi.mind.provider import MindProvider
 @pytest.fixture()
 def roots(tmp_path, monkeypatch):
     mind = tmp_path / "mind"
-    vault = tmp_path / "vault"
+    surface = tmp_path / "surface"
     (mind / "wiki" / "daily").mkdir(parents=True)
     (mind / "wiki" / "concepts").mkdir(parents=True)
     (mind / "wiki" / "concepts" / "plobi-gate.md").write_text(
@@ -37,10 +37,10 @@ def roots(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    (vault / "dossiers" / "projects" / "Aura").mkdir(parents=True)
-    (vault / "dossiers" / "research" / "SRTP").mkdir(parents=True)
-    (vault / "notes").mkdir()
-    (vault / "dossiers" / "projects" / "Aura" / "progress.md").write_text(
+    (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
+    (surface / "dossiers" / "research" / "SRTP").mkdir(parents=True)
+    (surface / "notes").mkdir()
+    (surface / "dossiers" / "projects" / "Aura" / "progress.md").write_text(
         textwrap.dedent(
             """\
             # Aura · 进度
@@ -51,30 +51,30 @@ def roots(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("VAULT_ROOT", str(vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
     provider = MindProvider()
     provider.initialize("sess-dossier", agent_context="primary")
-    return mind, vault, provider
+    return mind, surface, provider
 
 
 def test_every_dossier_home_is_now_writable(roots):
     _mind, _vault, _provider = roots
-    assert is_safe_relative("Vault/dossiers/projects/Aura/progress.md") is True
-    assert is_safe_relative("Vault/dossiers/research/SRTP/progress.md") is True
-    assert is_safe_relative("Vault/dossiers/courses/电工电子学/requirements.md") is True
+    assert is_safe_relative("Surface/dossiers/projects/Aura/progress.md") is True
+    assert is_safe_relative("Surface/dossiers/research/SRTP/progress.md") is True
+    assert is_safe_relative("Surface/dossiers/courses/电工电子学/requirements.md") is True
 
 
-def test_widening_vault_does_not_widen_the_memory_surface(roots):
+def test_widening_surface_does_not_widen_the_memory_surface(roots):
     _mind, _vault, _provider = roots
     # 记忆的读写只认脑里那几格；人读面再宽也不是记忆区（用户 10-24/25 两次判）。
-    assert is_memory_zone("Vault/dossiers/projects/Aura/progress.md") is False
-    assert is_memory_zone("Vault/notes") is False
-    assert is_memory_zone("Loom/wiki/daily/2026-10-25.md") is True
+    assert is_memory_zone("Surface/dossiers/projects/Aura/progress.md") is False
+    assert is_memory_zone("Surface/notes") is False
+    assert is_memory_zone("Mind/wiki/daily/2026-10-25.md") is True
 
 
 def test_paths_still_refuse_escapes_and_legacy_zones(roots):
     _mind, _vault, _provider = roots
-    for bad in ("../etc/passwd", "Vault/../../Windows", "Loom/raw/chat-logs/x.md", "random/file.md"):
+    for bad in ("../etc/passwd", "Surface/../../Windows", "Mind/raw/chat-logs/x.md", "random/file.md"):
         assert is_safe_relative(bad) is False, bad
 
 
@@ -82,8 +82,8 @@ def test_the_four_tools_are_atomic(roots):
     _mind, _vault, provider = roots
     schemas = provider.get_tool_schemas()
     assert [schema["name"] for schema in schemas] == [
-        "vault_read",
-        "vault_write",
+        "surface_read",
+        "surface_write",
         "mind_read",
         "mind_write",
     ]
@@ -96,32 +96,35 @@ def test_the_four_tools_are_atomic(roots):
             assert set(schema["parameters"]["properties"]) == {"path"}
         else:
             assert set(schema["parameters"]["properties"]) == {"path", "content"}
-    # 描述里不许出现盘上没有的那个词（用户 10-29：「不是已经没有 Loom 这个东西了吗」）
+    # 描述里不许出现**退役的旧拼法**（用户 10-29：「不是已经没有 Loom 这个东西了吗」；
+    # 2026-11-04 起 Loom 与 Vault 两个旧名全线退役 ⇒ 两个都不许再泄进给模型看的文字。
+    # 别把这条读成「不许出现 Mind」——脑仓给模型的说法就叫 Mind/，那是活名不是旧名。
     joined = " ".join(str(schema["description"]) for schema in schemas)
     assert "Loom" not in joined
+    assert "Vault" not in joined
 
 
-def test_vault_read_returns_the_file_or_says_it_is_missing(roots):
+def test_surface_read_returns_the_file_or_says_it_is_missing(roots):
     _mind, _vault, provider = roots
 
-    ok = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/dossiers/projects/Aura/progress.md"}))
+    ok = json.loads(provider.handle_tool_call("surface_read", {"path": "Surface/dossiers/projects/Aura/progress.md"}))
     assert ok["success"] is True
     assert "上一句还停在九月" in ok["content"]
 
-    missing = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/dossiers/projects/Aura/plan.md"}))
+    missing = json.loads(provider.handle_tool_call("surface_read", {"path": "Surface/dossiers/projects/Aura/plan.md"}))
     assert missing["success"] is False
     assert "还不存在" in missing["error"]
 
     # 工具面只认人读面：脑里的东西（原料区与 wiki 那两格都算）一律指名道姓拒掉。
-    # 用户 2026-10-27 拍「读也改：vault_read + vault_write」，代价就是模型再没有查脑仓的手。
-    for outside_path in ("Loom/raw/chat-logs/x.md", "Loom/wiki/concepts/x.md", "random/file.md"):
-        outside = json.loads(provider.handle_tool_call("vault_read", {"path": outside_path}))
+    # 用户 2026-10-27 拍「读也改：surface_read + surface_write」，代价就是模型再没有查脑仓的手。
+    for outside_path in ("Mind/raw/chat-logs/x.md", "Mind/wiki/concepts/x.md", "random/file.md"):
+        outside = json.loads(provider.handle_tool_call("surface_read", {"path": outside_path}))
         assert outside["success"] is False
-        assert "Vault/" in outside["error"]
+        assert "Surface/" in outside["error"]
 
 
-def test_vault_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
-    _mind, vault, provider = roots
+def test_surface_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
+    _mind, surface, provider = roots
     staged = []
 
     def fake_stage(self, batch):
@@ -133,20 +136,20 @@ def test_vault_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, mo
 
     result = json.loads(
         provider.handle_tool_call(
-            "vault_write", {"path": "Vault/dossiers/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
+            "surface_write", {"path": "Surface/dossiers/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
         )
     )
     assert result["success"] is False
     assert result["staged"] is True
     assert result["pending_id"] == "deadbeef"
     assert "approve" in result["detail"]
-    assert staged == [["Vault/dossiers/research/SRTP/progress.md"]]
+    assert staged == [["Surface/dossiers/research/SRTP/progress.md"]]
     # 待批就是待批：盘上不许有半个字节
-    assert not (vault / "dossiers" / "research" / "SRTP" / "progress.md").exists()
+    assert not (surface / "dossiers" / "research" / "SRTP" / "progress.md").exists()
 
 
-def test_vault_write_lands_when_the_gate_opens(roots, monkeypatch):
-    _mind, vault, provider = roots
+def test_surface_write_lands_when_the_gate_opens(roots, monkeypatch):
+    _mind, surface, provider = roots
     monkeypatch.setattr(writer_module.MindWriter, "_gate_refusals", lambda self, batch: [])
     monkeypatch.setattr(
         provider_module,
@@ -156,23 +159,23 @@ def test_vault_write_lands_when_the_gate_opens(roots, monkeypatch):
 
     result = json.loads(
         provider.handle_tool_call(
-            "vault_write", {"path": "Vault/dossiers/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
+            "surface_write", {"path": "Surface/dossiers/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
         )
     )
     assert result["success"] is True, result
-    assert (vault / "dossiers" / "projects" / "Aura" / "progress.md").read_text(encoding="utf-8").startswith("# Aura · 进度")
+    assert (surface / "dossiers" / "projects" / "Aura" / "progress.md").read_text(encoding="utf-8").startswith("# Aura · 进度")
 
 
-def test_vault_write_refuses_empty_oversized_and_unknown_tools(roots):
+def test_surface_write_refuses_empty_oversized_and_unknown_tools(roots):
     _mind, _vault, provider = roots
 
-    empty = json.loads(provider.handle_tool_call("vault_write", {"path": "Vault/dossiers/projects/Aura/plan.md", "content": "  "}))
+    empty = json.loads(provider.handle_tool_call("surface_write", {"path": "Surface/dossiers/projects/Aura/plan.md", "content": "  "}))
     assert empty["success"] is False and "non-empty" in empty["error"]
 
     big = json.loads(
         provider.handle_tool_call(
-            "vault_write",
-            {"path": "Vault/dossiers/projects/Aura/plan.md", "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1)},
+            "surface_write",
+            {"path": "Surface/dossiers/projects/Aura/plan.md", "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1)},
         )
     )
     assert big["success"] is False and "too large" in big["error"]
@@ -182,7 +185,7 @@ def test_vault_write_refuses_empty_oversized_and_unknown_tools(roots):
 
 
 def test_each_tool_touches_only_its_own_surface(roots):
-    """越面就当场拒：vault_* 读不到脑的页，mind_* 写不了人的笔记。"""
+    """越面就当场拒：surface_* 读不到脑的页，mind_* 写不了人的笔记。"""
     _mind, _vault, provider = roots
 
     def call(tool, path):
@@ -196,20 +199,20 @@ def test_each_tool_touches_only_its_own_surface(roots):
         return json.loads(provider.handle_tool_call(tool, {"path": path, "content": content}))
 
     cross = [
-        ("vault_read", "Mind/wiki/concepts/plobi-gate.md"),
-        ("vault_write", "Mind/wiki/concepts/plobi-gate.md"),
-        ("mind_read", "Vault/dossiers/projects/Aura/progress.md"),
-        ("mind_write", "Vault/dossiers/projects/Aura/progress.md"),
+        ("surface_read", "Mind/wiki/concepts/plobi-gate.md"),
+        ("surface_write", "Mind/wiki/concepts/plobi-gate.md"),
+        ("mind_read", "Surface/dossiers/projects/Aura/progress.md"),
+        ("mind_write", "Surface/dossiers/projects/Aura/progress.md"),
     ]
     for tool, path in cross:
         result = call(tool, path)
         assert result["success"] is False, (tool, path)
         assert "不在这一枚工具的面里" in result["error"], (tool, result)
-        assert "vault_" in result["error"] and "mind_" in result["error"]  # 要说清该用哪一枚
+        assert "surface_" in result["error"] and "mind_" in result["error"]  # 要说清该用哪一枚
 
 
 def test_mind_read_speaks_mind_not_loom(roots):
-    """脑那一面对模型的说法是 ``Mind/wiki/…``；内部仍按 ``Loom/…`` 解析，回给人看的也是 Mind。"""
+    """脑那一面对模型的说法是 ``Mind/wiki/…``；内部仍按 ``Mind/…`` 解析，回给人看的也是 Mind。"""
     _mind, _vault, provider = roots
 
     ok = json.loads(provider.handle_tool_call("mind_read", {"path": "Mind/wiki/concepts/plobi-gate.md"}))
@@ -217,6 +220,6 @@ def test_mind_read_speaks_mind_not_loom(roots):
     assert ok["path"] == "Mind/wiki/concepts/plobi-gate.md"
     assert "每次先点头" in ok["content"]
 
-    legacy = json.loads(provider.handle_tool_call("mind_read", {"path": "Loom/wiki/concepts/plobi-gate.md"}))
+    legacy = json.loads(provider.handle_tool_call("mind_read", {"path": "Mind/wiki/concepts/plobi-gate.md"}))
     assert legacy["success"] is True  # 存量那圈旧拼法照样读得到，不改判成"不存在"
-    assert legacy["path"] == "Loom/wiki/concepts/plobi-gate.md"
+    assert legacy["path"] == "Mind/wiki/concepts/plobi-gate.md"

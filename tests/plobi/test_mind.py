@@ -43,15 +43,15 @@ _REAL_MIND_COMMIT = MindWriter._commit
 
 
 @pytest.fixture()
-def vault(tmp_path, monkeypatch):
+def surface(tmp_path, monkeypatch):
     root = tmp_path / "Mind"
     (root / "persona").mkdir(parents=True)
-    (root / "Vault" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
+    (root / "Surface" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
-    # 详版画像在脑里（用户 10-24：vault 不进记忆系统；USER.md 是精简版）
+    # 详版画像在脑里（用户 10-24：surface 不进记忆系统；USER.md 是精简版）
     (root / "persona" / "profile.md").write_text("我是邓德宇。", encoding="utf-8")
-    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
-    (root / "Vault" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
+    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
+    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
     return root
 
@@ -62,9 +62,9 @@ def vault(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "relative",
     [
-        "Loom/wiki/daily/2026-08-25.md",
-        "Vault/dossiers/projects/Plobi/notes.md",
-        "Vault/inbox/idea.md",
+        "Mind/wiki/daily/2026-08-25.md",
+        "Surface/dossiers/projects/Plobi/notes.md",
+        "Surface/inbox/idea.md",
     ],
 )
 def test_safe_paths_are_accepted(relative):
@@ -72,9 +72,9 @@ def test_safe_paths_are_accepted(relative):
 
 
 def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
-    """原料区作废（裁定 198）：白名单里不许再出现任何 ``raw`` 段，AI 写的那格必须在 vault 一侧。
+    """原料区作废（裁定 198）：白名单里不许再出现任何 ``raw`` 段，AI 写的那格必须在 surface 一侧。
 
-    为什么钉这两条：``Loom/raw/chat-logs/*`` 那两条白名单项是旧 Mind 形态留下的门——门开着，
+    为什么钉这两条：``Mind/raw/chat-logs/*`` 那两条白名单项是旧 Mind 形态留下的门——门开着，
     provider 就会继续往带远端的脑仓抄第二份聊天原文，正是裁定 157 判过的事。会话的正本现在
     在单库 ``state.db``（裁定 180），所以这道门要关；而摘要与打勾回复按裁定 158 归人读面。
     """
@@ -82,9 +82,9 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     from plobi.mind.paths import SAFE_PREFIXES
 
     assert not [p for p in SAFE_PREFIXES if "raw" in p.split("/")], SAFE_PREFIXES
-    # 用户 10-24：「vault 不要进记忆系统」⇒ AI 写的那份必须在脑里（Loom），不许落人读面。
-    assert AI_WRITE_ROOT.split("/")[0] == "Loom", AI_WRITE_ROOT
-    assert not AI_WRITE_ROOT.startswith("Vault/"), AI_WRITE_ROOT
+    # 用户 10-24：「surface 不要进记忆系统」⇒ AI 写的那份必须在脑里（Mind），不许落人读面。
+    assert AI_WRITE_ROOT.split("/")[0] == "Mind", AI_WRITE_ROOT
+    assert not AI_WRITE_ROOT.startswith("Surface/"), AI_WRITE_ROOT
     assert is_safe_relative(f"{AI_WRITE_ROOT}/2026-10-23/agenda.md") is True
 
 
@@ -92,8 +92,8 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     "relative",
     [
         "AGENTS.md",                       # would rewrite Mind's own contract
-        "vault/dossiers/projects/Aura/plan.md",  # 逻辑前缀大小写敏感：小写 vault 不是那格
-        "Loom/skills/whatever/SKILL.md",   # skill count declaration
+        "surface/dossiers/projects/Aura/plan.md",  # 逻辑前缀大小写敏感：小写 surface 不是那格
+        "Mind/skills/whatever/SKILL.md",   # skill count declaration
         "../outside.md",
         "/etc/passwd",
         "",
@@ -111,19 +111,19 @@ def test_dossier_homes_are_open_after_2026_10_25():
     （``writer.py:228-234``），比静默 skip 至少是看得见的。立项仍然只有
     ``plobi/mind/project_tree.py`` 那一把手（它会同步 AGENTS.md §1 与 INDEX.md）。
     """
-    assert is_safe_relative("Vault/dossiers/projects/新项目/plan.md") is True
-    assert is_safe_relative("Vault/dossiers/research/新课题/progress.md") is True
-    # 放开的是路径，不是记忆面：vault 再宽也不进记忆系统（用户 10-24/25 两次判）。
-    assert is_memory_zone("Vault/dossiers/projects/新项目/plan.md") is False
+    assert is_safe_relative("Surface/dossiers/projects/新项目/plan.md") is True
+    assert is_safe_relative("Surface/dossiers/research/新课题/progress.md") is True
+    # 放开的是路径，不是记忆面：surface 再宽也不进记忆系统（用户 10-24/25 两次判）。
+    assert is_memory_zone("Surface/dossiers/projects/新项目/plan.md") is False
 
 
-def test_safe_target_rejects_traversal(vault):
+def test_safe_target_rejects_traversal(surface):
     with pytest.raises(UnsafeMindPath):
-        safe_target(vault, "Vault/inbox/../../../escape.md")
+        safe_target(surface, "Surface/inbox/../../../escape.md")
 
 
-def test_resolve_root_prefers_env(vault, monkeypatch, tmp_path):
-    assert resolve_root() == vault
+def test_resolve_root_prefers_env(surface, monkeypatch, tmp_path):
+    assert resolve_root() == surface
 
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "nowhere"))
     assert resolve_root() is None
@@ -139,7 +139,7 @@ def test_no_hardcoded_drive_letters_in_paths_module():
 # --- writer -----------------------------------------------------------------
 
 
-def test_ai_daily_digest_lands_in_the_human_surface(vault):
+def test_ai_daily_digest_lands_in_the_human_surface(surface):
     """AI 写的每日摘要住人读面（裁 158），不住原料区（裁 198）。
 
     钉的是关系不是路径字面量：`AI_WRITE_ROOT` 指到哪，文件就落到哪，且那个位置里
@@ -151,70 +151,70 @@ def test_ai_daily_digest_lands_in_the_human_surface(vault):
     rel = f"{AI_WRITE_ROOT}/2026-08-25/agenda.md"
     assert "raw" not in rel.split("/")
 
-    writer = MindWriter(vault, run_verifier=False)
+    writer = MindWriter(surface, run_verifier=False)
     result = writer.write_one(rel, "# 摘要\n")
 
     assert result.ok is True
-    assert real_target(rel, vault).read_text(encoding="utf-8") == "# 摘要\n"
+    assert real_target(rel, surface).read_text(encoding="utf-8") == "# 摘要\n"
 
 
-def test_unsafe_write_is_skipped_not_fatal(vault):
-    writer = MindWriter(vault, run_verifier=False)
+def test_unsafe_write_is_skipped_not_fatal(surface):
+    writer = MindWriter(surface, run_verifier=False)
     result = writer.write(
         [
             WriteRequest("AGENTS.md", "hijacked"),
-            WriteRequest("Vault/inbox/ok.md", "fine"),
+            WriteRequest("Surface/inbox/ok.md", "fine"),
         ]
     )
 
     assert result.ok is True
     assert result.skipped == ["AGENTS.md"]
-    assert (vault / "AGENTS.md").read_text(encoding="utf-8") == "# Mind"
+    assert (surface / "AGENTS.md").read_text(encoding="utf-8") == "# Mind"
 
 
-def test_append_mode_accumulates(vault):
-    writer = MindWriter(vault, run_verifier=False)
-    writer.write_one("Vault/inbox/log.md", "one\n", mode="append")
-    writer.write_one("Vault/inbox/log.md", "two\n", mode="append")
+def test_append_mode_accumulates(surface):
+    writer = MindWriter(surface, run_verifier=False)
+    writer.write_one("Surface/inbox/log.md", "one\n", mode="append")
+    writer.write_one("Surface/inbox/log.md", "two\n", mode="append")
 
-    assert (vault / "Vault/inbox/log.md").read_text(encoding="utf-8") == "one\ntwo\n"
+    assert (surface / "Surface/inbox/log.md").read_text(encoding="utf-8") == "one\ntwo\n"
 
 
-def test_writer_reports_when_vault_missing(tmp_path, monkeypatch):
+def test_writer_reports_when_surface_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "absent"))
     writer = MindWriter(run_verifier=False)
 
     assert writer.available is False
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
     assert result.ok is False
     assert result.written == []
 
 
-def test_failing_verifier_blocks_the_commit_but_keeps_files(vault):
-    scripts = vault / "scripts"
+def test_failing_verifier_blocks_the_commit_but_keeps_files(surface):
+    scripts = surface / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "verifier.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
 
-    writer = MindWriter(vault, run_verifier=True)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    writer = MindWriter(surface, run_verifier=True)
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is False
     assert "verifier" in result.detail
     # The file is still written — Mind is a working copy, not a transaction.
-    assert (vault / "Vault/inbox/x.md").exists()
+    assert (surface / "Surface/inbox/x.md").exists()
 
 
-def test_passing_verifier_allows_the_write(vault):
-    scripts = vault / "scripts"
+def test_passing_verifier_allows_the_write(surface):
+    scripts = surface / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "verifier.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
 
-    result = MindWriter(vault, run_verifier=True).write_one("Vault/inbox/x.md", "x")
+    result = MindWriter(surface, run_verifier=True).write_one("Surface/inbox/x.md", "x")
     assert result.ok is True
 
 
-def test_missing_verifier_is_not_a_blocker(vault):
-    assert MindWriter(vault, run_verifier=True).write_one("Vault/inbox/x.md", "x").ok is True
+def test_missing_verifier_is_not_a_blocker(surface):
+    assert MindWriter(surface, run_verifier=True).write_one("Surface/inbox/x.md", "x").ok is True
 
 
 # --- commit skip-on-dirty (WP-MIND-HOT, 裁定 33.2) ---------------------------
@@ -243,7 +243,7 @@ def _bypass_lock(monkeypatch):
 def git_vault(tmp_path, monkeypatch):
     """带 ``git init`` 的 Mind 顶层：commit 应该真的进去。"""
     root = tmp_path / "Mind"
-    (root / "Vault" / "meta").mkdir(parents=True)
+    (root / "Surface" / "meta").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     _git(["init"], root)
     _git(["config", "user.email", "tests@plobi.local"], root)
@@ -331,10 +331,10 @@ def test_commit_skipped_when_index_locked(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is True
-    assert result.written == ["Vault/inbox/x.md"]
+    assert result.written == ["Surface/inbox/x.md"]
     assert "commit skipped" in result.detail
     assert "index.lock" in result.detail or "Unable to create" in result.detail
 
@@ -354,7 +354,7 @@ def test_commit_skipped_on_dirty_working_tree(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is True
     assert "commit skipped" in result.detail
@@ -374,7 +374,7 @@ def test_commit_skipped_on_untracked_overlap(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is True
     assert "commit skipped" in result.detail
@@ -392,11 +392,11 @@ def test_commit_skipped_when_add_raises(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", raiser)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is True
     assert "commit skipped" in result.detail
-    assert (git_vault / "Vault" / "inbox" / "x.md").is_file()
+    assert (git_vault / "Surface" / "inbox" / "x.md").is_file()
 
 
 def test_commit_still_returns_false_on_unrecognised_error(git_vault, monkeypatch):
@@ -410,7 +410,7 @@ def test_commit_still_returns_false_on_unrecognised_error(git_vault, monkeypatch
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is False
     assert "commit skipped" not in result.detail
@@ -434,11 +434,11 @@ def test_publish_daily_summary_continues_to_fail_open_on_commit_skip(git_vault, 
         title="课",
         start_at=today.replace(hour=10, minute=0, second=0, microsecond=0),
     )
-    # 用 vault 的 MindWriter，commit = True（默认）
+    # 用 surface 的 MindWriter，commit = True（默认）
     writer = MindWriter(git_vault, run_verifier=False)
     # 这等价于 publish_daily_summary 内部 sink.write_one(...) 的返回；
     # 直接验 WriteResult 的契约而不是再过一遍 mind_sync 的 import 重置
-    result = writer.write_one("Vault/inbox/anything.md", "x")
+    result = writer.write_one("Surface/inbox/anything.md", "x")
     assert result.ok is True
     assert "commit skipped" in result.detail
 
@@ -478,16 +478,16 @@ def test_commit_skipped_when_root_is_nested_in_an_enclosing_repo(tmp_path, monke
     _git(["commit", "-m", "seed"], outer)
 
     root = outer / "Mind"
-    (root / "Vault" / "meta").mkdir(parents=True)
+    (root / "Surface" / "meta").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
 
     writer = MindWriter(root, commit=True, run_verifier=False, require_approval=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     # The write itself is unaffected by the guard.
     assert result.ok is True
-    assert (root / "Vault/inbox/x.md").read_text(encoding="utf-8") == "x"
+    assert (root / "Surface/inbox/x.md").read_text(encoding="utf-8") == "x"
     # …but no commit reached the enclosing repo.
     assert "commit skipped" in result.detail
     log = _git(["log", "--oneline"], outer)
@@ -499,13 +499,13 @@ def test_commit_happens_when_root_is_its_own_repo(tmp_path, monkeypatch):
     monkeypatch.setattr(writer_module.MindWriter, "_commit", _REAL_MIND_COMMIT)
 
     root = tmp_path / "Mind"
-    (root / "Vault" / "meta").mkdir(parents=True)
+    (root / "Surface" / "meta").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     _init_repo(root)
     monkeypatch.setenv("MIND_ROOT", str(root))
 
     writer = MindWriter(root, commit=True, run_verifier=False, require_approval=False)
-    result = writer.write_one("Vault/inbox/x.md", "x")
+    result = writer.write_one("Surface/inbox/x.md", "x")
 
     assert result.ok is True
     assert result.detail == "committed"
@@ -514,13 +514,13 @@ def test_commit_happens_when_root_is_its_own_repo(tmp_path, monkeypatch):
     assert "chore(plobi)" in log
 
 
-def test_concurrent_writers_do_not_interleave(vault):
-    writer = MindWriter(vault, run_verifier=False)
+def test_concurrent_writers_do_not_interleave(surface):
+    writer = MindWriter(surface, run_verifier=False)
     errors: list[BaseException] = []
 
     def worker(index: int) -> None:
         try:
-            writer.write_one(f"Vault/inbox/w{index}.md", f"content {index}")
+            writer.write_one(f"Surface/inbox/w{index}.md", f"content {index}")
         except BaseException as exc:  # noqa: BLE001 - surfaced below
             errors.append(exc)
 
@@ -532,9 +532,9 @@ def test_concurrent_writers_do_not_interleave(vault):
 
     assert errors == []
     for index in range(8):
-        assert (vault / f"Vault/inbox/w{index}.md").read_text(encoding="utf-8") == f"content {index}"
+        assert (surface / f"Surface/inbox/w{index}.md").read_text(encoding="utf-8") == f"content {index}"
     # The lock file must not survive the batch.
-    assert not (vault / ".plobi-mind.lock").exists()
+    assert not (surface / ".plobi-mind.lock").exists()
 
 
 def test_lock_times_out_rather_than_hanging(tmp_path):
@@ -556,8 +556,8 @@ def test_writer_never_imports_a_model_client():
 # --- reader -----------------------------------------------------------------
 
 
-def test_reader_pulls_persona_and_projects(vault):
-    context = MindReader(vault).context()
+def test_reader_pulls_persona_and_projects(surface):
+    context = MindReader(surface).context()
 
     assert "邓德宇" in context.persona
     assert [p.name for p in context.projects] == ["Plobi"]
@@ -565,26 +565,26 @@ def test_reader_pulls_persona_and_projects(vault):
     assert "M1" in context.projects[0].progress_excerpt
 
 
-def test_reader_excerpts_are_capped(vault):
+def test_reader_excerpts_are_capped(surface):
     huge = "字" * 50_000
-    (vault / "persona" / "profile.md").write_text(huge, encoding="utf-8")
+    (surface / "persona" / "profile.md").write_text(huge, encoding="utf-8")
 
-    persona = MindReader(vault).persona()
+    persona = MindReader(surface).persona()
     assert len(persona) < 5_000
 
 
-def test_reader_reports_missing_persona_instead_of_going_quiet(vault, caplog):
-    """The pointer used to name a file the real vault never had; the fixture made
+def test_reader_reports_missing_persona_instead_of_going_quiet(surface, caplog):
+    """The pointer used to name a file the real surface never had; the fixture made
     that phantom path, so production read "" while tests were green."""
-    (vault / "persona" / "profile.md").unlink()
+    (surface / "persona" / "profile.md").unlink()
 
     with caplog.at_level(logging.WARNING, logger="plobi.mind.reader"):
-        assert MindReader(vault).persona() == ""
+        assert MindReader(surface).persona() == ""
 
     assert "profile.md" in caplog.text
 
 
-def test_reader_is_quiet_when_vault_absent(tmp_path):
+def test_reader_is_quiet_when_surface_absent(tmp_path):
     reader = MindReader(tmp_path / "absent")
 
     assert reader.available is False
@@ -593,39 +593,39 @@ def test_reader_is_quiet_when_vault_absent(tmp_path):
     assert reader.context().is_empty is True
 
 
-def test_reader_skips_empty_project_dirs(vault):
-    (vault / "Vault" / "dossiers" / "projects" / "empty").mkdir()
-    assert [p.name for p in MindReader(vault).projects()] == ["Plobi"]
+def test_reader_skips_empty_project_dirs(surface):
+    (surface / "Surface" / "dossiers" / "projects" / "empty").mkdir()
+    assert [p.name for p in MindReader(surface).projects()] == ["Plobi"]
 
 
 # --- agenda digest ----------------------------------------------------------
 
 
-def test_daily_summary_is_published_under_loom(vault, tmp_path):
+def test_daily_summary_is_published_under_loom(surface, tmp_path):
     service = AgendaService(tmp_path / "agenda.db")
     today = datetime.now()
     service.create_manual(title="组会", start_at=today.replace(hour=15, minute=0, second=0, microsecond=0))
 
-    result = publish_daily_summary(service=service, writer=MindWriter(vault, run_verifier=False))
+    result = publish_daily_summary(service=service, writer=MindWriter(surface, run_verifier=False))
 
     assert result.ok is True
-    written = paths.real_target(summary_relative_path(), vault)
+    written = paths.real_target(summary_relative_path(), surface)
     assert written.is_file()
     assert "组会" in written.read_text(encoding="utf-8")
 
 
-def test_daily_summary_is_idempotent(vault, tmp_path):
+def test_daily_summary_is_idempotent(surface, tmp_path):
     service = AgendaService(tmp_path / "agenda.db")
-    writer = MindWriter(vault, run_verifier=False)
+    writer = MindWriter(surface, run_verifier=False)
 
     publish_daily_summary(service=service, writer=writer)
     publish_daily_summary(service=service, writer=writer)
 
-    body = paths.real_target(summary_relative_path(), vault).read_text(encoding="utf-8")
+    body = paths.real_target(summary_relative_path(), surface).read_text(encoding="utf-8")
     assert body.count("# 日程摘要") == 1
 
 
-def test_daily_summary_without_vault_is_a_soft_failure(tmp_path, monkeypatch):
+def test_daily_summary_without_surface_is_a_soft_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "absent"))
     service = AgendaService(tmp_path / "agenda.db")
 
