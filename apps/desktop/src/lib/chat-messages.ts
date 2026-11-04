@@ -93,6 +93,15 @@ export function externalSenderOf(
     return { kind: 'agent', name: '' }
   }
 
+  // 秘书（或别家）代问的那一行：`plugins/plobi-north-star/agent_ask.py` 发的第一行是
+  // `【{asker}代问】`。两列都没到界面时（刚进来的那一趟），这是屏上唯一一份"这条不是
+  // 主人自己打的"的证据——用户 11-04 指着截图问的正是它被署成了自己。
+  const relayed = /^【(.{1,40}?)代问】/.exec(body)
+
+  if (relayed?.[1]) {
+    return { kind: 'agent', name: relayed[1].trim() }
+  }
+
   return null
 }
 
@@ -104,6 +113,14 @@ export function externalSenderOf(
  */
 export function splitSpeakerPrefix(text: string): { speaker: string; body: string } {
   const s = text ?? ''
+
+  // 代问那一行的前缀是中文方括号，形状与上面那两种不同，单独认（同一份身份不重复说：
+  // 屏上由名字那一行讲，正文不再带 `【X代问】`）。
+  const relayed = /^【(.{1,40}?)代问】\r?\n?/.exec(s)
+
+  if (relayed?.[1]) {
+    return { speaker: relayed[1].trim(), body: s.slice(relayed[0].length) }
+  }
 
   if (!s.startsWith('[')) {
     return { speaker: '', body: s }

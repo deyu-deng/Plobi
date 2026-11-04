@@ -428,13 +428,16 @@ export const UserMessage: FC<{
                 </span>
               </div>
             )}
-            {/* 自己的消息也署名（用户 11-03：「用户的也要」）：名字在气泡上方靠右那一行，
-                头像在它右边那一列——与上面那枚「谁发起的」同一形状，但说的是身份不是来源。 */}
-            <div className="flex items-center justify-end gap-1">
-              <span className={MESSAGE_BYLINE} data-slot="aui_user-byline">
-                {copy.me}
-              </span>
-            </div>
+            {/* 只有他自己打的那一条才署「我」。秘书（或别的 Agent）代他发起的那一类不写
+                他的名字，也不给人形头像——那一条不是他打的，上面那行已经写了"谁代他发起"
+                （用户 11-04 指着截图问：「为什么总秘书发的消息的头像也是我呢？」）。 */}
+            {showByline ? null : (
+              <div className="flex items-center justify-end gap-1">
+                <span className={MESSAGE_BYLINE} data-slot="aui_user-byline">
+                  {copy.me}
+                </span>
+              </div>
+            )}
             <div className="relative flex w-full justify-end">
               {readOnly || !canEdit ? (
                 // Spectator transcript, and any runtime without an `onEdit` (the
@@ -473,10 +476,10 @@ export const UserMessage: FC<{
                   </button>
                 </ActionBarPrimitive.Edit>
               )}
-              {/* 中性人形一枚、不带品牌色：他自己那一侧不需要身份图标，名字已经在气泡
-                  上方那一行（`aui_user-byline`）。 */}
+              {/* 头像跟着发起方走：他自己打的 = 中性人形；秘书/别家代问的 = 机器人。
+                  名字只在第一种情况下写在气泡上方那一行（`aui_user-byline`）。 */}
               <div aria-hidden className={cn(MESSAGE_AVATAR, 'self-start')} data-slot="aui_user-avatar">
-                <Codicon name="person" size="0.75rem" />
+                <Codicon name={showByline ? 'hubot' : 'person'} size="0.875rem" />
               </div>
             </div>
 

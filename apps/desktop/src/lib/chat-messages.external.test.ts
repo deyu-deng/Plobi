@@ -42,6 +42,19 @@ describe('externalSenderOf', () => {
     expect(externalSenderOf('agent', 'l1:sess-1')).toEqual({ kind: 'agent', name: '总秘书' })
   })
 
+  it('认得「代问」那一行的正文前缀（两列都没到界面时也不署成主人自己）', () => {
+    // `plugins/plobi-north-star/agent_ask.py:393` 发的第一行就是 `【{asker}代问】`。
+    expect(externalSenderOf(undefined, undefined, '【plobi代问】\n提问人：plobi')).toEqual({
+      kind: 'agent',
+      name: 'plobi'
+    })
+    // 已经带 kind 的行照旧走 kind 那一臂，名字仍是总秘书。
+    expect(externalSenderOf('agent', 'l1', '【plobi代问】\n提问人：plobi')).toEqual({
+      kind: 'agent',
+      name: '总秘书'
+    })
+  })
+
   it('leaves owner-keyed rows on the human bubble', () => {
     expect(externalSenderOf('user', 'owner')).toBeNull()
     expect(externalSenderOf(null, null)).toBeNull()
@@ -71,6 +84,18 @@ describe('splitSpeakerPrefix', () => {
   it('leaves a body that only looks bracketed alone', () => {
     expect(splitSpeakerPrefix('[备注] 这不是前缀')).toEqual({ speaker: '', body: '[备注] 这不是前缀' })
     expect(splitSpeakerPrefix('没有前缀')).toEqual({ speaker: '', body: '没有前缀' })
+  })
+
+  it('把「代问」那一行也当身份前缀拆掉（屏上不重复说一遍谁在问）', () => {
+    expect(splitSpeakerPrefix('【plobi代问】\n提问人：plobi——替他统筹各项目。\n要回答的是你手上的实情')).toEqual({
+      speaker: 'plobi',
+      body: '提问人：plobi——替他统筹各项目。\n要回答的是你手上的实情'
+    })
+    // 正文中间出现的那种不算前缀。
+    expect(splitSpeakerPrefix('你说【plobi代问】这句不算开头')).toEqual({
+      body: '你说【plobi代问】这句不算开头',
+      speaker: ''
+    })
   })
 })
 
