@@ -1,12 +1,12 @@
+import { AssistantRuntimeProvider, type ThreadMessage, useExternalStoreRuntime } from '@assistant-ui/react'
 import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { AssistantRuntimeProvider, type ThreadMessage, useExternalStoreRuntime } from '@assistant-ui/react'
-
 import { en } from '@/i18n/en'
 
-import { Thread } from '.'
 import type { ThreadSpeaker } from './types'
+
+import { Thread } from '.'
 
 /**
  * 消息署名（用户 11-03：「以后消息要加在气泡上面旁边或者侧边加上 Agent 的名字和头像。

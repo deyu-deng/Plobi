@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { DEFAULT_SKIN_NAME } from './presets'
 import { modePref, skinPref } from './context'
+import { DEFAULT_SKIN_NAME } from './presets'
 
 /**
  * 外观是这台机器的一份，不是一个 Agent 一份（用户 11-04：「为什么有时候切换 Agent，软件
