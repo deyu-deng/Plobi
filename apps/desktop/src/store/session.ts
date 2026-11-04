@@ -259,9 +259,19 @@ export const $resumeExhaustedSessionId = atom<string | null>(null)
 // reflection of the truth the gateway reports rather than its own store.
 export const $yoloActive = atom(false)
 // 会话的三档审批（用户 10-31：YOLO 变成 Qoder 那种权限下拉）。后端 session.info
-// 直接报 `approval_mode`（manual / smart / off），这里只做镜像；off 与 $yoloActive 同义。
+// 直接报 `approval_mode`（manual / smart / off），这里做镜像**并记住上一次**：
+// 已有会话仍以网关报的为准（gateway-event / session.info 会覆盖这里），
+// 存的这份只当"新对话草稿的默认档"，否则每次重启都弹回「每次询问」。
 export type ApprovalMode = 'manual' | 'smart' | 'off'
-export const $approvalMode = atom<ApprovalMode>('manual')
+const APPROVAL_MODE_KEY = 'plobi.desktop.composer.approval-mode'
+
+function storedApprovalMode(): ApprovalMode {
+  const raw = storedString(APPROVAL_MODE_KEY)
+
+  return raw === 'smart' || raw === 'off' || raw === 'manual' ? raw : 'manual'
+}
+
+export const $approvalMode = atom<ApprovalMode>(storedApprovalMode())
 // 新对话草稿上还没有运行时会话：此时选定的档位先记下，会话一建好就补交（见 use-session-actions）。
 export const $approvalModePending = atom(false)
 export const $currentCwd = atom(getRememberedWorkspaceCwd())
@@ -305,7 +315,11 @@ export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($await
 
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
 
-export const setApprovalMode = (next: Updater<ApprovalMode>) => updateAtom($approvalMode, next)
+export const setApprovalMode = (next: Updater<ApprovalMode>) => {
+  updateAtom($approvalMode, next)
+  // 存的是"上一次生效的档"，只给新对话草稿当默认；网关报回来的那一份永远优先。
+  persistString(APPROVAL_MODE_KEY, $approvalMode.get())
+}
 
 export const setApprovalModePending = (next: Updater<boolean>) => updateAtom($approvalModePending, next)
 
