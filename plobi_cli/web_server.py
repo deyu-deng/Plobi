@@ -10729,7 +10729,12 @@ def _cron_profile_dicts() -> List[Dict[str, Any]]:
             continue
         out.append(dict(
             name=name,
-            path=str(_cron_store_dir_for(agent.get("profile_name") or name)),
+            # 键＝**名册 name**，与 `_cron_store_dir_for` 自己的说明、与改名／删行那两处
+            # 同一把尺。这里曾经传 `agent['profile_name'] or name`：那是「一个分身一个
+            # 门牌」时代的旧拼法，于是**同一行的作业裂成两份目录**（这台现读：日程秘书的
+            # `jobs.json` 在 `cron/agents/agenda/`，而列表把存储指到 `l2-agenda/`，
+            # 35 个目录里 21 个按 slug、12 个按 name——两边都空转，谁也不报错）。
+            path=str(_cron_store_dir_for(name)),
             is_default=False,
             description=agent.get("description") or "",
             description_auto=False,

@@ -335,3 +335,68 @@ def test_the_rename_endpoint_shows_the_plan_before_it_touches_anything(full_home
     missing = rename_agent("nobody-here", {"newName": "Whatever"})
     assert getattr(missing, "status_code", 200) == 404
     assert _roster_names() == ["AuraAgain", "agenda"]
+
+def test_rename_moves_the_legacy_store_dir_and_carries_the_slug_pin(full_home, monkeypatch):
+    """判据：排程存储的两把旧拼法一起搬，钉表里的门牌跟着改名走。
+
+    11-05 现读：这台 ``cron/agents/`` 下 35 个目录，21 个按那格旧门牌（``l2-course-ee``）、
+    12 个按名册 name（``agenda``），而日程秘书真正装着作业的在 ``agenda/``——只搬一把
+    等于把另一把下面的作业丢在盘上没人认领。``runtime_slugs.yaml`` 那张钉表的意义是
+    「这一行的内部门牌不许变」，改名是唯一还没接住它的路。
+    """
+    legacy = full_home / "cron" / "agents" / "aura"
+    legacy.mkdir(parents=True, exist_ok=True)
+    (legacy / "jobs.json").write_text('{"jobs": [{"id": "orphan"}]}', encoding="utf-8")
+    user_table = full_home / "plobi" / "runtime-slugs.yaml"
+    user_table.parent.mkdir(parents=True, exist_ok=True)
+    user_table.write_text("Aura: aura\n", encoding="utf-8")
+
+    profiles_mod.rename_identity("Aura", "AuraPrime")
+
+    # 新键那一份在场，旧的两把都不在场
+    assert (full_home / "cron" / "agents" / "AuraPrime" / "jobs.json").is_file()
+    assert not (full_home / "cron" / "agents" / "Aura").exists()
+    assert not legacy.exists(), "按旧门牌那一把的排程被丢在原地，改名后再没人认领"
+    # 钉跟着搬：新名下钉着同一个门牌，旧名那条不再留（留着＝一个死名字钉着一个活门牌）
+    import yaml
+
+    table = yaml.safe_load(user_table.read_text(encoding="utf-8")) or {}
+    assert table == {"AuraPrime": "aura"}
+
+
+def test_slug_pin_carry_restores_the_table_when_the_rename_rolls_back(full_home, monkeypatch):
+    """中途失败要能退回：钉表那一份也在撤销之列（不留半截状态）。"""
+    user_table = full_home / "plobi" / "runtime-slugs.yaml"
+    user_table.parent.mkdir(parents=True, exist_ok=True)
+    user_table.write_text("Aura: aura\n", encoding="utf-8")
+    before = user_table.read_text(encoding="utf-8")
+
+    undo = profiles_mod._carry_slug_pin("AuraPrime", "aura", "Aura")
+    assert "AuraPrime: aura" in user_table.read_text(encoding="utf-8")
+    undo()
+    assert user_table.read_text(encoding="utf-8") == before
+
+
+def test_the_cron_scopes_point_at_the_roster_name_dir(monkeypatch, tmp_path):
+    """排程面板上每一行的存储 = 名册 name 那一把，不是旧门牌那一把。
+
+    曾经这里传 ``agent['profile_name'] or name``：同一行于是有两把目录，面板列的是
+    空的旧门牌、作业写在 name 那一把下 ⇒「看得见但不跑」的另一半（这台真库：
+    ``agenda/`` 里有 11 KB 作业，列出来的却是 ``l2-agenda/``）。
+    """
+    from plobi_cli import web_server
+
+    agents = [
+        {"name": "agenda", "profile_name": "l2-agenda", "description": "日程秘书", "role": "l2_agenda"},
+        {"name": "电工电子学", "profile_name": "l2-course-ee", "description": "课", "role": "l2_project"},
+    ]
+    monkeypatch.setattr("plobi_cli.profiles.list_roster_agents", lambda *a, **k: agents)
+    monkeypatch.setattr("plobi_cli.profiles._read_config_model", lambda *a, **k: (None, None))
+    monkeypatch.setattr("plobi_cli.profiles._count_skills", lambda *a, **k: 0)
+    monkeypatch.setattr(web_server, "_cron_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web_server, "_cron_store_root", lambda: tmp_path / "cron")
+
+    rows = {d["name"]: d["path"] for d in web_server._cron_profile_dicts()}
+    assert rows["agenda"].replace("\\", "/").rstrip("/").endswith("agenda")
+    assert "l2-agenda" not in rows["agenda"]
+    assert rows["电工电子学"].endswith("电工电子学")

@@ -21,10 +21,14 @@ from .registry import (
 def _entry_from_args(name: str, args: Any) -> AgentEntry:
     # ``agents register`` 这一步**就是**登记（R-072）：名册成员资格在这儿盖成
     # ``True``，和「Mind 投影不是登记」的 ``registered=False`` 是同一枚章的两面。
+    #
+    # 这里原来还传一格 ``profile=``：那是「一个分身一个家」时代的门牌号，概念已取消
+    # （裁 178 乙案／ADR-0013），而 ``args`` 上从来没有这枚旗（``--profile`` 不在
+    # register 的 parser 里）——传下去只是把退役名字再写一遍。11-05 名册把这一格改成
+    # 由 ``name`` 派生的运行时 slug 之后，这一行会变成 ``TypeError`` 直接崩掉登记。
     return AgentEntry(
         name=name,
         role=getattr(args, "role", None) or "l2_project",
-        profile=getattr(args, "profile", None) or "",
         provider=getattr(args, "provider", None) or "",
         model=getattr(args, "model", None) or "",
         mind_subtree=getattr(args, "mind_subtree", None) or "",
@@ -78,8 +82,10 @@ def _list(registry: AgentRegistry) -> None:
 
     problems = registry.routing_problems()
     print(f"\nRegistry: {registry.path}")
-    print(f"{'Agent':<16} {'Role':<14} {'Profile':<16} {'Model':<24} Routing")
-    print(f"{'─'*16} {'─'*14} {'─'*16} {'─'*24} {'─'*9}")
+    # 那一列原来印 `Profile`（一个分身一个门牌号）——概念已取消，剩下的那格是
+    # 由 name 派生的内部 slug，属机器词，不上屏（屏上文案纪律）。
+    print(f"{'Agent':<16} {'Role':<14} {'Model':<24} Routing")
+    print(f"{'─'*16} {'─'*14} {'─'*24} {'─'*9}")
 
     for entry in registry.entries():
         try:
@@ -89,7 +95,7 @@ def _list(registry: AgentRegistry) -> None:
         model = route.qualified if route else "—"
         marker = "✅" if problems == [] else "⚠️"
         print(
-            f"{entry.name:<16} {entry.role:<14} {entry.profile_name:<16} "
+            f"{entry.name:<16} {entry.role:<14} "
             f"{model:<24} {marker}"
         )
 
@@ -110,7 +116,7 @@ def _register(registry: AgentRegistry, args: Any) -> None:
     entry = _entry_from_args(name, args)
     registry.upsert(entry)
     registry.save()
-    print(f"Registered {name} (role={entry.role}, profile={entry.profile_name})")
+    print(f"Registered {name} (role={entry.role})")
     print(f"Registry: {registry.path}")
     print(f"Materialize: plobi plobi agents spawn {name}")
 
@@ -122,8 +128,10 @@ def _spawn(registry: AgentRegistry, args: Any) -> None:
         sys.exit(1)
 
     # 允许 spawn 时用 --role 等直接注册（不必先 register）。
+    # `profile` 从这串里去掉：它不再是一格可写的东西（11-05 起是 name 派生的运行时
+    # slug），留着等于给用户一个"写了也不生效"的假入口。
     if registry.get(name) is None and any(
-        getattr(args, f, None) for f in ("role", "profile", "provider", "model")
+        getattr(args, f, None) for f in ("role", "provider", "model")
     ):
         registry.upsert(_entry_from_args(name, args))
         registry.save()
@@ -136,9 +144,11 @@ def _spawn(registry: AgentRegistry, args: Any) -> None:
 
     print(f"\nSpawned {result['name']} ({result['role']})")
     # WP-REGISTRY-NO-HOME（B 刀）：不再落一个家，所以这一行从
-    # 「Profile: x → <那个家的路径>」改成「身份在名册这一行上」。原来这里读
-    # ``result['profile_dir']``——spawn 的返回值里已经没有这个键了。
-    print(f"Agent:    {result['profile']}（身份在名册这一行；家已退役，不再建目录）")
+    # 「Profile: x → <那个家的路径>」改成「身份在名册这一行上」。
+    # 11-05 再改一刀：原来读 ``result['profile']``——那是「一个分身一个门牌」的键，
+    # 概念取消后那一格不再是数据而是派生物，且随时可能从返回值里消失（读了就是
+    # KeyError）。人只需要知道身份在哪一行。
+    print(f"Agent:    {result['name']}（身份在名册这一行；家已退役，不再建目录）")
     print(f"Routing:  ✅ ADR-0011 green (L1 ≠ L2 model)")
     print(f"Start:    {result['command']}")
     print()
