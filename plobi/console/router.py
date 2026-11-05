@@ -246,27 +246,26 @@ def status_for(agent_id: str) -> str:
     return STATUS_IDLE
 
 
-def _agent_id_for_profile(profile: str) -> str:
-    """带下来的身份 → 名册 name（console 的 agent_id 语义）；认不出回空串。
+def _agent_id_for_profile(profile: str) -> Optional[str]:
+    """带下来的作用域／身份 → 总账的行级键；**三种结果三种意思**。
 
-    身份的写法有两种、都合法：名册那一行的 ``name``（桌面左栏与总账 ``agent_id``
-    存的就是它，裁定 180/192）与旧家名 ``profile_name``（``-p`` 与老调用方还在传；
-    这台 25 行里 11 行两者不同，如 ``agenda``/``l2-agenda``）。这里曾自己写了一遍
-    **只比 ``profile_name`` 且大小写敏感**的循环，于是名册 name 一律回空串＝L1，
-    那一行自己的账与会话被并进秘书那份。判据交回名册那一份
-    :func:`plobi.agents.registry.identity_name_in_entries`（与 ``plobi_cli`` 那两个
-    入口同源），并照旧用本模块自己那份 registry——它已经按「文件变了才重读」缓存着，
+    ``None`` = 不圈（``all``／名册里认不出）；``''`` = **L1 那一格**（裁定 180：秘书在
+    单库里的归属键是空串，它不是"没带身份"，更不是全局；没带作用域也算这一格，与
+    §3.4「空 = L1 总秘书」同形）；其余 = 名册那一行的 ``name``。
+
+    身份的写法有两种、都合法：名册 name（桌面左栏与总账存的就是它，裁定 192）与旧家名
+    （``-p`` 与老调用方还在传；这台 25 行里 11 行两者不同）。判据只在名册那一份里
+    （:func:`plobi.agents.registry.agent_id_for_scope`），这里曾经自己写过一遍只比
+    ``profile_name`` 且大小写敏感的循环，于是名册 name 一律回空串＝L1，那一行自己的
+    账与会话被并进秘书那份。照旧用本模块那份 registry——它已按「文件变了才重读」缓存，
     再 parse 一遍 yaml 等于把每个请求的成本翻倍。
     """
-    name = str(profile or "").strip()
-    if not name:
-        return ""
     try:
-        from plobi.agents.registry import identity_name_in_entries
+        from plobi.agents.registry import agent_id_for_scope
 
-        return identity_name_in_entries(get_registry().entries(), name)
+        return agent_id_for_scope(profile, entries=get_registry().entries())
     except Exception:
-        return ""
+        return None
 
 
 def _latest_session_for_agent(agent_id: str, *, db_path: Optional[Path] = None) -> str:

@@ -4381,7 +4381,7 @@ def get_sessions(
                 compact_rows=not full,
                 # 缺口 B：单库总账上行级圈定「这个 Agent 的」会话（家名 → 名册
                 # name）；'' = 不过滤（flat / L1 全量视图，历史行为）。
-                agent_id=_agent_id_for_profile(profile) or None,
+                agent_id=_agent_scope_key(profile),
             )
             total = db.session_count(
                 source=source or None,
@@ -4391,7 +4391,7 @@ def get_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 exclude_children=True,
-                agent_id=_agent_id_for_profile(profile) or None,
+                agent_id=_agent_scope_key(profile),
             )
             now = time.time()
             for s in sessions:
@@ -4473,7 +4473,7 @@ def get_profiles_sessions(
     per_page = min(max(limit + offset, limit), 500)
 
     # 行级圈定：家名 → 名册 name；'all' / L1 / 查不到 → None = 全库。
-    agent_id = _agent_id_for_profile(scoped) or None
+    agent_id = _agent_scope_key(scoped)
 
     db = _open_session_db_for_profile(scoped or None)
     try:
@@ -4696,7 +4696,7 @@ async def search_sessions(q: str = "", limit: int = 20, profile: Optional[str] =
             for row in db.search_sessions_by_id(
                 q, limit=safe_limit, include_archived=True,
                 # 缺口 B：只在这个 Agent 的会话里搜（'' = 全库）。
-                agent_id=_agent_id_for_profile(profile) or None,
+                agent_id=_agent_scope_key(profile),
             ):
                 sid = row.get("id")
                 preview = (row.get("preview") or "").strip()
@@ -4729,7 +4729,7 @@ async def search_sessions(q: str = "", limit: int = 20, profile: Optional[str] =
             matches = db.search_messages(
                 query=prefix_query,
                 limit=fetch_limit,
-                agent_id=_agent_id_for_profile(profile) or None,
+                agent_id=_agent_scope_key(profile),
             )
 
             for m in matches:
@@ -10041,7 +10041,7 @@ async def count_empty_sessions_endpoint(profile: Optional[str] = None):
     """
     db = _open_session_db_for_profile(profile)
     try:
-        return {"count": db.count_empty_sessions(agent_id=_agent_id_for_profile(profile) or None)}
+        return {"count": db.count_empty_sessions(agent_id=_agent_scope_key(profile))}
     finally:
         db.close()
 
@@ -10069,7 +10069,7 @@ async def delete_empty_sessions_endpoint(profile: Optional[str] = None):
     db = _open_session_db_for_profile(profile)
     try:
         # 缺口 B：单库之后必须圈定「这个 Agent 的」空会话——不圈就是删别人的。
-        deleted = db.delete_empty_sessions(agent_id=_agent_id_for_profile(profile) or None)
+        deleted = db.delete_empty_sessions(agent_id=_agent_scope_key(profile))
         return {"ok": True, "deleted": deleted}
     finally:
         db.close()
@@ -10085,7 +10085,7 @@ async def get_session_stats(profile: Optional[str] = None):
     db = _open_session_db_for_profile(profile)
     try:
         # 缺口 B：单库总账上圈定「这个 Agent 的」统计（'' = 全库，历史行为）。
-        agent_scope = _agent_id_for_profile(profile) or None
+        agent_scope = _agent_scope_key(profile)
         total = db.session_count(include_archived=True, agent_id=agent_scope)
         active_store = db.session_count(include_archived=False, agent_id=agent_scope)
         archived = db.session_count(archived_only=True, agent_id=agent_scope)
@@ -10111,7 +10111,10 @@ async def get_session_stats(profile: Optional[str] = None):
 
 
 def _agent_id_for_profile(profile: Optional[str]) -> str:
-    """profile 家名 → 名册 name（``sessions.agent_id`` 的归属键）；查不到 → ''。
+    """作用域 → **名册那一行的 name**（身份语义，给 `_agent_tool_row` 那种反查用）；查不到 → ''。
+
+    这一只**不是**行级圈定键——那一只看 :func:`_agent_scope_key`（L1 是空串那一格，
+    不是"不圈"）。
 
     与 tui_gateway 的 ``_agent_id_for_profile_home`` 同语义：桌面传的是家名，
     总账里存的是名册 name——这一跳就是两者之间的桥。缺口 B 之后聚合读面
@@ -10126,6 +10129,19 @@ def _agent_id_for_profile(profile: Optional[str]) -> str:
         return entry.name if entry else ""
     except Exception:
         return ""
+
+
+def _agent_scope_key(profile: Optional[str]) -> Optional[str]:
+    """作用域 → 总账的行级键：``None`` 不圈 / ``''`` = **L1 那一格** / 其余 = 名册 name。
+
+    判据只有一份，在 :func:`plobi.agents.registry.agent_id_for_scope`。**调用点不许再
+    补一句 ``or None``**——那一句把 L1 与"全局"并成一件事：秘书的会话列表读成整库，
+    而带 L1 作用域的一次「删空会话」会替所有 Agent 删（2026-11-05 现核：名册进了 L1
+    行之后 ``default`` 被翻成 ``secretary``，圈出 0 行，两头同时落空）。
+    """
+    from plobi.agents.registry import agent_id_for_scope
+
+    return agent_id_for_scope(profile)
 
 
 def _agent_tool_row(scope: Optional[str]):
@@ -15178,7 +15194,7 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
         cutoff = time.time() - (days * 86400)
         cost_cols = _cost_partition_sql()
         # 缺口 B：单库总账上行级圈定「这个 Agent 的」用量读数（'' = 全库）。
-        agent_scope = _agent_id_for_profile(profile) or None
+        agent_scope = _agent_scope_key(profile)
         agent_sql = " AND agent_id = ?" if agent_scope else ""
         agent_params = (agent_scope,) if agent_scope else ()
         cur = db._conn.execute(f"""
@@ -15265,7 +15281,7 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
         cutoff = time.time() - (days * 86400)
         cost_cols = _cost_partition_sql()
         # 缺口 B：同 usage，按 agent_id 圈定读数。
-        agent_scope = _agent_id_for_profile(profile) or None
+        agent_scope = _agent_scope_key(profile)
         agent_sql = " AND agent_id = ?" if agent_scope else ""
         agent_params = (agent_scope,) if agent_scope else ()
 

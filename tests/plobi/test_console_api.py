@@ -777,14 +777,26 @@ def test_quota_summary_query_profile_is_remote_fallback(client, _isolated_state,
 
 
 def test_agent_id_for_profile_maps_roster_rows(_isolated_state):
-    """身份两种写法都翻回**同一行**：旧家名与名册 name（桌面带的就是后者）。"""
-    register(_isolated_state, agenda=AGENDA, physics={"role": "l2_project", "profile": "l2-physics"})
+    """身份两种写法都翻回**同一行**；L1 那一格翻回空串，不是"不圈"。"""
+    register(
+        _isolated_state,
+        agenda=AGENDA,
+        physics={"role": "l2_project", "profile": "l2-physics"},
+        secretary=SECRETARY,
+    )
     assert console_router._agent_id_for_profile("l2-agenda") == "agenda"
     assert console_router._agent_id_for_profile("l2-physics") == "physics"
     assert console_router._agent_id_for_profile("agenda") == "agenda"
     assert console_router._agent_id_for_profile("physics") == "physics"
+    # 裁定 180：秘书在总账里的归属键是**空串**。名册里的 L1 行（slug 恰好叫 master）
+    # 是同一格的另一种写法——把它翻成 `secretary` 就等于圈出 0 行（11-05 那次
+    # 「我和总秘书的对话又消失了」）。
+    assert console_router._agent_id_for_profile("master") == ""
+    assert console_router._agent_id_for_profile("secretary") == ""
     assert console_router._agent_id_for_profile("") == ""
-    assert console_router._agent_id_for_profile("no-such-home") == ""
+    # 全局与"没带身份"是两件事
+    assert console_router._agent_id_for_profile("all") is None
+    assert console_router._agent_id_for_profile("no-such-home") is None
 
 
 def test_an_identity_written_as_the_roster_name_is_not_read_as_l1(

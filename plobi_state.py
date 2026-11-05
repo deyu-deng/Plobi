@@ -3402,9 +3402,12 @@ class SessionDB:
         elif not include_archived:
             where_clauses.append("s.archived = 0")
         # 行级归属（裁定 180 / 缺口 B）：单库总账上按 agent_id 圈定「这个 Agent
-        # 的会话」。旧的一家一库读法在这里等价于本过滤；None = 不过滤
-        # （L1 / flat 的全量视图，历史行为）。
-        if agent_id:
+        # 的会话」。三个值三种意思，不许并成一个：``None`` = 不圈（跨 Agent 的全局
+        # 面）；**``''`` = L1 那一格**（总秘书的归属键就是空串——它不是"没带身份"，
+        # 更不是全局）；其余 = 名册那一行的 name。把 ``''`` 当成"没传"过一次代价是
+        # 2026-11-05 那句「我和总秘书的对话又消失了」：L1 作用域读走了全库，
+        # 而名册里的 L1 行又把 ``default`` 抢成某个 Agent，两头同时落空。
+        if agent_id is not None:
             where_clauses.append("s.agent_id = ?")
             params.append(agent_id)
 
@@ -4935,8 +4938,9 @@ class SessionDB:
             role_placeholders = ",".join("?" for _ in role_filter)
             where_clauses.append(f"m.role IN ({role_placeholders})")
             params.extend(role_filter)
-        # 行级归属（缺口 B）：FTS 也只在这个 Agent 的会话里搜；None = 全库。
-        if agent_id:
+        # 行级归属（缺口 B）：FTS 也只在这个 Agent 的会话里搜；``None`` = 全库，
+        # ``''`` = L1 那一格（与 :meth:`list_sessions_rich` 同一套三值）。
+        if agent_id is not None:
             where_clauses.append("s.agent_id = ?")
             params.append(agent_id)
 
@@ -5310,8 +5314,9 @@ class SessionDB:
             where_clauses.append("s.archived = 1")
         elif not include_archived:
             where_clauses.append("s.archived = 0")
-        # 行级归属（缺口 B）：单库总账上圈定「这个 Agent 的」计数；None = 不过滤。
-        if agent_id:
+        # 行级归属（缺口 B）：单库总账上圈定「这个 Agent 的」计数；``None`` = 不圈，
+        # ``''`` = L1 那一格（计数与列表必须同一套三值，否则侧栏显示一条、角标说零条）。
+        if agent_id is not None:
             where_clauses.append("s.agent_id = ?")
             params.append(agent_id)
 
@@ -5403,9 +5408,13 @@ class SessionDB:
         ``ended_at`` 为空天然排前——用户正在跟这个 Agent 说话的那一屏，
         就是它；``say`` 这时落进去，用户当场就看得见。
         """
-        aid = (agent_id or "").strip()
-        if not aid:
+        aid = agent_id.strip() if agent_id is not None else None
+        if aid is None:
             return None
+        # ``''`` 是**有意的**：L1 那一格的归属键就是空串（裁定 180），「点开秘书该
+        # 看到哪一条」与「say 投给秘书落哪一条」都得由这条判据答得出那一格。把空串
+        # 当"没给归属"退成 None，界面就只会开一张空草稿（11-05 那句「我和总秘书的
+        # 对话又消失了」的第二半原因）。
         excluded = sorted(NON_CONVERSATIONAL_SOURCES)
         marks = ",".join("?" for _ in excluded)
         # 子会话口径与 ``list_sessions_rich(include_children=False)`` 逐字一致：
@@ -5732,7 +5741,8 @@ class SessionDB:
     def count_empty_sessions(self, agent_id: str = None) -> int:
         """Return the count of empty, non-active, non-archived sessions.
 
-        ``agent_id``（缺口 B）圈定「这个 Agent 的」空会话计数；None = 全库。
+        ``agent_id``（缺口 B）圈定「这个 Agent 的」空会话计数；``None`` = 全库，
+        ``''`` = L1 那一格。
 
         "Empty" = ``message_count = 0`` AND the session has ended
         (``ended_at IS NOT NULL``) AND is not archived. The ``ended_at``
@@ -5748,7 +5758,7 @@ class SessionDB:
         count.
         """
         with self._lock:
-            if agent_id:
+            if agent_id is not None:
                 cursor = self._conn.execute(
                     "SELECT COUNT(*) FROM sessions "
                     "WHERE message_count = 0 "
@@ -5802,7 +5812,10 @@ class SessionDB:
         removed_ids: list[str] = []
 
         def _do(conn):
-            if agent_id:
+            # 三值同一套判据（见 :meth:`list_sessions_rich`）：``None`` 才是"跨 Agent
+            # 全清"，``''`` 是 L1 那一格。写成 ``if agent_id:`` 的话，带 L1 作用域的
+            # 一次"删空会话"会替**所有** Agent 删——那条路 11-05 之前就开着。
+            if agent_id is not None:
                 cursor = conn.execute(
                     "SELECT id FROM sessions "
                     "WHERE message_count = 0 "

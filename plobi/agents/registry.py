@@ -1426,6 +1426,38 @@ def identity_name_in_entries(entries, key: str | None) -> str:
     return ""
 
 
+def agent_id_for_scope(scope: str | None, *, entries=None) -> Optional[str]:
+    """作用域／身份 → 总账的行级键 ``sessions.agent_id``。三个返回值三种意思。
+
+    * ``None`` —— **不圈行**：作用域是 ``all``（跨 Agent 的全局面），或名册里认不出这写法。
+    * ``''``   —— **L1 那一格**。裁定 180 把秘书的归属键定成空串；名册里 L1 那一行
+      （``role=l1_secretary``，这台它的 slug 恰好叫 ``default``）**不是**另一个键，
+      它是同一格的另一种写法。**没带作用域也是这一格**——与 SINGLE-GATEWAY §3.4
+      「空 = 进程默认身份（L1 总秘书）」同形，桌面刻意不维护第二种"没说"的状态。
+    * 其余     —— 名册那一行的 ``name``（L2 的行级键）。
+
+    为什么单独立一只口：2026-11-05 那次「我和总秘书的对话又消失了」是两个错叠在
+    一起——① 读面把解析结果 ``or None``，于是 L1 与"全局"成了同一件事；② 名册进了
+    L1 行之后 ``default`` 被翻成 ``secretary``，圈出来 0 行（真库现读：不圈 193 行、
+    按 ``secretary`` 圈 0 行、按空串圈才是秘书那一格）。**L1 不代表全局**，所以这件事
+    要在一只口里判一次，不许每个读面各自猜。
+    """
+    raw = (scope or "").strip()
+    if not raw:
+        return ""
+    if raw.casefold() == "all":
+        return None
+    pool = list(entries) if entries is not None else list(load_registry().entries())
+    name = identity_name_in_entries(pool, raw)
+    if not name:
+        # 认不出：不圈。存在性另有 `_scope_name_for_read` 那道 404，这里不重复判。
+        return None
+    entry = next((e for e in pool if e.name == name), None)
+    if entry is not None and getattr(entry, "role", "") == L1_SECRETARY_ROLE:
+        return ""
+    return name
+
+
 def _registry_and_entry_for_profile(profile_name: str):
     """同 :func:`entry_for_profile`，但把那份注册表一起带回来（省一次读盘）。"""
     want = (profile_name or "").strip().casefold()

@@ -1971,13 +1971,19 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
             soul_path = _shared
         else:
             # 这一份还没生成：**别退回顶层那份（那是 L1 的秘书 SOUL）**，就地按名册生成身份。
+            _is_l1_row = False
             try:
                 from plobi.agents.registry import build_l2_identity_soul_block, load_registry
 
                 entry = next(
                     (e for e in load_registry().entries() if e.name == _agent_id), None
                 )
-                if entry is not None:
+                # 名册里 L1 那一行（role=l1_secretary）是**另一种写法的那个同一格**：秘书的
+                # 人设在顶层 SOUL.md 上，不许按 L2 形状给它造一份「本项目统筹者」。
+                # 11-05 名册进了 L1 行以后，`-p default` 会把 PLOBI_AGENT_ID 写成它的 name，
+                # 于是共享层找不到、下面这支就会把秘书写成 L2。
+                _is_l1_row = entry is not None and getattr(entry, "role", "") == "l1_secretary"
+                if entry is not None and not _is_l1_row:
                     return _truncate_content(
                         build_l2_identity_soul_block(entry),
                         "SOUL.md",
@@ -1986,12 +1992,15 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
                     )
             except Exception as exc:  # noqa: BLE001 - 生成不了就当没身份，别读错的
                 logger.debug("soul block for %s unavailable: %s", _agent_id, exc)
-            # 认不出是哪一行 ⇒ **宁可不给身份**，也不把 L1 的秘书合同印到分身身上
-            # （10-31：五门带括号的课就是这样答「我是你本机的总秘书」的）。
-            logger.debug(
-                "identity %r has no soul of its own; refusing the L1 one", _agent_id
-            )
-            return None
+            if _is_l1_row:
+                logger.debug("identity %r is the L1 row; reading the top-level SOUL.md", _agent_id)
+            else:
+                # 认不出是哪一行 ⇒ **宁可不给身份**，也不把 L1 的秘书合同印到分身身上
+                # （10-31：五门带括号的课就是这样答「我是你本机的总秘书」的）。
+                logger.debug(
+                    "identity %r has no soul of its own; refusing the L1 one", _agent_id
+                )
+                return None
 
     if not soul_path.exists():
         return None
