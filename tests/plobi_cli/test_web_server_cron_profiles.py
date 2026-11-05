@@ -11,20 +11,38 @@ from fastapi import HTTPException
 
 @pytest.fixture()
 def isolated_profiles(tmp_path, monkeypatch):
-    """Give profile discovery an isolated default home with one named profile."""
+    """一份隔离的共享根 ＋ **名册里的 `worker_alpha` 那一行**。
+
+    以前这里造的是 ``profiles/worker_alpha/`` 一具家——「一个分身一个家」的形状，
+    概念已取消（裁 178 乙案／ADR-0013）。现在身份＝名册那一行（裁 192）：
+    存在性问名册、**排程存储**是 ``<共享根>/cron/agents/<名册 name>/``、
+    **运行时家**是共享根本体（配置／凭据／脚本／技能只有一份）。
+    所以 ``isolated_profiles["worker_alpha"]`` 给的是共享根（那才是这一行运行时的家），
+    那一行自己的作业文件在 ``isolated_profiles["worker_store"]``。
+    """
     from plobi_cli import profiles
 
     default_home = tmp_path / ".plobi"
-    profiles_root = default_home / "profiles"
-    worker_home = profiles_root / "worker_alpha"
+    (default_home / "plobi").mkdir(parents=True)
+    roster = default_home / "plobi" / "projects.yaml"
+    roster.write_text(
+        "version: 1\nagents:\n  worker_alpha:\n    role: l2_project\n"
+        "    category: butler\n    profile: worker_alpha\n",
+        encoding="utf-8",
+    )
+    worker_store = default_home / "cron" / "agents" / "worker_alpha"
+    for home in (default_home / "cron", worker_store):
+        home.mkdir(parents=True, exist_ok=True)
+    (default_home / "config.yaml").write_text("model: test-model\n", encoding="utf-8")
 
-    for home in (default_home, worker_home):
-        (home / "cron").mkdir(parents=True, exist_ok=True)
-        (home / "config.yaml").write_text("model: test-model\n", encoding="utf-8")
-
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
     monkeypatch.setattr(profiles, "_get_default_plobi_home", lambda: default_home)
-    monkeypatch.setattr(profiles, "_get_profiles_root", lambda: profiles_root)
-    return {"default": default_home, "worker_alpha": worker_home}
+    monkeypatch.setattr(profiles, "_get_profiles_root", lambda: default_home / "profiles")
+    return {
+        "default": default_home,
+        "worker_alpha": default_home,
+        "worker_store": worker_store,
+    }
 
 
 def _drain_queue(q):
@@ -56,7 +74,8 @@ def test_call_cron_for_profile_routes_storage_without_mutating_globals(isolated_
     assert job["profile_name"] == "worker_alpha"
     assert job["plobi_home"] == str(isolated_profiles["worker_alpha"])
     assert job["is_default_profile"] is False
-    assert (isolated_profiles["worker_alpha"] / "cron" / "jobs.json").exists()
+    # 那一行的作业写在**它自己那一份存储**里，不落在共享根那一份上
+    assert (isolated_profiles["worker_store"] / "jobs.json").exists()
     assert not (isolated_profiles["default"] / "cron" / "jobs.json").exists()
 
     assert cron_jobs.CRON_DIR == old_cron_dir
@@ -79,7 +98,6 @@ def test_fire_cron_job_scopes_store_and_runtime_home_together(
     )
 
     default_home = isolated_profiles["default"]
-    worker_home = isolated_profiles["worker_alpha"]
     monkeypatch.setattr(scheduler, "_plobi_home", None)
     captured = {}
 
@@ -100,8 +118,9 @@ def test_fire_cron_job_scopes_store_and_runtime_home_together(
         assert web_server._fire_cron_job_for_profile("worker_alpha", "worker-job") is True
         assert captured == {
             "job_id": "worker-job",
-            "runtime_home": worker_home,
-            "jobs_file": worker_home / "cron" / "jobs.json",
+            # 运行时家＝共享根本体，存储＝那一行自己的那一份（两件事，别并成一个）
+            "runtime_home": default_home,
+            "jobs_file": isolated_profiles["worker_store"] / "jobs.json",
         }
         assert scheduler._get_plobi_home() == default_home
     finally:
@@ -117,7 +136,10 @@ def test_profile_call_cannot_retarget_ticker_store_mid_write(
     from plobi_cli import web_server
 
     default_cron = isolated_profiles["default"] / "cron"
-    worker_cron = isolated_profiles["worker_alpha"] / "cron"
+    # 那一行自己的存储是 `<共享根>/cron/agents/<名册 name>/`，与 ticker 正在写的那一份
+    # （共享根的 `cron/`）**是两个目录**——这条用例测的就是"面板点一行不许把调度器
+    # 的在写事务顶到别人的文件上"，两边并成一个就测不出这件事了。
+    worker_cron = isolated_profiles["worker_store"]
     default_file = default_cron / "jobs.json"
     worker_file = worker_cron / "jobs.json"
     default_job = {
