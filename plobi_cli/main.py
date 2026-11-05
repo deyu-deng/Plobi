@@ -11082,11 +11082,13 @@ def cmd_profile(args):
     action = getattr(args, "profile_action", None)
 
     if action is None:
-        # Bare `plobi profile` — show current profile status
+        # Bare `plobi agent` — 显示这一台当前跟哪个 Agent 说话。
+        # （11-05 随 `WP-PROFILE-CANCEL`：旧写法 `plobi profile` 仍收着，见
+        # `subcommands/profile.py`；改的是**人读的这两句**，取值与行为一字不动。）
         profile_name = get_active_profile_name()
         dhh = display_plobi_home()
-        print(f"\nActive profile: {profile_name}")
-        print(f"Path:           {dhh}")
+        print(f"\nActive agent: {profile_name}")
+        print(f"Path:         {dhh}")
 
         profiles = list_identity_profiles()
         for p in profiles:
@@ -11119,7 +11121,7 @@ def cmd_profile(args):
 
         # Header
         print(
-            f"\n {'Profile':<16} {'Model':<28} {'Gateway':<12} "
+            f"\n {'Agent':<16} {'Model':<28} {'Gateway':<12} "
             f"{'Alias':<12} {'Distribution'}"
         )
         print(
