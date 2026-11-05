@@ -1385,6 +1385,47 @@ def entry_for_profile(profile_name: str) -> Optional[AgentEntry]:
     return found[1] if found is not None else None
 
 
+def identity_name_in_entries(entries, key: str | None) -> str:
+    """在**手里这一批名册行**里认出「这个写法是谁」；认不出回空串。
+
+    与 :func:`identity_name_for_key` 同一套判据（名册 name、它的小写、旧家名、
+    ``souls/`` 里那个身份文件名、记忆那颗 slug），区别只在**不重新读盘**：调用方
+    手里常常已经有一份 registry 实例（``plobi/console`` 的请求面就是——它自己维护
+    「文件变了才重读」的缓存，这里再 parse 一遍 yaml 等于把每次请求的钱翻倍）。
+
+    判据只有一条：认得出就回那一行的 ``name``，认不出就回空串——空串的含义是
+    「没带身份」或「名册里真没这一行」，**不是**「这是 L1」。谁把它当 L1 用，
+    谁就得在调用点上明说（console 那一跳的注释就写了这件事）。
+    """
+    raw = (key or "").strip()
+    if not raw:
+        return ""
+    try:
+        from tools.memory_tool import resolve_agent_slug
+    except Exception:  # noqa: BLE001 - 记忆那条腿不可用就少一种写法
+        resolve_agent_slug = None
+    for entry in entries:
+        if getattr(entry, "archived", False):
+            continue
+        candidates = {entry.name, entry.name.lower()}
+        value = str(getattr(entry, "profile_name", "") or "").strip()
+        if value:
+            candidates.add(value)
+            candidates.add(value.lower())
+        try:
+            candidates.add(shared_soul_path_for(entry.name).stem)
+        except Exception:  # noqa: BLE001 - 算不出文件名就少一种写法
+            pass
+        if resolve_agent_slug is not None:
+            try:
+                candidates.add(resolve_agent_slug(entry.name))
+            except Exception:  # noqa: BLE001
+                pass
+        if raw in candidates:
+            return entry.name
+    return ""
+
+
 def _registry_and_entry_for_profile(profile_name: str):
     """同 :func:`entry_for_profile`，但把那份注册表一起带回来（省一次读盘）。"""
     want = (profile_name or "").strip().casefold()

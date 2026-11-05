@@ -777,12 +777,49 @@ def test_quota_summary_query_profile_is_remote_fallback(client, _isolated_state,
 
 
 def test_agent_id_for_profile_maps_roster_rows(_isolated_state):
-    """profile 名 → 名册 name 的反查（桌面头传 profile、库里存 name 的那一跳）。"""
+    """身份两种写法都翻回**同一行**：旧家名与名册 name（桌面带的就是后者）。"""
     register(_isolated_state, agenda=AGENDA, physics={"role": "l2_project", "profile": "l2-physics"})
     assert console_router._agent_id_for_profile("l2-agenda") == "agenda"
     assert console_router._agent_id_for_profile("l2-physics") == "physics"
+    assert console_router._agent_id_for_profile("agenda") == "agenda"
+    assert console_router._agent_id_for_profile("physics") == "physics"
     assert console_router._agent_id_for_profile("") == ""
     assert console_router._agent_id_for_profile("no-such-home") == ""
+
+
+def test_an_identity_written_as_the_roster_name_is_not_read_as_l1(
+    client, _isolated_state, monkeypatch, tmp_path
+):
+    """中文那几行按自己的名字问账：`X-Plobi-Agent` 与 `?profile=` 两条入口同语义。
+
+    11-05 这台：名册 25 行里 11 行的身份是中文课程名，`sessions.agent_id` 存的就是它
+    （总账没有「家名」那一列）。而 console 这一跳曾自己写了一遍只比 `profile_name` 的
+    循环 ⇒ 名册 name 一律回空串＝L1，那一行的消费被并进秘书那份；桌面那头因为 HTTP 头
+    只许 latin-1，中文身份还得退到 `?profile=`（另一条会话在飞的补丁），退过去照样
+    解析不出这一行。认不出是一回事，认错了当成 L1 是另一回事。
+    """
+    monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
+    register(
+        _isolated_state,
+        agenda=AGENDA,
+        电工电子学={"role": "l2_project", "profile": "l2-course-ee", "category": "courses"},
+    )
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [("s-l1", "", 1.0, 5), ("s-ee", "电工电子学", 0.5, 3)],
+    )
+
+    assert console_router._agent_id_for_profile("电工电子学") == "电工电子学"
+    assert console_router._agent_id_for_profile("l2-course-ee") == "电工电子学"
+
+    assert client.get("/api/quota/summary?profile=电工电子学").json()["data"]["todayUsd"] == 0.5
+    assert client.get(
+        "/api/quota/summary", headers={"X-Plobi-Agent": "l2-course-ee"}
+    ).json()["data"]["todayUsd"] == 0.5
+
+    # 不带身份才是 L1 那份
+    assert client.get("/api/quota/summary").json()["data"]["todayUsd"] == 1.0
 
 
 def test_request_profile_precedence_header_over_query():

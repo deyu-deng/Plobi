@@ -247,23 +247,26 @@ def status_for(agent_id: str) -> str:
 
 
 def _agent_id_for_profile(profile: str) -> str:
-    """profile 名 → 名册 name（console 的 agent_id 语义）；查不到回空串。
+    """带下来的身份 → 名册 name（console 的 agent_id 语义）；认不出回空串。
 
-    桌面 ``X-Plobi-Agent`` 头今天传的是 renderer 的 ``request.profile``
-    （SINGLE-GATEWAY §3.3），而单库后的归属列存的是名册 name（裁定 180）——
-    这一跳就是两者之间的桥。空串（L1/未指定/孤儿家）原样返回。
+    身份的写法有两种、都合法：名册那一行的 ``name``（桌面左栏与总账 ``agent_id``
+    存的就是它，裁定 180/192）与旧家名 ``profile_name``（``-p`` 与老调用方还在传；
+    这台 25 行里 11 行两者不同，如 ``agenda``/``l2-agenda``）。这里曾自己写了一遍
+    **只比 ``profile_name`` 且大小写敏感**的循环，于是名册 name 一律回空串＝L1，
+    那一行自己的账与会话被并进秘书那份。判据交回名册那一份
+    :func:`plobi.agents.registry.identity_name_in_entries`（与 ``plobi_cli`` 那两个
+    入口同源），并照旧用本模块自己那份 registry——它已经按「文件变了才重读」缓存着，
+    再 parse 一遍 yaml 等于把每个请求的成本翻倍。
     """
     name = str(profile or "").strip()
     if not name:
         return ""
     try:
-        registry = get_registry()
-        for entry in registry.entries():
-            if (entry.profile_name or "").strip() == name:
-                return entry.name
+        from plobi.agents.registry import identity_name_in_entries
+
+        return identity_name_in_entries(get_registry().entries(), name)
     except Exception:
         return ""
-    return ""
 
 
 def _latest_session_for_agent(agent_id: str, *, db_path: Optional[Path] = None) -> str:
