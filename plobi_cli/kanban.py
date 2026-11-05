@@ -307,7 +307,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_create = sub.add_parser("create", help="Create a new task")
     p_create.add_argument("title", help="Task title")
     p_create.add_argument("--body", default=None, help="Optional opening post")
-    p_create.add_argument("--assignee", default=None, help="Profile name to assign")
+    p_create.add_argument("--assignee", default=None, help="Agent 名（名册那一行）")
     p_create.add_argument("--parent", action="append", default=[],
                           help="Parent task id (repeatable)")
     p_create.add_argument("--workspace", default="scratch",
@@ -392,7 +392,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- list ---
     p_list = sub.add_parser("list", aliases=["ls"], help="List tasks")
     p_list.add_argument("--mine", action="store_true",
-                        help="Filter by $PLOBI_PROFILE as assignee")
+                        help="只看指派给当前 Agent 的卡")
     p_list.add_argument("--assignee", default=None)
     p_list.add_argument("--status", default=None,
                         choices=sorted(kb.VALID_STATUSES))
@@ -764,8 +764,8 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- assignees ---
     p_asg = sub.add_parser(
         "assignees",
-        help="List known profiles + per-profile task counts "
-             "(union of ~/.plobi/profiles/ and current assignees on the board)",
+        help="List assignable agents + per-agent task counts "
+             "(名册那些行 ∪ 盘上旧家 ∪ 板上现有 assignee)",
     )
     p_asg.add_argument("--json", action="store_true")
 
@@ -991,8 +991,13 @@ def kanban_command(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def _profile_author() -> str:
-    """Best-effort author name for an interactive CLI call."""
-    for env in ("PLOBI_PROFILE_NAME", "PLOBI_PROFILE"):
+    """Best-effort author name for an interactive CLI call.
+
+    先问 ``PLOBI_AGENT_ID``（名册那一行＝身份，裁 180/192），再退到两枚家名时代的环境
+    变量。顺序反过来的话 `--mine` 会拿旧家名去比现在存成名册 name 的 assignee，
+    结果是自己名下的卡一张也不显示。
+    """
+    for env in ("PLOBI_AGENT_ID", "PLOBI_PROFILE_NAME", "PLOBI_PROFILE"):
         v = os.environ.get(env)
         if v:
             return v
@@ -1239,23 +1244,24 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print(f"Kanban DB initialized at {path}")
 
     print()
-    # Enumerate profiles on disk so the user knows what assignees are
-    # already addressable. Multica does this auto-detection on its
-    # daemon start; we do it here at init time instead because our
-    # dispatcher doesn't need to enumerate — we just pass the name
-    # through to `plobi -p <name>`.
+    # 可以指派给谁＝**名册上那些行**（裁 192）。
+    # 这里从前扫的是盘上那几具家（`<根>/profiles/<名>/`）：家退休之后扫出来只剩
+    # `default`，新登记的 Agent 在板子上根本不出——那份"自动探测"随概念一起没了，
+    # 但能力要留着（用户 10-27：「kanban 的能力要有」）。
     try:
-        profiles = kb.list_profiles_on_disk()
+        assignable = kb.list_assignable_agents()
     except Exception:
-        profiles = []
-    if profiles:
-        print(f"Discovered {len(profiles)} profile(s) on disk; any of these can "
-              f"be an --assignee:")
-        for name in profiles:
+        assignable = []
+    if assignable:
+        print(f"Assignable agents ({len(assignable)} rows in the roster) — any of "
+              f"these can be an --assignee:")
+        for name in assignable[:24]:
             print(f"  {name}")
+        if len(assignable) > 24:
+            print(f"  … 另有 {len(assignable) - 24} 行（`plobi agent list`）")
     else:
-        print("No profiles found under ~/.plobi/profiles/.")
-        print("Create one with `plobi -p <name> setup` before assigning tasks.")
+        print("名册还是空的。")
+        print("先登记一行再派工：`plobi agent register <名>`")
     print()
     print("Next step: start the gateway so ready tasks actually get picked up.")
     print("  plobi gateway start")
@@ -1290,15 +1296,17 @@ def _cmd_assignees(args: argparse.Namespace) -> int:
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
     if not data:
-        print("(no assignees — create a profile with `plobi -p <name> setup`)")
+        print("(名册里还没有可指派的 Agent — 先登记一行：`plobi agent register <名>`)")
         return 0
-    # Header
-    print(f"{'NAME':20s}  {'ON DISK':8s}  COUNTS")
+    # Header：「在册」＝名册那一行（身份的真源）；「在盘」只说明那具旧家还在（隔离区里
+    # 的老安装），它不再是"这个 Agent 存在吗"的判据。
+    print(f"{'NAME':20s}  {'IN ROSTER':10s}  {'ON DISK':8s}  COUNTS")
     for entry in data:
+        in_roster = "yes" if entry.get("in_roster") else "no"
         on_disk = "yes" if entry["on_disk"] else "no"
         counts = entry["counts"] or {}
         count_str = ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "(idle)"
-        print(f"{entry['name']:20s}  {on_disk:8s}  {count_str}")
+        print(f"{entry['name']:20s}  {in_roster:10s}  {on_disk:8s}  {count_str}")
     return 0
 
 

@@ -2381,12 +2381,33 @@ def _claimer_id() -> str:
 # ---------------------------------------------------------------------------
 
 def _canonical_assignee(assignee: Optional[str]) -> Optional[str]:
-    """Lowercase-assignee normalization for Kanban rows (dashboard/CLI parity)."""
+    """Assignee 的键＝**名册那一行的 `name`**（裁 192），写法不许被改。
+
+    以前这里只走 `normalize_profile_name`（家名的归一：小写、非法字符换 `-`）。家退休
+    之后那会把身份写坏：这台现读 25 行里 **13 行**被改写法（``Aura``→``aura``、
+    ``大学物理（甲）Ⅱ``→``大学物理（甲）ⅱ``），于是同一块板上一个 Agent 有两种拼法
+    ——看板自己的 `assignee`、仪表盘下拉、以及改名那条链按名册 name 做的搬移，三者
+    对不上号（现读 `tasks.assignee` 里还留着旧家名 `l2-agenda`）。
+
+    认得出那一行 ⇒ 写成那一行的 `name`（原样，大小写与全角都留着）；认不出 ⇒
+    保持旧归一（terminal lane、人类自取的名字这类"不是名册行"的收件人不该被改行为）。
+    """
     if assignee is None:
         return None
+    raw = str(assignee).strip()
+    if not raw:
+        return None
+    try:
+        from plobi.agents.registry import identity_name_in_entries, load_registry
+
+        hit = identity_name_in_entries(load_registry().entries(), raw)
+        if hit:
+            return hit
+    except Exception:
+        pass
     from plobi_cli.profiles import normalize_profile_name
 
-    return normalize_profile_name(assignee)
+    return normalize_profile_name(raw)
 
 
 def create_task(
@@ -8522,20 +8543,47 @@ def list_profiles_on_disk() -> list[str]:
     return sorted(names)
 
 
-def known_assignees(conn: sqlite3.Connection) -> list[dict]:
-    """Return every assignee name known to the board or on disk.
+def list_assignable_agents() -> list[str]:
+    """这块板可以指派给谁 ＝ **名册上那些行**（裁 192）。
 
-    Each entry is ``{"name": str, "on_disk": bool, "counts": {status: n}}``.
-    A name is included when it's a configured profile on disk OR when
-    any non-archived task has it as the assignee. Used by:
+    以前这一份是从盘上扫出来的（``<根>/profiles/<名>/`` 那些家）。家退休之后扫出来
+    只剩 ``['default']``——这台现读 25 行名册全部看不见，仪表盘的收件人下拉与新登记的
+    Agent 就此断线：**功能丢了，不是措辞变了**。盘上那几具（隔离区里的旧家）仍并进来，
+    老安装里"手边还有个家"的写法不至于突然不能用。
+    """
+    names: set[str] = set()
+    try:
+        from plobi.agents.registry import load_registry
+
+        for entry in load_registry().entries():
+            if not getattr(entry, "archived", False):
+                name = str(entry.name or "").strip()
+                if name:
+                    names.add(name)
+    except Exception:
+        pass
+    try:
+        names.update(list_profiles_on_disk())
+    except Exception:
+        pass
+    names.add("default")
+    return sorted(names)
+
+def known_assignees(conn: sqlite3.Connection) -> list[dict]:
+    """Return every assignee name known to the board, the roster, or on disk.
+
+    Each entry is ``{"name", "on_disk", "in_roster", "counts"}``. A name is
+    included when it's a roster row, a configured profile on disk, OR the
+    assignee of any non-archived task. Used by:
 
     - ``plobi kanban assignees`` for the terminal.
-    - The dashboard assignee dropdown (so a fresh profile appears in
-      the picker even before it's been given any task).
+    - The dashboard assignee dropdown (so a freshly registered agent appears
+      in the picker even before it's been given any task).
     - Router-profile heuristics ("who's overloaded?") without scanning
       the whole board.
     """
     on_disk = set(list_profiles_on_disk())
+    roster = set(list_assignable_agents())
 
     # Count tasks per (assignee, status), excluding archived.
     counts: dict[str, dict[str, int]] = {}
@@ -8546,11 +8594,12 @@ def known_assignees(conn: sqlite3.Connection) -> list[dict]:
     ):
         counts.setdefault(row["assignee"], {})[row["status"]] = int(row["n"])
 
-    names = sorted(on_disk | set(counts.keys()))
+    names = sorted(roster | on_disk | set(counts.keys()))
     return [
         {
             "name": name,
             "on_disk": name in on_disk,
+            "in_roster": name in roster,
             "counts": counts.get(name, {}),
         }
         for name in names
