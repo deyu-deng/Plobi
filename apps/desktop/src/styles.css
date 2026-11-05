@@ -336,15 +336,12 @@
     --dt-border: var(--ui-stroke-secondary);
     --dt-input: var(--ui-stroke-primary);
     /* THE single knob for input-field borders: the resting alpha (% of the ring
-       color). Hover doubles it; focus/open go full. 0% = invisible at rest. */
-    --dt-input-border: 7%;
-    /* Knob for input-field background fill: alpha (% of --dt-card) across all
-       states. 100% = fully opaque, lower = translucent over the blurred chrome. */
-    --dt-input-bg: 0%;
-    /* Classic recessed "inset" — a crisp 1px inner shadow at the TOP edge.
-       :root.dark bumps the alpha since a dark card swallows shadow. Removed on
-       focus (the focus border carries the state). */
-    --dt-input-inset: inset 0 1px 1px color-mix(in srgb, #000 10%, transparent);
+       color). Hover doubles it; focus/open go full. Without the old inner shadow
+       (see below) the border has to say "field" on its own, so it rests stronger. */
+    --dt-input-border: 12%;
+    /* Fill knob, now mixed against the FOREGROUND: a flat light plate sitting on
+       the card, not a hole cut into it. */
+    --dt-input-bg: 3.5%;
     --dt-ring: var(--ui-stroke-primary);
     --dt-midground: var(--theme-midground);
     --dt-composer-ring: var(--ui-base);
@@ -477,10 +474,9 @@
     --sidebar-edge-border: color-mix(in srgb, var(--ui-base) 12%, transparent);
     --composer-ring-strength: 1.3;
     --backdrop-invert-mul: 0;
-    /* Dark mode: a dark card needs a stronger black inset to show the recess. */
-    --dt-input-inset: inset 0 1px 1px color-mix(in srgb, #000 38%, transparent);
-    /* Dark needs a lighter resting border than light mode. */
-    --dt-input-border: 4%;
+    /* Dark: same flat plate, read a bit stronger since the card is dark. */
+    --dt-input-bg: 6%;
+    --dt-input-border: 8%;
 
     --ui-inline-code-background: color-mix(in srgb, #ffffff 7%, transparent);
     --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
@@ -854,10 +850,11 @@ text-* variant utilities. */ .btn-arc {
    backdrop-blur flickers (badly on textareas), so the bg fill snaps instead.
    (:focus is declared after :hover so a focused+hovered field shows focus.) */
 .desktop-input-chrome {
-  background: color-mix(in srgb, var(--dt-card) var(--dt-input-bg), transparent);
+  background: color-mix(in srgb, var(--dt-foreground) var(--dt-input-bg), transparent);
   border-color: color-mix(in srgb, var(--dt-composer-ring) var(--dt-input-border), transparent);
-  box-shadow: var(--dt-input-inset);
-  transition: border-color 200ms ease-out;
+  transition:
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
 }
 
 .desktop-input-chrome:hover {
@@ -868,8 +865,14 @@ text-* variant utilities. */ .btn-arc {
    open — Radix moves focus into the list, so the trigger itself loses :focus. */
 .desktop-input-chrome:focus,
 .desktop-input-chrome[data-state='open'] {
+  /* Qoder 的聚焦是"1px 实描边 + 一圈柔光"（现读它那条 token：
+     `0 0 0 1px ring, 0 0 0 3px soft`），不是把框压得更深。常态那圈
+     `inset 0 1px 1px` 内阴影整个删了——用户 11-05：「填写框感觉是一个下沉的框，
+     不好看」，那圈阴影就是"下沉"的本体。 */
   border-color: var(--dt-composer-ring);
-  box-shadow: none;
+  box-shadow:
+    0 0 0 1px var(--dt-composer-ring),
+    0 0 0 3px color-mix(in srgb, var(--dt-composer-ring) 22%, transparent);
   outline: none;
 }
 

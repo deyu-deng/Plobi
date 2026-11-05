@@ -37,6 +37,9 @@ interface PageSearchShellProps extends React.ComponentProps<'section'> {
   /** Right-aligned control in the header's trailing cell (e.g. a refresh button)
    *  so mouse users get a visible affordance for the refresh hotkey. */
   searchTrailingAction?: ReactNode
+  /** 这一页是不是顶层那一屏。嵌进设置里的那一份要传 false：头顶那枚返回键会
+   *  把人直接送回对话，把宿主那一屏整张撤掉（用户 11-05 的截图里就是这样）。 */
+  showBack?: boolean
 }
 
 function ShellTabs({
@@ -71,6 +74,7 @@ export function PageSearchShell({
   searchValue,
   searchHidden = false,
   searchTrailingAction,
+  showBack = true,
   ...props
 }: PageSearchShellProps) {
   const hasTabs = (tabs?.length ?? 0) > 0
@@ -103,16 +107,18 @@ export function PageSearchShell({
             返回键在最左、与搜索同一行——Qoder 那几个页面也是这个位置。 */}
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 pb-2 pt-[calc(var(--titlebar-height)+0.5rem)]">
           <div className="flex min-w-0 items-center justify-start gap-1">
-            <Button
-              aria-label={t.common.back}
-              className="shrink-0 text-(--ui-text-tertiary)"
-              onClick={() => navigate(HOME_ROUTE)}
-              size="icon-xs"
-              title={t.common.back}
-              variant="ghost"
-            >
-              <Codicon name="arrow-left" />
-            </Button>
+            {showBack ? (
+              <Button
+                aria-label={t.common.back}
+                className="shrink-0 text-(--ui-text-tertiary)"
+                onClick={() => navigate(HOME_ROUTE)}
+                size="icon-xs"
+                title={t.common.back}
+                variant="ghost"
+              >
+                <Codicon name="arrow-left" />
+              </Button>
+            ) : null}
             {!searchHidden && (
               <SearchField
                 containerClassName="max-w-[45vw]"

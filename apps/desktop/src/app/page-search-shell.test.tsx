@@ -39,4 +39,12 @@ describe('页面壳的返回键', () => {
     expect(back.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(back.innerHTML).toContain('codicon-arrow-left')
   })
+
+  it('嵌在别的屏里时不画返回键（传 showBack=false）', () => {
+    // Capabilities 那一屏嵌在设置里：那枚返回键会把人送回对话，把宿主整张撤掉
+    // （用户 11-05 的截图里正是这个形状）。
+    mount({ showBack: false })
+
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+  })
 })

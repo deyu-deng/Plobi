@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 
-import { TabDropdown } from '@/components/ui/tab-dropdown'
+import { TabDropdown, tabMetaContent } from '@/components/ui/tab-dropdown'
+import { TextTabMeta } from '@/components/ui/text-tab'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
@@ -30,6 +31,9 @@ interface OverlayNavItemProps {
   active: boolean
   icon: IconComponent
   label: string
+  /** 行末那枚计数（与顶部那排 Tab 同一个形状、同一把尺：`TextTabMeta`）。
+   *  `null` = 还在加载（画骨架），`undefined` = 这一条没有计数。 */
+  meta?: number | string | null
   // Renders as an indented child of another nav item: smaller icon and a
   // lighter active state so it never competes with the boxed parent item.
   nested?: boolean
@@ -91,7 +95,7 @@ export function OverlayMain({ children, className }: OverlayMainProps) {
   )
 }
 
-export function OverlayNavItem({ active, icon: Icon, label, nested, onClick, trailing }: OverlayNavItemProps) {
+export function OverlayNavItem({ active, icon: Icon, label, meta, nested, onClick, trailing }: OverlayNavItemProps) {
   return (
     <button
       className={cn(
@@ -121,6 +125,7 @@ export function OverlayNavItem({ active, icon: Icon, label, nested, onClick, tra
         )}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {meta === undefined ? null : <TextTabMeta>{tabMetaContent(meta)}</TextTabMeta>}
       {trailing}
     </button>
   )
@@ -131,6 +136,8 @@ export interface OverlayNavLink {
   icon: IconComponent
   id: string
   label: string
+  /** 行末计数（见 `OverlayNavItemProps.meta`）。 */
+  meta?: number | string | null
   onSelect: () => void
 }
 
@@ -166,7 +173,13 @@ export function OverlayNav({
         {groups.map(group => (
           <Fragment key={group.id}>
             {group.gapBefore && <div aria-hidden className="h-2" />}
-            <OverlayNavItem active={group.active} icon={group.icon} label={group.label} onClick={group.onSelect} />
+            <OverlayNavItem
+              active={group.active}
+              icon={group.icon}
+              label={group.label}
+              meta={group.meta}
+              onClick={group.onSelect}
+            />
             {group.children && group.active && (
               <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5">
                 {group.children.map(child => (
@@ -175,6 +188,7 @@ export function OverlayNav({
                     icon={child.icon}
                     key={child.id}
                     label={child.label}
+                    meta={child.meta}
                     nested
                     onClick={child.onSelect}
                   />
@@ -206,6 +220,7 @@ export function OverlayNav({
                 icon: group.icon,
                 id: group.id,
                 label: group.label,
+                meta: group.meta,
                 onSelect: group.onSelect,
                 separatorBefore: group.gapBefore
               },
@@ -215,6 +230,7 @@ export function OverlayNav({
                 id: child.id,
                 indent: true,
                 label: child.label,
+                meta: child.meta,
                 onSelect: child.onSelect
               }))
             ])}
