@@ -120,8 +120,8 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
     skills_list.add_argument(
         "--enabled-only",
         action="store_true",
-        help="Hide disabled skills. Use with -p <profile> to see exactly "
-        "which skills will load for that profile.",
+        help="Hide disabled skills. Use with -p <agent> to see exactly "
+        "which skills will load for that agent.",
     )
 
     skills_check = skills_subparsers.add_parser(
@@ -212,11 +212,11 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
 
     skills_opt_out = skills_subparsers.add_parser(
         "opt-out",
-        help="Stop bundled skills from being seeded into this profile",
+        help="Stop bundled skills from being seeded into this agent",
         description=(
             "Write the .no-bundled-skills marker so the installer, "
             "`plobi update`, and any direct sync stop seeding bundled skills "
-            "into the active profile. By default nothing already on disk is "
+            "into the active agent. By default nothing already on disk is "
             "touched. Pass --remove to ALSO delete bundled skills that are "
             "unmodified (user-edited and hub/local skills are never removed)."
         ),

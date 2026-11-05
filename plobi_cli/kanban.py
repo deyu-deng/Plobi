@@ -197,11 +197,11 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     """
     kanban_parser = parent_subparsers.add_parser(
         "kanban",
-        help="Multi-profile collaboration board (tasks, links, comments)",
+        help="Multi-agent collaboration board (tasks, links, comments)",
         description=(
-            "Durable SQLite-backed task board shared across Plobi profiles. "
+            "Durable SQLite-backed task board shared across Plobi agents. "
             "Tasks are claimed atomically, can depend on other tasks, and "
-            "are executed by a named profile in an isolated workspace. "
+            "are executed by a named agent in an isolated workspace. "
             "See https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/kanban.md "
             "or docs/plobi-kanban-v1-spec.pdf for the full design."
         ),
@@ -378,14 +378,14 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
         "--worker",
         action="append",
         default=[],
-        metavar="PROFILE:TITLE[:SKILL,SKILL]",
+        metavar="AGENT:TITLE[:SKILL,SKILL]",
         help="Parallel worker card (repeatable)",
     )
-    p_swarm.add_argument("--verifier", required=True, help="Verifier profile")
-    p_swarm.add_argument("--synthesizer", required=True, help="Synthesizer/writer profile")
+    p_swarm.add_argument("--verifier", required=True, help="Verifier agent")
+    p_swarm.add_argument("--synthesizer", required=True, help="Synthesizer/writer agent")
     p_swarm.add_argument("--tenant", default=None, help="Tenant namespace")
     p_swarm.add_argument("--priority", type=int, default=0, help="Priority tiebreaker")
-    p_swarm.add_argument("--created-by", default=None, help="Creator/anchor profile")
+    p_swarm.add_argument("--created-by", default=None, help="Creator/anchor agent")
     p_swarm.add_argument("--idempotency-key", default=None, help="Dedup key for the root card")
     p_swarm.add_argument("--json", action="store_true", help="Emit JSON output")
 
@@ -443,7 +443,9 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- assign ---
     p_assign = sub.add_parser("assign", help="Assign or reassign a task")
     p_assign.add_argument("task_id")
-    p_assign.add_argument("profile", help="Profile name (or 'none' to unassign)")
+    p_assign.add_argument(
+        "profile", metavar="AGENT", help="Agent name (or 'none' to unassign)"
+    )
 
     # --- reclaim / reassign (recovery) ---
     p_reclaim = sub.add_parser(
@@ -458,12 +460,13 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
 
     p_reassign = sub.add_parser(
         "reassign",
-        help="Reassign a task to a different profile, optionally reclaiming first",
+        help="Reassign a task to a different agent, optionally reclaiming first",
     )
     p_reassign.add_argument("task_id")
     p_reassign.add_argument(
         "profile",
-        help="New profile name (or 'none' to unassign)",
+        metavar="AGENT",
+        help="New agent name (or 'none' to unassign)",
     )
     p_reassign.add_argument(
         "--reclaim", action="store_true",
@@ -518,7 +521,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_comment.add_argument("task_id")
     p_comment.add_argument("text", nargs="+", help="Comment body")
     p_comment.add_argument("--author", default=None,
-                           help="Author name (default: $PLOBI_PROFILE or 'user')")
+                           help="Author name (default: $PLOBI_AGENT_ID or 'user')")
     p_comment.add_argument("--max-len", type=int, default=None,
                            help="Trim the stored comment body to this many characters")
 
@@ -675,7 +678,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
         help="Live-stream task_events to the terminal (Ctrl+C to exit)",
     )
     p_watch.add_argument("--assignee", default=None,
-                         help="Only show events for tasks assigned to this profile")
+                         help="Only show events for tasks assigned to this agent")
     p_watch.add_argument("--tenant", default=None,
                          help="Only show events from tasks in this tenant")
     p_watch.add_argument("--kinds", default=None,
@@ -703,7 +706,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_nsub.add_argument("--user-id", default=None)
     p_nsub.add_argument(
         "--notifier-profile", default=None,
-        help="Profile gateway that owns/delivers this subscription (default: active profile)",
+        help="Gateway agent that owns/delivers this subscription (default: the current agent)",
     )
 
     p_nlist = sub.add_parser(
@@ -734,7 +737,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- runs (per-attempt history for a task) ---
     p_runs = sub.add_parser(
         "runs",
-        help="Show attempt history for a task (one row per run: profile, "
+        help="Show attempt history for a task (one row per run: agent, "
              "outcome, elapsed, summary)",
     )
     p_runs.add_argument("task_id")
@@ -805,7 +808,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
         "--author",
         default=None,
         help="Author name recorded on the audit comment "
-             "(default: $PLOBI_PROFILE or 'specifier')",
+             "(default: $PLOBI_AGENT_ID or 'specifier')",
     )
     p_specify.add_argument(
         "--json",
@@ -817,7 +820,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_decompose = sub.add_parser(
         "decompose",
         help="Decompose a triage-column task into a graph of child tasks "
-             "routed to specialist profiles by description. Falls back to "
+             "routed to specialist agents by description. Falls back to "
              "specify-style single-task promotion when the task doesn't "
              "benefit from fan-out. Uses auxiliary.kanban_decomposer.",
     )
@@ -842,7 +845,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
         "--author",
         default=None,
         help="Author name recorded on the audit comment "
-             "(default: $PLOBI_PROFILE or 'decomposer')",
+             "(default: $PLOBI_AGENT_ID or 'decomposer')",
     )
     p_decompose.add_argument(
         "--json",

@@ -13,10 +13,10 @@ def build_plobi_parser(subparsers, *, cmd_plobi: Callable) -> None:
     """Attach the ``plobi`` subcommand to ``subparsers``."""
     plobi_parser = subparsers.add_parser(
         "plobi",
-        help="Plobi-native ops — resident agents, routing, profiles",
+        help="Plobi-native ops — resident agents and model routing",
         description=(
             "Plobi-native operations. Currently: the L2 resident agent "
-            "registry (B2) — one persistent profile per project, "
+            "registry (B2) — one roster row per project, "
             "role→model routing from config, independent sessions."
         ),
     )
@@ -29,7 +29,7 @@ def build_plobi_parser(subparsers, *, cmd_plobi: Callable) -> None:
         "agents",
         help="L2 resident agent registry (B2)",
         description=(
-            "Manage the L2 resident agent registry: one persistent profile "
+            "Manage the L2 resident agent registry: one roster row "
             "per project, role→model routing (ADR-0011), independent "
             "sessions. Registry lives at $PLOBI_HOME/plobi/projects.yaml."
         ),
@@ -40,20 +40,20 @@ def build_plobi_parser(subparsers, *, cmd_plobi: Callable) -> None:
 
     register = agents_sub.add_parser(
         "register",
-        help="Add or update a registry entry (no profile side effects)",
+        help="Add or update a registry entry",
     )
-    register.add_argument("name", help="Agent name (also the default profile name)")
+    register.add_argument("name", help="Agent name")
     _add_entry_args(register)
 
     spawn = agents_sub.add_parser(
         "spawn",
-        help="Materialize a profile + model routing for a registered agent",
+        help="Materialize the shared-layer files + model routing for a registered agent",
         description=(
-            "Ensure the agent's profile exists (create it bare — no config / "
-            ".env / skill copies, skills come from the shared root per 裁定 42), "
-            "write the "
-            "role→model route into the profile's plobi/models.json, "
-            "verify ADR-0011, and sync config.yaml. If the agent is not "
+            "Write the agent's three shared-layer files — the identity page "
+            "(souls/<name>.md), its role→model route in the shared "
+            "plobi/models.json, and the skills root (no per-agent home is "
+            "created; skills come from the shared root per 裁定 42) — then "
+            "verify ADR-0011 and sync config.yaml. If the agent is not "
             "registered yet, --role/--model etc. register it first."
         ),
     )
@@ -73,7 +73,7 @@ def _add_entry_args(parser) -> None:
     parser.add_argument(
         "--profile",
         default=None,
-        help="Plobi profile name (default: the agent name)",
+        help="Ignored since 11-05: an agent no longer has its own home directory",
     )
     parser.add_argument(
         "--provider",

@@ -67,7 +67,7 @@ def build_gateway_parser(
         action="store_true",
         help=(
             "Start a foreground gateway even when a systemd/launchd/s6 service "
-            "already supervises this profile. Without --force, the command "
+            "already supervises this gateway. Without --force, the command "
             "refuses because a second dispatcher escapes the service and can "
             "corrupt shared gateway state."
         ),
@@ -100,7 +100,7 @@ def build_gateway_parser(
     gateway_start.add_argument(
         "--all",
         action="store_true",
-        help="Kill ALL stale gateway processes across all profiles before starting",
+        help="Kill ALL stale gateway processes across all agents before starting",
     )
     _add_compat_platform_flag(gateway_start)
 
@@ -114,7 +114,7 @@ def build_gateway_parser(
     gateway_stop.add_argument(
         "--all",
         action="store_true",
-        help="Stop ALL gateway processes across all profiles",
+        help="Stop ALL gateway processes across all agents",
     )
 
     # gateway restart
@@ -129,7 +129,7 @@ def build_gateway_parser(
     gateway_restart.add_argument(
         "--all",
         action="store_true",
-        help="Kill ALL gateway processes across all profiles before restarting",
+        help="Kill ALL gateway processes across all agents before restarting",
     )
     _add_compat_platform_flag(gateway_restart)
 
@@ -208,7 +208,7 @@ def build_gateway_parser(
     )
 
     # gateway list
-    gateway_subparsers.add_parser("list", help="List all profiles and their gateway status")
+    gateway_subparsers.add_parser("list", help="List all agents and their gateway status")
 
     # gateway setup
     gateway_subparsers.add_parser("setup", help="Configure messaging platforms")
@@ -219,8 +219,8 @@ def build_gateway_parser(
         help="Remove legacy plobi.service units from pre-rename installs",
         description=(
             "Stop, disable, and remove legacy Plobi gateway unit files "
-            "(e.g. plobi.service) left over from older installs. Profile "
-            "units (plobi-gateway-<profile>.service) and unrelated "
+            "(e.g. plobi.service) left over from older installs. Per-agent "
+            "units (plobi-gateway-<name>.service) and unrelated "
             "third-party services are never touched."
         ),
     )

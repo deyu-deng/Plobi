@@ -44,7 +44,7 @@ def run_plobi(args: Any) -> None:
         print("usage: plobi plobi <agents> ...")
         print("  agents list              list resident L2 agents")
         print("  agents register NAME     add/update a registry entry")
-        print("  agents spawn NAME        materialize profile + model routing")
+        print("  agents spawn NAME        materialize the shared-layer files + model routing")
         return
 
     if action == "agents":
