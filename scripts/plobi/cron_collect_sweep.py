@@ -51,6 +51,57 @@ _bootstrap()
 NOT_DUE_STATES = ("not_due", "invalid_cadence", "exhausted")
 
 
+#: 这一份在仓里的那一个名字。部署到家目录时换了名（`plobi_collect_sweep.py`），
+#: 所以"我的对照版是谁"必须写在这儿，不能靠 `__file__.name` 去猜。
+REPO_SCRIPT_NAME = "cron_collect_sweep.py"
+
+
+def _align_with_repo_copy() -> dict | None:
+    """家目录里跑的这一份与仓里那一版不一致 ⇒ 照仓里刷回来，并把这件事说出来。
+
+    为什么有这一格：`cron` 把相对名的作业脚本解析到 `$PLOBI_HOME/scripts/`
+    （`cron/lifecycle_guard.py:92`、`cron/scheduler.py:2333`），而仓里那份部署到那儿时还换了名——
+    所以**每一轮跑的都是复制品**，而仓里没有任何步骤维护它。10-23 就栽过：屏上那颗"每源频率"
+    已经改好，跑着的还是 10-15 那一版，频率一个字都没生效，台账、屏上、日志三处都读不出"这是旧脚本"。
+    静默不对齐比多打一句贵得多。
+
+    装进 wheel 的那种部署旁边没有仓边那份脚本，读不到就**当没这回事**（不给人发假事故）。
+    刷新只动我们自己的复制品，不碰他的任何数据；这一轮仍旧按旧代码算完，下一轮起才是新的——那句照实写。
+    """
+    here = Path(__file__).resolve()
+    try:
+        import plobi
+
+        twin = Path(plobi.__file__).resolve().parent.parent / "scripts" / "plobi" / REPO_SCRIPT_NAME
+    except Exception:                                    # noqa: BLE001 - 找不到对照版就不判
+        return None
+    if not twin.is_file() or twin == here:
+        return None
+
+    try:
+        repo_bytes, local_bytes = twin.read_bytes(), here.read_bytes()
+    except OSError as exc:                               # noqa: BLE001
+        return {"state": "unreadable", "running": str(here), "repo_copy": str(twin),
+                "note": f"两份对不上账，也没法读：{type(exc).__name__}: {exc}"}
+    if repo_bytes == local_bytes:
+        return None
+
+    try:
+        here.write_bytes(repo_bytes)
+    except OSError as exc:                               # noqa: BLE001 - 刷不回来也要把话说清
+        return {"state": "stale_unrefreshed", "running": str(here), "repo_copy": str(twin),
+                "note": f"家目录那份比仓里旧，且刷不回去：{type(exc).__name__}: {exc}；这一轮仍按旧版算"}
+    return {"state": "refreshed", "running": str(here), "repo_copy": str(twin),
+            "note": "家目录那份与仓里不一致，已照仓里刷回；这一轮仍按旧版算完，下一轮起才是新的"}
+
+
+#: 模块级就出声，不留到 payload：这条链后面有好几条早退路径（找不到 code root、一条都没点亮、
+#: 一条都没跑成），那句话要是只进 JSON，被那些路径截走就永远看不见。
+SCRIPT_DRIFT = _align_with_repo_copy()
+if SCRIPT_DRIFT:
+    print(f"[cron_collect_sweep] {SCRIPT_DRIFT['note']}", file=sys.stderr)
+
+
 def main() -> int:
     from plobi.collectors import cadence
     from plobi.collectors.sweep import run_sweep
@@ -88,8 +139,14 @@ def main() -> int:
             verdict += f"；另有 {len(skipped)} 条按各自频率本轮不打：" + \
                 "、".join(str(row["source"]) for row in skipped)
 
+    if SCRIPT_DRIFT:
+        # 漂移写进正文，不只塞字段：`verdict` 是这一轮唯一会被人（和告警）读到的一句话，
+        # 藏在 JSON 里等于没说。
+        verdict = f"⚠ {SCRIPT_DRIFT['note']} ｜ {verdict}"
+
     payload = {"sources": rows, "ran": len(ran), "attempted": len(attempted),
-               "total": len(rows), "verdict": verdict}
+               "total": len(rows), "verdict": verdict,
+               **({"script_drift": SCRIPT_DRIFT} if SCRIPT_DRIFT else {})}
     print(json.dumps(payload, ensure_ascii=False))
 
     if ran:
