@@ -119,8 +119,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                args_hint="[text | remove N | clear]"),
     CommandDef("status", "Show session, model, token, and context info", "Session"),
     CommandDef("whoami", "Show your slash command access (admin / user)", "Info"),
-    CommandDef("profile", "Show which agent this chat runs as", "Info",
-               aliases=("agent",)),
+    CommandDef("agent", "Show which agent this chat runs as", "Info",
+               aliases=("profile",)),
     CommandDef("sethome", "Set this chat as the home channel", "Session",
                gateway_only=True, aliases=("set-home",)),
     CommandDef("resume", "Resume a previously-named session", "Session",
@@ -375,6 +375,7 @@ ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset(
         "help",
         "new",
         "profile",
+        "agent",
         "queue",
         "restart",
         "status",
@@ -578,7 +579,7 @@ _TELEGRAM_MENU_PRIORITY = (
     "usage",
     "platforms",
     "platform",
-    "profile",
+    "agent",
     "whoami",
 )
 """Built-in commands that should stay visible in Telegram's capped menu.

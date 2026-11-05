@@ -10,23 +10,24 @@ from typing import Callable
 
 
 def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
-    """Attach the ``profile`` subcommand to ``subparsers``."""
-    # =========================================================================
-    # profile command
-    # =========================================================================
-    # ``plobi agent`` 是同一个命令族的新名字（用户 10-27：Agent 就是名册上的一行，
-    # 「profile」这个词不该再教给 Agent）。老名字 ``plobi profile`` 照旧能用——
-    # 那是用户手打的命令，不是 Agent 的词汇表。
+    """Attach the ``agent`` subcommand to ``subparsers`` (old name still parses).
+
+    名字反过来了（11-05 随 `WP-PROFILE-CANCEL`）：**主名是 `plobi agent`**，
+    ``plobi profile`` 只作为手打惯了的旧写法收着——它是别名，不是命令族的名字。
+    派发靠 ``set_defaults(func=…)``，所以两个名字走的是同一个处理器，功能不缩。
+    """
+    # ``plobi agent`` 是同一个命令族的名字（用户 10-27：Agent 就是名册上的一行，
+    # 「profile」这个词不该再教给 Agent；11-05：也别再摆在菜单第一位）。
     profile_parser = subparsers.add_parser(
-        "profile",
-        aliases=["agent"],
-        help="Manage agents — the roster of identities (alias: plobi agent)",
+        "agent",
+        aliases=["profile"],
+        help="Manage agents — the roster of identities",
     )
     profile_subparsers = profile_parser.add_subparsers(dest="profile_action")
 
     profile_subparsers.add_parser("list", help="List all agents (the roster)")
     profile_use = profile_subparsers.add_parser(
-        "use", help="Set sticky default profile"
+        "use", help="Remember which agent new chats use"
     )
     profile_use.add_argument("profile_name", help="Profile name (or 'default')")
 

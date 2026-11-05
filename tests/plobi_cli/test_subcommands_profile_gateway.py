@@ -58,6 +58,21 @@ def test_profile_subactions_and_dispatch():
     assert ns2.profile_action == "show"
 
 
+def test_agent_is_the_name_and_profile_still_parses():
+    """主名换成 `agent`（11-05 随 `WP-PROFILE-CANCEL`），旧写法照样派发到同一个处理器。
+
+    取消一个概念不等于把用户手打惯的命令拿走：两个名字必须走同一个 ``func``、
+    同一套子动作——多一条实现就多一处以后会漂移的地方。
+    """
+    p = _profile_parser()
+    new = p.parse_args(["agent", "list"])
+    old = p.parse_args(["profile", "list"])
+
+    assert new.command == "agent" and old.command == "profile"
+    assert new.profile_action == old.profile_action == "list"
+    assert new.func is old.func is _h_profile
+
+
 def test_profile_has_expected_actions():
     p = _profile_parser()
     # Map each subaction to a minimal valid argv suffix.
