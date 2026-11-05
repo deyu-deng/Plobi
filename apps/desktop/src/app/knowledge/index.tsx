@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { type ReactNode, type UIEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ListColumn, MasterDetail } from '@/app/master-detail'
 import { PageSearchShell } from '@/app/page-search-shell'
+import { Pane, PaneMain, PaneShell } from '@/components/pane-shell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -14,9 +14,12 @@ import { cn } from '@/lib/utils'
 
 import { NOTES_PREFIX, fetchNote, fetchNotes, saveNote } from './api'
 import type { NoteMeta } from './api'
-import { NoteMarkdown } from './note-markdown'
+import { HoverPreview } from './hover-preview'
+import { NoteMarkdown, jumpToAnchor, makeLinkIndex } from './note-markdown'
 import { buildNoteTree, noteTemplate, parseOutline } from './outline'
 import type { NoteTreeNode } from './outline'
+import { NoteSwitcher, useNoteSwitcherEscape, useNoteSwitcherHotkey } from './switcher'
+import { NoteTabs } from './tabs'
 
 function matches(note: NoteMeta, needle: string): boolean {
   if (!needle) return true
@@ -28,7 +31,18 @@ function breadcrumb(path: string): string {
   return parts.split('/').slice(0, -1).join(' / ')
 }
 
-function NoteRow({ active, note, onSelect }: { active: boolean; note: NoteMeta; onSelect: () => void }) {
+function NoteRow({
+  active,
+  note,
+  onPreview,
+  onSelect
+}: {
+  active: boolean
+  note: NoteMeta
+  /** 悬停时回调（带上指针位置，预览卡片要跟着指针走）。 */
+  onPreview?: (note: NoteMeta, position: { x: number; y: number }) => void
+  onSelect: () => void
+}) {
   return (
     <button
       className={cn(
@@ -37,6 +51,10 @@ function NoteRow({ active, note, onSelect }: { active: boolean; note: NoteMeta; 
         active && 'bg-(--ui-control-hover-background)'
       )}
       onClick={onSelect}
+      onMouseEnter={event => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        onPreview?.(note, { x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 220) })
+      }}
       type="button"
     >
       <span className={cn('min-w-0 truncate text-[0.72rem]', active && 'font-medium')}>{note.title}</span>
@@ -62,7 +80,16 @@ export function KnowledgeView() {
   const [newName, setNewName] = useState('')
   const [activeHeading, setActiveHeading] = useState<string | null>(null)
 
+  // 多标签页：开着哪几篇笔记。关掉最后一个时回到「无标签」态（空态）。
+  const [openTabs, setOpenTabs] = useState<string[]>([])
+  // 快速切换器（mod+o）
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  // 悬浮预览：当前悬停的笔记 + 指针位置
+  const [hovered, setHovered] = useState<NoteMeta | null>(null)
+  const [hoveredPreview, setHoveredPreview] = useState<{ x: number; y: number } | null>(null)
+
   const scrollRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const library = useQuery({ queryKey: ['surface-notes'], queryFn: fetchNotes, staleTime: 0 })
   const notes = library.data?.notes ?? []
   const page = useQuery({
@@ -76,15 +103,35 @@ export function KnowledgeView() {
   const tree = useMemo(() => buildNoteTree(visible), [visible])
   const searching = query.trim().length > 0
 
+  // wikilink 解析用的索引：库里有哪些笔记（按文件名与标题两套键）。
+  const linkIndex = useMemo(() => makeLinkIndex(notes), [notes])
+
   useEffect(() => {
     if (isNew || (selected && visible.some(note => note.path === selected))) return
-    setSelected(visible[0]?.path ?? null)
+    const first = visible[0]?.path ?? null
+    setSelected(first)
+    // 初始那一格也开成标签——Obsidian 的手感：打开过的笔记就留在标签栏上。
+    if (first) setOpenTabs(previous => (previous.includes(first) ? previous : [...previous, first]))
   }, [isNew, selected, visible])
 
   const activeNote = notes.find(note => note.path === selected) ?? null
   const sourceText = editing ? draft : (page.data?.text ?? '')
   const outline = useMemo(() => parseOutline(sourceText), [sourceText])
   const dirty = editing && draft !== base
+
+  const tabs = useMemo(
+    () =>
+      openTabs
+        .map(path => notes.find(note => note.path === path))
+        .filter((note): note is NoteMeta => Boolean(note)),
+    [notes, openTabs]
+  )
+
+  // 悬停目录树的一篇：记下它和指针位置（预览卡片跟着指针走）。
+  const previewNote = useCallback((note: NoteMeta, position: { x: number; y: number }) => {
+    setHovered(note)
+    setHoveredPreview(position)
+  }, [])
 
   function selectNote(path: string) {
     setSelected(path)
@@ -95,7 +142,50 @@ export function KnowledgeView() {
     setActiveHeading(null)
     setDraft('')
     setBase('')
+    // 选中的笔记自动开一个标签（Obsidian 的手感：打开过就留在标签栏上）。
+    setOpenTabs(previous => (previous.includes(path) ? previous : [...previous, path]))
   }
+
+  function closeTab(path: string) {
+    setOpenTabs(previous => {
+      const next = previous.filter(item => item !== path)
+      // 关掉当前这一格时，落到剩下的最后一格；一格都不剩就清空选中。
+      if (path === selected) {
+        const fallback = next[next.length - 1] ?? null
+        setSelected(fallback)
+        setEditing(false)
+        setIsNew(false)
+        setError(null)
+        setDraft('')
+        setBase('')
+      }
+      return next
+    })
+  }
+
+  function openFromSwitcher(path: string) {
+    selectNote(path)
+  }
+
+  // wikilink：同篇锚点跳转
+  function openAnchor(anchor: string) {
+    const container = scrollRef.current
+    if (!container) return
+    if (jumpToAnchor(container, anchor)) setActiveHeading(anchor)
+  }
+
+  // wikilink：跳到另一篇笔记（开成新标签，不打断当前这页的阅读位置）
+  function openNote(path: string) {
+    selectNote(path)
+  }
+
+  const openAnchorRef = useRef(openAnchor)
+  openAnchorRef.current = openAnchor
+  const openNoteRef = useRef(openNote)
+  openNoteRef.current = openNote
+
+  useNoteSwitcherHotkey(switcherOpen, setSwitcherOpen)
+  useNoteSwitcherEscape(switcherOpen, () => setSwitcherOpen(false))
 
   function startEdit() {
     const text = page.data?.text ?? ''
@@ -229,7 +319,7 @@ export function KnowledgeView() {
             {node.folders.map(child => renderFolder(child, depth + 1))}
             {node.notes.map(note => (
               <div key={note.path} style={{ paddingLeft: (depth + 1) * 10 + 12 }}>
-                <NoteRow active={note.path === selected} note={note} onSelect={() => selectNote(note.path)} />
+                <NoteRow active={note.path === selected} note={note} onPreview={previewNote} onSelect={() => selectNote(note.path)} />
               </div>
             ))}
           </>
@@ -257,7 +347,14 @@ export function KnowledgeView() {
       )
     }
     if (editing && view === 'preview') {
-      return <NoteMarkdown text={draft} />
+      return (
+        <NoteMarkdown
+          linkIndex={linkIndex}
+          onOpenAnchor={anchor => openAnchorRef.current(anchor)}
+          onOpenNote={path => openNoteRef.current(path)}
+          text={draft}
+        />
+      )
     }
     if (page.isError) {
       return <EmptyState description={page.error instanceof Error ? page.error.message : undefined} title={v.loadFailed} />
@@ -279,7 +376,12 @@ export function KnowledgeView() {
             </span>
           </div>
         </header>
-        <NoteMarkdown text={sourceText} />
+        <NoteMarkdown
+          linkIndex={linkIndex}
+          onOpenAnchor={anchor => openAnchorRef.current(anchor)}
+          onOpenNote={path => openNoteRef.current(path)}
+          text={sourceText}
+        />
       </article>
     )
   })()
@@ -291,37 +393,46 @@ export function KnowledgeView() {
   ) : visible.length === 0 && !isNew ? (
     <EmptyState description={v.emptyDesc} title={notes.length ? v.noMatchTitle : v.emptyTitle} />
   ) : (
-    <MasterDetail split="wide">
-      <ListColumn>
-        {tree.folders.map(node => renderFolder(node, 0))}
-        {tree.loose.map(note => (
-          <NoteRow active={note.path === selected} key={note.path} note={note} onSelect={() => selectNote(note.path)} />
-        ))}
-        {newParent !== null && (
-          <div className="mt-2 flex items-center gap-1 px-1">
-            <input
-              aria-label={v.newNote}
-              autoFocus
-              className="min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-background px-1.5 py-1 text-[0.72rem] outline-none"
-              onChange={event => setNewName(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Enter') startNew()
-                if (event.key === 'Escape') setNewParent(null)
-              }}
-              placeholder={v.newNote}
-              value={newName}
-            />
-            <Button onClick={startNew} variant="ghost">
-              {v.create}
-            </Button>
+    // 三栏各占一条轨道，两侧都能拖：左边的目录树、右边的大纲。
+    // 用的是 app 通用的 PaneShell（pointer capture + 宽度持久化 + 双击复位），
+    // 不是自己写的栅格——之前走 MasterDetail 的固定比例，宽度根本没法调。
+    <PaneShell className="h-full min-h-0">
+      <Pane id="notes-tree" minWidth={160} resizable side="left" width="15rem">
+        <aside className="flex h-full min-h-0 flex-col p-2" data-testid="note-tree">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+            {tree.folders.map(node => renderFolder(node, 0))}
+            {tree.loose.map(note => (
+              <NoteRow active={note.path === selected} key={note.path} note={note} onPreview={previewNote} onSelect={() => selectNote(note.path)} />
+            ))}
+            {newParent !== null && (
+              <div className="mt-2 flex items-center gap-1 px-1">
+                <input
+                  aria-label={v.newNote}
+                  autoFocus
+                  className="min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-background px-1.5 py-1 text-[0.72rem] outline-none"
+                  onChange={event => setNewName(event.target.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') startNew()
+                    if (event.key === 'Escape') setNewParent(null)
+                  }}
+                  placeholder={v.newNote}
+                  value={newName}
+                />
+                <Button onClick={startNew} variant="ghost">
+                  {v.create}
+                </Button>
+              </div>
+            )}
           </div>
-        )}
-      </ListColumn>
+        </aside>
+      </Pane>
 
-      <main className="flex min-h-0 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1">
+      <PaneMain>
+        <main className="flex h-full min-h-0 flex-col overflow-hidden">
+          <NoteTabs active={selected} onClose={closeTab} onSelect={selectNote} tabs={tabs} />
+
           <div
-            className={cn('min-w-0 flex-1 px-5 py-4 [scrollbar-gutter:stable]', editing && view === 'source' ? 'flex overflow-hidden' : 'overflow-y-auto overscroll-contain')}
+            className={cn('min-h-0 flex-1 px-5 py-4 [scrollbar-gutter:stable]', editing && view === 'source' ? 'flex overflow-hidden' : 'overflow-y-auto overscroll-contain')}
             onScroll={editing && view === 'source' ? undefined : onScroll}
             ref={scrollRef}
           >
@@ -335,68 +446,70 @@ export function KnowledgeView() {
             </div>
           </div>
 
-          <aside className="w-40 shrink-0 overflow-y-auto border-l border-(--ui-stroke-tertiary) px-2 py-3" data-testid="note-outline">
-            <div className="mb-2 px-1.5 text-[0.62rem] text-muted-foreground/60">{v.outline}</div>
-            {outline.length === 0 ? (
-              <div className="px-1.5 text-[0.62rem] text-muted-foreground/40">—</div>
-            ) : (
-              outline.map(item => (
-                <button
-                  className={cn(
-                    'block w-full truncate rounded px-1.5 py-1 text-left text-[0.66rem] hover:bg-(--ui-control-hover-background)/60',
-                    item.level <= 2 ? 'font-medium' : 'text-muted-foreground/80',
-                    activeHeading === item.id && 'bg-(--ui-control-hover-background)'
+          <footer className="shrink-0 border-t border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-5 py-2">
+            <div className="mx-auto flex max-w-2xl items-center gap-2">
+              {editing ? (
+                <>
+                  <Button aria-pressed={view === 'source'} onClick={() => setView('source')} variant="ghost">
+                    {v.source}
+                  </Button>
+                  <Button aria-pressed={view === 'preview'} onClick={() => setView('preview')} variant="ghost">
+                    {v.preview}
+                  </Button>
+                  {dirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" title={v.unsaved} />}
+                  {error && (
+                    <span className="min-w-0 truncate text-[0.65rem] text-destructive" title={error}>
+                      {v.saveFailed}
+                    </span>
                   )}
-                  key={item.id}
-                  onClick={() => jumpTo(item.id)}
-                  style={{ paddingLeft: 6 + Math.max(0, item.level - 2) * 8 }}
-                  title={item.text}
-                  type="button"
-                >
-                  {item.text}
-                </button>
-              ))
-            )}
-          </aside>
-        </div>
+                  <span className="ml-auto" />
+                  <Button onClick={cancelEdit} variant="ghost">
+                    {v.cancel}
+                  </Button>
+                  <Button disabled={saving} onClick={() => void save()} variant="ghost">
+                    {saving ? v.saving : v.save}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="ml-auto" />
+                  <Button onClick={startEdit} variant="ghost">
+                    <Codicon name="edit" size="0.85rem" />
+                    {v.edit}
+                  </Button>
+                </>
+              )}
+            </div>
+          </footer>
+        </main>
+      </PaneMain>
 
-        <footer className="shrink-0 border-t border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-5 py-2">
-          <div className="mx-auto flex max-w-2xl items-center gap-2">
-            {editing ? (
-              <>
-                <Button aria-pressed={view === 'source'} onClick={() => setView('source')} variant="ghost">
-                  {v.source}
-                </Button>
-                <Button aria-pressed={view === 'preview'} onClick={() => setView('preview')} variant="ghost">
-                  {v.preview}
-                </Button>
-                {dirty && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" title={v.unsaved} />}
-                {error && (
-                  <span className="min-w-0 truncate text-[0.65rem] text-destructive" title={error}>
-                    {v.saveFailed}
-                  </span>
-                )}
-                <span className="ml-auto" />
-                <Button onClick={cancelEdit} variant="ghost">
-                  {v.cancel}
-                </Button>
-                <Button disabled={saving} onClick={() => void save()} variant="ghost">
-                  {saving ? v.saving : v.save}
-                </Button>
-              </>
-            ) : (
-              <>
-                <span className="ml-auto" />
-                <Button onClick={startEdit} variant="ghost">
-                  <Codicon name="edit" size="0.85rem" />
-                  {v.edit}
-                </Button>
-              </>
-            )}
-          </div>
-        </footer>
-      </main>
-    </MasterDetail>
+      <Pane id="notes-outline" minWidth={140} resizable side="right" width="13rem">
+        <aside className="h-full overflow-y-auto px-2 py-3" data-testid="note-outline">
+                <div className="mb-2 px-1.5 text-[0.62rem] text-muted-foreground/60">{v.outline}</div>
+                {outline.length === 0 ? (
+                  <div className="px-1.5 text-[0.62rem] text-muted-foreground/40">—</div>
+                ) : (
+                  outline.map(item => (
+                    <button
+                      className={cn(
+                        'block w-full truncate rounded px-1.5 py-1 text-left text-[0.66rem] hover:bg-(--ui-control-hover-background)/60',
+                        item.level <= 2 ? 'font-medium' : 'text-muted-foreground/80',
+                        activeHeading === item.id && 'bg-(--ui-control-hover-background)'
+                      )}
+                      key={item.id}
+                      onClick={() => jumpTo(item.id)}
+                      style={{ paddingLeft: 6 + Math.max(0, item.level - 2) * 8 }}
+                    title={item.text}
+                    type="button"
+                  >
+                    {item.text}
+                  </button>
+                ))
+              )}
+        </aside>
+      </Pane>
+    </PaneShell>
   )
 
   return (
@@ -404,22 +517,57 @@ export function KnowledgeView() {
       onSearchChange={setQuery}
       searchPlaceholder={v.searchPlaceholder}
       searchTrailingAction={
-        <Button
-          aria-label={v.refresh}
-          onClick={() => {
-            void library.refetch()
-            if (selected) void page.refetch()
-          }}
-          size="icon-titlebar"
-          title={v.refresh}
-          variant="ghost"
-        >
-          <Codicon name="refresh" size="0.85rem" spinning={library.isFetching || page.isFetching} />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            aria-label={v.quickSwitch}
+            onClick={() => setSwitcherOpen(true)}
+            size="icon-titlebar"
+            title={v.quickSwitch}
+            variant="ghost"
+          >
+            <Codicon name="search" size="0.85rem" />
+          </Button>
+          <Button
+            aria-label={v.refresh}
+            onClick={() => {
+              void library.refetch()
+              if (selected) void page.refetch()
+            }}
+            size="icon-titlebar"
+            title={v.refresh}
+            variant="ghost"
+          >
+            <Codicon name="refresh" size="0.85rem" spinning={library.isFetching || page.isFetching} />
+          </Button>
+        </div>
       }
       searchValue={query}
     >
       {body}
+
+      {/* 快速切换器（mod+o）：输名字直接跳到一篇笔记 */}
+      <NoteSwitcher
+        notes={notes.map(note => ({ path: note.path, title: note.title, topic: note.topic }))}
+        onClose={() => setSwitcherOpen(false)}
+        onOpen={openFromSwitcher}
+        open={switcherOpen}
+      />
+
+      {/* 悬浮预览：停在目录树的一篇上，浮出正文开头 */}
+      {hovered && hoveredPreview && (
+        <div className="fixed z-40" style={{ left: hoveredPreview.x, top: hoveredPreview.y }}>
+          <HoverPreview
+            active
+            onOpen={() => {
+              selectNote(hovered.path)
+              setHovered(null)
+              setHoveredPreview(null)
+            }}
+            text={hovered.excerpt}
+            title={hovered.title}
+          />
+        </div>
+      )}
     </PageSearchShell>
   )
 }

@@ -32,7 +32,8 @@ export function stripFrontmatter(text: string): string {
   return end < 0 ? text : text.slice(end + 4).replace(/^\s*\n/, '')
 }
 
-function slug(text: string): string {
+/** 标题文字 → 锚点 id 的那部分（`h-` 前缀在外）。渲染与查找共用同一套规则。 */
+export function slug(text: string): string {
   const value = text
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')

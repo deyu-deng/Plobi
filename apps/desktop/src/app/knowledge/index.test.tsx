@@ -4,6 +4,15 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// cmdk（快速切换器的底层）要量尺寸、要把选中项滚进视野，jsdom 都没有。
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+window.ResizeObserver = window.ResizeObserver ?? (ResizeObserverStub as unknown as typeof ResizeObserver)
+Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? vi.fn()
+
 import type { NoteMeta, NotesLibrary } from './api'
 
 const fetchNotes = vi.fn()
@@ -21,8 +30,12 @@ vi.mock('./api', async () => {
 })
 
 vi.mock('./note-markdown', async () => {
+  const actual = await vi.importActual<typeof import('./note-markdown')>('./note-markdown')
   const { stripFrontmatter } = await vi.importActual<typeof import('./outline')>('./outline')
   return {
+    ...actual,
+    // 只把渲染换掉，解析与跳转的接线（makeLinkIndex / jumpToAnchor）留真的——
+    // 它们不碰 DOM，mock 掉反而测不到 wikilink 能不能解析。
     NoteMarkdown: ({ text }: { text: string }) => <div data-testid="markdown">{stripFrontmatter(text)}</div>
   }
 })
@@ -106,10 +119,11 @@ afterEach(cleanup)
 describe('KnowledgeView', () => {
   it('shows a folder tree with the second level, not a flat topic tab', async () => {
     renderView()
-    await waitFor(() => expect(screen.getByText('数学')).toBeTruthy())
-    expect(screen.getByText('工具')).toBeTruthy()
-    expect(screen.getByText('Design')).toBeTruthy()
-    expect(screen.getAllByText('微积分笔记').length).toBeGreaterThan(0)
+    const tree = await screen.findByTestId('note-tree')
+    await waitFor(() => expect(within(tree).getByText('数学')).toBeTruthy())
+    expect(within(tree).getByText('工具')).toBeTruthy()
+    expect(within(tree).getByText('Design')).toBeTruthy()
+    expect(within(tree).getAllByText('微积分笔记').length).toBeGreaterThan(0)
   })
 
   it('opens the first note with frontmatter stripped', async () => {
@@ -144,10 +158,12 @@ describe('KnowledgeView', () => {
 
   it('filters by search across title, excerpt and tags', async () => {
     renderView()
-    await waitFor(() => expect(screen.getByText('微积分笔记')).toBeTruthy())
+    const tree = await screen.findByTestId('note-tree')
+    await waitFor(() => expect(within(tree).getByText('微积分笔记')).toBeTruthy())
     fireEvent.change(screen.getByPlaceholderText('Search notes…'), { target: { value: '投影' } })
-    await waitFor(() => expect(screen.queryByText('微积分笔记')).toBeNull())
-    expect(screen.getAllByText('工程图学').length).toBeGreaterThan(0)
+    // 树里被过滤掉了；标签栏仍保留已开的那篇（Obsidian 同款行为：开过的不消失）。
+    await waitFor(() => expect(within(tree).queryByText('微积分笔记')).toBeNull())
+    expect(within(tree).getAllByText('工程图学').length).toBeGreaterThan(0)
   })
 
   it('reports a failed read instead of an empty library', async () => {
@@ -204,5 +220,53 @@ describe('KnowledgeView', () => {
         expect.objectContaining({ create: true })
       )
     )
+  })
+
+  it('opens a tab per note and keeps both when switching', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+    fireEvent.click(screen.getByText('工程图学'))
+    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Surface/notes/工具/Design/工程图学.md'))
+
+    const tabs = await screen.findByTestId('note-tabs')
+    expect(within(tabs).getAllByRole('tab').length).toBe(2)
+  })
+
+  it('closes a tab and falls back to another one', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+    fireEvent.click(screen.getByText('工程图学'))
+    const tabs = await screen.findByTestId('note-tabs')
+    await waitFor(() => expect(within(tabs).getAllByRole('tab').length).toBe(2))
+
+    const closeButtons = within(tabs).getAllByLabelText('Close')
+    fireEvent.click(closeButtons[closeButtons.length - 1])
+    await waitFor(() => expect(within(screen.getByTestId('note-tabs')).getAllByRole('tab').length).toBe(1))
+  })
+
+  it('opens the quick switcher with the keyboard and jumps to a note', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    fireEvent.keyDown(window, { key: 'o', ctrlKey: true })
+    const switcher = await screen.findByTestId('note-switcher')
+    const input = within(switcher).getByPlaceholderText('Jump to a note')
+    fireEvent.change(input, { target: { value: '工程' } })
+
+    // 树里也有同名笔记，断言限定到切换器内部。
+    await waitFor(() => expect(within(switcher).getByText('工程图学')).toBeTruthy())
+    fireEvent.click(within(switcher).getByText('工程图学'))
+    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Surface/notes/工具/Design/工程图学.md'))
+  })
+
+  it('shows a hover preview with the note excerpt', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    // React 的 onMouseEnter 从 mouseover 派生，直接派发 mouseenter 不触发。
+    fireEvent.mouseOver(screen.getByText('工程图学'))
+    // 预览有 220ms 的悬停意图门——指针划过不弹，停住才弹。
+    const preview = await waitFor(() => screen.getByTestId('note-hover-preview'), { timeout: 1500 })
+    expect(preview.textContent).toContain('工程图学')
   })
 })

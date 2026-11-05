@@ -1146,6 +1146,8 @@ export interface Translations {
     readOnly: string
     updated: string
     outline: string
+    /** 快速切换笔记（mod+o）。 */
+    quickSwitch: string
     edit: string
     source: string
     preview: string

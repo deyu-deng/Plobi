@@ -1452,6 +1452,7 @@ export const zh: Translations = {
     readOnly: '只读',
     updated: '更新',
     outline: '目录',
+    quickSwitch: '跳到一篇笔记',
     edit: '编辑',
     source: '源码',
     preview: '预览',

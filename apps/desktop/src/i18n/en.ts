@@ -1274,6 +1274,9 @@ export const en: Translations = {
     readOnly: 'Read-only',
     updated: 'Updated',
     outline: 'Outline',
+
+    quickSwitch: 'Jump to a note',
+
     edit: 'Edit',
     source: 'Source',
     preview: 'Preview',

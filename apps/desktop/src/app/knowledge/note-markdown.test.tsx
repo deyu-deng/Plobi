@@ -2,54 +2,59 @@
 import { render, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { NoteMarkdown } from './note-markdown'
-import { parseOutline } from './outline'
+import { NoteMarkdown, makeLinkIndex } from './note-markdown'
 
 /**
- * 大纲靠 id 跳章，而 id 是渲染后按 DOM 顺序贴上去的。Streamdown 内部按块渲染，
- * 所以这里必须拿**真渲染**核一次：DOM 里的标题序列要和 parseOutline 的序列
- * 逐条相等（条数、文本、id）。用 mock 测不出这个错位。
+ * wikilink 必须**真渲染**出来才算数——mock 测不出 remark 插件有没有生效、
+ * 组件映射对不对。这里用真 DOM 核三件事：
+ * ① `[[CATIA]]` 变成按钮，不是普通文字
+ * ② 代码围栏里的 `[[…]]` 不被当成链接（AST 层面天然成立）
+ * ③ 库里没有的目标被标成「未创建」，点不动
  */
-describe('NoteMarkdown', () => {
-  it('aligns rendered heading ids with the outline, skipping frontmatter and fenced code', async () => {
-    const text = [
-      '---',
-      'title: 测试笔记',
-      '---',
-      '',
-      '# 测试笔记',
-      '',
-      '## 第1章 极限',
-      '',
-      '正文一段。',
-      '',
-      '### 1.1 数列极限',
-      '',
-      '```md',
-      '# 这是代码块里的示例标题',
-      '```',
-      '',
-      '#### 1. 定义',
-      '',
-      '## 第2章 导数',
-      ''
-    ].join('\n')
+const NOTES = [
+  { path: 'Surface/notes/工具/Modeling/Creo.md', title: 'Creo Parametric' },
+  { path: 'Surface/notes/数学/微积分.md', title: '微积分' }
+]
 
-    const { container } = render(<NoteMarkdown text={text} />)
-    await waitFor(() => expect(container.querySelectorAll('h1,h2,h3,h4,h5,h6').length).toBeGreaterThan(0))
-
-    const outline = parseOutline(text)
-    const headings = Array.from(container.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'))
-
-    expect(headings.length).toBe(outline.length)
-    expect(headings.map(element => element.textContent?.trim())).toEqual(outline.map(item => item.text))
-    expect(headings.map(element => element.id)).toEqual(outline.map(item => item.id))
-    expect(container.textContent).not.toContain('title: 测试笔记')
+describe('NoteMarkdown wikilink', () => {
+  it('renders a cross-file wikilink as a button', async () => {
+    const { container } = render(<NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text="看 [[Creo]] 这个" />)
+    await waitFor(() => expect(container.querySelector('button')).toBeTruthy())
+    const button = container.querySelector('button')
+    expect(button?.textContent).toBe('Creo')
   })
 
-  it('gives repeated headings distinct ids', () => {
-    const text = '## 小结\n\n## 小结\n\n## 小结\n'
-    const outline = parseOutline(text)
-    expect(new Set(outline.map(item => item.id)).size).toBe(3)
+  it('renders an alias', async () => {
+    const { container } = render(
+      <NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text="[[微积分|微积分笔记]]" />
+    )
+    await waitFor(() => expect(container.querySelector('button')).toBeTruthy())
+    expect(container.querySelector('button')?.textContent).toBe('微积分笔记')
+  })
+
+  it('marks a link to a note that does not exist as unresolvable', async () => {
+    const { container } = render(<NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text="[[CATIA]]" />)
+    await waitFor(() => expect(container.querySelector('button')).toBeTruthy())
+    const button = container.querySelector('button') as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+  })
+
+  it('does not turn wikilinks inside fenced code into links', async () => {
+    const text = ['```md', '![[image.png|300]]', '```'].join('\n')
+    const { container } = render(<NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text={text} />)
+    await waitFor(() => expect(container.textContent).toContain('image.png'))
+    expect(container.querySelector('button')).toBeNull()
+  })
+
+  it('renders an embed as a quiet badge, not a link', async () => {
+    const { container } = render(<NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text="![[image.png|300]]" />)
+    await waitFor(() => expect(container.textContent).toContain('image.png'))
+    expect(container.querySelector('button')).toBeNull()
+  })
+
+  it('renders a same-file anchor link as a button', async () => {
+    const { container } = render(<NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text="[[#ch1|1. 发展历程]]" />)
+    await waitFor(() => expect(container.querySelector('button')).toBeTruthy())
+    expect(container.querySelector('button')?.textContent).toBe('1. 发展历程')
   })
 })
