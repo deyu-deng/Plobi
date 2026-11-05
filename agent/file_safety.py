@@ -385,31 +385,89 @@ def _resolve_active_profile_name() -> str:
     return "default"
 
 
+def _resolve_active_agent_name() -> str:
+    """这个会话**是谁**：先问 ``PLOBI_AGENT_ID``（名册那一行），再回家名那条老路。
+
+    家退休之后「活跃身份」不再由 ``PLOBI_HOME`` 落在哪一具家里决定（裁 180／192：
+    身份＝名册那一行，运行时由 ``PLOBI_AGENT_ID`` 带着；桌面与 ``build_child_command``
+    都放它）。老装机／``-p <家名>`` 那条路还在，所以留着兜底，不是主路。
+    """
+    rid = str(os.environ.get("PLOBI_AGENT_ID") or "").strip()
+    if rid and rid.casefold() != "default":
+        return rid
+    return _resolve_active_profile_name()
+
+
+def _row_by_key(key: str) -> str:
+    """身份的**任意写法** → 名册那一行的 ``name``；认不出给空串。
+
+    那三份东西的目录名是按身份派生的（``souls/<安全名>.md``／``memory/agents/<slug>/``／
+    ``cron/agents/<键>/``），大小写与全角字符都会变形；不还原成同一行就会把「自己的」
+    判成「别人的」（10-31 那次课程读到总秘书 SOUL 是同一类错的反面）。
+    """
+    raw = (key or "").strip()
+    if not raw:
+        return ""
+    try:
+        from plobi.agents.registry import identity_name_for_key
+
+        return identity_name_for_key(raw) or ""
+    except Exception:
+        return ""
+
+
+def _classify_agent_owned_area(parts: tuple):
+    """共享根下**按名册行分的那三份**里的那一份：返回 ``(名册 name, 区域名)``。
+
+    * ``souls/<名字>.md``      → ``identity``（身份页）
+    * ``memory/agents/<键>/…`` → ``memory``（它自己的记忆）
+    * ``cron/agents/<键>/…``   → ``schedule``（它那一份排程存储）
+
+    家目录退休之后，「别人的东西」不再是「另一个 profile 的家」，只剩这三份。
+    **认不出是谁的那一份 ⇒ ``None``**（宁可漏报，不误伤——一个没人认领的目录
+    不该把工具打死）。
+    """
+    if not parts:
+        return None
+    head = parts[0]
+    if head == "souls" and len(parts) == 2 and parts[1].endswith(".md"):
+        owner = _row_by_key(parts[1][:-3])
+        return (owner, "identity") if owner else None
+    if head == "memory" and len(parts) >= 3 and parts[1] == "agents":
+        owner = _row_by_key(parts[2])
+        return (owner, "memory") if owner else None
+    if head == "cron" and len(parts) >= 3 and parts[1] == "agents":
+        owner = _row_by_key(parts[2])
+        return (owner, "schedule") if owner else None
+    return None
+
+
 def classify_cross_profile_target(path: str) -> Optional[dict]:
-    """Classify a write target as cross-profile if it lands in another
-    profile's scoped area (skills/plugins/cron).
+    """Classify a write target as reaching into **another agent's own files**.
 
-    Returns ``None`` when the target is outside Plobi scope, or is inside
-    the ACTIVE profile, or doesn't hit a profile-scoped area. Otherwise
-    returns a dict with:
+    Returns ``None`` when the target is outside Plobi scope, belongs to the
+    ACTIVE agent, or sits in the shared layer. Otherwise a dict with:
 
-      * ``active_profile``: name of the profile the agent is running as
-      * ``target_profile``: name of the profile the path belongs to
-      * ``area``: which scoped area (``"skills"``, ``"plugins"``, etc.)
+      * ``active_agent`` / ``target_agent``: roster-row names (identity, 裁 192)
+      * ``active_profile`` / ``target_profile``: same values under the old key
+        names — kept as aliases so older callers and tests keep working
+      * ``area``: ``identity`` / ``memory`` / ``schedule`` (new shape) or the
+        legacy scoped area name for ``<root>/profiles/<name>/<area>/…``
       * ``target_path``: the resolved path string
 
-    The caller decides what to do with the result — surface a warning to
-    the model, prompt the user, or (with explicit consent /
-    ``cross_profile=True``) proceed anyway.
+    Two things changed with the home retirement, and both are load-bearing:
+    ① ``<root>/skills|plugins|cron`` stopped being "the default profile's
+    private area" — with one shared root those are **everyone's**, and guarding
+    them only stops an agent from managing its own skills;
+    ② the private set is now the three per-row artifacts above, keyed by
+    identity, resolved through the roster so a case- or slug-folded spelling of
+    one's own name is not mistaken for somebody else's.
     """
     try:
         target = Path(os.path.expanduser(str(path))).resolve()
         root_real = _plobi_root_path().resolve()
     except (OSError, RuntimeError):
         return None
-
-    target_profile: Optional[str] = None
-    area: Optional[str] = None
 
     try:
         rel = target.relative_to(root_real)
@@ -420,29 +478,38 @@ def classify_cross_profile_target(path: str) -> Optional[dict]:
     if not parts:
         return None
 
-    if parts[0] in PROFILE_SCOPED_AREAS:
-        # ``<root>/<area>/...`` → default profile.
-        target_profile = "default"
-        area = parts[0]
+    target_name: Optional[str] = None
+    area: Optional[str] = None
+
+    owned = _classify_agent_owned_area(parts)
+    if owned is not None:
+        target_name, area = owned
+    elif parts[0] in PROFILE_SCOPED_AREAS:
+        # 共享层那三处（``<root>/skills`` 等）现在是**大家的**：默认家退休之后
+        # 「默认那一份的私有区」这句话没有对应物了。拦它 = 不让 Agent 管自己的技能。
+        return None
     elif (
         parts[0] == "profiles"
         and len(parts) >= 3
         and parts[2] in PROFILE_SCOPED_AREAS
     ):
-        # ``<root>/profiles/<name>/<area>/...`` → named profile.
-        target_profile = parts[1]
+        # ``<root>/profiles/<name>/<area>/…`` → 老装机的具名家，还认（兜底腿）。
+        target_name = parts[1]
         area = parts[2]
     else:
         return None
 
-    active_profile = _resolve_active_profile_name()
-    if target_profile == active_profile:
-        # In-profile write — not a cross-profile event.
+    active_raw = _resolve_active_agent_name()
+    active_name = _row_by_key(active_raw) or active_raw
+    if target_name == active_name or target_name == active_raw:
+        # 自己那一行的东西 —— 不是跨 Agent。
         return None
 
     return {
-        "active_profile": active_profile,
-        "target_profile": target_profile,
+        "active_agent": active_name,
+        "target_agent": target_name,
+        "active_profile": active_raw,
+        "target_profile": target_name,
         "area": area,
         "target_path": str(target),
     }
@@ -465,15 +532,14 @@ def get_cross_profile_warning(path: str) -> Optional[str]:
     if info is None:
         return None
     return (
-        f"Cross-profile write blocked by soft guard: {info['target_path']} "
-        f"belongs to Plobi profile {info['target_profile']!r}, but the "
-        f"agent is running as {info['active_profile']!r}. "
-        f"Editing another agent's {info['area']}/ will affect that "
-        f"agent's future sessions, not the one you are currently in. "
-        f"Confirm with the user before proceeding. To bypass this guard "
-        f"after explicit user direction, retry the call with "
-        f"``cross_agent=True``. (Defense-in-depth — not a security "
-        f"boundary; the terminal tool can still bypass.)"
+        f"Cross-agent write blocked by soft guard: {info['target_path']} "
+        f"belongs to agent {info['target_agent']!r}, but this session runs as "
+        f"{info['active_agent']!r}. Editing another agent's "
+        f"{info['area']} file will affect that agent's future sessions, not "
+        f"the one you are currently in. Confirm with the user before "
+        f"proceeding. To bypass this guard after explicit user direction, "
+        f"retry the call with ``cross_agent=True``. (Defense-in-depth — not a "
+        f"security boundary; the terminal tool can still bypass.)"
     )
 
 

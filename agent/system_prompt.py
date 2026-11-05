@@ -382,16 +382,18 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             # Probe failure must never block prompt build.
             pass
 
-    # Active-profile hint — names the Plobi profile the agent is running
-    # under so it doesn't conflate ~/.plobi/skills/ (default profile) with
-    # ~/.plobi/profiles/<active>/skills/ (this profile's). Deterministic
-    # for the lifetime of the agent — profile name doesn't change
-    # mid-session, so this doesn't break the prompt cache.
-    # See file_safety._resolve_active_profile_name + classify_cross_profile_target
+    # Active-agent hint — names the roster row the agent is running as so it
+    # doesn't conflate its own files with another agent's. Deterministic for
+    # the lifetime of the agent (identity doesn't change mid-session), so it
+    # doesn't break the prompt cache.
+    # 家退休之后 `_resolve_active_profile_name()` 只能看见「家在 profiles/<名>」那种
+    # 老形状，正常会话一律回 "default" ⇒ 这一行提示词永远不报名字（一句假话）。
+    # 改问守卫那一只新口：先看 ``PLOBI_AGENT_ID``（名册那一行），家名只当兜底。
+    # See file_safety._resolve_active_agent_name + classify_cross_profile_target
     # for the matching tool-side guard.
     try:
-        from agent.file_safety import _resolve_active_profile_name
-        active_profile = _resolve_active_profile_name()
+        from agent.file_safety import _resolve_active_agent_name
+        active_profile = _resolve_active_agent_name()
     except Exception:
         active_profile = "default"
     if active_profile == "default":
