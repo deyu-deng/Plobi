@@ -14,6 +14,16 @@ const DEFAULT_FETCH_TIMEOUT_MS = 30_000
 const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 const TEXT_PREVIEW_SOURCE_MAX_BYTES = 64 * 1024 * 1024
 
+// Binary read for previews that need the whole file as bytes (PDF today).
+// `DATA_URL_READ_MAX_BYTES` exists because a data URL is base64 — the string is
+// a third larger than the file and has to be materialised twice. Textbooks are
+// 46 MB and 124 MB on this machine, so that cap turned "open the PDF" into
+// "This file cannot be previewed yet" (user 11-05). A binary IPC carries the
+// bytes once with no encoding, so the ceiling can be a real-document ceiling
+// rather than a "small image" one. Still bounded: no preview may read a whole
+// disk image by accident.
+const BYTES_READ_MAX_BYTES = 256 * 1024 * 1024
+
 const SAFE_ENV_SUFFIXES = new Set(['dist', 'example', 'sample', 'template'])
 const SENSITIVE_EXTENSIONS = new Set(['.kdbx', '.p12', '.pem', '.pfx'])
 
@@ -310,6 +320,7 @@ async function resolveReadableFileForIpc(
 }
 
 export {
+  BYTES_READ_MAX_BYTES,
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
   encryptDesktopSecret,

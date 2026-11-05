@@ -6,29 +6,23 @@ export interface FileBytesState {
   loading: boolean
 }
 
+/**
+ * Whole file as bytes, for the previews that must parse the entire buffer
+ * (pdf.js, 3D loaders, zip listings).
+ *
+ * 走二进制 IPC，不走 data URL：data URL 是 base64，字符串比文件大三分之一、还要
+ * 再解一遍，所以主进程那边卡在 16 MB —— 这台机器上的教材是 46 MB 和 124 MB，
+ * 于是「打开 PDF」变成「This file cannot be previewed yet」（用户 11-05 复报）。
+ * `plobi:readFileBytes` 直接把 ArrayBuffer 结构化克隆过来，上限是 256 MB。
+ */
 export async function readFileBytes(path: string): Promise<Uint8Array> {
-  const dataUrl = await window.plobiDesktop.readFileDataUrl(path)
-  const comma = dataUrl.indexOf(',')
+  const raw = (await window.plobiDesktop.readFileBytes(path)) as unknown
 
-  if (comma < 0) {
-    throw new Error('Invalid data URL')
+  if (raw instanceof Uint8Array) {
+    return raw
   }
 
-  const header = dataUrl.slice(0, comma)
-  const payload = dataUrl.slice(comma + 1)
-
-  if (header.includes(';base64')) {
-    const binary = atob(payload)
-    const bytes = new Uint8Array(binary.length)
-
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index)
-    }
-
-    return bytes
-  }
-
-  return new TextEncoder().encode(decodeURIComponent(payload))
+  return new Uint8Array(raw as ArrayBuffer)
 }
 
 export function useFileBytes(path: string, reloadKey = 0): FileBytesState {

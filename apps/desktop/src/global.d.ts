@@ -75,6 +75,7 @@ declare global {
       notify: (payload: PlobiNotification) => Promise<boolean>
       requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
+      readFileBytes: (filePath: string) => Promise<ArrayBuffer>
       readFileText: (filePath: string) => Promise<PlobiReadFileTextResult>
       selectPaths: (options?: PlobiSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>

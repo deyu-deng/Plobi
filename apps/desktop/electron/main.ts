@@ -149,6 +149,7 @@ import {
 import { gitRootForIpc } from './git-root'
 import { addWorktree, listBranches, listWorktrees, removeWorktree, switchBranch } from './git-worktree-ops'
 import {
+  BYTES_READ_MAX_BYTES,
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
   encryptDesktopSecret as encryptDesktopSecretStrict,
@@ -11084,6 +11085,21 @@ ipcMain.handle('plobi:readFileDataUrl', async (_event, filePath) => {
   const data = await fs.promises.readFile(resolvedPath)
 
   return `data:${mimeTypeForPath(resolvedPath)};base64,${data.toString('base64')}`
+})
+
+// Whole-file bytes without the base64 detour — PDF preview needs the entire
+// buffer for pdf.js, and the data-URL route tops out at 16 MB (textbooks here
+// are 46 MB and 124 MB). Structured clone hands the renderer an ArrayBuffer
+// directly; no encoding, no third-larger intermediate string.
+ipcMain.handle('plobi:readFileBytes', async (_event, filePath) => {
+  const { resolvedPath } = await resolveReadableFileForIpc(filePath, {
+    maxBytes: BYTES_READ_MAX_BYTES,
+    purpose: 'File preview'
+  })
+
+  const data = await fs.promises.readFile(resolvedPath)
+
+  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
 })
 
 ipcMain.handle('plobi:readFileText', async (_event, filePath) => {

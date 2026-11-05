@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   notify: payload => ipcRenderer.invoke('plobi:notify', payload),
   requestMicrophoneAccess: () => ipcRenderer.invoke('plobi:requestMicrophoneAccess'),
   readFileDataUrl: filePath => ipcRenderer.invoke('plobi:readFileDataUrl', filePath),
+  readFileBytes: filePath => ipcRenderer.invoke('plobi:readFileBytes', filePath),
   readFileText: filePath => ipcRenderer.invoke('plobi:readFileText', filePath),
   selectPaths: options => ipcRenderer.invoke('plobi:selectPaths', options),
   writeClipboard: text => ipcRenderer.invoke('plobi:writeClipboard', text),
