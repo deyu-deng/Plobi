@@ -128,3 +128,22 @@ def test_build_home_entries_are_closed(roster_home, monkeypatch, argv_tail):
         main_mod.main()
     assert exc.value.code == 2
     assert list((roster_home / "profiles").iterdir()) == []
+
+
+def test_the_library_entries_are_closed_too(roster_home):
+    """**库函数本体**也退（2026-11-06 补）。
+
+    ``import_profile``／``export_profile`` 只操作「家」：导入那一个会把
+    ``shutil.move`` 出 ``profiles/<名>/``。CLI 的两个口 10-27 退了 2，但这两个库函数
+    还活着——谁从代码里一调就把分身概念复活，而那正是 10-24／10-25 反复清掉的东西。
+    """
+    with pytest.raises(RuntimeError) as exc:
+        profiles_mod.import_profile("dummy.tar.gz", name="ghost")
+    assert "退役" in str(exc.value)
+
+    with pytest.raises(RuntimeError) as exc:
+        profiles_mod.export_profile("ghost", str(roster_home.parent / "out.tar.gz"))
+    assert "退役" in str(exc.value)
+
+    assert list((roster_home / "profiles").iterdir()) == []
+
