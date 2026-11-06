@@ -20,16 +20,26 @@
 ; electron-builder 的 `nsis.include` 按**工程目录**（`apps/desktop/`）解析
 ; （`NsisTarget.js:600` 的 `packager.getResource(this.options.include, ...)`）⇒ 指到这一份。
 ;
-; ── 形状（2026-11-06 22:5x 改正过一次） ──
+; ── 形状（2026-11-06 23:1x 改正到第三次） ──
 ;
-; 第一次编译炸了：`Error: command SendMessage not valid outside Section or Function`。
-; 根因：electron-builder 把 `customPageAfterChangeDir` 插在**顶层**（页面声明该在的位置，
-; `assistedInstaller.nsh:42`），而 `!insertmacro MUI_HEADER_TEXT` 会展开成 `SendMessage`
-; ——顶层用它就炸。
-; MUI2 官方自定义页的形状（Modern UI 2.1 Readme「Custom pages」）：
-;   `Page custom FunctionName` ＋ **正文与 `MUI_HEADER_TEXT` 都在那个 Function 里**。
-; 于是这里顶层只放「一页的声明」，正文搬到下面的 `PlobiDataPageFunc` 里。
+; 前两次编译各炸一次，两根绳子：
+;
+; ① **`customPageAfterChangeDir` 被插在顶层**（页面声明该在的位置，
+;    `assistedInstaller.nsh:42`），而 `!insertmacro MUI_HEADER_TEXT` 会展开成
+;    `SendMessage` ⇒ 顶层用它就炸（`command SendMessage not valid outside Section or
+;    Function`）。MUI2 官方自定义页的形状（Modern UI 2.1 Readme「Custom pages」）是
+;    `Page custom FunctionName` ＋ **正文与 `MUI_HEADER_TEXT` 都在那个 Function 里**
+;    ⇒ 顶层只留「一页的声明」，正文搬到下面的 `PlobiDataPageFunc`。
+;
+; ② **MUI2 的宏在这份脚本被 include 时还没定义**：electron-builder 生成的顺序是
+;    `scriptGenerator.build() + originalScript`（`NsisTarget.js:622`）——**用户脚本在前，
+;    模板（`installer.nsi`，里面有 `!include "MUI2.nsh"`）在后** ⇒ 编译期展开
+;    `MUI_HEADER_TEXT` 时它还不存在（`macro named "MUI_HEADER_TEXT" not found`）。
+;    ⇒ 这里**自己先 include 一次 MUI2.nsh**：它有 `!ifndef MUI_INCLUDED` 的 include-once
+;    保护，模板那次会被跳过；MUI2 需要的 `WinMessages`／`LogicLib`／`nsDialogs`／
+;    `Localization`／`Pages` 全都跟着进来（`MUI_LANGUAGE` 等宏也就位了）。
 
+!include "MUI2.nsh"
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 
