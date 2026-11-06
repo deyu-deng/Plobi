@@ -53,12 +53,10 @@ jobs:
       # The install then needs neither a git clone nor a PyPI resolve, and the
       # shell and the agent can no longer drift -- they come from one package.
       #
-      # Only the Windows leg bundles it for now: install.ps1 has the
-      # -BundleDir/-Wheelhouse mode, install.sh does not yet, so the macOS and
-      # Linux legs keep the git path and carry no bundle (their installers stay
-      # the size they are today).
+      # All three legs do it now: install.ps1 and install.sh both have the
+      # -BundleDir/-Wheelhouse mode (the POSIX stage names differ -- install.sh
+      # calls the dependency stage `python-deps`).
       - name: Build the backend bundle (runtime source + locked wheels)
-        if: matrix.platform == 'win'
         shell: bash
         run: |
           set -euo pipefail
@@ -76,17 +74,17 @@ jobs:
           python -m pip install --quiet "uv==0.13.1"
           uv export --format requirements-txt --extra all --no-emit-project \
             -o apps/desktop/build/requirements.txt
+          # NOT fatal: a platform whose wheels are incomplete (e.g. an arm64
+          # mac with no wheel for one dependency) falls back to the PyPI
+          # resolve at install time -- today's behaviour -- instead of
+          # breaking the whole release build.
           python -m pip download --require-hashes --only-binary=:all: \
-            -r apps/desktop/build/requirements.txt -d apps/desktop/build/wheelhouse
+            -r apps/desktop/build/requirements.txt -d apps/desktop/build/wheelhouse \
+            || echo "::warning::wheelhouse incomplete on this platform; the install will resolve from PyPI"
 
           # 3) the runtime source tree (the wheel only carries part of what the
           #    backend reads by repo-relative path -- skills/, locales/, ...).
           node apps/desktop/scripts/collect-backend-bundle.mjs
-
-      - name: Keep the bundle dirs present on the legs that do not bundle yet
-        if: matrix.platform != 'win'
-        shell: bash
-        run: mkdir -p apps/desktop/build/backend apps/desktop/build/wheelhouse
 
       - name: Build & package (${{ matrix.platform }})
         working-directory: apps/desktop

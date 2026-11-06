@@ -257,10 +257,8 @@ async function resolveInstallScript({
   }
 
   // 2. Bundled backend: the package carries the agent AND its installer, so
-  //    the install needs neither GitHub nor a clone. Windows only for now --
-  //    install.sh has no -BundleDir mode yet, so the POSIX leg keeps the git
-  //    path (and carries no bundle).
-  const bundle = installScriptKind() === 'powershell' ? resolveBundledBackend() : null
+  //    the install needs neither GitHub nor a clone.
+  const bundle = resolveBundledBackend()
 
   if (bundle) {
     const bundledScript = path.join(bundle.bundleDir, 'scripts', installScriptName())
@@ -638,7 +636,7 @@ function buildPinArgs(installStamp, { pinCommit = true, bundle = null } = {}) {
   return args
 }
 
-function buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit = true }) {
+function buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit = true, bundle = null }) {
   const args = ['--dir', activeRoot, '--plobi-home', plobiHome]
 
   if (installStamp && installStamp.branch) {
@@ -647,6 +645,16 @@ function buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit = tr
 
   if (pinCommit && installStamp && installStamp.commit) {
     args.push('--commit', installStamp.commit)
+  }
+
+  // The bundled backend IS the version: install it from the package, with the
+  // locked wheels that ship beside it (offline, hash-verified).
+  if (bundle) {
+    args.push('--bundle-dir', bundle.bundleDir)
+
+    if (bundle.wheelhouse) {
+      args.push('--wheelhouse', bundle.wheelhouse)
+    }
   }
 
   return args
@@ -665,7 +673,7 @@ async function fetchManifest({
   const isPosix = installerKind === 'posix'
 
   const args = isPosix
-    ? ['--manifest', ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit })]
+    ? ['--manifest', ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit, bundle })]
     : ['-Manifest', ...buildPinArgs(installStamp, { pinCommit, bundle })]
 
   const result = await (isPosix ? spawnBash : spawnPowerShell)(scriptPath, args, {
@@ -746,7 +754,7 @@ async function runStage({
         stage.name,
         '--non-interactive',
         '--json',
-        ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit })
+        ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit, bundle })
       ]
     : [
         '-Stage',

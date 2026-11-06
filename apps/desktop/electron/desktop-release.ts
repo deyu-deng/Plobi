@@ -523,11 +523,24 @@ export function writeUpdateHelper(opts: {
     lines.push(`  git -C "${agentDir}" checkout main >> "%PLOBI_LOG%" 2>&1`)
     lines.push(`)`)
   } else {
+    // Same two shapes as the Windows branch. The POSIX stage names differ:
+    // install.sh calls the dependency stage `python-deps`.
+    lines.push(`if [ -d "${bundledAgent}" ]; then`)
+    lines.push(`  rem --- 2a) bundled backend: install it out of the package, offline ---`)
     lines.push(
-      `sh "${installScript}" --tag "${opts.tag}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" >> "$PLOBI_LOG" 2>&1`
+      `  sh "${path.join(bundledAgent, 'scripts', 'install.sh')}" --stage repository --bundle-dir "${bundledAgent}" --wheelhouse "${bundledWheelhouse}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" --non-interactive >> "$PLOBI_LOG" 2>&1`
     )
-    lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "$PLOBI_LOG" 2>&1`)
-    lines.push(`git -C "${agentDir}" checkout main >> "$PLOBI_LOG" 2>&1`)
+    lines.push(
+      `  sh "${path.join(bundledAgent, 'scripts', 'install.sh')}" --stage python-deps --bundle-dir "${bundledAgent}" --wheelhouse "${bundledWheelhouse}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" --non-interactive >> "$PLOBI_LOG" 2>&1`
+    )
+    lines.push(`else`)
+    lines.push(`  rem --- 2b) source install: move the checkout to the same tag ---`)
+    lines.push(
+      `  sh "${installScript}" --tag "${opts.tag}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" >> "$PLOBI_LOG" 2>&1`
+    )
+    lines.push(`  git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "$PLOBI_LOG" 2>&1`)
+    lines.push(`  git -C "${agentDir}" checkout main >> "$PLOBI_LOG" 2>&1`)
+    lines.push(`fi`)
   }
 
   lines.push('rem --- 3) start the app again ---')

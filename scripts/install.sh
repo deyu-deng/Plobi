@@ -46,6 +46,12 @@ BOLD='\033[1m'
 REPO_URL_SSH="git@github.com:deyu-deng/Plobi.git"
 REPO_URL_HTTPS="https://github.com/deyu-deng/Plobi.git"
 PLOBI_HOME="${PLOBI_HOME:-$HOME/.plobi}"
+# The desktop package may carry the agent (runtime source + a wheelhouse of
+# the locked dependency wheels). When it does, the install comes FROM the
+# package: no clone, no PyPI resolve. Both are optional -- without them the
+# script behaves exactly as before.
+BUNDLE_DIR="${PLOBI_BUNDLE_DIR:-}"
+WHEELHOUSE="${PLOBI_WHEELHOUSE:-}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
 # explicit directory — if so we never override it.
@@ -113,6 +119,14 @@ while [[ $# -gt 0 ]]; do
             BRANCH="$2"
             shift 2
             ;;
+        --bundle-dir|-BundleDir)
+            BUNDLE_DIR="$2"
+            shift 2
+            ;;
+        --wheelhouse|-Wheelhouse)
+            WHEELHOUSE="$2"
+            shift 2
+            ;;
         --commit|-Commit)
             INSTALL_COMMIT="$2"
             shift 2
@@ -167,6 +181,8 @@ while [[ $# -gt 0 ]]; do
             echo "                   write \$PLOBI_HOME/.no-bundled-skills so future"
             echo "                   'plobi update' runs never inject bundled skills either"
             echo "  --branch NAME  Git branch to install (default: main)"
+          echo "  --bundle-dir DIR   Install the agent from a packaged bundle (no clone)"
+          echo "  --wheelhouse DIR   Install the locked dependency wheels from DIR (offline)"
             echo "  --commit SHA   Pin checkout to a specific commit after clone/update"
             echo "  --manifest     Print desktop bootstrap stage manifest as JSON"
             echo "  --stage NAME   Run one desktop bootstrap stage"
@@ -1172,8 +1188,42 @@ show_manual_install_hint() {
 # Installation
 # ============================================================================
 
+# Copy a packaged runtime tree over the installed one. The venv stays where
+# it is (its bin/ scripts carry absolute paths -- moving it breaks them), and
+# every source entry is REPLACED rather than merged: a file the new version
+# deleted must not linger and shadow the new one.
+copy_bundled_backend() {
+    local src="$1" dest="$2"
+    local skip="venv .venv .git node_modules __pycache__"
+    local item name
+
+    mkdir -p "$dest"
+
+    for item in "$src"/* "$src"/.[!.]*; do
+        [ -e "$item" ] || continue
+        name="$(basename "$item")"
+        case " $skip " in
+            *" $name "*) continue ;;
+        esac
+        rm -rf "${dest:?}/$name" 2>/dev/null || true
+        cp -R "$item" "$dest/$name"
+    done
+}
+
 clone_repo() {
     log_info "Installing to $INSTALL_DIR..."
+
+    # Bundled backend: the package already carries the runtime source, so copy
+    # it instead of cloning. The layout stays byte-for-byte the same as a
+    # checkout, so every path the backend reads (skills/, plugins/,
+    # locales/, scripts/) keeps resolving exactly as before -- that is why we
+    # ship the source tree and not just the wheel.
+    if [ -n "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR" ]; then
+        log_info "Installing the bundled backend from $BUNDLE_DIR (no clone)..."
+        copy_bundled_backend "$BUNDLE_DIR" "$INSTALL_DIR"
+        cd "$INSTALL_DIR" || exit 1
+        return 0
+    fi
 
     # An interrupted previous clone leaves a .git with no initial commit, where
     # the update path's `git stash` / `git checkout` abort with "You do not
@@ -1456,6 +1506,22 @@ install_deps() {
     # hash verification — they exist to keep installs working when the
     # lockfile is stale, missing, or out-of-sync with the current
     # extras spec, NOT because they're equivalent in posture.
+    # Bundled wheelhouse: the package ships the locked dependency wheels, so
+    # the install needs NO PyPI resolve at all -- `--no-index` forbids the
+    # network, `--offline` forbids uv's own fetches, and `--locked` keeps the
+    # lockfile's SHA256 verification (the wheels in the wheelhouse ARE the
+    # locked ones, so the hashes still check out).
+    if [ -n "$WHEELHOUSE" ] && [ -d "$WHEELHOUSE" ]; then
+        log_info "Trying tier: bundled wheelhouse (offline) ..."
+        export UV_PROJECT_ENVIRONMENT="$INSTALL_DIR/venv"
+        if uv sync --extra all --locked --no-index --find-links "$WHEELHOUSE" --offline; then
+            log_success "Main package installed from the bundled wheelhouse (offline, hash-verified)"
+            log_success "All dependencies installed"
+            return 0
+        fi
+        log_warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
+    fi
+
     if [ -f "uv.lock" ]; then
         log_info "Trying tier: hash-verified (uv.lock) ..."
         log_info "(this resolves + downloads the curated [all] set — first run on a"
