@@ -7,30 +7,36 @@ import { writeClipboardText } from '@/components/ui/copy-button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { ErrorIcon, ErrorState } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
-import type { DesktopUpdateCommit, DesktopUpdateStage, DesktopUpdateStatus } from '@/global'
+import type { DesktopReleaseInfo, DesktopUpdateCommit, DesktopUpdateStage, DesktopUpdateStatus } from '@/global'
 import { useI18n } from '@/i18n'
 import { buildCommitChangelog, type CommitGroup } from '@/lib/commit-changelog'
-import { AlertCircle, Check, Copy, Terminal } from '@/lib/icons'
-import { useStaleAfter } from './hooks/use-stale-after'
+import { AlertCircle, Check, Copy, ExternalLink, Loader2, Terminal } from '@/lib/icons'
 import { resolveUpdateCopy, type UpdateTarget } from '@/lib/update-copy'
 import { cn } from '@/lib/utils'
 import {
   $backendUpdateApply,
   $backendUpdateChecking,
   $backendUpdateStatus,
+  $desktopRelease,
+  $releaseInstalling,
   $updateApply,
   $updateChecking,
   $updateOverlayOpen,
   $updateOverlayTarget,
+  $updateSource,
   $updateStatus,
   applyBackendUpdate,
   applyUpdates,
   checkBackendUpdates,
+  checkDesktopRelease,
   checkUpdates,
+  installDesktopRelease,
   resetUpdateApplyState,
   setUpdateOverlayOpen,
   type UpdateApplyState
 } from '@/store/updates'
+
+import { useStaleAfter } from './hooks/use-stale-after'
 
 function totalItems(groups: readonly CommitGroup[]) {
   return groups.reduce((sum, g) => sum + g.items.length, 0)
@@ -46,6 +52,9 @@ export function UpdatesOverlay() {
   const backendStatus = useStore($backendUpdateStatus)
   const backendChecking = useStore($backendUpdateChecking)
   const backendApply = useStore($backendUpdateApply)
+  const release = useStore($desktopRelease)
+  const releaseInstalling = useStore($releaseInstalling)
+  const source = useStore($updateSource)
 
   const isBackend = target === 'backend'
   const status = isBackend ? backendStatus : clientStatus
@@ -59,6 +68,15 @@ export function UpdatesOverlay() {
       void check()
     }
   }, [check, checking, open, status])
+
+  // 「有没有新版的壳」是另一条查法（GitHub 上有没有发布物），跟家目录那个
+  // checkout 落后多少笔不是一回事。开着这一屏就顺手问一次，省得用户以为
+  // 「已是最新」就真的没有新版。
+  useEffect(() => {
+    if (open && !isBackend) {
+      void checkDesktopRelease()
+    }
+  }, [isBackend, open])
 
   const behind = status?.behind ?? 0
   const updateAvailable = status?.updateAvailable || behind > 0
@@ -93,6 +111,18 @@ export function UpdatesOverlay() {
     void install()
   }
 
+  // 错误态上那个「重试」重跑**同一件事**：装壳失败要是被丢去重跑 checkout
+  // 的更新，就把用户推到另一条路上去了。
+  const handleRetry = () => {
+    if (source === 'release') {
+      void installDesktopRelease()
+
+      return
+    }
+
+    handleInstall()
+  }
+
   return (
     <Dialog onOpenChange={handleClose} open={open}>
       <DialogContent className="max-w-sm overflow-hidden p-0 gap-0" showCloseButton={phase !== 'applying'}>
@@ -105,22 +135,30 @@ export function UpdatesOverlay() {
         {phase === 'guiSkew' && <GuiSkewView message={apply.message} onDone={() => handleClose(false)} />}
 
         {phase === 'error' && (
-          <ErrorView message={apply.message} onDismiss={() => handleClose(false)} onRetry={handleInstall} />
+          <ErrorView message={apply.message} onDismiss={() => handleClose(false)} onRetry={handleRetry} />
         )}
 
-        {phase === 'idle' && (
-          <IdleView
-            behind={behind}
-            checking={checking}
-            commits={status?.commits ?? []}
-            onInstall={handleInstall}
-            onLater={() => handleClose(false)}
-            onRetryCheck={() => void check()}
-            status={status}
-            target={target}
-            updateAvailable={updateAvailable}
-          />
-        )}
+        {phase === 'idle' &&
+          (isBackend || !release?.newer ? (
+            <IdleView
+              behind={behind}
+              checking={checking}
+              commits={status?.commits ?? []}
+              onInstall={handleInstall}
+              onLater={() => handleClose(false)}
+              onRetryCheck={() => void check()}
+              status={status}
+              target={target}
+              updateAvailable={updateAvailable}
+            />
+          ) : (
+            <ReleaseView
+              installing={releaseInstalling}
+              onInstall={() => void installDesktopRelease()}
+              onLater={() => handleClose(false)}
+              release={release}
+            />
+          ))}
       </DialogContent>
     </Dialog>
   )
@@ -257,6 +295,73 @@ function IdleView({
   )
 }
 
+/**
+ * 「有新版的壳」那一屏。跟 IdleView 是两件事：IdleView 说的是家目录里那个
+ * checkout 离 origin/main 差几笔（后端），这一屏说的是**用户眼前这个程序**
+ * 有没有更新的发布物（壳）。有新版时它排在前面——因为它那一按顺手把后端也
+ * 带到同一个版本号上（裁定 208：一个产品一条号）。
+ */
+function ReleaseView({
+  installing,
+  onInstall,
+  onLater,
+  release
+}: {
+  installing: boolean
+  onInstall: () => void
+  onLater: () => void
+  release: DesktopReleaseInfo
+}) {
+  const { t } = useI18n()
+  const u = t.updates
+  const a = t.settings.about
+  const version = release.latest ?? ''
+  const notesUrl = release.htmlUrl
+
+  return (
+    <div className="grid gap-5 px-6 pb-6 pt-7 pr-8">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <BrandMark className="size-16" />
+
+        <DialogTitle className="text-center text-xl">{a.updateReadyVersion(version)}</DialogTitle>
+        <DialogDescription className="text-center text-sm">
+          {release.canUpdate ? u.availableBody : u.unsupportedMessage}
+        </DialogDescription>
+      </div>
+
+      <div className="grid gap-2">
+        {release.canUpdate ? (
+          <Button className="font-semibold" disabled={installing} onClick={onInstall} size="lg">
+            {installing ? <Loader2 className="size-4 animate-spin" /> : null}
+            {a.upgradeTo(version)}
+          </Button>
+        ) : null}
+
+        {notesUrl ? (
+          <Button asChild className="font-medium" variant="text">
+            <a
+              href={notesUrl}
+              onClick={event => {
+                event.preventDefault()
+                void window.plobiDesktop?.openExternal?.(notesUrl)
+              }}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <ExternalLink className="size-3" />
+              {a.releaseNotes}
+            </a>
+          </Button>
+        ) : null}
+
+        <Button className="font-medium" onClick={onLater} type="button" variant="text">
+          {u.maybeLater}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function ManualView({ command, message, onDone }: { command: string | null; message?: string; onDone: () => void }) {
   const { t } = useI18n()
   const u = t.updates
@@ -371,6 +476,7 @@ function ApplyingView({ apply, isBackend }: { apply: UpdateApplyState; isBackend
     typeof apply.percent === 'number' && Number.isFinite(apply.percent)
       ? Math.max(2, Math.min(100, Math.round(apply.percent)))
       : null
+
   // 进度拿不到时那条脉冲是无限动画：等过 8 秒就停脉冲、明说"还没回来"，
   // 否则一个 30 秒才超时的请求会让整个弹层看起来一直在闪（10-26 用户报）。
   const stale = useStaleAfter(percent === null, 8000)

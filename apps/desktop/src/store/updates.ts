@@ -15,9 +15,9 @@ import type {
   DesktopUpdateStatus,
   DesktopVersionInfo
 } from '@/global'
-import { checkPlobiUpdate, getActionStatus, updatePlobi } from '@/plobi'
 import { translateNow } from '@/i18n'
 import { persistString, storedString } from '@/lib/storage'
+import { checkPlobiUpdate, getActionStatus, updatePlobi } from '@/plobi'
 import { dismissNotification, notify } from '@/store/notifications'
 import { $connection } from '@/store/session'
 import type { BackendUpdateCheckResponse } from '@/types/plobi'
@@ -62,6 +62,13 @@ export const $backendUpdateChecking = atom<boolean>(false)
 
 export type UpdateTarget = 'client' | 'backend'
 export const $updateOverlayTarget = atom<UpdateTarget>('client')
+
+/**
+ * 这一轮更新是谁发起的。错误态上那个「重试」必须重跑**同一件事**——把装壳
+ * 的失败丢去重跑 checkout 的更新，等于把用户推到另一条路上。
+ */
+export type UpdateSource = 'checkout' | 'backend' | 'release'
+export const $updateSource = atom<UpdateSource>('checkout')
 
 export const setUpdateOverlayOpen = (open: boolean) => $updateOverlayOpen.set(open)
 
@@ -116,6 +123,46 @@ function isSkewToastSnoozed(): boolean {
   const until = Number(storedString(SKEW_TOAST_SNOOZE_KEY) || 0)
 
   return Number.isFinite(until) && Date.now() < until
+}
+
+const RELEASE_TOAST_ID = 'desktop-release-available'
+// 这一族按**版本号**记，不按时间：那把尺是给「一天能落一百笔」的分支用的，
+// 而发布物一版一份——同一个号只提醒一次，下一版（号变了）才再响。
+const RELEASE_TOAST_SEEN_KEY = 'plobi:release-toast-seen-version'
+
+/**
+ * 有新版的桌面端时响一声。分支更新那把尺用冷却窗口，是因为 main 一天能落
+ * 上百笔；发布物不会——一个版本号一辈子只该被打扰一次。
+ */
+export function maybeNotifyDesktopRelease(release: DesktopReleaseInfo | null): void {
+  if (!release?.newer || !release.latest) {
+    return
+  }
+
+  if ($releaseInstalling.get()) {
+    return
+  }
+
+  if (storedString(RELEASE_TOAST_SEEN_KEY) === release.latest) {
+    return
+  }
+
+  persistString(RELEASE_TOAST_SEEN_KEY, release.latest)
+
+  notify({
+    action: {
+      label: translateNow('notifications.updatePlobi'),
+      onClick: () => {
+        openUpdateOverlayFor('client')
+      }
+    },
+    durationMs: 0,
+    icon: 'gift',
+    id: RELEASE_TOAST_ID,
+    kind: 'info',
+    message: translateNow('settings.about.updateReadyVersion', release.latest),
+    title: translateNow('notifications.updateReadyTitle')
+  })
 }
 
 const INSTALL_METHOD_TOAST_ID = 'install-method-not-supported'
@@ -382,6 +429,7 @@ export async function checkDesktopRelease(): Promise<DesktopReleaseInfo | null> 
   try {
     const info = await bridge.releaseCheck()
     $desktopRelease.set(info)
+    maybeNotifyDesktopRelease(info)
 
     return info
   } catch {
@@ -392,6 +440,10 @@ export async function checkDesktopRelease(): Promise<DesktopReleaseInfo | null> 
 /**
  * 一步升级：下载新版的安装包 → 退出 → helper 装壳 ＋ 把后端带到同一个 tag
  * → 拉起来。壳与后端落在**同一个版本号**上（裁定 208）。
+ *
+ * 这条路自己管进度：主进程发来的 'fetch'／'restart' 会被 `ingestProgress`
+ * 吃进 `$updateApply`（弹层据此显示「下载中…／正在重启 Plobi…」），但从
+ * 点下去到第一条进度到达之间还有一段空窗，所以这里先自己占住 'fetch'。
  */
 export async function installDesktopRelease(): Promise<DesktopReleaseInstallResult> {
   const bridge = window.plobiDesktop?.updates
@@ -401,19 +453,45 @@ export async function installDesktopRelease(): Promise<DesktopReleaseInstallResu
   }
 
   $releaseInstalling.set(true)
+  dismissNotification(RELEASE_TOAST_ID)
+  $updateSource.set('release')
+  $updateApply.set({
+    ...IDLE,
+    applying: true,
+    stage: 'fetch',
+    message: translateNow('settings.about.downloadingUpdate')
+  })
 
   try {
     const result = await bridge.releaseInstall()
-    $releaseInstalling.set(false)
 
+    if (!result.ok) {
+      // 装不成就是装不成：落在可关闭的错误态上，不留一个转不出来的圈。
+      $updateApply.set({
+        ...IDLE,
+        applying: false,
+        stage: 'error',
+        error: 'apply-failed',
+        message: result.message ?? translateNow('updates.errorBody')
+      })
+      $releaseInstalling.set(false)
+
+      return result
+    }
+
+    // 成功：主进程已经拉起 helper，400ms 后退出应用；'restart' 那条进度由
+    // `ingestProgress` 落到 `$updateApply`，弹层停在「正在重启」。
     return result
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+
+    $updateApply.set({ ...IDLE, applying: false, stage: 'error', error: 'apply-failed', message })
     $releaseInstalling.set(false)
 
     return {
       ok: false,
       reason: 'install-failed',
-      message: error instanceof Error ? error.message : String(error)
+      message
     }
   }
 }
@@ -426,6 +504,7 @@ export async function applyUpdates(opts: DesktopUpdateApplyOptions = {}): Promis
   }
 
   dismissNotification(UPDATE_TOAST_ID)
+  $updateSource.set('checkout')
   $updateApply.set({ ...IDLE, applying: true, stage: 'prepare', message: 'Starting update…' })
 
   try {
@@ -583,6 +662,7 @@ function ingestBackendActionStatus(status: Awaited<ReturnType<typeof getActionSt
 
 export async function applyBackendUpdate(): Promise<DesktopUpdateApplyResult> {
   dismissNotification(UPDATE_TOAST_ID)
+  $updateSource.set('backend')
   $backendUpdateApply.set({
     ...IDLE,
     applying: true,
@@ -714,6 +794,7 @@ export function startUpdatePoller(): void {
   pollerStarted = true
   void checkUpdates()
   void checkBackendUpdates()
+  void checkDesktopRelease()
   void refreshDesktopVersion()
   bridge.onProgress(ingestProgress)
 
@@ -737,6 +818,7 @@ export function startUpdatePoller(): void {
     () => {
       void checkUpdates()
       void checkBackendUpdates()
+      void checkDesktopRelease()
     },
     30 * 60 * 1000
   )
@@ -765,5 +847,6 @@ function onFocus() {
   lastFocusAt = now
   void checkUpdates()
   void checkBackendUpdates()
+  void checkDesktopRelease()
   void refreshDesktopVersion()
 }

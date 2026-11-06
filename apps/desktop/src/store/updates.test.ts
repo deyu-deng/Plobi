@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { DesktopUpdateStatus } from '@/global'
+import type { DesktopReleaseInfo, DesktopUpdateStatus } from '@/global'
 
 const storage = new Map<string, string>()
 
@@ -54,7 +54,12 @@ const {
   resetUpdateApplyState,
   startUpdatePoller,
   stopUpdatePoller,
-  $updateStatus
+  $updateStatus,
+  maybeNotifyDesktopRelease,
+  checkDesktopRelease,
+  installDesktopRelease,
+  $desktopRelease,
+  $releaseInstalling
 } = await import('./updates')
 
 const { setConnection } = await import('./session')
@@ -64,6 +69,22 @@ const status = (over: Partial<DesktopUpdateStatus> = {}): DesktopUpdateStatus =>
   behind: 3,
   targetSha: 'sha-a',
   fetchedAt: 0,
+  ...over
+})
+
+const release = (over: Partial<DesktopReleaseInfo> = {}): DesktopReleaseInfo => ({
+  ok: true,
+  current: '0.3.0',
+  latest: '0.3.1',
+  tag: 'v0.3.1',
+  htmlUrl: 'https://github.com/deyu-deng/Plobi/releases/tag/v0.3.1',
+  newer: true,
+  canUpdate: true,
+  assetName: 'Plobi-0.3.1-win-x64.exe',
+  assetUrl: 'https://example.invalid/Plobi-0.3.1-win-x64.exe',
+  assetSize: 1024,
+  reason: null,
+  checkedAt: 0,
   ...over
 })
 
@@ -459,14 +480,95 @@ describe('applyBackendUpdate recovery', () => {
   })
 })
 
+describe('desktop release (the shell itself)', () => {
+  beforeEach(() => {
+    storage.clear()
+    notifySpy.mockClear()
+    dismissSpy.mockClear()
+    $desktopRelease.set(null)
+    $releaseInstalling.set(false)
+    resetUpdateApplyState()
+    vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    delete (globalThis as unknown as { window?: unknown }).window
+  })
+
+  it('tells the user once per version, and again for the next version', () => {
+    maybeNotifyDesktopRelease(release())
+    expect(notifySpy).toHaveBeenCalledTimes(1)
+
+    // The same release: no second nag — a version is worth one interruption.
+    maybeNotifyDesktopRelease(release())
+    expect(notifySpy).toHaveBeenCalledTimes(1)
+
+    // A newer release: worth telling again.
+    maybeNotifyDesktopRelease(release({ latest: '0.3.2', tag: 'v0.3.2' }))
+    expect(notifySpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('stays quiet when there is no newer release', () => {
+    maybeNotifyDesktopRelease(release({ newer: false }))
+    maybeNotifyDesktopRelease(null)
+    expect(notifySpy).not.toHaveBeenCalled()
+  })
+
+  it('publishes what the release check found', async () => {
+    const releaseCheck = vi.fn().mockResolvedValue(release())
+
+    ;(globalThis as unknown as { window: unknown }).window = {
+      plobiDesktop: { updates: { releaseCheck } }
+    }
+
+    const info = await checkDesktopRelease()
+
+    expect(info?.latest).toBe('0.3.1')
+    expect($desktopRelease.get()?.newer).toBe(true)
+    expect(notifySpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('lands on a closeable error state when the install fails', async () => {
+    const releaseInstall = vi.fn().mockResolvedValue({ ok: false, reason: 'download-failed', message: '下载失败' })
+
+    ;(globalThis as unknown as { window: unknown }).window = {
+      plobiDesktop: { updates: { releaseInstall } }
+    }
+
+    const result = await installDesktopRelease()
+
+    expect(result.ok).toBe(false)
+    expect($updateApply.get().stage).toBe('error')
+    expect($updateApply.get().applying).toBe(false)
+    expect($releaseInstalling.get()).toBe(false)
+  })
+
+  it('holds the applying state while the helper takes over', async () => {
+    const releaseInstall = vi.fn().mockResolvedValue({ ok: true, restarting: true, latest: '0.3.1' })
+
+    ;(globalThis as unknown as { window: unknown }).window = {
+      plobiDesktop: { updates: { releaseInstall } }
+    }
+
+    const result = await installDesktopRelease()
+
+    expect(result.ok).toBe(true)
+    // The app quits right after this; the progress stream drives the view on.
+    expect($updateApply.get().applying).toBe(true)
+    expect($updateApply.get().stage).toBe('fetch')
+  })
+})
+
 describe('startUpdatePoller', () => {
   const checkMock = vi.fn()
+  const releaseCheckMock = vi.fn()
   const onProgressMock = vi.fn()
   const listeners: Record<string, Function> = {}
 
   beforeEach(() => {
     storage.clear()
     checkMock.mockReset()
+    releaseCheckMock.mockReset()
     onProgressMock.mockReset()
     Object.keys(listeners).forEach(k => delete listeners[k])
     checkMock.mockResolvedValue({
@@ -475,9 +577,13 @@ describe('startUpdatePoller', () => {
       targetSha: 'sha-abc',
       fetchedAt: 0
     })
+    // Not newer: the poller's job here is to ASK, not to nag.
+    releaseCheckMock.mockResolvedValue(release({ newer: false, latest: null }))
     $updateStatus.set(null)
     ;(globalThis as unknown as { window: unknown }).window = {
-      plobiDesktop: { updates: { check: checkMock, onProgress: onProgressMock } },
+      plobiDesktop: {
+        updates: { check: checkMock, onProgress: onProgressMock, releaseCheck: releaseCheckMock }
+      },
       addEventListener: vi.fn((event: string, handler: Function) => {
         listeners[event] = handler
       }),
@@ -525,5 +631,20 @@ describe('startUpdatePoller', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(checkMock).toHaveBeenCalled()
+  })
+
+  it('asks GitHub for a newer desktop build on startup, on each tick and on focus', async () => {
+    startUpdatePoller()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(releaseCheckMock).toHaveBeenCalled()
+
+    releaseCheckMock.mockClear()
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
+    expect(releaseCheckMock).toHaveBeenCalled()
+
+    releaseCheckMock.mockClear()
+    listeners['focus']?.()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(releaseCheckMock).toHaveBeenCalled()
   })
 })
