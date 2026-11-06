@@ -292,7 +292,8 @@
       "perMachine": false,
       "shortcutName": "Plobi",
       "uninstallDisplayName": "Plobi",
-      "warningsAsErrors": false
+      "warningsAsErrors": false,
+      "include": "installer.nsh"
     }
   }
 }
