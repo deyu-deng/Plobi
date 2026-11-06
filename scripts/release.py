@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Plobi Agent Release Script
 
-Generates changelogs and creates GitHub releases with CalVer tags.
+Generates changelogs and creates GitHub releases with SemVer tags.
+The tag IS the version (vX.Y.Z); the release date is metadata that
+only ends up in __release_date__.
 
 Usage:
     # Preview changelog (dry run)
@@ -16,8 +18,8 @@ Usage:
     # First release (no previous tag)
     python scripts/release.py --bump minor --publish --first-release
 
-    # Override CalVer date (e.g. for a belated release)
-    python scripts/release.py --bump minor --publish --date 2026.3.15
+    # Override the release date (e.g. for a belated release)
+    python scripts/release.py --bump minor --publish --date 2026.11.6
 """
 
 import argparse
@@ -32,6 +34,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = REPO_ROOT / "plobi_cli" / "__init__.py"
+
+# A release tag is a SemVer version and nothing else. The CalVer tags
+# this repo inherited (v2026.10.20 and friends) still exist in the
+# history, but they are NOT release tags any more -- and they sort
+# above every 0.x tag numerically (2026 > 0), so they must never be
+# mixed into "the last release" lookups.
+SEMVER_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 PYPROJECT_FILE = REPO_ROOT / "pyproject.toml"
 
 # ACP Registry manifest must stay version-locked with pyproject.toml.
@@ -1982,23 +1991,29 @@ def git_result(*args, cwd=None):
 
 
 def get_last_tag():
-    """Get the most recent CalVer tag."""
-    tags = git("tag", "--list", "v20*", "--sort=-v:refname")
+    """Get the most recent SemVer tag (vX.Y.Z)."""
+    tags = [
+        tag
+        for tag in git("tag", "--list", "v[0-9]*", "--sort=-v:refname").split("\n")
+        if SEMVER_TAG_RE.match(tag)
+    ]
     if tags:
-        return tags.split("\n")[0]
+        return tags[0]
     return None
 
 
-def next_available_tag(base_tag: str) -> tuple[str, str]:
-    """Return a tag/calver pair, suffixing same-day releases when needed."""
-    if not git("tag", "--list", base_tag):
-        return base_tag, base_tag.removeprefix("v")
+def tag_for_version(version: str) -> str:
+    """The tag for a release version: the tag IS the version (vX.Y.Z).
 
-    suffix = 2
-    while git("tag", "--list", f"{base_tag}.{suffix}"):
-        suffix += 1
-    tag_name = f"{base_tag}.{suffix}"
-    return tag_name, tag_name.removeprefix("v")
+    There is no suffixing escape hatch any more. One version maps to
+    exactly one tag, and re-releasing a version is an error, not a
+    second tag with a suffix on it.
+    """
+    return f"v{version}"
+
+
+def tag_already_exists(tag_name: str) -> bool:
+    return bool(git("tag", "--list", tag_name))
 
 
 def get_current_version():
@@ -2030,7 +2045,7 @@ def bump_version(current: str, part: str) -> str:
     return f"{major}.{minor}.{patch}"
 
 
-def update_version_files(semver: str, calver_date: str):
+def update_version_files(semver: str, release_date: str):
     """Update version strings in source files."""
     # Update __init__.py
     content = VERSION_FILE.read_text()
@@ -2041,7 +2056,7 @@ def update_version_files(semver: str, calver_date: str):
     )
     content = re.sub(
         r'__release_date__\s*=\s*"[^"]+"',
-        f'__release_date__ = "{calver_date}"',
+        f'__release_date__ = "{release_date}"',
         content,
     )
     VERSION_FILE.write_text(content)
@@ -2396,24 +2411,20 @@ def main():
     parser.add_argument("--publish", action="store_true",
                         help="Actually create the tag and GitHub release (otherwise dry run)")
     parser.add_argument("--date", type=str,
-                        help="Override CalVer date (format: YYYY.M.D)")
+                        help="Override the release date (format: YYYY.M.D)")
     parser.add_argument("--first-release", action="store_true",
                         help="Mark as first release (no previous tag expected)")
     parser.add_argument("--output", type=str,
                         help="Write changelog to file instead of stdout")
     args = parser.parse_args()
 
-    # Determine CalVer date
+    # The release DATE is metadata (it lands in __release_date__); the
+    # VERSION is the tag. Date and version are separate things now.
     if args.date:
-        calver_date = args.date
+        release_date = args.date
     else:
         now = datetime.now()
-        calver_date = f"{now.year}.{now.month}.{now.day}"
-
-    base_tag = f"v{calver_date}"
-    tag_name, calver_date = next_available_tag(base_tag)
-    if tag_name != base_tag:
-        print(f"Note: Tag {base_tag} already exists, using {tag_name}")
+        release_date = f"{now.year}.{now.month}.{now.day}"
 
     # Determine semver
     current_version = get_current_version()
@@ -2421,6 +2432,12 @@ def main():
         new_version = bump_version(current_version, args.bump)
     else:
         new_version = current_version
+
+    tag_name = tag_for_version(new_version)
+    if tag_already_exists(tag_name):
+        print(f"Tag {tag_name} already exists -- that version is already released.")
+        print("Bump the version first (--bump patch|minor|major) and release that.")
+        return
 
     # Get previous tag
     prev_tag = get_last_tag()
@@ -2440,8 +2457,9 @@ def main():
     print(f"{'='*60}")
     print("  Plobi Agent Release Preview")
     print(f"{'='*60}")
-    print(f"  CalVer tag:      {tag_name}")
-    print(f"  SemVer:          v{current_version} → v{new_version}")
+    print(f"  Tag:             {tag_name}")
+    print(f"  Version:         v{current_version} → v{new_version}")
+    print(f"  Release date:    {release_date}")
     print(f"  Previous tag:    {prev_tag or '(none — first release)'}")
     print(f"  Commits:         {len(commits)}")
     print(f"  Unique authors:  {len({c['github_author'] for c in commits})}")
@@ -2469,8 +2487,8 @@ def main():
 
         # Update version files
         if args.bump:
-            update_version_files(new_version, calver_date)
-            print(f"  ✓ Updated version files to v{new_version} ({calver_date})")
+            update_version_files(new_version, release_date)
+            print(f"  ✓ Updated version files to v{new_version} ({release_date})")
 
             # Commit version bump
             add_files = [str(VERSION_FILE), str(PYPROJECT_FILE)]
@@ -2482,7 +2500,7 @@ def main():
                 return
 
             commit_result = git_result(
-                "commit", "-m", f"chore: bump version to v{new_version} ({calver_date})"
+                "commit", "-m", f"chore: bump version to v{new_version} ({release_date})"
             )
             if commit_result.returncode != 0:
                 print(f"  ✗ Failed to commit version bump: {commit_result.stderr.strip()}")
@@ -2492,24 +2510,35 @@ def main():
         # Create annotated tag
         tag_result = git_result(
             "tag", "-a", tag_name, "-m",
-            f"Plobi Agent v{new_version} ({calver_date})\n\nWeekly release"
+            f"Plobi v{new_version} ({release_date})\n\nRelease"
         )
         if tag_result.returncode != 0:
             print(f"  ✗ Failed to create tag {tag_name}: {tag_result.stderr.strip()}")
             return
         print(f"  ✓ Created tag {tag_name}")
 
-        # Push
-        push_result = git_result("push", "origin", "HEAD", "--tags")
+        # Push -- the branch and THIS tag only.
+        # `git push --tags` pushes EVERY local tag: a tag that was
+        # deleted on purpose comes back to life, and every stray tag
+        # fires the desktop release workflow again.
+        push_result = git_result("push", "origin", "HEAD")
         if push_result.returncode == 0:
-            print("  ✓ Pushed to origin")
+            print("  ✓ Pushed HEAD to origin")
         else:
-            print(f"  ✗ Failed to push to origin: {push_result.stderr.strip()}")
+            print(f"  ✗ Failed to push HEAD to origin: {push_result.stderr.strip()}")
             print("    Continue manually after fixing access:")
-            print("    git push origin HEAD --tags")
+            print("    git push origin HEAD")
+
+        tag_push = git_result("push", "origin", tag_name)
+        if tag_push.returncode == 0:
+            print(f"  ✓ Pushed tag {tag_name}")
+        else:
+            print(f"  ✗ Failed to push tag {tag_name}: {tag_push.stderr.strip()}")
+            print("    Continue manually after fixing access:")
+            print(f"    git push origin {tag_name}")
 
         # Build semver-named Python artifacts so downstream packagers
-        # (e.g. Homebrew) can target them without relying on CalVer tag names.
+        # (e.g. Homebrew) can target them by name.
         artifacts = build_release_artifacts(new_version)
         if artifacts:
             print("  ✓ Built release artifacts:")
@@ -2522,7 +2551,7 @@ def main():
 
         gh_cmd = [
             "gh", "release", "create", tag_name,
-            "--title", f"Plobi Agent v{new_version} ({calver_date})",
+            "--title", f"Plobi v{new_version} ({release_date})",
             "--notes-file", str(changelog_file),
         ]
         gh_cmd.extend(str(path) for path in artifacts)
@@ -2549,7 +2578,7 @@ def main():
             print(f"    Release notes kept at: {changelog_file}")
             print("    Tag was created locally. Create the release manually:")
             print(
-                f"    gh release create {tag_name} --title 'Plobi Agent v{new_version} ({calver_date})' "
+                f"    gh release create {tag_name} --title 'Plobi v{new_version} ({release_date})' "
                 f"--notes-file .release_notes.md {' '.join(str(path) for path in artifacts)}"
             )
             print(f"\n  ✓ Release artifacts prepared for manual publish: v{new_version} ({tag_name})")

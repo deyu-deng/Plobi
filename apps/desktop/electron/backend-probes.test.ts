@@ -11,7 +11,14 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { canImportPlobiCli, plobiRuntimeImportProbe, verifyPlobiCli } from './backend-probes'
+import {
+  aigwProbeVerdict,
+  canImportPlobiCli,
+  plobiProbeVerdict,
+  plobiRuntimeImportProbe,
+  runProbe,
+  verifyPlobiCli
+} from './backend-probes'
 
 // Resolve the host's own Node binary -- guaranteed to be on disk and
 // runnable. We use it as both a stand-in for "a python that doesn't
@@ -90,4 +97,75 @@ test('verifyPlobiCli swallows timeouts (does not throw)', () => {
   // (because the binary is missing) returns false rather than
   // propagating. Same code path the timeout case takes.
   assert.equal(verifyPlobiCli('/definitely/not/a/real/binary/anywhere'), false)
+})
+
+// ---------------------------------------------------------------------------
+// Probe verdicts (2026-11-06): "timed out" is NOT "broken".
+//
+// A broken venv exits non-zero within seconds. A venv that is merely SLOW
+// (loaded machine, scanned disk, cold interpreter) trips our deadline -- and
+// the fallback for "broken" is a full reinstall bootstrap, 20+ minutes of
+// uv/python/git/node stages on Windows. So the Plobi probe trusts a timeout
+// and only rejects on a real failure; the aigw probe keeps the opposite
+// policy, because ITS fallback is an explainable `deferred` row.
+// ---------------------------------------------------------------------------
+
+test('runProbe classifies a clean exit as pass', () => {
+  assert.equal(runProbe(NODE_BIN, ['-e', 'process.exit(0)'], { timeoutMs: 5000 }), 'pass')
+})
+
+test('runProbe classifies a non-zero exit as fail', () => {
+  assert.equal(runProbe(NODE_BIN, ['-e', 'process.exit(3)'], { timeoutMs: 5000 }), 'fail')
+})
+
+test('runProbe classifies a missing binary as fail', () => {
+  const ghost = path.join(os.tmpdir(), 'plobi-probes-ghost-' + Date.now() + '.exe')
+  assert.equal(runProbe(ghost, ['--version'], { timeoutMs: 5000 }), 'fail')
+})
+
+test('runProbe classifies our own deadline as timeout', () => {
+  // The interpreter starts and keeps working; we kill it at the deadline.
+  // This is exactly the case the old code misread as "broken venv" and
+  // answered with a 20-minute reinstall.
+  assert.equal(runProbe(NODE_BIN, ['-e', 'setTimeout(() => {}, 10000)'], { timeoutMs: 800 }), 'timeout')
+})
+
+test('the Plobi probe trusts a timeout -- a slow venv is not a broken venv', () => {
+  assert.equal(plobiProbeVerdict('pass'), true)
+  assert.equal(plobiProbeVerdict('timeout'), true)
+  assert.equal(plobiProbeVerdict('fail'), false)
+})
+
+test('the aigw probe declines a timeout -- its fallback is a deferred row, not a reinstall', () => {
+  assert.equal(aigwProbeVerdict('pass'), true)
+  assert.equal(aigwProbeVerdict('timeout'), false)
+  assert.equal(aigwProbeVerdict('fail'), false)
+})
+
+test('verifyPlobiCli trusts a command that only times out', () => {
+  // A command that never exits. The probe kills it at its deadline, and
+  // the verdict is "slow but alive" -- so we KEEP it as the backend
+  // candidate instead of dropping it into the bootstrap installer.
+  const isWindows = process.platform === 'win32'
+  const sleeper = path.join(
+    os.tmpdir(),
+    `plobi-probes-slow-${Date.now()}-${process.pid}${isWindows ? '.cmd' : '.sh'}`
+  )
+
+  if (isWindows) {
+    fs.writeFileSync(sleeper, '@ping -n 5 127.0.0.1 > NUL\r\n')
+  } else {
+    fs.writeFileSync(sleeper, '#!/bin/sh\nsleep 5\n')
+    fs.chmodSync(sleeper, 0o755)
+  }
+
+  try {
+    assert.equal(verifyPlobiCli(sleeper, { shell: true, timeoutMs: 500 }), true)
+  } finally {
+    try {
+      fs.unlinkSync(sleeper)
+    } catch {
+      void 0
+    }
+  }
 })
