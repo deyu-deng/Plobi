@@ -165,3 +165,120 @@ def test_release_notes_carry_no_internal_wording():
             continue
         hits = forbidden.findall(notes_path.read_text(encoding="utf-8"))
         assert not hits, f"{notes_path.name} leaks internal wording: {hits}"
+
+
+def _house_body() -> str:
+    return (
+        "## Plobi v0.3.0\n\n"
+        "[中文](https://github.com/deyu-deng/Plobi/releases/tag/v0.3.0) | "
+        "[English](https://github.com/deyu-deng/Plobi/releases/download/"
+        "v0.3.0/Plobi-0.3.0-release-notes.en.md)\n\n"
+        "### 新增\n\n"
+        "- **知识库** — 左栏新增知识库入口。笔记支持检索与就地编辑。\n"
+        "- **日记** — 左栏新增日记入口，按日撰写与翻阅。\n\n"
+        "### 修复\n\n"
+        "- **首启重装循环** — 探测超时此前被判定为环境故障，现按响应缓慢处理。\n"
+    )
+
+
+def test_register_guard_accepts_the_house_shape():
+    module = _load_release_module()
+    assert module.notes_register_problems(_house_body(), language="zh") == []
+
+
+def test_register_guard_catches_colloquial_wording():
+    """The wording that made earlier notes read like a chat message."""
+    module = _load_release_module()
+    body = _house_body().replace("现按响应缓慢处理", "当场就装好了")
+    problems = module.notes_register_problems(body, language="zh")
+    assert any("当场" in problem for problem in problems)
+
+
+def test_register_guard_catches_marketing_adjectives():
+    module = _load_release_module()
+    body = _house_body().replace("笔记支持检索与就地编辑", "带来强大的检索体验")
+    problems = module.notes_register_problems(body, language="zh")
+    assert any("强大" in problem for problem in problems)
+
+
+def test_register_guard_catches_the_reader_being_addressed():
+    module = _load_release_module()
+    body = _house_body().replace("按日撰写与翻阅", "你可以按日撰写与翻阅")
+    problems = module.notes_register_problems(body, language="zh")
+    assert any("你可以" in problem for problem in problems)
+
+
+def test_register_guard_catches_an_item_that_is_not_in_the_house_shape():
+    """An item without a noun phrase in bold is a sentence, not a release item."""
+    module = _load_release_module()
+    body = _house_body().replace(
+        "- **日记** — 左栏新增日记入口，按日撰写与翻阅。",
+        "- 左栏新增日记入口，按日撰写与翻阅。",
+    )
+    problems = module.notes_register_problems(body, language="zh")
+    assert any("house shape" in problem for problem in problems)
+
+
+def test_register_guard_catches_internal_wording():
+    module = _load_release_module()
+    body = _house_body() + "\n按裁定 209 的口径改的。\n"
+    problems = module.notes_register_problems(body, language="zh")
+    assert any("裁定" in problem for problem in problems)
+
+
+def test_register_guard_catches_the_same_things_in_english():
+    module = _load_release_module()
+    body = (
+        "### New\n\n"
+        "- **Knowledge** — The left rail gains a Knowledge entry.\n\n"
+        "You can now search every note.\n"
+    )
+    problems = module.notes_register_problems(body, language="en")
+    assert any("you can now" in problem for problem in problems)
+
+
+def test_every_release_note_in_the_repo_survives_the_register_guard():
+    """The repo's own notes have to pass the rule they are checked by.
+
+    A release page is written once and kept. If the register drifts, it drifts
+    in the notes that are already published, and nothing catches it there.
+    """
+    module = _load_release_module()
+    releases_dir = REPO_ROOT / "docs" / "plobi" / "releases"
+    notes = [p for p in sorted(releases_dir.glob("*.md")) if p.name != "README.md"]
+    assert notes, "no release notes found in docs/plobi/releases"
+
+    for notes_path in notes:
+        language = "en" if ".en." in notes_path.name else "zh"
+        problems = module.notes_register_problems(
+            notes_path.read_text(encoding="utf-8"), language=language
+        )
+        assert not problems, f"{notes_path.name} fails the register guard: {problems}"
+
+
+def test_the_two_languages_of_a_release_cover_the_same_items():
+    """One Chinese body, one English attachment -- the same facts twice.
+
+    The Chinese body and the English attachment are written separately, so
+    they drift unless something checks that they still say the same number of
+    things in the same order.
+    """
+    module = _load_release_module()
+    releases_dir = REPO_ROOT / "docs" / "plobi" / "releases"
+
+    for chinese_path in sorted(releases_dir.glob("v*.md")):
+        version = chinese_path.stem.lstrip("v")
+        english_path = releases_dir / f"Plobi-{version}-release-notes.en.md"
+        assert english_path.is_file(), f"missing English notes for v{version}"
+
+        chinese_items = module._change_section_bullets(
+            chinese_path.read_text(encoding="utf-8"), module.REGISTER_SECTIONS_ZH
+        )
+        english_items = module._change_section_bullets(
+            english_path.read_text(encoding="utf-8"), module.REGISTER_SECTIONS_EN
+        )
+        assert chinese_items, f"{chinese_path.name} lists no items"
+        assert len(chinese_items) == len(english_items), (
+            f"v{version}: {len(chinese_items)} items in the Chinese body, "
+            f"{len(english_items)} in the English attachment"
+        )

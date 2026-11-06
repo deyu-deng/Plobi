@@ -2,22 +2,22 @@
 
 [中文](https://github.com/deyu-deng/Plobi/releases/tag/v0.2.1) | [English](https://github.com/deyu-deng/Plobi/releases/download/v0.2.1/Plobi-0.2.1-release-notes.en.md)
 
-This is a hotfix. v0.2.0 crashed on startup after install; this one fixes that.
+v0.2.1 fixes the chat page crash seen after installing v0.2.0, and adjusts the initial file set and the quota balance readout.
 
-The installer is below.
+Installers are attached below.
 
 ### Fixed
 
-- **Startup no longer crashes** — The optimistic placeholder message was missing a piece of metadata, and the chat runtime threw when it read it. The release build crashed on first launch; this release normalises it.
+- **Chat page crash** — After v0.2.0 was installed, the chat page raised a rendering error whenever an active session existed, because the placeholder message carried no metadata. This release fills in the metadata of that message and pins the message id to the session.
 
 ### Improved
 
-- **A new machine no longer arrives pre-seeded** — Creating one leaves only sessions and logs; the `.env` and `SOUL.md` legs are gone.
-- **Quota balance readout completed** — When it can read a balance it now reports the number with its unit, and when it cannot it returns `None` with a reason instead of something half-done.
+- **No seeded files in a new profile** — Creating a profile now creates only `sessions/` and `logs/`, and no longer copies `.env` or `SOUL.md`. The main directory and existing profiles are unaffected.
+- **Quota balance readout** — A readable balance returns the figure with its unit (dollars, credits or requests); an unreadable one returns `None` with the specific reason.
 
 ### Install
 
-Download the installer below — Windows uses `.exe` or `.msi`, macOS uses `.dmg`, Linux uses `.deb`, `.rpm` or `.AppImage`.
+Download the installer below and run it — Windows uses `.exe` or `.msi`, macOS uses `.dmg`, Linux uses `.deb`, `.rpm` or `.AppImage`.
 
 ### Docs
 

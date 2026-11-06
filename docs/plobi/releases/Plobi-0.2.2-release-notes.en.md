@@ -2,28 +2,27 @@
 
 [中文](https://github.com/deyu-deng/Plobi/releases/tag/v0.2.2) | [English](https://github.com/deyu-deng/Plobi/releases/download/v0.2.2/Plobi-0.2.2-release-notes.en.md)
 
-This release is about installing: the red lights after install, the rows that were guaranteed to fail when clicked, and the agenda that scheduled the same class twice.
+v0.2.2 addresses several problems around installation and daily use: the local quota gateway failing to start, entries that fail when opened, agenda entries scheduled twice, and two collection columns reading the wrong values.
 
-The installer is below.
+Installers are attached below.
 
 ### Fixed
 
-- **aigw no longer lights up red after install** — The first item in the install batch fix.
-- **The rail no longer carries rows that fail on click** — Entries that could not be installed should not sit in the list.
-- **A class is no longer scheduled twice** — Planning used to look only inside the proposal and could not see what was already on that day; it de-duplicates now.
-- **Nothing is touched before the rate limit** — Reconciliation became a single command that only submits when submission is actually due.
-- **The collector's time column lands in the right place** — "the time of this message itself" no longer reads as something else, and the conversation and visibility columns take their real values.
-- **A new home no longer seeds that session seed** — Creating one leaves only sessions and logs.
+- **Local quota gateway startup** — The dependency closure now carries `h2`, so the gateway starts; without `h2` it falls back to HTTP/1.1. The gateway's errors are also written to `desktop.log`, instead of a timeout with no reason attached.
+- **Usability of roster entries** — An entry that fails when opened is now disabled with the reason attached, instead of letting it be opened and fail.
+- **Timetable de-duplication** — Planning compares the entries already scheduled for that day: the proposal is rejected, and the entry is removed again before it is stored. The test is the same slot with the same title.
+- **Read-only reconciliation command** — A new reconciliation command. While the rate limit interval has not elapsed it does not contact the school at all and only reports how long is left; it can also show the library side alone next to the requests of the previous round.
+- **Conversation and visibility columns in the information pool** — The pool itself is now in the repository and stores both columns, and reads can filter on them. The collection side defines where each value comes from, namely the window username and whether the message is a group message; a verification command pins the shape and the meaning of the time field. The WeChat collector does not write to the pool in this release yet.
 
 ### New
 
-- **Memory is two actions** — `memory_read(scope)` and `memory_write(scope, parts, source)`, available to every role through one interface.
-- **The L0 half of memory is on** — The source of truth is open, and the entries it displaces really land in the confirmation layer.
-- **Scheduled jobs name a recipient** — The job creation form now has the field.
+- **Memory read and write** — Two actions, `memory_read(scope)` and `memory_write(scope, parts, source)`, available to every role by default.
+- **L0 memory layer** — On by default. When a slot reaches its squeeze threshold, the entries it displaces enter the confirmation layer instead of being dropped silently.
+- **Scheduled jobs name a recipient** — Creating and updating a job both accept the name of an agent from the roster; without one the job belongs to the currently speaking agent, and when that cannot be determined it is reported in the result.
 
 ### Install
 
-Download the installer below — Windows uses `.exe` or `.msi`, macOS uses `.dmg`, Linux uses `.deb`, `.rpm` or `.AppImage`.
+Download the installer below and run it — Windows uses `.exe` or `.msi`, macOS uses `.dmg`, Linux uses `.deb`, `.rpm` or `.AppImage`.
 
 ### Docs
 

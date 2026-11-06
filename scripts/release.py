@@ -2122,6 +2122,148 @@ def body_reference_problems(body: str, version: str, en_asset: str | None) -> li
     return problems
 
 
+# The register of a release page (docs/plobi/releases/README.md) is the one the
+# industry uses: a category, one item per line, a noun phrase in bold, the fact
+# after an em dash, no marketing adjectives, no internal bookkeeping.
+#
+# These lists are deliberately short. They name the words that made earlier
+# notes read like a chat message instead of a release page. A word that is
+# merely unusual is not a problem and is not listed here.
+COLLOQUIAL_ZH = (
+    "随手",
+    "当场",
+    "说人话",
+    "一片红灯",
+    "摆在那儿",
+    "话说回去",
+    "糊弄",
+    "省心",
+    "顺手",
+    "攒着",
+    "妥妥",
+    "稳稳的",
+    "神器",
+    "黑科技",
+    "王炸",
+    "保姆级",
+    "开箱即用",
+    "一键搞定",
+    "无缝",
+    "丝滑",
+    "一站式",
+    "强大",
+    "惊艳",
+    "极致",
+    "前所未有",
+    "耳目一新",
+    "简单易用",
+)
+
+COLLOQUIAL_EN = (
+    "just works",
+    "handy",
+    "seamless",
+    "blazing",
+    "the good news",
+    "say goodbye",
+    "a piece of cake",
+    "rock solid",
+    "game changer",
+    "delighted",
+    "thrilled",
+    "now you can",
+    "you can now",
+)
+
+# Words that belong to the repo's own bookkeeping, not to a reader.
+INTERNAL_WORDING = re.compile(
+    r"裁定\s*\d+|WP-[A-Z0-9-]+|release\.py|pipeline|流水线|撤版|CalVer",
+    re.IGNORECASE,
+)
+
+REGISTER_SECTIONS_ZH = ("新增", "改进", "修复")
+REGISTER_SECTIONS_EN = ("New", "Improved", "Fixed")
+
+_ITEM_SHAPE = re.compile(r"^- \*\*[^*]+\*\* — \S")
+
+
+def _change_section_bullets(body: str, wanted: tuple[str, ...]) -> list[str]:
+    """The bullet lines that sit under one of the change sections."""
+    bullets: list[str] = []
+    section = ""
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            section = stripped.lstrip("#").strip()
+            continue
+        if section in wanted and stripped.startswith("- "):
+            bullets.append(stripped)
+    return bullets
+
+
+def notes_register_problems(body: str, language: str = "zh") -> list[str]:
+    """Wording that would make the release page read like a chat message.
+
+    A release page is the one piece of the project that a reader outside the
+    repo sees. Earlier notes came out of the repo's own way of talking: they
+    addressed the reader, they used metaphors for what the code does, and they
+    called ordinary improvements powerful. None of that survives contact with
+    the industry register -- VS Code and GitHub Desktop write a category, a
+    noun phrase, and the fact.
+
+    The checks are cheap and they run before anything is published, because a
+    release page cannot be edited quietly afterwards: whatever goes out is
+    what readers keep.
+    """
+    problems: list[str] = []
+    chinese = language == "zh"
+
+    for match in INTERNAL_WORDING.finditer(body):
+        problems.append(
+            f"the body carries internal wording ({match.group(0)}) -- a release "
+            "page is written for readers, not for the repo's own bookkeeping"
+        )
+
+    if chinese:
+        words = COLLOQUIAL_ZH
+        sections = REGISTER_SECTIONS_ZH
+        address = ("你可以", "你需要", "你们", "咱们")
+        shape = "the item is not in the house shape: `- **Noun phrase** — fact`"
+    else:
+        words = COLLOQUIAL_EN
+        sections = REGISTER_SECTIONS_EN
+        address = ("you can now", "your ", "you'll ")
+        shape = "the item is not in the house shape: `- **Noun phrase** — fact`"
+
+    lowered = body.lower()
+    probe = body if chinese else lowered
+    for word in words:
+        if word in body:
+            problems.append(
+                f"the body uses {word!r} -- the register of a release page is "
+                "factual, not conversational"
+            )
+    for phrase in address:
+        if phrase in probe:
+            problems.append(
+                f"the body addresses the reader ({phrase!r}) -- release notes "
+                "describe what changed, they do not talk to the reader"
+            )
+    if not chinese:
+        for phrase in ("you can ", "you should ", "you'll ", "you have to "):
+            if phrase in lowered:
+                problems.append(
+                    f"the body addresses the reader ({phrase!r}) -- release notes "
+                    "describe what changed, they do not talk to the reader"
+                )
+
+    for bullet in _change_section_bullets(body, sections):
+        if not _ITEM_SHAPE.match(bullet):
+            problems.append(f"{shape}: {bullet[:60]}")
+
+    return problems
+
+
 def update_version_files(semver: str, release_date: str):
     """Update version strings in source files."""
     # Update __init__.py
@@ -2566,6 +2708,13 @@ def main():
         if problems:
             for problem in problems:
                 print(f"  ✗ Notes file problem: {problem}.")
+            return
+        register_problems = notes_register_problems(hand_written, language="zh")
+        if en_notes is not None:
+            register_problems += notes_register_problems(en_notes, language="en")
+        if register_problems:
+            for problem in register_problems:
+                print(f"  ✗ Notes register problem: {problem}.")
             return
         if en_asset is None and "releases/download/" not in hand_written:
             print("  ! The body has no link to an English version.")
