@@ -200,7 +200,16 @@ def main() -> int:
     print(f"home sessions (sum):   {total_home}")
     for db, agent, n in per_home:
         mark = "" if agent else "  ← ORPHAN (rows will be attributed to '')"
-        print(f"  {db.parent.name:28s} → agent_id={agent or "''":12s} rows={n}{mark}")
+        # 11-06（Lint 闸门修）：原来这行写的是
+        #   f"... agent_id={agent or "''":12s} ..."
+        # 那是 **Python 3.12+ 才有的 f-string 嵌套**（PEP 701，复用外层引号），而本仓
+        # `requires-python` 是 >=3.11 ⇒ 在 3.11 上这个文件**连解析都过不去**
+        # （ruff：`error[invalid-syntax]: Cannot reuse outer quote character in f-strings on
+        # Python 3.11`）。它一报错，**整条 Lint 闸门**（PLW1514 那道）就跟着每笔都红，
+        # 于是那道本来很有用的闸门变成了没人看的红灯。
+        # 改法：先把那个标签算好再格式化——**输出逐字相同**，3.11 也能跑。
+        agent_label = agent if agent else "''"
+        print(f"  {db.parent.name:28s} → agent_id={agent_label:12s} rows={n}{mark}")
     if orphans:
         print(f"\nWARNING: {len(orphans)} orphan home(s) not in roster: {orphans}")
         print("         their rows land as '' (= L1) — listed, not silently dropped")
