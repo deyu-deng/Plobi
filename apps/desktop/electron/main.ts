@@ -11832,12 +11832,27 @@ ipcMain.handle('plobi:updates:branch:set', async (_event, name) => {
   return { branch }
 })
 
-// Resolve the canonical Plobi version (the one `release.py` bumps in
-// plobi_cli/__init__.py + pyproject.toml) so the desktop About panel shows the
-// real Plobi version instead of the Electron app's own package.json version,
-// which historically drifted (stuck at 0.0.2). Falls back to app.getVersion()
-// when the source tree can't be read (e.g. a packaged build without the repo).
+// Resolve the SHELL's own version -- the one the user installed (the
+// installer writes package.json's version into the app bundle). This is
+// what "关于 → Version" must show: the thing the user can actually update.
+//
+// It used to read the BACKEND's `plobi_cli.__version__` instead, because
+// the Electron app's version "historically drifted (stuck at 0.0.2)".
+// That drift is gone: 裁定 208 gave the product ONE number (desktop
+// package.json == pyproject.toml == the tag), so the shell's version IS
+// the product version. Reading the backend's file here made the panel
+// print "0.1.0" on a 0.3.2 install -- because the agent checkout is a
+// separate git tree with its own version -- i.e. two numbers wearing one
+// label (2026-11-06 acceptance run).
 function resolvePlobiVersion() {
+  return app.getVersion()
+}
+
+// The BACKEND's version, read from the agent checkout in the home
+// directory. It is a DIFFERENT thing (a git checkout, updated on its own
+// schedule), so it gets its own line in the About panel -- never the
+// shell's number under the shell's label.
+function resolveBackendVersion(): string | null {
   try {
     const root = resolveUpdateRoot()
     const initPath = path.join(root, 'plobi_cli', '__init__.py')
@@ -11851,10 +11866,10 @@ function resolvePlobiVersion() {
       }
     }
   } catch {
-    // Fall through to the Electron app version below.
+    // No agent checkout yet (a packaged build before its first bootstrap).
   }
 
-  return app.getVersion()
+  return null
 }
 
 // Re-resolve the live Plobi version and push it into the native About panel
@@ -11872,6 +11887,7 @@ function showAboutPanelFresh() {
 
 ipcMain.handle('plobi:version', async () => ({
   appVersion: resolvePlobiVersion(),
+  backendVersion: resolveBackendVersion(),
   electronVersion: process.versions.electron,
   nodeVersion: process.versions.node,
   platform: process.platform,

@@ -102,6 +102,16 @@ export function AboutSettings() {
           <p className="mt-1 text-xs text-muted-foreground">
             {version?.appVersion ? a.version(version.appVersion) : a.versionUnavailable}
           </p>
+          {/* The agent (the Python side) has its OWN version -- it lives in the
+              home checkout, a separate git tree with its own release rhythm.
+              It gets its own line; the number above is the shell's. Before
+              this split the panel showed the agent's number under the shell's
+              label (a 0.3.2 install announced "Version 0.1.0"). */}
+          {version?.backendVersion ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t.shell.statusbar.backendVersion(version.backendVersion)}
+            </p>
+          ) : null}
         </div>
       </div>
 

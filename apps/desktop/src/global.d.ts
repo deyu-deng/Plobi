@@ -325,7 +325,13 @@ export interface PlobiTerminalExit {
 }
 
 export interface DesktopVersionInfo {
+  /** The SHELL's version — what the user installed (and what an update replaces). */
   appVersion: string
+  /**
+   * The agent's version, read from the home checkout. Null when there is no
+   * checkout yet (a packaged build before its first bootstrap).
+   */
+  backendVersion: string | null
   electronVersion: string
   nodeVersion: string
   platform: string
