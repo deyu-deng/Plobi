@@ -228,7 +228,7 @@ if (USER_DATA_OVERRIDE) {
   // bookkeeping) in userData, which defaults to `%APPDATA%\plobi` for BOTH the
   // packaged app and `npm run dev`. Two processes, one directory: the single
   // instance lock has one winner and the loser exits — you cannot run the dev
-  // tree while the installed copy is open. Dev moves to `plobi-dev`.
+  // tree while the installed copy is open. Dev moves to `Plobi-Dev`.
   const electronUserData = resolveElectronUserDataRoot({
     isPackaged: app.isPackaged || Boolean(process.env.PLOBI_DESKTOP_IS_PACKAGED),
     appDataDir: app.getPath('appData'),
@@ -408,7 +408,7 @@ if (INSTALL_STAMP) {
 // The ladder now forks (see `data-root.ts` for the full rationale):
 //
 //   packaged   PLOBI_DESKTOP_DATA_DIR → installer's recorded choice → %LOCALAPPDATA%\Plobi
-//   dev        PLOBI_DESKTOP_DATA_DIR → PLOBI_HOME (env, then registry) → %LOCALAPPDATA%\plobi-dev
+//   dev        PLOBI_DESKTOP_DATA_DIR → PLOBI_HOME (env, then registry) → %LOCALAPPDATA%\Plobi-Dev
 //
 // The packaged branch never consults `PLOBI_HOME`. That is the whole point.
 function readInstallerRecordedDataDir() {
