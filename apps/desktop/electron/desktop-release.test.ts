@@ -135,6 +135,63 @@ test('the update helper moves the agent to the same tag, then the shell, then st
   }
 })
 
+test('the update helper waits for the app to exit before installing', () => {
+  const helper = writeUpdateHelper({
+    installerPath: 'C:\\Temp\\Plobi-0.3.2-win-x64.exe',
+    installDir: 'D:\\Software\\Plobi',
+    appPath: 'D:\\Software\\Plobi\\Plobi.exe',
+    plobiHome: 'D:\\Data\\AppData\\plobi',
+    tag: 'v0.3.2'
+  })
+
+  try {
+    const text = fs.readFileSync(helper, 'utf8')
+
+    // Installing over a running app half-succeeds: the wait has to come
+    // FIRST, before the checkout and before the installer.
+    assert.match(text, /tasklist \/FI "IMAGENAME eq Plobi\.exe"/)
+    assert.match(text, /plobi_wait_exit/)
+
+    const waitAt = text.indexOf('plobi_wait_exit')
+    const installAt = text.indexOf('install.ps1')
+    const shellAt = text.indexOf('/S /D=')
+
+    assert.ok(waitAt >= 0 && installAt > waitAt, 'the wait must come before the checkout move')
+    assert.ok(shellAt > installAt, 'the shell swap must come after the checkout move')
+  } finally {
+    try {
+      fs.unlinkSync(helper)
+    } catch {
+      /* already gone */
+    }
+  }
+})
+
+test('the update helper leaves the checkout on a branch, not on a detached HEAD', () => {
+  const helper = writeUpdateHelper({
+    installerPath: 'C:\\Temp\\Plobi-0.3.2-win-x64.exe',
+    installDir: 'D:\\Software\\Plobi',
+    appPath: 'D:\\Software\\Plobi\\Plobi.exe',
+    plobiHome: 'D:\\Data\\AppData\\plobi',
+    tag: 'v0.3.2'
+  })
+
+  try {
+    const text = fs.readFileSync(helper, 'utf8')
+
+    // A tag checkout leaves a detached HEAD; the next update has no branch
+    // to move, so put main back on the release commit.
+    assert.match(text, /branch -f main "refs\/tags\/v0\.3\.2"/)
+    assert.match(text, /checkout main/)
+  } finally {
+    try {
+      fs.unlinkSync(helper)
+    } catch {
+      /* already gone */
+    }
+  }
+})
+
 test('the update helper is written into the temp dir, not into the install', () => {
   const helper = writeUpdateHelper({
     installerPath: 'C:\\Temp\\x.exe',

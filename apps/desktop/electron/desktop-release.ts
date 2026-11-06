@@ -262,8 +262,12 @@ export async function downloadAsset(url: string, dest: string, timeoutMs = 30 * 
 /**
  * The helper that does the actual work AFTER this app has quit:
  *
+ *   0. wait until this app is really gone -- its files are locked until
+ *      then, and installing over a running app half-succeeds;
  *   1. the agent checkout moves to the same tag (so shell and agent share
- *      ONE version number -- 裁定 208);
+ *      ONE version number -- 裁定 208), and the branch is put back on that
+ *      commit (a tag checkout leaves a DETACHED head, and the next update
+ *      has no branch to move);
  *   2. the new installer replaces the shell;
  *   3. the app starts again.
  *
@@ -287,6 +291,24 @@ export function writeUpdateHelper(opts: {
   lines.push('@echo off')
   lines.push('setlocal')
   lines.push(`set "PLOBI_LOG=${logPath}"`)
+
+  // ---- 0) wait for this app to really exit -------------------------------
+  lines.push('rem --- 0) wait until this app has really quit (its files are locked until then) ---')
+  if (isWindows) {
+    lines.push('set /a PL0BI_WAITED=0')
+    lines.push(':plobi_wait_exit')
+    lines.push('tasklist /FI "IMAGENAME eq Plobi.exe" 2>NUL | find /I "Plobi.exe" >NUL')
+    lines.push('if errorlevel 1 goto plobi_app_gone')
+    lines.push('set /a PL0BI_WAITED+=2')
+    lines.push('if %PL0BI_WAITED% GEQ 120 goto plobi_app_gone')
+    lines.push('timeout /t 2 /nobreak >NUL')
+    lines.push('goto plobi_wait_exit')
+    lines.push(':plobi_app_gone')
+  } else {
+    lines.push('while pgrep -f "Plobi" >/dev/null 2>&1; do sleep 2; done')
+  }
+
+  // ---- 1) the agent checkout moves to the same tag ------------------------
   lines.push('rem --- 1) the agent checkout moves to the same tag ---')
   if (isWindows) {
     lines.push(
@@ -297,6 +319,21 @@ export function writeUpdateHelper(opts: {
       `sh "${installScript}" --tag "${opts.tag}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" >> "$PLOBI_LOG" 2>&1`
     )
   }
+
+  // ---- 1b) the tag checkout leaves a DETACHED head -------------------------
+  // `branch -f` moves the pointer without touching the working tree (so the
+  // user's restored local edits survive), and `checkout main` then attaches
+  // the branch -- the trees are identical, so nothing is overwritten.
+  lines.push('rem --- 1b) the tag checkout leaves a detached HEAD: point main at the release commit and attach to it ---')
+  if (isWindows) {
+    lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "%PLOBI_LOG%" 2>&1`)
+    lines.push(`git -C "${agentDir}" checkout main >> "%PLOBI_LOG%" 2>&1`)
+  } else {
+    lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "$PLOBI_LOG" 2>&1`)
+    lines.push(`git -C "${agentDir}" checkout main >> "$PLOBI_LOG" 2>&1`)
+  }
+
+  // ---- 2) the shell is replaced by the new installer ----------------------
   lines.push('rem --- 2) the shell is replaced by the new installer ---')
   if (isWindows) {
     lines.push(`"${opts.installerPath}" /S /D=${opts.installDir} >> "%PLOBI_LOG%" 2>&1`)
