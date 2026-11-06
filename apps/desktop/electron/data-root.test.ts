@@ -48,15 +48,15 @@ test('装机版：没选过数据目录就落到自己的默认格 %LOCALAPPDATA
 })
 
 test('开发态：PLOBI_HOME 说了算', () => {
-  const devHome = path.resolve(path.sep === '\\' ? 'D:\\Data\\AppData\\plobi-dev' : '/data/appdata/plobi-dev')
+  const devHome = path.resolve(path.sep === '\\' ? 'D:\\Data\\AppData\\Plobi-Dev' : '/data/appdata/Plobi-Dev')
   const got = resolveDataRoot({ isPackaged: false, homeEnv: devHome, localAppData: LOCAL, home: HOME })
   assert.equal(got.root, devHome)
   assert.equal(got.source, 'home-env')
 })
 
-test('开发态：没设 PLOBI_HOME 就落到 plobi-dev，不再碰老的 plobi', () => {
+test('开发态：没设 PLOBI_HOME 就落到 Plobi-Dev，不再碰老的 plobi', () => {
   const got = resolveDataRoot({ isPackaged: false, localAppData: LOCAL, home: HOME })
-  assert.equal(got.root, path.join(LOCAL, 'plobi-dev'))
+  assert.equal(got.root, path.join(LOCAL, 'Plobi-Dev'))
   assert.equal(got.source, 'default-dev')
 })
 

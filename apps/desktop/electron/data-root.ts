@@ -8,14 +8,14 @@
  * 定下的规矩：
  *
  *   装机版   显式 `PLOBI_DESKTOP_DATA_DIR` → 安装时选的那一格 → `%LOCALAPPDATA%\Plobi`
- *   开发态   显式 `PLOBI_DESKTOP_DATA_DIR` → `PLOBI_HOME` → `%LOCALAPPDATA%\plobi-dev`
+ *   开发态   显式 `PLOBI_DESKTOP_DATA_DIR` → `PLOBI_HOME` → `%LOCALAPPDATA%\Plobi-Dev`
  *
  * 两处刻意的取舍：
  *
  * 1. **装机版不看 `PLOBI_HOME`。** 装机版是玩家从开始菜单点开的那个，它继承
  *    的是登录会话的环境，里面躺着的是开发机的门牌。装机版只认「安装时选定的
  *    那一格」与「它自己的默认格」，这样 `setx` 再怎么写都污染不到它。
- * 2. **开发态从 `plobi` 挪到 `plobi-dev`。** 老目录留给装机版之外的历史数据，
+ * 2. **开发态从 `plobi` 挪到 `Plobi-Dev`。** 老目录留给装机版之外的历史数据，
  *    开发态从此在一格新地方从零长，两边同时开着也抢不到同一把锁。
  */
 
@@ -83,7 +83,7 @@ function normalize(value: string): string {
  */
 export function resolveDataRoot(input: DataRootInput): DataRootResolution {
   const defaultBase = normalize(clean(input.localAppData) || input.home)
-  const devDefault = defaultBase ? path.join(defaultBase, 'plobi-dev') : 'plobi-dev'
+  const devDefault = defaultBase ? path.join(defaultBase, 'Plobi-Dev') : 'Plobi-Dev'
   const packagedDefault = defaultBase ? path.join(defaultBase, 'Plobi') : 'Plobi'
 
   // ① 显式注入的那一格，两份都认——调试、CI、以及安装器首次拉起都走这条。
@@ -101,7 +101,7 @@ export function resolveDataRoot(input: DataRootInput): DataRootResolution {
     return { root: packagedDefault, source: 'default-packaged' }
   }
 
-  // ③ 开发态：`PLOBI_HOME` 说了算（`setx` 钉的那个），否则 `plobi-dev`。
+  // ③ 开发态：`PLOBI_HOME` 说了算（`setx` 钉的那个），否则 `Plobi-Dev`。
   const fromHome = normalize(clean(input.homeEnv))
   if (fromHome) {
     return { root: fromHome, source: 'home-env' }
