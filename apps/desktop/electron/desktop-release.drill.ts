@@ -1,3 +1,7 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
 /**
  * Drill the one-click path WITHOUT publishing anything:
  *   fetch the latest release → pick this platform's installer → download it
@@ -7,15 +11,13 @@
  * the helper's command sequence is printed so it can be read.
  */
 import { pickInstallerAsset, writeUpdateHelper } from './desktop-release'
-import { fetchLatestRelease, downloadAsset } from './desktop-release'
-import fs from 'node:fs'
-import path from 'node:path'
-import os from 'node:os'
+import { downloadAsset, releaseLookup } from './desktop-release'
 
-const release = await fetchLatestRelease()
+const lookup = await releaseLookup.lookup()
+const release = lookup.release
 
 if (!release) {
-  console.log('REACH: failed (no release)')
+  console.log(`REACH: failed (${lookup.reason ?? 'unreachable'}${lookup.status ? `, HTTP ${lookup.status}` : ''})`)
   process.exit(2)
 }
 
@@ -39,6 +41,7 @@ if (asset) {
       plobiHome: 'D:\\Data\\AppData\\plobi',
       tag: release.tag
     })
+
     console.log(`HELPER: ${helper}`)
     console.log('--- the helper would run ---')
     console.log(fs.readFileSync(helper, 'utf8'))

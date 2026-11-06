@@ -363,6 +363,8 @@ export interface DesktopReleaseInfo {
   assetUrl: string | null
   assetSize: number
   reason: string | null
+  /** The HTTP status of the lookup; 0 when the request never made it. */
+  status: number
   checkedAt: number
 }
 

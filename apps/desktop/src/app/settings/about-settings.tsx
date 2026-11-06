@@ -100,6 +100,11 @@ export function AboutSettings() {
     // asked for ("点一下就升级"). It comes before the agent-checkout state.
     statusLine = a.updateReadyVersion(release.latest ?? '')
     statusTone = 'available'
+  } else if (release && !release.ok) {
+    // 壳那边这一查**没跑成**（连不上／被限流／仓库还没发过版）⇒ 绝不能说
+    // 「已是最新」：那是在替一个没跑成的查法背书，说的是我们没看见，不是没有。
+    statusLine = a.cantReach
+    statusTone = 'error'
   } else if (!supported) {
     statusLine = status?.message ?? a.cantUpdate
     statusTone = 'error'
@@ -167,6 +172,14 @@ export function AboutSettings() {
               {status?.error && status.message ? (
                 <p className="mt-1 font-mono text-[0.68rem] break-all text-muted-foreground">
                   {status.message}
+                </p>
+              ) : null}
+              {release && !release.ok && release.reason ? (
+                // 这一格是诊断行（跟上面那条 git 的 stderr 同一性质）：说清楚
+                // 「壳那侧这一查」到底怎么了，别让「已是最新」盖住它。
+                <p className="mt-1 font-mono text-[0.68rem] break-all text-muted-foreground">
+                  {release.reason}
+                  {release.status ? ` (HTTP ${release.status})` : ''}
                 </p>
               ) : null}
               {releaseError ? (

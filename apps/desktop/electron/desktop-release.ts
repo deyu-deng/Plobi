@@ -75,6 +75,7 @@ export function compareVersions(a: string, b: string): number {
  */
 export function parseReleaseTag(tag: string): string | null {
   const m = /^v?(\d{1,2})\.(\d+)\.(\d+)$/.exec(String(tag || '').trim())
+
   return m ? `${m[1]}.${m[2]}.${m[3]}` : null
 }
 
@@ -113,6 +114,7 @@ export function pickInstallerAsset(
 
   for (const suffix of wanted) {
     const hit = release.assets.find((asset) => asset.name.endsWith(suffix))
+
     if (hit) {
       return hit
     }
@@ -134,12 +136,21 @@ function curlBinary(): string {
 }
 
 /**
- * Run curl and capture stdout. `--noproxy '*'` is the direct attempt: the
- * desktop's egress proxy is not always up, and api.github.com is reachable
- * directly on some networks. We try the proxy first (the env is inherited),
- * then straight out.
+ * Run curl and capture stdout **plus the HTTP status**.
+ *
+ * `--noproxy '*'` is the direct attempt: the desktop's egress proxy is not
+ * always up, and api.github.com is reachable directly on some networks. We try
+ * the proxy first (the env is inherited), then straight out.
+ *
+ * The status matters: curl exits 0 on a 403/404 body unless `--fail` is given,
+ * so without it a rate-limited answer looks like a perfectly good JSON payload
+ * — and GitHub's anonymous API budget is 60 requests per hour per IP. We ask
+ * for the status so a throttled answer can be told apart from "no release".
  */
-async function curlText(url: string, timeoutMs = 20000): Promise<string | null> {
+async function curlFetch(
+  url: string,
+  timeoutMs = 20000
+): Promise<{ status: number; body: string } | null> {
   const attempts: string[][] = [
     ['--silent', '--show-error', '--location'],
     ['--silent', '--show-error', '--location', '--noproxy', '*']
@@ -147,14 +158,20 @@ async function curlText(url: string, timeoutMs = 20000): Promise<string | null> 
 
   for (const extra of attempts) {
     const out = await new Promise<string | null>((resolve) => {
-      const child = spawn(curlBinary(), [...extra, '--max-time', String(Math.ceil(timeoutMs / 1000)), url], {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'ignore']
-      })
+      const child = spawn(
+        curlBinary(),
+        [...extra, '--max-time', String(Math.ceil(timeoutMs / 1000)), '--write-out', '\n%{http_code}', url],
+        {
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'ignore']
+        }
+      )
+
       let buf = ''
       child.stdout.on('data', (chunk) => {
         buf += String(chunk)
       })
+
       const timer = setTimeout(() => {
         try {
           child.kill()
@@ -162,6 +179,7 @@ async function curlText(url: string, timeoutMs = 20000): Promise<string | null> 
           /* already gone */
         }
       }, timeoutMs)
+
       child.on('error', () => {
         clearTimeout(timer)
         resolve(null)
@@ -172,48 +190,182 @@ async function curlText(url: string, timeoutMs = 20000): Promise<string | null> 
       })
     })
 
-    if (out && out.trim()) {
-      return out
+    if (!out) {
+      continue
     }
+
+    // curl appends the status code on its own last line (the format string
+    // starts with a newline), so the body is everything before it.
+    const cut = out.lastIndexOf('\n')
+
+    if (cut < 0) {
+      continue
+    }
+
+    const status = Number.parseInt(out.slice(cut + 1).trim(), 10)
+
+    if (!Number.isFinite(status) || status <= 0) {
+      continue
+    }
+
+    return { status, body: out.slice(0, cut) }
   }
 
   return null
 }
 
-/** The newest published release, or null when we can't reach GitHub. */
-export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
-  const body = await curlText(RELEASES_API)
+/** Why there is no release to offer. Internal codes -- they travel to the
+ *  renderer as `reason` and are shown on a diagnostic line, never as body copy. */
+export type ReleaseLookupReason =
+  | 'unreachable'
+  | 'rate-limited'
+  | 'not-found'
+  | 'bad-payload'
+  | 'no-version'
 
-  if (!body) {
-    return null
-  }
+export interface ReleaseLookup {
+  release: ReleaseInfo | null
+  reason: ReleaseLookupReason | null
+  /** The HTTP status we got; 0 when the request never made it. */
+  status: number
+  checkedAt: number
+}
+
+/** The one HTTP call this module makes. Injectable so the cache can be tested. */
+export type ReleaseFetcher = (url: string) => Promise<{ status: number; body: string } | null>
+
+function parseReleasePayload(body: string): { release: ReleaseInfo | null; reason: ReleaseLookupReason | null } {
+  let parsed: any
 
   try {
-    const parsed = JSON.parse(body)
-    const tag = String(parsed?.tag_name || '')
-    const version = parseReleaseTag(tag)
+    parsed = JSON.parse(body)
+  } catch {
+    return { release: null, reason: 'bad-payload' }
+  }
 
-    if (!version) {
-      return null
-    }
+  const tag = String(parsed?.tag_name || '')
+  const version = parseReleaseTag(tag)
 
-    const assets: ReleaseAsset[] = (parsed?.assets || [])
-      .filter((asset: any) => asset && asset.name && asset.browser_download_url)
-      .map((asset: any) => ({
-        name: String(asset.name),
-        browser_download_url: String(asset.browser_download_url),
-        size: Number(asset.size) || 0
-      }))
+  if (!version) {
+    return { release: null, reason: 'no-version' }
+  }
 
-    return {
+  const assets: ReleaseAsset[] = (parsed?.assets || [])
+    .filter((asset: any) => asset && asset.name && asset.browser_download_url)
+    .map((asset: any) => ({
+      name: String(asset.name),
+      browser_download_url: String(asset.browser_download_url),
+      size: Number(asset.size) || 0
+    }))
+
+  return {
+    release: {
       tag,
       version,
       assets,
       htmlUrl: String(parsed?.html_url || RELEASE_NOTES_URL)
-    }
-  } catch {
-    return null
+    },
+    reason: null
   }
+}
+
+export interface ReleaseLookupOptions {
+  /** How long a successful answer is reused (ms). */
+  ttlMs?: number
+  /** How long a FAILED answer is reused (ms) -- short, so a dead proxy is
+   *  retried soon, but not on every single focus event. */
+  failureTtlMs?: number
+  now?: () => number
+}
+
+/**
+ * The release lookup, with a cache and an in-flight guard.
+ *
+ * Why the cache: the renderer asks on startup, every 30 minutes, on every
+ * window focus, every time the update sheet opens, every time About opens,
+ * and once more right before the install. Each of those was a separate curl
+ * to api.github.com -- and GitHub's anonymous API budget is 60 requests per
+ * hour per IP. Over that budget the answer turns into a 403, which (without
+ * `--fail`) would look like a normal JSON body and silently read as "there is
+ * no new release". One shared, short-lived answer per machine keeps us well
+ * inside the budget and keeps the UI consistent with what it was shown.
+ */
+export function createReleaseLookup(fetcher: ReleaseFetcher, options: ReleaseLookupOptions = {}) {
+  const ttlMs = options.ttlMs ?? 10 * 60 * 1000
+  const failureTtlMs = options.failureTtlMs ?? 60 * 1000
+  const now = options.now ?? (() => Date.now())
+
+  let cached: { at: number; value: ReleaseLookup } | null = null
+  let inFlight: Promise<ReleaseLookup> | null = null
+
+  async function fetchNow(): Promise<ReleaseLookup> {
+    const response = await fetcher(RELEASES_API)
+    const checkedAt = now()
+
+    if (!response) {
+      return { release: null, reason: 'unreachable', status: 0, checkedAt }
+    }
+
+    if (response.status === 403 || response.status === 429) {
+      return { release: null, reason: 'rate-limited', status: response.status, checkedAt }
+    }
+
+    if (response.status === 404) {
+      return { release: null, reason: 'not-found', status: response.status, checkedAt }
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      return { release: null, reason: 'unreachable', status: response.status, checkedAt }
+    }
+
+    const { release, reason } = parseReleasePayload(response.body)
+
+    return { release, reason, status: response.status, checkedAt }
+  }
+
+  return {
+    async lookup(opts: { force?: boolean } = {}): Promise<ReleaseLookup> {
+      const fresh =
+        cached !== null && now() - cached.at < (cached.value.release ? ttlMs : failureTtlMs)
+
+      if (!opts.force && fresh) {
+        return cached!.value
+      }
+
+      // One request at a time: a burst of callers shares the same answer.
+      if (inFlight) {
+        return inFlight
+      }
+
+      inFlight = (async () => {
+        const value = await fetchNow()
+
+        cached = { at: value.checkedAt, value }
+
+        return value
+      })()
+
+      try {
+        return await inFlight
+      } finally {
+        inFlight = null
+      }
+    },
+    reset(): void {
+      cached = null
+      inFlight = null
+    }
+  }
+}
+
+/** The lookup the app actually uses. */
+export const releaseLookup = createReleaseLookup(async url => curlFetch(url))
+
+/** The newest published release, or null when we can't reach GitHub. */
+export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
+  const { release } = await releaseLookup.lookup()
+
+  return release
 }
 
 /**
@@ -234,6 +386,7 @@ export async function downloadAsset(url: string, dest: string, timeoutMs = 30 * 
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'ignore']
       })
+
       const timer = setTimeout(() => {
         try {
           child.kill()
@@ -241,6 +394,7 @@ export async function downloadAsset(url: string, dest: string, timeoutMs = 30 * 
           /* already gone */
         }
       }, timeoutMs)
+
       child.on('error', () => {
         clearTimeout(timer)
         resolve(false)
@@ -294,6 +448,7 @@ export function writeUpdateHelper(opts: {
 
   // ---- 0) wait for this app to really exit -------------------------------
   lines.push('rem --- 0) wait until this app has really quit (its files are locked until then) ---')
+
   if (isWindows) {
     lines.push('set /a PL0BI_WAITED=0')
     lines.push(':plobi_wait_exit')
@@ -310,6 +465,7 @@ export function writeUpdateHelper(opts: {
 
   // ---- 1) the agent checkout moves to the same tag ------------------------
   lines.push('rem --- 1) the agent checkout moves to the same tag ---')
+
   if (isWindows) {
     lines.push(
       `powershell -ExecutionPolicy Bypass -File "${installScript}" -Tag "${opts.tag}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
@@ -325,6 +481,7 @@ export function writeUpdateHelper(opts: {
   // user's restored local edits survive), and `checkout main` then attaches
   // the branch -- the trees are identical, so nothing is overwritten.
   lines.push('rem --- 1b) the tag checkout leaves a detached HEAD: point main at the release commit and attach to it ---')
+
   if (isWindows) {
     lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "%PLOBI_LOG%" 2>&1`)
     lines.push(`git -C "${agentDir}" checkout main >> "%PLOBI_LOG%" 2>&1`)
@@ -335,18 +492,21 @@ export function writeUpdateHelper(opts: {
 
   // ---- 2) the shell is replaced by the new installer ----------------------
   lines.push('rem --- 2) the shell is replaced by the new installer ---')
+
   if (isWindows) {
     lines.push(`"${opts.installerPath}" /S /D=${opts.installDir} >> "%PLOBI_LOG%" 2>&1`)
   } else {
     lines.push(`chmod +x "${opts.installerPath}" >> "$PLOBI_LOG" 2>&1`)
     lines.push(`"${opts.installerPath}" --appimage-extract-and-run >> "$PLOBI_LOG%" 2>&1 &`)
   }
+
   lines.push('rem --- 3) start the app again ---')
   lines.push(`start "" "${opts.appPath}"`)
   lines.push('endlocal')
 
   const helperPath = path.join(os.tmpdir(), `plobi-desktop-update-${Date.now()}.${isWindows ? 'cmd' : 'sh'}`)
   fs.writeFileSync(helperPath, lines.join('\n') + '\n', 'utf8')
+
   return helperPath
 }
 
@@ -358,11 +518,13 @@ export function writeUpdateHelper(opts: {
  */
 export function spawnUpdateHelper(helperPath: string): number | null {
   const isWindows = process.platform === 'win32'
+
   const child = spawn(isWindows ? 'cmd.exe' : 'sh', isWindows ? ['/c', helperPath] : [helperPath], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true
   })
+
   child.unref()
 
   return child.pid ?? null

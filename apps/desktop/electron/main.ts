@@ -182,8 +182,8 @@ import {
   canSelfUpdate,
   compareVersions,
   downloadAsset,
-  fetchLatestRelease,
   pickInstallerAsset,
+  releaseLookup,
   spawnUpdateHelper,
   writeUpdateHelper
 } from './desktop-release'
@@ -11944,18 +11944,22 @@ ipcMain.handle('plobi:updates:apply', async (_event, payload) =>
 // 个 tag → 拉起来（裁定 208：桌面与 Python 包一条号）。
 ipcMain.handle('plobi:updates:release-check', async () => {
   const current = resolvePlobiVersion()
-  const release = await fetchLatestRelease()
+  const lookup = await releaseLookup.lookup()
 
-  if (!release) {
+  if (!lookup.release) {
     return {
       ok: false,
-      reason: 'unreachable',
+      // 说清楚是哪一种：连不上 / 被限流 / 仓库还没有 release / 回来的不是发布物。
+      // 以前这里一律写 'unreachable'，被 GitHub 限流（403）也报成「连不上」。
+      reason: lookup.reason ?? 'unreachable',
+      status: lookup.status,
       current,
       canUpdate: false,
-      checkedAt: Date.now()
+      checkedAt: lookup.checkedAt
     }
   }
 
+  const release = lookup.release
   const newer = compareVersions(release.version, current) > 0
   const asset = newer ? pickInstallerAsset(release) : null
 
@@ -11970,17 +11974,20 @@ ipcMain.handle('plobi:updates:release-check', async () => {
     assetName: asset?.name ?? null,
     assetUrl: asset?.browser_download_url ?? null,
     assetSize: asset?.size ?? 0,
+    status: lookup.status,
     reason: newer && !asset ? 'no-installer-for-this-platform' : null,
-    checkedAt: Date.now()
+    checkedAt: lookup.checkedAt
   }
 })
 
 ipcMain.handle('plobi:updates:release-install', async () => {
   const current = resolvePlobiVersion()
-  const release = await fetchLatestRelease()
+  // 用**缓存里那一份**（用户刚在界面上看到的就是它），不要再打一次 GitHub。
+  const lookup = await releaseLookup.lookup()
+  const release = lookup.release
 
   if (!release) {
-    return { ok: false, reason: 'unreachable' }
+    return { ok: false, reason: lookup.reason ?? 'unreachable' }
   }
 
   if (compareVersions(release.version, current) <= 0) {

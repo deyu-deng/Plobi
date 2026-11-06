@@ -14,6 +14,7 @@ import test from 'node:test'
 import {
   canSelfUpdate,
   compareVersions,
+  createReleaseLookup,
   parseReleaseTag,
   pickInstallerAsset,
   writeUpdateHelper
@@ -210,4 +211,126 @@ test('the update helper is written into the temp dir, not into the install', () 
       /* already gone */
     }
   }
+})
+
+// ---- the release lookup's cache ------------------------------------------
+//
+// The renderer asks for the latest release on startup, every 30 minutes, on
+// every window focus, every time the update sheet opens, every time About
+// opens -- and once more right before the install. Each of those used to be
+// its own request to api.github.com, whose anonymous budget is 60 per hour
+// per IP. Past that budget GitHub answers 403, and curl (without --fail)
+// hands back that body as if it were a normal payload -- so the app would
+// silently read "no new release" forever.
+
+const payload = (tag: string) =>
+  JSON.stringify({
+    tag_name: tag,
+    html_url: 'https://github.com/deyu-deng/Plobi/releases',
+    assets: [{ name: 'Plobi-0.3.2-win-x64.exe', size: 1, browser_download_url: 'https://example.invalid/a.exe' }]
+  })
+
+test('the release lookup asks GitHub once and reuses the answer', async () => {
+  let calls = 0
+
+  const lookup = createReleaseLookup(async () => {
+    calls += 1
+
+    return { status: 200, body: payload('v0.3.2') }
+  })
+
+  const first = await lookup.lookup()
+  const second = await lookup.lookup()
+
+  assert.equal(calls, 1)
+  assert.equal(first.release?.version, '0.3.2')
+  assert.equal(second.release?.version, '0.3.2')
+})
+
+test('the cached answer goes stale and is fetched again', async () => {
+  let now = 0
+  let calls = 0
+
+  const lookup = createReleaseLookup(
+    async () => {
+      calls += 1
+
+      return { status: 200, body: payload('v0.3.2') }
+    },
+    { now: () => now }
+  )
+
+  await lookup.lookup()
+  now = 11 * 60 * 1000 // past the 10-minute TTL
+
+  await lookup.lookup()
+
+  assert.equal(calls, 2)
+})
+
+test('a failed lookup is retried sooner than a successful one', async () => {
+  let now = 0
+  let calls = 0
+
+  const lookup = createReleaseLookup(
+    async () => {
+      calls += 1
+
+      return null
+    },
+    { now: () => now }
+  )
+
+  const first = await lookup.lookup()
+
+  assert.equal(first.reason, 'unreachable')
+  assert.equal(first.status, 0)
+
+  now = 30 * 1000 // inside the failure window: don't hammer a dead proxy
+  await lookup.lookup()
+  assert.equal(calls, 1)
+
+  now = 61 * 1000 // past it: try again
+  await lookup.lookup()
+  assert.equal(calls, 2)
+})
+
+test('a rate-limited answer is told apart from "no release"', async () => {
+  const lookup = createReleaseLookup(async () => ({ status: 403, body: '{"message":"rate limit exceeded"}' }))
+  const result = await lookup.lookup()
+
+  assert.equal(result.release, null)
+  assert.equal(result.reason, 'rate-limited')
+  assert.equal(result.status, 403)
+})
+
+test('a repository without any release says so', async () => {
+  const lookup = createReleaseLookup(async () => ({ status: 404, body: '{"message":"Not Found"}' }))
+  const result = await lookup.lookup()
+
+  assert.equal(result.release, null)
+  assert.equal(result.reason, 'not-found')
+})
+
+test('a date-shaped tag is not a version', async () => {
+  const lookup = createReleaseLookup(async () => ({ status: 200, body: payload('v2026.10.20') }))
+  const result = await lookup.lookup()
+
+  assert.equal(result.release, null)
+  assert.equal(result.reason, 'no-version')
+})
+
+test('concurrent lookups share one request', async () => {
+  let calls = 0
+
+  const lookup = createReleaseLookup(async () => {
+    calls += 1
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    return { status: 200, body: payload('v0.3.2') }
+  })
+
+  await Promise.all([lookup.lookup(), lookup.lookup(), lookup.lookup()])
+
+  assert.equal(calls, 1)
 })
