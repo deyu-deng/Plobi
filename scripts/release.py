@@ -35,11 +35,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = REPO_ROOT / "plobi_cli" / "__init__.py"
 
-# A release tag is a SemVer version and nothing else. The CalVer tags
-# this repo inherited (v2026.10.20 and friends) still exist in the
-# history, but they are NOT release tags any more -- and they sort
-# above every 0.x tag numerically (2026 > 0), so they must never be
-# mixed into "the last release" lookups.
+# A release tag is a SemVer version and nothing else. The CalVer tags this
+# repo inherited (v2026.10.20 and friends) were renamed to the product
+# version they always stood for on 2026-11-06, so no CalVer tag is left on
+# the remote. The filter below stays anyway: a date-shaped tag sorts above
+# every 0.x tag numerically (2026 > 0), so one must never be mixed into
+# "the last release" lookups even if it shows up again.
 SEMVER_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 PYPROJECT_FILE = REPO_ROOT / "pyproject.toml"
 

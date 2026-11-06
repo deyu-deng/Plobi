@@ -66,12 +66,12 @@ export function compareVersions(a: string, b: string): number {
 /**
  * `v0.3.2` -> `0.3.2`; anything that isn't a product version tag -> null.
  *
- * The major is capped at two digits on purpose. The repo inherited CalVer
- * tags (`v2026.10.20`) and those are still published on the Releases page —
- * numerically `2026.10.20` beats every `0.x` version, so without this
- * guard the updater would cheerfully offer "newer" 2026 releases to a
- * 0.3.x install. A product version has a small major; a date-shaped one
- * does not.
+ * The major is capped at two digits on purpose. Every release tag is a
+ * product version (`vX.Y.Z`) since the 2026-11-06 renumbering, but a
+ * date-shaped tag still sorts above every `0.x` version numerically
+ * (`2026.10.20` > `0.3.2`), so without this guard the updater would
+ * cheerfully offer "newer" 2026 releases to a 0.3.x install. A product
+ * version has a small major; a date-shaped one does not.
  */
 export function parseReleaseTag(tag: string): string | null {
   const m = /^v?(\d{1,2})\.(\d+)\.(\d+)$/.exec(String(tag || '').trim())

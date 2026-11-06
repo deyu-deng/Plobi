@@ -47,9 +47,11 @@ test('parseReleaseTag accepts only three-part version tags', () => {
   assert.equal(parseReleaseTag('nightly'), null)
 })
 
-test('parseReleaseTag rejects the inherited CalVer tags (a date beats every 0.x)', () => {
-  // The old CalVer releases are still published. Numerically 2026.10.20 is
-  // "newer" than 0.3.2, so the updater must not read them as versions.
+test('parseReleaseTag rejects date-shaped tags (a date beats every 0.x)', () => {
+  // The CalVer releases were renamed to the product version they always
+  // stood for on 2026-11-06, but the guard stays: numerically 2026.10.20 is
+  // "newer" than 0.3.2, so the updater must never read a date-shaped tag as
+  // a version.
   assert.equal(parseReleaseTag('v2026.10.20'), null)
   assert.equal(parseReleaseTag('v2026.10.19.1'), null)
 })
