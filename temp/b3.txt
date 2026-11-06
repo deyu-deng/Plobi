@@ -1,0 +1,10 @@
+﻿FAILED tests/plobi/test_l2_diet_registry.py::test_lookup_matches_the_registry_name_not_only_the_profile_name
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_publishes_daily_agenda_once
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_write_failure_never_blocks_turn
+FAILED tests/plobi/test_identity_rename_full_chain.py::test_the_rename_endpoint_shows_the_plan_before_it_touches_anything
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_writer_soft_failure_is_warning_only
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_publishes_agenda_and_writes_no_chat_material
+FAILED tests/plobi/test_mind_adapter.py::test_prefetch_includes_profile_summary
+FAILED tests/plobi/test_model_confirm.py::test_the_model_confirmer_resolves_what_the_heuristic_refused
+8 failed, 451 passed in 24.93s
+[slice 80:120 of 166 files, rc=1, 27s]

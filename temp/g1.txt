@@ -1,0 +1,53 @@
+﻿...FFFF..................s............................FFF............... [ 42%]
+...................F.....F.FF............F.............................. [ 84%]
+...........................                                              [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert {'default': 'workbuddy/configured-once', 'provider': 'aigw'} != {'default': 'workbuddy/configured-once', 'provider': 'aigw'}
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_config_single_source.py:163: AssertionError: assert {'default': 'workbuddy/configured-once', 'provider': 'aigw'} != {'default': 'workbuddy/configured-once', 'provider': 'aigw'}
+E   AssertionError: {'default': 'workbuddy/configured-once', 'provider': 'aigw'}
+    assert 'workbuddy/configured-once' == 'kimi-a'
+      
+      - kimi-a
+      + workbuddy/configured-once
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_config_single_source.py:184: AssertionError: {'default': 'workbuddy/configured-once', 'provider': 'aigw'}
+E   AssertionError: 被拦下要说不出为什么
+    assert False
+     +  where False = any(<generator object test_an_unresolvable_provider_override_is_not_applied.<locals>.<genexpr> at 0x00000235D4132420>)
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_config_single_source.py:208: AssertionError: 被拦下要说不出为什么
+E   AssertionError: assert 'workbuddy/configured-once' == 'kimi-k3'
+      
+      - kimi-k3
+      + workbuddy/configured-once
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_config_single_source.py:227: AssertionError: assert 'workbuddy/configured-once' == 'kimi-k3'
+E   assert 1.25 == 0.25
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_console_api.py:780: assert 1.25 == 0.25
+E   assert 1.4 == 0.4
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_console_api.py:805: assert 1.4 == 0.4
+E   AssertionError: assert None == 'physics'
+     +  where None = <function _agent_id_for_profile at 0x00000235D3E1EFC0>('l2-physics')
+     +    where <function _agent_id_for_profile at 0x00000235D3E1EFC0> = console_router._agent_id_for_profile
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_console_api.py:817: AssertionError: assert None == 'physics'
+E   AssertionError: assert '不是我们记过的那个' in '未找到对应的任务记录，标识无法识别'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_console_api.py:1329: AssertionError: assert '不是我们记过的那个' in '未找到对应的任务记录，标识无法识别'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_course_agent_identity.py:57: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_course_agent_identity.py:57: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_course_agent_identity.py:57: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   AssertionError: assert '怎么回到绿：' in 'http://127.0.0.1:5030 unreachable (no listener) — 稍后自动启动 — 不是故障：需要时会自动运行并恢复正常。如何手动启动：无需手动操作——应用需要时自动启动该服务'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_doctor.py:79: AssertionError: assert '怎么回到绿：' in 'http://127.0.0.1:5030 unreachable (no listener) — 稍后自动启动 — 不是故障：需要时会自动运行并恢复正常。如何手动启动：无需手动操作——应用需要时自动启动该服务'
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_config_single_source.py::test_a_roster_override_moves_only_that_agent
+FAILED tests/plobi/test_config_single_source.py::test_two_agents_with_overrides_do_not_fold_into_one_role_route
+FAILED tests/plobi/test_config_single_source.py::test_an_unresolvable_provider_override_is_not_applied
+FAILED tests/plobi/test_config_single_source.py::test_editing_the_roster_takes_effect_without_restarting
+FAILED tests/plobi/test_console_api.py::test_quota_summary_today_usd_follows_request_identity
+FAILED tests/plobi/test_console_api.py::test_quota_summary_query_profile_is_remote_fallback
+FAILED tests/plobi/test_console_api.py::test_agent_id_for_profile_maps_roster_rows
+FAILED tests/plobi/test_console_api.py::TestOffloadResume::test_an_id_the_ledger_never_recorded_is_refused
+FAILED tests/plobi/test_course_agent_identity.py::test_declared_course_entry_gets_a_nonempty_profile_name
+FAILED tests/plobi/test_course_agent_identity.py::test_course_role_is_the_one_the_ask_list_and_router_both_accept
+FAILED tests/plobi/test_course_agent_identity.py::test_a_missing_home_no_longer_changes_askability
+FAILED tests/plobi/test_doctor.py::test_chatlog_down_while_registry_off_is_deferred_with_todays_reason
+12 failed, 158 passed, 1 skipped in 13.44s

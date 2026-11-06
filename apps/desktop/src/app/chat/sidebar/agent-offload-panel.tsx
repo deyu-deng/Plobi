@@ -44,7 +44,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
   const [showUnknown, setShowUnknown] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const experts = useAgentExperts(agentId)
-  const { data } = useExternalSessions(agentId)
+  const { data, reload: reloadExternal } = useExternalSessions(agentId)
 
   useEffect(() => {
     let cancelled = false
@@ -115,14 +115,15 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
             return (
               <ExpertRoleRow
                 key={role.key}
+                // 没跑过也照开：主区那张卡会写清这个角色是什么、怎么让它出场。
                 onOpen={() =>
-                  latest &&
                   openConversation({
                     agentId,
                     kind: 'expert',
-                    running: latest.status === 'running',
-                    sessionId: latest.id,
-                    title: latest.goal || latest.id
+                    role: role.key,
+                    running: latest?.status === 'running',
+                    sessionId: latest?.id ?? null,
+                    title: latest?.goal || t.console[role.labelKey]
                   })}
                 role={role}
                 runs={runs}
@@ -171,7 +172,9 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                           <OffloadRoundRow key={`${item.round.ts}-${item.round.cwd}`} round={item.round} />
                         ) : (
                           <ExternalSessionRow
+                            agentId={agentId}
                             key={`${item.session.vendor}-${item.session.id}`}
+                            onMarked={reloadExternal}
                             onOpen={() =>
                               openConversation({
                                 agentId,

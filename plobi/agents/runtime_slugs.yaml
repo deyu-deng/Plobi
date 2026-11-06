@@ -1,0 +1,26 @@
+# 名册 name → 运行时 slug（= 子进程 plobi -p 的门牌号）
+# 规则：ASCII 名缺省 = name.lower()；非 ASCII 或需要固定历史的，必须在此显式登记。
+#
+# 2026-11-05「profile 连根拔 · 后端批」：profile 不再是名册上可填写的一格，
+# 而是由 name 机械派生的内部 slug（见 AgentEntry.profile_name / derive_runtime_slug）。
+#
+# 这张表只为一件事存在：下面这 14 行的 slug 必须跟改造前一字不差。它们的 slug
+# 已经散落在 souls/<slug>.md、memory/agents/<slug>/ 与会话归属里，换个名字就等于
+# 让这些 Agent 的身份文件与记忆当场读空。
+#
+# 新行不要往这里加——机械派生就够了。真需要固定 slug 时，用户侧写
+# $PLOBI_HOME/plobi/runtime-slugs.yaml（同名键优先，格式相同）。
+secretary: default
+Plobi: l2-plobi
+agenda: l2-agenda
+中国近现代人物研究: l2-course-chmodern
+健美（初级）: l2-course-aerobics
+大学物理实验2026周四345: l2-course-phylab-2026-thu
+大学物理（甲）Ⅱ: l2-course-physics-a2
+工程训练: l2-course-engtrain
+理论力学（甲）: l2-course-theomech-a
+电子工程训练（乙）: l2-course-eet-b
+电工电子学: l2-course-ee
+电工电子学实验: l2-course-eelab
+设计与制造Ⅰ: l2-course-designmfg1
+马克思主义基本原理: l2-course-marxprinciples

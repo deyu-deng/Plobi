@@ -20,7 +20,23 @@ export type OpenConversation =
     title: string
     vendor: string
   }
-  | { agentId: string, kind: 'expert', running?: boolean, sessionId: string, title: string }
+  | {
+    agentId: string
+    kind: 'expert'
+    /**
+     * 哪一类角色（file/browser/software/computer）。
+     * 名册上四行**永远点得开**：没派过活时也要能打开这张卡，看到它是什么角色、能干什么，
+     * 而不是像以前那样把整行 `disabled` 掉、点了毫无反应（11-04 用户：「根本点击不了」）。
+     */
+    role?: ExpertRoleKey
+    running?: boolean
+    /** 没派过活就没有会话号——主区显示角色说明，而不是去读一个不存在的日志。 */
+    sessionId: null | string
+    title: string
+  }
+
+/** 与 `app/chat/sidebar/expert-roles.ts` 的 `ExpertRoleKey` 同义（store 不反向依赖 UI 模块）。 */
+export type ExpertRoleKey = 'browser' | 'computer' | 'file' | 'software'
 
 export const $openConversation = atom<null | OpenConversation>(null)
 

@@ -3,7 +3,7 @@ import { atom, map } from 'nanostores'
 import { getActionStatus, installSkillFromHub, uninstallSkillFromHub, updateSkillsFromHub } from '@/plobi'
 import { queryClient } from '@/lib/query-client'
 import { upsertDesktopActionTask } from '@/store/activity'
-import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, normalizeProfileKey } from '@/store/scope'
 
 const POLL_MS = 1200
 
@@ -46,7 +46,7 @@ export const $hubActiveLog = atom<null | string>(null)
 let _hubProfile: null | string = null
 let _hubEpoch = 0
 
-$activeGatewayProfile.subscribe(value => {
+$scopeAgent.subscribe(value => {
   const key = normalizeProfileKey(value)
 
   if (_hubProfile !== null && _hubProfile !== key) {

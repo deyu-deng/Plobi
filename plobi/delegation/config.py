@@ -29,6 +29,9 @@ DEFAULTS: dict[str, Any] = {
     "quota_daily_budget_usd": 5.0,
     # True = degrade to allow when the breaker trips (never block on quota).
     "quota_fail_open": False,
+    # 设置 → 外包 里被主人关掉的那几家（**只影响派活**，不改「装没装/登没登录」这些事实）。
+    # 存「关掉的」而不是「打开的」：空列表 = 全部允许，老配置升级后行为一个字不变。
+    "offload_disabled_agents": [],
 }
 
 _ENV_PREFIX = "PLOBI_DELEGATION_"
@@ -98,4 +101,59 @@ def load() -> dict[str, Any]:
     out["global_max_children"] = max(1, int(out["global_max_children"]))
     out["queue_timeout_seconds"] = max(0.0, float(out["queue_timeout_seconds"]))
     out["lease_ttl_seconds"] = max(1.0, float(out["lease_ttl_seconds"]))
+    out["offload_disabled_agents"] = _normalise_names(out.get("offload_disabled_agents"))
     return out
+
+
+def _normalise_names(raw: Any) -> list[str]:
+    """名字列表收敛成「小写 + 去空白 + 去重」：配置里写成列表、写成逗号串都认。"""
+    if isinstance(raw, str):
+        raw = [part for part in raw.replace("\n", ",").split(",")]
+    if not isinstance(raw, (list, tuple, set)):
+        return []
+    seen: list[str] = []
+    for item in raw:
+        name = str(item or "").strip().lower()
+        if name and name not in seen:
+            seen.append(name)
+    return seen
+
+
+def offload_disabled() -> set[str]:
+    """设置 → 外包 里被关掉的那几家。空集 = 全部允许（默认值）。"""
+    return set(load()["offload_disabled_agents"])
+
+
+def set_offload_enabled(name: str, enabled: bool) -> list[str]:
+    """把一家外部软件的开关写进 config.yaml 的 ``delegation.offload_disabled_agents``。
+
+    只动这一个键，其余配置原样写回（``save_config`` 保留未知段）；返回落盘后的「关掉」名单。
+    写不进去就抛 ``RuntimeError``，让路由如实回错误，不假装存下了。
+    """
+    target = str(name or "").strip().lower()
+    if not target:
+        raise ValueError("name 不能为空")
+    try:
+        from plobi_cli.config import load_config, save_config
+    except Exception as exc:  # noqa: BLE001 - 配置模块不在就当存不下
+        raise RuntimeError(f"读不到配置模块：{exc}") from exc
+
+    current = load_config() or {}
+    section = current.get("delegation")
+    if not isinstance(section, dict):
+        section = {}
+        current["delegation"] = section
+    disabled = _normalise_names(section.get("offload_disabled_agents"))
+    if enabled:
+        disabled = [item for item in disabled if item != target]
+    elif target not in disabled:
+        disabled.append(target)
+    section["offload_disabled_agents"] = disabled
+    save_config(current)
+    try:  # 懒导入：顺手把外包那一屏的取数缓存丢掉，别让旧开关撑到 TTL 过期
+        from plobi.delegation.offload_surface import forget_rows_cache
+
+        forget_rows_cache()
+    except Exception:  # noqa: BLE001 - 缓存清不掉不影响这次落盘
+        pass
+    return disabled

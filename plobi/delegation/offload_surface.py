@@ -111,6 +111,7 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
             channel_ready=bool(binary),
             permission_flag=base.permission_flag if base is not None else "",
             capabilities=capabilities,
+            allowed=bool(getattr(base, "allowed", True)),
         )
         can_use, why_not = availability(decision)
         day_rows = [r for r in mine if str(r.get("ts") or "")[:10] == today]
@@ -135,6 +136,8 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
             "permission_modes": list(getattr(spec, "permission_modes", ()) or ()),
             "capabilities": {key: bool(value) for key, value in (capabilities or {}).items()},
             "can_use": can_use,
+            # 主人这一格的开关（设置 → 外包）：关掉只是不派活，卡面照常显示这一家。
+            "enabled": bool(getattr(base, "allowed", True)),
             "why_not": why_not,
             "resume_supported": bool(resume_argv),
             "today": {
@@ -163,3 +166,8 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
     _CACHE["at"] = now
     _CACHE["payload"] = payload
     return payload
+
+
+def forget_rows_cache() -> None:
+    """开关改了：下一次取数别再拿缓存里的旧 `enabled` 糊弄人（探针不动，只丢结果）。"""
+    _CACHE.clear()

@@ -147,13 +147,18 @@ describe('ExpertRoleRow', () => {
 
   const fileRole = EXPERT_ROLES[0]
 
-  it('一行就是图标 + 名词；没派过时灰着不可点', () => {
-    render(<ExpertRoleRow onOpen={() => {}} role={fileRole} runs={[]} />)
+  it('一行就是图标 + 名词；没派过也点得开（灰着点不动会被当成坏了）', () => {
+    let opened = 0
+    render(<ExpertRoleRow onOpen={() => { opened += 1 }} role={fileRole} runs={[]} />)
 
     const row = screen.getByRole('button', { name: /File/ })
 
     expect(row.textContent?.trim()).toBe('File')
-    expect(row.hasAttribute('disabled')).toBe(true)
+    expect(row.hasAttribute('disabled')).toBe(false)
+
+    row.click()
+
+    expect(opened).toBe(1)
   })
 
   it('派过就能点，正在干的有状态点与时长', () => {

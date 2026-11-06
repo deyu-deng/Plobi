@@ -54,7 +54,7 @@ import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab, type PreviewTarget } from '../store/preview'
 import { $dirtyPreviewUrls } from '../store/preview-edit'
-import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
+import { $scopeAgent, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/scope'
 import { $reviewOpen, closeReview, openReview } from '../store/review'
 import {
   $activeSessionId,
@@ -115,7 +115,7 @@ import {
 import { LegacySessionRedirect, SecretaryCenterPane } from './desktop-views'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
-import { useProfileScopeSync } from './gateway/hooks/use-profile-scope-sync'
+import { useScopeSync } from './gateway/hooks/use-scope-sync'
 import { useBackgroundPolling } from './hooks/use-background-polling'
 import { useKeybinds } from './hooks/use-keybinds'
 import { usePetBridge } from './hooks/use-pet-bridge'
@@ -320,7 +320,7 @@ export function DesktopController() {
   // Last non-agent profile L1 successfully bound to. Returning from L2 without
   // `master` must restore this — otherwise "stayed" keeps the agent profile and
   // the center resumes the L2 transcript under L1 chrome.
-  const l1GatewayProfileRef = useRef(normalizeProfileKey($activeGatewayProfile.get() || 'default'))
+  const l1GatewayProfileRef = useRef(normalizeProfileKey($scopeAgent.get() || 'default'))
 
   const {
     agentsOpen,
@@ -914,7 +914,7 @@ export function DesktopController() {
       return
     }
 
-    const profile = normalizeProfileKey($activeGatewayProfile.get() || 'default')
+    const profile = normalizeProfileKey($scopeAgent.get() || 'default')
 
     if (readL1MainSessionId(profile)) {
       return
@@ -1272,7 +1272,7 @@ export function DesktopController() {
   // without this the statusbar keeps showing the previous profile's model
   // (the "forgets the LLM setting" report). gatewayState stays 'open' across a
   // swap (background sockets persist), so the open→open effect won't re-run.
-  useProfileScopeSync({
+  useScopeSync({
     activeSessionId,
     chatScope,
     freshDraftReady,
@@ -1433,11 +1433,11 @@ export function DesktopController() {
             .filter(Boolean)
 
           profileForSessions = resolveL1HomeProfile({
-            activeProfile: $activeGatewayProfile.get(),
+            activeProfile: $scopeAgent.get(),
             agentProfiles,
             rememberedHome: l1GatewayProfileRef.current
           })
-          const live = normalizeProfileKey($activeGatewayProfile.get() || 'default')
+          const live = normalizeProfileKey($scopeAgent.get() || 'default')
 
           if (live !== profileForSessions) {
             try {
@@ -1552,7 +1552,7 @@ export function DesktopController() {
       // swallowed" bug: transcript shows nothing because the turn never reached
       // the agent's dispatch). Bind unconditionally; the registry is the source
       // of truth for which profiles exist.
-      const previousProfile = $activeGatewayProfile.get()
+      const previousProfile = $scopeAgent.get()
 
       // 数据条目：不绑后端、不替它编一个家。走与"绑不上"同一条既有路径——
       // 留在原地、开一张新草稿，不排任何重试。区别只在过渡那句说什么：

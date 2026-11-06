@@ -35,6 +35,12 @@ export interface SubagentProgress {
   summary?: string
   /** Active tool while running — cleared on terminal status. */
   currentTool?: string
+  /**
+   * 「专家」那一族（file/browser/software/computer）。空 = 普通子智能体。
+   * 用户 11-04：专家的工作日志归左栏「专家」抽屉，普通子智能体才进底栏那一格——
+   * 两条腿不能混在同一张列表里。
+   */
+  expert?: string
 }
 
 export interface SubagentNode extends SubagentProgress {
@@ -174,7 +180,8 @@ function toProgress(payload: SubagentPayload, prev: SubagentProgress | undefined
     filesWritten: filesWritten.length ? filesWritten : (prev?.filesWritten ?? []),
     stream,
     summary: str(payload.summary) || prev?.summary,
-    currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool
+    currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool,
+    expert: str(payload.expert) || prev?.expert
   }
 }
 

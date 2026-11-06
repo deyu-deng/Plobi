@@ -45,6 +45,8 @@ DEFAULT_BASE = "https://gateway.qoder.com.cn"
 #: The gateway can hold an accepted stream open forever (measured in the reference
 #: project's issue #354), so an idle read is a failure we name, not a hung turn.
 DEFAULT_IDLE_TIMEOUT = 90.0
+#: Renew while >24 h of the lease remain (sub2api-style lead time).
+_REFRESH_SKEW_S = 24 * 3600
 DEFAULT_MAX_OUTPUT = 32000
 DEFAULT_MAX_INPUT = 180000
 
@@ -180,18 +182,28 @@ class QoderProvider(Provider):
         return session
 
     async def ensure_fresh(self, acc: Account) -> None:
-        """The 30-day device lease, checked locally; renewal is another click, not a call.
+        """30-day device lease with JIT renewal (endpoint measured 2026-11-03, HTTP 200).
 
-        We deliberately do not spend the stored refresh_token: the exchange endpoint for a
-        *device* token is not something this machine has measured, and guessing at a token
-        endpoint is how a working login gets burned.
+        Renew while >24 h of the lease remain instead of spending the refresh token only
+        after expiry; a failed refresh degrades to the old "sign in again" verdict.
         """
-        live, reason = oauth.signed_in()
-        if live:
-            cred = oauth.read_credential() or {}
+        cred = oauth.read_credential() or {}
+        stamp = oauth._expiry_epoch(cred.get("expires_at"))
+        if stamp is not None and (stamp - time.time()) > _REFRESH_SKEW_S:
             acc.cred.access_token = str(cred.get("token") or acc.cred.access_token)
+            acc.cred.refresh_token = str(cred.get("refresh_token") or acc.cred.refresh_token)
             return
-        raise UpstreamError(401, f"qoder: {reason}", reauth=True)
+        tokens = oauth.refresh_credential()
+        if tokens is None:
+            live, reason = oauth.signed_in()
+            if live:
+                # Not actually due (clock skew / probe) — keep serving the stored pair.
+                acc.cred.access_token = str(cred.get("token") or acc.cred.access_token)
+                return
+            raise UpstreamError(401, f"qoder refresh failed — sign in again ({reason})", reauth=True)
+        acc.cred.access_token = str(tokens.get("device_token") or tokens.get("token") or "")
+        acc.cred.refresh_token = str(tokens.get("refresh_token") or "")
+        acc.cred.expires_at = oauth._expiry_epoch(tokens.get("expires_at")) or 0.0
 
     # --- catalogue --------------------------------------------------------
     async def refresh_models(self, acc: Account) -> list[str] | None:

@@ -93,4 +93,50 @@ function readWindowsUserEnvVar(
   return expanded || null
 }
 
-export { expandWindowsEnvRefs, parseRegQueryValue, readWindowsUserEnvVar }
+// Read an arbitrary string value out of HKCU. Same failure discipline as the
+// env reader above: off-Windows, missing `reg`, missing key, or an empty value
+// all collapse to null so callers keep their fallback chain.
+//
+// Added for WP-DATA-ISOLATION: the installer records the data directory the
+// user picked on its own page, under HKCU\Software\Plobi. The desktop must read
+// that value before it settles on a default, otherwise a fresh install would
+// quietly ignore the choice and write next to the installer.
+function readWindowsRegistryString(
+  keyPath,
+  name,
+  {
+    platform = process.platform,
+    env = process.env,
+    exec = execFileSync
+  }: {
+    platform?: NodeJS.Platform
+    env?: NodeJS.ProcessEnv
+    exec?: typeof execFileSync | ((file?: string, args?: any) => string)
+  } = {}
+) {
+  if (platform !== 'win32' || !keyPath || !name) {
+    return null
+  }
+  let stdout
+
+  try {
+    stdout = exec('reg', ['query', keyPath, '/v', name], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5000
+    })
+  } catch {
+    return null
+  }
+
+  const raw = parseRegQueryValue(stdout, name)
+
+  if (raw == null) {
+    return null
+  }
+  const expanded = expandWindowsEnvRefs(raw, env).trim()
+
+  return expanded || null
+}
+
+export { expandWindowsEnvRefs, parseRegQueryValue, readWindowsUserEnvVar, readWindowsRegistryString }

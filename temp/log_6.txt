@@ -1,0 +1,21 @@
+﻿.FFF....                                                                 [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert set() == {'aura-no-skill'}
+      
+      Extra items in the right set:
+      'aura-no-skill'
+      Use -v to get more diff
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_tool_prefs.py:123: AssertionError: assert set() == {'aura-no-skill'}
+E   AssertionError: assert {'global-off-skill'} == {'aura-no-ski...al-off-skill'}
+      
+      Extra items in the right set:
+      'aura-no-skill'
+      Use -v to get more diff
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_tool_prefs.py:144: AssertionError: assert {'global-off-skill'} == {'aura-no-ski...al-off-skill'}
+E   AssertionError: assert 'shared-server' not in {'shared-server': {'args': [], 'command': 'echo'}}
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_tool_prefs.py:158: AssertionError: assert 'shared-server' not in {'shared-server': {'args': [], 'command': 'echo'}}
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agent_tool_prefs.py::test_agent_disabled_sets_resolves_by_active_home
+FAILED tests/plobi/test_agent_tool_prefs.py::test_skill_disabled_names_union_agent_row
+FAILED tests/plobi/test_agent_tool_prefs.py::test_mcp_config_load_filters_agent_disabled_servers
+3 failed, 5 passed in 2.38s

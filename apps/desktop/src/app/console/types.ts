@@ -92,6 +92,12 @@ export interface Agent {
   category?: string
   id: string
   /**
+   * 名册 role（用户 11-05：L1 也进名册，和五类 L2 分开标、地位平等）。
+   * `l1_secretary` = 主界面本体那一行；`l2_project` / `l2_agenda` / … = 智能体名单。
+   * 左栏名单只画 L2，能力页靠它认出「这一行是 L1 自己」，不再靠 profile 猜。
+   */
+  role?: string
+  /**
    * 桌面左栏这一行能不能点进聊天页（后端 `agent_navigability`：点了之后
    * spawn 不会失败的形状）。absent = 旧后端没透出，前端按 profile 判据回落；
    * false = 不可点，`notNavigableReason` 说明为什么（课程是数据 / 保留名 /

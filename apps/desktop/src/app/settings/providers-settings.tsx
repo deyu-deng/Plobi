@@ -1,32 +1,31 @@
 import { useStore } from '@nanostores/react'
-import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { runInTerminal } from '@/app/right-sidebar/store'
 import {
   FEATURED_ID,
   FeaturedProviderRow,
-  KeyProviderRow,
   ProviderRow,
   providerTitle,
   sortProviders
 } from '@/components/onboarding'
 import { Button } from '@/components/ui/button'
-import { RowButton } from '@/components/ui/row-button'
 import { SearchField } from '@/components/ui/search-field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Check, ChevronDown, ChevronRight, KeyRound, Loader2, Plus, Terminal, Trash2 } from '@/lib/icons'
+import { ChevronRight, Loader2, Plus, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
-import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
+import { disconnectOAuthProvider, getGlobalModelOptions, listOAuthProviders } from '@/plobi'
 import {
   $connectedDesktopApps,
   markConnected,
   markDisconnected,
   quotaAppVerdict,
-  requestQuotaCatalog
+  requestQuotaCatalog,
+  type ConnectedDesktopApp,
+  type QuotaAppVerdict
 } from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
@@ -36,22 +35,11 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
-import { QuotaAppIcon } from './quota-app-icon'
 import { buildLoginCards, cardControl, cardDetail, type LoginCard, type RoutingVerdict } from './quota-login-cards'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
 const canRunInTerminal = () => typeof window !== 'undefined' && Boolean(window.plobiDesktop?.terminal)
-
-// Parallel group headers ("Connected", "Other providers") so the expanded list
-// reads as its own section instead of bleeding into the connected group.
-function GroupLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="mt-3 px-0.5 text-[length:var(--conversation-caption-font-size)] font-medium text-(--ui-text-tertiary)">
-      {children}
-    </p>
-  )
-}
 
 // Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
 export const PROVIDER_VIEWS = ['accounts', 'keys', 'desktop'] as const
@@ -131,6 +119,11 @@ function buildProviderKeyGroups(vars: Record<string, EnvVarInfo>): ProviderKeyGr
         .filter(([k, i]) => k !== primary[0] && (!isKeyVar(k, i) || i.is_set))
         .sort(([a], [b]) => a.localeCompare(b)),
       description: meta?.description ?? primary[1].description,
+      // The overlay's constants layer marks a few legacy legs explicitly off
+      // (`OPENCODE_ZEN_`): that flag lives on the PROVIDER_GROUPS entry and rides
+      // down through providerMeta — the card consumes it, it is no longer dead.
+      disabled: meta?.disabled,
+      disabledReason: meta?.disabledReason,
       docsUrl: meta?.docsUrl ?? primary[1].url ?? undefined,
       hasAnySet: entries.some(([, i]) => i.is_set),
       name,
@@ -143,11 +136,11 @@ function buildProviderKeyGroups(vars: Record<string, EnvVarInfo>): ProviderKeyGr
 }
 
 
-// Deliberately a near-1:1 replica of the first-run onboarding picker
-// (`Picker` in desktop-onboarding-overlay): same recommended card, same
-// provider rows, same "Other providers" disclosure, same OpenRouter quick-key
-// row, and the same bottom-right "I have an API key" affordance. The leaf cards
-// are the exact shared components, so the two surfaces stay visually identical.
+// Settings-surface replica of the first-run onboarding picker (`Picker` in
+// desktop-onboarding-overlay): same recommended card, same provider rows, and
+// the same bottom-right "I have an API key" affordance. Since 2026-11-04 the
+// list is flat — no "Other providers" disclosure, no collapse button — so
+// connected rows lead and every unconnected row is visible in one scroll.
 // Selecting a provider hands off to the shared onboarding overlay, which runs
 // that provider's real sign-in flow; the key affordances open the API-key
 // catalog below.
@@ -166,7 +159,6 @@ function OAuthPicker({
 }) {
   const { t } = useI18n()
   const p = t.settings.providers
-  const [showAll, setShowAll] = useState(false)
   const ordered = useMemo(() => sortProviders(providers), [providers])
 
   if (ordered.length === 0) {
@@ -176,19 +168,17 @@ function OAuthPicker({
   const select = (p: OAuthProvider) => startManualProviderOAuth(p.id)
 
   const featured = ordered.find(p => p.id === FEATURED_ID && !p.status?.logged_in) ?? null
-  const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
-  // Keep connected accounts grouped and always visible; only the unconnected
-  // providers hide behind the disclosure, so the page leads with what's set up.
-  // Both lists preserve `sortProviders` order (curated priority, then name).
+  // Dedupe (2026-11-04): OpenCode Zen renders once, as the disabled static key
+  // entry on the Keys tab — drop the same-named OAuth row here.
+  const rest = (featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered).filter(p => p.id !== 'opencode_api')
+  // Flat list: connected rows first (they are what the page leads with), then
+  // the unconnected rows in `sortProviders` order (curated priority, then name).
   const connected = rest.filter(p => p.status?.logged_in)
   const others = rest.filter(p => !p.status?.logged_in)
-  const collapsible = others.length > 0
-  const showOthers = !collapsible || showAll
 
   return (
-    <section className="mb-5 grid gap-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <SettingsCategoryHeading icon={KeyRound} title={p.connectAccount} />
+    <SettingsGroup
+      action={
         <Button
           className="text-[length:var(--conversation-caption-font-size)]"
           onClick={onWantApiKey}
@@ -198,48 +188,25 @@ function OAuthPicker({
         >
           {p.haveApiKey}
         </Button>
-      </div>
-      <p className="-mt-2 mb-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-        {p.intro}
-      </p>
+      }
+      description={p.intro}
+      title={p.connectAccount}
+    >
       {featured && <FeaturedProviderRow onSelect={select} provider={featured} />}
-      {connected.length > 0 && (
-        <>
-          <GroupLabel>{p.connected}</GroupLabel>
-          {connected.map(p => (
-            <ConnectedProviderRow
-              disconnecting={disconnecting === p.id}
-              key={p.id}
-              onDisconnect={onDisconnect}
-              onSelect={select}
-              onTerminalDisconnect={onTerminalDisconnect}
-              provider={p}
-            />
-          ))}
-        </>
-      )}
-      {showOthers && (
-        <>
-          {connected.length > 0 && <GroupLabel>{p.otherProviders}</GroupLabel>}
-          {others.map(p => (
-            <ProviderRow key={p.id} onSelect={select} provider={p} />
-          ))}
-          <KeyProviderRow onClick={onWantApiKey} />
-        </>
-      )}
-      {collapsible && (
-        <Button
-          className="py-1 text-[length:var(--conversation-caption-font-size)]"
-          onClick={() => setShowAll(v => !v)}
-          size="inline"
-          type="button"
-          variant="text"
-        >
-          {showAll ? p.collapse : connected.length > 0 ? p.connectAnother : p.otherProviders}
-          <ChevronDown className={cn('size-3.5 transition', showAll && 'rotate-180')} />
-        </Button>
-      )}
-    </section>
+      {connected.map(p => (
+        <ConnectedProviderRow
+          disconnecting={disconnecting === p.id}
+          key={p.id}
+          onDisconnect={onDisconnect}
+          onSelect={select}
+          onTerminalDisconnect={onTerminalDisconnect}
+          provider={p}
+        />
+      ))}
+      {others.map(p => (
+        <ProviderRow key={p.id} onSelect={select} provider={p} />
+      ))}
+    </SettingsGroup>
   )
 }
 
@@ -269,51 +236,57 @@ function ConnectedProviderRow({
   const showHint = !canDisconnect && !terminalDisconnect
 
   return (
-    <div className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md transition-colors hover:bg-(--ui-control-hover-background)">
-      <RowButton className="min-w-0 px-3 py-2.5 text-left" onClick={() => onSelect(provider)}>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[length:var(--conversation-text-font-size)] font-semibold">{title}</span>
-          <span className="inline-flex shrink-0 items-center gap-1 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-            <Check className="size-3" />
-            {copy.connected}
-          </span>
+    <ListRow
+      action={
+        <div className="flex items-center gap-1">
+          <Trail className="size-4 text-muted-foreground" />
+          {canDisconnect && (
+            <Button
+              aria-label={`${t.common.remove} ${title}`}
+              disabled={disconnecting}
+              onClick={() => onDisconnect(provider)}
+              size="icon-xs"
+              title={`${t.common.remove} ${title}`}
+              type="button"
+              variant="ghost"
+            >
+              {disconnecting ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+            </Button>
+          )}
+          {terminalDisconnect && (
+            <Button
+              aria-label={`${copy.disconnect} ${title}`}
+              onClick={() => onTerminalDisconnect(provider)}
+              size="icon-xs"
+              title={copy.disconnectInTerminal}
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="size-3" />
+            </Button>
+          )}
         </div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.onboarding.flowSubtitles[provider.flow]}</p>
-        {showHint && (
-          <p className="mt-0.5 truncate text-[0.68rem] leading-5 text-muted-foreground/70">
-            {provider.flow === 'external' ? copy.removeExternalGeneric(title) : copy.removeKeyManaged(title)}
-          </p>
-        )}
-      </RowButton>
-      <div className="flex items-center gap-1 pr-2">
-        <Trail className="size-4 text-muted-foreground transition group-hover:text-foreground" />
-        {canDisconnect && (
-          <Button
-            aria-label={`${t.common.remove} ${title}`}
-            disabled={disconnecting}
-            onClick={() => onDisconnect(provider)}
-            size="icon-xs"
-            title={`${t.common.remove} ${title}`}
-            type="button"
-            variant="ghost"
-          >
-            {disconnecting ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
-          </Button>
-        )}
-        {terminalDisconnect && (
-          <Button
-            aria-label={`${copy.disconnect} ${title}`}
-            onClick={() => onTerminalDisconnect(provider)}
-            size="icon-xs"
-            title={copy.disconnectInTerminal}
-            type="button"
-            variant="ghost"
-          >
-            <Trash2 className="size-3" />
-          </Button>
-        )}
-      </div>
-    </div>
+      }
+      description={
+        <>
+          {t.onboarding.flowSubtitles[provider.flow]}
+          {showHint && (
+            <span className="mt-0.5 block truncate text-[0.68rem] leading-5 text-muted-foreground/70">
+              {provider.flow === 'external' ? copy.removeExternalGeneric(title) : copy.removeKeyManaged(title)}
+            </span>
+          )}
+        </>
+      }
+      onActivate={() => onSelect(provider)}
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          {/* Connected status dot — same "status dot + name" shape as the key and
+              desktop quota cards (2026-11-04 unified template). */}
+          <span className="size-2 shrink-0 rounded-full bg-primary" />
+          <span className="truncate">{title}</span>
+        </span>
+      }
+    />
   )
 }
 
@@ -369,6 +342,21 @@ function DesktopQuotasView() {
   // Per-app failure detail, surfaced on the control that failed as its tooltip.
   const [errInfo, setErrInfo] = useState<Record<string, { code?: string; message?: string; installHint?: string }>>({})
 
+  // The chat picker's row filter (`quotaProviders` in store/desktop-quotas) drops the
+  // whole hub row when the backend catalog marks it `selectable === false` — the
+  // switch must not light next to a dropdown that offers nothing. The card mirrors
+  // the same catalog row (`QUOTA_HUB_ROW` is store-local; the aggregate slug is
+  // `aigw`). `null` means "no hub row in the catalog", which we leave untouched
+  // rather than inventing a verdict.
+  const [hubSelectable, setHubSelectable] = useState<null | boolean>(null)
+
+  const readHubSelectable = useCallback(() => {
+    void getGlobalModelOptions().then(({ providers }) => {
+      const hubRow = (providers ?? []).find(p => /^aigw$/i.test(p.slug))
+      setHubSelectable(hubRow ? hubRow.selectable !== false : null)
+    })
+  }, [])
+
   const readAuthCatalog = useCallback(() => {
     void window.plobiDesktop?.authCatalog?.().then(rows => {
       setAuthCatalog(buildLoginCards(rows))
@@ -381,7 +369,8 @@ function DesktopQuotasView() {
   useEffect(() => {
     requestQuotaCatalog()
     readAuthCatalog()
-  }, [readAuthCatalog])
+    readHubSelectable()
+  }, [readAuthCatalog, readHubSelectable])
 
   // While a sign-in is waiting on him in the browser, keep asking. Without this the card
   // only updates when the view re-mounts, so a login that finished perfectly kept showing
@@ -484,7 +473,11 @@ function DesktopQuotasView() {
   // dialog: it is the reverse of a choice they just made, not a new consequence.
   const handleTurnOn = (card: LoginCard) => {
     for (const leg of peerLegs(card.id)) {
-      markConnected({ id: leg })
+      // Turning on is a request, not a verdict: the record stays `answered:false`
+      // until the hub's next frame lands with real models. The card reads
+      // unanswered until then, so the switch never lights before the dropdown
+      // can actually offer the leg (user 2026-11-04).
+      markConnected({ answered: false, id: leg })
     }
 
     requestQuotaCatalog()
@@ -496,46 +489,108 @@ function DesktopQuotasView() {
   // says "connected" or "expired" out loud. Why a leg cannot serve a turn right now
   // rides on that control as its tooltip: it is the reason the switch is still there,
   // not a status line the screen should be shouting.
+  // OpenCode Zen shows up once, as the disabled static key entry on the Keys tab
+  // (constants.ts OPENCODE_ZEN_, per the 2026-11-04 dedupe ruling); this leg must
+  // not render a second card of the same name.
+  const desktopCards = useMemo(
+    () => (authCatalog ?? []).filter(card => card.id !== 'opencode_api'),
+    [authCatalog]
+  )
+
   const rows = useMemo(
     () =>
-      (authCatalog ?? []).map(card => {
-        const verdict = quotaAppVerdict(quotaApps, peerLegs(card.id))
+      desktopCards.map(card => {
+        const peers = peerLegs(card.id)
+        const verdict = quotaAppVerdict(quotaApps, peers)
+
+        // The one record this card stands on. `quotaApps` is keyed per leg id
+        // (peerLegs expands aggregates), so a card can hold several records.
+        const record = peers.map(id => quotaApps[id]).find(app => Boolean(app))
+
+        // The frame's row-level honesty: a hub row that answered with zero selectable
+        // models is exactly "selectable === false" in the picker's words; the backend
+        // catalog's `aigw` aggregate carries the same flag for the whole hub.
+        const legUsable = Boolean(record?.answered === true && (record.models?.length ?? 0) > 0)
+        const hubUsable = hubSelectable !== false
+
         // `off` is the user's own verdict and outranks the hub's, so a leg the hub is
         // still happily serving does not read as on.
         const routing: RoutingVerdict = verdict.state === 'off' ? 'off' : verdict.state === 'ok' ? 'on' : 'unknown'
-        const click = conn[card.id] ?? 'idle'
-        const error = click === 'error' ? errInfo[card.id] : undefined
+
+        // verdict=ok but the hub row is not selectable: the dropdown cannot offer this
+        // leg, so the card must not pretend the switch works. Same downgrade for a
+        // record the hub answered with nothing pickable.
+        const usable = verdict.state === 'ok' && legUsable && hubUsable
+
+        // Registry reason beats the frame reason: it is the exact line the picker would
+        // have used, carried per dropped model in the frame's `blocked` map.
+        const unselectableReason = record?.blocked ? Object.values(record.blocked)[0] : undefined
+
+        const verdictView: QuotaAppVerdict =
+          !usable && verdict.state === 'ok'
+            ? { reason: unselectableReason ?? 'not_offered', state: 'unusable' }
+            : verdict
 
         // The hub's reason belongs on the control that would fix it.
         const reason
-          = verdict.state === 'unusable'
-            ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
+          = !usable
+            ? unselectableReason
+              ?? (verdict.state === 'unusable'
+                ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
+                : '')
             : ''
+
+        const click = conn[card.id] ?? 'idle'
+        const error = click === 'error' ? errInfo[card.id] : undefined
+        // A failed click keeps its detail on the control's tooltip (it is what the
+        // user just pressed); the why-this-leg-is-dark line lives under the card.
+        const errorTitle = error ? `${dq.connectError(card.name)}${error.message ? `：${error.message}` : ''}` : undefined
 
         return {
           card,
           checked: routing !== 'off',
-          control: cardControl(card, routing),
-          detail: cardDetail(card, error ? `${dq.connectError(card.name)}${error.message ? `：${error.message}` : ''}` : undefined, reason),
+          control: cardControl(card, routing, usable),
+          // The reason for a dark leg is body copy under the card (user 2026-11-04
+          // ruling) — see `belowText`; the control tooltip only carries a click
+          // failure, which an action (retry / turn off) can actually resolve.
+          belowText: reason || unselectableReason || undefined,
+          detail: cardDetail(card, errorTitle, undefined, undefined),
+          errorTitle,
           // A click that is still in flight is the only moment a control is disabled.
-          isBusy: click === 'connecting'
+          isBusy: click === 'connecting',
+          usable,
+          unselectableReason,
+          verdict: verdictView
         }
-      }),
+      })
+        // Configured legs lead the list (user 2026-11-04): anything that is on (or
+        // at least routed) comes first, then usable-but-unconfigured, then the rest.
+        .sort(
+          (a, b) =>
+            Number(b.checked) - Number(a.checked) ||
+            Number(b.usable) - Number(a.usable) ||
+            a.card.name.localeCompare(b.card.name)
+        ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [authCatalog, conn, dq, errInfo, quotaApps, quotaReason]
+    [desktopCards, conn, dq, errInfo, hubSelectable, quotaApps, quotaReason]
   )
 
   /** The one control this row is allowed to show, in the shape the state asks for. */
   function renderControl(row: (typeof rows)[number]) {
-    const { card, checked, control, detail, isBusy } = row
+    const { card, checked, control, errorTitle, isBusy } = row
 
-    if (control === 'switch') {
+    if (control === 'switch' || control === 'disabled') {
+      // A disabled switch is "on but dark": the reason lives under the card, and
+      // the switch stays operable so the user can act on the message — turn the
+      // leg off — instead of only reading it (user 2026-11-04). Only turning it
+      // back on is gated while the leg is dark (the dropdown cannot offer it).
       return (
         <Switch
           aria-label={dq.useQuota}
           checked={checked}
+          disabled={control === 'disabled' && !checked}
           onCheckedChange={value => (value ? handleTurnOn(card) : handleTurnOff(card))}
-          title={detail || undefined}
+          title={errorTitle || undefined}
         />
       )
     }
@@ -556,7 +611,7 @@ function DesktopQuotasView() {
           aria-label={dq.configure}
           onClick={() => handleConnect(card.id)}
           size="icon-sm"
-          title={detail || undefined}
+          title={errorTitle || undefined}
           type="button"
           variant="secondary"
         >
@@ -600,10 +655,37 @@ function DesktopQuotasView() {
           {rows.map(row => (
             <ListRow
               action={renderControl(row)}
+              // Why a leg is dark reads under the card, on its own row — never a
+              // tooltip overlapping the switch (user 2026-11-04 ruling).
+              below={
+                row.belowText ? (
+                  <p
+                    className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-destructive"
+                    role="note"
+                  >
+                    {row.belowText}
+                  </p>
+                ) : undefined
+              }
               description={row.card.intro}
-              icon={<QuotaAppIcon id={row.card.id} name={row.card.name} />}
               key={row.card.id}
-              title={row.card.name}
+              // Unified card template (2026-11-04): status dot + name + the one
+              // switch on the right — same shape as the key cards.
+              title={
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      row.verdict.state === 'ok'
+                        ? 'bg-primary'
+                        : row.verdict.state === 'unusable'
+                          ? 'bg-destructive'
+                          : 'bg-(--ui-stroke-secondary)'
+                    )}
+                  />
+                  <span className="truncate">{row.card.name}</span>
+                </span>
+              }
             />
           ))}
         </div>
@@ -734,6 +816,16 @@ export function ProvidersSettings({ onClose, onViewChange, view }: ProvidersSett
         })
       : keyGroups
 
+    // Configured groups lead (user 2026-11-04), then curated priority, then name.
+    const orderedGroups = visibleGroups
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(b.hasAnySet) - Number(a.hasAnySet) ||
+          a.priority - b.priority ||
+          a.name.localeCompare(b.name)
+      )
+
     return (
       <SettingsContent>
         {keyGroups.length > 0 ? (
@@ -745,9 +837,9 @@ export function ProvidersSettings({ onClose, onViewChange, view }: ProvidersSett
               placeholder={t.settings.providers.searchKeys}
               value={keyQuery}
             />
-            {visibleGroups.length > 0 ? (
+            {orderedGroups.length > 0 ? (
               <div className="grid gap-2">
-                {visibleGroups.map(group => (
+                {orderedGroups.map(group => (
                   <ProviderKeyRows
                     expanded={openProvider === group.name}
                     group={group}
@@ -787,6 +879,8 @@ export function ProvidersSettings({ onClose, onViewChange, view }: ProvidersSett
 interface ProviderKeyGroup {
   advanced: [string, EnvVarInfo][]
   description?: string
+  disabled?: boolean
+  disabledReason?: string
   docsUrl?: string
   hasAnySet: boolean
   name: string

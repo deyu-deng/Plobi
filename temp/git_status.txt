@@ -1,0 +1,158 @@
+﻿ M agent/egress/proxy_guard.py
+ M agent/egress/system_proxy.py
+ M agent/egress/watchdog.py
+ M agent/error_classifier.py
+ M apps/desktop/electron/connection-config.test.ts
+ M apps/desktop/electron/connection-config.ts
+ M apps/desktop/electron/egress-proxy.ts
+ M apps/desktop/electron/main.ts
+ M apps/desktop/electron/profile-delete-respawn.test.ts
+ M apps/desktop/electron/update-relaunch.test.ts
+ M apps/desktop/electron/windows-user-env.ts
+ M apps/desktop/src/app/agents/index.tsx
+ M apps/desktop/src/app/artifacts/index.test.ts
+ M apps/desktop/src/app/artifacts/index.tsx
+ M apps/desktop/src/app/chat/index.tsx
+ M apps/desktop/src/app/chat/sidebar/agent-category-group.tsx
+ M apps/desktop/src/app/chat/sidebar/agent-groups.test.ts
+ M apps/desktop/src/app/chat/sidebar/agent-groups.ts
+ M apps/desktop/src/app/chat/sidebar/agent-offload-panel.tsx
+ M apps/desktop/src/app/chat/sidebar/expert-panel.test.tsx
+ M apps/desktop/src/app/chat/sidebar/expert-panel.tsx
+ M apps/desktop/src/app/chat/sidebar/expert-roles.ts
+ M apps/desktop/src/app/chat/sidebar/expert-runs.ts
+ M apps/desktop/src/app/chat/sidebar/external-sessions-panel.tsx
+ M apps/desktop/src/app/chat/sidebar/external-sessions.ts
+ M apps/desktop/src/app/chat/sidebar/index.tsx
+ M apps/desktop/src/app/chat/sidebar/projects/workspace-group.tsx
+ M apps/desktop/src/app/chat/sidebar/projects/workspace-groups.test.ts
+ M apps/desktop/src/app/chat/sidebar/session-row.tsx
+ M apps/desktop/src/app/command-palette/index.tsx
+ M apps/desktop/src/app/console/api.ts
+ M apps/desktop/src/app/console/chat/chat-surface.tsx
+ M apps/desktop/src/app/console/chat/conversation-pane.tsx
+ M apps/desktop/src/app/console/store/agents.ts
+ M apps/desktop/src/app/console/types.ts
+ M apps/desktop/src/app/desktop-controller-utils.test.ts
+ M apps/desktop/src/app/desktop-controller-utils.ts
+ M apps/desktop/src/app/desktop-controller.tsx
+ M apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts
+ M apps/desktop/src/app/gateway/hooks/use-gateway-request.ts
+ D apps/desktop/src/app/gateway/hooks/use-profile-scope-sync.ts
+ M apps/desktop/src/app/hooks/use-keybinds.ts
+ M apps/desktop/src/app/hooks/use-on-profile-switch.ts
+ M apps/desktop/src/app/page-search-shell.test.tsx
+ M apps/desktop/src/app/page-search-shell.tsx
+ M apps/desktop/src/app/session/hooks/use-conversation-reset.ts
+ M apps/desktop/src/app/session/hooks/use-prompt-actions/index.test.tsx
+ M apps/desktop/src/app/session/hooks/use-prompt-actions/slash.ts
+ M apps/desktop/src/app/session/hooks/use-session-actions.test.tsx
+ M apps/desktop/src/app/session/hooks/use-session-actions/index.ts
+ M apps/desktop/src/app/session/hooks/use-session-actions/utils.ts
+ M apps/desktop/src/app/session/hooks/use-session-list-actions.ts
+ M apps/desktop/src/app/settings/constants.ts
+ M apps/desktop/src/app/settings/credential-key-ui.tsx
+ M apps/desktop/src/app/settings/gateway-settings.tsx
+ M apps/desktop/src/app/settings/index.tsx
+ M apps/desktop/src/app/settings/model-settings.tsx
+ M apps/desktop/src/app/settings/offload-settings.test.tsx
+ M apps/desktop/src/app/settings/offload-settings.tsx
+ M apps/desktop/src/app/settings/offload/api.ts
+ M apps/desktop/src/app/settings/primitives.tsx
+ M apps/desktop/src/app/settings/providers-settings.tsx
+ M apps/desktop/src/app/settings/quota-login-cards.ts
+ M apps/desktop/src/app/settings/sessions-settings.tsx
+ M apps/desktop/src/app/shell/egress-panel.test.tsx
+ M apps/desktop/src/app/shell/egress-panel.tsx
+ M apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+ M apps/desktop/src/app/skills/index.test.tsx
+ M apps/desktop/src/app/skills/index.tsx
+ M apps/desktop/src/app/skills/mcp-tab.tsx
+ M apps/desktop/src/components/error-boundary.test.tsx
+ M apps/desktop/src/components/error-boundary.tsx
+ M apps/desktop/src/components/onboarding/index.tsx
+ M apps/desktop/src/components/onboarding/providers.tsx
+ M apps/desktop/src/i18n/en.ts
+ M apps/desktop/src/i18n/ja.ts
+ M apps/desktop/src/i18n/types.ts
+ M apps/desktop/src/i18n/zh-hant.ts
+ M apps/desktop/src/i18n/zh.ts
+ M apps/desktop/src/lib/session-export.ts
+ M apps/desktop/src/lib/session-search.test.ts
+ M apps/desktop/src/plobi.test.ts
+ M apps/desktop/src/plobi.ts
+ M apps/desktop/src/store/conversation-view.ts
+ M apps/desktop/src/store/desktop-quotas.ts
+ M apps/desktop/src/store/hub-actions.ts
+ M apps/desktop/src/store/pet.ts
+ D apps/desktop/src/store/profile.test.ts
+ D apps/desktop/src/store/profile.ts
+ M apps/desktop/src/store/projects.ts
+ M apps/desktop/src/store/session.test.ts
+ M apps/desktop/src/store/subagents.ts
+ M apps/desktop/src/types/plobi.ts
+ M plobi/agents/registry.py
+ M plobi/console/router.py
+ M plobi/delegation/config.py
+ M plobi/delegation/expert_roles.py
+ M plobi/delegation/experts.py
+ M plobi/delegation/external_sessions.py
+ M plobi/delegation/offload.py
+ M plobi/delegation/offload_surface.py
+ M plobi_cli/kanban_db.py
+ M plobi_cli/web_server.py
+ M plugins/plobi-north-star/agent_ask.py
+ M quota_hub/config.yaml
+ M quota_hub/quota_hub/main.py
+ M quota_hub/quota_hub/providers/apps/antigravity/api.py
+ M quota_hub/quota_hub/providers/apps/opencode/api.py
+ M quota_hub/quota_hub/providers/apps/qoder/api.py
+ M quota_hub/quota_hub/providers/apps/qoder/oauth.py
+ M quota_hub/quota_hub/providers/base.py
+ M quota_hub/quota_hub/providers/cloudcode.py
+ M quota_hub/quota_hub/registry.py
+ M run_agent.py
+ M scripts/run_tests.sh
+ M tests/cron/conftest.py
+ M tests/cron/test_cron_recipient.py
+ M tests/plobi/test_agent_registry.py
+ M tests/plobi/test_agent_soul_shared.py
+ M tests/plobi/test_console_api.py
+ M tests/plobi/test_course_agent_identity.py
+ M tests/plobi/test_expert_dispatch.py
+ M tests/plobi/test_experts.py
+ M tests/plobi/test_l2_diet_registry.py
+ M tests/plobi/test_l2_name_collisions.py
+ M tests/plobi/test_l2_route_tools_capable.py
+ M tests/plobi/test_l2_shared_skills.py
+ M tests/plobi/test_profile_lazy_home_off.py
+ M tests/plobi/test_profile_scope_roster.py
+ M tests/plobi/test_registry_no_home.py
+ M tests/plobi/test_studio_cwd.py
+ M tests/run_agent/test_exit_cleanup_interrupt.py
+ M tests/tools/test_cronjob_recipient.py
+ M tests/tools/test_offload_tools.py
+ M tests/tools/test_search_hidden_dirs.py
+ M tools/delegate_tool.py
+ M tools/offload_tools.py
+ M uv.lock
+?? .codegraph/
+?? .serena/
+?? "D\357\200\272Tempplobi-goaltmpbaseplobi-tests-home.TdpgR1tmppytest-of-unknownpytest-1852test_approved_command_genuine_0cmd_started_c"
+?? apps/desktop/electron/data-root.test.ts
+?? apps/desktop/electron/data-root.ts
+?? apps/desktop/electron/desktop-release.test.ts
+?? apps/desktop/electron/desktop-release.ts
+?? apps/desktop/src/app/console/chat/expert-model-bar.test.tsx
+?? apps/desktop/src/app/console/chat/expert-model-bar.tsx
+?? apps/desktop/src/app/gateway/hooks/use-scope-sync.ts
+?? apps/desktop/src/lib/session-agent.ts
+?? apps/desktop/src/store/scope.test.ts
+?? apps/desktop/src/store/scope.ts
+?? plobi/agents/runtime_slugs.yaml
+?? plobi/delegation/external_capabilities.py
+?? quota_hub/quota_hub/token_refresh_service.py
+?? scripts/run-bundle-hidden.vbs
+?? scripts/run-mind-sync-hidden.vbs
+?? temp/
+?? tests/plobi/test_external_capabilities.py

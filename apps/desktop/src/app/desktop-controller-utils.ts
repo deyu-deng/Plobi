@@ -1,6 +1,7 @@
 import type { SessionInfo } from '@/plobi'
+import { normalizeAgentKey, sessionAgentId } from '@/lib/session-agent'
 import { persistString, storedString } from '@/lib/storage'
-import { normalizeProfileKey } from '@/store/profile'
+import { normalizeProfileKey } from '@/store/scope'
 
 import type { ShellLevel } from './routes'
 
@@ -20,7 +21,7 @@ export function sameCronSignature(a: SessionInfo[], b: SessionInfo[]): boolean {
       session._lineage_root_id === other._lineage_root_id &&
       session.title === other.title &&
       session.source === other.source &&
-      session.profile === other.profile &&
+      session.agent_id === other.agent_id &&
       session.preview === other.preview &&
       session.message_count === other.message_count &&
       session.last_active === other.last_active &&
@@ -67,14 +68,18 @@ export function findKnownOverviewSession<T extends { id: string; _lineage_root_i
 }
 
 /**
- * Latest non-lineage session for a Plobi profile (L1 bind after 裁定 6).
- * Prefers tip sessions (`!_lineage_root_id`); falls back to any row on that profile.
+ * Latest non-lineage session owned by one agent (L1 bind after 裁定 6).
+ * Prefers tip sessions (`!_lineage_root_id`); falls back to any row on that owner.
+ *
+ * 2026-11-05 起归属键是行级 `agent_id`（名册 name，L1＝空串），比较前两侧都过
+ * {@link normalizeAgentKey}（空串折成 `default`）——传进来的仍是调用方那份
+ * 作用域键（`default` / 名册 name），只是不再读 `profile` 标签。
  */
 export function findLatestSessionForProfile<
-  T extends { id: string; profile?: null | string; _lineage_root_id?: null | string; started_at?: null | number }
+  T extends { id: string; agent_id?: null | string; _lineage_root_id?: null | string; started_at?: null | number }
 >(sessions: T[], profile: string): T | undefined {
-  const key = normalizeProfileKey(profile)
-  const onProfile = sessions.filter(session => normalizeProfileKey(session.profile ?? 'default') === key)
+  const key = normalizeAgentKey(profile)
+  const onProfile = sessions.filter(session => normalizeAgentKey(session.agent_id) === key)
 
   if (onProfile.length === 0) {
     return undefined
@@ -101,7 +106,7 @@ export function findLatestSessionForProfile<
 export function pickL1Mouth<
   T extends {
     id: string
-    profile?: null | string
+    agent_id?: null | string
     source?: null | string
     _lineage_root_id?: null | string
     started_at?: null | number
@@ -198,14 +203,14 @@ export function secretaryShellLabel(
 
 /** Prefer the remembered L1 mainline; otherwise the latest tip on that profile. */
 export function pickL1MainSession<
-  T extends { id: string; profile?: null | string; _lineage_root_id?: null | string; started_at?: null | number }
+  T extends { id: string; agent_id?: null | string; _lineage_root_id?: null | string; started_at?: null | number }
 >(sessions: T[], profile: string, rememberedId?: null | string): T | undefined {
-  const key = normalizeProfileKey(profile)
+  const key = normalizeAgentKey(profile)
   const remembered = (rememberedId || '').trim()
 
   if (remembered) {
     const hit = sessions.find(
-      session => session.id === remembered && normalizeProfileKey(session.profile ?? 'default') === key
+      session => session.id === remembered && normalizeAgentKey(session.agent_id) === key
     )
 
     if (hit) {
@@ -218,18 +223,23 @@ export function pickL1MainSession<
 
 /**
  * Every L1-home local session except the kept mainline. Cron / messaging /
- * subagent / agent-profile threads are left alone — those are not "bypass chats".
+ * subagent / agent-owned threads are left alone — those are not "bypass chats".
  * Without a mainline to keep, nothing counts as a bypass: see the guard below.
+ *
+ * 2026-11-05：L1 判据从「`profile` 标签等于 L1 那份家」改成 **`agent_id` 为空串**
+ * （schema 约定，缺口 B）。这一条同时替掉了旧的 `agentProfiles` 白名单兜底——
+ * 归属非空就一定是某个 Agent 的会话，不必再拿家名集合去比。
  */
 export function collectL1BypassSessionIds(
-  sessions: ReadonlyArray<{ id: string; profile?: null | string }>,
+  sessions: ReadonlyArray<{ id: string; agent_id?: null | string }>,
   options: {
-    agentProfiles?: Iterable<string>
+    /** 名册里存在的 Agent 名。归属非空的行本就跳过，留着只为调用方语义自证。 */
+    agentNames?: Iterable<string>
     keepId?: null | string
-    profile: string
+    /** 这次要扫的是哪一份 L1（`default`）。判据已不看它，仅供调用方自证。 */
+    profile?: string
   }
 ): string[] {
-  const key = normalizeProfileKey(options.profile)
   const keep = (options.keepId || '').trim()
 
   // Returning every sibling when `keep` is empty is what ate a 63-message
@@ -239,10 +249,6 @@ export function collectL1BypassSessionIds(
     return []
   }
 
-  const agentSet = new Set(
-    [...(options.agentProfiles ?? [])].map(name => normalizeProfileKey(name)).filter(Boolean)
-  )
-
   const ids: string[] = []
 
   for (const session of sessions) {
@@ -250,12 +256,8 @@ export function collectL1BypassSessionIds(
       continue
     }
 
-    if (normalizeProfileKey(session.profile ?? 'default') !== key) {
-      continue
-    }
-
-    // Agent-owned profiles nest under agents; never purge those as L1 bypass.
-    if (agentSet.has(normalizeProfileKey(session.profile ?? ''))) {
+    // L1 判据：归属键为空串。非空＝那个 Agent 的会话，归它折叠，永不当旁路清掉。
+    if (sessionAgentId(session)) {
       continue
     }
 

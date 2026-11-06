@@ -81,9 +81,9 @@ describe('bindL1GatewayIfMasterExists (WP-G3 / 裁定 6)', () => {
 describe('findLatestSessionForProfile (P0-1 L1 bind)', () => {
   it('prefers tip sessions on the profile, newest first', () => {
     const rows = [
-      { id: 'old', profile: 'default', started_at: 1 },
-      { id: 'new', profile: 'default', started_at: 9 },
-      { id: 'other', profile: 'l2-agenda', started_at: 99 }
+      { id: 'old', agent_id: '', started_at: 1 },
+      { id: 'new', agent_id: '', started_at: 9 },
+      { id: 'other', agent_id: 'agenda', started_at: 99 }
     ]
 
     expect(findLatestSessionForProfile(rows, 'default')?.id).toBe('new')
@@ -91,15 +91,15 @@ describe('findLatestSessionForProfile (P0-1 L1 bind)', () => {
 
   it('skips lineage children when a tip exists', () => {
     const rows = [
-      { id: 'tip', profile: 'default', started_at: 1 },
-      { id: 'child', profile: 'default', started_at: 50, _lineage_root_id: 'root' }
+      { id: 'tip', agent_id: '', started_at: 1 },
+      { id: 'child', agent_id: '', started_at: 50, _lineage_root_id: 'root' }
     ]
 
     expect(findLatestSessionForProfile(rows, 'default')?.id).toBe('tip')
   })
 
   it('returns undefined when the profile has no rows', () => {
-    expect(findLatestSessionForProfile([{ id: 'a', profile: 'other' }], 'default')).toBeUndefined()
+    expect(findLatestSessionForProfile([{ agent_id: 'other', id: 'a' }], 'default')).toBeUndefined()
   })
 })
 
@@ -138,8 +138,8 @@ describe('secretaryShellLabel (WP-G8 / 裁定 13+16)', () => {
 describe('pickL1MainSession (WP-G7)', () => {
   it('prefers the remembered mainline even when a newer session exists', () => {
     const rows = [
-      { id: 'main', profile: 'default', started_at: 1 },
-      { id: 'side', profile: 'default', started_at: 99 }
+      { id: 'main', agent_id: '', started_at: 1 },
+      { id: 'side', agent_id: '', started_at: 99 }
     ]
 
     expect(pickL1MainSession(rows, 'default', 'main')?.id).toBe('main')
@@ -147,8 +147,8 @@ describe('pickL1MainSession (WP-G7)', () => {
 
   it('falls back to latest when the remembered id is missing', () => {
     const rows = [
-      { id: 'old', profile: 'default', started_at: 1 },
-      { id: 'new', profile: 'default', started_at: 9 }
+      { id: 'old', agent_id: '', started_at: 1 },
+      { id: 'new', agent_id: '', started_at: 9 }
     ]
 
     expect(pickL1MainSession(rows, 'default', 'gone')?.id).toBe('new')
@@ -156,8 +156,8 @@ describe('pickL1MainSession (WP-G7)', () => {
 
   it('ignores a remembered id on another profile', () => {
     const rows = [
-      { id: 'l2', profile: 'l2-agenda', started_at: 50 },
-      { id: 'l1', profile: 'default', started_at: 1 }
+      { id: 'l2', agent_id: 'agenda', started_at: 50 },
+      { id: 'l1', agent_id: '', started_at: 1 }
     ]
 
     expect(pickL1MainSession(rows, 'default', 'l2')?.id).toBe('l1')
@@ -170,8 +170,8 @@ describe('pickL1MainSession (WP-G7)', () => {
 describe('pickL1Mouth (one mouth, always the newest real conversation)', () => {
   it('takes the newest session that actually has messages', () => {
     const rows = [
-      { id: 'old', profile: 'default', started_at: 1, message_count: 197 },
-      { id: 'empty-draft', profile: 'default', started_at: 99, message_count: 0 }
+      { id: 'old', agent_id: '', started_at: 1, message_count: 197 },
+      { id: 'empty-draft', agent_id: '', started_at: 99, message_count: 0 }
     ]
 
     expect(pickL1Mouth(rows, 'default')?.id).toBe('old')
@@ -179,8 +179,8 @@ describe('pickL1Mouth (one mouth, always the newest real conversation)', () => {
 
   it('falls back to the newest row when every row is empty', () => {
     const rows = [
-      { id: 'a', profile: 'default', started_at: 1, message_count: 0 },
-      { id: 'b', profile: 'default', started_at: 9, message_count: 0 }
+      { id: 'a', agent_id: '', started_at: 1, message_count: 0 },
+      { id: 'b', agent_id: '', started_at: 9, message_count: 0 }
     ]
 
     expect(pickL1Mouth(rows, 'default')?.id).toBe('b')
@@ -188,8 +188,8 @@ describe('pickL1Mouth (one mouth, always the newest real conversation)', () => {
 
   it('never crosses into another profile', () => {
     const rows = [
-      { id: 'l2', profile: 'l2-agenda', started_at: 99, message_count: 50 },
-      { id: 'l1', profile: 'default', started_at: 1, message_count: 5 }
+      { id: 'l2', agent_id: 'agenda', started_at: 99, message_count: 50 },
+      { id: 'l1', agent_id: '', started_at: 1, message_count: 5 }
     ]
 
     expect(pickL1Mouth(rows, 'default')?.id).toBe('l1')
@@ -199,8 +199,8 @@ describe('pickL1Mouth (one mouth, always the newest real conversation)', () => {
     // 同一份家上别的线会用 `plobi chat` 做验证，那些会话会写进来；
     // 它们不许把桌面手上那张嘴抢走（用户 10-30 报「聊天记录不见了」）。
     const rows = [
-      { id: 'his', profile: 'default', source: 'desktop', started_at: 1, message_count: 197 },
-      { id: 'agent-test', profile: 'default', source: 'tui', started_at: 99, message_count: 6 }
+      { id: 'his', agent_id: '', source: 'desktop', started_at: 1, message_count: 197 },
+      { id: 'agent-test', agent_id: '', source: 'tui', started_at: 99, message_count: 6 }
     ]
 
     expect(pickL1Mouth(rows, 'default')?.id).toBe('his')
@@ -213,8 +213,8 @@ describe('pickL1Mouth (one mouth, always the newest real conversation)', () => {
 // leaves it set hands the retired conversation straight back.
 describe('forgetL1MainSession (restart this mouth)', () => {
   const rows = [
-    { id: 'retired', profile: 'default', started_at: 100 },
-    { id: 'fresh', profile: 'default', started_at: 200 }
+    { id: 'retired', agent_id: '', started_at: 100 },
+    { id: 'fresh', agent_id: '', started_at: 200 }
   ]
 
   beforeEach(() => {
@@ -292,26 +292,38 @@ describe('resolveL1HomeProfile (L2→L1 center stale)', () => {
 })
 
 describe('collectL1BypassSessionIds', () => {
-  it('keeps the mainline and drops other sessions on the L1 profile', () => {
+  it('keeps the mainline and drops other sessions whose agent_id is empty', () => {
+    // 2026-11-05：判据是 `agent_id` 空串（L1 无主行），不再是 `profile` 标签。
     const rows = [
-      { id: 'main', profile: 'default' },
-      { id: 'old', profile: 'default' },
-      { id: 'agent', profile: 'l2-agenda' }
+      { agent_id: '', id: 'main' },
+      { agent_id: '', id: 'old' },
+      { agent_id: 'agenda', id: 'agent' }
     ]
 
     expect(
       collectL1BypassSessionIds(rows, {
-        agentProfiles: ['l2-agenda'],
+        agentNames: ['agenda'],
         keepId: 'main',
         profile: 'default'
       })
     ).toEqual(['old'])
   })
 
+  it('never treats a roster-less owner as L1 (orphan rows stay put)', () => {
+    // 孤儿归属（agent_id 非空但名册查不到）依旧归那个 Agent 折叠，绝不进旁路清单——
+    // 否则一次 L1 入口就会把别人家的对话归档掉。
+    const rows = [
+      { agent_id: '', id: 'main' },
+      { agent_id: 'ghost-owner', id: 'orphan' }
+    ]
+
+    expect(collectL1BypassSessionIds(rows, { keepId: 'main', profile: 'default' })).toEqual([])
+  })
+
   it('collects nothing when there is no keep id — the 2026-10-07 shape (R-078)', () => {
     const rows = [
-      { id: 'a', profile: 'default' },
-      { id: 'b', profile: 'default' }
+      { agent_id: '', id: 'a' },
+      { agent_id: '', id: 'b' }
     ]
 
     // 这条以前断言 `['a','b']`：认不出主线时把整个 profile 交出去，配上硬删就是一次删光。

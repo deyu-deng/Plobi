@@ -12,7 +12,7 @@ import {
   listAllProfileSessions,
   listSessions
 } from './plobi'
-import { refreshActiveProfile } from './store/profile'
+import { refreshActiveProfile } from './store/scope'
 
 const emptySessionsResponse = {
   limit: 0,
@@ -53,7 +53,7 @@ describe('Plobi REST session helpers', () => {
 
     expect(api).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: '/api/profiles/sessions?limit=50&offset=0&min_messages=1&archived=exclude&order=recent&profile=all',
+        path: '/api/agents/sessions?limit=50&offset=0&min_messages=1&archived=exclude&order=recent&agent=all',
         timeoutMs: 60_000
       })
     )
@@ -80,7 +80,7 @@ describe('Plobi REST session helpers', () => {
     expect(api).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        path: '/api/profiles/active',
+        path: '/api/agents/active',
         timeoutMs: 60_000
       })
     )

@@ -1,56 +1,61 @@
 /**
- * 设置 → 外包：一家外部软件一行。
+ * 设置 → 外包：一家外部软件一张卡。
  *
  * **它与 Providers / 模型那一屏不是一件事**：那边把订阅/API 借来当模型；这里管的是
  * 「把一段活交给那家软件、让它在自己界面里干」——一个人、一趟活、一条它自己的会话。
+ * 外部会话不是另一类东西，它就是这家软件自己的会话；会话入口在对应 Agent 的侧边栏
+ * （那边自己调 `/api/external-sessions/sources`），这一屏只管「允不允许把活交给它」。
  *
- * 这一屏的形状（10-23 与用户对齐）：**只读、说真话**。
- * - 能不能用由后端一处判据给（`availability()`），这里不自己判第二遍；
- * - 登录态写清**来源**（上一趟真跑的证据 / 没证据），存在性猜的那种只当提示；
- * - 没有可点的假按钮：回跳能力有就写「可以回到它那屏」，没有就写没有。
+ * 这一屏的形状（卡片系统统一模板，与三类 provider 卡同形）：
+ * - 左边一颗状态点 + 名字 + 一句 i18n 简介（这家软件能外包什么类型的活、适配到哪一步）；
+ * - 右边只有两态：**没配好**给加号（点开是下载/登录的引导），**配好了**才是开关；
+ * - 能不能用仍由后端一处判据给（`availability()`），这里不自己判第二遍；
+ * - 机器细节（二进制、版本、权限档、会话号、后端给的原因）收进悬停提示，卡面只留人话。
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { vendorLabel } from '@/app/chat/sidebar/external-sessions'
-import { OffloadVendorIcon } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { AlertCircle, CheckCircle2, HelpCircle, Package, RefreshCw } from '@/lib/icons'
+import { Plus, RefreshCw } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 
-import { getOffloadAgents, getSessionSources, type OffloadAgent, type OffloadPayload, type SessionSource } from './offload/api'
-import { ListRow, LoadingState, Pill, SectionHeading, SettingsContent } from './primitives'
+import { getOffloadAgents, type OffloadAgent, type OffloadPayload, setOffloadAgentEnabled } from './offload/api'
+import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 
-const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
+const CAPTION =
+  'mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)'
 
+const REASON =
+  'mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-danger)'
+
+/** UTC ISO → 到分钟，不做时区换算（说真话：后端给什么写什么）。 */
 function shortTime(iso: string): string {
-  // 后端给的是 UTC ISO；只做"给人看"的截取，不做时区换算（那是显示器的事）。
-  return iso ? iso.replace('T', ' ').replace('+00:00', 'Z').slice(0, 16) : ''
+  return iso ? iso.slice(0, 16).replace('T', ' ') : ''
 }
 
-function money(value: number | null, status: string): string {
-  if (value === null || value === undefined) {
-    return status === 'no_usage_reported' ? '—' : '—'
-  }
-
-  return `$${value.toFixed(2)}`
+/** 算不出来就写「—」，不拿 0 冒充当月花了零点几美元（照后端 cost_status 的意思）。 */
+function money(value: number | null): string {
+  return value === null || value === undefined ? '—' : `$${value.toFixed(2)}`
 }
 
 export function OffloadSettings() {
   const { t } = useI18n()
   const s = t.settings.offload
+
   const [payload, setPayload] = useState<OffloadPayload | null>(null)
-  const [sources, setSources] = useState<SessionSource[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState('')
+  const [guide, setGuide] = useState('')
 
-  const load = useCallback(async (refresh: boolean) => {
+  const load = useCallback(async (refresh = false) => {
     setBusy(true)
     setError('')
 
     try {
       setPayload(await getOffloadAgents(refresh))
-      setSources(await getSessionSources())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -59,21 +64,54 @@ export function OffloadSettings() {
   }, [])
 
   useEffect(() => {
-    void load(false)
+    void load()
   }, [load])
 
-  const loginText = (agent: OffloadAgent): string => {
-    if (agent.logged_in.value === true) {return s.loginYes}
+  /** 这一格的开关：先就地翻面（点了立刻有反应），落盘失败再翻回去并把原因写在屏上。 */
+  const toggle = async (agent: OffloadAgent, next: boolean) => {
+    setPending(agent.name)
+    setError('')
+    setPayload(current =>
+      current
+        ? { ...current, agents: current.agents.map(item => (item.name === agent.name ? { ...item, enabled: next } : item)) }
+        : current
+    )
 
-    if (agent.logged_in.value === false) {return s.loginNo}
+    try {
+      await setOffloadAgentEnabled(agent.name, next)
+    } catch (err) {
+      setPayload(current =>
+        current
+          ? {
+              ...current,
+              agents: current.agents.map(item =>
+                item.name === agent.name ? { ...item, enabled: agent.enabled } : item
+              )
+            }
+          : current
+      )
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending('')
+    }
+  }
+
+  const loginText = (agent: OffloadAgent): string => {
+    if (agent.logged_in.value === true) {
+      return s.loginYes
+    }
+
+    if (agent.logged_in.value === false) {
+      return s.loginNo
+    }
 
     return s.loginUnknown
   }
 
-  // 机器细节（二进制、旗标、会话号、后端给的原因）进悬停提示：屏上只留「这是什么 + 现在能不能用」。
+  // 机器细节（二进制、版本、旗标、会话号、后端给的原因）进悬停提示：屏上只留「这是什么 + 现在能不能用」。
   const agentTip = (agent: OffloadAgent): string =>
     [
-      agent.installed ? agent.binary : s.notInstalled,
+      agent.installed ? `${agent.binary}${agent.version ? ` · ${agent.version}` : ''}` : s.notInstalled,
       agent.permission_flag,
       loginText(agent),
       agent.why_not,
@@ -85,82 +123,109 @@ export function OffloadSettings() {
 
   return (
     <SettingsContent>
-      <SectionHeading
-        icon={Package}
-        meta={payload ? `${s.probedAt} ${shortTime(payload.probed_at)}` : undefined}
+      <SettingsGroup
+        action={
+          <div className="flex items-center gap-2">
+            {payload ? (
+              <span className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+                {s.probedAt} {shortTime(payload.probed_at)}
+              </span>
+            ) : null}
+            <Button disabled={busy} onClick={() => void load(true)} size="sm" variant="ghost">
+              <RefreshCw className={busy ? 'animate-spin' : ''} />
+              {s.refresh}
+            </Button>
+          </div>
+        }
+        description={s.note}
         title={s.title}
-      />
-      <div className="pb-2">
-        <Button disabled={busy} onClick={() => void load(true)} size="sm" variant="ghost">
-          <RefreshCw className={busy ? 'animate-spin' : ''} />
-          {s.refresh}
-        </Button>
-      </div>
-      {error ? <p className="pb-2 text-sm text-(--ui-text-danger)">{error}</p> : null}
-      {!payload && !error ? <LoadingState label={s.loading} /> : null}
-      {payload?.agents.map(agent => (
-        <div key={agent.name} title={agentTip(agent)}>
-          <ListRow
-            action={
-              <Pill tone={agent.can_use ? 'primary' : 'muted'}>
-                {agent.can_use ? s.usable : s.blocked}
-              </Pill>
-            }
-            below={
-              agent.today.rounds > 0 || agent.today.last_ts ? (
-                <div className={CAPTION}>
-                  {s.today} {agent.today.rounds} · {money(agent.today.total_usd, agent.today.cost_status)}
-                  {agent.today.last_ts ? ` · ${shortTime(agent.today.last_ts)}` : ''}
-                </div>
-              ) : undefined
-            }
-            hint={agent.version || undefined}
-            title={
-              <span className="flex items-center gap-2">
-                <OffloadVendorIcon vendor={agent.name} />
-                <span>{agent.name}</span>
-                <LoginMark agent={agent} label={loginText(agent)} />
-              </span>
-            }
-          />
-        </div>
-      ))}
+      >
+        {error ? <p className="py-2 text-sm text-(--ui-text-danger)">{error}</p> : null}
+        {!payload && !error ? <LoadingState label={s.loading} /> : null}
+        {payload?.agents.map(agent => {
+          // 「配好了」= 装上了、且没判成未登录；能不能用另算（那是后端一处判据）。
+          const configured = agent.installed && agent.logged_in.value !== false
 
-      <SectionHeading icon={Package} title={s.sessionsTitle} />
-      {sources.map(source => (
-        <div key={source.vendor} title={[source.root, source.reason].filter(Boolean).join('\n')}>
-          <ListRow
-            action={
-              <Pill tone={source.readable ? 'primary' : 'muted'}>
-                {source.readable ? s.sessionsReadable : s.sessionsUnreadable}
-              </Pill>
-            }
-            below={
-              <div className={CAPTION}>
-                {source.sessions} {s.sessionsCount}
-              </div>
-            }
-            title={
-              <span className="flex items-center gap-2">
-                <OffloadVendorIcon vendor={source.vendor} />
-                <span>{vendorLabel(source.vendor)}</span>
-              </span>
-            }
-          />
-        </div>
-      ))}
+          // 自己关掉的那一格不标红、也不搬后端「主人把它关了」那句上屏——那时该说的是「这格是关的」。
+          const reason = !configured
+            ? agent.installed
+              ? s.loginNo
+              : s.notInstalled
+            : !agent.enabled
+              ? ''
+              : agent.can_use
+                ? ''
+                : agent.why_not
+
+          return (
+            <ListRow
+              action={
+                configured ? (
+                  <Switch
+                    aria-label={`${s.allowSwitch} · ${agent.name}`}
+                    checked={agent.enabled}
+                    disabled={pending === agent.name}
+                    onCheckedChange={next => void toggle(agent, next)}
+                  />
+                ) : (
+                  <Button
+                    aria-expanded={guide === agent.name}
+                    aria-label={`${s.setup} · ${agent.name}`}
+                    onClick={() => setGuide(current => (current === agent.name ? '' : agent.name))}
+                    size="icon-sm"
+                    type="button"
+                    variant="secondary"
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                )
+              }
+              below={
+                <>
+                  {reason ? (
+                    <p className={REASON} role="note">
+                      {reason}
+                    </p>
+                  ) : null}
+                  {configured && !agent.enabled ? (
+                    <p className={CAPTION} role="note">
+                      {s.switchOff}
+                    </p>
+                  ) : null}
+                  {agent.today.rounds > 0 || agent.today.last_ts ? (
+                    <p className={CAPTION}>
+                      {s.today} {agent.today.rounds} · {money(agent.today.total_usd)}
+                      {agent.today.last_ts ? ` · ${shortTime(agent.today.last_ts)}` : ''}
+                    </p>
+                  ) : null}
+                  {guide === agent.name ? (
+                    <p className={CAPTION} role="note">
+                      {agent.installed ? s.loginGuide : s.installGuide}
+                    </p>
+                  ) : null}
+                </>
+              }
+              description={s.intro[agent.name] ?? s.introFallback}
+              key={agent.name}
+              title={
+                <span className="flex min-w-0 items-center gap-2" title={agentTip(agent)}>
+                  <span
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      !configured || !agent.enabled
+                        ? 'bg-(--ui-stroke-secondary)'
+                        : agent.can_use
+                          ? 'bg-primary'
+                          : 'bg-destructive'
+                    )}
+                  />
+                  <span className="truncate">{agent.name}</span>
+                </span>
+              }
+            />
+          )
+        })}
+      </SettingsGroup>
     </SettingsContent>
   )
-}
-
-function LoginMark({ agent, label }: { agent: OffloadAgent, label: string }) {
-  if (agent.logged_in.value === false) {
-    return <AlertCircle aria-label={label} className="size-3.5 shrink-0 text-(--ui-text-danger)" />
-  }
-
-  if (agent.logged_in.value === true) {
-    return <CheckCircle2 aria-label={label} className="size-3.5 shrink-0 text-(--theme-primary)" />
-  }
-
-  return <HelpCircle aria-label={label} className="size-3.5 shrink-0 text-(--ui-text-quaternary)" />
 }

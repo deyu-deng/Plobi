@@ -18,7 +18,7 @@ import { type ComposerAttachment, setComposerDraft } from '@/store/composer'
 import { notify, notifyError } from '@/store/notifications'
 import { setPetScale } from '@/store/pet-gallery'
 import { $petGenInput, openPetGenerate } from '@/store/pet-generate'
-import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/scope'
 import {
   $connection,
   $sessions,
@@ -294,7 +294,7 @@ export function useSlashCommand(deps: SlashCommandDeps) {
         // the current empty draft) at that profile's backend.
         profile: async ({ arg }) => {
           const target = arg.trim()
-          const current = normalizeProfileKey($activeGatewayProfile.get())
+          const current = normalizeProfileKey($scopeAgent.get())
 
           if (!target) {
             notify({ kind: 'success', message: copy.profileStatus(current) })

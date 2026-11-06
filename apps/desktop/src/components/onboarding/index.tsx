@@ -29,7 +29,7 @@ import {
 import type { ModelOptionProvider, OAuthProvider } from '@/types/plobi'
 
 import { DocsLink, FlowPanel, Status } from './flow'
-import { FeaturedProviderRow, KeyProviderRow, PROVIDER_ROW_CLASS, ProviderRow, sortProviders } from './providers'
+import { FeaturedProviderRow, KeyProviderRow, ProviderRow, sortProviders } from './providers'
 
 export {
   FeaturedProviderRow,

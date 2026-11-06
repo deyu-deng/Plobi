@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getSessionMessages, type SessionInfo } from '@/plobi'
 import { createClientSessionState } from '@/lib/chat-runtime'
-import { $activeGatewayProfile, $newChatProfile } from '@/store/profile'
+import { $scopeAgent, $newChatProfile } from '@/store/scope'
 import {
   $activeSessionId,
   $currentCwd,
@@ -34,6 +34,7 @@ const RUNTIME_SESSION_ID = 'rt-new-001'
 
 function storedSession(overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
+    agent_id: '',
     ended_at: null,
     id: 'stored-1',
     input_tokens: 0,
@@ -116,7 +117,7 @@ describe('createBackendSessionForSend profile routing', () => {
   afterEach(() => {
     cleanup()
     $newChatProfile.set(null)
-    $activeGatewayProfile.set('default')
+    $scopeAgent.set('default')
     $currentCwd.set('')
     vi.restoreAllMocks()
   })
@@ -127,7 +128,7 @@ describe('createBackendSessionForSend profile routing', () => {
     // profile, so an omitted `profile` lands the chat on the launch (default)
     // profile. The session must instead carry the active gateway profile.
     const params = await createWith(() => {
-      $activeGatewayProfile.set('coder')
+      $scopeAgent.set('coder')
       $newChatProfile.set(null)
     })
 
@@ -136,7 +137,7 @@ describe('createBackendSessionForSend profile routing', () => {
 
   it('honours an explicit per-profile "+" selection', async () => {
     const params = await createWith(() => {
-      $activeGatewayProfile.set('coder')
+      $scopeAgent.set('coder')
       $newChatProfile.set('analyst')
     })
 
@@ -145,7 +146,7 @@ describe('createBackendSessionForSend profile routing', () => {
 
   it('passes the default profile for single-profile users (backend resolves it to launch)', async () => {
     const params = await createWith(() => {
-      $activeGatewayProfile.set('default')
+      $scopeAgent.set('default')
       $newChatProfile.set(null)
     })
 
@@ -171,7 +172,7 @@ describe('createBackendSessionForSend secretary shell URL (WP-L2-FE-BUGFIX)', ()
   afterEach(() => {
     cleanup()
     $newChatProfile.set(null)
-    $activeGatewayProfile.set('default')
+    $scopeAgent.set('default')
     $currentCwd.set('')
     vi.restoreAllMocks()
   })

@@ -344,6 +344,21 @@ class Registry:
             # verdict instead, so a consumer that wants the strict view asks for it.
             if not usable and selectable_only:
                 continue
+            # A cooling leg is not "unknown": it is spent until a known moment. On
+            # 2026-11-05 the opencode free pool took a 429 and parked for 21 hours, yet
+            # this table still reported 41 models as live/ok until the first chat attempt,
+            # so every surface promised "usable" and then ate an undated 503. Carrying the
+            # remaining seconds and the end time on the row lets any reader answer both
+            # "why can this not be picked" and "when does it come back".
+            _probe = getattr(prov, "quota_retry_after", None) if prov else None
+            retry_after = None
+            if callable(_probe) and reason == "quota_exhausted":
+                try:
+                    retry_after = int(_probe())
+                except Exception:  # one row's metadata must not fail the whole catalog
+                    retry_after = None
+                if retry_after is not None and retry_after <= 0:
+                    retry_after = None
             out.append(
                 {
                     "id": m,
@@ -368,6 +383,17 @@ class Registry:
                         ""
                         if usable
                         else ("model_rejected" if refused else (reason if not live else "no_tools"))
+                    ),
+                    # When does a cooling leg come back: seconds left plus a readable end
+                    # time. The machine code stays in unselectable_reason ("quota_exhausted")
+                    # so existing string matching keeps working; these two keys only add the
+                    # deadline, letting a badge say "allowance spent, back at {available_at}"
+                    # instead of an unavailable with no end.
+                    "retry_after_seconds": retry_after,
+                    "available_at": (
+                        time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now + retry_after))
+                        if retry_after
+                        else None
                     ),
                 }
             )

@@ -104,8 +104,9 @@ function unwrapEnvelope<T>(payload: unknown): T {
  * 24 行名册整栏不见、屏幕上一句提示都没有（用户只能以为数据丢了）。
  * 空名册与读不到是两件事，只有调用方（`store/agents`）能同时看见这两件。
  */
-export async function fetchAgents(): Promise<Agent[]> {
-  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/agents' })
+export async function fetchAgents(options: { includeL1?: boolean } = {}): Promise<Agent[]> {
+  const path = options.includeL1 ? '/api/agents?include_l1=1' : '/api/agents'
+  const payload = await window.plobiDesktop.api<unknown>({ path })
   const rows = unwrapEnvelope<Agent[]>(payload)
 
   if (!Array.isArray(rows)) {
@@ -233,7 +234,7 @@ export async function putAgentToolPrefs(
  * WP-AGENT-MODEL-PICKER-MOUNT：给**这一个** Agent 设／撤名册那一行的模型覆盖。
  *
  * 走的是后端现成那张嘴（裁定 166 决定二那句「不新建 API」）：路由落
- * `plobi_cli/web_server.py` 的 `PUT /api/profiles/{name}/model`，它再调
+ * `plobi_cli/web_server.py` 的 `PUT /api/agents/{name}/model`，它再调
  * `plobi.agents.registry.set_profile_model_override` 写**名册那一行**——不往任何分身家写文件。
  * 键是 `profile_name`，也就是行上那个 `Agent.profile`（不是 `Agent.id`：两者在旧数据里会不同）。
  *
@@ -249,7 +250,7 @@ export async function putAgentModel(
   const payload = await window.plobiDesktop.api<unknown>({
     body: assignment ?? { model: '', provider: '' },
     method: 'PUT',
-    path: `/api/profiles/${encodeURIComponent(profileName)}/model`
+    path: `/api/agents/${encodeURIComponent(profileName)}/model`
   })
 
   return unwrapEnvelope(payload)

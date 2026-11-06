@@ -5,7 +5,7 @@ import { Codicon } from '@/components/ui/codicon'
 import type { SessionInfo } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { notifyError } from '@/store/notifications'
-import { newSessionInProfile } from '@/store/profile'
+import { newSessionInProfile } from '@/store/scope'
 import { switchBranchInRepo } from '@/store/projects'
 
 import { countLabel, SidebarRowStack } from '../chrome'

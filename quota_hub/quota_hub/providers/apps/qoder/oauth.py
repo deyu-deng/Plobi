@@ -36,6 +36,9 @@ log = logging.getLogger("quota_hub.qoder")
 
 BASE = "https://qoder.com.cn"
 OPENAPI = "https://openapi.qoder.com.cn"
+#: Device-lease renewal (measured 2026-11-03, HTTP 200). Body field must be
+#: `refresh_token`; the Go-side `refreshToken` spelling answers 400.
+REFRESH_PATH = "/api/v1/deviceToken/refresh"
 #: The production client id shipped inside the installed CLI bundle.
 CLIENT_ID = "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb"
 
@@ -111,6 +114,47 @@ def signed_in() -> tuple[bool, str]:
     if stamp is not None and time.time() >= stamp:
         return False, "credential_expired"
     return True, "ok"
+
+
+def refresh_credential() -> dict[str, Any] | None:
+    """Renew the device lease via `deviceToken/refresh` (measured 2026-11-03, HTTP 200).
+
+    Body field must be `refresh_token` (OAuth naming); the Go-side `refreshToken`
+    spelling answers 400 DeviceRefreshTokenRequired. Rotation: the old `drt-` token
+    dies on use. The new pair is persisted atomically through `write_credential` (the
+    `device_token` field is folded into `token` so read paths keep working). Returns
+    the persisted credential dict, or None on any failure — caller owns backoff/reauth.
+    """
+    data = read_credential()
+    rt = (data or {}).get("refresh_token")
+    if not rt:
+        return None
+    try:
+        res = httpx.post(
+            f"{OPENAPI}{REFRESH_PATH}",
+            json={"refresh_token": rt},
+            headers={"Content-Type": "application/json", "User-Agent": "plobi-quota-hub/1.0"},
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        log.warning("qoder refresh request failed: %s", type(exc).__name__)
+        return None
+    if res.status_code != 200:
+        log.warning("qoder refresh -> HTTP %s", res.status_code)
+        return None
+    try:
+        tokens = res.json()
+    except ValueError:
+        log.warning("qoder refresh answered a non-JSON body")
+        return None
+    if not isinstance(tokens, dict) or not (tokens.get("device_token") or tokens.get("token")):
+        log.warning("qoder refresh body missing device_token")
+        return None
+    normalized = dict(tokens)
+    if normalized.get("device_token") and not normalized.get("token"):
+        normalized["token"] = normalized["device_token"]
+    write_credential(normalized)
+    return normalized
 
 
 def machine_id() -> str:

@@ -41,6 +41,10 @@ CMDLINE_MARKER = "egress.watchdog"
 #: Set in the child's own environment: it is how a re-arm request knows "I am the supervisor",
 #: so `engine.ensure()` (which the watchdog itself calls every tick) cannot fork copies of us.
 MARKER = "PLOBI_EGRESS_WATCHDOG"
+#: How long a "starting" placeholder stays believable. The worker registers its own pid
+#: on its first tick; until then the record carries pid 0 and this window keeps a second
+#: `start()` from forking a duplicate.
+STARTING_WINDOW_SECONDS = 45.0
 
 
 def repo_root() -> Path:
@@ -86,13 +90,22 @@ def _clear_record(home: str | Path | None = None) -> None:
 
 def _pid_is_ours(rec: dict[str, Any]) -> tuple[bool, str]:
     """Is the recorded pid still **our** watchdog? (Windows recycles pids.)"""
+    pid = rec.get("pid")
+    # A "starting" placeholder: `start()` has spawned the worker but the worker has not
+    # registered its pid yet. Believing it (for a bounded window) is what stops a second
+    # `start()` — the watchdog's own tick calls `enable()` → `_watchdog().start()` — from
+    # forking a duplicate supervisor.
+    if pid == 0 and rec.get("last_verdict") == "starting":
+        age = time.time() - float(rec.get("created") or 0.0)
+        if age < STARTING_WINDOW_SECONDS:
+            return True, "看门狗正在启动（pid 还没登记）"
+        return False, "启动窗口过了，仍然没有登记上 pid"
+    if not isinstance(pid, int):
+        return False, "记录里没有可用的 pid"
     try:
         import psutil
     except ImportError:
         return False, "psutil 不可用，没法确认这个 pid 是不是我们的"
-    pid = rec.get("pid")
-    if not isinstance(pid, int):
-        return False, "记录里没有可用的 pid"
     try:
         proc = psutil.Process(pid)
         cmdline = " ".join(proc.cmdline())
@@ -106,6 +119,35 @@ def _pid_is_ours(rec: dict[str, Any]) -> tuple[bool, str]:
     return True, "pid %d 是我们的看门狗" % pid
 
 
+def _own_created() -> float:
+    """When *this* process actually started — the record's `created` anchor.
+
+    Measured from the OS rather than from "whenever we got round to writing the record",
+    so the pid-reuse check in `_pid_is_ours` compares like with like.
+    """
+    try:
+        import psutil
+
+        return float(psutil.Process(os.getpid()).create_time())
+    except Exception:  # noqa: BLE001 - a coarse timestamp still beats nothing
+        return time.time()
+
+
+#: Import time, i.e. this worker's start time — the yardstick for "is that quit marker about us?"
+_PROCESS_STARTED_AT = time.time()
+
+
+def _quit_marker_is_about_us(system_proxy: Any, home: str | Path | None) -> bool:
+    """Did the desktop mark *this* session as a deliberate quit? (WP-QUIT-CLEAN, 11-05)
+
+    The marker is timestamped by the desktop's clock and compared against ours with 1s of slack: a
+    leftover file from a previous session must never retire a watchdog that is doing its job.
+    """
+    at = system_proxy.quit_marker_since(home)
+
+    return at is not None and at >= _PROCESS_STARTED_AT - 1.0
+
+
 def tick(table: Any = None, *, home: str | Path | None = None) -> str:
     """One decision. Returns one of ``idle``/``healthy``/``restarted``/``gave-up``.
 
@@ -114,6 +156,15 @@ def tick(table: Any = None, *, home: str | Path | None = None) -> str:
     from agent.egress import engine, system_proxy
 
     table = table if table is not None else _load_table()
+
+    # A deliberate quit outranks the table (WP-QUIT-CLEAN, 11-05). `before-quit` has already handed
+    # the registry back, and without this the `taken-over` rule below would put the takeover right
+    # back on the next tick — after the engine it depends on is gone. ``idle`` is what ``run``
+    # treats as "nothing left to supervise": clear the record and exit.
+    if _quit_marker_is_about_us(system_proxy, home):
+        log.info("watchdog: 用户主动退出了 Plobi —— 不再接管，本进程退出")
+        return "idle"
+
     if not getattr(table, "system_proxy_enabled", False):
         # Nothing on this machine points at the engine ⇒ nothing to keep alive.
         return "idle"
@@ -146,11 +197,31 @@ def _load_table():
     return load_table(force_reload=True)
 
 
+def _setup_file_log(log_path: Path) -> None:
+    """Log to our own file — do not rely on inherited stdout.
+
+    The worker is spawned through a ``cmd /c start`` shim (see :func:`start`), and
+    the shim does **not** hand the worker's stdout down to the log file the parent
+    opened (measured 11-04: the watchdog kept running happily and the log stopped
+    dead at the last pre-shim line).  A supervisor whose own log is blind is a
+    supervisor nobody can debug, so the file handle is opened here instead.
+    """
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        log.addHandler(fh)
+        log.setLevel(logging.INFO)
+        log.propagate = False
+    except OSError:
+        pass  # stdout still carries something
+
+
 def run(*, interval: float = INTERVAL_SECONDS, home: str | Path | None = None,
         once: bool = False) -> int:
     """The loop the detached child runs."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    record = _read_record(home) or {}
+    _setup_file_log(_log_path(home))
     while True:
         try:
             from plobi_cli.config import reload_env
@@ -165,7 +236,7 @@ def run(*, interval: float = INTERVAL_SECONDS, home: str | Path | None = None,
                 return 0
             _write_record({
                 "pid": os.getpid(),
-                "created": float(record.get("created") or time.time()),
+                "created": _own_created(),
                 "last_tick": time.time(),
                 "last_verdict": verdict,
             }, home=home)
@@ -195,25 +266,42 @@ def start(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS)
     child_env = {**os.environ, MARKER: "1"}
     flags = 0
     kwargs: dict[str, Any] = {}
+    spawn_cmd = cmd
     if os.name == "nt":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        # `DETACHED_PROCESS` alone is **not** enough on Windows (measured 11-04): it
+        # detaches the console, not the parent/child link, so the worker is still a
+        # descendant of the backend — and the desktop's `taskkill /T /F` on quit reaps
+        # the whole live tree.  The watchdog therefore died together with the backend
+        # (its log gap 11:32→11:39 on this machine), leaving the engine unsupervised:
+        # once mihomo died, nothing restarted it and the machine sat on a dead proxy
+        # with every app reading "no internet".
+        #
+        # Spawn through a `cmd /c start` shim that exits immediately: the worker's
+        # parent is then a *dead* PID, which the tree walk cannot reach.  The worker
+        # registers its own pid in the record, so the shim's pid is never mistaken
+        # for it.
+        spawn_cmd = ["cmd.exe", "/c", "start", "", "/b", *cmd]
     else:
         kwargs["start_new_session"] = True
     log_path = _log_path(home)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handle = open(log_path, "ab")  # noqa: SIM115 - the child keeps the handle
     try:
-        proc = subprocess.Popen(  # noqa: S603 - our own interpreter and our own module
-            cmd, stdout=handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        subprocess.Popen(  # noqa: S603 - our own interpreter and our own module
+            spawn_cmd, stdout=handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
             cwd=str(repo_root()), creationflags=flags, env=child_env, **kwargs,
         )
     except OSError as exc:
         return False, "起看门狗失败（%s: %s）" % (type(exc).__name__, exc)
     finally:
         handle.close()
-    _write_record({"pid": proc.pid, "created": time.time(), "last_tick": 0.0,
+    # pid 0 + "starting": the worker writes its own pid on its first tick. Recording
+    # the shim's pid here would be a lie — and a lie `_pid_is_ours` would correctly
+    # call "not ours", which is how a duplicate supervisor used to get forked.
+    _write_record({"pid": 0, "created": time.time(), "last_tick": 0.0,
                    "last_verdict": "starting"}, home=home)
-    return True, "看门狗起来了（pid %d）" % proc.pid
+    return True, "看门狗起来了"
 
 
 def _terminate_tree(proc: Any, psutil: Any) -> list:
@@ -250,15 +338,21 @@ def stop(*, home: str | Path | None = None) -> tuple[bool, str]:
     if not ours:
         _clear_record(home=home)
         return False, "记录的看门狗已经不是我们的了（%s）——没碰它" % why
+    pid = rec.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        # Still in the "starting" window: the worker has not registered a pid yet, so
+        # there is nothing to kill (and pid 0 is the System Idle Process — never touch it).
+        _clear_record(home=home)
+        return True, "看门狗还在启动，没有 pid 可停；记录已清"
     try:
         import psutil
 
-        family = _terminate_tree(psutil.Process(rec["pid"]), psutil)
+        family = _terminate_tree(psutil.Process(pid), psutil)
     except Exception as exc:  # noqa: BLE001 - already gone counts as stopped
         _clear_record(home=home)
         return True, "看门狗本来就不在了（%s）" % type(exc).__name__
     _clear_record(home=home)
-    return True, "已停掉看门狗（pid %d，共 %d 个进程）" % (rec["pid"], len(family))
+    return True, "已停掉看门狗（pid %d，共 %d 个进程）" % (pid, len(family))
 
 def ensure_running(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS) -> tuple[bool, str]:
     """Arm the supervisor if nobody has it — **the answer to "who watches the watchdog"**.

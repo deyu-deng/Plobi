@@ -25,14 +25,12 @@ import {
 } from '@/components/ui/sidebar'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import type { SessionInfo } from '@/plobi'
 import { $panesFlipped, $sidebarOpen, pinSession } from '@/store/layout'
-import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
 import { createAgent } from '../../console/api'
-import { $consoleAgents, $consoleAgentsError, $consoleAgentsLoading, refreshConsoleAgents } from '../../console/store/agents'
+import { $consoleAgents, $consoleAgentsError, $consoleAgentsLoading, $consoleL1Agent, refreshConsoleAgents } from '../../console/store/agents'
 import type { Agent } from '../../console/types'
 import {
   agentRoute,
@@ -51,9 +49,9 @@ import { AgentCategoryGroup } from './agent-category-group'
 import {
   AGENT_CATEGORY_PREFERENCE,
   type AgentCategoryGroup as AgentCategoryGroupData,
-  agentProfileIdSet,
-  groupAgentsByCategory,
-  isL1SessionProfile
+  agentNameSet,
+  bucketSessionsByAgent,
+  groupAgentsByCategory
 } from './agent-groups'
 import { AgentOffloadPanel } from './agent-offload-panel'
 import { categoryIcon } from './category-icons'
@@ -173,26 +171,24 @@ export function ChatSidebar({
   //
   // 10-31：键换成**名册 id**——profile 是裁 42 / ADR-0013 要拆掉的概念，
   // 不许再从产品面的 URL 上回来（用户：「不要让 profile 的概念回归」）。
-  const liveProfile = useStore($activeGatewayProfile)
+  // L1 那一行（用户 11-05）：名册里现在有它，role 标 l1_secretary。L1 形态下直接
+  // 用这一行——名册行才是作用域键。原先还有一条「拿 liveProfile 反查名册行」的兜底，
+  // 那是 profile 概念的回魂路，随用户 11-05 的追问一起拆了：认不出就是认不出，
+  // 宁可退回全局页，也不再从 profile 绕回来。
+  const l1Agent = useStore($consoleL1Agent)
 
   const navItems = useMemo(() => {
     const base = sidebarNavForLevel(SIDEBAR_NAV, { l1, l2Id })
 
     const scopedAgent =
-      (l2Id ? secretaryAgents.find(agent => agent.id === l2Id) : null) ??
-      (liveProfile
-        ? secretaryAgents.find(
-            agent => normalizeProfileKey(agent.profile ?? '') === normalizeProfileKey(liveProfile)
-          )
-        : null) ??
-      null
+      (l2Id ? secretaryAgents.find(agent => agent.id === l2Id) : null) ?? (l1 ? l1Agent : null) ?? null
 
     return base.map(item =>
       item.id === 'skills' && scopedAgent
         ? { ...item, route: `${SKILLS_ROUTE}?agent=${encodeURIComponent(scopedAgent.id)}` }
         : item
     )
-  }, [l1, l2Id, liveProfile, secretaryAgents])
+  }, [l1, l1Agent, l2Id, secretaryAgents])
 
   const sidebarOpen = useStore($sidebarOpen)
   // 收起态不再归零：同一个栏换成 40px 图标条（用户 10-31）。
@@ -233,29 +229,17 @@ export function ChatSidebar({
     [agentCategoryGroups]
   )
 
-  const agentProfileSet = useMemo(() => agentProfileIdSet(secretaryAgents), [secretaryAgents])
+  // 归属键是 `sessions.agent_id`（名册 name）。L1（空串）与"名册里没有这一行"
+  // 的孤儿行都不进桶——抽屉只认名册真有的 Agent。
+  // 孤儿行（归属非空、名册查不到：名册删过行或旧库被拷进来）落「未归属」，
+  // **不许折进 `default`**——那一格是 L1 的桶，折进去等于把别人的对话记在
+  // 总秘书头上，L1 的计数与清单都会多出一票。
+  const agentNames = useMemo(() => agentNameSet(secretaryAgents), [secretaryAgents])
 
-  const sessionsByAgentProfile = useMemo(() => {
-    const map = new Map<string, SessionInfo[]>()
-
-    for (const session of sessions) {
-      const profile = (session.profile ?? '').trim()
-
-      if (!profile || !agentProfileSet.has(profile) || isL1SessionProfile(profile, agentProfileSet)) {
-        continue
-      }
-
-      const bucket = map.get(profile)
-
-      if (bucket) {
-        bucket.push(session)
-      } else {
-        map.set(profile, [session])
-      }
-    }
-
-    return map
-  }, [agentProfileSet, sessions])
+  const sessionsByAgentProfile = useMemo(
+    () => bucketSessionsByAgent(sessions, agentNames).byAgent,
+    [agentNames, sessions]
+  )
 
   const openCreateAgent = useCallback(() => {
     setCreateAgentName('')
@@ -562,7 +546,7 @@ export function ChatSidebar({
           >
             <div className="grid gap-1.5">
               <label className="text-xs font-medium" htmlFor="new-agent-name">
-                {t.profiles.nameLabel}
+                {t.agents.nameLabel}
               </label>
               <Input
                 autoFocus

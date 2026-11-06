@@ -117,12 +117,20 @@ providers:
   kiro_cli:
     enabled: true
     # 10-31：嘴换成它自己的流式 API（`transport: api`，见 providers/apps/kiro/http.py）。
-    # 现核：目录 5 个模型；一个真回合 200 / 1619 字节 / 10 帧，toolUseEvent 把我们给的
-    # 函数名流回来，metadataEvent{"stopReason":"TOOL_USE"} 收尾。删掉这行就回到 spawn。
+    # 11-04 现核：目录 7 个具体模型（auto 不在其中，INVALID_MODEL_ID）；model_map 只
+    # 在 CLI spawn 路径消费，api 路径由 _model_id 剥前缀直发，故 models/model_map 直接
+    # 写真实模型 ID，不再用 default 占位。删掉 transport 行就回到 spawn。
     transport: api
     timeout: 300
-    models: [kiro_cli/default]
-    model_map: { kiro_cli/default: "" }
+    models: [kiro_cli/claude-sonnet-4.5, kiro_cli/claude-haiku-4.5, kiro_cli/deepseek-3.2, kiro_cli/minimax-m2.5, kiro_cli/minimax-m2.1, kiro_cli/glm-5, kiro_cli/qwen3-coder-next]
+    model_map:
+      kiro_cli/claude-sonnet-4.5: claude-sonnet-4.5
+      kiro_cli/claude-haiku-4.5: claude-haiku-4.5
+      kiro_cli/deepseek-3.2: deepseek-3.2
+      kiro_cli/minimax-m2.5: minimax-m2.5
+      kiro_cli/minimax-m2.1: minimax-m2.1
+      kiro_cli/glm-5: glm-5
+      kiro_cli/qwen3-coder-next: qwen3-coder-next
     accounts: [{ id: kiro-default }]
 
   # Cline 走它自己的 OpenAI 兼容口（`api.cline.bot/api/v1`，10-31 实测 0.7-7.1s 回

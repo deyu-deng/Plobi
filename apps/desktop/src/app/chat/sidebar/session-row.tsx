@@ -25,6 +25,7 @@ import {
   SidebarRowShell
 } from './chrome'
 import { SessionActionsMenu, SessionContextMenu } from './session-actions-menu'
+import { sessionScopeKey } from '@/lib/session-agent'
 
 interface SidebarSessionRowProps extends React.ComponentProps<'div'> {
   session: SessionInfo
@@ -93,7 +94,7 @@ export function SidebarSessionRow({
       onDelete={onDelete}
       onPin={onPin}
       pinned={isPinned}
-      profile={session.profile}
+      profile={sessionScopeKey(session)}
       sessionId={session.id}
       title={title}
     >
@@ -111,7 +112,7 @@ export function SidebarSessionRow({
               onDelete={onDelete}
               onPin={onPin}
               pinned={isPinned}
-              profile={session.profile}
+              profile={sessionScopeKey(session)}
               sessionId={session.id}
               title={title}
             >
@@ -149,7 +150,7 @@ export function SidebarSessionRow({
 
           writeSessionDrag(event.dataTransfer, {
             id: session.id,
-            profile: session.profile || 'default',
+            profile: sessionScopeKey(session),
             title
           })
         }}

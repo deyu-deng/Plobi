@@ -123,7 +123,13 @@ import {
   remoteEgressIndicator
 } from './egress-tray'
 import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
-import { applyDesktopProxy, describeDesktopProxy, desktopProxyConfig, restoreLoopbackSystemProxy } from './egress-proxy'
+import {
+  applyDesktopProxy,
+  describeDesktopProxy,
+  desktopProxyConfig,
+  egressRuntimeDir,
+  releaseEgressOnQuit
+} from './egress-proxy'
 import { invalidateWorkspaceIndex, searchWorkspaceIndex } from './fs-index'
 import { convertLegacyOffice } from './office-convert'
 import { readDirForIpc } from './fs-read-dir'
@@ -172,6 +178,15 @@ import { registerGenOffice } from './genoffice'
 import { nativeOverlayWidth as computeNativeOverlayWidth, macTitleBarOverlayHeight } from './titlebar-overlay-width'
 import { resolveBehindCount, shouldCountCommits } from './update-count'
 import { readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
+import {
+  canSelfUpdate,
+  compareVersions,
+  downloadAsset,
+  fetchLatestRelease,
+  pickInstallerAsset,
+  spawnUpdateHelper,
+  writeUpdateHelper
+} from './desktop-release'
 import { runRebuildWithRetry } from './update-rebuild'
 import {
   buildRelaunchScript,
@@ -197,7 +212,8 @@ import {
   MIN_HEIGHT as WINDOW_MIN_HEIGHT,
   MIN_WIDTH as WINDOW_MIN_WIDTH
 } from './window-state'
-import { readWindowsUserEnvVar } from './windows-user-env'
+import { readWindowsRegistryString, readWindowsUserEnvVar } from './windows-user-env'
+import { resolveDataRoot, resolveElectronUserDataRoot } from './data-root'
 import { isPackagedInstallPath as isPackagedInstallPathUnderRoots } from './workspace-cwd'
 import { readWslWindowsClipboardImage } from './wsl-clipboard-image'
 
@@ -207,6 +223,22 @@ if (USER_DATA_OVERRIDE) {
   const resolvedUserData = path.resolve(USER_DATA_OVERRIDE)
   fs.mkdirSync(resolvedUserData, { recursive: true })
   app.setPath('userData', resolvedUserData)
+} else {
+  // Electron keeps its own state (window geometry, connection.json, update
+  // bookkeeping) in userData, which defaults to `%APPDATA%\plobi` for BOTH the
+  // packaged app and `npm run dev`. Two processes, one directory: the single
+  // instance lock has one winner and the loser exits — you cannot run the dev
+  // tree while the installed copy is open. Dev moves to `plobi-dev`.
+  const electronUserData = resolveElectronUserDataRoot({
+    isPackaged: app.isPackaged || Boolean(process.env.PLOBI_DESKTOP_IS_PACKAGED),
+    appDataDir: app.getPath('appData'),
+    appName: app.getName()
+  })
+
+  if (electronUserData !== app.getPath('userData')) {
+    fs.mkdirSync(electronUserData, { recursive: true })
+    app.setPath('userData', electronUserData)
+  }
 }
 
 const DEV_SERVER = process.env.PLOBI_DESKTOP_DEV_SERVER
@@ -365,46 +397,52 @@ if (INSTALL_STAMP) {
 
 // PLOBI_HOME — the user-facing root for everything Plobi-related.
 //
-// We deliberately default to OUR OWN home (~/.plobi) instead of Plobi's
-// ~/.plobi so Plobi data (config.yaml, sessions, .env, auth.json, model
-// cache, logs, plugins) is fully isolated from a co-installed official Plobi.
-// This is the first step in severing Plobi from Plobi.
+// TWO INSTALLS, TWO HOMES (WP-DATA-ISOLATION).
 //
-// Resolution order:
-//   1. PLOBI_HOME env var          (explicit override — what install.ps1 pins)
-//   2. USER_DATA_OVERRIDE (tests)   -> <override>/plobi-home
-//   3. Windows: HKCU\Environment PLOBI_HOME (see the note in the function)
-//   4. Windows: %LOCALAPPDATA%\plobi
-//      macOS/Linux: ~/.plobi
-function resolvePlobiHome() {
-  if (process.env.PLOBI_HOME) {
-    return normalizePlobiHomeRoot(process.env.PLOBI_HOME)
+// This used to walk one ladder for both the packaged app and `npm run dev`, and
+// one rung of that ladder read `HKCU\Environment\PLOBI_HOME` — the door plate a
+// developer pins with `setx`. The result was that the app sitting in the Start
+// menu read and wrote the same directory the dev tree was using. Bump a version,
+// `setx` a new home, and the player's install silently follows.
+//
+// The ladder now forks (see `data-root.ts` for the full rationale):
+//
+//   packaged   PLOBI_DESKTOP_DATA_DIR → installer's recorded choice → %LOCALAPPDATA%\Plobi
+//   dev        PLOBI_DESKTOP_DATA_DIR → PLOBI_HOME (env, then registry) → %LOCALAPPDATA%\plobi-dev
+//
+// The packaged branch never consults `PLOBI_HOME`. That is the whole point.
+function readInstallerRecordedDataDir() {
+  if (!IS_WINDOWS) {
+    return ''
   }
 
-  if (USER_DATA_OVERRIDE) {
-    return path.join(path.resolve(USER_DATA_OVERRIDE), 'plobi-home')
-  }
-
-  if (IS_WINDOWS) {
-    // A GUI app launched from Explorer inherits the environment block captured
-    // at login, so a PLOBI_HOME set via `setx` AFTER login is invisible in
-    // process.env even though the CLI (a fresh shell) sees it. Reading the
-    // registry keeps the desktop and the CLI on the same home.
-    const fromRegistry = readWindowsUserEnvVar('PLOBI_HOME')
-
-    if (fromRegistry?.trim()) {
-      return normalizePlobiHomeRoot(fromRegistry.trim())
-    }
-  }
-
-  if (IS_WINDOWS && process.env.LOCALAPPDATA) {
-    return path.join(process.env.LOCALAPPDATA, 'plobi')
-  }
-
-  return path.join(app.getPath('home'), '.plobi')
+  return readWindowsRegistryString('HKCU\\Software\\Plobi', 'DataDir') || ''
 }
 
-const PLOBI_HOME = resolvePlobiHome()
+const DATA_ROOT = resolveDataRoot({
+  isPackaged: IS_PACKAGED,
+  explicitDir:
+    process.env.PLOBI_DESKTOP_DATA_DIR ||
+    // Tests pin every artifact under one throwaway dir; keep that absolute.
+    (USER_DATA_OVERRIDE ? path.join(path.resolve(USER_DATA_OVERRIDE), 'plobi-home') : ''),
+  // Only the dev branch is allowed to see PLOBI_HOME — handed over as '' when
+  // packaged so a stale `setx` cannot reach in even by accident.
+  homeEnv: IS_PACKAGED ? '' : process.env.PLOBI_HOME || readWindowsUserEnvVar('PLOBI_HOME') || '',
+  installRecordedDir: readInstallerRecordedDataDir(),
+  localAppData: process.env.LOCALAPPDATA || '',
+  home: app.getPath('home')
+})
+
+const PLOBI_HOME = normalizePlobiHomeRoot(DATA_ROOT.root)
+
+// WHERE THE DATA WENT — printed once, on startup. When someone reports "my
+// sessions vanished", this line says which rung picked the home, and whether
+// this process is the packaged app or the dev tree.
+try {
+  console.log(`[plobi] PLOBI_HOME=${PLOBI_HOME} (source=${DATA_ROOT.source}, packaged=${IS_PACKAGED})`)
+} catch {
+  // A missing stdout must never take the app down.
+}
 
 function plobiManagedNodePathEntries() {
   // NOTE: keep this ordering in sync with iter_plobi_node_dirs() in
@@ -2635,6 +2673,21 @@ let isQuittingForHandoff = false
 // main.ts is the untyped Electron entry; the decision itself lives in the pure,
 // unit-tested shouldHideOnClose() / shouldQuitOnAllWindowsClosed() helpers.
 let isQuittingByUser = false
+
+// WP-QUIT-CLEAN (11-05): the quit gate every spawn path shares.
+//
+// Measured in desktop.log (quit → backend 'exit' → `[boot] Starting`): `before-quit` kills the
+// backend, the renderer sees the socket die and re-dials `plobi:connection` → `ensureBackend` →
+// `startPlobi` → a *new* backend is spawned while the app is on its way out. The tree-kill has
+// already run, so that child is never stopped by us and survives as an orphan holding the port.
+// The three spawn entries therefore ask this one question instead of each growing its own copy.
+const QUITTING_START_REFUSED = 'Plobi is quitting; refusing to start another backend'
+
+function assertNotQuitting(): void {
+  if (isQuittingByUser) {
+    throw new Error(QUITTING_START_REFUSED)
+  }
+}
 
 // Cold-boot straight into the tray when the OS launcher (packaged: --hidden) or
 // the dev Startup script (PLOBI_DESKTOP_START_HIDDEN=1) asks for it.
@@ -6949,6 +7002,8 @@ function reportPoolBackendFailure(profile, error) {
 // mode), and any OTHER profile to a lazily-spawned pool backend. An empty /
 // unknown profile resolves to the primary, so all legacy callers are unchanged.
 async function ensureBackend(profile) {
+  assertNotQuitting()
+
   const key = profile && String(profile).trim() ? String(profile).trim() : primaryProfileKey()
 
   if (key === primaryProfileKey()) {
@@ -7083,6 +7138,11 @@ function startPoolIdleReaper() {
 // local-spawn portion of startPlobi() but without the boot-progress UI,
 // bootstrap, or remote handling (those belong to the primary backend only).
 async function spawnPoolBackend(profile, entry) {
+  // Same gate as the primary: a pool backend spawned during quit is the same orphan with a
+  // different name. `stopAllPoolBackends()` already ran in `before-quit`, so nothing would ever
+  // stop this child.
+  assertNotQuitting()
+
   // A profile may point at its OWN remote backend (connection.json
   // `profiles[name]`), or inherit the app-wide remote (env / global settings).
   // In either case there is no local child to spawn — we just verify the
@@ -7204,6 +7264,12 @@ async function prepareProfileDeleteRequest(request) {
 }
 
 async function startPlobi() {
+  // Quit gate first: this is the call the renderer makes on every reconnect, including the one
+  // triggered by our own 'backend exit' broadcast during quit. It has to answer before the
+  // latched-failure checks, or a quit that happens to follow a failed boot would report the
+  // stale error instead of "we are on our way out".
+  assertNotQuitting()
+
   // Latched-failure short-circuit: once bootstrap has failed in this
   // process, every subsequent startPlobi() call re-throws the same error
   // without re-running install.ps1. This prevents the renderer's
@@ -7284,31 +7350,41 @@ async function startPlobi() {
     await advanceBootProgress('backend.spawn', `Starting Plobi backend via ${backend.label}`, 84)
     rememberLog(`Starting Plobi backend via ${backend.label}`)
 
+    // 2b-1：`PLOBI_AGENT_ID` 是**子进程**的身份键，真 `-p` 不在这个进程里——
+    // electron 起的主后端是全 Agent 共享的一条（见上面 §3.2：身份是请求属性）。
+    // 万一 electron 自己是被 `plobi -p ...` 拉起来的，env 里会带着上一层的
+    // 身份；直接继承会把这条共享后端的所有会话都记到同一家头上，所以显式摘掉。
+    // 真正需要双写的 worker 在 Python 侧：plobi_cli/kanban_db.py 里同处写
+    // `-p <派生 slug>` 与 `PLOBI_AGENT_ID=<名册 name>`。
+    const backendEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      // Explicitly pin PLOBI_HOME for the child so Python's get_plobi_home()
+      // resolves to the SAME location our resolvePlobiHome() picked. Without
+      // this pin, Python falls back to ~/.plobi on every platform — fine on
+      // mac/linux (where our default matches), but on Windows our default is
+      // %LOCALAPPDATA%\plobi, which differs from C:\Users\<u>\.plobi.
+      // Mismatch would split config / sessions / .env / logs across two
+      // directories. install.ps1 sets PLOBI_HOME via setx; the desktop
+      // can't reliably do that, so we set it inline for every spawn.
+      PLOBI_HOME,
+      ...backend.env,
+      TERMINAL_CWD: plobiCwd,
+      PLOBI_DASHBOARD_SESSION_TOKEN: token,
+      // Marks this dashboard backend as desktop-spawned so it runs the cron
+      // scheduler tick loop (the gateway isn't running under the app).
+      PLOBI_DESKTOP: '1',
+      PLOBI_WEB_DIST: webDist,
+      ...(readyFile ? { PLOBI_DESKTOP_READY_FILE: readyFile } : {})
+    }
+
+    delete backendEnv.PLOBI_AGENT_ID
+
     plobiProcess = spawn(
       backend.command,
       backend.args,
       hiddenWindowsChildOptions({
         cwd: plobiCwd,
-        env: {
-          ...process.env,
-          // Explicitly pin PLOBI_HOME for the child so Python's get_plobi_home()
-          // resolves to the SAME location our resolvePlobiHome() picked. Without
-          // this pin, Python falls back to ~/.plobi on every platform — fine on
-          // mac/linux (where our default matches), but on Windows our default is
-          // %LOCALAPPDATA%\plobi, which differs from C:\Users\<u>\.plobi.
-          // Mismatch would split config / sessions / .env / logs across two
-          // directories. install.ps1 sets PLOBI_HOME via setx; the desktop
-          // can't reliably do that, so we set it inline for every spawn.
-          PLOBI_HOME,
-          ...backend.env,
-          TERMINAL_CWD: plobiCwd,
-          PLOBI_DASHBOARD_SESSION_TOKEN: token,
-          // Marks this dashboard backend as desktop-spawned so it runs the cron
-          // scheduler tick loop (the gateway isn't running under the app).
-          PLOBI_DESKTOP: '1',
-          PLOBI_WEB_DIST: webDist,
-          ...(readyFile ? { PLOBI_DESKTOP_READY_FILE: readyFile } : {})
-        },
+        env: backendEnv,
         shell: backend.shell,
         stdio: ['ignore', 'pipe', 'pipe']
       })
@@ -8653,7 +8729,12 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
   })
 }
 
-ipcMain.handle('plobi:connection', async (_event, profile) => ensureBackend(profile))
+// During quit this answers `null` instead of throwing: the renderer is about to be torn down, and
+// an exception here only makes it retry the same question harder. `null` is what "no backend to
+// hand you" already looks like to every caller.
+ipcMain.handle('plobi:connection', async (_event, profile) =>
+  isQuittingByUser ? null : ensureBackend(profile)
+)
 // Reconnect-after-wake recovery. A REMOTE primary backend has no child process,
 // so the 'exit'/'error' handlers that would clear a dead connectionPromise never
 // fire — once the remote becomes unreachable across a sleep/wake the renderer
@@ -10835,7 +10916,7 @@ ipcMain.handle('plobi:requestMicrophoneAccess', async () => {
 // the response. Reads tag the profile as ?profile=<name>; mutations carry it in
 // request.profile. Either way, a remote profile's session lives only on its
 // remote host, so the request must go there (where it serves its own state.db).
-//   GET    /api/profiles/sessions        → splice each remote profile's rows in
+//   GET    /api/agents/sessions          → splice each remote agent's rows in
 //   GET    /api/sessions/{id}[/messages] → read from remote
 //   DELETE /api/sessions/{id}            → delete on remote
 //   PATCH  /api/sessions/{id}            → rename/archive on remote
@@ -10856,14 +10937,19 @@ async function interceptSessionRequestForRemote(request) {
 
   const { pathname, searchParams } = parsed
 
-  if (method === 'GET' && pathname === '/api/profiles/sessions') {
+  // 2026-11-05（profile 连根拔 · 2b-2）：会话列表只认 /api/agents/sessions。
+  // 老 profile 版路径已从产品面撤除，本拦截不再为它保留分支（后端旧路由留到 2c 一并删）。
+  // 圈定键仍 agent 优先、profile 仅作读旧参数兜底。
+  const isSessionsListPath = pathname === '/api/agents/sessions'
+
+  if (method === 'GET' && isSessionsListPath) {
     const remoteProfiles = configuredRemoteProfileNames()
 
     if (remoteProfiles.length === 0) {
       return undefined // no remote profiles → local fast path
     }
 
-    const requested = (searchParams.get('profile') || 'all').trim() || 'all'
+    const requested = (searchParams.get('agent') || searchParams.get('profile') || 'all').trim() || 'all'
 
     if (requested !== 'all') {
       return profileHasRemoteOverride(requested) ? remoteSessionList(requested, searchParams) : undefined
@@ -10929,6 +11015,9 @@ async function remoteSessionList(profile, searchParams) {
   const data = await fetchJsonForProfile(profile, `/api/sessions?${qs}`)
 
   for (const s of rowsOf(data)) {
+    // 归属键是新契约的 `agent_id`（名册 name）。`profile` 仍是同一个值，
+    // 只为还没升级的渲染层保留；判断「谁家的会话」一律走 `agent_id`。
+    s.agent_id = profile
     s.profile = profile
     s.is_default_profile = false
   }
@@ -10947,10 +11036,17 @@ async function mergeRemoteProfileSessions(searchParams, remoteProfiles) {
 
   const primary = await ensureBackend(null)
 
-  const base = (await fetchJson(`${primary.baseUrl}/api/profiles/sessions?${searchParams}`, primary.token, {
+  // 2026-11-05（profile 连根拔 · 2b-1）：主后端改打新别名 /api/agents/sessions。
+  // 老调用方只填 ?profile= 时补一份 ?agent=（后端 agent 优先、profile 兜底）。
+  const primaryParams = new URLSearchParams(searchParams)
+  if (!primaryParams.get('agent') && primaryParams.get('profile')) {
+    primaryParams.set('agent', primaryParams.get('profile') as string)
+  }
+
+  const base = (await fetchJson(`${primary.baseUrl}/api/agents/sessions?${primaryParams}`, primary.token, {
     method: 'GET',
     timeoutMs: DEFAULT_FETCH_TIMEOUT_MS
-  }).catch(() => ({ sessions: [], total: 0, profile_totals: {} }))) as any
+  }).catch(() => ({ sessions: [], total: 0, agent_totals: {}, profile_totals: {} }))) as any
 
   // Over-fetch each remote from offset 0 (limit+offset rows) so the merged window
   // is correct for this page — mirrors the primary's per-profile over-fetch.
@@ -10958,10 +11054,13 @@ async function mergeRemoteProfileSessions(searchParams, remoteProfiles) {
   remoteParams.set('limit', String(limit + offset))
   remoteParams.set('offset', '0')
 
+  // 归属键统一取 `agent_id`（名册 name），`profile` 只作未升级后端/老渲染层的回落。
+  const ownerOf = s => String(s?.agent_id ?? s?.profile ?? '').trim()
   const remoteSet = new Set(remoteProfiles)
-  const merged = rowsOf(base).filter(s => !remoteSet.has(s?.profile))
-  const profileTotals = { ...(base.profile_totals || {}) }
-  let total = (Number(base.total) || 0) - remoteProfiles.reduce((n, p) => n + (profileTotals[p] || 0), 0)
+  const merged = rowsOf(base).filter(s => !remoteSet.has(ownerOf(s)))
+  // agent_totals 是新名；老后端只回 profile_totals，两者取其一再合并（键都是名册 name）。
+  const agentTotals = { ...(base.agent_totals || base.profile_totals || {}) }
+  let total = (Number(base.total) || 0) - remoteProfiles.reduce((n, p) => n + (agentTotals[p] || 0), 0)
 
   // Swap each remote profile's stale local rows/total for the remote's real ones.
   await Promise.all(
@@ -10969,22 +11068,29 @@ async function mergeRemoteProfileSessions(searchParams, remoteProfiles) {
       const list = await remoteSessionList(name, remoteParams).catch(() => null)
 
       if (!list) {
-        delete profileTotals[name] // dead remote → drop its stale local total too
+        delete agentTotals[name] // dead remote → drop its stale local total too
 
         return
       }
 
       const rows = rowsOf(list)
       merged.push(...rows)
-      profileTotals[name] = Number(list.total) || rows.length
-      total += profileTotals[name]
+      agentTotals[name] = Number(list.total) || rows.length
+      total += agentTotals[name]
     })
   )
 
   const recency = s => s?.[order] ?? s?.started_at ?? 0
   merged.sort((a, b) => recency(b) - recency(a))
 
-  return { ...(base as any), sessions: merged.slice(offset, offset + limit), total, profile_totals: profileTotals }
+  // 两个键都回：渲染层读 agent_totals，未升级的那一版读 profile_totals（同值）。
+  return {
+    ...(base as any),
+    sessions: merged.slice(offset, offset + limit),
+    total,
+    agent_totals: agentTotals,
+    profile_totals: agentTotals
+  }
 }
 
 ipcMain.handle('plobi:api', async (_event, request) => {
@@ -11011,7 +11117,14 @@ ipcMain.handle('plobi:api', async (_event, request) => {
   const connection = await ensureBackend(null)
   const timeoutMs = resolveTimeoutMs(request?.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
+  // HTTP 头的值只许 latin-1，而名册身份可以是中文课程名（这台 25 条里 11 条是）。把那样的名字
+  // 塞进 `X-Plobi-Agent`，Node 在请求发出前就抛 `Invalid character in header content`——坏的
+  // 不是"这一格没身份"，是整座 `plobi:api` 桥（11-05 底栏那一屏就是这样空成 Direct 的）。
+  // 后端 `request_profile()` 两条同语义（header → `?profile=`），非 ASCII 就退到带得住的那条。
+  const headerSafeProfile = /^[\x20-\x7e]*$/.test(String(profile ?? '').trim())
+
   const requestPath = pathWithGlobalRemoteProfile(request.path, profile, {
+    forceProfileQuery: !headerSafeProfile,
     globalRemote: globalRemoteActive(),
     profileRemoteOverride: profileHasRemoteOverride(profile)
   })
@@ -11022,7 +11135,7 @@ ipcMain.handle('plobi:api', async (_event, request) => {
     method: request?.method,
     body: request?.body,
     timeoutMs,
-    ...(profile ? { headers: { 'X-Plobi-Agent': String(profile) } } : {})
+    ...(profile && headerSafeProfile ? { headers: { 'X-Plobi-Agent': String(profile) } } : {})
   }
 
   // OAuth gateways authenticate REST via the HttpOnly session cookie held in
@@ -11823,6 +11936,119 @@ ipcMain.handle('plobi:updates:apply', async (_event, payload) =>
   }))
 )
 
+// ---- 「这台机器上有没有新版的桌面端」 -----------------------------------
+//
+// 面板上那个「立即更新」以前只管**后端**（家目录里的 checkout），壳自己
+// 不会换 —— 于是用户看到「已是最新」却什么都没发生。这两个 IPC 把两件事
+// 合成一个动作：下载新版的安装包 → 退出 → helper 装壳 ＋ 把后端带到同一
+// 个 tag → 拉起来（裁定 208：桌面与 Python 包一条号）。
+ipcMain.handle('plobi:updates:release-check', async () => {
+  const current = resolvePlobiVersion()
+  const release = await fetchLatestRelease()
+
+  if (!release) {
+    return {
+      ok: false,
+      reason: 'unreachable',
+      current,
+      canUpdate: false,
+      checkedAt: Date.now()
+    }
+  }
+
+  const newer = compareVersions(release.version, current) > 0
+  const asset = newer ? pickInstallerAsset(release) : null
+
+  return {
+    ok: true,
+    current,
+    latest: release.version,
+    tag: release.tag,
+    htmlUrl: release.htmlUrl,
+    newer,
+    canUpdate: Boolean(asset) && canSelfUpdate(),
+    assetName: asset?.name ?? null,
+    assetUrl: asset?.browser_download_url ?? null,
+    assetSize: asset?.size ?? 0,
+    reason: newer && !asset ? 'no-installer-for-this-platform' : null,
+    checkedAt: Date.now()
+  }
+})
+
+ipcMain.handle('plobi:updates:release-install', async () => {
+  const current = resolvePlobiVersion()
+  const release = await fetchLatestRelease()
+
+  if (!release) {
+    return { ok: false, reason: 'unreachable' }
+  }
+
+  if (compareVersions(release.version, current) <= 0) {
+    return { ok: false, reason: 'up-to-date', latest: release.version }
+  }
+
+  const asset = pickInstallerAsset(release)
+
+  if (!asset) {
+    return { ok: false, reason: 'no-installer-for-this-platform' }
+  }
+
+  if (!canSelfUpdate()) {
+    return { ok: false, reason: 'manual-required', latest: release.version }
+  }
+
+  emitUpdateProgress({
+    stage: 'fetch',
+    message: `正在下载 ${asset.name}…`,
+    percent: null
+  })
+
+  const dest = path.join(os.tmpdir(), asset.name)
+  const downloaded = await downloadAsset(asset.browser_download_url, dest)
+
+  if (!downloaded) {
+    emitUpdateProgress({ stage: 'error', message: '下载新版安装包失败。', percent: null })
+    return { ok: false, reason: 'download-failed' }
+  }
+
+  // 后端那一半要动 checkout，得先把 venv 的锁松开（我们自己那个后端进程
+  // 还开着的话，它锁着的文件动不了）。
+  const lock = await releaseBackendLockForUpdate(resolveUpdateRoot())
+
+  if (!lock.unlocked) {
+    emitUpdateProgress({ stage: 'error', message: '还有别的进程占着安装目录，更新没开始。', percent: null })
+    return { ok: false, reason: 'locked' }
+  }
+
+  const helper = writeUpdateHelper({
+    installerPath: dest,
+    installDir: path.dirname(process.execPath),
+    appPath: process.execPath,
+    plobiHome: PLOBI_HOME,
+    tag: release.tag
+  })
+
+  const helperPid = spawnUpdateHelper(helper)
+
+  // 标记「更新正在进行」：helper 装完会拉起新版本，那时它看到这个标记就
+  // 先等 helper 收工（老规矩，见 update-marker.ts）。
+  if (helperPid) {
+    writeUpdateMarker(PLOBI_HOME, helperPid)
+  }
+
+  emitUpdateProgress({
+    stage: 'restart',
+    message: '正在安装新版并重启…',
+    percent: 100
+  })
+
+  setTimeout(() => {
+    app.quit()
+  }, 400)
+
+  return { ok: true, restarting: true, latest: release.version, tag: release.tag }
+})
+
 ipcMain.handle('plobi:updates:branch:get', async () => readDesktopUpdateConfig())
 
 ipcMain.handle('plobi:updates:branch:set', async (_event, name) => {
@@ -12300,7 +12526,13 @@ function configureSpellChecker() {
 // `before-quit` 往下就是 `taskkill /T /F`，后端、引擎与看门狗同一瞬间没命，
 // 没人再有机会把系统代理交还——机器会指着那个死端口，每个读系统代理的应用都报「没网」。
 function restoreSystemProxyOnQuit(): void {
-  restoreLoopbackSystemProxy(rememberLog)
+  // WP-QUIT-CLEAN (11-05): handing the registry back is only half of it. The two detached helpers
+  // survive this process by design (their spawners are intentionally dead pids), so nothing here
+  // can stop them — and both would undo the hand-back: the watchdog's `taken-over` rule puts the
+  // takeover straight back within one 20s tick, and the perpetual proxy guard stays alive forever
+  // with a pid file naming a dead pid. `releaseEgressOnQuit` does the registry write it always did
+  // and drops a timestamped quit marker that each helper checks against its own start time.
+  releaseEgressOnQuit(rememberLog, egressRuntimeDir(PLOBI_HOME))
 }
 
 app.on('before-quit', () => {

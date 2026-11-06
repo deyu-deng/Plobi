@@ -1,0 +1,14 @@
+### batch 1 (22 files, rc=1, 15s)
+FAILED tests/plobi/test_agenda_service.py::test_list_agenda_dedupes_duplicate_event_ids
+FAILED tests/plobi/test_agent_create_mind.py::test_reserved_profile_name_is_refused_before_anything_lands
+FAILED tests/plobi/test_agent_edit.py::test_rename_changes_the_rail_label_and_nothing_else
+FAILED tests/plobi/test_agent_registry.py::test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model
+FAILED tests/plobi/test_agent_registry.py::test_spawn_without_model_override_inherits_the_configured_default
+FAILED tests/plobi/test_agent_registry.py::test_agenda_template_carries_no_model_override
+FAILED tests/plobi/test_agent_registry.py::test_spawn_skips_unresolvable_provider_without_failing
+FAILED tests/plobi/test_agent_soul_shared.py::test_identity_name_for_key_maps_every_spelling_of_the_same_row
+FAILED tests/plobi/test_agent_tool_prefs.py::test_agent_disabled_sets_resolves_by_active_home
+FAILED tests/plobi/test_agent_tool_prefs.py::test_skill_disabled_names_union_agent_row
+FAILED tests/plobi/test_agent_tool_prefs.py::test_mcp_config_load_filters_agent_disabled_servers
+11 failed, 265 passed, 1 skipped in 11.36s
+

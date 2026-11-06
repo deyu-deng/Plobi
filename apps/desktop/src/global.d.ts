@@ -251,6 +251,8 @@ declare global {
       getRemoteDisplayReason?: () => Promise<string | null>
       updates: {
         check: () => Promise<DesktopUpdateStatus>
+        releaseCheck: () => Promise<DesktopReleaseInfo>
+        releaseInstall: () => Promise<DesktopReleaseInstallResult>
         apply: (opts?: DesktopUpdateApplyOptions) => Promise<DesktopUpdateApplyResult>
         getBranch: () => Promise<{ branch: string }>
         setBranch: (name: string) => Promise<{ branch: string }>
@@ -336,6 +338,42 @@ export interface DesktopVersionInfo {
   nodeVersion: string
   platform: string
   plobiRoot: string
+}
+
+/**
+ * What the Releases page says about a NEWER build of the desktop shell.
+ *
+ * This is a different question from "how far behind is the agent checkout"
+ * (`DesktopUpdateStatus`): that one is about the Python side in the home
+ * directory, this one is about the app the user is looking at.
+ */
+export interface DesktopReleaseInfo {
+  ok: boolean
+  /** The shell's own version (what is running right now). */
+  current: string
+  /** The newest published version, when we could reach GitHub. */
+  latest: string | null
+  tag: string | null
+  htmlUrl: string | null
+  /** true when `latest` is newer than `current`. */
+  newer: boolean
+  /** true when this machine can install it in place (Windows / Linux). */
+  canUpdate: boolean
+  assetName: string | null
+  assetUrl: string | null
+  assetSize: number
+  reason: string | null
+  checkedAt: number
+}
+
+export interface DesktopReleaseInstallResult {
+  ok: boolean
+  reason?: string
+  message?: string
+  latest?: string
+  tag?: string
+  /** true when the app is quitting and the helper takes over from here. */
+  restarting?: boolean
 }
 
 export type DesktopUninstallMode = 'full' | 'gui' | 'lite'

@@ -189,7 +189,7 @@ export class PlobiGateway extends JsonRpcGatewayClient {
 }
 
 // Profile that profile-scoped REST settings (config/env/skills/tools/model/…)
-// should target. Mirrors $activeGatewayProfile, pushed in from the store via
+// should target. Mirrors $scopeAgent, pushed in from the store via
 // setApiRequestProfile so this module needs no store import (avoids a cycle).
 // Electron main consumes request.profile to pick which backend *process* serves
 // the call; each pooled backend already has its own PLOBI_HOME, so no backend
@@ -251,10 +251,13 @@ export async function listAllProfileSessions(
     ? `&exclude_sources=${encodeURIComponent(filter.excludeSources.join(','))}`
     : ''
 
+  // 2026-11-05（profile 连根拔 · 2b-1）：走新别名 /api/agents/sessions，圈定键
+  // 只用 agent=名册 name，不再发 profile=。
+  const scope = encodeURIComponent(profile)
   const result = await window.plobiDesktop.api<PaginatedSessions>({
     path:
-      `/api/profiles/sessions?limit=${limit}&offset=0&min_messages=${Math.max(0, minMessages)}` +
-      `&archived=${archived}&order=${order}&profile=${encodeURIComponent(profile)}${sourceParam}${excludeParam}`,
+      `/api/agents/sessions?limit=${limit}&offset=0&min_messages=${Math.max(0, minMessages)}` +
+      `&archived=${archived}&order=${order}&agent=${scope}${sourceParam}${excludeParam}`,
     timeoutMs: SESSION_LIST_REQUEST_TIMEOUT_MS
   })
 
@@ -806,7 +809,7 @@ export function toggleToolset(
 }
 
 // --- Agent 作用域变体（全局真源 + per-agent 开关，2026-10-19 用户裁定）------
-// 显式带 profile 家名，不 ride $activeGatewayProfile 的 ambient scope——
+// 显式带 profile 家名，不 ride $scopeAgent 的 ambient scope——
 // Agent 界面里的面板必须读写「这个 Agent」的名册行，与当前网关在哪个
 // profile 无关。后端按 profile→名册行分叉：行在场 = 读写行黑名单。
 
@@ -839,7 +842,7 @@ export function getToolsetsForAgent(agent: string): Promise<ToolsetInfo[]> {
 }
 
 /** 全局 mcp_servers 名单（唯一真源）。显式**不带** profile override——ambient
- *  scope 会跟着 $activeGatewayProfile 走，进 L2 时可能指到 Agent 家（空壳），
+ *  scope 会跟着 $scopeAgent 走，进 L2 时可能指到 Agent 家（空壳），
  *  全局名单必须恒读顶层 config。`enabled: false` 是全局运行时闸（同 CLI）。 */
 export function getGlobalMcpServers(): Promise<Record<string, Record<string, unknown>>> {
   return window.plobiDesktop
@@ -1158,13 +1161,15 @@ export function deleteProfile(name: string): Promise<{ ok: boolean; path: string
 
 export function getProfileSoul(name: string): Promise<ProfileSoul> {
   return window.plobiDesktop.api<ProfileSoul>({
-    path: `/api/profiles/${encodeURIComponent(name)}/soul`
+    // 2b-1：soul 走 /api/agents/{name}，路径参数是名册 name（不再是 slug）。
+    path: `/api/agents/${encodeURIComponent(name)}/soul`
   })
 }
 
 export function updateProfileSoul(name: string, content: string): Promise<{ ok: boolean }> {
   return window.plobiDesktop.api<{ ok: boolean }>({
-    path: `/api/profiles/${encodeURIComponent(name)}/soul`,
+    // 2b-1：同上，soul 写入也走 /api/agents/{name}。
+    path: `/api/agents/${encodeURIComponent(name)}/soul`,
     method: 'PUT',
     body: { content }
   })

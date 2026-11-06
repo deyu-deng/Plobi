@@ -23,7 +23,7 @@ import type { ComposerAttachment } from '@/store/composer'
 import { $pinnedSessionIds } from '@/store/layout'
 import { $petActive } from '@/store/pet'
 import { $petOverlayActive } from '@/store/pet-overlay'
-import { $gatewaySwapTarget } from '@/store/profile'
+import { $gatewaySwapTarget } from '@/store/scope'
 import {
   $activeSessionId,
   $awaitingResponse,

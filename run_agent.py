@@ -5767,6 +5767,10 @@ class AIAgent:
             tasks=_strip_model_hidden_task_fields(function_args.get("tasks")),
             max_iterations=function_args.get("max_iterations"),
             role=function_args.get("role"),
+            # 顶层 expert：单任务派工时也要落成职责 + 工具面。漏了这一行，
+            # 模型写 expert="software" 会被静默丢掉——子智能体照旧拿父的工具面，
+            # 既不是专家（没侧记、进不了左栏专家那一格），也没有 terminal。
+            expert=function_args.get("expert"),
             background=(not _is_subagent),
             parent_agent=self,
         )

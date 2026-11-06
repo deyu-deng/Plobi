@@ -15,6 +15,16 @@ export const $consoleAgents = atom<Agent[]>([])
 export const $consoleAgentsLoading = atom(true)
 export const $consoleAgentsError = atom<null | string>(null)
 
+/**
+ * 名册里 L1 那一行（role `l1_secretary`），用户 11-05：L1 也进名册，和五类 L2
+ * 分开标、但地位平等。
+ *
+ * 为什么不放进 `$consoleAgents`：那张表是左栏「智能体名单」的渲染源，L1 是主界面
+ * 本体、不是名单里的一员。但能力页要它的名册 id 才拼得出 `?agent=`，所以读的时候
+ * 一起拉、拉完把这一行摘出来单独存——名单干净，作用域拿得到。
+ */
+export const $consoleL1Agent = atom<Agent | null>(null)
+
 /** Agents the user has to unblock — drives the rail's attention hint. */
 export const $consoleBlockedAgents = computed($consoleAgents, agents =>
   agents.filter(agent => agent.status === 'awaiting_approval' || agent.status === 'error')

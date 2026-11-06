@@ -244,6 +244,9 @@ class TestOptInAndPolicy:
             "external_offload_run",
             "external_sessions_scan",
             "external_sessions_mark",
+            "external_sessions_delete",
+            "external_sessions_archive",
+            "external_sessions_rename",
         }
         for name in TOOLSETS["offload"]["tools"]:
             assert name not in _PLOBI_CORE_TOOLS, "进了核心包就等于默认开（裁定 78）"

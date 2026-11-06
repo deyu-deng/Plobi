@@ -1,0 +1,10 @@
+﻿F........                                                                [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert 'aura' == 'l2-aura'
+      
+      - l2-aura
+      + aura
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_edit.py:97: AssertionError: assert 'aura' == 'l2-aura'
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agent_edit.py::test_rename_changes_the_rail_label_and_nothing_else
+1 failed, 8 passed in 1.18s

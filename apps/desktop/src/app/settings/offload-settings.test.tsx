@@ -2,28 +2,26 @@
  * 设置 → 外包 那一屏：**只搬字节、说真话**。
  *
  * 三条要钉住的：
- * 1. 不可用的那一家，行上要带后端给的那一句原因（不是前端自己编一句）；
- * 2. 登录态写清来源：上一趟它自己说的「没登录」要出现，**没有证据时不许写成没登录**；
+ * 1. 后端给的那一句原因不许被前端改写，得原样落进悬停；
+ * 2. 右边只有两态：没配好是加号（点开是引导），配好了才是开关；
  * 3. 回跳能力有就写有、没有就写没有（这一屏不放假按钮，所以只断言文字）。
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { OffloadSettings } from './offload-settings'
 import type * as OffloadApi from './offload/api'
 import type { OffloadPayload } from './offload/api'
 
 const getOffloadAgents = vi.fn()
-const getSessionSources = vi.fn()
 
 vi.mock('./offload/api', async () => {
   const actual = await vi.importActual<typeof OffloadApi>('./offload/api')
 
   return {
     ...actual,
-    getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh),
-    getSessionSources: () => getSessionSources()
+    getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh)
   }
 })
 
@@ -40,6 +38,7 @@ const payload: OffloadPayload = {
       permission_modes: ['default', 'accept_edits'],
       capabilities: { writes: true },
       can_use: false,
+      enabled: true,
       why_not: '它没登录：这一轮不会交给它（登录要本人做一次，不代跑）。',
       resume_supported: false,
       today: { rounds: 1, total_usd: null, cost_status: 'no_usage_reported', last_ts: '2026-10-22T15:11:48+00:00' },
@@ -63,6 +62,7 @@ const payload: OffloadPayload = {
       permission_modes: ['default'],
       capabilities: { writes: true },
       can_use: true,
+      enabled: true,
       why_not: '',
       resume_supported: true,
       today: { rounds: 0, total_usd: null, cost_status: 'priced', last_ts: '' },
@@ -79,6 +79,7 @@ const payload: OffloadPayload = {
       permission_modes: [],
       capabilities: {},
       can_use: false,
+      enabled: false,
       why_not: '本机没有 agy：不是坏了，是没装。',
       resume_supported: true,
       today: { rounds: 0, total_usd: null, cost_status: 'unknown', last_ts: '' },
@@ -89,13 +90,6 @@ const payload: OffloadPayload = {
   probe_ttl_seconds: 120,
   note: '这一屏管的是把活外包给那家软件；把它的订阅/API 当模型用在 Providers。'
 }
-
-beforeEach(() => {
-  getSessionSources.mockResolvedValue([
-    { readable: true, reason: '', root: 'C:/Users/me/.qoder/projects', sendable: true, sessions: 113, vendor: 'qoder' },
-    { readable: false, reason: '还没找到它的会话存放', root: '.', sendable: false, sessions: 0, vendor: 'agy' }
-  ])
-})
 
 afterEach(() => {
   cleanup()
@@ -116,15 +110,21 @@ describe('settings → offload', () => {
     expect(getOffloadAgents).toHaveBeenCalledWith(false)
   })
 
-  it('sign-in state is a mark with a name, not a paragraph; the last reply stays out of the card', async () => {
+  it('没配好的右边是加号，点开是登录引导', async () => {
     getOffloadAgents.mockResolvedValue(payload)
+
     render(<OffloadSettings />)
+
     await waitFor(() => expect(screen.getByText('qoder')).toBeTruthy())
 
-    // 有证据的那一家才出现"上一趟它自己说没登录"；agy 没有证据 ⇒ 只能出现"no evidence yet"
-    expect(screen.getAllByLabelText(/not signed in/).length).toBe(1)
-    expect(screen.getByLabelText(/No sign-in status available yet/)).toBeTruthy()
-    expect(screen.queryByText(/Not logged in · Please run \/login/)).toBeNull()
+    // 没配好（qoder 未登录、agy 未安装）右边是加号，不是开关
+    const setupButtons = screen.getAllByLabelText(/Not set up yet/)
+
+    expect(setupButtons.length).toBe(2)
+
+    fireEvent.click(setupButtons[0])
+
+    await waitFor(() => expect(screen.getByText(/sign in inside its own app/)).toBeTruthy())
   })
 
   it('reads again when the refresh control is used', async () => {
@@ -135,16 +135,4 @@ describe('settings → offload', () => {
     fireEvent.click(screen.getByText('Read again'))
     await waitFor(() => expect(getOffloadAgents).toHaveBeenCalledWith(true))
   })
-  it('设置里看得见每家软件的会话存在哪、读不读得动、能不能说', async () => {
-    getOffloadAgents.mockResolvedValue(payload)
-    render(<OffloadSettings />)
-    await waitFor(() => expect(screen.getByText('External conversations')).toBeTruthy())
-
-    expect(screen.getByText('113 conversations')).toBeTruthy()
-    expect(screen.getByText('Readable')).toBeTruthy()
-    const tips = [...document.querySelectorAll('[title]')].map(node => node.getAttribute('title') || '')
-    expect(tips.some(tip => tip.includes('C:/Users/me/.qoder/projects'))).toBe(true)
-    expect(tips.some(tip => tip.includes('还没找到它的会话存放'))).toBe(true)
-  })
-
 })

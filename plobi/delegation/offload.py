@@ -86,6 +86,8 @@ class ExternalAgent:
     channel_ready: bool = False                # 通道半是否已交
     permission_flag: str = ""                  # 该 Agent 自带的最放开档（裁定 99 一）
     capabilities: dict[str, bool] = field(default_factory=dict)
+    # 主人这一格的开关（设置 → 外包）。默认允许；关掉只是「不派活」，不动装没装这些事实。
+    allowed: bool = True
 
     def can(self, capability: str) -> bool:
         return bool(self.capabilities.get(capability))
@@ -93,6 +95,8 @@ class ExternalAgent:
 
 def availability(agent: ExternalAgent) -> tuple[bool, str]:
     """现在能不能把活交给它；不能就给一句话原因。**唯一判据**，清单与工具共用。"""
+    if not agent.allowed:
+        return False, f"主人在设置里把 {agent.name} 这一格关掉了：现在不派活给它。"
     if not agent.installed:
         return False, f"本机没有 {agent.name}：不是坏了，是没装。"
     if not agent.channel_ready:

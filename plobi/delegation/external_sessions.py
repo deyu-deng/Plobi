@@ -40,7 +40,26 @@ VENDOR_CURSOR = "cursor"
 VENDOR_AGY = "agy"
 
 #: 这一版能真的把话送进去的只有 Qoder：其余两家只读。不是漏做，是没实测过回跳旗标。
-SENDABLE = frozenset({VENDOR_QODER})
+#: 能力表在 `external_capabilities.py` 里，这里只留一份**兼容旧调用**的派生集合。
+def _known_vendors() -> tuple[str, ...]:
+    from plobi.delegation.external_capabilities import vendor_names
+
+    return vendor_names()
+
+
+def capabilities_for(vendor: str):
+    """这一家的能力位；不认识就返回 None。"""
+    from plobi.delegation.external_capabilities import capabilities
+
+    return capabilities(vendor)
+
+
+#: 能真的把话送进去的那几家从能力表派生，不在这里再列第二份。
+#: 今天只有 Qoder；其余只读，不是漏做，是没实测过回跳旗标。
+SENDABLE = frozenset(
+    v for v in _known_vendors()
+    if (spec := capabilities_for(v)) is not None and spec.send
+)
 
 #: 会话号会拼进文件名/argv/DB 查询，先于任何拼接校一遍。``_`` 留给 Marvis 的 ``conv_…``。
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -634,9 +653,14 @@ def _entry_for_session(entries: dict[str, Any], vendor: str, session_id: str) ->
 def update_entry(
     agent: str, vendor: str, session_id: str, *,
     title: Optional[str] = None, pinned: Optional[bool] = None, archived: Optional[bool] = None,
+    model: Optional[str] = None, permission_level: Optional[str] = None,
 ) -> dict[str, Any]:
-    """改名 / 置顶 / 归档。只记这一家这一条，别处不动。"""
-    if vendor not in (VENDOR_QODER, VENDOR_CODEBUDDY, VENDOR_MARVIS, VENDOR_CURSOR, VENDOR_AGY):
+    """改名 / 置顶 / 归档 / 会话预设。只记这一家这一条，别处不动。
+
+    `model` / `permission_level` 是 **Plobi 侧的会话预设**（下次从 Plobi 续接时用），
+    不是去改对方软件里那条会话。传空串＝清掉那一格；传 None＝不动。
+    """
+    if vendor not in _known_vendors():
         return {"ok": False, "status": 400, "error": "不认识这家软件"}
     if not SESSION_ID_RE.match(str(session_id or "")):
         return {"ok": False, "status": 400, "error": "会话号不是可执行形状"}
@@ -649,11 +673,67 @@ def update_entry(
         entry["pinned"] = bool(pinned)
     if archived is not None:
         entry["archived"] = bool(archived)
+    if model is not None:
+        value = str(model).strip()
+        if value:
+            entry["model"] = value[:160]
+        else:
+            entry.pop("model", None)
+    if permission_level is not None:
+        value = str(permission_level).strip().lower()
+        if value:
+            entry["permission_level"] = value
+        else:
+            entry.pop("permission_level", None)
     entries[_key(vendor, session_id)] = entry
     if not _save_index(payload):
         return {"ok": False, "status": 500, "error": "账本写不进去（磁盘只读？）"}
 
     return {"ok": True, "data": {"entry": entry}}
+
+
+def prefs_for_agent(agent_name: str, vendor: str, session_id: str) -> dict[str, Any]:
+    """这条会话在 Plobi 侧记下的模型 / 权限预设（没记就是 None）。"""
+    entry = _entry_for(agent_name)
+    if entry is None:
+        return {"model": None, "permission_level": None}
+    key = entry.name if hasattr(entry, "name") else agent_name
+    record = _entry_for_session(_agent_index(_load_index(), key), vendor, session_id)
+
+    return {
+        "model": record.get("model") or None,
+        "permission_level": record.get("permission_level") or None,
+    }
+
+
+def set_prefs_for_agent(
+    agent_name: str, vendor: str, session_id: str, *,
+    model: Optional[str] = None, permission_level: Optional[str] = None,
+) -> dict[str, Any]:
+    """给一条会话写预设。先确认这条会话真的在名单里，再落到账本。"""
+    from plobi.delegation.external_capabilities import supports, unsupported_note
+
+    for action in (("model" if model is not None else None), ("permission" if permission_level is not None else None)):
+        if action and not supports(vendor, action):
+            return {"ok": False, "status": 400, "error": unsupported_note(vendor, action)}
+    if not _in_agent_scope(agent_name, vendor, session_id):
+        return {"ok": False, "status": 404, "error": "这条会话不在这个 Agent 的名单里"}
+    if _locate(vendor, session_id) is None:
+        return {"ok": False, "status": 404, "error": "没发现这条会话"}
+
+    result = update_entry(agent_name, vendor, session_id, model=model, permission_level=permission_level)
+    if not result.get("ok"):
+        return result
+
+    spec = capabilities_for(vendor)
+    result["data"]["apply_on_send"] = bool(spec and spec.apply_on_send)
+    result["data"]["note"] = (
+        "预设已记下；续接时会自动带上。"
+        if result["data"]["apply_on_send"]
+        else "预设已记下，但这家续接时还不能自动应用——只作为 Plobi 侧的设置，不是改对方软件里那条会话。"
+    )
+
+    return result
 
 
 def _vendor_root(vendor: str) -> Path:
@@ -686,7 +766,7 @@ def _session_payload_paths(vendor: str, session_id: str) -> list[Path]:
 
 def delete_entry(agent: str, vendor: str, session_id: str) -> dict[str, Any]:
     """删除＝搬到回收站。数据库那两家（Marvis/Cursor）只隐藏，不动它们的库。"""
-    if vendor not in (VENDOR_QODER, VENDOR_CODEBUDDY, VENDOR_MARVIS, VENDOR_CURSOR, VENDOR_AGY):
+    if vendor not in _known_vendors():
         return {"ok": False, "status": 400, "error": "不认识这家软件"}
     if not SESSION_ID_RE.match(str(session_id or "")):
         return {"ok": False, "status": 400, "error": "会话号不是可执行形状"}
@@ -790,7 +870,7 @@ def mark_sessions(agent: str, items: Iterable[dict[str, Any]]) -> int:
     for item in items:
         vendor = str(item.get("vendor") or "").strip()
         session_id = str(item.get("id") or "").strip()
-        if vendor not in (VENDOR_QODER, VENDOR_CODEBUDDY, VENDOR_MARVIS, VENDOR_CURSOR, VENDOR_AGY):
+        if vendor not in _known_vendors():
             continue
         if not SESSION_ID_RE.match(session_id):
             continue
@@ -1027,8 +1107,9 @@ def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: fl
         return {"ok": False, "status": 400, "error": "说点什么再发"}
     if len(body) > MAX_MESSAGE_CHARS:
         return {"ok": False, "status": 400, "error": f"一次最多 {MAX_MESSAGE_CHARS} 字"}
-    if vendor != VENDOR_QODER:
-        return {"ok": False, "status": 400, "error": "这家还不能从 Plobi 里说话（只接了 qoder）"}
+    if vendor not in SENDABLE:
+        usable = "、".join(sorted(SENDABLE)) or "（本机一家都接不上）"
+        return {"ok": False, "status": 400, "error": f"这家还不能从 Plobi 里说话；现在能续接的：{usable}"}
 
     project = str(session.get("project") or "").strip()
     if not project:

@@ -144,6 +144,31 @@ test('pathWithGlobalRemoteProfile preserves existing query params', () => {
   )
 })
 
+//: 11-05 这台：名册 25 条身份里 11 条是中文课程名。`X-Plobi-Agent` 是 HTTP 头，值只许 latin-1，
+//: 中文进去 Node 在请求发出前就抛 `Invalid character in header content` —— 坏掉的不是"这一格没身份"，
+//: 是整座 `plobi:api` 桥（底栏那一屏就是这样空成 Direct 的）。退路 = 后端同语义的 `?profile=`。
+test('a non-ASCII identity survives the trip when carried as a query param', () => {
+  const scoped = pathWithGlobalRemoteProfile('/api/network/egress', '理论力学（甲）', {
+    forceProfileQuery: true,
+    globalRemote: false,
+    profileRemoteOverride: false
+  })
+
+  assert.equal(new URL(scoped, 'http://plobi.local').searchParams.get('profile'), '理论力学（甲）')
+  assert.equal(scoped.startsWith('/api/network/egress?profile='), true, scoped)
+})
+
+test('...and a backend already scoped to that profile still needs no scope at all', () => {
+  assert.equal(
+    pathWithGlobalRemoteProfile('/api/network/egress', '理论力学（甲）', {
+      forceProfileQuery: true,
+      globalRemote: false,
+      profileRemoteOverride: true
+    }),
+    '/api/network/egress'
+  )
+})
+
 test('pathWithGlobalRemoteProfile does not replace an explicit profile query', () => {
   assert.equal(
     pathWithGlobalRemoteProfile('/api/model/info?profile=default', 'iris', {

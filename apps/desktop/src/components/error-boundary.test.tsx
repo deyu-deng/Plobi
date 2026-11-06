@@ -78,7 +78,7 @@ describe('ErrorBoundary — 模块图被热更新搞坏时自愈（用户 10-22�
     expect(window.sessionStorage.getItem('plobi:hmr-stale-reload-once')).toBeNull()
 
     // 清掉之后再来一次悬空引用，还能自愈
-    renderBoom(new ReferenceError('$activeGatewayProfile is not defined'))
+    renderBoom(new ReferenceError('$scopeAgent is not defined'))
     expect(reload).toHaveBeenCalledTimes(1)
   })
 })

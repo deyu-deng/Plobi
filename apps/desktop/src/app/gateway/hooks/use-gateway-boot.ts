@@ -28,7 +28,7 @@ import {
 } from '@/store/gateway'
 import { $gatewaySwitching, wipeSessionListsForGatewaySwitch } from '@/store/gateway-switch'
 import { notify, notifyError } from '@/store/notifications'
-import { $activeGatewayProfile, normalizeProfileKey, touchActiveGatewayBackend } from '@/store/profile'
+import { $scopeAgent, normalizeProfileKey, touchActiveGatewayBackend } from '@/store/scope'
 import {
   $activeSessionId,
   $attentionSessionIds,
@@ -43,6 +43,7 @@ import {
   setSessionsLoading
 } from '@/store/session'
 import type { RpcEvent } from '@/types/plobi'
+import { sessionScopeKey } from '@/lib/session-agent'
 
 // After this many consecutive failed reconnects (≈45s with the 1→15s backoff)
 // raise a recoverable boot error. Otherwise a dropped remote gateway loops the
@@ -148,7 +149,7 @@ export function useGatewayBoot({
         // "Starting Plobi…". The probe is a no-op for a healthy or local backend.
         await desktop.revalidateConnection?.().catch(() => undefined)
 
-        const conn = await desktop.getConnection($activeGatewayProfile.get())
+        const conn = await desktop.getConnection($scopeAgent.get())
 
         if (cancelled) {
           return
@@ -233,11 +234,11 @@ export function useGatewayBoot({
       try {
         const pref = await desktop.profile?.get?.()
         const profileKey = (pref?.profile ?? '').trim() || 'default'
-        $activeGatewayProfile.set(profileKey)
+        $scopeAgent.set(profileKey)
         setPrimaryGateway(gateway, profileKey)
         void ensureGatewayForProfile(profileKey)
       } catch {
-        $activeGatewayProfile.set('default')
+        $scopeAgent.set('default')
       }
     }
 
@@ -346,7 +347,7 @@ export function useGatewayBoot({
 
     const gateway = new PlobiGateway()
     callbacksRef.current.onGatewayReady(gateway)
-    setPrimaryGateway(gateway, normalizeProfileKey($activeGatewayProfile.get()))
+    setPrimaryGateway(gateway, normalizeProfileKey($scopeAgent.get()))
     // Secondary (background-profile) sockets funnel into the same handler.
     configureGatewayRegistry({ onEvent: event => callbacksRef.current.handleGatewayEvent(event) })
 
@@ -411,7 +412,7 @@ export function useGatewayBoot({
 
       for (const session of $sessions.get()) {
         if (live.has(session.id)) {
-          keep.add(normalizeProfileKey(session.profile))
+          keep.add(normalizeProfileKey(sessionScopeKey(session)))
         }
       }
 
@@ -420,7 +421,7 @@ export function useGatewayBoot({
 
     const offWorking = $workingSessionIds.subscribe(() => recomputeKeptGateways())
     const offAttention = $attentionSessionIds.subscribe(() => recomputeKeptGateways())
-    const offActiveProfile = $activeGatewayProfile.subscribe(() => recomputeKeptGateways())
+    const offActiveProfile = $scopeAgent.subscribe(() => recomputeKeptGateways())
 
     const offWindowState = desktop.onWindowStateChanged?.(payload => {
       const current = $connection.get()

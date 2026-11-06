@@ -32,6 +32,12 @@ interface ProviderPrefix {
   docsUrl?: string
   /** Lower numbers float to the top of the providers list. */
   priority: number
+  /** Set when the hub leg behind this entry is no longer usable; the entry is
+   *  kept so existing env vars still group and render, but the card is shown
+   *  disabled instead of inviting a new key. */
+  disabled?: boolean
+  /** Human reason for `disabled`, shown where the card is greyed out. */
+  disabledReason?: string
 }
 
 export const EMPTY_SELECT_VALUE = '__plobi_empty__'
@@ -138,7 +144,14 @@ export const PROVIDER_GROUPS: ProviderPrefix[] = [
     name: 'OpenCode Zen',
     description: 'Pay-as-you-go access to curated coding models',
     docsUrl: 'https://opencode.ai/auth',
-    priority: 13
+    priority: 13,
+    // The `opencode_api` hub leg has no CLI on this machine, so the gateway marks
+    // it unselectable; the manual-key entry is kept only so existing OPENCODE_ZEN_
+    // env vars still group and render. New keys are not offered here anymore —
+    // see desktop-quotas.ts DESKTOP_QUOTA_NAMES + the hub's selectable verdict.
+    disabled: true,
+    disabledReason:
+      'opencode_api leg is not selectable (no CLI); kept for existing env vars only'
   },
   {
     prefix: 'OPENCODE_GO_',

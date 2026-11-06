@@ -19,6 +19,7 @@ import {
 } from './session'
 
 const session = (over: Partial<SessionInfo>): SessionInfo => ({
+  agent_id: '',
   archived: false,
   cwd: null,
   ended_at: null,

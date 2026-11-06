@@ -18,6 +18,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Request
@@ -30,6 +31,7 @@ from .providers.base import UpstreamError
 from .providers.apps.antigravity.network import probe_network
 from .registry import Registry
 from .scheduler import NoAccountAvailable, Scheduler
+from .token_refresh_service import TokenRefreshService
 from .tokens.manager import TokenManager
 from .tokens.vault import Vault
 
@@ -201,6 +203,21 @@ async def _startup():
     )
     sched = Scheduler(reg.providers, **cfg.get("scheduler", {}))
 
+    # Background token-renewal worker (sub2api style). Off unless the operator opts in:
+    # QUOTA_HUB_TOKEN_REFRESH=1, or `token_refresh: {enabled: true}` in the config.
+    # It sweeps on a timer and calls the same measured ensure_fresh paths the scheduler
+    # would, so leases renew with 24 h of runway instead of at the last second.
+    refresh_task = None
+    refresh_cfg = cfg.get("token_refresh") or {}
+    if os.environ.get("QUOTA_HUB_TOKEN_REFRESH", "").strip() or refresh_cfg.get("enabled"):
+        refresh_svc = TokenRefreshService(
+            reg.providers,
+            interval_seconds=float(refresh_cfg.get("interval_seconds", 300)),
+            skew_seconds=float(refresh_cfg.get("skew_seconds", 24 * 3600)),
+        )
+        refresh_task = asyncio.create_task(refresh_svc.run())
+        logger.info("token refresh worker started (QUOTA_HUB_TOKEN_REFRESH=1)")
+
     # Token Manager + encrypted vault (optional but recommended)
     tokenmgr = None
     vault_cfg = cfg.get("vault")
@@ -232,6 +249,7 @@ async def _startup():
         api_key=_declared_api_key(cfg),
         tokenmgr=tokenmgr,
         quota_task=quota_task,
+        refresh_task=refresh_task,
     )
 
 
@@ -240,6 +258,9 @@ async def _shutdown():
     if STATE.get("quota_task"):
         with contextlib.suppress(Exception):
             STATE["quota_task"].cancel()
+    if STATE.get("refresh_task"):
+        with contextlib.suppress(Exception):
+            STATE["refresh_task"].cancel()
     if STATE.get("tokenmgr"):
         with contextlib.suppress(Exception):
             await STATE["tokenmgr"].stop()
@@ -354,6 +375,31 @@ def _no_account_detail(prov) -> str:
         # retired). That is not English's job to explain.
         return "这条腿现在没有一个能服务回合的账号——通常是它的登录租约刚过期，稍后再发"
     return _NO_ACCOUNT_WORDS.get(str(reason), "") or (str(reason) if reason and not str(reason).isascii() else "")
+
+
+def _quota_retry_after(prov) -> int | None:
+    """How many seconds a *cooling* leg wants the caller to wait; None if it isn't cooling.
+
+    Measured 2026-11-05 on the opencode free pool: the upstream answered 429
+    FreeUsageLimitError with retry-after about 76331s, and the leg parked itself for
+    that long, refusing every later request in 4-96ms without touching the network.
+    That is not a service outage, it is a spent allowance with a known end - so the
+    remaining seconds belong in a header, not in an undated 503.
+    """
+    if prov is None:
+        return None
+    probe = getattr(prov, "quota_retry_after", None)
+    if not callable(probe):
+        return None
+    try:
+        wait = probe()
+    except Exception:  # a probe failing on the error path must not mask the real refusal
+        return None
+    try:
+        secs = int(wait)
+    except (TypeError, ValueError):
+        return None
+    return secs if secs > 0 else None
 
 
 @app.get("/v1/models")
@@ -562,7 +608,16 @@ async def chat_completions(request: Request, authorization: str = Header(None)):
             (reg.providers.get(n) for n in names if reg is not None and reg.providers.get(n) is not None),
             None,
         )
-        raise HTTPException(503, _no_account_detail(prov0) or f"no upstream account available: {e}")
+        # A leg that is merely *spent* is not a leg that is *down*. 503 tells the client
+        # "the service is unavailable" and clients answer it by retrying at once — which
+        # is exactly what re-armed the upstream limit on 2026-11-05 (refusals came back
+        # in 4-96 ms, never reaching the network). 429 + Retry-After states the truth:
+        # this account has spent its allowance, come back in N seconds.
+        _wait = _quota_retry_after(prov0)
+        _detail = _no_account_detail(prov0) or f"no upstream account available: {e}"
+        if _wait is not None:
+            raise HTTPException(429, _detail, headers={"Retry-After": str(_wait)})
+        raise HTTPException(503, _detail)
     except UpstreamError as e:
         raise HTTPException(e.status if 400 <= e.status < 600 else 502, str(e))
 

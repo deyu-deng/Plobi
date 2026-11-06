@@ -175,7 +175,7 @@ export function CredentialKeyCard({
   return (
     <div
       className={cn(
-        '@container group/card rounded-md p-3 transition-colors',
+        '@container group/card dl-card px-4 py-3 transition-colors',
         expandable && 'cursor-pointer',
         expandable && !expanded && 'row-hover',
         expanded && 'bg-(--ui-bg-quaternary) ring-1 ring-(--ui-stroke-secondary)'
@@ -252,7 +252,9 @@ export function CredentialKeyCard({
   )
 }
 
-/** Provider API key group — collapsible card; description, docs link, and advanced fields expand on click. */
+/** Provider API key group — one settings row; description, docs link, and advanced
+ *  fields expand under the row (2026-11-05: unified ListRow skeleton with the
+ *  desktop / accounts cards instead of a separate dl-card per provider). */
 export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps }: ProviderKeyRowsProps) {
   const { t } = useI18n()
   const docsUrl = group.docsUrl?.trim()
@@ -260,59 +262,8 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
   const expandable = Boolean(description || docsUrl || group.advanced.length > 0)
 
   return (
-    <div
-      className={cn(
-        '@container group/card rounded-md p-3 transition-colors',
-        expandable && 'cursor-pointer',
-        expandable && !expanded && 'row-hover',
-        expanded && 'bg-(--ui-bg-quaternary) ring-1 ring-(--ui-stroke-secondary)'
-      )}
-      onClick={expandable ? onToggle : undefined}
-      onKeyDown={
-        expandable
-          ? e => {
-              // Only the card's own focus toggles it — ignore Enter/Space
-              // bubbling up from the inputs/buttons inside (Enter saves a key,
-              // Space types a space) so keyboard editing never collapses the card.
-              if (e.target !== e.currentTarget) {
-                return
-              }
-
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                onToggle()
-              }
-            }
-          : undefined
-      }
-      role={expandable ? 'button' : undefined}
-      tabIndex={expandable ? 0 : undefined}
-    >
-      {/* Same grid as CredentialKeyCard: 1 col stacked, 2 cols at @2xl, p-3 =
-          gap-3, items-start, label row h-8 to line up with the input row. */}
-      <div className="grid grid-cols-1 items-start gap-x-3 gap-y-1.5 @2xl:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] @2xl:gap-y-3">
-        <div className="flex h-8 min-w-0 items-center gap-2">
-          <span
-            className={cn(
-              'size-2 shrink-0 rounded-full',
-              group.hasAnySet ? 'bg-primary' : 'bg-(--ui-stroke-secondary)'
-            )}
-          />
-
-          <span className="min-w-0 truncate text-[length:var(--conversation-text-font-size)] font-medium text-foreground">
-            {group.name}
-          </span>
-
-          {expandable && (
-            <ChevronDown
-              className={cn(
-                'size-3.5 shrink-0 text-muted-foreground transition',
-                expanded ? 'rotate-180 opacity-100' : 'opacity-0 group-hover/card:opacity-100'
-              )}
-            />
-          )}
-        </div>
-
+    <ListRow
+      action={
         <div
           className="min-w-0"
           onClick={e => e.stopPropagation()}
@@ -330,42 +281,75 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
             varKey={group.primary[0]}
           />
         </div>
+      }
+      below={
+        <>
+          {/* The reason lives under the row, on its own line (2026-11-04 ruling) —
+              never on the dot's tooltip, and never overlapping the input. */}
+          {group.disabledReason && (
+            <p
+              className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-destructive"
+              role="note"
+            >
+              {group.disabledReason}
+            </p>
+          )}
 
-        {expandable && expanded && (
-          <div className="grid gap-3 @2xl:col-span-2" onClick={e => e.stopPropagation()}>
-            {description && (
-              <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-                {description}
-              </p>
+          {expandable && expanded && (
+            <div className="grid gap-3 pt-2" onClick={e => e.stopPropagation()}>
+              {description && (
+                <p className="text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
+                  {description}
+                </p>
+              )}
+
+              {group.advanced.map(([key, info]) => {
+                const fieldLabel = isKeyVar(key, info)
+                  ? prettyName(key.replace(/(?:_API_KEY|_TOKEN|_KEY)$/i, ''))
+                  : friendlyFieldLabel(key, info)
+
+                return (
+                  <ListRow
+                    action={
+                      <KeyField
+                        expanded={expanded}
+                        info={info}
+                        placeholder={credentialPlaceholder(key, info, fieldLabel)}
+                        rowProps={rowProps}
+                        varKey={key}
+                      />
+                    }
+                    key={key}
+                    title={fieldLabel}
+                  />
+                )
+              })}
+
+              {docsUrl && <CredentialDocsLink href={docsUrl} />}
+            </div>
+          )}
+        </>
+      }
+      expanded={expandable ? expanded : undefined}
+      onActivate={expandable ? onToggle : undefined}
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          {/* Status dot only — the reason is body copy below the row (2026-11-04:
+              tooltips overlapped the input and could not be dismissed). */}
+          <span
+            className={cn(
+              'size-2 shrink-0 rounded-full',
+              group.disabled
+                ? 'bg-destructive'
+                : group.hasAnySet
+                  ? 'bg-primary'
+                  : 'bg-(--ui-stroke-secondary)'
             )}
-
-            {group.advanced.map(([key, info]) => {
-              const fieldLabel = isKeyVar(key, info)
-                ? prettyName(key.replace(/(?:_API_KEY|_TOKEN|_KEY)$/i, ''))
-                : friendlyFieldLabel(key, info)
-
-              return (
-                <ListRow
-                  action={
-                    <KeyField
-                      expanded={expanded}
-                      info={info}
-                      placeholder={credentialPlaceholder(key, info, fieldLabel)}
-                      rowProps={rowProps}
-                      varKey={key}
-                    />
-                  }
-                  key={key}
-                  title={fieldLabel}
-                />
-              )
-            })}
-
-            {docsUrl && <CredentialDocsLink href={docsUrl} />}
-          </div>
-        )}
-      </div>
-    </div>
+          />
+          <span className="truncate">{group.name}</span>
+        </span>
+      }
+    />
   )
 }
 
@@ -399,6 +383,8 @@ interface ProviderKeyRowsProps {
 export interface ProviderKeyRowGroup {
   advanced: [string, EnvVarInfo][]
   description?: string
+  disabled?: boolean
+  disabledReason?: string
   docsUrl?: string
   hasAnySet: boolean
   name: string

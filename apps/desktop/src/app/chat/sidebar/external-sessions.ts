@@ -183,6 +183,24 @@ export function deleteExternalSession(
   )
 }
 
+/**
+ * 人工判一条会话跟这个 Agent 有没有关系（用户 11-04）。
+ *
+ * 目录相同的后端已经自动算有关，剩下停在「未判」的由 L2 读标题判；
+ * 这一条是给人直接改的——左栏那一行上的勾/叉走这里。
+ */
+export function markExternalSession(
+  agentId: string,
+  vendor: string,
+  sessionId: string,
+  related: boolean
+): Promise<{ data: { written: number }, ok: boolean }> {
+  return api(`/api/agents/${encodeURIComponent(agentId)}/external-sessions/mark`, {
+    body: { items: [{ id: sessionId, related, vendor }] },
+    method: 'POST'
+  })
+}
+
 export function restoreExternalSession(
   agentId: string,
   vendor: string,

@@ -4,6 +4,13 @@
 角色只干两件事：给这个子智能体**一段职责**（它自己知道自己是谁）和**一层工具面**
 （只看该看的工具，别把整个工具箱背过去）。图标与名字是给人看的，不上模型。
 
+11-04 用户补的三条（这一版落在这里）：
+- **专家是 L3，不是普通子代理**：它们能自己再派普通子代理，所以角色一律 `orchestrator`；
+- **每类角色可以有自己的模型**，跟 L2 不一样也行（存在 `experts/roles.json`，
+  没配就继承父 Agent——与普通子代理同一条默认）；
+- 普通子代理（不管谁派的）进底栏 overlay，L3 自己的工作日志进主区卡片。
+  区分靠侧记：带角色侧记的是 L3，不带的才是普通子代理。
+
 新增一类角色的判据：有独立的工具面 + 一句说得清的职责；否则别开新角色。
 """
 
@@ -106,17 +113,85 @@ def experts_dir() -> Path:
     return get_plobi_home() / "experts"
 
 
-def record_role(child_session_id: str, role: str, goal: str) -> None:
+def roles_config_path() -> Path:
+    """四类角色各自的模型：`$PLOBI_HOME/experts/roles.json`。
+
+    形状：`{"software": {"model": "provider/model"}, ...}`。**没有这一格＝继承父 Agent**，
+    与普通子代理同一条默认——不给专家配模型时，它就该跟 L2 用同一个。
+    """
+    return experts_dir() / "roles.json"
+
+
+def load_role_models() -> dict[str, str]:
+    """角色 → `provider/model`。读不到/坏档一律当「没配」，不拖垮派工。"""
+    try:
+        payload = json.loads(roles_config_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    out: dict[str, str] = {}
+    for key, value in payload.items():
+        role = str(key or "").strip().lower()
+        if role not in ROLES:
+            continue
+        model = ""
+        if isinstance(value, dict):
+            model = str(value.get("model") or "").strip()
+        elif isinstance(value, str):
+            model = value.strip()
+        if model:
+            out[role] = model
+    return out
+
+
+def model_for_role(key: str) -> Optional[str]:
+    """这一类角色的模型；没配就是 None（＝继承父 Agent）。"""
+    role = str(key or "").strip().lower()
+    return load_role_models().get(role) if role in ROLES else None
+
+
+def save_role_model(key: str, model: Optional[str]) -> dict[str, str]:
+    """写一类角色的模型。`model` 传空＝清掉覆盖，回到继承父 Agent。
+
+    整档重写是有意的：这份文件只归本模块管，没有别人往里写行。
+    """
+    role = str(key or "").strip().lower()
+    if role not in ROLES:
+        raise ValueError(f"未知专家角色 {key!r}：只有 file / browser / software / computer 四种")
+
+    current = load_role_models()
+    value = str(model or "").strip()
+    if value:
+        current[role] = value
+    else:
+        current.pop(role, None)
+
+    path = roles_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {name: {"model": value} for name, value in current.items()}
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    return current
+
+
+def record_role(child_session_id: str, role: str, goal: str, model: Optional[str] = None) -> None:
     sid = str(child_session_id or "").strip()
     if not sid or role not in ROLES:
         return
     path = experts_dir() / f"{sid}.json"
+    payload: dict[str, Any] = {
+        "role": role,
+        "goal": goal,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    # 这一趟实际用的模型：左栏要能看出「这个专家跟 L2 不是同一个脑子」。
+    if model:
+        payload["model"] = str(model)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps({"role": role, "goal": goal, "at": time.strftime("%Y-%m-%dT%H:%M:%S")},
-                       ensure_ascii=False),
-            encoding="utf-8",
-        )
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     except OSError:
         pass

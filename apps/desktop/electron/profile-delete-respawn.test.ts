@@ -64,3 +64,31 @@ test('plobi:api handler never spawns a pool backend (single gateway)', () => {
     'profile-delete preparation side effects must be preserved'
   )
 })
+
+// 身份进 HTTP 头之前必须先过 ASCII 这一道（11-03 这台：名册 25 条里 11 条是中文课程名，
+// `X-Plobi-Agent` 收到非 latin-1 时 Node 在请求发出前就抛 `Invalid character in header content`，
+// 于是整座 `plobi:api` 桥废掉——屏幕上表现为底栏那一屏空成 Direct、按钮全灰）。
+test('a non-ASCII identity is routed as a query param, never into the header', () => {
+  const source = readElectronFile('main.ts')
+
+  assert.match(
+    source,
+    /const headerSafeProfile =/,
+    'the handler must classify the identity before choosing a channel'
+  )
+  assert.match(
+    source,
+    /forceProfileQuery: !headerSafeProfile/,
+    'a header-unsafe identity must fall back to the ?profile= channel'
+  )
+  assert.match(
+    source,
+    /profile && headerSafeProfile \? \{ headers: \{ 'X-Plobi-Agent': String\(profile\) \} \}/,
+    'the header must be set only for a header-safe identity'
+  )
+  assert.doesNotMatch(
+    source,
+    /\.\.\.\(profile \? \{ headers: \{ 'X-Plobi-Agent'/,
+    'the unconditional header form is what broke the bridge'
+  )
+})

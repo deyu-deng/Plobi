@@ -18,7 +18,7 @@ vi.mock('@/plobi', () => ({
 vi.mock('@/lib/query-client', () => ({ queryClient: { invalidateQueries: vi.fn() } }))
 vi.mock('@/store/starmap', () => ({ resetStarmapGraph }))
 
-const { $activeGatewayProfile, $profiles, ensureGatewayProfile, refreshProfiles } = await import('./profile')
+const { $scopeAgent, $profiles, ensureGatewayProfile, refreshProfiles } = await import('./scope')
 const { $connection } = await import('./session')
 const { queryClient } = await import('@/lib/query-client')
 const { getProfiles } = await import('@/plobi')
@@ -45,7 +45,7 @@ beforeEach(() => {
   getConnection.mockReset()
   ensureGatewayForProfile.mockClear()
   $gateway.set({ id: 'live-socket' })
-  $activeGatewayProfile.set('default')
+  $scopeAgent.set('default')
   $connection.set(localConn())
   $profiles.set([])
   vi.stubGlobal('window', { plobiDesktop: { getConnection } })
@@ -75,7 +75,7 @@ describe('ensureGatewayProfile → $connection sync (#46651)', () => {
   })
 
   it('resyncs $connection back to local when returning to the default profile', async () => {
-    $activeGatewayProfile.set('vps-remote')
+    $scopeAgent.set('vps-remote')
     $connection.set(remoteConn())
     getConnection.mockResolvedValue(localConn())
 
@@ -95,7 +95,7 @@ describe('ensureGatewayProfile → $connection sync (#46651)', () => {
   })
 
   it('does not churn $connection when the target is already the active profile', async () => {
-    $activeGatewayProfile.set('vps-remote')
+    $scopeAgent.set('vps-remote')
     $connection.set(remoteConn())
 
     await ensureGatewayProfile('vps-remote')
@@ -108,7 +108,7 @@ describe('ensureGatewayProfile → $connection sync (#46651)', () => {
 
 describe('profile-scoped cache invalidation', () => {
   it('drops the memory graph cache when the active gateway profile changes', () => {
-    $activeGatewayProfile.set('coder')
+    $scopeAgent.set('coder')
 
     expect(queryClient.invalidateQueries).toHaveBeenCalled()
     expect(resetStarmapGraph).toHaveBeenCalledTimes(1)

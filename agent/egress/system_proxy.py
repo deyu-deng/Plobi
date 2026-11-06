@@ -66,17 +66,37 @@ def _watchdog():
 def _start_guard(home: str | Path | None = None) -> bool:
     """Launch the detached proxy guard (covers the hard-kill / crash case).
 
-    The guard is ``DETACHED_PROCESS``, i.e. not in Plobi's process tree, so the
-    desktop's ``taskkill /T /F`` on quit cannot take it with the engine. It polls
-    for a dead loopback proxy and hands the machine back — see ``proxy_guard.py``.
+    The guard polls for a dead loopback proxy and hands the machine back — see
+    ``proxy_guard.py``.
+
+    **How it survives the tree-kill** (measured 11-04, the reason it kept failing):
+    the desktop's quit path runs ``taskkill /PID <backend> /T /F``, and ``/T``
+    walks the **live** process tree.  ``DETACHED_PROCESS`` alone is *not*
+    enough on Windows — it detaches the console, not the parent/child link, so
+    a directly-spawned guard is still a descendant of the backend and gets
+    reaped with it.  (The old docstring claimed otherwise; it was wrong, and
+    the guard died every single quit without ever logging a restore.)
+
+    So the guard is spawned through a ``cmd /c start`` shim that exits
+    immediately: the guard's parent is then a *dead* PID, which the tree walk
+    cannot reach.  The shim is gone within milliseconds of the spawn, long
+    before any tree-kill, so the guard is a true orphan by quit time.
     """
     guard = Path(__file__).resolve().parent / "proxy_guard.py"
     try:
+        args = [sys.executable, str(guard)]
+        # Pass the *raw* home (or none at all) — `proxy_guard.main` resolves it via
+        # `sp._home()` itself.  Pre-resolving here would double the `egress` segment
+        # (egress/egress) and split the pid/backup/log into the wrong directory.
+        if home is not None:
+            args += ["--home", str(home)]
         flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0
         )
+        # `cmd /c start "" /b <exe> <args>`: the shim exits at once, orphaning the
+        # guard. `""` is `start`'s (empty) window title, not an argument.
         subprocess.Popen(
-            [sys.executable, str(guard), "--home", str(_home(home))],
+            ["cmd.exe", "/c", "start", "", "/b", *args],
             creationflags=flags,
             close_fds=True,
             stdin=subprocess.DEVNULL,
@@ -90,7 +110,13 @@ def _start_guard(home: str | Path | None = None) -> bool:
 
 
 def _stop_guard(home: str | Path | None = None) -> None:
-    """Best-effort: kill the detached guard (e.g. when `proxy off` restores cleanly)."""
+    """Best-effort: kill the detached guard (e.g. when `proxy off` restores cleanly).
+
+    The pid is **verified before it is killed** (measured 11-04): the file names the
+    pid of the guard that was running when we last started, and Windows recycles
+    pids — so that number may well belong to something else by now. ``taskkill`` on a
+    recycled pid takes down an innocent bystander.
+    """
     pid_path = _home(home) / "runtime" / "proxy-guard.pid"
     if not pid_path.exists():
         return
@@ -98,24 +124,84 @@ def _stop_guard(home: str | Path | None = None) -> None:
         old = int(pid_path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         old = None
-    try:
-        if old is not None:
+    if old is not None and _pid_is_guard(old):
+        try:
+            # No ``/T``: the venv's ``python.exe`` is a launcher stub whose child is
+            # the real worker, and a tree-kill of the stub takes the worker with it.
+            # The pid file names the *worker*, so killing it exactly is enough — the
+            # stub exits once its child is gone.
             subprocess.run(
-                ["taskkill", "/PID", str(old), "/T", "/F"],
+                ["taskkill", "/PID", str(old), "/F"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
-    except OSError:
-        pass
+        except OSError:
+            pass
     try:
         pid_path.unlink(missing_ok=True)
     except OSError:
         pass
 
 
+def _pid_is_guard(pid: int) -> bool:
+    """Is this pid one of our proxy guards right now?
+
+    The ``cmd /c start`` shim mentions the script in its command line but is **not**
+    the guard — and killing it with ``/T`` kills the guard it just launched.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return False
+    try:
+        cmdline = " ".join(psutil.Process(pid).cmdline())
+    except Exception:  # noqa: BLE001 - gone, or not ours to look at
+        return False
+    parts = cmdline.strip().split()
+    if parts and parts[0].lower().endswith("cmd.exe"):
+        return False
+    return "proxy_guard.py" in cmdline
+
+
 def _home(home: str | Path | None = None) -> Path:
     from agent.egress.engine import egress_dir
 
     return egress_dir(home)
+
+
+#: The desktop's "this quit was deliberate" note — written by `egress-proxy.ts` right before it
+#: tree-kills us (WP-QUIT-CLEAN, 11-05).  Without it both detached helpers keep doing their job:
+#: the watchdog's ``taken-over`` rule re-takes the machine one tick after the registry hand-back,
+#: and the perpetual guard never leaves, leaving a pid file that names a dead pid.
+QUIT_MARKER_BASENAME = "user-quit.json"
+
+
+def _quit_marker_path(home: str | Path | None = None) -> Path:
+    return _home(home) / "runtime" / QUIT_MARKER_BASENAME
+
+
+def quit_marker_since(home: str | Path | None = None) -> Optional[float]:
+    """Epoch **seconds** of a user-quit marker, or ``None`` when there is no usable one.
+
+    Timestamped on purpose: a stale file left behind by a previous session must never retire a
+    helper that was started *after* it, so callers compare this against their own start time
+    rather than trusting the file's mere existence.  The desktop writes milliseconds.
+    """
+    try:
+        raw = json.loads(_quit_marker_path(home).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    at = raw.get("at") if isinstance(raw, dict) else None
+    if not isinstance(at, (int, float)):
+        return None
+    return float(at) / 1000.0
+
+
+def clear_quit_marker(home: str | Path | None = None) -> None:
+    """Forget a quit intent — a fresh takeover supersedes it (see :func:`enable`)."""
+    try:
+        _quit_marker_path(home).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 @dataclass(frozen=True)
@@ -356,6 +442,11 @@ def plan(table: Optional[Table] = None, *, home: str | Path | None = None) -> Pr
 
 def enable(table: Optional[Table] = None, *, home: str | Path | None = None, apply: bool = True) -> ProxyPlan:
     """Take over the system proxy, remembering exactly what was there before."""
+    # A takeover supersedes any earlier "the user quit" note (WP-QUIT-CLEAN, 11-05): the helpers
+    # compare the marker against their own start time, so a leftover file is already harmless —
+    # clearing it here keeps a fresh session from starting out with a stale intent on disk.
+    clear_quit_marker(home)
+
     p = plan(table, home=home)
     if not p.ok:
         if apply:

@@ -23,6 +23,8 @@ import type { ChatMessage } from '@/lib/chat-messages'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { closeConversation, type OpenConversation, openConversation } from '@/store/conversation-view'
 
+import { ExpertModelBar } from './expert-model-bar'
+
 /**
  * 主区那张对话卡片，显示**不在这个 Agent 自己会话里**的一段对话（用户 11-01）。
  *
@@ -55,6 +57,14 @@ export function ConversationPane({
 
   const load = useCallback(
     async (cancelled: () => boolean) => {
+      // 名册上那四行永远点得开，但没派过活时没有会话号——不必去读一个不存在的日志。
+      if (kind === 'expert' && !sessionId) {
+        setLines([])
+        setError('')
+
+        return
+      }
+
       try {
         if (kind === 'external') {
           const body = await getExternalTranscript(agentId, vendor, sessionId)
@@ -62,6 +72,12 @@ export function ConversationPane({
           if (!cancelled()) {
             setLines((body?.data?.messages ?? []).map(message => ({ role: message.role, text: message.text })))
           }
+
+          return
+        }
+
+        if (!sessionId) {
+          setLines([])
 
           return
         }
@@ -166,7 +182,11 @@ export function ConversationPane({
         {lines.length === 0 && !error && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-8 text-center">
             <p className="text-xs text-(--ui-text-tertiary)">
-              {kind === 'external' ? c.externalSessionsNoMessages : c.expertsEmpty}
+              {kind === 'external'
+                ? c.externalSessionsNoMessages
+                : sessionId
+                  ? c.expertsEmpty
+                  : c.expertsIdleHint}
             </p>
           </div>
         )}
@@ -176,6 +196,15 @@ export function ConversationPane({
 
       {conversation.kind === 'external' && conversation.sendable ? (
         <ConversationComposer disabled={pending} onSend={send} />
+      ) : conversation.kind === 'expert' && conversation.role ? (
+        // 专家卡片底部那条：位置与高度照主对话的 composer，里面只放模型选择。
+        // 选完存到这个角色上，下次派它就用这个模型（用户 11-04）。
+        <div className="shrink-0 px-4 pb-[var(--composer-shell-pad-block-end,0.75rem)] pt-2">
+          <div className="mx-auto flex w-full max-w-[var(--composer-width,46rem)] items-center justify-between gap-2 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-3 py-2">
+            <span className="min-w-0 truncate text-[0.72rem] text-(--ui-text-quaternary)">{c.expertModelHint}</span>
+            <ExpertModelBar role={conversation.role} />
+          </div>
+        </div>
       ) : null}
     </div>
   )

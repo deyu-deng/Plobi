@@ -202,6 +202,18 @@ class Provider:
         """
         return {}
 
+    # --- how long a leg stays shut ---------------------------------------
+    def quota_retry_after(self) -> int | None:
+        """Seconds until this leg can serve again, or None when nothing is cooling.
+
+        Some legs are not broken, they are *spent*: the upstream answered 429 with
+        its own ``retry-after`` and the leg parked itself for exactly that long.
+        Saying so is what lets the HTTP surface send a real ``Retry-After`` instead
+        of an untimed "service unavailable", and what lets ``/v1/models`` state when
+        the rows come back. Legs with no such notion answer None and behave as before.
+        """
+        return None
+
     # --- sign-in ---------------------------------------------------------
     def login_plan(self) -> dict:
         """How the user signs into THIS provider, stated by the provider itself.

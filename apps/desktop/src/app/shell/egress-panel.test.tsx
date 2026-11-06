@@ -336,3 +336,21 @@ describe('左下底栏那一格', () => {
     expect(button.className).toContain('truncate')
   })
 })
+
+describe('机器原话不许顶在这一屏上', () => {
+  //: 11-05 这台：身份是中文课程名时 `X-Plobi-Agent` 让 Node 在发出前就抛，那一整句 IPC 报错
+  //: 直接印在开关下面（还把面板下半截挤出弹窗）。屏上只留"这件事没成"，原话进悬停。
+  it('IPC 那一串只进悬停，屏上留「没保存」', async () => {
+    saveNetworkEgress.mockRejectedValue(new Error(
+      `Error invoking remote method 'plobi:api': Error: Invalid character in header content ["X-Plobi-Agent"]`
+    ))
+    render(<EgressPanel />)
+    await waitFor(() => expect(screen.getByTestId('egress-panel')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: copy.modeGlobal }))
+
+    await waitFor(() => expect(screen.getByText(copy.refused)).toBeTruthy())
+    expect(screen.queryByText(/remote method|Invalid character/)).toBeNull()
+    expect(screen.getByText(copy.refused).getAttribute('title')).toContain('Invalid character')
+  })
+})

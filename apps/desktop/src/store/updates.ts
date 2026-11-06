@@ -6,6 +6,8 @@
 import { atom } from 'nanostores'
 
 import type {
+  DesktopReleaseInfo,
+  DesktopReleaseInstallResult,
   DesktopUpdateApplyOptions,
   DesktopUpdateApplyResult,
   DesktopUpdateProgress,
@@ -44,6 +46,11 @@ const IDLE: UpdateApplyState = {
 
 export const $desktopVersion = atom<DesktopVersionInfo | null>(null)
 export const $updateApply = atom<UpdateApplyState>(IDLE)
+
+/** The newest published desktop build (and whether it is newer than ours). */
+export const $desktopRelease = atom<DesktopReleaseInfo | null>(null)
+/** True while the one-click install is running (the app quits at the end). */
+export const $releaseInstalling = atom<boolean>(false)
 export const $updateChecking = atom<boolean>(false)
 export const $updateOverlayOpen = atom<boolean>(false)
 export const $updateStatus = atom<DesktopUpdateStatus | null>(null)
@@ -358,6 +365,56 @@ export async function checkUpdates(): Promise<DesktopUpdateStatus | null> {
     return fallback
   } finally {
     $updateChecking.set(false)
+  }
+}
+
+/**
+ * 「有没有新版的桌面端」——和 `checkUpdates`（后端 checkout 离 origin/main
+ * 多远）是两件事：这一条问的是**壳**，也就是用户眼前这个程序。
+ */
+export async function checkDesktopRelease(): Promise<DesktopReleaseInfo | null> {
+  const bridge = window.plobiDesktop?.updates
+
+  if (!bridge?.releaseCheck) {
+    return $desktopRelease.get()
+  }
+
+  try {
+    const info = await bridge.releaseCheck()
+    $desktopRelease.set(info)
+
+    return info
+  } catch {
+    return $desktopRelease.get()
+  }
+}
+
+/**
+ * 一步升级：下载新版的安装包 → 退出 → helper 装壳 ＋ 把后端带到同一个 tag
+ * → 拉起来。壳与后端落在**同一个版本号**上（裁定 208）。
+ */
+export async function installDesktopRelease(): Promise<DesktopReleaseInstallResult> {
+  const bridge = window.plobiDesktop?.updates
+
+  if (!bridge?.releaseInstall) {
+    return { ok: false, reason: 'unavailable' }
+  }
+
+  $releaseInstalling.set(true)
+
+  try {
+    const result = await bridge.releaseInstall()
+    $releaseInstalling.set(false)
+
+    return result
+  } catch (error) {
+    $releaseInstalling.set(false)
+
+    return {
+      ok: false,
+      reason: 'install-failed',
+      message: error instanceof Error ? error.message : String(error)
+    }
   }
 }
 

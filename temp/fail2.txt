@@ -1,0 +1,4 @@
+.................F.........F.......F.............F...F.................. [ 13%]
+.FFFFFFFFFFFFFF.F.F.FFF.................FFFF...!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\psutil\__init__.py:978: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)

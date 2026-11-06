@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from '@nanostores/react'
 
-import { $activeGatewayProfile, refreshActiveProfile } from '@/store/profile'
+import { $scopeAgent, refreshActiveProfile } from '@/store/scope'
 import type { ChatScope } from '../../console/chat/scope'
 
 interface UseProfileScopeSyncOptions {
@@ -14,12 +14,12 @@ interface UseProfileScopeSyncOptions {
   refreshSessions: () => Promise<void>
 }
 
-// P2-6 useProfileScopeSync（WP-P2-HOOKS）:
+// P2-6 useScopeSync（WP-P2-HOOKS）:
 // 从 desktop-controller.tsx 原样迁出的 profile/scope 联动 effect 组：
 // 换 profile 重拉该 profile 的全局模型 + active-profile pill、chatScope 切换
 // 重指向模型粘性、gateway 打开后兜底刷新、空会话 fresh draft 补齐配置。
 // 纯移动，不做语义变更（盘点报告 P2-6）。
-export function useProfileScopeSync({
+export function useScopeSync({
   activeSessionId,
   chatScope,
   freshDraftReady,
@@ -34,20 +34,20 @@ export function useProfileScopeSync({
   // without this the statusbar keeps showing the previous profile's model
   // (the "forgets the LLM setting" report). gatewayState stays 'open' across a
   // swap (background sockets persist), so the open→open effect won't re-run.
-  const activeGatewayProfile = useStore($activeGatewayProfile)
-  const lastGatewayProfileRef = useRef(activeGatewayProfile)
+  const scopeAgent = useStore($scopeAgent)
+  const lastGatewayProfileRef = useRef(scopeAgent)
 
   useEffect(() => {
-    if (activeGatewayProfile === lastGatewayProfileRef.current) {
+    if (scopeAgent === lastGatewayProfileRef.current) {
       return
     }
 
-    lastGatewayProfileRef.current = activeGatewayProfile
+    lastGatewayProfileRef.current = scopeAgent
     // Force: the new profile has its own default, so reseed even if the composer
     // already shows the previous profile's model.
     void refreshCurrentModel(true)
     void refreshActiveProfile()
-  }, [activeGatewayProfile, refreshCurrentModel])
+  }, [scopeAgent, refreshCurrentModel])
 
   // 裁定 44:「一个 Agent 一张嘴」— the composer's model/provider stickiness is an
   // attribute of the person you're talking to, not of this window. `chatScope` is

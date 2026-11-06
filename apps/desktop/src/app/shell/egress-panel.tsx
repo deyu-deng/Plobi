@@ -276,11 +276,13 @@ export function EgressPanel() {
     //: 宽度由这一格按屏给（弹窗那格是 `w-auto`，跟着这里走）：控制屏是一列控件，
     //: 22rem 够；节点屏是卡片，要**一行三张**才不显得空（用户 11-01：「怎么也要一横行
     //: 能同时显示三个卡片的宽度」）⇒ 32rem，三列各 ~158px，名字两行放得下。
+    //: 高度也要有界：这一屏挂在底栏弹窗里，弹窗的可视高度由视口给，内容顶出去就是**下半截看不见**
+    //: （用户 11-05 那张截图正是切到一半）。列布局＋正文自己滚，表头那一行始终在。
     <div
-      className={`min-w-0 select-text ${view === 'nodes' ? 'w-[32rem]' : 'w-96'}`}
+      className={`flex max-h-[min(70vh,34rem)] min-w-0 flex-col select-text ${view === 'nodes' ? 'w-[32rem]' : 'w-96'}`}
       data-testid="egress-panel"
     >
-      <div className="flex items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2 py-1.5">
+      <div className="flex shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2 py-1.5">
         <TabButton active={view === 'switch'} icon={Power} onClick={() => setView('switch')}>
           {copy.tabSwitch}
         </TabButton>
@@ -294,7 +296,7 @@ export function EgressPanel() {
       {view === 'switch' ? (
         //: `grid-cols-1` = `minmax(0,1fr)`：裸 `grid` 的隐式轨道按 max-content 算，
         //: 一行长标签就能把整列顶宽、然后被弹窗裁掉（11-01 那次截图的成因）。
-        <div className="grid min-w-0 grid-cols-1 gap-2.5 px-3 py-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2.5 overflow-y-auto px-3 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label={ctl.vpn ? copy.powerOff : copy.powerOn}
@@ -364,7 +366,16 @@ export function EgressPanel() {
             ) : null}
           </div>
 
-          {error ? <p className="text-xs text-(--ui-text-danger)">{error}</p> : null}
+          {error ? (
+            //: 屏上那一行只说"这件事没成"，机器原话留在悬停里（10-27 文案纪律：机器词不许上屏）。
+            //: 11-05 这台的现场是 `Error invoking remote method 'plobi:api': Invalid character in
+            //: header content [...]` ——一整句内部机制顶在开关下面，还把这一屏往下挤出弹窗的可见高度。
+            <p className="line-clamp-1 text-xs text-(--ui-text-danger)" title={error}>
+              {/invoking remote method|ERR_[A-Z_]+|Invalid character|\b(TypeError|ReferenceError|RangeError)\b/.test(error)
+                ? copy.refused
+                : error}
+            </p>
+          ) : null}
           {refused ? (
             // 纸 §25 与 11-02 那条：默认都拒，但拒了要给**那一个**决定——并行别人的网卡、
             // 和把默认路由从别人那里抢过来，是两件事，不是一颗按钮。

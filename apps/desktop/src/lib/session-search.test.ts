@@ -6,6 +6,7 @@ import { sessionMatchesSearch } from './session-search'
 
 function makeSession(overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
+    agent_id: '',
     archived: false,
     cwd: '/home/user/projects/plobi-agent',
     ended_at: null,

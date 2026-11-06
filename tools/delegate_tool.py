@@ -813,6 +813,7 @@ def _build_child_progress_callback(
     model: Optional[str] = None,
     toolsets: Optional[List[str]] = None,
     session_ref: Optional[Dict[str, Any]] = None,
+    expert: Optional[str] = None,
 ) -> Optional[callable]:
     """Build a callback that relays child agent tool calls to the parent display.
 
@@ -860,6 +861,9 @@ def _build_child_progress_callback(
             kw["model"] = model
         if toolsets is not None:
             kw["toolsets"] = list(toolsets)
+        # 「这一趟是专家还是普通子智能体」：前端据此分栏（专家→抽屉，普通→底栏）。
+        if expert:
+            kw["expert"] = expert
         # The child's own session id — filled into the shared ref once the
         # child agent exists (the callback is built first), so every relayed
         # event lets UIs open/inspect the subagent's session directly.
@@ -1064,6 +1068,9 @@ def _build_child_agent(
     # 'leaf' (default) cannot; 'orchestrator' retains the delegation
     # toolset subject to depth/kill-switch bounds applied below.
     role: str = "leaf",
+    # 「专家」那一族（file/browser/software/computer）。事件与活动记录都带出去：
+    # 前端靠它把专家归到左栏「专家」抽屉、把**普通**子智能体留在底栏那一格。
+    expert: Optional[str] = None,
 ):
     """
     Build a child AIAgent on the main thread (thread-safe construction).
@@ -1175,6 +1182,7 @@ def _build_child_agent(
         model=effective_model_for_cb,
         toolsets=child_toolsets,
         session_ref=child_session_ref,
+        expert=expert,
     )
 
     # Each subagent gets its own iteration budget capped at max_iterations
@@ -1202,6 +1210,15 @@ def _build_child_agent(
     if not override_base_url:
         effective_base_url = _inherit_parent_base_url(parent_agent, effective_base_url)
     effective_api_key = override_api_key or parent_api_key
+    if not effective_api_key:
+        # Credential fallback (#20558 follow-up): L2 roster agents may carry an
+        # empty api_key (the profile-removal refactor dropped the old L2
+        # credential path without a replacement), so delegated children would
+        # send "Authorization: Bearer None" and the gateway answers 401 invalid
+        # api key. Fall back to the target provider's configured key from
+        # config (e.g. the local aigw gateway's sk-local-dev-key). The provider
+        # must match so we never inject a foreign provider's credential.
+        effective_api_key = _fallback_provider_api_key(effective_provider)
     # Bug #20558 / PR #20563: api_mode must NOT be inherited when the child uses a
     # different provider than the parent — each provider has its own API surface
     # (e.g. MiniMax uses anthropic_messages, DeepSeek uses chat_completions).
@@ -1748,6 +1765,7 @@ def _run_single_child(
     goal: str,
     child=None,
     parent_agent=None,
+    expert: Optional[str] = None,
     **_kwargs,
 ) -> Dict[str, Any]:
     """
@@ -1892,6 +1910,9 @@ def _run_single_child(
                 "started_at": time.time(),
                 "status": "running",
                 "tool_count": 0,
+                # 这一趟是不是「专家」（file/browser/software/computer）。空 = 普通子智能体。
+                # 前端按它分栏：专家进左栏「专家」抽屉，普通子智能体进底栏那一格。
+                "expert": expert or None,
                 "agent": child,
             }
         )
@@ -2377,10 +2398,20 @@ def _apply_expert_presets(task_list: List[Dict[str, Any]]) -> str:
 
     返回空串表示没问题；非空是一句给人看的错（未知角色）。
     没有 expert 的任务原样不动——这一支不影响普通派工。
+
+    11-04 起专家是 **L3**（用户：「L3 也可以自己调用普通子代理」）：
+    - `role` 给 `orchestrator`，`_build_child_agent` 会把 `delegation` 工具集加回来，
+      所以专家能再派**普通**子代理（那些不带 expert，按普通子代理进底栏 overlay）；
+    - 模型：任务自己指定 > 该类角色的默认（`experts/roles.json`）> 继承父 Agent。
+      不配就是继承——和普通子代理同一条默认。
     """
-    from plobi.delegation.expert_roles import role_spec, stamp_goal
+    from plobi.delegation.expert_roles import model_for_role, role_spec, stamp_goal
 
     for task in task_list:
+        # 非 dict 的条目留给后面那条「Task N must be an object」去报，
+        # 这里不能抢先把 AttributeError 抛出去。
+        if not isinstance(task, dict):
+            continue
         key = str(task.get("expert") or "").strip().lower()
         if not key:
             continue
@@ -2389,7 +2420,11 @@ def _apply_expert_presets(task_list: List[Dict[str, Any]]) -> str:
             return f"未知专家角色 {key!r}：只有 file / browser / software / computer 四种"
         task["goal"] = stamp_goal(key, str(task.get("goal") or ""))
         task["toolsets"] = list(spec["toolsets"])
-        task["role"] = "leaf"
+        task["role"] = "orchestrator"
+        if not str(task.get("model") or "").strip():
+            configured = model_for_role(key)
+            if configured:
+                task["model"] = configured
 
     return ""
 
@@ -2412,18 +2447,23 @@ def delegate_task(
     background: Optional[bool] = None,
     parent_agent=None,
     toolsets: Optional[List[str]] = None,
+    expert: Optional[str] = None,
 ) -> str:
     """
     Spawn one or more child agents to handle delegated tasks.
 
     Supports two modes:
-      - Single: provide goal (+ optional context, toolsets, role)
-      - Batch:  provide tasks array [{goal, context, toolsets, role}, ...]
+      - Single: provide goal (+ optional context, toolsets, role, expert)
+      - Batch:  provide tasks array [{goal, context, toolsets, role, expert}, ...]
 
     The 'role' parameter controls whether a child can further delegate:
     'leaf' (default) cannot; 'orchestrator' retains the delegation
     toolset and can spawn its own workers, bounded by
     delegation.max_spawn_depth.  Per-task role beats the top-level one.
+
+    The 'expert' parameter (file/browser/software/computer) dispatches a
+    preset specialist: its duty is stamped onto the goal and the child gets
+    only that role's toolset layer.  Per-task expert beats the top-level one.
 
     Returns JSON with results array, one entry per task.
     """
@@ -2511,7 +2551,9 @@ def delegate_task(
             )
         task_list = tasks
     elif goal and isinstance(goal, str) and goal.strip():
-        task_list = [{"goal": goal, "context": context, "role": top_role}]
+        # 单任务也要带上 expert：不然 _apply_expert_presets 拿不到角色，
+        # 职责不盖章、工具面不落层、侧记不写——派出去的就不是专家了。
+        task_list = [{"goal": goal, "context": context, "role": top_role, "expert": expert}]
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
 
@@ -2555,6 +2597,9 @@ def delegate_task(
             # Per-task role beats top-level; normalise again so unknown
             # per-task values warn and degrade to leaf uniformly.
             effective_role = _normalize_role(t.get("role") or top_role)
+            # 这一条自己的模型（专家可以有和父不一样的脑子）。没指定就用全局那一份，
+            # 而全局那一份在没有 delegation.model 时是 None ⇒ 继承父 Agent。
+            task_creds = _credentials_for_task_model(t.get("model"), creds, parent_agent)
             child = _build_child_agent(
                 task_index=i,
                 goal=t["goal"],
@@ -2562,19 +2607,20 @@ def delegate_task(
                 # 默认继承父的工具面；「专家」那一族会给角色自己的一层（只取交集，
                 # 子智能体永远拿不到父没有的工具）。模型没有这个参数。
                 toolsets=t.get("toolsets") or toolsets,
-                model=creds["model"],
+                model=task_creds["model"],
                 max_iterations=effective_max_iter,
                 task_count=n_tasks,
                 parent_agent=parent_agent,
-                override_provider=creds["provider"],
-                override_base_url=creds["base_url"],
-                override_api_key=creds["api_key"],
-                override_api_mode=creds["api_mode"],
-                override_request_overrides=creds.get("request_overrides"),
-                override_max_tokens=creds.get("max_output_tokens"),
-                override_acp_command=creds.get("command"),
-                override_acp_args=creds.get("args"),
+                override_provider=task_creds["provider"],
+                override_base_url=task_creds["base_url"],
+                override_api_key=task_creds["api_key"],
+                override_api_mode=task_creds["api_mode"],
+                override_request_overrides=task_creds.get("request_overrides"),
+                override_max_tokens=task_creds.get("max_output_tokens"),
+                override_acp_command=task_creds.get("command"),
+                override_acp_args=task_creds.get("args"),
                 role=effective_role,
+                expert=str(t.get("expert") or "").strip().lower() or None,
             )
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
@@ -2596,7 +2642,13 @@ def delegate_task(
         if n_tasks == 1:
             # Single task -- run directly (no thread pool overhead)
             _i, _t, child = children[0]
-            result = _run_single_child(_i, _t["goal"], child, parent_agent)
+            result = _run_single_child(
+                _i,
+                _t["goal"],
+                child,
+                parent_agent,
+                expert=str(_t.get("expert") or "").strip().lower() or None,
+            )
             results.append(result)
         else:
             # Batch -- run in parallel with per-task progress lines
@@ -2616,6 +2668,7 @@ def delegate_task(
                         goal=t["goal"],
                         child=child,
                         parent_agent=parent_agent,
+                        expert=str(t.get("expert") or "").strip().lower() or None,
                     )
                     futures[future] = i
 
@@ -2844,12 +2897,20 @@ def delegate_task(
             index = entry.get("task_index")
             if not isinstance(index, int) or not (0 <= index < len(children)):
                 continue
+            # session_id 必须是真的字符串：测试里 child 可能是 MagicMock，
+            # 直接把 mock 塞进结果会让 json.dumps 在收尾处炸掉。
             child_session_id = getattr(children[index][2], "session_id", "") or ""
-            entry.setdefault("child_session_id", child_session_id)
+            if not isinstance(child_session_id, str):
+                child_session_id = ""
+            if child_session_id:
+                entry.setdefault("child_session_id", child_session_id)
             task = task_list[index] if index < len(task_list) else {}
             role = str(task.get("expert") or "").strip().lower()
-            if role:
-                record_role(child_session_id, role, _expert_body(task))
+            if role and child_session_id:
+                # 侧记里写**实际用的模型**：左栏要能看出这个专家跟 L2 不是同一个脑子。
+                child = children[index][2]
+                used_model = str(getattr(child, "model", "") or "").strip() or str(task.get("model") or "").strip()
+                record_role(child_session_id, role, _expert_body(task), model=used_model or None)
 
         return {
             "results": results,
@@ -3095,6 +3156,28 @@ def _resolve_child_credential_pool(
     return None
 
 
+def _fallback_provider_api_key(provider: Optional[str]) -> Optional[str]:
+    """Resolve the configured api_key for a provider when the parent agent
+    carries none (e.g. the local aigw gateway's ``sk-local-dev-key``).
+
+    Read-only lookup into the shared config's ``providers.<name>.api_key``;
+    returns None when the provider is unknown or unset so callers keep the
+    previous behavior (no key) instead of inventing a credential.
+    """
+    if not provider:
+        return None
+    try:
+        from plobi_cli.config import load_config_readonly
+
+        full = load_config_readonly()
+        entry = (full.get("providers") or {}).get(provider) or {}
+        value = entry.get("api_key")
+        return str(value).strip() if value else None
+    except Exception as exc:  # pragma: no cover - defensive, config load varies by env
+        logger.debug("Could not resolve provider api_key for '%s': %s", provider, exc)
+        return None
+
+
 def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     """Resolve credentials for subagent delegation.
 
@@ -3223,6 +3306,54 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     }
 
 
+def _credentials_for_task_model(qualified, fallback: dict, parent_agent=None) -> dict:
+    """把一条任务自己的模型解析成一份完整凭据。
+
+    三种形态：
+
+    * 空 → 原样返回 `fallback`（普通子代理继承父 Agent 的模型）；
+    * `model`（不带斜杠）→ 只换模型名，provider 与凭据沿用 fallback；
+    * `provider/model` → 走 `resolve_runtime_provider` 重新拿那一家的 base_url/key，
+      这就是「专家用和 L2 不同的模型」真正落地的路径。
+
+    解析不了时**退回 fallback 的凭据、只换模型名**：宁可跑在父的通道上，
+    也不要因为一个模型名把整批派工打红。
+    """
+    raw = str(qualified or "").strip()
+    if not raw:
+        return fallback
+
+    provider, sep, model = raw.partition("/")
+    if not sep or not provider.strip() or not model.strip():
+        return {**fallback, "model": raw}
+
+    provider = provider.strip()
+    model = model.strip()
+    try:
+        from plobi_cli.runtime_provider import resolve_runtime_provider
+
+        runtime = resolve_runtime_provider(requested=provider, target_model=model)
+    except Exception:
+        logger.debug("task model %r could not be resolved; falling back to parent creds", raw)
+        return {**fallback, "model": model}
+
+    api_key = runtime.get("api_key") or fallback.get("api_key")
+    if not api_key:
+        return {**fallback, "model": model}
+
+    return {
+        "model": model,
+        "provider": provider if runtime.get("provider") == _RUNTIME_PROVIDER_CUSTOM else runtime.get("provider"),
+        "base_url": runtime.get("base_url"),
+        "api_key": api_key,
+        "api_mode": runtime.get("api_mode"),
+        "request_overrides": dict(runtime.get("request_overrides") or {}),
+        "max_output_tokens": runtime.get("max_output_tokens"),
+        "command": runtime.get("command"),
+        "args": list(runtime.get("args") or []),
+    }
+
+
 def _load_config() -> dict:
     """Load delegation config from the active Plobi config.
 
@@ -3317,20 +3448,26 @@ def _build_top_level_description() -> str:
         "Only the final summary is returned -- intermediate tool results "
         "never enter your context window.\n\n"
         "TWO MODES (one of 'goal' or 'tasks' is required):\n"
-        "1. Single task: provide 'goal' (+ optional context, toolsets).\n"
+        "1. Single task: provide 'goal' (+ optional context, expert).\n"
         f"2. Batch (parallel): provide 'tasks' array with up to {max_children} "
         f"items concurrently for this user (configured via "
         f"delegation.max_concurrent_children in config.yaml). {nesting_clause}\n\n"
-        "EXPERTS (specialised workers, tasks[] only): set 'expert' on a task to "
-        "dispatch a preset specialist instead of a general worker. Available "
-        "presets: 'file' (文件整理：find/read/write files), 'browser' (网页操作："
-        "browse/fetch/extract), 'software' (软件操作：drive GUI apps), "
-        "'computer' (电脑操作：shell, processes, system state). The preset fixes "
-        "that child's toolset and prefixes its goal with its duty; your 'goal' "
-        "text is appended after it. HARD RULE: when a task is a self-contained "
-        "piece of file, browser, software, or computer work, dispatch the "
-        "matching expert instead of doing it yourself — the 'single tool call "
-        "-> do it directly' shortcut below does NOT apply to these four kinds. "
+        "EXPERTS (specialised workers; PREFER the dedicated `delegate_expert` tool — "
+        "it takes role/goal/model directly and is harder to get wrong. Here "
+        "'expert' works on BOTH modes: top-level for a single task, per-item "
+        "for a batch): set 'expert' to dispatch a "
+        "preset specialist instead of a general worker. Available presets: "
+        "'file' (文件：read/write/organise files, no shell), 'browser' (网页："
+        "browse/fetch/extract, no shell), 'software' (软件与脚本：terminal + file "
+        "— 装、跑、修脚本与命令，这是唯一能跑 bash 的那一类), 'computer' "
+        "(电脑：terminal + computer_use — 系统设置、进程、窗口操作). The preset "
+        "fixes that child's toolset and prefixes its goal with its duty; your "
+        "'goal' text is appended after it. HARD RULE: when a task is a "
+        "self-contained piece of file, browser, software, or computer work, "
+        "dispatch the matching expert instead of doing it yourself — the "
+        "'single tool call -> do it directly' shortcut below does NOT apply to "
+        "these four kinds. A plain subagent has NO terminal: if the work needs "
+        "to run a command, it MUST carry expert='software' or 'computer'. "
         "Experts are subagents, not new agents: they appear in the left "
         "sidebar with their own work log.\n\n"
         "BOTH MODES RUN IN THE BACKGROUND. delegate_task returns immediately — "
@@ -3399,9 +3536,10 @@ def _build_tasks_param_description() -> str:
     return (
         f"Batch mode: tasks to run in parallel (up to {max_children} for this "
         f"user, set via delegation.max_concurrent_children). Each gets "
-        "its own subagent with isolated context and terminal session. "
+        "its own subagent with isolated context. "
         "Each item may set 'expert' (file/browser/software/computer) to "
-        "dispatch a preset specialist instead of a general worker. "
+        "dispatch a preset specialist instead of a general worker — same "
+        "meaning as the top-level 'expert'. "
         "When provided, top-level goal/context/toolsets are ignored."
     )
 
@@ -3549,6 +3687,17 @@ DELEGATE_TASK_SCHEMA = {
                     "compatibility."
                 ),
             },
+            "expert": {
+                "type": "string",
+                "enum": ["file", "browser", "software", "computer"],
+                "description": (
+                    "单任务派工时把这条活交给哪一类**临时专家**（与 tasks[].expert 同义）："
+                    "file=文件资料、browser=网页抄录、software=装跑修软件、computer=系统与窗口。"
+                    "给了它，子智能体只带那一类工具面，任务书前面自动加上它的职责，"
+                    "并会在左栏「专家」那一格出现、可点开看日志。"
+                    "要跑命令/脚本一律 software 或 computer——普通子智能体不带 terminal。"
+                ),
+            },
         },
         "required": [],
     },
@@ -3607,10 +3756,117 @@ registry.register(
         tasks=_strip_model_hidden_task_fields(args.get("tasks")),
         max_iterations=args.get("max_iterations"),
         role=args.get("role"),
+        expert=args.get("expert"),
         background=_model_background_value(args, kw.get("parent_agent")),
         parent_agent=kw.get("parent_agent"),
     ),
     check_fn=check_delegate_requirements,
     emoji="🔀",
     dynamic_schema_overrides=_build_dynamic_schema_overrides,
+)
+
+
+# ---------------------------------------------------------------------------
+# delegate_expert —— 专家是 L3，不是普通子代理（用户 11-04 拍板）
+# ---------------------------------------------------------------------------
+
+DELEGATE_EXPERT_SCHEMA = {
+    "name": "delegate_expert",
+    "description": (
+        "派一个**临时专家**（L3）去干一类活。专家不是普通子代理：\n"
+        "- 它有自己的工具箱（文件 / 浏览器 / 软件 / 电脑四类），只看该看的工具；\n"
+        "- 它可以有**自己的模型**，和你不一定是同一个；\n"
+        "- 它自己也能再派普通子代理（那些才进底栏的子代理面板）；\n"
+        "- 它的工作日志在左栏「专家」那一格，点开在主区卡片里看，不进底栏面板。\n\n"
+        "**该用哪个**：要跑命令、跑脚本、装软件 → software（唯一带 terminal 的那一类，"
+        "文件读写也在里面）；要动系统设置、进程、窗口 → computer；只读整理文件 → file；"
+        "只上网抄东西 → browser。\n"
+        "**普通子代理没有 terminal**：凡是需要执行命令的活，必须走 software 或 computer，"
+        "不要用 delegate_task 派一个「普通」子代理去跑 bash——它跑不了。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "role": {
+                "type": "string",
+                "enum": ["file", "browser", "software", "computer"],
+                "description": (
+                    "哪一类专家。file=读写整理文件；browser=上网抄录；"
+                    "software=装跑修软件与脚本（terminal + file，唯一能跑 bash 的）；"
+                    "computer=系统设置、进程与窗口（terminal + computer_use）。"
+                ),
+            },
+            "goal": {
+                "type": "string",
+                "description": (
+                    "要它干什么，写清楚到「它自己就能动手」的程度：路径、命令、"
+                    "成功判据、要交回什么。它会照着这个干，中途不会来问你。"
+                ),
+            },
+            "context": {
+                "type": "string",
+                "description": "它看不到你的对话，凡是用得上的背景都写在这里（环境、约束、已知坑）。",
+            },
+            "model": {
+                "type": "string",
+                "description": (
+                    "这个专家用哪个模型，`provider/model` 形式（例如 workbuddy/deepseek-v4.1-flash）。"
+                    "不填就用这个角色在设置里选过的那个；再没有就继承你自己的模型。"
+                ),
+            },
+        },
+        "required": ["role", "goal"],
+    },
+}
+
+
+def delegate_expert(
+    role: Optional[str] = None,
+    goal: Optional[str] = None,
+    context: Optional[str] = None,
+    model: Optional[str] = None,
+    parent_agent=None,
+) -> str:
+    """派一个临时专家（L3）。实质是把一条带 `expert` 的任务交给 `delegate_task`。
+
+    不另造一条派工链路：构建、后台派发、事件、侧记、成本归集全复用同一套，
+    这里只负责**把角色与模型说清楚**，并在参数不对时给人一句能看懂的话。
+    """
+    from plobi.delegation.expert_roles import role_spec
+
+    key = str(role or "").strip().lower()
+    if role_spec(key) is None:
+        return tool_error(f"未知专家角色 {role!r}：只有 file / browser / software / computer 四种")
+    if not str(goal or "").strip():
+        return tool_error("delegate_expert 需要 goal：要这个专家干什么。")
+
+    task: Dict[str, Any] = {"goal": str(goal), "expert": key}
+    if str(context or "").strip():
+        task["context"] = str(context)
+    if str(model or "").strip():
+        task["model"] = str(model)
+
+    # 顶层 Agent 派工一律后台（与 delegate_task 同一条规矩）；L3 派专家时才同步等。
+    is_subagent = getattr(parent_agent, "_delegate_depth", 0) > 0
+
+    return delegate_task(
+        tasks=[task],
+        background=not is_subagent,
+        parent_agent=parent_agent,
+    )
+
+
+registry.register(
+    name="delegate_expert",
+    toolset="delegation",
+    schema=DELEGATE_EXPERT_SCHEMA,
+    handler=lambda args, **kw: delegate_expert(
+        role=args.get("role"),
+        goal=args.get("goal"),
+        context=args.get("context"),
+        model=args.get("model"),
+        parent_agent=kw.get("parent_agent"),
+    ),
+    check_fn=check_delegate_requirements,
+    emoji="🎓",
 )

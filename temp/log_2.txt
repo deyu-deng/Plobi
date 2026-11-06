@@ -1,0 +1,9 @@
+﻿......F.......                                                           [100%]
+================================== FAILURES ===================================
+E   AssertionError: {'data': {'askable': True, 'category': 'projects', 'color': '', 'disabledMcpServers': [], ...}, 'ok': True}
+    assert 200 == 400
+     +  where 200 = <Response [200 OK]>.status_code
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_create_mind.py:238: AssertionError: {'data': {'askable': True, 'category': 'projects', 'color': '', 'disabledMcpServers': [], ...}, 'ok': True}
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agent_create_mind.py::test_reserved_profile_name_is_refused_before_anything_lands
+1 failed, 13 passed in 1.50s

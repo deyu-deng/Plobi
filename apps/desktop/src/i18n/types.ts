@@ -344,6 +344,13 @@ export interface Translations {
       resumeYes: string
       resumeNo: string
       sessionId: string
+      intro: Record<string, string>
+      introFallback: string
+      allowSwitch: string
+      setup: string
+      switchOff: string
+      installGuide: string
+      loginGuide: string
       notInstalled: string
       sessionsTitle: string
       sessionsNote: string
@@ -679,6 +686,9 @@ export interface Translations {
       cantReach: string
       tapCheck: string
       updateReady: (count: number) => string
+      updateReadyVersion: (version: string) => string
+      upgradeTo: (version: string) => string
+      downloadingUpdate: string
       lastChecked: (age: string) => string
       justNowSuffix: string
       automaticUpdates: string
@@ -1198,6 +1208,7 @@ export interface Translations {
   }
   agents: {
     close: string
+    nameLabel: string
     title: string
     subtitle: string
     emptyTitle: string
@@ -1434,10 +1445,6 @@ export interface Translations {
     fieldCopy: Record<string, { label?: string; help?: string; placeholder?: string }>
     platformIntro: Record<string, string>
   }
-
-  profiles: {
-    nameLabel: string
-  },
 
   mindPending: {
     label: string

@@ -21,7 +21,7 @@ import {
 } from '@/store/layout'
 import {
   $newChatProfile
-} from '@/store/profile'
+} from '@/store/scope'
 import { requestNewWorktree } from '@/store/projects'
 import { toggleReview } from '@/store/review'
 import { setModelPickerOpen } from '@/store/session'

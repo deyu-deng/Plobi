@@ -80,15 +80,20 @@ export function groupAgentsByCategory<T extends Pick<Agent, 'category' | 'name'>
   }))
 }
 
-/** Profiles an agent chats under (used to nest agent-owned sessions). */
-export function agentProfileIdSet(agents: readonly Agent[]): Set<string> {
+/**
+ * 名册 name 集合（2026-11-05 profile 连根拔）。
+ *
+ * 会话归属键 `sessions.agent_id` 存的就是**名册 name**（= 这一行的 `id`），
+ * 不再是家名 / profile 值。左栏要用"这一行在不在名册"筛会话，就该拿 name 建集。
+ */
+export function agentNameSet(agents: readonly Pick<Agent, 'id'>[]): Set<string> {
   const out = new Set<string>()
 
   for (const agent of agents) {
-    const profile = (agent.profile ?? '').trim()
+    const name = (agent.id ?? '').trim()
 
-    if (profile) {
-      out.add(profile)
+    if (name) {
+      out.add(name)
     }
   }
 
@@ -114,32 +119,64 @@ export function isNavigableAgent(agent: Pick<Agent, 'profile'> & Partial<Pick<Ag
   return Boolean((agent.profile ?? '').trim())
 }
 
-// The desktop controller injects SessionInfo over IPC, and that layer always
-// sends an empty `profile` string — so we can't trust the field's truthfulness.
-// L1 identity is therefore "default OR master OR blank OR any profile that is
-// NOT one of the known agent profiles". An agent's own thread is only excluded
-// when it actually carries that agent's profile (which the backend populates,
-// not the session-profile IPC fallback).
-export function isL1SessionProfile(profile?: null | string, agentProfileSet?: ReadonlySet<string>): boolean {
-  const normalized = (profile ?? '').trim().toLowerCase() || 'default'
+// 2026-11-05（profile 连根拔 · 桌面批）：L1 判据只有一个 —— 会话行的归属键
+// **`agent_id` 为空串**。这是总账 schema 自己的约定（缺口 B：无主行 = L1），
+// 不再是"`profile` 标签为空 / 叫 default / 叫 master / 不在家名集合里"那一串猜测。
+// 归属非空就一定是某个 Agent 的会话，名册里查不查得到都不影响这条判定——
+// 左栏筛"挂到哪一行"另有一道 `agentNameSet` 闸门，两件事不混。
+export function isL1SessionProfile(agentId?: null | string): boolean {
+  return !(agentId ?? '').trim()
+}
 
-  if (normalized === 'master') {
-    return true
+/**
+ * 会话按归属分桶（2026-11-05 profile 连根拔 · 桌面批）。
+ *
+ * 桶键是名册 name；三种行分开对待，别混：
+ *   - 归属空串 ⇒ **L1**，不进任何 Agent 桶（总秘书那一格由 L1 自己那份清单管）；
+ *   - 归属在名册里 ⇒ 进它那一桶；
+ *   - 归属非空但名册查不到（名册删过行、旧库被拷进来）⇒ **未归属**，
+ *     既不进 Agent 桶，也不折进 `default`。折进 L1 等于把别人的对话记在
+ *     总秘书头上：L1 的计数与清单都会多出一票（10-31 那次误归档的同类错）。
+ */
+const warnedOrphanSessionIds = new Set<string>()
+
+export function bucketSessionsByAgent<T extends { agent_id?: null | string }>(
+  sessions: readonly T[],
+  agentNames: ReadonlySet<string>
+): { byAgent: Map<string, T[]>; unassigned: T[] } {
+  const byAgent = new Map<string, T[]>()
+  const unassigned: T[] = []
+
+  for (const session of sessions) {
+    const agentId = (session.agent_id ?? '').trim()
+
+    if (!agentId) {
+      continue // L1：不进 Agent 桶
+    }
+
+    if (!agentNames.has(agentId)) {
+      unassigned.push(session)
+      // 2b-1 风险③：孤儿归属原来是完全静默的，排查时只能靠猜。这里补一条
+      // 可见告警，同一个 session id 只打一次（分桶每帧都会跑，不能刷屏）。
+      const sessionId = (session as { id?: string }).id ?? '<no-id>'
+      if (!warnedOrphanSessionIds.has(sessionId)) {
+        warnedOrphanSessionIds.add(sessionId)
+        console.warn(
+          `[agent-groups] 会话 ${sessionId} 的归属 agent_id="${agentId}" 不在名册里，落到未归属分组`
+        )
+      }
+
+      continue
+    }
+
+    const bucket = byAgent.get(agentId)
+
+    if (bucket) {
+      bucket.push(session)
+    } else {
+      byAgent.set(agentId, [session])
+    }
   }
 
-  if (normalized === 'default') {
-    return true
-  }
-
-  // Empty profile (the common IPC case) is the user's own main thread, not an agent.
-  if (!profile || normalized === '') {
-    return true
-  }
-
-  if (agentProfileSet?.has(normalized)) {
-    return false
-  }
-
-  // Unknown profile: conservative — keep it out of agent nesting as L1.
-  return true
+  return { byAgent, unassigned }
 }

@@ -1,0 +1,34 @@
+﻿FFFFFFF.F.F                                                              [100%]
+================================== FAILURES ===================================
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:47: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:200: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   AssertionError: l2-course-ee
+    assert '' == '电子工程训练（乙）'
+      
+      - 电子工程训练（乙）
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:262: AssertionError: l2-course-ee
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agent_soul_shared.py::test_l2_identity_lands_in_the_shared_layer
+FAILED tests/plobi/test_agent_soul_shared.py::test_read_side_prefers_the_shared_copy_when_agent_id_is_set
+FAILED tests/plobi/test_agent_soul_shared.py::test_l1_path_is_untouched_without_agent_id
+FAILED tests/plobi/test_agent_soul_shared.py::test_identity_survives_a_home_that_is_not_there
+FAILED tests/plobi/test_agent_soul_shared.py::test_writing_twice_is_a_noop - ...
+FAILED tests/plobi/test_agent_soul_shared.py::test_l1_row_is_never_written - ...
+FAILED tests/plobi/test_agent_soul_shared.py::test_a_chinese_agent_name_still_gets_a_safe_filename
+FAILED tests/plobi/test_agent_soul_shared.py::test_a_name_that_slugifies_differently_still_reads_its_own_soul
+FAILED tests/plobi/test_agent_soul_shared.py::test_identity_name_for_key_maps_every_spelling_of_the_same_row
+9 failed, 2 passed in 0.67s

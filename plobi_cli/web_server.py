@@ -124,6 +124,10 @@ except ImportError:
 WEB_DIST = Path(os.environ["PLOBI_WEB_DIST"]) if "PLOBI_WEB_DIST" in os.environ else Path(__file__).parent / "web_dist"
 _log = logging.getLogger(__name__)
 
+# 已经喊过的「未知归属」值（Batch 2a §3）。会话列表每刷新一次都会重打标签，
+# 同一个孤儿 agent_id 只该在日志里出现一次，不该把日志刷穿。
+_unknown_agent_owner_warned: set[str] = set()
+
 # ---------------------------------------------------------------------------
 # Per-channel subscriber registry used by /api/pub (PTY-side gateway → dashboard)
 # and /api/events (dashboard → browser sidebar).  Keyed by an opaque channel id
@@ -4319,12 +4323,13 @@ def get_sessions(
     offset: int = 0,
     min_messages: int = 0,
     archived: str = "exclude",
-    order: str = "created",
+    order: Optional[str] = None,
     source: str = None,
     exclude_sources: str = None,
     cwd_prefix: str = None,
     full: bool = False,
     profile: Optional[str] = None,
+    agent: Optional[str] = None,
 ):
     """List sessions.
 
@@ -4340,7 +4345,26 @@ def get_sessions(
 
     Rows omit ``system_prompt``/``model_config`` (the payload-dominating
     fields no list UI reads) unless ``full=1`` is passed.
+
+    2026-11-05（profile 连根拔 · 2b-1）：新增可选 ``agent=<名册 name>``。带上它
+    时整条请求让位给 :func:`_sessions_for_scope`（与 ``/api/agents/sessions``
+    同一份圈行实现，默认 recency 排序）；不带时老行为一字不动。
     """
+    if agent is not None and str(agent).strip():
+        return _sessions_for_scope(
+            limit=limit,
+            offset=offset,
+            min_messages=min_messages,
+            archived=archived,
+            order=order or "recent",
+            scope=str(agent).strip(),
+            source=source,
+            exclude_sources=exclude_sources,
+            full=full,
+        )
+
+    order = order or "created"
+
     if archived not in ("exclude", "only", "include"):
         raise HTTPException(
             status_code=400,
@@ -4425,6 +4449,78 @@ def get_profiles_sessions(
     archived: str = "exclude",
     order: str = "recent",
     profile: str = "all",
+    agent: Optional[str] = None,
+    source: str = None,
+    exclude_sources: str = None,
+    full: bool = False,
+):
+    """旧路径，本批保留（硬约束 1）。
+
+    2026-11-05（profile 连根拔 · 2b-1）：实现抽到 :func:`_sessions_for_scope`，
+    本端点与 ``/api/agents/sessions`` 共用。``agent``（名册 name）是本批新增的
+    产品面参数名，优先于残留的 ``profile``；两者都只做行级圈定。
+    """
+    return _sessions_for_scope(
+        limit=limit,
+        offset=offset,
+        min_messages=min_messages,
+        archived=archived,
+        order=order,
+        scope=_session_scope_arg(agent, profile),
+        source=source,
+        exclude_sources=exclude_sources,
+        full=full,
+    )
+
+
+@app.get("/api/agents/sessions")
+def get_agent_sessions(
+    limit: int = 20,
+    offset: int = 0,
+    min_messages: int = 0,
+    archived: str = "exclude",
+    order: str = "recent",
+    agent: str = "all",
+    profile: Optional[str] = None,
+    source: str = None,
+    exclude_sources: str = None,
+    full: bool = False,
+):
+    """产品面身份键（名册 name / ``sessions.agent_id``）的会话列表。
+
+    2026-11-05（profile 连根拔 · 2b-1）：``/api/profiles/sessions`` 的别名，
+    同一份实现、同一份圈行逻辑；``agent`` 优先于残留的 ``profile`` 参数名。
+    """
+    return _sessions_for_scope(
+        limit=limit,
+        offset=offset,
+        min_messages=min_messages,
+        archived=archived,
+        order=order,
+        scope=_session_scope_arg(agent, profile),
+        source=source,
+        exclude_sources=exclude_sources,
+        full=full,
+    )
+
+
+def _session_scope_arg(agent: Optional[str], profile: Optional[str]) -> str:
+    """作用域写法：``agent`` 优先、``profile`` 只作过渡回落，都没有就是 ``all``。"""
+    for value in (agent, profile):
+        text = (value or "").strip()
+        if text:
+            return text
+    return "all"
+
+
+def _sessions_for_scope(
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    min_messages: int = 0,
+    archived: str = "exclude",
+    order: str = "recent",
+    scope: str = "all",
     source: str = None,
     exclude_sources: str = None,
     full: bool = False,
@@ -4456,7 +4552,7 @@ def get_profiles_sessions(
     # 家名依旧校验（坏名字 400/404，与 /api/sessions 同一口径），但它的家
     # 不再被打开——选库已退役，见 docstring。
     profile_name: Optional[str] = None
-    scoped = (profile or "").strip()
+    scoped = (scope or "").strip()
     if scoped and scoped != "all":
         profile_name = _scope_name_for_read(scoped)
 
@@ -4499,9 +4595,13 @@ def get_profiles_sessions(
             exclude_children=True,
             agent_id=agent_id,
         )
-        # 家名 → 名册 name 的反表：总账每行只记 agent_id，桌面那几处
-        # （isL1SessionProfile / pickL1MainSession / 分组徽章）认的是家名。
-        home_of_agent = _agent_home_names()
+        # 2026-11-05（profile 连根拔 · 后端批）：这一段过去用「名册 name → 家名」的
+        # 反表把总账里的 agent_id 翻成 profile 家名打给桌面。现在 slug 只是 name
+        # 派生的内部标识、产品面不再出现 profile：标签直接给 **名册 name**
+        # （= sessions.agent_id 的原值），不再反查。这张表只留给下面 totals 枚举名册行。
+        agent_names = _agent_roster_names()
+        # 合法归属值的集合（名册 name）。只做 membership，不去动 `agent_names` 的顺序。
+        roster_name_set = {name for name in agent_names if name}
 
         def _tag(s: dict) -> None:
             # **永远按归属打**（2026-10-21 现核）：这一格曾经在「具体作用域」下
@@ -4509,10 +4609,12 @@ def get_profiles_sessions(
             # `default`，而桌面的 L1 旁路清理（`collectL1BypassSessionIds`）只按
             # 这个标签认「是不是我这一家的旁路会话」⇒ **Agent 的对话被当成 L1
             # 旁路顺手归档了**（库里有实例：`chan_…` 14 条消息、archived=1）。
-            # 按归属打就对了：L1 行（agent_id 空串）= default，Agent 行 = 它的家名。
-            owner = str(s.get("agent_id") or "").strip()
-            tag = home_of_agent.get(owner, "") if owner else ""
-            s["profile"] = tag or (profile_name or "default")
+            # 按归属打就对了：L1 行（agent_id 空串）= default，Agent 行 = 名册 name。
+            owner = _session_owner(s, roster_name_set)
+            s["agent_id"] = owner
+            # 旧键本批保留（桌面老版本还在读），**值已改成名册 name**；
+            # 下一批连同桌面侧一起删。
+            s["profile"] = owner or "default"
             s["is_default_profile"] = not owner
             s["is_active"] = (
                 s.get("ended_at") is None
@@ -4525,14 +4627,15 @@ def get_profiles_sessions(
         for s in rows:
             _tag(s)
 
-        # profile_totals：具体作用域 = 那一家的数；'all' = 按家名分组数。
-        # 名册里有家的 Agent 逐个索引计数（有界）；L1 与任何孤儿归属并进
+        # agent_totals：具体作用域 = 那一个 Agent 的数；'all' = 按 **名册 name**
+        # 分组数（2026-11-05 起 key 不再是 profile 家名）。
+        # 名册里有身份的 Agent 逐个索引计数（有界）；L1 与任何孤儿归属并进
         # 'default' 那一格（agent_id 空串 = L1，见 schema 注释）。
         if profile_name:
-            profile_totals = {profile_name: total}
+            agent_totals = {agent_id or profile_name: total}
         else:
-            profile_totals = {"default": 0}
-            for name in home_of_agent:
+            agent_totals = {"default": 0}
+            for name in agent_names:
                 count = db.session_count(
                     source=source_filter,
                     exclude_sources=exclude_list or None,
@@ -4543,8 +4646,10 @@ def get_profiles_sessions(
                     agent_id=name,
                 )
                 if count:
-                    profile_totals[home_of_agent[name]] = count
-            profile_totals["default"] = max(total - sum(profile_totals.values()), 0)
+                    agent_totals[name] = count
+            agent_totals["default"] = max(total - sum(agent_totals.values()), 0)
+        # 兼容一版：老调用方读的还是 profile_totals（同一份数据，key 已是名册 name）。
+        profile_totals = dict(agent_totals)
     finally:
         db.close()
 
@@ -4556,11 +4661,34 @@ def get_profiles_sessions(
     return {
         "sessions": window,
         "total": total,
+        "agent_totals": agent_totals,
         "profile_totals": profile_totals,
         "limit": limit,
         "offset": offset,
         "errors": [],
     }
+
+
+
+def _agent_roster_names() -> list[str]:
+    """名册里所有在册的 Agent 名字（**名册 name**，产品面唯一的身份键）。
+
+    2026-11-05（profile 连根拔 · 后端批）：这段枚举过去借 :func:`_agent_home_names`
+    取键，而那张表按 ``profile_name`` 过滤——``l2_course`` 这类行派生不出 slug
+    （``profile_name == ""``），它们的会话就会被算进 ``default`` 那一格，把 L1
+    的数字抬高。产品面既然只认名册 name，枚举就直接读名册，不再借道 slug。
+    """
+    try:
+        from plobi.agents.registry import AgentRegistry
+
+        registry = AgentRegistry.load()
+        return [
+            entry.name
+            for entry in registry.entries()
+            if (entry.name or "").strip() and not getattr(entry, "archived", False)
+        ]
+    except Exception:
+        return []
 
 
 def _agent_home_names() -> dict:
@@ -10836,6 +10964,21 @@ def _roster_has_scope(scope: str) -> bool:
         return False
 
 
+def _roster_scope_name(scope: str) -> Optional[str]:
+    """作用域值 → 名册里那一行的 **name 原样**；指代不唯一或没有就给 None。
+
+    ``entry_for_profile`` 本身已经"撞车给 None"，这里只负责把 name 拎出来。
+    """
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        entry = entry_for_profile(scope)
+    except Exception:
+        return None
+    name = (entry.name or "").strip() if entry is not None else ""
+    return name or None
+
+
 def _scope_name_for_read(profile: Optional[str]) -> str:
     """作用域值 → 规范名；存在性问**名册那一行**，不问盘上的家目录。
 
@@ -10851,18 +10994,47 @@ def _scope_name_for_read(profile: Optional[str]) -> str:
     from plobi_cli import agent_identity as profiles_mod
 
     raw = (profile or "default").strip() or "default"
+    canon = profiles_mod.normalize_profile_name(raw)
+    # L1 那个伪作用域先短路：名册里 ``secretary`` 那一行的 slug 恰好就叫
+    # ``default``，先问名册就会被它抢走，L1 一夜之间变成某个 Agent 的家。
+    if canon == "default":
+        return canon
+    # 2026-11-05（profile 连根拔）：作用域从今往后传的是**名册 name**，它可以是
+    # 中文、可以带大写（``agenda`` / ``中国近现代人物研究`` / ``Plobi``）——这些
+    # 都不是 slug 形状，先过 ``validate_profile_name`` 会当场 400。顺序改成：
+    # 归一 → 先问名册（拿到就**按名册原样**返回，库里 agent_id 存的就是它，
+    # 大小写不能再被抹平）→ 再看老家的壳 → 都没有才按 slug 形状报错。
+    netry = _roster_scope_name(raw)
+    if netry:
+        return netry
     try:
-        canon = profiles_mod.normalize_profile_name(raw)
         profiles_mod.validate_profile_name(canon)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if canon == "default":
-        return canon
-    if _roster_has_scope(canon):
-        return canon
     if profiles_mod.profile_exists(canon):
         return canon
     raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
+
+
+def _session_owner(s: dict, roster_names: set[str]) -> str:
+    """会话行的归属键归一：名册 name 原样，空串＝L1；孤儿归属降级成 L1 并喊一次。
+
+    Batch 2a §3 的防御：库里的归属键应当恒是名册 name 或空串，但「应当」不是
+    保证——名册行被删、旧库被拷进来都会留下孤儿归属。这时按 **L1** 处理并留
+    一行 warning（同一个值只喊一次，免得刷穿日志），不许静默把它挂到一个已经
+    不存在的 Agent 上，也不许拿它去猜另一个名字。
+    """
+    owner = str(s.get("agent_id") or "").strip()
+    if owner and owner not in roster_names:
+        if owner not in _unknown_agent_owner_warned:
+            _unknown_agent_owner_warned.add(owner)
+            _log.warning(
+                "session %s carries agent_id=%r which is not in the roster; treating it as L1",
+                s.get("id"),
+                owner,
+            )
+        return ""
+    return owner
 
 
 def _annotate_cron_job(job: Dict[str, Any], profile: str, home: Path) -> Dict[str, Any]:
@@ -13710,9 +13882,14 @@ async def create_profile_endpoint(body: ProfileCreate):
     }
 
 
+# 2026-11-05（profile 连根拔 · 2b-2）：产品面端点为 /api/agents/active，与旧路径共用同一实现。
+# 这一组只给 active 加别名：/api/agents/{name} 的 PATCH 已被 kanban 的 update_agent_route 占用
+# （那是改 Agent 元数据，不是改 profile home），rename / delete / setup-command 三个 CRUD 端点
+# 整组留到 2c 与旧路由一并迁移，避免两条不同语义抢同一路径模板。
 @app.get("/api/profiles/active")
+@app.get("/api/agents/active")
 async def get_active_profile_endpoint():
-    """Return the sticky active profile and the profile this dashboard
+    """Deprecated: 名字里的 ``profile`` 已只是内部 slug，语义是「当前 Agent 身份」；产品面请用 ``/api/agents``。 Return the sticky active profile and the profile this dashboard
     process is currently running as.
 
     ``active`` is the sticky default written by ``plobi profile use`` —
@@ -13732,8 +13909,9 @@ async def get_active_profile_endpoint():
 
 
 @app.post("/api/profiles/active")
+@app.post("/api/agents/active")
 async def set_active_profile_endpoint(body: ProfileActiveUpdate):
-    """Set the sticky active profile (mirrors ``plobi profile use``).
+    """Deprecated: 名字里的 ``profile`` 已只是内部 slug，语义是「当前 Agent 身份」；产品面请用 ``/api/agents``。 Set the sticky active profile (mirrors ``plobi profile use``).
 
     Note: this does not retarget the already-running dashboard process —
     it changes which profile subsequent CLI commands and gateways use.
@@ -13850,6 +14028,35 @@ async def delete_profile_endpoint(name: str):
     return {"ok": True, "backup": str(backup)}
 
 
+def _agent_scope_name(name: str) -> str:
+    """任意写法 → **名册 name**（``/api/agents/<name>/...`` 的寻址口径）。
+
+    2026-11-05（profile 连根拔 · 后端批）：产品面的身份键就是名册 ``name``，所以
+    别名路由先把外部传来的写法（名册 name / 旧的家名 ``l2-*`` / 派生 slug）翻回
+    名册 name，再交给与 ``/api/profiles/...`` 同一套实现——
+    :func:`_resolve_profile_dir` 与 :func:`_shared_soul_path_for` 的键都是名册
+    name，后者决定 ``souls/<名册 name>.md`` 的落点：**换成 slug 就找不到自己那份
+    SOUL，静默回落 L1 秘书**（10-31 那次分身自称总秘书的同类事故）。
+    翻不回来就原样往下走（``default`` 没有名册行，落共享根那份 SOUL.md）。
+    """
+    raw = str(name or "").strip()
+    if not raw:
+        return raw
+    # ``default`` 是 L1 的语义键（没有名册行，落共享根那份 SOUL.md），必须先短路：
+    # 名册里秘书那行的派生 slug 恰好也叫 ``default``（slug 表 ``secretary: default``），
+    # 交给下面的反查会把 L1 翻成秘书行，读错人设。
+    if raw.casefold() == "default":
+        return "default"
+    try:
+        from plobi.agents.registry import identity_name_for_key
+
+        return identity_name_for_key(raw) or raw
+    except Exception:  # noqa: BLE001 - 名册读不到就原值透传，别把 5xx 甩给调用方
+        pass
+    return raw
+
+
+
 @app.get("/api/profiles/{name}/soul")
 async def get_profile_soul(name: str):
     _resolve_profile_dir(name)
@@ -13958,6 +14165,30 @@ async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
         _log.exception("PUT /api/profiles/%s/model failed", name)
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True, "cleared": clearing, "provider": provider, "model": model}
+
+
+# ---------------------------------------------------------------------------
+# /api/agents/<名册 name>/{soul,model}/{GET,PUT}：产品面身份键的别名（2026-11-05）
+# 内部与 /api/profiles/<家名>/... **同一实现、同一寻址口径**（_agent_scope_name）；
+# 旧路由一个字不动——桌面老版本与外部脚本还在打它们。
+# ---------------------------------------------------------------------------
+@app.get("/api/agents/{name}/soul")
+async def get_agent_soul(name: str):
+    """``/api/agents/<名册 name>/soul``：同 :func:`get_profile_soul`。"""
+    return await get_profile_soul(_agent_scope_name(name))
+
+
+@app.put("/api/agents/{name}/soul")
+async def update_agent_soul(name: str, body: ProfileSoulUpdate):
+    """``/api/agents/<名册 name>/soul``：同 :func:`update_profile_soul`。"""
+    return await update_profile_soul(_agent_scope_name(name), body)
+
+
+@app.put("/api/agents/{name}/model")
+async def update_agent_model_endpoint(name: str, body: ProfileModelUpdate):
+    """``/api/agents/<名册 name>/model``：同 :func:`update_profile_model_endpoint`。"""
+    return await update_profile_model_endpoint(_agent_scope_name(name), body)
+
 
 
 @app.post("/api/profiles/{name}/describe-auto")

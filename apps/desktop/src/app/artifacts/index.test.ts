@@ -7,6 +7,7 @@ import { artifactImageSrc, collectArtifactsForSession } from './artifact-utils'
 
 function makeSession(overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
+    agent_id: '',
     ended_at: null,
     id: 'session-1',
     input_tokens: 0,

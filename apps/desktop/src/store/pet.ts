@@ -1,7 +1,7 @@
 import { atom, computed } from 'nanostores'
 
 import { persistBoolean, storedBoolean } from '@/lib/storage'
-import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, normalizeProfileKey } from '@/store/scope'
 import { $busy } from '@/store/session'
 
 /**
@@ -104,7 +104,7 @@ export const $petActive = computed($petInfo, info => info.enabled && Boolean(inf
  * mode (one backend serving every profile).
  */
 export function petProfile(): string {
-  return normalizeProfileKey($activeGatewayProfile.get())
+  return normalizeProfileKey($scopeAgent.get())
 }
 
 /**

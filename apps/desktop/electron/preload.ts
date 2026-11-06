@@ -287,6 +287,8 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   },
   updates: {
     check: () => ipcRenderer.invoke('plobi:updates:check'),
+    releaseCheck: () => ipcRenderer.invoke('plobi:updates:release-check'),
+    releaseInstall: () => ipcRenderer.invoke('plobi:updates:release-install'),
     apply: opts => ipcRenderer.invoke('plobi:updates:apply', opts),
     getBranch: () => ipcRenderer.invoke('plobi:updates:branch:get'),
     setBranch: name => ipcRenderer.invoke('plobi:updates:branch:set', name),

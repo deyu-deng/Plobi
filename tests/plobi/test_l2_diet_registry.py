@@ -10,6 +10,7 @@
 4. diet 真源：`diet_entry_toolsets` 写名册行 `disabled_toolsets`，幂等、只追加。
 5. 读侧并集：名册行黑名单与顶层用户选择求并集，替换会吃掉用户的勾选。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,7 +26,9 @@ from plobi.agents.registry import (
 
 
 def _entry(**kw) -> AgentEntry:
-    base = dict(name="Stithy", role="l2_project", profile="l2-stithy", category="projects")
+    base = dict(
+        name="Stithy", role="l2_project", category="projects"
+    )
     base.update(kw)
     return AgentEntry(**base)
 
@@ -66,9 +69,11 @@ def test_profile_home_is_still_the_fallback(monkeypatch, tmp_path):
 
 
 def test_lookup_matches_the_registry_name_not_only_the_profile_name():
-    entries = [_entry(name="Stithy", profile="l2-stithy")]
-    assert _entry_for_profile_in(entries, "stithy") is entries[0]
-    assert _entry_for_profile_in(entries, "l2-stithy") is entries[0]
+    """AGENT_ID 带的是名册 name。非 ASCII 名的 slug 与 name 毫无关系——
+    靠 slug 桶认不出来时，还得有 name 桶兜着（2026-11-05 两轮唯一命中）。"""
+    entries = [_entry(name="大学物理（甲）Ⅱ", role="l2_project", category="courses")]
+    assert _entry_for_profile_in(entries, "l2-course-physics-a2") is entries[0]  # slug 桶
+    assert _entry_for_profile_in(entries, "大学物理（甲）Ⅱ") is entries[0]  # name 桶
 
 
 def test_lookup_never_returns_an_archived_row():
@@ -177,4 +182,7 @@ def test_union_leaves_an_overlay_without_an_agent_section_alone():
     from plobi_cli.config import _union_agent_blacklists
 
     overlay = {"model": {"default": "kimi"}}
-    assert _union_agent_blacklists(overlay, {"agent": {"disabled_toolsets": ["web"]}}) == overlay
+    assert (
+        _union_agent_blacklists(overlay, {"agent": {"disabled_toolsets": ["web"]}})
+        == overlay
+    )

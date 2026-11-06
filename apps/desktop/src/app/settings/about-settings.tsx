@@ -8,11 +8,15 @@ import { type Translations, useI18n } from '@/i18n'
 import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
+  $desktopRelease,
   $desktopVersion,
+  $releaseInstalling,
   $updateApply,
   $updateChecking,
   $updateStatus,
+  checkDesktopRelease,
   checkUpdates,
+  installDesktopRelease,
   openUpdatesWindow,
   refreshDesktopVersion,
   startActiveUpdate
@@ -50,9 +54,12 @@ export function AboutSettings() {
   const a = t.settings.about
   const version = useStore($desktopVersion)
   const status = useStore($updateStatus)
+  const release = useStore($desktopRelease)
   const apply = useStore($updateApply)
   const checking = useStore($updateChecking)
+  const releaseInstalling = useStore($releaseInstalling)
   const [justChecked, setJustChecked] = useState(false)
+  const [releaseError, setReleaseError] = useState('')
 
   // The version atom is loaded once at app boot, which makes About show a
   // stale number after a self-update (the running binary is current, the
@@ -60,6 +67,9 @@ export function AboutSettings() {
   // reflects the running build.
   useEffect(() => {
     void refreshDesktopVersion()
+    // Ask GitHub whether a newer desktop build exists, so the card can say
+    // so without the user pressing "check" first.
+    void checkDesktopRelease()
   }, [])
 
   const behind = status?.behind ?? 0
@@ -68,14 +78,29 @@ export function AboutSettings() {
 
   const handleCheck = async () => {
     setJustChecked(false)
-    const next = await checkUpdates()
+    setReleaseError('')
+    const [next] = await Promise.all([checkUpdates(), checkDesktopRelease()])
     setJustChecked(Boolean(next))
+  }
+
+  const handleUpgrade = async () => {
+    setReleaseError('')
+    const result = await installDesktopRelease()
+
+    if (!result.ok) {
+      setReleaseError(result.message ?? result.reason ?? '')
+    }
   }
 
   let statusLine: string
   let statusTone: 'idle' | 'available' | 'error' = 'idle'
 
-  if (!supported) {
+  if (release?.newer) {
+    // The shell itself is behind: that is the one update the user actually
+    // asked for ("点一下就升级"). It comes before the agent-checkout state.
+    statusLine = a.updateReadyVersion(release.latest ?? '')
+    statusTone = 'available'
+  } else if (!supported) {
     statusLine = status?.message ?? a.cantUpdate
     statusTone = 'error'
   } else if (status?.error) {
@@ -144,6 +169,11 @@ export function AboutSettings() {
                   {status.message}
                 </p>
               ) : null}
+              {releaseError ? (
+                <p className="mt-1 font-mono text-[0.68rem] break-all text-destructive">
+                  {releaseError}
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-muted-foreground">
                 {a.lastChecked(relativeTime(status?.fetchedAt, a))}
                 {justChecked && !checking ? a.justNowSuffix : ''}
@@ -161,6 +191,17 @@ export function AboutSettings() {
               {checking ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
               {checking ? a.checking : a.checkNow}
             </Button>
+
+            {release?.newer && release.canUpdate ? (
+              <Button
+                disabled={releaseInstalling || applying}
+                onClick={() => void handleUpgrade()}
+                size="sm"
+              >
+                {releaseInstalling ? <Loader2 className="size-3 animate-spin" /> : null}
+                {a.upgradeTo(release.latest ?? '')}
+              </Button>
+            ) : null}
 
             {behind > 0 && supported && !applying && (
               <>

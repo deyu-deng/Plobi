@@ -37,7 +37,7 @@ def roster(_isolate_plobi_home):
 
 
 def _add(reg: AgentRegistry, name: str, profile: str | None = None) -> None:
-    reg.upsert(AgentEntry(name=name, role="l2_agenda", profile=profile))
+    reg.upsert(AgentEntry(name=name, role="l2_agenda"))
     reg.save()
 
 
@@ -78,6 +78,7 @@ def _seed_session(session_id: str, agent_id: str) -> None:
 
 # ── ① 名册里有的作用域不再 404 ─────────────────────────────────────────────
 
+
 def test_roster_scope_is_not_missing(roster):
     """① 名册里有的那一行 ⇒ 不是「不存在」。"""
     _add(roster, "srtp", "srtp")
@@ -95,6 +96,7 @@ def test_roster_scope_matches_by_profile_name_not_by_dir(roster):
 
 # ── ② 圈出来的真是那一行的会话 ─────────────────────────────────────────────
 
+
 def test_scoped_list_returns_only_that_rows_sessions(client, roster):
     """② 名册行的作用域 ⇒ 只圈那一行的会话，不是全库。"""
     _add(roster, "srtp", "srtp")
@@ -110,6 +112,7 @@ def test_scoped_list_returns_only_that_rows_sessions(client, roster):
 
 
 # ── ③ 坏名字仍然 404／400，正文一字不变 ───────────────────────────────────
+
 
 def test_unknown_scope_still_404s_with_the_same_wording(roster):
     """③ 查无此行 ⇒ 404，正文仍是那句 ``Profile 'x' does not exist.``。"""
@@ -142,6 +145,7 @@ def test_endpoint_still_404s_for_an_unknown_scope(client, roster):
 
 # ── ④ default 与 all 两条老路一字不变 ──────────────────────────────────────
 
+
 def test_default_scope_is_unchanged(roster):
     """④ ``default`` 是 L1 那个伪作用域，永远算数。"""
     assert _scope("default") == "default"
@@ -155,6 +159,7 @@ def test_all_and_default_still_answer_on_the_endpoint(client, roster):
 
 
 # ── ⑤ 一个字节都不重建 ─────────────────────────────────────────────────────
+
 
 def test_resolving_a_roster_scope_creates_no_home(roster):
     """⑤ 修法是**换判据**，不是把家造回来。"""
@@ -179,6 +184,7 @@ def test_a_home_that_is_still_on_disk_still_resolves(roster):
 
 
 # ── 端点那一路：读面三处都换成问名册 ───────────────────────────────────────
+
 
 def test_sessions_endpoint_accepts_a_roster_scope(client, roster):
     """``GET /api/sessions`` 那一处也是问名册了。"""

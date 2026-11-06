@@ -1,0 +1,40 @@
+﻿gateway/platforms/base.py:1066:        profile_dirs = [p for p in profiles_dir.iterdir() if p.is_dir()]
+gateway/platforms/base.py:1069:    for profile_dir in profile_dirs:
+gateway/platforms/base.py:1071:            roots.append(profile_dir / "cache" / subdir)
+gateway/run.py:17025:        from plobi_cli.agent_identity import get_active_profile_name, get_profile_dir
+gateway/run.py:17028:            return get_profile_dir(name)
+plobi/agents/registry.py:1180:            # **没有 profile_dir**：名册加一行不再落一个家（B 刀）。
+plobi/agents/registry.py:1213:    def _write_profile_models(self, profile_dir: Path, entry: AgentEntry) -> Path:
+plobi/agents/registry.py:1216:        原来这一句是 ``profile_dir / "plobi" / "models.json"``：每次 spawn 都往那个分身家
+plobi/agents/registry.py:2668:def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
+plobi/agents/registry.py:2697:    if profile_dir is None:
+plobi/agents/registry.py:2699:    cfg_path = Path(profile_dir) / "config.yaml"
+plobi/agents/registry.py:2752:    from plobi_cli.agent_identity import get_profile_dir
+plobi/agents/registry.py:2754:    return get_profile_dir("default") / "skills"
+plobi/agents/registry.py:2894:def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
+plobi/agents/registry.py:2902:    cfg_path = Path(profile_dir) / "config.yaml"
+plobi/console/router.py:275:    ``get_profile_dir`` 跨库只读聚合。迁移后（WP-AGENT-SESSION-ATTRIBUTION
+plobi/console/router.py:1203:        archive_path = _archive_profile_dir(entry, move=False)
+plobi/console/router.py:1221:    archive_path = _archive_profile_dir(updated, move=True)
+plobi/console/router.py:1241:def _archive_profile_dir(entry: AgentEntry, *, move: bool) -> Optional[Path]:
+plobi/console/router.py:1250:        from plobi_cli.profiles import get_profile_dir
+plobi/console/router.py:1254:        src = get_profile_dir(entry.profile_name)
+plobi_cli/agent_identity.py:149:def has_bundled_skills_opt_out(profile_dir: Path) -> bool:
+plobi_cli/agent_identity.py:152:        return (profile_dir / NO_BUNDLED_SKILLS_MARKER).exists()
+plobi_cli/agent_identity.py:163:def mark_profile_retired(profile_dir: Path | str, *, reason: str = "") -> bool:
+plobi_cli/agent_identity.py:168:    directory = Path(profile_dir)
+plobi_cli/agent_identity.py:182:def is_profile_retired(profile_dir: Path | str) -> bool:
+plobi_cli/agent_identity.py:185:        return (Path(profile_dir) / PROFILE_RETIREMENT_MARKER).exists()
+plobi_cli/agent_identity.py:412:def get_profile_dir(name: str) -> Path:
+plobi_cli/agent_identity.py:425:    return get_profile_dir(canon).is_dir()
+plobi_cli/agent_identity.py:742:def _migrate_profile_config_if_outdated(profile_dir: Path) -> None:
+plobi_cli/agent_identity.py:751:    config_path = profile_dir / "config.yaml"
+plobi_cli/agent_identity.py:759:        token = set_plobi_home_override(str(profile_dir))
+plobi_cli/agent_identity.py:877:    # at. Persisted in ``<profile_dir>/profile.yaml``. Empty when the
+plobi_cli/agent_identity.py:891:def _read_distribution_meta(profile_dir: Path) -> tuple:
+plobi_cli/agent_identity.py:898:    mf_path = profile_dir / "distribution.yaml"
+plobi_cli/agent_identity.py:916:def _read_config_model(profile_dir: Path) -> tuple:
+plobi_cli/agent_identity.py:920:    不是 ``profile_dir`` 那个目录——否则 ``profile list`` 那一列的模型会全空，
+plobi_cli/agent_identity.py:925:    config_path = config_path_for_home(profile_dir)
+plobi_cli/agent_identity.py:942:def _check_gateway_running(profile_dir: Path) -> bool:
+plobi_cli/agent_identity.py:953:    agree.  Parameterized by ``profile_dir`` so it never mutates ``PLOBI_HOME``.

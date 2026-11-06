@@ -40,6 +40,7 @@ import {
   type ArtifactRecord,
   collectArtifactsForSession
 } from './artifact-utils'
+import { sessionScopeKey } from '@/lib/session-agent'
 
 function formatArtifactTime(timestamp: number): string {
   return fmtDayTime.format(new Date(timestamp))
@@ -122,7 +123,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
 
     try {
       const sessions = (await listAllProfileSessions(30, 1)).sessions
-      const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, session.profile)))
+      const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, sessionScopeKey(session))))
       const nextArtifacts: ArtifactRecord[] = []
 
       results.forEach((result, index) => {

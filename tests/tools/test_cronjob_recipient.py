@@ -27,11 +27,11 @@ def _roster(tmp_path, monkeypatch):
 
     path = tmp_path / "recipient-roster.yaml"
     rows = {
-        name: AgentEntry(name=name, role="l2_test", profile=name, display_name=name)
+        name: AgentEntry(name=name, role="l2_test", display_name=name)
         for name in (OWNER, OTHER)
     }
     rows[GONE] = replace(
-        AgentEntry(name=GONE, role="l2_test", profile=GONE, display_name=GONE),
+        AgentEntry(name=GONE, role="l2_test", display_name=GONE),
         archived=True,
         archived_at="2026-10-19",
     )
@@ -47,7 +47,11 @@ def _run(**kwargs):
 
 
 def _create(**kwargs):
-    args = {"action": "create", "prompt": "把今天还开口的口子列一遍", "schedule": "every 1d"}
+    args = {
+        "action": "create",
+        "prompt": "把今天还开口的口子列一遍",
+        "schedule": "every 1d",
+    }
     args.update(kwargs)
     return _run(**args)
 
@@ -117,7 +121,9 @@ class TestUpdate:
         refused = _run(action="update", job_id=job_id, recipient="")
         assert refused["success"] is False
         assert "清空" in refused["error"]
-        cleared = _run(action="update", job_id=job_id, recipient="", no_agent=True, script="wd.sh")
+        cleared = _run(
+            action="update", job_id=job_id, recipient="", no_agent=True, script="wd.sh"
+        )
         assert cleared["success"] is True
         assert cleared["job"]["recipient"] is None
         assert cleared["job"]["no_agent"] is True
@@ -138,14 +144,12 @@ class TestListingAndWiring:
         assert "recipient" in CRONJOB_SCHEMA["parameters"]["properties"]
         entry = registry.get_entry("cronjob")
         out = json.loads(
-            entry.handler(
-                {
-                    "action": "create",
-                    "prompt": "每天核一遍没关的口子",
-                    "schedule": "every 1d",
-                    "recipient": OWNER,
-                }
-            )
+            entry.handler({
+                "action": "create",
+                "prompt": "每天核一遍没关的口子",
+                "schedule": "every 1d",
+                "recipient": OWNER,
+            })
         )
         assert out["success"] is True
         assert out["job"]["recipient"] == OWNER

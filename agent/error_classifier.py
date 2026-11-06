@@ -452,6 +452,19 @@ _SERVER_DISCONNECT_PATTERNS = [
     "incomplete chunked read",
 ]
 
+# A disconnect on a session that is already sizeable is not the same animal as a
+# disconnect on a two-message chat.  Measured 2026-11-05 09:12:28 on
+# antigravity/gemini-3.8-flash: 89 messages / ~32,204 tokens, the stream died
+# mid-output with "incomplete chunked read", and because the model's context
+# window is 1M the old `approx_tokens > context_length * 0.6` test called it
+# small — so it was retried as a plain timeout, three times, re-sending the same
+# 32k payload each time and dying the same way.  These floors say: past this
+# size, a transport disconnect is treated as an oversized-stream rejection and
+# routed to the compression path, which shrinks the request instead of repeating
+# it.  Below them the old transient-retry behaviour is untouched.
+_DISCONNECT_COMPRESS_MIN_MESSAGES = 60
+_DISCONNECT_COMPRESS_MIN_TOKENS = 24000
+
 # SSL certificate verification failures — deterministic, NOT transient.
 #
 # A failed certificate chain (TLS-inspecting corporate proxy, missing
@@ -832,6 +845,16 @@ def classify_api_error(
         is_large = approx_tokens > context_length * 0.6 or (
             context_length <= 256000 and (approx_tokens > 120000 or num_messages > 200)
         )
+        # The ratio test alone only protects models with small windows. On a 1M-window
+        # model the exact failure of 2026-11-05 (89 msgs / ~32k tokens, dropped mid
+        # stream) reads as "tiny" and becomes a plain timeout: retry the identical
+        # 32k request, get the identical disconnect. A session already this big is
+        # better served by one compressed retry than by three identical corpses.
+        if not is_large and (
+            num_messages >= _DISCONNECT_COMPRESS_MIN_MESSAGES
+            or approx_tokens >= _DISCONNECT_COMPRESS_MIN_TOKENS
+        ):
+            is_large = True
         if is_large:
             return _result(
                 FailoverReason.context_overflow,

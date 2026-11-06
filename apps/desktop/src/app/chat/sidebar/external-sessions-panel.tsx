@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 
+import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-import { getAgentExternalSessions, titleOf, whenText } from './external-sessions'
+import { getAgentExternalSessions, markExternalSession, titleOf, whenText } from './external-sessions'
 import type { ExternalSession, ExternalSessionsData } from './external-sessions'
 
 /**
@@ -63,32 +64,66 @@ export function useExternalSessions(agentId: string): { data: null | ExternalSes
 
 /** 一条会话在组里的一行：标题 + 时间，点开在主区读。 */
 export function ExternalSessionRow({
+  agentId,
   muted = false,
+  onMarked,
   onOpen,
   session,
   trailing
 }: {
+  /**
+   * 传了才给人工判「有关/无关」的那枚勾/叉（用户 11-04：目录相同的已经自动算有关，
+   * 剩下的 L2 判，人也能直接改）。归档那几条不传——它们已经不在活列表里。
+   */
+  agentId?: string
   /** 归档的那几条压暗一档（它们仍在同一张表里，只是不再当活会话读）。 */
   muted?: boolean
+  onMarked?: () => void
   onOpen: () => void
   session: ExternalSession
   /** 右侧那格默认是时间；归档列表里换成那家软件的名字。 */
   trailing?: string
 }) {
+  const { t } = useI18n()
+
+  const markLabel =
+    session.related === true ? t.console.externalSessionsMarkUnrelated : t.console.externalSessionsMarkRelated
+
+  const mark = (related: boolean) => {
+    if (!agentId) {
+      return
+    }
+
+    void markExternalSession(agentId, session.vendor, session.id, related).then(() => onMarked?.())
+  }
+
   return (
-    <button
-      className={cn(
-        'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] leading-none transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none',
-        muted ? 'text-(--ui-text-tertiary)' : 'text-(--ui-text-secondary)'
-      )}
-      onClick={onOpen}
-      title={session.project}
-      type="button"
-    >
-      <span className="min-w-0 flex-1 truncate">{titleOf(session)}</span>
-      <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
-        {trailing ?? whenText(session.updated_at)}
-      </span>
-    </button>
+    <div className="group/row flex h-7 w-full items-center gap-1 rounded-md pr-1 transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none">
+      <button
+        className={cn(
+          'flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-[0.8125rem] leading-none transition-colors duration-100 ease-out hover:text-foreground hover:transition-none',
+          muted ? 'text-(--ui-text-tertiary)' : 'text-(--ui-text-secondary)'
+        )}
+        onClick={onOpen}
+        title={session.project}
+        type="button"
+      >
+        <span className="min-w-0 flex-1 truncate">{titleOf(session)}</span>
+        <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
+          {trailing ?? whenText(session.updated_at)}
+        </span>
+      </button>
+      {agentId ? (
+        <button
+          aria-label={markLabel}
+          className="grid size-5 shrink-0 place-items-center rounded text-(--ui-text-quaternary) opacity-0 transition-opacity duration-100 ease-out hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+          onClick={() => mark(session.related !== true)}
+          title={markLabel}
+          type="button"
+        >
+          <Codicon name={session.related === true ? 'close' : 'check'} size="0.75rem" />
+        </button>
+      ) : null}
+    </div>
   )
 }

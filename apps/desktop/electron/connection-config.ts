@@ -201,11 +201,18 @@ function profileRemoteOverride(config, profile) {
  * that are scoped by renderer-side `request.profile` must carry that scope as a
  * query parameter. Local pooled backends and per-profile remote overrides do not
  * need this: they already run against a backend scoped to the target profile.
+ *
+ * `forceProfileQuery` is the second reason to use the query channel: an HTTP header
+ * may only carry latin-1, and a roster identity can be a course name in Chinese —
+ * measured 11-05 on this box, 11 of 25 identities are. `X-Plobi-Agent` with such a
+ * name makes Node throw before the request leaves, so the whole bridge dies instead
+ * of scoping one call. The backend reads header → `?profile=`, so the query form is
+ * the same statement through a channel that can carry it.
  */
 function pathWithGlobalRemoteProfile(path, profile, opts: any = {}) {
   const scopedProfile = connectionScopeKey(profile)
 
-  if (!scopedProfile || !opts.globalRemote || opts.profileRemoteOverride) {
+  if (!scopedProfile || (!opts.globalRemote && !opts.forceProfileQuery) || opts.profileRemoteOverride) {
     return path
   }
 

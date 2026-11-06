@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+﻿import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,8 @@ interface PageSearchShellProps extends React.ComponentProps<'section'> {
   /** 这一页是不是顶层那一屏。嵌进设置里的那一份要传 false：头顶那枚返回键会
    *  把人直接送回对话，把宿主那一屏整张撤掉（用户 11-05 的截图里就是这样）。 */
   showBack?: boolean
+  /** 表头：这一屏属于哪个 Agent（主界面侧边栏点进来的能力页）。只写 Agent 名，不加修饰。 */
+  pageTitle?: string
 }
 
 function ShellTabs({
@@ -75,6 +77,7 @@ export function PageSearchShell({
   searchHidden = false,
   searchTrailingAction,
   showBack = true,
+  pageTitle,
   ...props
 }: PageSearchShellProps) {
   const hasTabs = (tabs?.length ?? 0) > 0
@@ -132,6 +135,13 @@ export function PageSearchShell({
           {hasTabs ? <ShellTabs activeTab={activeTab} onTabChange={onTabChange} tabs={tabs!} /> : <span />}
           <div className="flex min-w-0 items-center justify-end">{searchTrailingAction}</div>
         </div>
+        {pageTitle ? (
+          // 表头：一行 Agent 名。主界面侧边栏点进来的能力页才有；设置里那份全局的
+          // 不传（用户 11-05：全局页不加任何标识）。
+          <div className="flex min-w-0 items-center px-3 pb-2">
+            <h2 className="truncate text-[0.92rem] font-medium text-(--ui-text-primary)">{pageTitle}</h2>
+          </div>
+        ) : null}
         {filters ? <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-2">{filters}</div> : null}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background)">{children}</div>

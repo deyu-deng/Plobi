@@ -1,0 +1,76 @@
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\lark_oapi\ws\pb\google\__init__.py:2
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\lark_oapi\ws\pb\google\__init__.py:2: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+    __import__('pkg_resources').declare_namespace(__name__)
+
+.venv\Lib\site-packages\lark_oapi\ws\pb\google\__init__.py:2
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\lark_oapi\ws\pb\google\__init__.py:2: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('lark_oapi.ws.pb.google')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    __import__('pkg_resources').declare_namespace(__name__)
+
+.venv\Lib\site-packages\pkg_resources\__init__.py:2560
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\pkg_resources\__init__.py:2560: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('lark_oapi.ws.pb')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(parent)
+
+.venv\Lib\site-packages\pkg_resources\__init__.py:2560
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\pkg_resources\__init__.py:2560: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('lark_oapi.ws')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(parent)
+
+.venv\Lib\site-packages\pkg_resources\__init__.py:2560
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\pkg_resources\__init__.py:2560: DeprecationWarning: Deprecated call to `pkg_resources.declare_namespace('lark_oapi')`.
+  Implementing implicit namespace packages (as specified in PEP 420) is preferred to `pkg_resources.declare_namespace`. See https://setuptools.pypa.io/en/latest/references/keywords.html#keyword-namespace-packages
+    declare_namespace(parent)
+
+.venv\Lib\site-packages\lark_oapi\ws\pb\google\protobuf\internal\well_known_types.py:91
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\lark_oapi\ws\pb\google\protobuf\internal\well_known_types.py:91: DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.fromtimestamp(timestamp, datetime.UTC).
+    _EPOCH_DATETIME_NAIVE = datetime.datetime.utcfromtimestamp(0)
+
+.venv\Lib\site-packages\lark_oapi\ws\client.py:30
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\lark_oapi\ws\client.py:30: DeprecationWarning: There is no current event loop
+    loop = asyncio.get_event_loop()
+
+tests\integration\test_vision_docker_resolve.py:44
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\integration\test_vision_docker_resolve.py:44: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytest.mark.timeout(180),
+
+tests\test_background_review_list_shapes.py:142
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\test_background_review_list_shapes.py:142: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_background_review_list_shapes.py)
+    class TestRunner:
+
+tests\test_wheel_locales_e2e.py:37
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\test_wheel_locales_e2e.py:37: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(300)  # overrides the global --timeout=30; cold-CI wheel build + venv + pip can exceed it
+
+tests\test_wheel_locales_e2e.py:95
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\test_wheel_locales_e2e.py:95: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(300)  # overrides the global --timeout=30; cold-CI sdist build can exceed it
+
+tests\tools\test_file_sync_perf.py:82
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\tools\test_file_sync_perf.py:82: PytestUnknownMarkWarning: Unknown pytest.mark.ssh - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.ssh
+
+tests\tools\test_mcp_parked_self_probe.py:15
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\tools\test_mcp_parked_self_probe.py:15: PytestUnknownMarkWarning: Unknown pytest.mark.no_isolate - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.no_isolate
+
+tests\tools\test_mcp_reconnect_retry_reset.py:12
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\tools\test_mcp_reconnect_retry_reset.py:12: PytestUnknownMarkWarning: Unknown pytest.mark.no_isolate - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.no_isolate
+
+tests\tools\test_mcp_reconnect_retry_reset.py:130
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\tools\test_mcp_reconnect_retry_reset.py:130: PytestUnknownMarkWarning: Unknown pytest.mark.no_isolate - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.no_isolate
+
+tests\tools\test_mcp_register_wakes_stale.py:13
+  D:\Projects\Plobi\Plobi-Desktop\Code\tests\tools\test_mcp_register_wakes_stale.py:13: PytestUnknownMarkWarning: Unknown pytest.mark.no_isolate - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.no_isolate
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/plobi/test_l2_route_tools_capable.py
+ERROR tests/tools/test_search_hidden_dirs.py - FileNotFoundError: [WinError 2...
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!
+7 skipped, 65 deselected, 16 warnings, 2 errors in 34.86s

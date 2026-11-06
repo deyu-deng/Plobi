@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { SkillsView } from '@/app/skills'
+import { SKILLS_MODES, type SkillsCounts, type SkillsMode, SkillsView } from '@/app/skills'
 import { SearchField } from '@/components/ui/search-field'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
@@ -16,11 +16,14 @@ import {
   Layers3,
   LayoutGrid,
   Package,
+  Radar,
   RefreshCw,
   Send,
+  Server,
   Settings2,
   Upload,
   Users,
+  Wand,
   Wrench,
   Zap
 } from '@/lib/icons'
@@ -55,8 +58,8 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'keys',
   'notifications',
   'sessions',
-  'sources',
   'offload',
+  'sources',
   'capabilities',
   'about'
 ]
@@ -107,6 +110,11 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
   const [keysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
+  // Capabilities 那四张表（技能 / 工具集 / MCP / 浏览技能中心）挪进左导航，与 Providers
+  // 下面那三枚子项同一形状（用户 11-05：「可以把几个 tab 变成像 Provider 里面下面的三个
+  // 子 tab 一样」；计数保留）。同一把尺：子项活在 URL 参数里，刷新与深链都落得回来。
+  const [capabilitiesView] = useRouteEnumParam<SkillsMode>('cview', SKILLS_MODES, 'skills')
+  const [capabilityCounts, setCapabilityCounts] = useState<SkillsCounts>({ skills: null, toolsets: null })
 
   // Jump to a section + its sub-view in one navigate. Two sequential setters
   // would each read the same stale `search` and the second would clobber the
@@ -127,6 +135,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
 
   const openProviderView = (view: ProviderView) => openSubView('providers', 'pview', view, 'accounts')
   const openKeysView = (view: KeysView) => openSubView('keys', 'kview', view, 'tools')
+  const openCapabilitiesView = (view: SkillsMode) => openSubView('capabilities', 'cview', view, 'skills')
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -183,6 +192,38 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       // 全局清单只住这一处（2026-10-20 用户裁定）：技能 / 工具集 / MCP / Hub
       // 四张**全局**表。它是全局真源本身，不是某个 Agent 的减法视图——所以渲染
       // 在设置 overlay 里，而不是跳出去、也不进任何 Agent 的界面。
+      children: [
+        {
+          active: activeView === 'capabilities' && capabilitiesView === 'skills',
+          icon: Wand,
+          id: 'cview:skills',
+          label: t.skills.tabSkills,
+          meta: capabilityCounts.skills,
+          onSelect: () => openCapabilitiesView('skills')
+        },
+        {
+          active: activeView === 'capabilities' && capabilitiesView === 'toolsets',
+          icon: Wrench,
+          id: 'cview:toolsets',
+          label: t.skills.tabToolsets,
+          meta: capabilityCounts.toolsets,
+          onSelect: () => openCapabilitiesView('toolsets')
+        },
+        {
+          active: activeView === 'capabilities' && capabilitiesView === 'mcp',
+          icon: Server,
+          id: 'cview:mcp',
+          label: t.skills.tabMcp,
+          onSelect: () => openCapabilitiesView('mcp')
+        },
+        {
+          active: activeView === 'capabilities' && capabilitiesView === 'hub',
+          icon: Radar,
+          id: 'cview:hub',
+          label: t.skills.tabHub,
+          onSelect: () => openCapabilitiesView('hub')
+        }
+      ],
       active: activeView === 'capabilities',
       // 语义跟着主界面那一格走（四格扩展），家族跟着这一屏走（用户 11-04：「颜色深浅
       // 和样式还是不统一」——这一列原来混了两家：13 枚 Tabler 描边 + 2 枚 codicon 字体，
@@ -224,18 +265,18 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       onSelect: () => setActiveView('providers')
     },
     {
-      active: activeView === 'sources',
-      icon: Layers3,
-      id: 'sources',
-      label: t.settings.nav.sources,
-      onSelect: () => setActiveView('sources')
-    },
-    {
       active: activeView === 'offload',
       icon: Package,
       id: 'offload',
       label: t.settings.nav.offload,
       onSelect: () => setActiveView('offload')
+    },
+    {
+      active: activeView === 'sources',
+      icon: Layers3,
+      id: 'sources',
+      label: t.settings.nav.sources,
+      onSelect: () => setActiveView('sources')
     },
     {
       active: activeView === 'gateway',
@@ -368,7 +409,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
           ) : activeView === 'offload' ? (
             <OffloadSettings />
           ) : activeView === 'capabilities' ? (
-            <SkillsView />
+            <SkillsView embedded mode={capabilitiesView} onCountsChange={setCapabilityCounts} />
           ) : (
             <SessionsSettings />
           )}

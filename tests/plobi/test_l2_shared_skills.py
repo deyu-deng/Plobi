@@ -48,7 +48,9 @@ def l2_home(tmp_path, monkeypatch):
             f"{name} body.\n",
             encoding="utf-8",
         )
-    (home / "config.yaml").write_text("model:\n  default: test-model\n", encoding="utf-8")
+    (home / "config.yaml").write_text(
+        "model:\n  default: test-model\n", encoding="utf-8"
+    )
     (home / ".env").write_text("TEST_KEY=1\n", encoding="utf-8")
     (home / "SOUL.md").write_text("shared persona\n", encoding="utf-8")
 
@@ -103,7 +105,6 @@ def _registry_with_l2(home: Path, *, name: str = "demo") -> tuple[AgentRegistry,
         AgentEntry(
             name=name,
             role="l2_project",
-            profile=f"l2-{name}",
             category="projects",
             provider="deepseek",
             model="deepseek-chat",
@@ -214,9 +215,9 @@ def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
     # 预建时那样——一个字节都没被 spawn 改过。这比原来「家里不该有 config.yaml」
     # 更强：原来只查存在，现在查内容。
     expected_config = "toolsets:\n  - skills\n"
-    assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == expected_config, (
-        "spawn 又往分身家落了 config.yaml"
-    )
+    assert (profile_dir / "config.yaml").read_text(
+        encoding="utf-8"
+    ) == expected_config, "spawn 又往分身家落了 config.yaml"
 
     from agent.skill_utils import get_external_skills_dirs
 
@@ -254,10 +255,15 @@ def test_repeated_spawn_does_not_append_a_second_shared_root(l2_home, in_profile
     top_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
     assert apply_shared_skills_root() is True
     after = yaml.safe_load(top_cfg.read_text(encoding="utf-8"))
-    assert after["skills"]["external_dirs"] == ["~/elsewhere", str(shared_skills_root())]
+    assert after["skills"]["external_dirs"] == [
+        "~/elsewhere",
+        str(shared_skills_root()),
+    ]
 
 
-def test_apply_shared_skills_root_creates_the_shared_config_when_absent(tmp_path, monkeypatch):
+def test_apply_shared_skills_root_creates_the_shared_config_when_absent(
+    tmp_path, monkeypatch
+):
     """顶层那份 ``config.yaml`` 还没落地（新装机）时，这一句把它建出来。
 
     以前这一条断的是「分身没有 config.yaml 也要给它建一份最小的」——那份文件如今
@@ -331,10 +337,18 @@ def test_shared_skills_are_read_only_to_the_profile_curator(l2_home, in_profile)
         # Usage recorded inside the 分身 lands in its own sidecar, never in the
         # shared ledger — the attribution gap 裁定 42 §42.2 closes separately.
         shared_ledger = shared_skills_root() / ".usage.json"
-        before = shared_ledger.read_text(encoding="utf-8") if shared_ledger.exists() else None
+        before = (
+            shared_ledger.read_text(encoding="utf-8")
+            if shared_ledger.exists()
+            else None
+        )
         skill_usage.bump_use("alpha")
         assert (profile_dir / "skills" / ".usage.json").is_file()
-        after = shared_ledger.read_text(encoding="utf-8") if shared_ledger.exists() else None
+        after = (
+            shared_ledger.read_text(encoding="utf-8")
+            if shared_ledger.exists()
+            else None
+        )
         assert after == before
         assert skill_usage.load_usage()["alpha"]["use_count"] == 1
 
@@ -381,9 +395,9 @@ def test_spawn_lands_no_env_or_config_copy(l2_home):
     # 预建时那样——一个字节都没被 spawn 改过。这比原来「家里不该有 config.yaml」
     # 更强：原来只查存在，现在查内容。
     expected_config = "toolsets:\n  - skills\n"
-    assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == expected_config, (
-        "spawn 又往分身家落了 config.yaml"
-    )
+    assert (profile_dir / "config.yaml").read_text(
+        encoding="utf-8"
+    ) == expected_config, "spawn 又往分身家落了 config.yaml"
 
     # 顶层那份是密钥的唯一真源，它带着 TEST_KEY=1 这一行——分身没有第二份。
     assert _assignment_lines(l2_home / ".env") == ["TEST_KEY=1"]

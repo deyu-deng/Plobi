@@ -107,8 +107,14 @@ const effortLabelKey = (v: string) => (v === 'xhigh' ? 'max' : v) as 'high' | 'l
 // backend now surfaces the full `plobi model` universe (every canonical
 // provider), so unconfigured providers come back with `authenticated:false`
 // and an empty `models` list — those need a setup step before a model exists.
+// A leg the gateway marks `selectable:false` (missing CLI, VPN node down,
+// quota exhausted) is never ready, whatever its credentials/models claim.
 function isProviderReady(p?: ModelOptionProvider): boolean {
-  return !!p && (p.authenticated !== false || (p.models?.length ?? 0) > 0)
+  return (
+    !!p &&
+    p.selectable !== false &&
+    (p.authenticated !== false || (p.models?.length ?? 0) > 0)
+  )
 }
 
 // Mirrors `_AUX_TASK_SLOTS` in plobi_cli/web_server.py. Friendly labels and
@@ -297,8 +303,13 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     // rows recompute when the shell pushes a fresh quota frame.
     [providers, connectedApps]
   )
+  // Auxiliary slots (MoA references / aggregators) must only offer legs the
+  // picker can actually serve: a provider the switch turned off, or one the
+  // gateway marks `selectable:false`, must not appear as a dead choice.
+  // Filter before humanizing so the same `isProviderReady` rule governs every
+  // provider surface on this page (user 2026-11-04).
   const auxProviderOptions = useMemo(
-    () => humanizeProviderRows(providerOptions),
+    () => humanizeProviderRows(providerOptions.filter(p => isProviderReady(p))),
     [providerOptions]
   )
 

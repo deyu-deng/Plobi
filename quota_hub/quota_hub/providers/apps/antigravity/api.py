@@ -286,6 +286,11 @@ class AntigravityProvider(Provider):
         # neither a login problem nor a node problem, and it must not be reported as
         # either.
         self.quota_exhausted = False
+        # Streak of consecutive upstream 429s since the last success. A single 429 is
+        # a door/account hiccup that rotation usually absorbs; only a streak (>=3)
+        # marks the allowance spent and flips `quota_exhausted` (which in turn makes
+        # live=False on the catalog, so the front end stops offering the leg).
+        self._consecutive_429 = 0
         # Why the last renewal did not land (one of RENEW_*). Measured 2026-10-30 15:22:
         # the node was up and the account was ours to renew, and the tool simply could
         # not reach Google — that answer belongs to the node, not to the login.
@@ -1198,11 +1203,27 @@ class AntigravityProvider(Provider):
         return True
 
     def _note_upstream(self, exc: UpstreamError | None) -> None:
-        """Remember what the upstream last said about this account's allowance."""
+        """Remember what the upstream last said about this account's allowance.
+
+        Only a streak — three consecutive upstream 429s with no success in between —
+        marks the allowance spent. A single 429 is usually absorbed by the tool's own
+        account rotation or the sibling door; one success resets the streak so a
+        recovered account is never stuck ``quota_exhausted``.
+        """
         if exc is None:
+            self._consecutive_429 = 0
             self.quota_exhausted = False
-        elif exc.status == 429:
+            return
+        if exc.status != 429:
+            self._consecutive_429 = 0
+            return
+        self._consecutive_429 += 1
+        if self._consecutive_429 >= 3 and not self.quota_exhausted:
             self.quota_exhausted = True
+            logger.warning(
+                "antigravity: 连续 %d 次上游 429，判定配额耗尽（quota_exhausted=True，live 同步为 False）",
+                self._consecutive_429,
+            )
 
     async def _recover_refusal(self, acc: Account, exc: UpstreamError) -> bool:
         """Try what a refusal might actually mean; True when the caller should resend.

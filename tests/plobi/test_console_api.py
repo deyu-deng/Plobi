@@ -84,6 +84,29 @@ def test_agents_empty_registry_is_ok_envelope(client):
     assert body == {"ok": True, "data": []}
 
 
+def test_l1_is_not_in_the_default_roster(client, _isolated_state):
+    """L1 不在左栏那份「智能体」名单里（它只有主界面本体一个入口）。"""
+    register(_isolated_state, agenda=AGENDA, secretary=SECRETARY)
+
+    ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
+
+    assert ids == ["agenda"]
+
+
+def test_l1_joins_the_roster_when_asked_and_keeps_its_own_role(client, _isolated_state):
+    """include_l1=1 时 L1 也在册：role 与五类 L2 分开标，但地位平等（同一份行形状）。"""
+    register(_isolated_state, agenda=AGENDA, secretary=SECRETARY)
+
+    rows = client.get("/api/agents?include_l1=1").json()["data"]
+    by_id = {row["id"]: row for row in rows}
+
+    assert set(by_id) == {"agenda", "secretary"}
+    assert by_id["secretary"]["role"] == "l1_secretary"
+    assert by_id["agenda"]["role"] == "l2_agenda"
+    # 平等 = 同一套键，不是「L1 少几格」。
+    assert set(by_id["secretary"]) == set(by_id["agenda"])
+
+
 def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     register(_isolated_state, agenda=AGENDA)
     row = client.get("/api/agents").json()["data"][0]
@@ -93,6 +116,9 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     # registry.agent_navigability 的 docstring）。
     assert set(row) == {
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+        # 11-05（用户）：名册 role 随行透出——L1 与五类 L2 分开标、但地位平等，
+        # 前端靠它认出「这一行是 L1 自己」，不再拿 profile 反查。
+        "role",
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
         "askable", "notAskableReason", "navigable",
@@ -198,6 +224,9 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     # askable/navigable 是 R-072 的两把判据（嘴 / 点击）。
     assert set(body["data"]) == {
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+        # 11-05（用户）：名册 role 随行透出——L1 与五类 L2 分开标、但地位平等，
+        # 前端靠它认出「这一行是 L1 自己」，不再拿 profile 反查。
+        "role",
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
         "askable", "navigable",

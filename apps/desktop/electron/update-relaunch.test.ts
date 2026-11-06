@@ -36,6 +36,19 @@ import {
   unpackedDirName
 } from './update-relaunch'
 
+// `bash -n` is the only real syntax oracle for the generated watcher script.
+// On a plain Windows box there is no bash on PATH, so those two cases can only
+// report ENOENT — they skip instead of failing, and still run in CI on Linux.
+const HAS_BASH = (() => {
+  try {
+    execFileSync('bash', ['-c', 'exit 0'], { stdio: 'pipe' })
+
+    return true
+  } catch {
+    return false
+  }
+})()
+
 // Every fixture here is a *pure string* path — nothing is created on disk — but
 // `resolveUnpackedRelease` runs `path.resolve` over the execPath it is handed, so a fixture
 // that merely *looks* absolute (`/home/u/…`) stops being absolute on Windows: it resolves to
@@ -199,7 +212,7 @@ test('shellQuote neutralizes single quotes and metacharacters', () => {
   assert.equal(shellQuote('$(rm -rf /)'), `'$(rm -rf /)'`)
 })
 
-test('buildRelaunchScript embeds pid/exec/args/env/cwd and is valid bash', () => {
+test('buildRelaunchScript embeds pid/exec/args/env/cwd and is valid bash', { skip: !HAS_BASH && 'no bash on PATH' }, () => {
   const script = buildRelaunchScript({
     pid: 4242,
     execPath: '/home/u/.plobi/plobi-agent/apps/desktop/release/linux-unpacked/Plobi',
@@ -230,7 +243,7 @@ test('buildRelaunchScript embeds pid/exec/args/env/cwd and is valid bash', () =>
   }
 })
 
-test('buildRelaunchScript with no args/env still lints clean', () => {
+test('buildRelaunchScript with no args/env still lints clean', { skip: !HAS_BASH && 'no bash on PATH' }, () => {
   const script = buildRelaunchScript({
     pid: 1,
     execPath: '/opt/Plobi/Plobi',

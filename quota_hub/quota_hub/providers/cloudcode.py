@@ -21,9 +21,12 @@ the reason a leg is pickable at all.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 from .cloudcode_wire import (
     _describe_google_error,
@@ -75,6 +78,10 @@ class CloudCodeClient:
         self.thinking = thinking
         self.timeout = timeout
         self.label = label
+        #: Last thought_signature seen on an upstream functionCall part; the next
+        #: turn forwards it on its own functionCall parts (Code Assist rejects
+        #: calls without one — measured 2026-11-02).
+        self._last_thought_signature: str | None = None
 
     # --- endpoints --------------------------------------------------------
     def url(self, stream: bool) -> str:
@@ -148,9 +155,18 @@ class CloudCodeClient:
 
     # --- the turn ---------------------------------------------------------
     def to_gemini(self, oai_req: dict, session_id: str, model: str = "") -> dict:
+        # Code Assist enforces a strict turn grammar: a functionCall turn must come
+        # immediately after a user turn or after a function response turn, and every
+        # functionCall part must carry the thought_signature of the preceding thought
+        # turn (measured 2026-11-03 on a 78-msg / 46k-token context and 2026-11-02 on
+        # an unsigned call). We therefore pair every tool round here:
+        #   - a functionCall turn is only emitted when a functionResponse turn follows;
+        #   - an orphan call or an orphan response (long-context trim dropped its mate)
+        #     is dropped instead of being sent into a 400.
         contents: list[dict[str, Any]] = []
         system_txt: list[str] = []
         tc_names: dict[str, str] = {}
+        pending_call: int | None = None
         for m in oai_req["messages"]:
             role = m["role"]
             if role == "system":
@@ -168,11 +184,26 @@ class CloudCodeClient:
                         "response": {"result": _as_text(m.get("content"))},
                     }
                 }
-                if (
+                open_response_batch = (
                     contents
                     and contents[-1]["role"] == "user"
                     and all("functionResponse" in p for p in contents[-1]["parts"])
-                ):
+                )
+                if pending_call is not None:
+                    # The functionCall whose turn we are answering is right behind
+                    # us — the grammar is satisfied.
+                    pending_call = None
+                elif not open_response_batch:
+                    # No pending call and no open functionResponse batch: this tool
+                    # result arrived without its call (long-context trim). Dropping
+                    # it is the only shape that does not violate the grammar.
+                    logger.warning(
+                        "%s: dropping an orphan functionResponse (%s) — no preceding functionCall",
+                        self.label,
+                        fn_name,
+                    )
+                    continue
+                if open_response_batch:
                     contents[-1]["parts"].append(part)
                 else:
                     contents.append({"role": "user", "parts": [part]})
@@ -190,13 +221,51 @@ class CloudCodeClient:
                         args = json.loads(raw) if isinstance(raw, str) else (raw or {})
                     except Exception:
                         args = {}
-                    parts.append({"functionCall": {"name": fn_name, "args": args or {}}})
+                    call_part: dict[str, Any] = {"functionCall": {"name": fn_name, "args": args or {}}}
+                    # The upstream requires a thought_signature on the part. Prefer
+                    # one the caller forwarded on the message; fall back to the last
+                    # signature we captured from an upstream functionCall; otherwise
+                    # drop the call (an unsigned call is rejected with a 400 anyway).
+                    sig = (
+                        str(m.get("thought_signature") or "")
+                        or (self._last_thought_signature or "")
+                    )
+                    if sig:
+                        call_part["thought_signature"] = sig
+                        parts.append(call_part)
+                    else:
+                        logger.warning(
+                            "%s: dropping an unsigned functionCall (%s) — no thought_signature to forward",
+                            self.label,
+                            fn_name,
+                        )
             else:
                 text = _as_text(m.get("content"))
                 if text:
                     parts.append({"text": text})
-            if parts:
-                contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
+            if not parts:
+                continue
+            # A plain assistant turn arriving while a functionCall is still unpaired
+            # means the functionResponse turn was lost; drop the orphan call so no
+            # functionCall turn is left dangling.
+            if pending_call is not None:
+                dropped = contents.pop(pending_call)
+                logger.warning(
+                    "%s: dropping %d orphan functionCall part(s) — the functionResponse turn is missing (long-context trim?)",
+                    self.label,
+                    len(dropped.get("parts", [])),
+                )
+                pending_call = None
+            contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
+            if role == "assistant" and any("functionCall" in p for p in parts):
+                pending_call = len(contents) - 1
+        if pending_call is not None:
+            dropped = contents.pop(pending_call)
+            logger.warning(
+                "%s: dropping %d trailing orphan functionCall part(s) at end of turn",
+                self.label,
+                len(dropped.get("parts", [])),
+            )
 
         body: dict[str, Any] = {"contents": contents}
         if system_txt:
@@ -323,5 +392,8 @@ class CloudCodeClient:
                     yield _chunk(cid, oai_req["model"], text)
                 fn = _extract_gemini_function_call(obj)
                 if fn:
+                    sig = self._extract_thought_signature(obj)
+                    if sig:
+                        self._last_thought_signature = sig
                     yield _tool_chunk(cid, oai_req["model"], fn)
             yield _chunk(cid, oai_req["model"], None, finish="stop")

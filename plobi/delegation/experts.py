@@ -6,7 +6,9 @@
 实现上不新造一套身份：`delegate_task` 每派一个子智能体，就会在**同一个状态库**里留一条
 ``source='subagent'`` 的子会话（``parent_session_id`` 指回发起它的那条会话）。所以：
 
-- 名单 = 这个 Agent 名下会话的**子会话**（父子链），新的在前；
+- 名单 = 这个 Agent 名下会话的**子会话**（父子链），**只留带角色侧记的**（真专家），
+  新的在前。没带 `expert` 的普通子智能体不进这一格——那是底栏子智能体面板的事
+  （用户 11-04：两条腿分开）；
 - 状态 = 进程内 ``list_active_subagents()`` 里还挂着的就是「正在干」，否则「干完了」；
 - 工作日志 = 子会话自己的 messages（复用现成的 ``/api/sessions/:id/messages`` 路由）。
 
@@ -107,8 +109,13 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
         experts: list[dict[str, Any]] = []
         for sid, parent, started, ended, messages, tools, model in rows:
             sid = str(sid)
-            record = live.get(sid) or {}
             sidecar = _sidecar_of(sid)
+            role = str(sidecar.get("role") or "").strip()
+            # 只认**真专家**：带角色侧记的那些。没带 `expert` 的普通子智能体不进这一格
+            # ——它们的工作日志归底栏那枚子智能体面板（用户 11-04：两条腿要分开）。
+            if not role:
+                continue
+            record = live.get(sid) or {}
             experts.append({
                 "goal": str(sidecar.get("goal") or "").strip() or _first_user_text(con, sid),
                 "id": sid,
@@ -116,7 +123,7 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
                 "model": str(record.get("model") or model or ""),
                 "parent_session_id": str(parent or ""),
                 "started_at": float(started or 0),
-                "role": str(sidecar.get("role") or "").strip(),
+                "role": role,
                 "status": "running" if record else "done",
                 "tool_calls": int(record.get("tool_count") or tools or 0),
             })

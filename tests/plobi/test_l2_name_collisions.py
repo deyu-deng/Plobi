@@ -72,7 +72,9 @@ def _land(tmp_path, *names: str) -> None:
         )
 
 
-def _project(name: str, *, description: str = "用户自己写的一句话", registered: bool = True):
+def _project(
+    name: str, *, description: str = "用户自己写的一句话", registered: bool = True
+):
     from plobi.agents.registry import AgentEntry
 
     return AgentEntry(
@@ -98,7 +100,9 @@ def test_find_case_twin_spells_the_collision(fresh_registry):
     assert fresh_registry.find_case_twin("") == ""
 
 
-def test_new_key_colliding_only_by_case_is_rejected_without_adding_a_row(fresh_registry):
+def test_new_key_colliding_only_by_case_is_rejected_without_adding_a_row(
+    fresh_registry,
+):
     from plobi.agents.registry import RegistryError
 
     fresh_registry.upsert(_project("Nymo"))
@@ -117,7 +121,9 @@ def test_a_genuinely_different_name_is_still_allowed(fresh_registry):
     assert {"Nymo", "Framelet"} <= set(fresh_registry.agents)
 
 
-def test_reading_an_existing_case_pair_and_editing_its_own_row_still_work(fresh_registry):
+def test_reading_an_existing_case_pair_and_editing_its_own_row_still_work(
+    fresh_registry,
+):
     """存量家已经躺着一对只差大小写的记录——读它 / 改它不许报错（本刀不替用户改数据）。"""
     from plobi.agents.registry import RegistryError
 
@@ -172,12 +178,18 @@ def test_genuinely_different_homes_stay_ambiguous(fresh_registry, tmp_path):
     from plobi.agents.registry import AgentEntry
 
     a = AgentEntry(
-        name="alpha", role="l2_project", category="projects",
-        display_name="共用人名", description="project",
+        name="alpha",
+        role="l2_project",
+        category="projects",
+        display_name="共用人名",
+        description="project",
     )
     b = AgentEntry(
-        name="beta", role="l2_project", category="projects",
-        display_name="共用人名", description="project",
+        name="beta",
+        role="l2_project",
+        category="projects",
+        display_name="共用人名",
+        description="project",
     )
     fresh_registry.agents["alpha"] = a
     fresh_registry.agents["beta"] = b
@@ -197,11 +209,13 @@ def test_genuinely_different_homes_stay_ambiguous(fresh_registry, tmp_path):
 def test_reserved_home_name_yields_an_actionable_blocker():
     from plobi.agents.registry import profile_name_blocker, suggested_profile_name
 
-    entry = _project("Plobi")  # 小写化就是保留名 plobi
+    # ``default`` 是 L1（secretary）专属的 slug；别的行撞上它 ⇒ 派生不出运行时名字。
+    entry = _project("default")
+    assert entry.profile_name == ""
     blocker = profile_name_blocker(entry)
     assert blocker
-    assert "Plobi" in blocker  # 点名是哪条分身
-    assert "reserved" in blocker.lower()  # 说清撞了什么
+    assert "default" in blocker  # 点名是哪条分身
+    assert "不能用" in blocker  # 说清哪儿坏了
     suggestion = suggested_profile_name(entry)
     assert suggestion and suggestion in blocker  # 给一个能填的替代名
 
@@ -210,66 +224,56 @@ def test_reserved_home_name_yields_an_actionable_blocker():
 
 
 def test_agent_ask_refuses_a_分身_whose_home_can_never_be_created(fresh_registry):
-    # 分身登记了，但它的家永远建不出来（撞保留名）→ 当面问要拒，并给能行动的话。
-    fresh_registry.agents["Plobi"] = _project("Plobi")
+    # 分身登记了，但它派生不出运行时名字（撞 L1 保留 slug）→ 当面问要拒，并给能行动的话。
+    fresh_registry.agents["default"] = _project("default")
     with pytest.raises(AA.AskRefusal) as exc:
-        AA.resolve_target("Plobi", registry=fresh_registry)
+        AA.resolve_target("default", registry=fresh_registry)
     message = str(exc.value.message)
-    assert "reserved" in message.lower() and "Plobi" in message
+    assert "default" in message and "不能用" in message
 
 
 # --------------------------------------------------------------------------- #
-# 撞保留名那条：写入时就落成显式 profile，别留一条永远红着的行（2026-10-13 脑搬家线现核）
+# slug 由 name 派生之后，upsert 不再保管家名（2026-11-05「profile 连根拔」）
+# 这几条以前断言 upsert 会把 profile 落成一格字段；那格字段已经不存在了，
+# 现在能钉的只有两件事：派生结果对不对、派生不出来会不会有人说。
 # --------------------------------------------------------------------------- #
 
 
-def test_upsert_lands_the_suggestion_instead_of_leaving_a_dead_row(fresh_registry):
-    """``Plobi`` 小写化是保留名，那个家**永远建不出来**（``-p plobi --help`` 退 0、
-    死在后面那句 reserved 校验）。以前只给一句"建议填 l2-plobi"没人填 ⇒ 行一直红。"""
+def test_plobi_derives_the_historical_slug_from_the_table(fresh_registry):
+    """``Plobi`` 的旧 slug 是 ``l2-plobi``，靠 ``runtime_slugs.yaml`` 那条登记一字不差。"""
     from plobi.agents.registry import profile_name_blocker
 
     entry = fresh_registry.upsert(_project("Plobi"))
 
-    assert entry.profile == "l2-plobi"
     assert entry.profile_name == "l2-plobi"
     assert profile_name_blocker(entry) == ""
 
 
-def test_upsert_does_not_rename_a_working_home(fresh_registry):
-    """那 11 条本来能用的名字一字不改——改它们要搬 ``state.db``，
-    会把每个分身已有的会话历史孤儿化，那不是"修一个名字"该有的代价。"""
+def test_plain_ascii_names_derive_their_own_lowercase_slug(fresh_registry):
+    """没登记过的 ASCII 名一字不改地 lower 成 slug —— 不动那些本来能用的名字。"""
     entry = fresh_registry.upsert(_project("Aura"))
 
-    assert entry.profile == ""
     assert entry.profile_name == "aura"
 
 
-def test_upsert_leaves_a_data_row_profileless(fresh_registry):
-    """数据条目（课程）不许被这条规则顺手安一个家——它没有运行时。"""
+def test_a_course_row_takes_its_slug_from_the_table(fresh_registry):
+    """数据条目（课程）的运行时名字只从 slug 表派生；它本来就不该报「建不出家」。"""
     from plobi.agents.registry import AgentEntry, profile_name_blocker
 
-    course = fresh_registry.upsert(AgentEntry(name="电工电子学", role="l2_course", category="courses"))
+    # 课程行的正统形状是 l2_project + category: courses（裁定 143②/146②）；
+    # 裸 l2_course 是「还没有身份的课程条目」，那种行才是没有家的。
+    course = fresh_registry.upsert(
+        AgentEntry(name="电工电子学", role="l2_project", category="courses")
+    )
 
-    assert course.profile == "" and course.profile_name == ""
+    assert course.profile_name == "l2-course-ee"
     assert profile_name_blocker(course) == "", "数据条目没有家是设计，不是缺陷"
 
 
-def test_upsert_does_not_steal_another_分身的_home(fresh_registry):
-    from plobi.agents.registry import profile_name_blocker
-
-    fresh_registry.upsert(_project("l2-plobi"))
-
-    entry = fresh_registry.upsert(_project("Plobi"))
-
-    assert entry.profile == "", "推荐名已被占 ⇒ 不许自动落，把话留给 blocker"
-    assert "l2-plobi" in profile_name_blocker(entry)
-
-
-def test_upsert_never_overwrites_an_explicit_profile(fresh_registry):
-    """用户自己填过 profile 就一个字都不动，哪怕它撞保留名（那是他的选择，blocker 会说）。"""
+def test_an_unregistered_non_ascii_name_has_no_runtime_identity(fresh_registry):
+    """非 ASCII 名派生不出 ASCII slug ⇒ 没有可路由身份（这是「没家」，不是「撞保留名」）。"""
     from plobi.agents.registry import AgentEntry
 
-    entry = fresh_registry.upsert(AgentEntry(name="Plobi", role="l2_project",
-                                             category="projects", profile="plobi"))
+    row = AgentEntry(name="未登记的中文名", role="l2_project", category="projects")
 
-    assert entry.profile == "plobi"
+    assert row.profile_name == ""

@@ -1,0 +1,22 @@
+﻿apps/desktop/src/app/desktop-controller.tsx:1547:      // `$profiles` (the user-facing list from GET /api/profiles) — agent-pool
+apps/desktop/src/plobi.test.ts:69:        path: '/api/profiles',
+apps/desktop/src/plobi.test.ts:90:        path: '/api/profiles',
+apps/desktop/src/plobi.ts:72:// /api/profiles runs list_profiles(), which does a recursive skill-tree walk
+apps/desktop/src/plobi.ts:1134:    path: '/api/profiles',
+apps/desktop/src/plobi.ts:1141:    path: '/api/profiles',
+apps/desktop/src/plobi.ts:1149:    path: `/api/profiles/${encodeURIComponent(name)}`,
+apps/desktop/src/plobi.ts:1157:    path: `/api/profiles/${encodeURIComponent(name)}`,
+apps/desktop/src/plobi.ts:1180:    path: `/api/profiles/${encodeURIComponent(name)}/setup-command`
+web/src/lib/api.ts:600:    fetchJSON<{ profiles: ProfileInfo[] }>("/api/profiles"),
+web/src/lib/api.ts:602:    fetchJSON<ActiveProfileInfo>("/api/profiles/active"),
+web/src/lib/api.ts:604:    fetchJSON<{ ok: boolean; active: string }>("/api/profiles/active", {
+web/src/lib/api.ts:630:    }>("/api/profiles", {
+web/src/lib/api.ts:637:      `/api/profiles/${encodeURIComponent(name)}/description`,
+web/src/lib/api.ts:646:      `/api/profiles/${encodeURIComponent(name)}/describe-auto`,
+web/src/lib/api.ts:655:      `/api/profiles/${encodeURIComponent(name)}/model`,
+web/src/lib/api.ts:664:      `/api/profiles/${encodeURIComponent(name)}`,
+web/src/lib/api.ts:673:      `/api/profiles/${encodeURIComponent(name)}`,
+web/src/lib/api.ts:678:      `/api/profiles/${encodeURIComponent(name)}/setup-command`,
+web/src/lib/api.ts:682:      `/api/profiles/${encodeURIComponent(name)}/soul`,
+web/src/lib/api.ts:686:      `/api/profiles/${encodeURIComponent(name)}/soul`,
+web/src/pages/ProfileBuilderPage.tsx:41: * disk until "Create profile" on the final step; the single POST /api/profiles

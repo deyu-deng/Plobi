@@ -58,7 +58,7 @@ import {
 } from '@/store/command-palette'
 import { $bindings } from '@/store/keybinds'
 import { openPetGenerate } from '@/store/pet-generate'
-import { requestFreshSession } from '@/store/profile'
+import { requestFreshSession } from '@/store/scope'
 import { requestStartWorkSession } from '@/store/projects'
 import { runGatewayRestart } from '@/store/system-actions'
 import { applyBackendUpdate } from '@/store/updates'

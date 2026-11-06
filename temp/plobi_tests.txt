@@ -1,0 +1,163 @@
+........................................................................ [  3%]
+..........................F............................................. [  6%]
+F..........................F...............F...F...................FFFFF [  9%]
+FF.................FFFFFFF.F.F....................s...FFFF.............. [ 12%]
+........................................................................ [ 15%]
+......................F....F............................................ [ 18%]
+........................................................................ [ 21%]
+........................................................................ [ 24%]
+........................................................................ [ 27%]
+..................FFFF..................s............................FFF [ 30%]
+..................................F...............................F.FF.. [ 33%]
+....................FFF.FFF............................................. [ 37%]
+........................................................................ [ 40%]
+.....................................................F.................. [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 49%]
+.....................................F.......F..F....................... [ 52%]
+......................................................................FF [ 55%]
+.FFFFFFF.........FFFFFFF..FFF.FFFF...................................... [ 58%]
+............................................................F...F.FFF... [ 61%]
+........................................................................ [ 64%]
+...............F........................................................ [ 67%]
+........................................................................ [ 70%]
+........................................................................ [ 74%]
+..........FFFF.....FFFFFFFFFFFF......................................... [ 77%]
+........................................................................ [ 80%]
+........................................................................ [ 83%]
+...................FFF..F............................F.FF...FFF......... [ 86%]
+....................................F..........FF..F...FF............... [ 89%]
+....F............................................................F...... [ 92%]
+.......FF.........FF........F.F..........F...FFFF....................... [ 95%]
+........................................................................ [ 98%]
+...............................                                          [100%]
+============================== warnings summary ===============================
+tests/plobi/test_handset_interface_contract.py::test_device_token_never_opens_the_browser_surface
+  D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\starlette\testclient.py:445: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agenda_service.py::test_list_agenda_dedupes_duplicate_event_ids
+FAILED tests/plobi/test_agent_create_mind.py::test_reserved_profile_name_is_refused_before_anything_lands
+FAILED tests/plobi/test_agent_edit.py::test_rename_changes_the_rail_label_and_nothing_else
+FAILED tests/plobi/test_agent_registry.py::test_round_trip_preserves_entries
+FAILED tests/plobi/test_agent_registry.py::test_missing_profile_field_falls_back_to_name
+FAILED tests/plobi/test_agent_registry.py::test_studio_cwd_still_lands_when_agent_has_display_name
+FAILED tests/plobi/test_agent_registry.py::test_spawn_writes_model_section_when_provider_resolves
+FAILED tests/plobi/test_agent_registry.py::test_spawn_skips_unresolvable_provider_without_failing
+FAILED tests/plobi/test_agent_registry.py::test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model
+FAILED tests/plobi/test_agent_registry.py::test_profile_name_is_normalized_to_the_on_disk_id
+FAILED tests/plobi/test_agent_registry.py::test_spawn_without_model_override_inherits_the_configured_default
+FAILED tests/plobi/test_agent_registry.py::test_agenda_template_carries_no_model_override
+FAILED tests/plobi/test_agent_soul_shared.py::test_l2_identity_lands_in_the_shared_layer
+FAILED tests/plobi/test_agent_soul_shared.py::test_read_side_prefers_the_shared_copy_when_agent_id_is_set
+FAILED tests/plobi/test_agent_soul_shared.py::test_l1_path_is_untouched_without_agent_id
+FAILED tests/plobi/test_agent_soul_shared.py::test_identity_survives_a_home_that_is_not_there
+FAILED tests/plobi/test_agent_soul_shared.py::test_writing_twice_is_a_noop - ...
+FAILED tests/plobi/test_agent_soul_shared.py::test_l1_row_is_never_written - ...
+FAILED tests/plobi/test_agent_soul_shared.py::test_a_chinese_agent_name_still_gets_a_safe_filename
+FAILED tests/plobi/test_agent_soul_shared.py::test_a_name_that_slugifies_differently_still_reads_its_own_soul
+FAILED tests/plobi/test_agent_soul_shared.py::test_identity_name_for_key_maps_every_spelling_of_the_same_row
+FAILED tests/plobi/test_agent_tool_prefs.py::test_agent_disabled_sets_resolves_by_active_home
+FAILED tests/plobi/test_agent_tool_prefs.py::test_skill_disabled_names_union_agent_row
+FAILED tests/plobi/test_agent_tool_prefs.py::test_mcp_config_load_filters_agent_disabled_servers
+FAILED tests/plobi/test_agent_tool_prefs.py::test_agent_scoped_skill_listing_reads_global_source
+FAILED tests/plobi/test_channel_wake.py::test_a_second_wake_is_skipped_while_the_first_is_alive
+FAILED tests/plobi/test_channel_wake.py::test_a_round_already_running_blocks_the_wake
+FAILED tests/plobi/test_config_single_source.py::test_a_roster_override_moves_only_that_agent
+FAILED tests/plobi/test_config_single_source.py::test_two_agents_with_overrides_do_not_fold_into_one_role_route
+FAILED tests/plobi/test_config_single_source.py::test_an_unresolvable_provider_override_is_not_applied
+FAILED tests/plobi/test_config_single_source.py::test_editing_the_roster_takes_effect_without_restarting
+FAILED tests/plobi/test_console_api.py::test_quota_summary_today_usd_follows_request_identity
+FAILED tests/plobi/test_console_api.py::test_quota_summary_query_profile_is_remote_fallback
+FAILED tests/plobi/test_console_api.py::test_agent_id_for_profile_maps_roster_rows
+FAILED tests/plobi/test_console_api.py::TestOffloadResume::test_an_id_the_ledger_never_recorded_is_refused
+FAILED tests/plobi/test_course_agent_identity.py::test_declared_course_entry_gets_a_nonempty_profile_name
+FAILED tests/plobi/test_course_agent_identity.py::test_course_role_is_the_one_the_ask_list_and_router_both_accept
+FAILED tests/plobi/test_course_agent_identity.py::test_a_missing_home_no_longer_changes_askability
+FAILED tests/plobi/test_cron_store_by_roster_row.py::test_cron_scope_accepts_a_roster_row
+FAILED tests/plobi/test_cron_store_by_roster_row.py::test_cron_scope_unknown_name_still_404
+FAILED tests/plobi/test_cron_store_by_roster_row.py::test_cron_scope_default_is_the_shared_store
+FAILED tests/plobi/test_cron_store_by_roster_row.py::test_same_row_two_spellings_share_one_store
+FAILED tests/plobi/test_cron_store_by_roster_row.py::test_store_key_is_the_roster_name_not_the_slug
+FAILED tests/plobi/test_cron_store_by_roster_row.py::test_roster_name_with_capitals_is_not_a_400
+FAILED tests/plobi/test_doctor.py::test_chatlog_down_while_registry_off_is_deferred_with_todays_reason
+FAILED tests/plobi/test_identity_by_roster_row.py::test_decomposer_roster_comes_from_the_registry
+FAILED tests/plobi/test_identity_rename_full_chain.py::test_the_rename_endpoint_shows_the_plan_before_it_touches_anything
+FAILED tests/plobi/test_identity_rename_full_chain.py::test_the_cron_scopes_point_at_the_roster_name_dir
+FAILED tests/plobi/test_l2_diet_registry.py::test_lookup_matches_the_registry_name_not_only_the_profile_name
+FAILED tests/plobi/test_l2_diet_registry.py::test_lookup_never_returns_an_archived_row
+FAILED tests/plobi/test_l2_diet_registry.py::test_overlay_carries_the_three_blacklists
+FAILED tests/plobi/test_l2_diet_registry.py::test_overlay_omits_the_agent_section_when_nothing_is_disabled
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_writes_the_four_names_into_the_registry_row
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_is_idempotent - TypeEr...
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_never_touches_a_users_own_blacklist
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_refuses_non_project_rows
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_does_not_write_the_plobi_composite
+FAILED tests/plobi/test_l2_name_collisions.py::test_reserved_home_name_yields_an_actionable_blocker
+FAILED tests/plobi/test_l2_name_collisions.py::test_agent_ask_refuses_a_分身_whose_home_can_never_be_created
+FAILED tests/plobi/test_l2_name_collisions.py::test_upsert_lands_the_suggestion_instead_of_leaving_a_dead_row
+FAILED tests/plobi/test_l2_name_collisions.py::test_upsert_does_not_rename_a_working_home
+FAILED tests/plobi/test_l2_name_collisions.py::test_upsert_leaves_a_data_row_profileless
+FAILED tests/plobi/test_l2_name_collisions.py::test_upsert_does_not_steal_another_分身的_home
+FAILED tests/plobi/test_l2_name_collisions.py::test_upsert_never_overwrites_an_explicit_profile
+FAILED tests/plobi/test_l2_shared_skills.py::test_spawn_lands_no_skill_copies_but_sees_the_shared_root
+FAILED tests/plobi/test_l2_shared_skills.py::test_shared_root_is_written_into_the_one_shared_config
+FAILED tests/plobi/test_l2_shared_skills.py::test_repeated_spawn_does_not_append_a_second_shared_root
+FAILED tests/plobi/test_l2_shared_skills.py::test_local_skill_wins_over_shared_root_and_never_doubles
+FAILED tests/plobi/test_l2_shared_skills.py::test_shared_skills_are_read_only_to_the_profile_curator
+FAILED tests/plobi/test_l2_shared_skills.py::test_spawn_lands_no_env_or_config_copy
+FAILED tests/plobi/test_l2_shared_skills.py::test_secret_override_never_lands_on_disk
+FAILED tests/plobi/test_mind_adapter.py::test_prefetch_includes_profile_summary
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_publishes_daily_agenda_once
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_write_failure_never_blocks_turn
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_writer_soft_failure_is_warning_only
+FAILED tests/plobi/test_mind_adapter.py::test_sync_turn_publishes_agenda_and_writes_no_chat_material
+FAILED tests/plobi/test_model_confirm.py::test_the_model_confirmer_resolves_what_the_heuristic_refused
+FAILED tests/plobi/test_profile_lazy_home_off.py::test_dash_p_does_not_create_the_home
+FAILED tests/plobi/test_profile_lazy_home_off.py::test_dash_p_folds_to_the_shared_root
+FAILED tests/plobi/test_profile_lazy_home_off.py::test_identity_is_the_roster_name_not_the_profile_name
+FAILED tests/plobi/test_profile_lazy_home_off.py::test_agent_id_lookup_returns_the_roster_name
+FAILED tests/plobi/test_profile_scope_roster.py::test_roster_scope_is_not_missing
+FAILED tests/plobi/test_profile_scope_roster.py::test_roster_scope_matches_by_profile_name_not_by_dir
+FAILED tests/plobi/test_profile_scope_roster.py::test_scoped_list_returns_only_that_rows_sessions
+FAILED tests/plobi/test_profile_scope_roster.py::test_unknown_scope_still_404s_with_the_same_wording
+FAILED tests/plobi/test_profile_scope_roster.py::test_invalid_scope_is_still_400
+FAILED tests/plobi/test_profile_scope_roster.py::test_endpoint_still_404s_for_an_unknown_scope
+FAILED tests/plobi/test_profile_scope_roster.py::test_default_scope_is_unchanged
+FAILED tests/plobi/test_profile_scope_roster.py::test_all_and_default_still_answer_on_the_endpoint
+FAILED tests/plobi/test_profile_scope_roster.py::test_resolving_a_roster_scope_creates_no_home
+FAILED tests/plobi/test_profile_scope_roster.py::test_a_home_that_is_still_on_disk_still_resolves
+FAILED tests/plobi/test_profile_scope_roster.py::test_sessions_endpoint_accepts_a_roster_scope
+FAILED tests/plobi/test_profile_scope_roster.py::test_session_detail_endpoint_accepts_a_roster_scope
+FAILED tests/plobi/test_registry_no_home.py::test_spawn_does_not_create_a_home
+FAILED tests/plobi/test_registry_no_home.py::test_spawn_still_wires_the_shared_skills_root
+FAILED tests/plobi/test_registry_no_home.py::test_shared_layer_has_exactly_one_copy_of_each
+FAILED tests/plobi/test_registry_no_home.py::test_spawn_result_carries_no_profile_dir_and_no_dash_p
+FAILED tests/plobi/test_session_ledger_scope.py::test_agent_id_for_profile_maps_via_registry
+FAILED tests/plobi/test_session_ledger_scope.py::test_skill_toggle_under_agent_scope_writes_roster_row
+FAILED tests/plobi/test_session_ledger_scope.py::test_toolset_toggle_under_agent_scope_subtracts_from_whitelist
+FAILED tests/plobi/test_session_ledger_scope.py::test_profiles_sessions_endpoint_reads_the_ledger_not_the_home
+FAILED tests/plobi/test_session_ledger_scope.py::test_profiles_sessions_all_mode_tags_each_row_by_its_agent
+FAILED tests/plobi/test_session_ledger_scope.py::test_l1_scope_does_not_dress_agent_sessions_as_l1
+FAILED tests/plobi/test_source_registry_pluggable.py::TestCapabilitiesAreDeclaredNotGuessed::test_unknown_capability_name_is_refused
+FAILED tests/plobi/test_source_registry_pluggable.py::TestCategoriesAreDeclaredNotGuessed::test_registry_module_names_no_source_at_all
+FAILED tests/plobi/test_source_registry_pluggable.py::TestCategoriesAreDeclaredNotGuessed::test_every_collector_package_declares_its_own_spec
+FAILED tests/plobi/test_source_registry_pluggable.py::TestDiscoveryCannotFailSilently::test_a_cold_process_first_read_is_never_empty
+FAILED tests/plobi/test_source_registry_pluggable.py::TestRegisteredSourcesDeclareTheirRealShape::test_wechat_and_timetable_declare_their_real_shape
+FAILED tests/plobi/test_source_registry_pluggable.py::TestRegisteredSourcesDeclareTheirRealShape::test_wechat_and_zju_sit_in_different_categories
+FAILED tests/plobi/test_source_setup_guidance.py::TestEveryFieldHasAHint::test_declared_fields_carry_a_hint_without_artifacts[wechat]
+FAILED tests/plobi/test_sources_api_surface.py::TestPoolCountsReachTheScreen::test_a_source_bigger_than_the_read_cap_still_reports_its_real_number
+FAILED tests/plobi/test_sources_config_layer.py::TestTheFallbackChain::test_a_written_value_wins_and_says_it_did
+FAILED tests/plobi/test_sources_config_layer.py::TestTheFallbackChain::test_deleting_the_line_returns_to_the_code_default
+FAILED tests/plobi/test_sources_config_layer.py::TestSetupIsValidatedAgainstTheDeclaration::test_the_declaration_comes_from_the_package_not_from_a_table
+FAILED tests/plobi/test_sources_config_layer.py::TestSetupIsValidatedAgainstTheDeclaration::test_a_key_the_source_never_declared_is_refused
+FAILED tests/plobi/test_sources_config_layer.py::TestOneReadEntry::test_an_unreadable_config_layer_says_so_instead_of_falling_back_silently
+FAILED tests/plobi/test_sources_config_layer.py::TestTheVerbs::test_toggling_writes_and_the_read_entry_sees_it
+FAILED tests/plobi/test_studio_cwd.py::test_the_roster_wins_over_the_top_level_file
+FAILED tests/plobi/test_studio_cwd.py::test_moving_the_folder_in_the_roster_moves_the_agent_without_a_restart
+FAILED tests/plobi/test_studio_cwd.py::test_spawning_a_project_agent_leaves_no_config_yaml_in_its_home
+FAILED tests/plobi/test_studio_cwd.py::test_a_stale_copy_left_in_the_home_is_not_read
+FAILED tests/plobi/test_studio_cwd.py::test_the_l2_diet_cannot_move_an_agents_workspace
+122 failed, 2211 passed, 2 skipped, 1 warning in 314.61s (0:05:14)

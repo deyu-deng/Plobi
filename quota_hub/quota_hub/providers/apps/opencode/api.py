@@ -15,12 +15,16 @@ to translate.
 
 Boundaries kept on purpose:
 
-* The credential is **read-only** and stays in this process: the SQLite file is opened
-  `mode=ro&immutable=1`, and no token is logged, copied or persisted here.
-* No refresh flow in v1: an expired token reports `credential_expired` and the card keeps
-  its `+` (the user signs in again with `opencode auth login`). Inventing a refresh
-  against an endpoint nobody verified would be the same kind of lie this whole knife is
-  removing.
+* The credential is **read-only by default** and stays in this process: the SQLite file is
+  opened `mode=ro`, and no token is logged, copied or persisted here. The single exception
+  is the measured renewal path (2026-11-03, HTTP 200): `refresh_credential()` +
+  `persist_credential()` re-open the store `mode=rw` only when a refresh succeeded and
+  the worker is enabled (`QUOTA_HUB_TOKEN_REFRESH=1`), with an optimistic compare against
+  the row's refresh token so the CLI's own renewal is never overwritten.
+* No refresh flow in v1 was the old boundary; it is now JIT: `ensure_fresh` renews while
+  the lease still has >24 h left (skew), and a failed refresh still degrades to
+  `credential_expired` → the card keeps its `+` (the user signs in again with
+  `opencode auth login`).
 * If `/models` cannot be read, the leg serves **no** models. Falling back to a declared
   list is what the ruling forbids.
 
@@ -44,10 +48,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import sqlite3
 import time
 from collections.abc import AsyncIterator
+
+import httpx
 from pathlib import Path
 from typing import Any
 
@@ -99,10 +106,119 @@ def read_credential() -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def refresh_credential(cred: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Renew the OAuth pair via /console/auth/device/token (measured HTTP 200).
+
+    Body is `{"grant_type":"refresh_token","refresh_token":<rt_...>,
+    "client_id":"opencode-cli"}`; the server comes from the credential's own metadata.
+    Rotation: the old refresh token dies on use, so the caller must persist the new
+    value (or re-login). Returns the merged new credential on success, None otherwise —
+    the caller owns backoff / reauth. Never logs token values.
+    """
+    if not cred:
+        return None
+    rt = cred.get("refresh") or cred.get("refresh_token")
+    if not rt:
+        return None
+    server = str((cred.get("metadata") or {}).get("server") or "").rstrip("/")
+    url = (server + "/auth/device/token") if server else REFRESH_PATH
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": rt,
+        "client_id": REFRESH_CLIENT_ID,
+    }
+    try:
+        res = httpx.post(
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json", "User-Agent": REFRESH_UA},
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        log.warning("[opencode_api] refresh request failed: %s", type(exc).__name__)
+        return None
+    if res.status_code != 200:
+        log.warning("[opencode_api] refresh -> HTTP %s", res.status_code)
+        return None
+    try:
+        body = res.json()
+    except ValueError:
+        log.warning("[opencode_api] refresh answered a non-JSON body")
+        return None
+    if not isinstance(body, dict) or not body.get("access_token") or not body.get("refresh_token"):
+        log.warning("[opencode_api] refresh body missing access_token/refresh_token")
+        return None
+    expires_in = body.get("expires_in")
+    if isinstance(expires_in, (int, float)) and expires_in > 0:
+        new_expires = int(time.time() * 1000) + int(expires_in * 1000)
+    else:
+        new_expires = int(time.time() * 1000) + 30 * 24 * 3600 * 1000
+    return {
+        **cred,
+        "access": str(body["access_token"]),
+        "refresh": str(body["refresh_token"]),
+        "expires": new_expires,
+    }
+
+
+def persist_credential(cred: dict[str, Any]) -> bool:
+    """Controlled write-back to opencode.db (mode=rw), optimistic against CLI rewrites.
+
+    The CLI rewrites this row when it renews, so before committing we compare the stored
+    refresh token with the one we just produced; a mismatch means the CLI won and we
+    drop our write rather than clobber a newer pair. Returns False when the write was
+    abandoned (or failed) — the caller keeps serving the store's value.
+    """
+    path = store_path()
+    if not path.is_file():
+        return False
+    uri = f"file:{path.as_posix()}?mode=rw"
+    try:
+        con = sqlite3.connect(uri, uri=True, timeout=0.5)
+    except sqlite3.Error as exc:
+        log.warning("opencode store at %s cannot be opened for write: %s", path, exc)
+        return False
+    try:
+        row = con.execute(
+            "select value from credential where integration_id='opencode' and active=1 "
+            "order by time_updated desc limit 1"
+        ).fetchone()
+        if row and row[0]:
+            try:
+                old = json.loads(row[0])
+            except ValueError:
+                old = None
+            if isinstance(old, dict) and (old.get("refresh") or "") != (cred.get("refresh") or ""):
+                log.info("[opencode_api] store moved on (CLI refreshed); skipping our write-back")
+                return False
+        con.execute(
+            "update credential set value=?, time_updated=? "
+            "where integration_id='opencode' and active=1",
+            (json.dumps(cred), int(time.time() * 1000)),
+        )
+        con.commit()
+        return True
+    except sqlite3.Error as exc:
+        log.warning("[opencode_api] credential write-back failed: %s", exc)
+        return False
+    finally:
+        con.close()
+
+
 DEFAULT_CHAT_BASE = "https://opencode.ai/inference/openai/v1"
 DEFAULT_MODELS_BASE = "https://opencode.ai/inference/v1"
 #: Our own identity, per OpenCode's paid-lane instructions.
 SELF_UA = "plobi-quota-hub/1.0"
+
+#: Token renewal (measured 2026-11-03, HTTP 200): POST /console/auth/device/token with
+#: grant_type=refresh_token returns access_token / refresh_token / expires_in (30 days)
+#: and consumes the old refresh token (rotation). UA follows the official client shape;
+#: the research plan pinned this exact string.
+REFRESH_PATH = "https://opencode.ai/console/auth/device/token"
+REFRESH_CLIENT_ID = "opencode-cli"
+REFRESH_UA = "opencode/latest/2.0.25/cli"
+#: Renew while >24 h of the lease remain (sub2api-style lead time).
+_REFRESH_SKEW_S = 24 * 3600
 
 _BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -208,6 +324,23 @@ class OpencodeApiProvider(Provider):
         live, reason, _ = self._credential_state()
         return live, reason
 
+    def quota_retry_after(self) -> int | None:
+        """Seconds left in the free-pool cooldown, None when this leg is not cooling.
+
+        Measured 2026-11-05: the free lane answers `429 FreeUsageLimitError` with
+        `retry-after≈76331` (~21 h) and `_free_blocked_until` parks the leg for exactly
+        that long. Until it expires every request is refused here in 4-96 ms without
+        the upstream ever being asked — so the honest answer to a caller is "come back
+        in N seconds", not "the gateway is unavailable" and not a silent retry storm.
+        This is a duration, not a diagnosis: it stays None for legs and for windows
+        that have already passed.
+        """
+        blocked = float(self._free_blocked_until or 0.0)
+        remaining = blocked - time.time()
+        if remaining <= 0:
+            return None
+        return max(1, math.ceil(remaining))
+
     # --- accounts / models -------------------------------------------------
     def _token(self, data: dict[str, Any] | None = None) -> str:
         data = data or self._credential or read_credential() or {}
@@ -264,9 +397,26 @@ class OpencodeApiProvider(Provider):
         return self.accounts
 
     async def ensure_fresh(self, acc: Account) -> None:
-        # v1 has no refresh flow on purpose (see module header): expired = sign in again.
-        if acc.cred.is_expired():
-            raise UpstreamError(401, "opencode credential expired — sign in again with `opencode auth login`", reauth=True)
+        # JIT renewal (endpoint measured 2026-11-03): renew while >24 h of the lease
+        # remain. A failed refresh degrades to the old "sign in again" verdict.
+        if not acc.cred.is_expired(skew=_REFRESH_SKEW_S):
+            return
+        data = read_credential() or {}
+        new_cred = refresh_credential(data)
+        if new_cred is None:
+            raise UpstreamError(
+                401, "opencode refresh failed — sign in again with `opencode auth login`", reauth=True
+            )
+        if persist_credential(new_cred):
+            self._credential = new_cred
+            acc.cred.access_token = str(new_cred.get("access") or "")
+            acc.cred.refresh_token = str(new_cred.get("refresh") or "")
+            acc.cred.expires_at = float(new_cred.get("expires", 0)) / 1000.0
+        else:
+            # The CLI won the write race; keep serving the store's freshest value.
+            data = read_credential() or {}
+            acc.cred.access_token = str(data.get("access") or acc.cred.access_token)
+            acc.cred.refresh_token = str(data.get("refresh") or acc.cred.refresh_token)
 
     # --- the turn ----------------------------------------------------------
     def _headers(self, token: str) -> dict[str, str]:

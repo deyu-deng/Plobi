@@ -187,7 +187,7 @@ def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
 def test_round_trip_preserves_entries(home):
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="agenda", skills=("a", "b"), description="日程闭环"))
-    reg.upsert(_entry(name="srtp", role="l2_project", profile="l2-srtp"))
+    reg.upsert(_entry(name="srtp", role="l2_project"))
     path = reg.save()
 
     assert path.is_file()
@@ -195,7 +195,7 @@ def test_round_trip_preserves_entries(home):
     assert set(reloaded.names()) == {"agenda", "srtp"}
     assert reloaded.get("agenda").skills == ("a", "b")
     assert reloaded.get("agenda").description == "日程闭环"
-    assert reloaded.get("srtp").profile_name == "l2-srtp"
+    assert reloaded.get("srtp").profile_name == "srtp"
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ def test_courses_category_can_bind_folders(home):
 
 def test_missing_profile_field_falls_back_to_name(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="x", profile=""))
+    reg.upsert(_entry(name="x"))
     assert reg.get("x").profile_name == "x"
 
 
@@ -594,15 +594,15 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     profile_dir = _seed_profile_dir(home, "l2-plobi")
 
     reg = AgentRegistry.load()
+    # display_name / category 是本刀新增字段；工作目录仍要跟着这一行。
     reg.upsert(
         AgentEntry(
             name="Plobi",
             role="l2_project",
-            profile="l2-plobi",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
-            display_name="Plobi",  # 本刀新增字段；工作目录仍要跟着这一行。
+            display_name="Plobi",
         )
     )
     # 读时叠的前提是那一行**在盘上**（旧机制由 spawn 落文件，所以以前这里不用 save）。
@@ -664,7 +664,7 @@ def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
         _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="l2_project", profile="l2-proj", provider=provider, model="a-model")
+        _entry(name="proj", role="l2_project", provider=provider, model="a-model")
     )
     reg.save()
 
@@ -705,13 +705,7 @@ def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, home, capl
         _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(
-            name="proj",
-            role="l2_project",
-            profile="l2-proj",
-            provider=_UNRESOLVABLE_PROVIDER,
-            model="a-model",
-        )
+        _entry(name="proj", role="l2_project", provider=_UNRESOLVABLE_PROVIDER, model="a-model",)
     )
     reg.save()
 
@@ -751,15 +745,7 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
         _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(
-            name="proj",
-            role="l2_project",
-            profile="l2-proj",
-            provider=_UNRESOLVABLE_PROVIDER,
-            model="a-model",
-            project_path=str(project_dir),
-            category="projects",
-        )
+        _entry(name="proj", role="l2_project", provider=_UNRESOLVABLE_PROVIDER, model="a-model", project_path=str(project_dir), category="projects",)
     )
     reg.save()
 
@@ -780,7 +766,7 @@ def test_profile_name_is_normalized_to_the_on_disk_id():
     → 退出码 2 → 分身后端永远起不来、界面一直停在「网关 检查中」。
     与底座那个函数的等价性钉在 tests/plobi_cli/test_profiles.py（本层不 import plobi_cli）。
     """
-    assert AgentEntry(name="Aura", role="l2_project", profile="L2-Aura").profile_name == "l2-aura"
+    assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
 
 
 # ---------------------------------------------------------------------------
@@ -812,7 +798,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
     reg.upsert(
-        _entry(name="proj", role="l2_project", profile="l2-proj", provider="", model="")
+        _entry(name="proj", role="l2_project", provider="", model="")
     )
     reg.save()
 
@@ -839,13 +825,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     _seed_profile_dir(spawn_env, "l2-ctrl")
     provider = _resolvable_provider_name()
     reg.upsert(
-        _entry(
-            name="ctrl",
-            role="l2_planner",
-            profile="l2-ctrl",
-            provider=provider,
-            model="a-chosen-model",
-        )
+        _entry(name="ctrl", role="l2_planner", provider=provider, model="a-chosen-model",)
     )
     reg.save()
     reg.spawn("ctrl")
@@ -869,8 +849,7 @@ def test_agenda_template_carries_no_model_override(spawn_env, home):
     profile_dir = _seed_profile_dir(spawn_env, AGENDA_TEMPLATE_PROFILE)
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name=template.name, role=template.role, profile=template.profile,
-                      provider="", model=""))
+    reg.upsert(_entry(name=template.name, role=template.role, provider="", model=""))
     reg.save()
     reg.spawn(template.name)
 

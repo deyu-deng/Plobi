@@ -1,3 +1,4 @@
+import { sessionScopeKey } from '@/lib/session-agent'
 import type { SessionInfo } from '@/plobi'
 import { getSessionMessages } from '@/plobi'
 import { translateNow } from '@/i18n'
@@ -32,7 +33,9 @@ export async function exportSession(sessionId: string, params: Omit<ExportSessio
   }
 
   try {
-    const profile = params.profile ?? params.session?.profile
+    // 会话行的归属键只从 `agent_id` 取（L1 折成 `default`）；调用方显式给的
+  // `profile` 仍然优先——那是它自己的作用域口径，不该被会话行覆盖。
+  const profile = params.profile ?? (params.session ? sessionScopeKey(params.session) : null)
     const { messages } = await getSessionMessages(sessionId, profile)
 
     const payload = {

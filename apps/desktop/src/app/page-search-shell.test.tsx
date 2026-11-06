@@ -48,3 +48,19 @@ describe('页面壳的返回键', () => {
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
   })
 })
+
+describe('页面壳的表头（这一屏属于哪个 Agent）', () => {
+  // 用户 11-05：每个 Agent 主界面侧边栏点进来的能力页，头顶要有一行表头，**只写
+  // Agent 名**（不许加「专属」之类的修饰）；设置里那一份是全局的，什么都不写。
+  it('传 pageTitle 时就写这一个名字，一个字不多', () => {
+    mount({ pageTitle: '总秘书' })
+
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('总秘书')
+  })
+
+  it('不传 pageTitle 时头顶没有表头（全局那一页不加任何标识）', () => {
+    mount()
+
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+  })
+})

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { PlobiGateway } from '@/plobi'
 import { $gateway, ensureActiveGatewayOpen, isActivePrimary } from '@/store/gateway'
-import { $activeGatewayProfile } from '@/store/profile'
+import { $scopeAgent } from '@/store/scope'
 import { $gatewayState, setConnection } from '@/store/session'
 
 export function useGatewayRequest() {
@@ -64,7 +64,7 @@ export function useGatewayRequest() {
         // Reconnect to whichever profile the gateway is currently routed to (not
         // always the primary), so a sleep/wake reconnect keeps the user on the
         // profile they were chatting in.
-        const conn = await desktop.getConnection($activeGatewayProfile.get())
+        const conn = await desktop.getConnection($scopeAgent.get())
         connectionRef.current = conn
         setConnection(conn)
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use

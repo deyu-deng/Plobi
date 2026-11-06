@@ -1,0 +1,40 @@
+﻿gateway/platforms/api_server.py:1265:        （``PUT /api/agents/:id/tool-prefs``，见 ``plobi/console/router.py``），
+plobi/agents/registry.py:254:# wins over this table, and ``POST /api/agents`` ``projectPath`` is the
+plobi/agents/registry.py:885:        # `GET /api/agents` 是并发读同一个文件：撞上写窗口就读到半截（或空）文件，
+plobi/agents/registry.py:1027:        """Non-archived rows — the default ``GET /api/agents`` view."""
+plobi/agents/registry.py:1400:    判据只有这一份，创建门（``POST /api/agents``）调它，桌面弹窗不另算一套——它只
+plobi/agents/registry.py:1942:    The left rail's ``GET /api/agents`` reads that one YAML file, so a visible
+plobi/console/router.py:4:contract paths: ``/api/agents``, ``/api/agents/{id}/subagents``,
+plobi/console/router.py:5:``/api/agents/{id}/overview``.
+plobi/console/router.py:40:  (``role: l1_secretary``). §5's ``GET /api/agents`` feeds the *left rail*,
+plobi/console/router.py:43:* **POST /api/agents.** Human 配备 (裁定 18): register one ``l2_project``.
+plobi/console/router.py:419:    """``POST /api/agents`` 的 ``projectPaths`` 归一：去空去重保序。
+plobi/console/router.py:564:    """``GET /api/agents`` — one row per registered L2, sorted by name.
+plobi/console/router.py:592:    """``GET /api/agents/:id/subagents`` — B4's shape, passed through as-is."""
+plobi/console/router.py:597:    """``GET /api/agents/:id/overview`` — the S2 status card.
+plobi/console/router.py:854:    """§5 GET /api/agents — L2 rows for the console left rail.
+plobi/console/router.py:1185:    """裁定 19: POST /api/agents/:id/dissolve — archive, do not delete.
+plobi/console/router.py:1287:    """§5 POST /api/agents — human registers one project L2 (裁定 18)."""
+plobi/console/router.py:1298:# PATCH /api/agents/:id — 改一条已有的 Agent（用户 10-21：「可以编辑更多信息，
+plobi/console/router.py:1302:#: 这一格**只**改这些键。故意不复用 ``POST /api/agents``：那个端点是 upsert，
+plobi/console/router.py:1380:    """PATCH /api/agents/:id — 显示名 / 一句话说明 / 图标 / 颜色 / 工作目录清单."""
+plobi/console/router.py:1394:    """``POST /api/agents/:id/rename`` — 改**身份名**（名册那一行的键），全链跟到。
+plobi/console/router.py:1396:    与 ``PATCH /api/agents/:id`` 是两件事：那一格只改"人和这个 Agent 的关系"
+plobi/console/router.py:1424:    """POST /api/agents/:id/rename — 身份名改名（或只看清单）。"""
+plobi/console/router.py:1513:    """§5 GET /api/agents/:id/subagents — that L2's L3 children."""
+plobi/console/router.py:1522:    """§5 GET /api/agents/:id/overview — the S2 status card."""
+plobi/console/router.py:1585:    ``/api/agents/{id}/`` 下面，与 ``subagents`` / ``overview`` / ``notes`` 同族。
+plobi/console/router.py:1623:    """GET /api/agents/:id/offloads — 这一格外包出去的轮次（控制台那一处流水）。"""
+plobi/console/router.py:1759:    鉴权与别的写端点（``POST /api/agents``、``dissolve``）同一道。
+plobi/console/router.py:1799:    """GET /api/agents/:id/external-sessions — 这个 Agent 项目下的外部会话。"""
+plobi/console/router.py:1914:    """GET /api/agents/:id/experts — 这个 Agent 派出去过的**临时专家**（子会话，非名册 Agent）。"""
+plobi/console/router.py:1969:    """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""
+plobi/delegation/__init__.py:10:  ``/api/agents/:id/subagents`` shape.
+plobi/delegation/__init__.py:12:Explicitly out of scope: mounting HTTP routes. §5 owns the ``/api/agents``
+plobi/delegation/tracker.py:193:        """§5 ``GET /api/agents/:id/subagents`` payload for one L2."""
+plobi/delegation/tracker.py:245:    """Data source for §5 ``GET /api/agents/:id/subagents``.
+plobi_cli/main.py:420:            "not a directory on disk (add the row first: `plobi agent register` or POST /api/agents)",
+plobi_cli/main.py:11175:            "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。\n"
+plobi_cli/main.py:11560:            "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。",
+plobi_cli/main.py:11590:            "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。",
+plobi_cli/web_server.py:172:    """Idempotently register the agenda L2 so ``GET /api/agents`` always sees it.

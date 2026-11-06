@@ -1,0 +1,11 @@
+﻿FAILED tests/plobi/test_config_single_source.py::test_a_roster_override_moves_only_that_agent
+FAILED tests/plobi/test_config_single_source.py::test_two_agents_with_overrides_do_not_fold_into_one_role_route
+FAILED tests/plobi/test_config_single_source.py::test_an_unresolvable_provider_override_is_not_applied
+FAILED tests/plobi/test_config_single_source.py::test_editing_the_roster_takes_effect_without_restarting
+FAILED tests/plobi/test_console_api.py::test_quota_summary_today_usd_follows_request_identity
+FAILED tests/plobi/test_console_api.py::TestOffloadResume::test_an_id_the_ledger_never_recorded_is_refused
+FAILED tests/plobi/test_console_api.py::test_quota_summary_query_profile_is_remote_fallback
+FAILED tests/plobi/test_console_api.py::test_agent_id_for_profile_maps_roster_rows
+FAILED tests/plobi/test_doctor.py::test_chatlog_down_while_registry_off_is_deferred_with_todays_reason
+9 failed, 592 passed, 1 skipped, 1 warning in 48.54s
+[slice 40:80 of 166 files, rc=1, 49s]

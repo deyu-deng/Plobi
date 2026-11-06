@@ -1,0 +1,9 @@
+﻿.\.venv\Scripts\python.exe : 
+At line:1 char:406
++ ... ktop\Code'; .\.venv\Scripts\python.exe -m pip install -q pytest-xdist ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[notice] A new release of pip is available: 25.0.1 -> 26.3
+[notice] To update, run: D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Scripts\python.exe -m pip install --upgrade pip

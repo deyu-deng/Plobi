@@ -272,7 +272,7 @@ def _label(entry) -> str:
 
 def _matches(entry, needle: str) -> bool:
     """Accept the registry key, the display name, or the profile name."""
-    names = {entry.name, entry.display_name, entry.profile or entry.name}
+    names = {entry.name, entry.display_name, entry.profile_name or entry.name}
     return needle in {name.strip().casefold() for name in names if name}
 
 

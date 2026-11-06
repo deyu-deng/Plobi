@@ -51,26 +51,28 @@ def _course_entry(**over) -> AgentEntry:
         "name": COURSE,
         "role": L2_PROJECT,          # 有运行时的那条路（models.py 注释指定的改法）
         "category": "courses",       # 类型只决定附加设置（裁定 146②(c)）
-        "profile": "l2-course-phys",  # 显式 ASCII 名：非 ASCII 会被 CLI 的 -p 预扫丢掉
+        # slug 不是可填写的一格（2026-11-05）：这门课在 slug 表里登记过，
+        # 派生出来是 l2-course-physics-a2。非 ASCII 名不登记就一个字都派生不出来。
     }
     data.update(over)
     return AgentEntry(**data)
 
 
 def test_declared_course_entry_gets_a_nonempty_profile_name():
-    """声明了 profile 的课 ⇒ 前端那句「能不能点」的谓词拿到非空（R-090 的可点半边）。"""
+    """表里登记过的课 ⇒ 前端那句「能不能点」的谓词拿到非空（R-090 的可点半边）。"""
     entry = _course_entry()
 
-    assert entry.profile_name == "l2-course-phys"
+    assert entry.profile_name == "l2-course-physics-a2"
     assert entry.profile_name.strip()  # isNavigableAgent 在 JS 侧判的就是这个
 
 
-def test_undeclared_entry_keeps_profile_name_empty_so_no_ghost_sidecar():
-    """没声明 profile ⇒ 继续回空串。这是负例：空串挡着「冒充一格 profile 起后端」。"""
-    entry = AgentEntry(name="电工电子学", role=L2_COURSE, category="courses")
+def test_an_unregistered_course_name_keeps_profile_name_empty():
+    """没登记过的名字 ⇒ 派生不出 slug，回空串。这是负例：
+    空串挡着「冒充一格 slug 起后端」。数据条目没有家不是缺陷，blocker 也不该响。"""
+    entry = AgentEntry(name="未登记的中文名", role=L2_PROJECT, category="courses")
 
     assert entry.profile_name == ""
-    assert profile_name_blocker(entry) == ""  # 数据条目没有家不是缺陷，别报错
+    assert profile_name_blocker(entry)  # 有运行时的角色派生不出名字，得能行动地说
     assert not is_askable_agent(entry)
 
 

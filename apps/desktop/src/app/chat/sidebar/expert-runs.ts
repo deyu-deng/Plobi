@@ -25,12 +25,37 @@ export type ExpertLogMessage = {
   tool_name?: string
 }
 
-function api<T>(path: string, init?: { method?: string }): Promise<T> {
+function api<T>(path: string, init?: { body?: unknown, method?: string }): Promise<T> {
   return window.plobiDesktop.api<T>({ ...init, path })
 }
 
 export function getAgentExperts(agentId: string): Promise<{ data: ExpertRunsData, ok: boolean }> {
   return api(`/api/agents/${encodeURIComponent(agentId)}/experts`)
+}
+
+/** 一类角色的配置：职责、工具面、以及**它自己用的模型**（null＝跟随父 Agent）。 */
+export type ExpertRoleInfo = {
+  duty: string
+  key: string
+  label: string
+  mark: string
+  model: null | string
+  toolsets: string[]
+}
+
+export function getExpertRoles(): Promise<{ data: { roles: ExpertRoleInfo[] }, ok: boolean }> {
+  return api('/api/experts/roles')
+}
+
+/** 写一类角色的模型。`model` 传空串＝清掉覆盖，回到继承父 Agent。 */
+export function setExpertRoleModel(
+  role: string,
+  model: string
+): Promise<{ data: { model: null | string, role: string }, ok: boolean }> {
+  return api(`/api/experts/roles/${encodeURIComponent(role)}`, {
+    body: { model },
+    method: 'PUT'
+  })
 }
 
 export function getExpertLog(sessionId: string): Promise<{ messages: ExpertLogMessage[], session_id: string }> {

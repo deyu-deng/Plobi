@@ -36,6 +36,8 @@ export interface OffloadAgent {
   capabilities: Record<string, boolean>
   can_use: boolean
   why_not: string
+  /** 主人是否允许把活交给它（设置里那格开关）。默认允许；关了只影响派活，不改可用性判据。 */
+  enabled: boolean
   resume_supported: boolean
   today: { rounds: number; total_usd: number | null; cost_status: string; last_ts: string }
   last_round: OffloadLastRound | null
@@ -84,4 +86,15 @@ export async function getSessionSources(): Promise<SessionSource[]> {
   const sources = payload?.sources
 
   return Array.isArray(sources) ? (sources as SessionSource[]) : []
+}
+
+
+/** 主人这一格的开关：允许/不允许把活交给这家软件。
+ *  落点 config.yaml 的 `delegation.offload_disabled_agents`（空 = 全部允许，向后兼容）。 */
+export async function setOffloadAgentEnabled(name: string, enabled: boolean): Promise<void> {
+  await window.plobiDesktop.api({
+    path: `/api/offload/agents/${encodeURIComponent(name)}/enabled`,
+    method: 'PUT',
+    body: { enabled }
+  })
 }

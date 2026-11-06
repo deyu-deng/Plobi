@@ -15,7 +15,7 @@ const getToolsetConfig = vi.fn()
 const selectToolsetProvider = vi.fn()
 const getUsageAnalytics = vi.fn()
 
-// Partial mock: keep the real module (SkillsView pulls in @/store/profile,
+// Partial mock: keep the real module (SkillsView pulls in @/store/scope,
 // whose import-time subscription calls setApiRequestProfile) and stub only the
 // calls we assert on.
 vi.mock('@/plobi', async importOriginal => ({

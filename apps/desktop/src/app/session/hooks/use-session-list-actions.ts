@@ -9,7 +9,8 @@ import {
 } from '@/lib/session-source'
 import { setCronJobs } from '@/store/cron'
 import { $pinnedSessionIds, $sessionsLimit, bumpSessionsLimit, SIDEBAR_SESSIONS_PAGE_SIZE } from '@/store/layout'
-import { ALL_PROFILES, $profileScope, normalizeProfileKey } from '@/store/profile'
+import { normalizeAgentKey, resolveScopedSessions, sessionAgentId } from '@/lib/session-agent'
+import { ALL_PROFILES, $profileScope } from '@/store/scope'
 import {
   $messagingSessions,
   $selectedStoredSessionId,
@@ -59,7 +60,8 @@ function sessionsToKeep(scope?: string): Set<string> {
   if (active) {
     const session = scope ? $sessions.get().find(s => s.id === active) : null
 
-    if (!scope || !session || normalizeProfileKey(session.profile) === scope) {
+    // scope 是名册 name 口径；两侧都过 normalizeAgentKey（L1 空串折成 default）。
+    if (!scope || !session || normalizeAgentKey(sessionAgentId(session)) === normalizeAgentKey(scope)) {
       keep.add(active)
     }
   }
@@ -83,9 +85,10 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
   // still resolves into the Pinned section via sessionByAnyId.
   const refreshCronSessions = useCallback(async () => {
     try {
-      const { sessions } = await listAllProfileSessions(CRON_SECTION_LIMIT, 1, 'exclude', 'recent', 'all', {
+      const response = await listAllProfileSessions(CRON_SECTION_LIMIT, 1, 'exclude', 'recent', 'all', {
         source: 'cron'
       })
+      const { sessions } = resolveScopedSessions(response)
 
       setCronSessions(prev => (sameCronSignature(prev, sessions) ? prev : sessions))
     } catch {
@@ -99,9 +102,11 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
   // seeds every platform; the sidebar splits the rows per source.
   const refreshMessagingSessions = useCallback(async () => {
     try {
-      const result = await listAllProfileSessions(MESSAGING_SECTION_LIMIT, 1, 'exclude', 'recent', 'all', {
-        excludeSources: MESSAGING_EXCLUDED_SOURCES
-      })
+      const result = resolveScopedSessions(
+        await listAllProfileSessions(MESSAGING_SECTION_LIMIT, 1, 'exclude', 'recent', 'all', {
+          excludeSources: MESSAGING_EXCLUDED_SOURCES
+        })
+      )
 
       // Drop any non-messaging source the broad exclude didn't catch (custom
       // sources) — those stay in local recents, not a platform section.
@@ -123,9 +128,11 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
     const inPlatform = (s: SessionInfo) => normalizeSessionSource(s.source) === platform
     const loaded = $messagingSessions.get().filter(inPlatform).length
 
-    const result = await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', 'all', {
-      source: platform
-    })
+    const result = resolveScopedSessions(
+      await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', 'all', {
+        source: platform
+      })
+    )
 
     const incoming = result.sessions.filter(s => normalizeSessionSource(s.source) === platform)
 
@@ -173,19 +180,23 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
       // recency page — the empty-history-on-profile-switch bug.
       // Scope the fetch to the live gateway profile at call time (not the
       // React-closed `profileScope`). After `ensureGatewayProfile`, `$profileScope`
-      // already follows `$activeGatewayProfile`, so an awaited refresh from the
+      // already follows `$scopeAgent`, so an awaited refresh from the
       // L2 bind effect sees N3's session instead of the previous profile's list.
       const scope = $profileScope.get() || profileScope
       const sessionProfile = scope === ALL_PROFILES ? 'all' : scope
 
-      const result = await listAllProfileSessions(limit, 1, 'exclude', 'recent', sessionProfile, {
-        excludeSources: SIDEBAR_EXCLUDED_SOURCES
-      })
+      const result = resolveScopedSessions(
+        await listAllProfileSessions(limit, 1, 'exclude', 'recent', sessionProfile, {
+          excludeSources: SIDEBAR_EXCLUDED_SOURCES
+        })
+      )
 
       if (refreshSessionsRequestRef.current === requestId) {
         setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
         setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
-        setSessionProfileTotals(result.profile_totals ?? {})
+        // 键是名册 name（L1 桶＝default）。agentTotals 已由守卫挑好算法：
+        // 正常取 agent_totals，整包回落旧口径时取 profile_totals。
+        setSessionProfileTotals(result.agentTotals)
       }
     } catch {
       // 一个作用域被后端拒了（名册里没有这一行）不许拖垮整台开机，
@@ -209,13 +220,17 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
   // ALL-profiles view pages one profile at a time: fetch that profile's next
   // page and merge it in place, leaving every other profile's rows untouched.
   const loadMoreSessionsForProfile = useCallback(async (profile: string) => {
-    const key = normalizeProfileKey(profile)
-    const inKey = (s: SessionInfo) => normalizeProfileKey(s.profile) === key
+    // 参数是**归属键**（名册 name）。分桶按 agent_id 判，往外发的作用域仍用
+    // 这个名字：后端 `_scope_name_for_read` 认名册行，L1 的 `default` 也认。
+    const key = normalizeAgentKey(profile)
+    const inKey = (s: SessionInfo) => normalizeAgentKey(sessionAgentId(s)) === key
     const loaded = $sessions.get().filter(inKey).length
 
-    const result = await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', key, {
-      excludeSources: SIDEBAR_EXCLUDED_SOURCES
-    })
+    const result = resolveScopedSessions(
+      await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', key, {
+        excludeSources: SIDEBAR_EXCLUDED_SOURCES
+      })
+    )
 
     const keep = sessionsToKeep(key)
 
@@ -224,7 +239,7 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
       ...mergeSessionPage(prev.filter(inKey), result.sessions, keep)
     ])
 
-    const total = result.profile_totals?.[key] ?? result.total ?? result.sessions.length
+    const total = result.agentTotals[key] ?? result.total ?? result.sessions.length
     setSessionProfileTotals(prev => ({ ...prev, [key]: Math.max(total, result.sessions.length) }))
   }, [])
 

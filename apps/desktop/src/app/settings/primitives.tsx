@@ -31,6 +31,42 @@ export function Pill({ tone = 'muted', children }: { tone?: 'muted' | 'primary';
   return <Badge variant={tone === 'primary' ? 'default' : 'muted'}>{children}</Badge>
 }
 
+/** Provider card status badge — the shared five-state visual for all three provider
+ *  pillars (desktop quota / API key / OAuth). `ok` mirrors the onboarding "connected"
+ *  chip; `unusable` warns in destructive tone; `configuring` / `connecting` are the
+ *  transient amber states; `disabled` is the flat grey of a leg the hub cannot serve. */
+export function ProviderStatusBadge({
+  children,
+  className,
+  state = 'ok',
+  title
+}: {
+  children: ReactNode
+  className?: string
+  state?: 'ok' | 'unusable' | 'configuring' | 'connecting' | 'disabled'
+  title?: string
+}) {
+  const dot =
+    state === 'ok' ? 'bg-primary' : state === 'unusable' ? 'bg-destructive' : state === 'disabled' ? 'bg-muted-foreground' : 'bg-warning'
+
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[0.68rem] font-medium leading-4',
+        state === 'ok' && 'bg-primary/10 text-primary',
+        state === 'unusable' && 'bg-destructive/10 text-destructive',
+        (state === 'configuring' || state === 'connecting') && 'bg-warning/10 text-warning',
+        state === 'disabled' && 'bg-muted text-muted-foreground',
+        className
+      )}
+      title={title}
+    >
+      <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', dot)} />
+      {children}
+    </span>
+  )
+}
+
 /**
  * 一组一张卡（用户 11-02 拍「外壳 + 设置」，形状照 Qoder 实测搬：卡 + 44px 组抬头 +
  * 行与行之间**虚线**分隔，末行不带）。组名不再画中黑体 + 图标那一行——它是"这一堆是什么"，

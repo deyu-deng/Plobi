@@ -29,6 +29,7 @@ const RUNTIME_SESSION_ID = 'rt-abc123'
 
 function sessionInfo(overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
+    agent_id: '',
     ended_at: null,
     id: RUNTIME_SESSION_ID,
     input_tokens: 0,

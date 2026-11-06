@@ -43,7 +43,6 @@ def _agenda_row(tmp_path: Path, **fields) -> str:
         AgentEntry(
             name=RECIPIENT,
             role="l2_agenda",
-            profile=RECIPIENT,
             display_name="日程秘书",
             description="日程采集 → SQLite → 看板 → 钉钉 闭环",
             **fields,
@@ -81,25 +80,27 @@ def _fire(job, home, *, docs: list | None = None):
 
     ``docs`` 只给需要读那份输出文档（留痕落点）的测试用——其余测试照旧五元组。
     """
-    with patch("cron.scheduler._plobi_home", home), \
-         patch("cron.scheduler._resolve_origin", return_value=None), \
-         patch("plobi_cli.env_loader.load_plobi_dotenv"), \
-         patch("plobi_cli.env_loader.reset_secret_source_cache"), \
-         patch("plobi_state.SessionDB", return_value=MagicMock()), \
-         patch(
-             "plobi_cli.runtime_provider.resolve_runtime_provider",
-             return_value={
-                 "api_key": "test-key",
-                 "base_url": "https://example.invalid/v1",
-                 "provider": "aigw",
-                 "api_mode": "chat_completions",
-             },
-         ) as resolve_provider, \
-         patch(
-             "cron.scheduler._run_job_script",
-             return_value=(True, '{"wakeAgent": true}'),
-         ) as script_runner, \
-         patch("run_agent.AIAgent") as agent_cls:
+    with (
+        patch("cron.scheduler._plobi_home", home),
+        patch("cron.scheduler._resolve_origin", return_value=None),
+        patch("plobi_cli.env_loader.load_plobi_dotenv"),
+        patch("plobi_cli.env_loader.reset_secret_source_cache"),
+        patch("plobi_state.SessionDB", return_value=MagicMock()),
+        patch(
+            "plobi_cli.runtime_provider.resolve_runtime_provider",
+            return_value={
+                "api_key": "test-key",
+                "base_url": "https://example.invalid/v1",
+                "provider": "aigw",
+                "api_mode": "chat_completions",
+            },
+        ) as resolve_provider,
+        patch(
+            "cron.scheduler._run_job_script",
+            return_value=(True, '{"wakeAgent": true}'),
+        ) as script_runner,
+        patch("run_agent.AIAgent") as agent_cls,
+    ):
         agent = MagicMock()
         agent.run_conversation.return_value = {"final_response": "排好了"}
         agent_cls.return_value = agent
@@ -114,7 +115,9 @@ def _fire(job, home, *, docs: list | None = None):
 
 def test_a_round_without_a_recipient_never_starts(home):
     """缺收件人 ⇒ 什么都没发生：连 wake-gate 脚本都不跑，一个模型都不打。"""
-    success, error, agent_cls, script_runner, _resolve = _fire(_job(recipient=None), home)
+    success, error, agent_cls, script_runner, _resolve = _fire(
+        _job(recipient=None), home
+    )
 
     assert success is False
     assert "收件人" in error
@@ -124,7 +127,9 @@ def test_a_round_without_a_recipient_never_starts(home):
 
 def test_a_blank_recipient_is_the_same_as_missing(home):
     """空格串不等于有收件人——判据不许被一个空字符串绕过。"""
-    success, _error, agent_cls, script_runner, _resolve = _fire(_job(recipient="   "), home)
+    success, _error, agent_cls, script_runner, _resolve = _fire(
+        _job(recipient="   "), home
+    )
 
     assert success is False
     agent_cls.assert_not_called()
@@ -133,7 +138,9 @@ def test_a_blank_recipient_is_the_same_as_missing(home):
 
 def test_a_recipient_that_is_not_a_roster_row_is_refused(home):
     """查无此人 ⇒ 不起，且理由里带着那个名字（不许只报一句内部错误）。"""
-    success, error, agent_cls, _script, _resolve = _fire(_job(recipient="nobody-here"), home)
+    success, error, agent_cls, _script, _resolve = _fire(
+        _job(recipient="nobody-here"), home
+    )
 
     assert success is False
     assert "nobody-here" in error
@@ -143,12 +150,14 @@ def test_a_recipient_that_is_not_a_roster_row_is_refused(home):
 def test_an_archived_row_is_refused(home, tmp_path, monkeypatch):
     """归档那一行不是能认领这一轮的主（裁 19：归档是藏起来，不是删除）。"""
     entry = dataclasses.replace(
-        AgentEntry(name="old-agenda", role="l2_agenda", profile="old-agenda"),
+        AgentEntry(name="old-agenda", role="l2_agenda"),
         archived=True,
     )
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", _roster(tmp_path / "archived", entry))
 
-    success, error, agent_cls, _script, _resolve = _fire(_job(recipient="old-agenda"), home)
+    success, error, agent_cls, _script, _resolve = _fire(
+        _job(recipient="old-agenda"), home
+    )
 
     assert success is False
     assert "old-agenda" in error
@@ -201,7 +210,8 @@ def test_a_row_that_declares_a_model_runs_on_that_model(home, tmp_path, monkeypa
         _agenda_row(tmp_path, provider="rowprov", model="rowprov/row-model"),
     )
     monkeypatch.setattr(
-        "plobi.agents.registry.provider_is_resolvable", lambda provider: provider == "rowprov"
+        "plobi.agents.registry.provider_is_resolvable",
+        lambda provider: provider == "rowprov",
     )
 
     _success, _error, agent_cls, _script, resolve_provider = _fire(_job(), home)
@@ -216,9 +226,13 @@ def test_a_sibling_row_does_not_borrow_the_override(home, tmp_path, monkeypatch)
         "PLOBI_PROJECTS_CONFIG",
         _roster(
             tmp_path,
-            AgentEntry(name=RECIPIENT, role="l2_agenda", profile=RECIPIENT,
-                       provider="rowprov", model="rowprov/row-model"),
-            AgentEntry(name="other", role="l2_agenda", profile="other"),
+            AgentEntry(
+                name=RECIPIENT,
+                role="l2_agenda",
+                provider="rowprov",
+                model="rowprov/row-model",
+            ),
+            AgentEntry(name="other", role="l2_agenda"),
         ),
     )
     monkeypatch.setattr(
@@ -233,7 +247,9 @@ def test_a_sibling_row_does_not_borrow_the_override(home, tmp_path, monkeypatch)
     assert agent_cls.call_args.kwargs["model"] == "test-cron-default-model"
 
 
-def test_an_unresolvable_provider_on_the_row_is_dropped_not_fatal(home, tmp_path, monkeypatch):
+def test_an_unresolvable_provider_on_the_row_is_dropped_not_fatal(
+    home, tmp_path, monkeypatch
+):
     """底座认不出的 provider 当没写过：那一轮照旧起，只是按本机默认。"""
     monkeypatch.setenv(
         "PLOBI_PROJECTS_CONFIG",
@@ -250,7 +266,9 @@ def test_an_unresolvable_provider_on_the_row_is_dropped_not_fatal(home, tmp_path
     assert agent_cls.call_args.kwargs["model"] == "test-cron-default-model"
 
 
-def test_a_pinned_row_does_not_trip_the_provider_drift_guard(home, tmp_path, monkeypatch):
+def test_a_pinned_row_does_not_trip_the_provider_drift_guard(
+    home, tmp_path, monkeypatch
+):
     """那一行钉过的轴 = 用户钉死的选择，漂移闸门不许把它当成「跟着全局默认漂了」。"""
     monkeypatch.setenv(
         "PLOBI_PROJECTS_CONFIG",
@@ -291,7 +309,8 @@ def test_a_config_default_does_not_clobber_the_row(home, tmp_path, monkeypatch):
     cfg_home = tmp_path / "cfg_home"
     cfg_home.mkdir()
     (cfg_home / "config.yaml").write_text(
-        "model:\n  provider: homeprov\n  default: homeprov/home-model\n", encoding="utf-8"
+        "model:\n  provider: homeprov\n  default: homeprov/home-model\n",
+        encoding="utf-8",
     )
 
     success, _error, agent_cls, _script, _resolve = _fire(_job(), cfg_home)
@@ -306,9 +325,13 @@ def test_a_config_default_does_not_clobber_the_row(home, tmp_path, monkeypatch):
 def test_a_no_agent_job_still_fires_without_a_recipient(home):
     """采集 / 晨报 / 额度提醒那几条不经过 Agent——收件人闸门不许把它们一起拦掉。"""
     job = _job(recipient=None, no_agent=True, script="plobi_collect_sweep.py")
-    with patch("cron.scheduler._plobi_home", home), \
-         patch("cron.scheduler._run_job_script", return_value=(True, "采集完 3 条")) as script_runner, \
-         patch("run_agent.AIAgent") as agent_cls:
+    with (
+        patch("cron.scheduler._plobi_home", home),
+        patch(
+            "cron.scheduler._run_job_script", return_value=(True, "采集完 3 条")
+        ) as script_runner,
+        patch("run_agent.AIAgent") as agent_cls,
+    ):
         success, _output, final, error = run_job(job)
 
     assert success is True, error
@@ -395,7 +418,9 @@ def test_the_job_prompt_is_written_into_the_window_first(window_home):
     db = _db()
     db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
 
-    _write_cron_prompt_to_window({"id": "job-9", "name": "早报", "prompt": "读一下今天的安排"}, _Entry())
+    _write_cron_prompt_to_window(
+        {"id": "job-9", "name": "早报", "prompt": "读一下今天的安排"}, _Entry()
+    )
 
     row = db.get_messages("sess-window")[-1]
     assert row["role"] == "user"
@@ -438,7 +463,9 @@ def test_a_case_variant_on_the_record_still_finds_the_same_window(window_home):
     assert record["session_id"] == "sess-window"
 
 
-def test_a_recipient_that_is_gone_reports_failure_instead_of_a_fake_success(window_home):
+def test_a_recipient_that_is_gone_reports_failure_instead_of_a_fake_success(
+    window_home,
+):
     """发不进窗口不许说成发好了——那一格错误会进 `last_delivery_error`。"""
     error, record = _deliver(_window_job(recipient="ghost"))
 
@@ -452,7 +479,9 @@ def test_the_trace_is_one_cell_on_the_job_and_a_silent_run_clears_it(window_home
     from cron.jobs import create_job, get_job, mark_job_run, use_cron_store
 
     with use_cron_store(window_home):
-        job = create_job(prompt="x", schedule="every 5m", name="早报", recipient=RECIPIENT)
+        job = create_job(
+            prompt="x", schedule="every 5m", name="早报", recipient=RECIPIENT
+        )
         assert get_job(job["id"])["last_delivery"] is None
 
         trace = {
@@ -466,10 +495,13 @@ def test_the_trace_is_one_cell_on_the_job_and_a_silent_run_clears_it(window_home
         assert get_job(job["id"])["last_delivery"] == trace
 
         mark_job_run(job["id"], True)
-        assert get_job(job["id"])["last_delivery"] is None, "这一轮没投就要清空，别留旧痕迹"
+        assert get_job(job["id"])["last_delivery"] is None, (
+            "这一轮没投就要清空，别留旧痕迹"
+        )
 
 
 # ------------------------------------- 同一屏同时只跑一轮 + 接着上下文（裁定 201）
+
 
 def test_a_second_round_on_the_same_screen_is_refused_while_one_is_alive(window_home):
     from cron.scheduler import _acquire_agent_round, _release_agent_round
@@ -477,7 +509,9 @@ def test_a_second_round_on_the_same_screen_is_refused_while_one_is_alive(window_
     first = _acquire_agent_round(RECIPIENT, job_id="j1")
     try:
         assert first is not None
-        assert _acquire_agent_round(RECIPIENT, job_id="j2") is None, "同一屏不许并发两轮"
+        assert _acquire_agent_round(RECIPIENT, job_id="j2") is None, (
+            "同一屏不许并发两轮"
+        )
     finally:
         _release_agent_round(first)
 
@@ -491,7 +525,11 @@ def test_a_second_round_on_the_same_screen_is_refused_while_one_is_alive(window_
 def test_a_dead_holder_does_not_block_the_next_round(window_home):
     import json
 
-    from cron.scheduler import _acquire_agent_round, _release_agent_round, _round_lock_path
+    from cron.scheduler import (
+        _acquire_agent_round,
+        _release_agent_round,
+        _round_lock_path,
+    )
 
     marker = _round_lock_path(RECIPIENT)
     marker.write_text(json.dumps({"pid": 999999, "agent": RECIPIENT}), encoding="utf-8")
@@ -532,8 +570,14 @@ def test_a_user_delivery_also_lands_in_the_agents_own_window(window_home, monkey
     db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
     copied: list = []
     notified: list = []
-    monkeypatch.setattr(UI, "append_user_message", lambda body, **kw: (copied.append(body), ("u-sess", "m-user", None))[1])
-    monkeypatch.setattr(UI, "notify_user", lambda body, **kw: (notified.append(kw), True)[1])
+    monkeypatch.setattr(
+        UI,
+        "append_user_message",
+        lambda body, **kw: (copied.append(body), ("u-sess", "m-user", None))[1],
+    )
+    monkeypatch.setattr(
+        UI, "notify_user", lambda body, **kw: (notified.append(kw), True)[1]
+    )
 
     out: dict = {}
     error = _deliver_result(
@@ -547,4 +591,6 @@ def test_a_user_delivery_also_lands_in_the_agents_own_window(window_home, monkey
     assert rows[-1]["role"] == "assistant", "回答先落回它自己的窗口"
     assert rows[-1]["content"] == "做完了吗"
     assert copied == [], "用户 10-28：不再往 L1 抄正文（总秘书不该复述日程秘书的话）"
-    assert notified and notified[0]["session_id"] == "sess-window", "只提醒，且点通知跳到那个 Agent"
+    assert notified and notified[0]["session_id"] == "sess-window", (
+        "只提醒，且点通知跳到那个 Agent"
+    )

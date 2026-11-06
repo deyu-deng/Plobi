@@ -37,7 +37,8 @@ def _default_cron_test_roster(tmp_path, monkeypatch):
 
     path = tmp_path / "cron-test-roster.yaml"
     entry = AgentEntry(
-        name=CRON_TEST_AGENT, role="l2_test", profile=CRON_TEST_AGENT,
+        name=CRON_TEST_AGENT,
+        role="l2_test",
         display_name="测试分身",
     )
     AgentRegistry(path=path, agents={entry.name: entry}).save()

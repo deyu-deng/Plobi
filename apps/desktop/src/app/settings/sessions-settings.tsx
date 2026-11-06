@@ -14,6 +14,7 @@ import type { SessionInfo } from '@/types/plobi'
 
 import { EmptyState, ListRow, LoadingState, Pill, SettingsContent, SettingsGroup } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
+import { sessionScopeKey } from '@/lib/session-agent'
 
 const ARCHIVED_FETCH_LIMIT = 200
 
@@ -62,7 +63,7 @@ export function SessionsSettings() {
       setBusyId(session.id)
 
       try {
-        await setSessionArchived(session.id, false, session.profile)
+        await setSessionArchived(session.id, false, sessionScopeKey(session))
         setLocalSessions(prev => prev.filter(s => s.id !== session.id))
         // Surface it again in the sidebar without waiting for a full refresh, and
         // lift any optimistic eviction so the grouped tree shows it again too.
@@ -88,7 +89,7 @@ export function SessionsSettings() {
       setBusyId(session.id)
 
       try {
-        await deleteSession(session.id, session.profile)
+        await deleteSession(session.id, sessionScopeKey(session))
         setLocalSessions(prev => prev.filter(s => s.id !== session.id))
         triggerHaptic('warning')
       } catch (err) {

@@ -7637,6 +7637,22 @@ def _default_spawn(
 
     profile_arg = normalize_profile_name(task.assignee)
 
+    # 2026-11-05（profile 连根拔 · 2b-1）：`-p` 只吃 ASCII 的派生 slug（它同时是
+    # PLOBI_HOME 的目录名），身份另走 PLOBI_AGENT_ID 双写名册 name。名册里查得到
+    # 就把 assignee 折成该行的 runtime slug；查不到维持原值（老行为）。
+    agent_identity = ""
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        _entry = entry_for_profile(profile_arg)
+        if _entry is not None:
+            agent_identity = _entry.name or ""
+            _slug = getattr(_entry, "profile_name", "") or ""
+            if _slug:
+                profile_arg = _slug
+    except Exception:
+        agent_identity = ""
+
     prompt = f"work kanban task {task.id}"
     env = dict(os.environ)
 
@@ -7720,6 +7736,11 @@ def _default_spawn(
     # attributed correctly regardless of how the child loads config.
     env["PLOBI_PROFILE"] = profile_arg
 
+    # 2b-1 双写：身份键是名册 name（不是 slug）。查得到才写，查不到留空让子进程
+    # 继续按老的 `-p` 折回逻辑自己认人（plobi_cli/main.py::_apply_folded_identity）。
+    if agent_identity:
+        env["PLOBI_AGENT_ID"] = agent_identity
+
     # A worker must NEVER boot the interactive TUI: an inherited PLOBI_TUI=1
     # or a `display.interface: tui` in the profile's config would send the
     # quiet chat run into the Ink TUI, whose no-TTY bail-out exits 0 without
@@ -7730,6 +7751,9 @@ def _default_spawn(
 
     cmd = [
         *_resolve_plobi_argv(),
+        # `-p` 只承担派生 slug：它决定 PLOBI_HOME 落在哪个 profile 目录，
+        # 不承载身份事实。子进程的真实归属以 PLOBI_AGENT_ID（名册 name）为准；
+        # 查不到名册身份时才折回按 `-p` 认人（main.py::_apply_folded_identity）。
         "-p", profile_arg,
         "--cli",
         # Worker subprocesses switch to a profile-scoped PLOBI_HOME above,
@@ -8568,6 +8592,7 @@ def list_assignable_agents() -> list[str]:
         pass
     names.add("default")
     return sorted(names)
+
 
 def known_assignees(conn: sqlite3.Connection) -> list[dict]:
     """Return every assignee name known to the board, the roster, or on disk.

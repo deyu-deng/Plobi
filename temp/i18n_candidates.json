@@ -1,0 +1,677 @@
+[
+ {
+  "key": "copyFailed",
+  "zh": "复制失败",
+  "line": 23
+ },
+ {
+  "key": "error",
+  "zh": "错误",
+  "line": 27
+ },
+ {
+  "key": "failed",
+  "zh": "失败",
+  "line": 29
+ },
+ {
+  "key": "loading",
+  "zh": "加载中…",
+  "line": 32
+ },
+ {
+  "key": "copyPath",
+  "zh": "复制路径",
+  "line": 53
+ },
+ {
+  "key": "copyRelativePath",
+  "zh": "复制相对路径",
+  "line": 54
+ },
+ {
+  "key": "pathCopied",
+  "zh": "已复制路径",
+  "line": 61
+ },
+ {
+  "key": "saveError",
+  "zh": "语言更新失败",
+  "line": 280
+ },
+ {
+  "key": "exportConfig",
+  "zh": "导出配置",
+  "line": 309
+ },
+ {
+  "key": "importConfig",
+  "zh": "导入配置",
+  "line": 310
+ },
+ {
+  "key": "exportFailed",
+  "zh": "导出失败",
+  "line": 313
+ },
+ {
+  "key": "resetFailed",
+  "zh": "重置失败",
+  "line": 314
+ },
+ {
+  "key": "emptyTitle",
+  "zh": "无可配置项",
+  "line": 873
+ },
+ {
+  "key": "noDescription",
+  "zh": "暂无描述。",
+  "line": 1218
+ },
+ {
+  "key": "configured",
+  "zh": "已配置",
+  "line": 1219
+ },
+ {
+  "key": "skillsLoadFailed",
+  "zh": "技能加载失败",
+  "line": 1224
+ },
+ {
+  "key": "toolsetsRefreshFailed",
+  "zh": "工具集刷新失败",
+  "line": 1225
+ },
+ {
+  "key": "bulkNoChange",
+  "zh": "没有需要更改的内容。",
+  "line": 1240
+ },
+ {
+  "key": "loading",
+  "zh": "加载中…",
+  "line": 1310
+ },
+ {
+  "key": "emptyTitle",
+  "zh": "还没有 Agent",
+  "line": 1314
+ },
+ {
+  "key": "noMatchTitle",
+  "zh": "没有匹配的",
+  "line": 1316
+ },
+ {
+  "key": "copyPath",
+  "zh": "复制路径",
+  "line": 1322
+ },
+ {
+  "key": "notBuilt",
+  "zh": "这份档案还没建",
+  "line": 1323
+ },
+ {
+  "key": "noHome",
+  "zh": "这个 Agent 还没有绑档案文件夹",
+  "line": 1325
+ },
+ {
+  "key": "noHomeDesc",
+  "zh": "名册里它的领地是空的，所以这里没有可读的内容。",
+  "line": 1326
+ },
+ {
+  "key": "loading",
+  "zh": "加载中…",
+  "line": 1348
+ },
+ {
+  "key": "emptyTitle",
+  "zh": "暂无活跃子代理",
+  "line": 1368
+ },
+ {
+  "key": "failed",
+  "zh": "失败",
+  "line": 1371
+ },
+ {
+  "key": "close",
+  "zh": "关闭命令中心",
+  "line": 1395
+ },
+ {
+  "key": "paletteTitle",
+  "zh": "命令面板",
+  "line": 1396
+ },
+ {
+  "key": "commandCenter",
+  "zh": "命令中心",
+  "line": 1403
+ },
+ {
+  "key": "noSessions",
+  "zh": "暂无会话。",
+  "line": 1495
+ },
+ {
+  "key": "gatewayStopped",
+  "zh": "消息网关已停止",
+  "line": 1497
+ },
+ {
+  "key": "gatewayRestartFailed",
+  "zh": "网关重启失败。",
+  "line": 1500
+ },
+ {
+  "key": "actionFailed",
+  "zh": "失败",
+  "line": 1504
+ },
+ {
+  "key": "recentLogs",
+  "zh": "最近日志",
+  "line": 1507
+ },
+ {
+  "key": "noLogs",
+  "zh": "尚未加载日志。",
+  "line": 1508
+ },
+ {
+  "key": "noDailyActivity",
+  "zh": "暂无每日活动。",
+  "line": 1521
+ },
+ {
+  "key": "noModelUsage",
+  "zh": "暂无模型用量。",
+  "line": 1523
+ },
+ {
+  "key": "noSkillActivity",
+  "zh": "暂无技能活动。",
+  "line": 1525
+ },
+ {
+  "key": "logFile",
+  "zh": "日志文件",
+  "line": 1527
+ },
+ {
+  "key": "logSearchPlaceholder",
+  "zh": "筛选日志行…",
+  "line": 1529
+ },
+ {
+  "key": "loadFailed",
+  "zh": "消息平台加载失败",
+  "line": 1579
+ },
+ {
+  "key": "unknown",
+  "zh": "未知",
+  "line": 1591
+ },
+ {
+  "key": "gatewayStopped",
+  "zh": "消息网关已停止",
+  "line": 1596
+ },
+ {
+  "key": "loadFailed",
+  "zh": "日程加载失败",
+  "line": 1715
+ },
+ {
+  "key": "emptyTitle",
+  "zh": "暂无日程",
+  "line": 1745
+ },
+ {
+  "key": "unknown",
+  "zh": "未知",
+  "line": 1762
+ },
+ {
+  "key": "noAttachments",
+  "zh": "暂无附件",
+  "line": 1772
+ },
+ {
+  "key": "attachmentFailed",
+  "zh": "附件操作失败",
+  "line": 1777
+ },
+ {
+  "key": "dismissed",
+  "zh": "已忽略该改动",
+  "line": 1783
+ },
+ {
+  "key": "actionFailed",
+  "zh": "日程操作失败",
+  "line": 1790
+ },
+ {
+  "key": "agentEnterNoOverview",
+  "zh": "后端没答上这个 Agent 的概况：不是“在忙”，也不是“没有会话”。",
+  "line": 1868
+ },
+ {
+  "key": "agentEnterBindFailed",
+  "zh": "后端起来了，但对话通道没绑上：",
+  "line": 1870
+ },
+ {
+  "key": "agentMenuCopyFailed",
+  "zh": "ID 没能复制：",
+  "line": 1878
+ },
+ {
+  "key": "agentMenuArchiveFailed",
+  "zh": "这个 Agent 没能归档：",
+  "line": 1885
+ },
+ {
+  "key": "agentEditPathsEmpty",
+  "zh": "还没绑文件夹——它没有工作区。",
+  "line": 1894
+ },
+ {
+  "key": "agentEditFailed",
+  "zh": "这个 Agent 没能更新：",
+  "line": 1902
+ },
+ {
+  "key": "agentsEmptyTitle",
+  "zh": "暂无智能体",
+  "line": 1906
+ },
+ {
+  "key": "offloadsEmpty",
+  "zh": "这一格还没把活外包出去过。",
+  "line": 1910
+ },
+ {
+  "key": "offloadsLoadFailed",
+  "zh": "外包记录读取失败：服务端未返回数据（并非没有外包任务）。",
+  "line": 1914
+ },
+ {
+  "key": "offloadsNoArtifact",
+  "zh": "本次任务没有可打开的产物（可能未执行成功）。",
+  "line": 1915
+ },
+ {
+  "key": "offloadsOpenFailed",
+  "zh": "无法打开该路径对应的文件。",
+  "line": 1916
+ },
+ {
+  "key": "offloadsCostUnknown",
+  "zh": "花费未知",
+  "line": 1918
+ },
+ {
+  "key": "newAgentFolderPlaceholder",
+  "zh": "还没有选文件夹",
+  "line": 1937
+ },
+ {
+  "key": "newAgentFolderPrimaryHint",
+  "zh": "第一个是主文件夹：智能体的命令行默认落在这里。",
+  "line": 1944
+ },
+ {
+  "key": "emptyTitleNew",
+  "zh": "暂无排程任务",
+  "line": 2127
+ },
+ {
+  "key": "failedLoad",
+  "zh": "加载定时任务失败",
+  "line": 2154
+ },
+ {
+  "key": "failedUpdate",
+  "zh": "更新定时任务失败",
+  "line": 2155
+ },
+ {
+  "key": "failedTrigger",
+  "zh": "触发定时任务失败",
+  "line": 2156
+ },
+ {
+  "key": "failedDelete",
+  "zh": "删除定时任务失败",
+  "line": 2157
+ },
+ {
+  "key": "failedSave",
+  "zh": "保存定时任务失败",
+  "line": 2158
+ },
+ {
+  "key": "failedLoad",
+  "zh": "产物加载失败",
+  "line": 2196
+ },
+ {
+  "key": "openFailed",
+  "zh": "打开失败",
+  "line": 2197
+ },
+ {
+  "key": "colLocationFile",
+  "zh": "路径",
+  "line": 2209
+ },
+ {
+  "key": "copyPath",
+  "zh": "复制路径",
+  "line": 2217
+ },
+ {
+  "key": "projectEmpty",
+  "zh": "暂无会话",
+  "line": 2247
+ },
+ {
+  "key": "noSessions",
+  "zh": "暂无会话",
+  "line": 2248
+ },
+ {
+  "key": "loading",
+  "zh": "加载中…",
+  "line": 2309
+ },
+ {
+  "key": "lookupNoMatches",
+  "zh": "没有匹配项。",
+  "line": 2388
+ },
+ {
+  "key": "commonCommands",
+  "zh": "常用命令",
+  "line": 2391
+ },
+ {
+  "key": "attachUrlDesc",
+  "zh": "Plobi 将抓取该页面并作为本回合的上下文。",
+  "line": 2413
+ },
+ {
+  "key": "queueStuckBody",
+  "zh": "排队的对话多次发送失败。它仍在队列中，请重试发送。",
+  "line": 2428
+ },
+ {
+  "key": "noMatchingThemes",
+  "zh": "没有匹配的主题。",
+  "line": 2438
+ },
+ {
+  "key": "availableBodyNoChangelog",
+  "zh": "已有新版本可用。此安装方式无法显示更新日志。",
+  "line": 2556
+ },
+ {
+  "key": "manualBody",
+  "zh": "你是从命令行安装的 Plobi，因此更新也需要在那里运行。请将此命令粘贴到终端：",
+  "line": 2561
+ },
+ {
+  "key": "errorBody",
+  "zh": "没有数据丢失。你可以现在重试。",
+  "line": 2574
+ },
+ {
+  "key": "installCommand",
+  "zh": "安装命令",
+  "line": 2597
+ },
+ {
+  "key": "copyCommand",
+  "zh": "复制命令",
+  "line": 2598
+ },
+ {
+  "key": "failedTitle",
+  "zh": "安装失败",
+  "line": 2602
+ },
+ {
+  "key": "failedDesc",
+  "zh": "某个安装步骤失败。在 Windows 上，如果另一个 Plobi 实例（命令行或桌面）正在运行，可能会出现这种情况。请停止正在运行的 Plobi 实例后重试。可查看下方详情或完整日志。",
+  "line": 2605
+ },
+ {
+  "key": "activeDesc",
+  "zh": "这是一次性设置。Plobi 安装器正在下载依赖并配置你的机器。之后启动会跳过此步骤。",
+  "line": 2607
+ },
+ {
+  "key": "error",
+  "zh": "错误",
+  "line": 2611
+ },
+ {
+  "key": "noOutput",
+  "zh": "暂无输出。",
+  "line": 2615
+ },
+ {
+  "key": "signInFailed",
+  "zh": "登录失败，请重试。",
+  "line": 2666
+ },
+ {
+  "key": "unknown",
+  "zh": "(未知)",
+  "line": 2695
+ },
+ {
+  "key": "noAuthenticatedProviders",
+  "zh": "没有已认证的提供方。",
+  "line": 2700
+ },
+ {
+  "key": "noAuthenticatedProviders",
+  "zh": "没有已认证的提供方。",
+  "line": 2711
+ },
+ {
+  "key": "noProjectTitle",
+  "zh": "没有项目",
+  "line": 2843
+ },
+ {
+  "key": "treeErrorTitle",
+  "zh": "文件树错误",
+  "line": 2851
+ },
+ {
+  "key": "capabilitiesEmpty",
+  "zh": "还没有安装任何能力",
+  "line": 2870
+ },
+ {
+  "key": "capabilitiesLoadError",
+  "zh": "能力清单加载失败",
+  "line": 2871
+ },
+ {
+  "key": "capabilitiesToggleFailed",
+  "zh": "开关切换失败",
+  "line": 2872
+ },
+ {
+  "key": "modelStateUnknown",
+  "zh": "这份后端没说这一行有没有单独指定",
+  "line": 2877
+ },
+ {
+  "key": "emptyGuidanceTitle",
+  "zh": "这里还没有打开的东西",
+  "line": 2882
+ },
+ {
+  "key": "unknownSize",
+  "zh": "大小未知",
+  "line": 2902
+ },
+ {
+  "key": "noInlineTitle",
+  "zh": "没有内联预览",
+  "line": 2909
+ },
+ {
+  "key": "gatewayDisconnected",
+  "zh": "Plobi 网关未连接",
+  "line": 3164
+ },
+ {
+  "key": "sudoDesc",
+  "zh": "Plobi 需要你的管理员密码来运行特权命令。它只会发送给本机 Plobi，不会上传。",
+  "line": 3168
+ },
+ {
+  "key": "promptFailed",
+  "zh": "提示词发送失败",
+  "line": 3179
+ },
+ {
+  "key": "emptySlashCommand",
+  "zh": "空 slash 命令",
+  "line": 3183
+ },
+ {
+  "key": "desktopCommands",
+  "zh": "桌面端命令",
+  "line": 3184
+ },
+ {
+  "key": "unknownProfile",
+  "zh": "未知配置档案",
+  "line": 3193
+ },
+ {
+  "key": "setProfileFailed",
+  "zh": "设置配置档案失败",
+  "line": 3196
+ },
+ {
+  "key": "stopFailed",
+  "zh": "停止失败",
+  "line": 3198
+ },
+ {
+  "key": "regenerateFailed",
+  "zh": "重新生成失败",
+  "line": 3199
+ },
+ {
+  "key": "editFailed",
+  "zh": "编辑失败",
+  "line": 3200
+ },
+ {
+  "key": "resumeFailed",
+  "zh": "恢复失败",
+  "line": 3201
+ },
+ {
+  "key": "resumeStrandedBody",
+  "zh": "与此会话的连接失败，自动重试已停止。请确认网关正在运行，然后重试。",
+  "line": 3203
+ },
+ {
+  "key": "nothingToBranch",
+  "zh": "没有可分支的内容",
+  "line": 3205
+ },
+ {
+  "key": "branchNoText",
+  "zh": "此消息没有可用于分支的文本。",
+  "line": 3209
+ },
+ {
+  "key": "branchFailed",
+  "zh": "分支失败",
+  "line": 3211
+ },
+ {
+  "key": "deleteFailed",
+  "zh": "删除失败",
+  "line": 3212
+ },
+ {
+  "key": "archiveFailed",
+  "zh": "归档失败",
+  "line": 3214
+ },
+ {
+  "key": "cwdChangeFailed",
+  "zh": "工作目录更改失败",
+  "line": 3215
+ },
+ {
+  "key": "modelSwitchFailed",
+  "zh": "模型切换失败",
+  "line": 3218
+ },
+ {
+  "key": "imageDownloadFailed",
+  "zh": "图片下载失败",
+  "line": 3236
+ },
+ {
+  "key": "imagePreviewFailed",
+  "zh": "图片预览失败",
+  "line": 3240
+ },
+ {
+  "key": "imageAttachFailed",
+  "zh": "附加图片失败",
+  "line": 3243
+ },
+ {
+  "key": "noClipboardImage",
+  "zh": "剪贴板中没有图片",
+  "line": 3246
+ },
+ {
+  "key": "clipboardPasteFailed",
+  "zh": "粘贴剪贴板失败",
+  "line": 3247
+ },
+ {
+  "key": "genericFailure",
+  "zh": "发生错误",
+  "line": 3259
+ },
+ {
+  "key": "boundaryDesc",
+  "zh": "此视图遇到意外错误。你的对话和设置是安全的。",
+  "line": 3261
+ },
+ {
+  "key": "openLogs",
+  "zh": "打开日志",
+  "line": 3263
+ },
+ {
+  "key": "emptyTitle",
+  "zh": "没有打开的页签",
+  "line": 3295
+ }
+]

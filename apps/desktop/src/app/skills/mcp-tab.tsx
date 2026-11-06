@@ -42,7 +42,7 @@ import { type Translations, useI18n } from '@/i18n'
 import { countEnabledTools, isToolEnabled, toggleToolInServer } from '@/lib/mcp-tool-filter'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
-import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, normalizeProfileKey } from '@/store/scope'
 import { $activeSessionId } from '@/store/session'
 import type { PlobiConfigRecord } from '@/types/plobi'
 
@@ -131,7 +131,7 @@ const serverFingerprint = (server: Record<string, unknown>): string =>
   JSON.stringify([server.url, server.command, server.args, server.env, server.headers, server.transport, server.auth])
 
 const probeKey = (name: string, server: Record<string, unknown> | undefined): string =>
-  `${normalizeProfileKey($activeGatewayProfile.get())}::${name}::${serverFingerprint(server ?? {})}`
+  `${normalizeProfileKey($scopeAgent.get())}::${name}::${serverFingerprint(server ?? {})}`
 
 type Probe = McpTestResult | 'probing'
 
@@ -420,7 +420,7 @@ export function McpTab({ gateway }: { gateway: PlobiGateway | null }) {
   // Key by active profile — installed/enabled badges are per-profile, so sharing
   // one cache across profiles would flash the previous profile's state on switch.
   const catalogQuery = useQuery({
-    queryKey: [...MCP_CATALOG_KEY, normalizeProfileKey(useStore($activeGatewayProfile))],
+    queryKey: [...MCP_CATALOG_KEY, normalizeProfileKey(useStore($scopeAgent))],
     queryFn: getMcpCatalog,
     staleTime: 5 * 60_000
   })
@@ -474,7 +474,7 @@ export function McpTab({ gateway }: { gateway: PlobiGateway | null }) {
   // write its result into profile B's state after the user switched.
   const profileEpoch = useRef(0)
 
-  // A profile switch invalidates the config query (see store/profile.ts), which
+  // A profile switch invalidates the config query (see store/scope.ts), which
   // refetches the new backend's mcp.json. Reset ALL per-profile view state — the
   // draft (incl. a dirty one, so profile A's edits can't be saved into B), its
   // seed latch, probes, and cursor — so everything reseeds for the new profile.
@@ -1494,7 +1494,7 @@ function McpLogs({
   // A profile switch reroutes getLogs to the new backend; keying the effect on
   // the active profile tears down the old poll (its `cancelled` flag blocks a
   // late setLines) so profile A's logs never flash in B.
-  const activeProfile = useStore($activeGatewayProfile)
+  const activeProfile = useStore($scopeAgent)
 
   useEffect(() => {
     let cancelled = false

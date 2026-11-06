@@ -1,3 +1,4 @@
+import { sessionScopeKey } from '@/lib/session-agent'
 import type { MutableRefObject } from 'react'
 import { useCallback, useRef } from 'react'
 import type { NavigateFunction } from 'react-router-dom'
@@ -9,7 +10,7 @@ import { setSessionApproval, setSessionYolo } from '@/lib/yolo-session'
 import { clearQueuedPrompts } from '@/store/composer-queue'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
-import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/scope'
 import { resolveNewSessionCwd, tombstoneSessions, untombstoneSessions } from '@/store/projects'
 import {
   $currentCwd,
@@ -164,7 +165,7 @@ export function useSessionActions({
         // chat on the launch (default) profile — the "rubberbands back to
         // default" bug. This is a no-op for single-profile/local-pooled users:
         // a backend resolves its own launch profile to None (_profile_home).
-        const newChatProfile = $newChatProfile.get() ?? normalizeProfileKey($activeGatewayProfile.get())
+        const newChatProfile = $newChatProfile.get() ?? normalizeProfileKey($scopeAgent.get())
         await ensureGatewayProfile(newChatProfile)
         const cwd = $currentCwd.get().trim() || workspaceCwdForNewSession()
         // The composer's model/effort/fast is sticky UI state ($currentModel,
@@ -359,7 +360,9 @@ export function useSessionActions({
       // resolveStoredSession finds the row by id (cheap), so an uncached pasted
       // id loads as fast as a sidebar click instead of hanging on a list scan.
       const storedForProfile = await resolveStoredSession(storedSessionId)
-      const sessionProfile = storedForProfile?.profile
+      // 归属键读 `agent_id`（名册 name；L1 空串折成 `default`）。后端只要
+      // 这个会话是谁的，网关就换到那一家——与改造前读 `profile` 标签同值。
+      const sessionProfile = storedForProfile ? sessionScopeKey(storedForProfile) : null
 
       if (resumeRequestRef.current !== requestId) {
         return
@@ -780,7 +783,7 @@ export function useSessionActions({
       clearNotifications()
 
       const stored = $sessions.get().find(session => sessionMatchesStoredId(session, storedSessionId))
-      const profile = sessionProfile ?? stored?.profile
+      const profile = sessionProfile ?? (stored ? sessionScopeKey(stored) : null)
 
       try {
         await ensureGatewayProfile(profile)
@@ -837,7 +840,7 @@ export function useSessionActions({
           await requestGateway('session.close', { session_id: closingRuntimeId }).catch(() => undefined)
         }
 
-        await deleteSession(storedSessionId, removed?.profile)
+        await deleteSession(storedSessionId, removed ? sessionScopeKey(removed) : undefined)
         clearQueuedPrompts(storedSessionId)
 
         if (closingRuntimeId) {
@@ -918,7 +921,7 @@ export function useSessionActions({
       }
 
       try {
-        await setSessionArchived(storedSessionId, true, archived?.profile)
+        await setSessionArchived(storedSessionId, true, archived ? sessionScopeKey(archived) : undefined)
         // A sidebar refresh can race the optimistic removal while the PATCH is
         // in flight and briefly reinsert the still-unarchived backend row. Win
         // that race after the mutation succeeds so right-click → Archive does

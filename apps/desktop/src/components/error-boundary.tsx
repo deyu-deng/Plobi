@@ -24,7 +24,7 @@ const HMR_RELOAD_ONCE_KEY = 'plobi:hmr-stale-reload-once'
  *
  * Vite + React Fast Refresh 在**跨多个文件**的热更之后，偶发会留下悬空绑定：
  * 渲染时报 ``X is not defined``，而 X 明明就在源文件里 import 着。本机 dev 上
- * 实测咬过三次（`$activeGatewayProfile` / `AgentActionsMenu` /
+ * 实测咬过三次（`$scopeAgent` / `AgentActionsMenu` /
  * `AGENT_ICON_CHOICES`，全在 2026-10-21 晚间的十几轮 HMR 之后）。
  *
  * 这种错 React 的错误边界救不了：它能重建组件树，但救不活已经失效的模块绑定

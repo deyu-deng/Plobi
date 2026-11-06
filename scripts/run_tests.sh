@@ -187,7 +187,7 @@ echo "  (temp root: $(to_native "$TEMP_ROOT") → per-run scratch $(to_native "$
 cd "$REPO_ROOT"
 
 # MIND_ROOT is a location pointer, not a credential: a few tests reuse the
-# brain's own gate script (Loom/scripts/verifier.py), and the vault may live
+# brain's own gate script (Mind/scripts/verifier.py), and the human surface may live
 # outside the repo. Stripped, those tests skip and still report green.
 env -i \
   PATH="$PATH" \

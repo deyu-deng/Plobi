@@ -1,0 +1,10 @@
+﻿.................F...                                                    [100%]
+================================== FAILURES ===================================
+E   AttributeError: type object 'AgendaService' has no attribute '_order_by_confirmed_plans'
+
+The above exception was the direct cause of the following exception:
+E   AttributeError: 'type' object at plobi.agenda.service.AgendaService has no attribute '_order_by_confirmed_plans'
+D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Lib\site-packages\_pytest\monkeypatch.py:94: AttributeError: 'type' object at plobi.agenda.service.AgendaService has no attribute '_order_by_confirmed_plans'
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agenda_service.py::test_list_agenda_dedupes_duplicate_event_ids
+1 failed, 20 passed in 1.12s

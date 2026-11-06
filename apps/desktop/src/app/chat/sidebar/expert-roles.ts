@@ -7,9 +7,12 @@
  *
  * 新增一类角色要两处一起改；只改这里会得到一行永远点不开的空行。
  */
+import type { ExpertRoleKey } from '@/store/conversation-view'
+
 import type { ExpertRun } from './expert-runs'
 
-export type ExpertRoleKey = 'browser' | 'computer' | 'file' | 'software'
+/** 角色键只在一处定义（`store/conversation-view.ts`）：主区卡片与侧栏名册必须同一套。 */
+export type { ExpertRoleKey }
 
 export interface ExpertRoleSpec {
   /** Codicon 名。 */

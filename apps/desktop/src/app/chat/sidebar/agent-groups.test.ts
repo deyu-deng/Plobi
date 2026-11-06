@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Agent } from '@/app/console/types'
 
 import {
-  agentProfileIdSet,
+  agentNameSet,
   groupAgentsByCategory,
   isL1SessionProfile,
   isNavigableAgent,
@@ -83,36 +83,27 @@ describe('groupAgentsByCategory', () => {
   })
 })
 
-describe('agentProfileIdSet / isL1SessionProfile', () => {
-  it('collects non-blank agent profiles', () => {
+describe('agentNameSet / isL1SessionProfile', () => {
+  it('collects non-blank roster names (the session ownership key)', () => {
     expect(
-      agentProfileIdSet([
-        agent({ id: 'a', name: 'A', profile: 'simulation' }),
-        agent({ id: 'b', name: 'B' }),
-        agent({ id: 'c', name: 'C', profile: '  ' })
+      agentNameSet([
+        agent({ id: 'agenda', name: '日程秘书' }),
+        agent({ id: '中国近现代人物研究', name: '中国近现代人物研究' }),
+        agent({ id: '   ', name: 'blank' })
       ])
-    ).toEqual(new Set(['simulation']))
+    ).toEqual(new Set(['agenda', '中国近现代人物研究']))
   })
 
-  it('treats default/master/blank as L1 main thread (IPC sends empty profile)', () => {
-    expect(isL1SessionProfile('default')).toBe(true)
-    expect(isL1SessionProfile('master')).toBe(true)
+  it('treats an EMPTY agent_id as L1 — and only that', () => {
+    // 2026-11-05：判据只剩一条 —— 总账里 `agent_id` 空串＝无主行＝L1。
     expect(isL1SessionProfile(undefined)).toBe(true)
+    expect(isL1SessionProfile(null)).toBe(true)
     expect(isL1SessionProfile('')).toBe(true)
-    // No agent profile set → unknown profiles conservatively stay L1.
-    expect(isL1SessionProfile('simulation')).toBe(true)
-  })
-
-  it('excludes a session only when its profile is a known agent profile', () => {
-    const agentProfiles = new Set(['simulation', 'l2-agenda'])
-
-    expect(isL1SessionProfile('', agentProfiles)).toBe(true)
-    expect(isL1SessionProfile('default', agentProfiles)).toBe(true)
-    expect(isL1SessionProfile('master', agentProfiles)).toBe(true)
-    expect(isL1SessionProfile('simulation', agentProfiles)).toBe(false)
-    expect(isL1SessionProfile('l2-agenda', agentProfiles)).toBe(false)
-    // Unknown profile still L1 even with a set present.
-    expect(isL1SessionProfile('ghost', agentProfiles)).toBe(true)
+    expect(isL1SessionProfile('   ')).toBe(true)
+    // 归属非空就是某个 Agent 的会话，哪怕名册里查不到（孤儿行也不许算 L1，
+    // 否则它会混进 L1 旁路归档那一刀）。
+    expect(isL1SessionProfile('agenda')).toBe(false)
+    expect(isL1SessionProfile('ghost')).toBe(false)
   })
 })
 

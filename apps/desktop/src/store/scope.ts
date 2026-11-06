@@ -1,3 +1,6 @@
+// 作用域 store：镜像「当前本地后端被钉在哪个 Agent 上」，并决定新建会话的默认归属。
+// 身份键统一为名册 name（sessions.agent_id）；profile 仅是派生 slug，只用于 PLOBI_HOME
+// 与派生目录，不再作为产品面概念对外出现。
 import { atom, computed } from 'nanostores'
 
 import { getProfiles, setApiRequestProfile, STARTUP_REQUEST_TIMEOUT_MS } from '@/plobi'
@@ -12,6 +15,7 @@ import {
   storedStringRecord
 } from '@/lib/storage'
 import { $gateway, ensureGatewayForProfile } from '@/store/gateway'
+import { notifyError } from '@/store/notifications'
 import { setConnection } from '@/store/session'
 import { resetStarmapGraph } from '@/store/starmap'
 import type { ProfileInfo } from '@/types/plobi'
@@ -25,7 +29,7 @@ export function normalizeProfileKey(name: string | null | undefined): string {
 }
 
 // The profile the running local backend is actually scoped to (mirrors
-// /api/profiles/active `current`). "default" is the root ~/.plobi. This is the
+// /api/agents/active `current`). "default" is the root ~/.plobi. This is the
 // display source of truth for the statusbar pill; the desktop's *stored*
 // preference (which may be unset) lives in the Electron main process.
 export const $activeProfile = atom<string>('default')
@@ -40,9 +44,34 @@ export function setActiveProfile(name: string): void {
 
 export async function refreshProfiles(): Promise<ProfileInfo[]> {
   const { profiles } = await getProfiles()
-  $profiles.set(profiles)
 
-  return profiles
+  // 2b-1 风险②：名册里若出现 name='default' 的行，它会和 L1 的分桶键撞车
+  // （`normalizeAgentKey` 把 L1 的空串折成 `default`），两边会话会被合并到一桶。
+  // 该行**拒绝进入名单**，而且拒绝必须是可见的——只打 console 等于静默丢行。
+  // 豁免：L1 总秘书本人的 slug 就是 `default`（名册 name='secretary'）。老后端 /
+  // 迁移期的响应里那一行的 name 仍可能是 'default'，无差别拒绝等于把 L1 从名册
+  // 里摘掉 —— 那会断掉「L1 会话归属与 -p 启动不回归」这条硬约束。所以只拒绝
+  // 「不是 L1、却占了 default 这个名字」的行。
+  const isL1Row = (profile?: null | ProfileInfo) =>
+    profile?.is_default === true || (profile?.name ?? '').trim().toLowerCase() === 'secretary'
+  const isReservedName = (name?: null | string) => (name ?? '').trim().toLowerCase() === 'default'
+  const isRejected = (profile?: null | ProfileInfo) =>
+    isReservedName(profile?.name) && !isL1Row(profile)
+
+  const rejected = profiles.filter(profile => isRejected(profile))
+  const accepted = profiles.filter(profile => !isRejected(profile))
+
+  if (rejected.length > 0) {
+    console.warn('[profile] 名册行使用了保留名 default，已拒绝进入名单', rejected.map(profile => profile?.name))
+    notifyError(
+      new Error('名册中存在名为 "default" 的行（该名是总秘书 L1 的保留名）'),
+      '名册里名为 "default" 的行已被拒绝加载，请改名后重试'
+    )
+  }
+
+  $profiles.set(accepted)
+
+  return accepted
 }
 
 // ── Rail order ─────────────────────────────────────────────────────────────
@@ -111,7 +140,7 @@ interface ActiveProfileResponse {
 export async function refreshActiveProfile(): Promise<void> {
   try {
     const res = await window.plobiDesktop.api<ActiveProfileResponse>({
-      path: '/api/profiles/active',
+      path: '/api/agents/active',
       timeoutMs: STARTUP_REQUEST_TIMEOUT_MS
     })
 
@@ -148,7 +177,7 @@ export async function switchProfile(name: string): Promise<void> {
 
 // The profile the live gateway WebSocket is currently connected to. Initialized
 // to the primary (window) backend's profile on boot.
-export const $activeGatewayProfile = atom<string>('default')
+export const $scopeAgent = atom<string>('default')
 
 // Profile for the NEXT new chat (chosen via the new-chat picker). null = primary
 // / default, so single-profile users are unaffected.
@@ -172,7 +201,7 @@ export function requestFreshSession(): void {
 // get "default" (→ the primary backend) with no extra fetches.
 let _lastRoutedProfile: string | null = null
 
-$activeGatewayProfile.subscribe(value => {
+$scopeAgent.subscribe(value => {
   const key = normalizeProfileKey(value)
   setApiRequestProfile(key)
 
@@ -238,7 +267,7 @@ export async function ensureGatewayProfile(profile: string | null | undefined): 
 
   const target = normalizeProfileKey(profile)
 
-  if (normalizeProfileKey($activeGatewayProfile.get()) === target && $gateway.get()) {
+  if (normalizeProfileKey($scopeAgent.get()) === target && $gateway.get()) {
     return
   }
 
@@ -247,7 +276,7 @@ export async function ensureGatewayProfile(profile: string | null | undefined): 
   if (gatewaySwitch) {
     await gatewaySwitch.catch(() => undefined)
 
-    if (normalizeProfileKey($activeGatewayProfile.get()) === target && $gateway.get()) {
+    if (normalizeProfileKey($scopeAgent.get()) === target && $gateway.get()) {
       return
     }
   }
@@ -257,7 +286,7 @@ export async function ensureGatewayProfile(profile: string | null | undefined): 
     // ensureGatewayForProfile opens (or reuses) the target's socket and points
     // the active gateway at it — without closing the profile you came from.
     await ensureGatewayForProfile(target)
-    $activeGatewayProfile.set(target)
+    $scopeAgent.set(target)
     // The active backend just changed; resync $connection so remote-aware
     // paths (image.attach_bytes vs image.attach, /api/fs/*, /api/media) follow.
     await syncConnectionToActiveProfile(target)
@@ -292,18 +321,18 @@ $showAllProfiles.subscribe(value => persistBoolean(SHOW_ALL_PROFILES_STORAGE_KEY
 // gateway so opening/selecting a profile (which swaps the gateway) moves the
 // whole sidebar with it — a real context switch, not a separate filter to keep
 // in sync.
-export const $profileScope = computed([$showAllProfiles, $activeGatewayProfile], (showAll, gateway) =>
+export const $profileScope = computed([$showAllProfiles, $scopeAgent], (showAll, gateway) =>
   showAll ? ALL_PROFILES : normalizeProfileKey(gateway)
 )
 
 // Switch the active context to `name`: leave "All profiles" mode, point new
 // chats at it, and swap the single live gateway onto its backend (which moves
-// $activeGatewayProfile → name, so $profileScope follows).
+// $scopeAgent → name, so $profileScope follows).
 export function selectProfile(name: string): void {
   const target = normalizeProfileKey(name)
   // Switching profiles (or coming back from the all-profiles browse view) starts
   // fresh; re-tapping the profile you're already in leaves your session be.
-  const switching = $showAllProfiles.get() || target !== normalizeProfileKey($activeGatewayProfile.get())
+  const switching = $showAllProfiles.get() || target !== normalizeProfileKey($scopeAgent.get())
   $showAllProfiles.set(false)
   $newChatProfile.set(target)
 
@@ -382,7 +411,7 @@ export function cycleProfile(direction: 1 | -1): void {
     return
   }
 
-  const current = $showAllProfiles.get() ? -1 : keys.indexOf(normalizeProfileKey($activeGatewayProfile.get()))
+  const current = $showAllProfiles.get() ? -1 : keys.indexOf(normalizeProfileKey($scopeAgent.get()))
   const start = current < 0 ? (direction === 1 ? -1 : 0) : current
   const next = (start + direction + keys.length) % keys.length
 
@@ -403,6 +432,6 @@ export function requestProfileCreate(): void {
 export function touchActiveGatewayBackend(): void {
   // Always ping: the main process no-ops for non-pool (primary) backends, so we
   // don't need to know which profile is primary from here.
-  const target = normalizeProfileKey($activeGatewayProfile.get())
+  const target = normalizeProfileKey($scopeAgent.get())
   void window.plobiDesktop?.touchBackend?.(target).catch(() => undefined)
 }

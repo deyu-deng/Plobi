@@ -1,0 +1,111 @@
+﻿..........F......F.........................FFFFF..........F....FF.FFFFFF [ 58%]
+F.....................F.................F...FFFFF.FF                     [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert '' == 'l2-course-ee'
+      
+      - l2-course-ee
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_name_collisions.py:267: AssertionError: assert '' == 'l2-course-ee'
+E   AssertionError: assert 'srtp' == 'l2-srtp'
+      
+      - l2-srtp
+      + srtp
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:198: AssertionError: assert 'srtp' == 'l2-srtp'
+E   AssertionError: []
+    assert False
+     +  where False = any(<generator object test_spawn_skips_unresolvable_provider_without_failing.<locals>.<genexpr> at 0x0000013B4811AA80>)
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:727: AssertionError: []
+E   FileNotFoundError: Named profile home does not exist: C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_unresolvable_provider_ski0\.plobi\profiles\proj. Create the profile explicitly before using it.
+D:\Projects\Plobi\Plobi-Desktop\Code\plobi_cli\config.py:1087: FileNotFoundError: Named profile home does not exist: C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_unresolvable_provider_ski0\.plobi\profiles\proj. Create the profile explicitly before using it.
+E   AssertionError: assert 'aura' == 'l2-aura'
+      
+      - l2-aura
+      + aura
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:769: AssertionError: assert 'aura' == 'l2-aura'
+E   FileNotFoundError: Named profile home does not exist: C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_spawn_without_model_overr0\.plobi\profiles\proj. Create the profile explicitly before using it.
+D:\Projects\Plobi\Plobi-Desktop\Code\plobi_cli\config.py:1087: FileNotFoundError: Named profile home does not exist: C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_spawn_without_model_overr0\.plobi\profiles\proj. Create the profile explicitly before using it.
+E   AssertionError: assert '' == 'default'
+      
+      - default
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:862: AssertionError: assert '' == 'default'
+E   AssertionError: l2-course-ee
+    assert '' == '电子工程训练（乙）'
+      
+      - 电子工程训练（乙）
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_soul_shared.py:260: AssertionError: l2-course-ee
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_l2_diet_registry.py:33: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   AssertionError: assert 'agenda' == 'l2-agenda'
+      
+      - l2-agenda
+      ? ---
+      + agenda
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_profile_scope_roster.py:93: AssertionError: assert 'agenda' == 'l2-agenda'
+E   AssertionError: assert '.' != '.'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:122: AssertionError: assert '.' != '.'
+E   AssertionError: assert '.' == 'C:\\Users\\T..._the_0\\first'
+      
+      - C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_moving_the_folder_in_the_0\first
+      + .
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:179: AssertionError: assert '.' == 'C:\\Users\\T..._the_0\\first'
+E   KeyError: 'profile_dir'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:222: KeyError: 'profile_dir'
+E   AssertionError: assert '.' == 'C:\\Users\\T...\\real-folder'
+      
+      - C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_a_stale_copy_left_in_the_0\real-folder
+      + .
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:245: AssertionError: assert '.' == 'C:\\Users\\T...\\real-folder'
+E   AssertionError: assert '.' == 'C:\\Users\\T...ve_a0\\dieted'
+      
+      - C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-613\test_the_l2_diet_cannot_move_a0\dieted
+      + .
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:274: AssertionError: assert '.' == 'C:\\Users\\T...ve_a0\\dieted'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_course_agent_identity.py:57: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_course_agent_identity.py:57: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_course_agent_identity.py:57: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_l2_name_collisions.py::test_a_course_row_takes_its_slug_from_the_table
+FAILED tests/plobi/test_agent_registry.py::test_round_trip_preserves_entries
+FAILED tests/plobi/test_agent_registry.py::test_spawn_skips_unresolvable_provider_without_failing
+FAILED tests/plobi/test_agent_registry.py::test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model
+FAILED tests/plobi/test_agent_registry.py::test_profile_name_is_normalized_to_the_on_disk_id
+FAILED tests/plobi/test_agent_registry.py::test_spawn_without_model_override_inherits_the_configured_default
+FAILED tests/plobi/test_agent_registry.py::test_agenda_template_carries_no_model_override
+FAILED tests/plobi/test_agent_soul_shared.py::test_identity_name_for_key_maps_every_spelling_of_the_same_row
+FAILED tests/plobi/test_l2_diet_registry.py::test_lookup_matches_the_registry_name_not_only_the_profile_name
+FAILED tests/plobi/test_l2_diet_registry.py::test_lookup_never_returns_an_archived_row
+FAILED tests/plobi/test_l2_diet_registry.py::test_overlay_carries_the_three_blacklists
+FAILED tests/plobi/test_l2_diet_registry.py::test_overlay_omits_the_agent_section_when_nothing_is_disabled
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_writes_the_four_names_into_the_registry_row
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_is_idempotent - TypeEr...
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_never_touches_a_users_own_blacklist
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_refuses_non_project_rows
+FAILED tests/plobi/test_l2_diet_registry.py::test_diet_does_not_write_the_plobi_composite
+FAILED tests/plobi/test_profile_scope_roster.py::test_roster_scope_matches_by_profile_name_not_by_dir
+FAILED tests/plobi/test_studio_cwd.py::test_the_roster_wins_over_the_top_level_file
+FAILED tests/plobi/test_studio_cwd.py::test_moving_the_folder_in_the_roster_moves_the_agent_without_a_restart
+FAILED tests/plobi/test_studio_cwd.py::test_spawning_a_project_agent_leaves_no_config_yaml_in_its_home
+FAILED tests/plobi/test_studio_cwd.py::test_a_stale_copy_left_in_the_home_is_not_read
+FAILED tests/plobi/test_studio_cwd.py::test_the_l2_diet_cannot_move_an_agents_workspace
+FAILED tests/plobi/test_course_agent_identity.py::test_declared_course_entry_gets_a_nonempty_profile_name
+FAILED tests/plobi/test_course_agent_identity.py::test_course_role_is_the_one_the_ask_list_and_router_both_accept
+FAILED tests/plobi/test_course_agent_identity.py::test_a_missing_home_no_longer_changes_askability
+26 failed, 98 passed in 12.08s

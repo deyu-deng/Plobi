@@ -854,20 +854,23 @@ def agent_config_overlay(current: Optional[Dict[str, Any]] = None) -> Dict[str, 
 
 
 def _agent_config_overlay_sig() -> Tuple[int, int]:
-    """名册文件的 ``(mtime_ns, size)``；活跃家就是共享根、或名册读不到 = ``(0, 0)``。
+    """名册文件的 ``(mtime_ns, size)``；没有身份（L1）或名册读不到 = ``(0, 0)``。
 
     只 stat 一个文件（微秒级），所以这一句放在缓存判定**之前**；真正解析名册的
     :func:`agent_config_overlay` 只在缓存未命中时跑。覆盖是读时叠的，缓存签名必须带上
     名册那一行的变化——否则「给某个分身单独选一个模型」要等进程重启才生效，而这套缓存
     本来就是按文件 mtime 算的。
+
+    判据必须是**身份**不是家：``PLOBI_AGENT_ID`` 为空才是 L1 / flat。B 刀之后 L2 不带
+    ``-p`` 起来，它的家就是共享根——沿用「家 == 共享根 ⇒ (0,0)」会把名册签名钉死，
+    同一个进程里改名册那一行（换项目目录 / 换模型）就永远读不到新值。
     """
     try:
-        from plobi_constants import get_plobi_home, get_shared_plobi_root
-
-        if get_plobi_home() == get_shared_plobi_root():
-            return (0, 0)
+        from plobi.agents.registry import _active_agent_profile_name
         from plobi.agents.registry import default_path as roster_path
 
+        if not (_active_agent_profile_name() or "").strip():
+            return (0, 0)
         return _stat_sig(roster_path())
     except Exception:
         return (0, 0)

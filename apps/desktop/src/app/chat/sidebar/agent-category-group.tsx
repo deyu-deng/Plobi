@@ -108,7 +108,7 @@ export function AgentCategoryGroup({
           {agents.map(agent => {
             const agentSessions = hideSessions
               ? []
-              : (sessionsByProfile.get((agent.profile ?? '').trim()) ?? [])
+              : (sessionsByProfile.get((agent.id ?? '').trim()) ?? [])
 
             const sessionsOpen = !hideSessions && openAgentId === agent.id
             // 数据条目（没有 profile 的行）不可点：它没有自己的会话，点进去只会是一张空壳，

@@ -1,4 +1,4 @@
-"""§5 console data API — HTTP + row assembly in ONE module (ARCH-UI-MASTER §3.5).
+﻿"""§5 console data API — HTTP + row assembly in ONE module (ARCH-UI-MASTER §3.5).
 
 Mounted at ``/api`` by ``plobi_cli.web_server`` so the routes are exactly the
 contract paths: ``/api/agents``, ``/api/agents/{id}/subagents``,
@@ -522,6 +522,9 @@ def agent_row(entry: AgentEntry, *, working: bool = False) -> dict:
         "todayCalls": totals.calls,
         "profile": entry.profile_name,
         "category": entry.category,
+        # 11-05（用户）：名册 role 随行透出。L1 也进名册、与五类 L2 分开标但地位平等，
+        # 前端据此识别「这一行是 L1 自己」，不再靠 profile 反查。
+        "role": entry.role,
         "mindSubtree": entry.mind_subtree,
         "askable": askable,
         "notAskableReason": not_askable_reason or None,
@@ -556,11 +559,16 @@ def list_agents(
     entries: Optional[Iterable[AgentEntry]] = None,
     *,
     include_archived: bool = False,
+    include_l1: bool = False,
 ) -> list[dict]:
     """``GET /api/agents`` — one row per registered L2, sorted by name.
 
     裁定 19: archived rows are hidden by default; ``include_archived=True``
     surfaces them (a separate, explicitly-requested view).
+
+    11-05（用户裁定）: L1 也进名册，和五类 L2 分开标 role、但地位平等——所以
+    ``include_l1=True`` 时把 L1 那一行一并给出。左栏名单默认不传这个开关（L1
+    不在「智能体」名单里），能力页要的是它的名册 id，才按需拉一次。
     """
     if entries is not None:
         source = list(entries)
@@ -571,7 +579,11 @@ def list_agents(
             else get_registry().entries()
         )
     working = _working_agent_names()
-    rows = [agent_row(entry, working=entry.name in working) for entry in source if is_l2(entry)]
+    rows = [
+        agent_row(entry, working=entry.name in working)
+        for entry in source
+        if is_l2(entry) or (include_l1 and not is_l2(entry))
+    ]
     rows.sort(key=lambda row: row["id"])
     return rows
 
@@ -842,11 +854,20 @@ async def list_agents_route(request: Request):
     """§5 GET /api/agents — L2 rows for the console left rail.
 
     裁定 19: ``?include_archived=1`` surfaces dissolved rows (hidden by default).
+    11-05: ``?include_l1=1`` 一并给出 L1 那一行（能力页要它的名册 id；左栏不传）。
     """
     include_archived = str(request.query_params.get("include_archived") or "").strip() in (
         "1", "true", "True",
     )
-    rows = await run_in_threadpool(list_agents, None, include_archived=include_archived)
+    include_l1 = str(request.query_params.get("include_l1") or "").strip() in (
+        "1", "true", "True",
+    )
+    rows = await run_in_threadpool(
+        list_agents,
+        None,
+        include_archived=include_archived,
+        include_l1=include_l1,
+    )
     return {"ok": True, "data": rows}
 
 
@@ -1619,6 +1640,34 @@ async def offload_agents_route(refresh: bool = False):
     return {"ok": True, "data": payload}
 
 
+@router.put("/offload/agents/{agent_name}/enabled", name="set_offload_agent_enabled")
+async def set_offload_agent_enabled_route(agent_name: str, request: Request):
+    """PUT /api/offload/agents/:name/enabled — 设置 → 外包 那一格的开关。
+
+    落点 ``config.yaml`` 的 ``delegation.offload_disabled_agents``（空 = 全部允许）。
+    关掉只是「不派活给它」，不改「装没装 / 登没登录」这些事实；写不进去就如实回错。
+    """
+    from plobi.delegation.config import set_offload_enabled
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - 空 body/坏 JSON 都按「没给值」处理
+        body = {}
+    enabled = body.get("enabled") if isinstance(body, dict) else None
+    if not isinstance(enabled, bool):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "enabled 必须是 true 或 false"})
+    try:
+        disabled = await run_in_threadpool(set_offload_enabled, agent_name, enabled)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+    return {
+        "ok": True,
+        "data": {"name": agent_name.strip().lower(), "enabled": enabled, "offload_disabled_agents": disabled},
+    }
+
+
 # --------------------------------------------------------------------------- #
 # 外包那一轮回到它自己的软件里（WP-L2-OUTSOURCE-ENTRY 入口面③第三级）
 # --------------------------------------------------------------------------- #
@@ -1755,6 +1804,31 @@ async def agent_external_sessions_route(agent_id: str):
     return {"ok": True, "data": payload}
 
 
+@router.post("/agents/{agent_id}/external-sessions/mark", name="agent_external_sessions_mark")
+async def agent_external_sessions_mark_route(agent_id: str, request: Request):
+    """POST …/external-sessions/mark — 人工判一条会话跟这个 Agent 有没有关系。
+
+    用户 11-04：工作目录相同的已经自动算有关，剩下的由 L2 读标题判；
+    人也可以直接改（左栏那一行上的勾/叉就是走这里）。
+    """
+    from plobi.delegation.external_sessions import mark_for_agent
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "请求体不是 JSON")
+
+    items = body.get("items") if isinstance(body, dict) else None
+    if not isinstance(items, list) or not items:
+        return _error(400, "items 不能为空")
+
+    result = await run_in_threadpool(mark_for_agent, agent_id, items)
+    if not result.get("ok"):
+        return _error(int(result.get("status") or 400), str(result.get("error") or "unknown"))
+
+    return {"ok": True, "data": result.get("data") or {}}
+
+
 @router.get("/agents/{agent_id}/external-sessions/{vendor}/{session_id}", name="agent_external_session")
 async def agent_external_session_route(agent_id: str, vendor: str, session_id: str):
     """GET …/external-sessions/:vendor/:id — 那一条的 transcript。"""
@@ -1843,6 +1917,51 @@ async def agent_experts_route(agent_id: str):
     payload = await run_in_threadpool(experts_for_agent, agent_id)
 
     return {"ok": True, "data": payload}
+
+
+@router.get("/experts/roles", name="expert_roles")
+async def expert_roles_route():
+    """GET /api/experts/roles — 四类专家各自配的模型。
+
+    `model` 为 null ＝ 这一类还没配，派工时继承父 Agent（与普通子代理同一条默认）。
+    顺带把职责与工具面一起交出去：主区那张专家卡片要能说清「它是什么」。
+    """
+    from plobi.delegation.expert_roles import load_role_models, role_rows
+
+    configured = await run_in_threadpool(load_role_models)
+    rows = [{**row, "model": configured.get(row["key"])} for row in role_rows()]
+
+    return {"ok": True, "data": {"roles": rows}}
+
+
+@router.put("/experts/roles/{role}", name="expert_role_model")
+async def expert_role_model_route(role: str, request: Request):
+    """PUT /api/experts/roles/:role — 改这一类专家的模型。
+
+    `{"model": "provider/model"}` 写覆盖；`{"model": ""}` 或 `null` 清掉覆盖，
+    回到「继承父 Agent」。
+    """
+    from plobi.delegation.expert_roles import save_role_model
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "body must be JSON")
+    if not isinstance(body, dict):
+        return _error(400, "body must be an object")
+
+    model = body.get("model")
+    if model is not None and not isinstance(model, str):
+        return _error(400, "model must be a string")
+
+    try:
+        models = await run_in_threadpool(save_role_model, role, model)
+    except ValueError as exc:
+        return _error(400, str(exc))
+    except OSError as exc:
+        return _error(500, f"cannot write role config: {exc}")
+
+    return {"ok": True, "data": {"role": str(role).strip().lower(), "model": models.get(str(role).strip().lower())}}
 
 
 @router.get("/agents/{agent_id}/notes")

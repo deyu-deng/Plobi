@@ -3,7 +3,7 @@ import { type ChatMessage, chatMessageText } from '@/lib/chat-messages'
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
 import { requestDesktopOnboarding } from '@/store/onboarding'
-import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, $profiles, normalizeProfileKey } from '@/store/scope'
 import {
   $currentCwd,
   $sessions,
@@ -147,9 +147,12 @@ export function upsertOptimisticSession(
   // Stamp the profile the session was just created on (= the live gateway's
   // profile) so the scoped sidebar shows the new row immediately instead of
   // filtering it out as "default" until the aggregator re-fetches.
-  const profileKey = normalizeProfileKey($activeGatewayProfile.get())
+  const profileKey = normalizeProfileKey($scopeAgent.get())
 
   const session: SessionInfo = {
+    // 归属键：新会话落在那家网关上就属于那一家（L1 → 空串）。乐观行必须带上它，
+    // 否则侧栏要等聚合器回填才肯把这行挂到 Agent 抽屉里。
+    agent_id: profileKey === 'default' ? '' : profileKey,
     // Seed cwd so the grouped sidebar can place the new row in its repo/worktree
     // lane immediately (the overlay groups by path); fall back to the workspace
     // the session was just started in when the create response omits it.
@@ -229,7 +232,7 @@ export async function resolveStoredSession(storedSessionId: string): Promise<Ses
   // Multi-profile only: probe each other profile by id (still one cheap lookup
   // each) rather than pulling every profile's recent sessions. The first hit
   // carries its owning `profile`, which routes the resume to the right backend.
-  const activeKey = normalizeProfileKey($activeGatewayProfile.get())
+  const activeKey = normalizeProfileKey($scopeAgent.get())
 
   const otherProfiles = $profiles
     .get()

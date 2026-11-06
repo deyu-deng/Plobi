@@ -23,6 +23,7 @@ let nextId = 0
 
 function makeSession(cwd: null | string, overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
+    agent_id: '',
     archived: false,
     cwd,
     ended_at: null,

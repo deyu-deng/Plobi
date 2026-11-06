@@ -1,0 +1,72 @@
+﻿.....F.FF...FFF.F...FFFF.F..........                                     [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert '' == 'aura'
+      
+      - aura
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_session_ledger_scope.py:114: AssertionError: assert '' == 'aura'
+E   AssertionError: assert 'my-skill' in ()
+     +  where () = AgentEntry(name='aura', role='l2_project', provider='', model='', mind_subtree='', skills=(), description='', descript...e_event_id='', secret_overrides={}, registered=True, disabled_skills=(), disabled_toolsets=(), disabled_mcp_servers=()).disabled_skills
+     +    where AgentEntry(name='aura', role='l2_project', provider='', model='', mind_subtree='', skills=(), description='', descript...e_event_id='', secret_overrides={}, registered=True, disabled_skills=(), disabled_toolsets=(), disabled_mcp_servers=()) = _roster_entry()
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_session_ledger_scope.py:198: AssertionError: assert 'my-skill' in ()
+E   AssertionError: assert 'web' in ()
+     +  where () = AgentEntry(name='aura', role='l2_project', provider='', model='', mind_subtree='', skills=(), description='', descript...e_event_id='', secret_overrides={}, registered=True, disabled_skills=(), disabled_toolsets=(), disabled_mcp_servers=()).disabled_toolsets
+     +    where AgentEntry(name='aura', role='l2_project', provider='', model='', mind_subtree='', skills=(), description='', descript...e_event_id='', secret_overrides={}, registered=True, disabled_skills=(), disabled_toolsets=(), disabled_mcp_servers=()) = _roster_entry()
+------------------------------ Captured log call ------------------------------
+WARNING  agent.auxiliary_client:auxiliary_client.py:2803 Auxiliary: marking openrouter unhealthy for 60s (payment / credit error). Subsequent auxiliary calls will skip it until 10:24:22.
+WARNING  agent.auxiliary_client:auxiliary_client.py:2012 Auxiliary Nous client unavailable: no Nous authentication found (run: plobi auth).
+WARNING  agent.auxiliary_client:auxiliary_client.py:2803 Auxiliary: marking nous unhealthy for 60s (payment / credit error). Subsequent auxiliary calls will skip it until 10:24:22.
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_session_ledger_scope.py:221: AssertionError: assert 'web' in ()
+E   AssertionError: assert 'aura' == 'l2-aura'
+      
+      - l2-aura
+      + aura
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_session_ledger_scope.py:367: AssertionError: assert 'aura' == 'l2-aura'
+E   AssertionError: assert 'aura' == 'l2-aura'
+      
+      - l2-aura
+      + aura
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_session_ledger_scope.py:389: AssertionError: assert 'aura' == 'l2-aura'
+E   AssertionError: assert 'aura' == 'l2-aura'
+      
+      - l2-aura
+      + aura
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_session_ledger_scope.py:423: AssertionError: assert 'aura' == 'l2-aura'
+E   AssertionError: assert '.' != '.'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:122: AssertionError: assert '.' != '.'
+E   AssertionError: assert '.' == 'C:\\Users\\T..._the_0\\first'
+      
+      - C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-626\test_moving_the_folder_in_the_0\first
+      + .
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:179: AssertionError: assert '.' == 'C:\\Users\\T..._the_0\\first'
+E   KeyError: 'profile_dir'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:222: KeyError: 'profile_dir'
+E   AssertionError: assert '.' == 'C:\\Users\\T...\\real-folder'
+      
+      - C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-626\test_a_stale_copy_left_in_the_0\real-folder
+      + .
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:245: AssertionError: assert '.' == 'C:\\Users\\T...\\real-folder'
+E   AssertionError: assert '.' == 'C:\\Users\\T...ve_a0\\dieted'
+      
+      - C:\Users\Turtlelet\AppData\Local\Temp\pytest-of-Turtlelet\pytest-626\test_the_l2_diet_cannot_move_a0\dieted
+      + .
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_studio_cwd.py:274: AssertionError: assert '.' == 'C:\\Users\\T...ve_a0\\dieted'
+E   AssertionError: assert 'agenda' == 'l2-agenda'
+      
+      - l2-agenda
+      ? ---
+      + agenda
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_profile_scope_roster.py:93: AssertionError: assert 'agenda' == 'l2-agenda'
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_session_ledger_scope.py::test_agent_id_for_profile_maps_via_registry
+FAILED tests/plobi/test_session_ledger_scope.py::test_skill_toggle_under_agent_scope_writes_roster_row
+FAILED tests/plobi/test_session_ledger_scope.py::test_toolset_toggle_under_agent_scope_subtracts_from_whitelist
+FAILED tests/plobi/test_session_ledger_scope.py::test_profiles_sessions_endpoint_reads_the_ledger_not_the_home
+FAILED tests/plobi/test_session_ledger_scope.py::test_profiles_sessions_all_mode_tags_each_row_by_its_agent
+FAILED tests/plobi/test_session_ledger_scope.py::test_l1_scope_does_not_dress_agent_sessions_as_l1
+FAILED tests/plobi/test_studio_cwd.py::test_the_roster_wins_over_the_top_level_file
+FAILED tests/plobi/test_studio_cwd.py::test_moving_the_folder_in_the_roster_moves_the_agent_without_a_restart
+FAILED tests/plobi/test_studio_cwd.py::test_spawning_a_project_agent_leaves_no_config_yaml_in_its_home
+FAILED tests/plobi/test_studio_cwd.py::test_a_stale_copy_left_in_the_home_is_not_read
+FAILED tests/plobi/test_studio_cwd.py::test_the_l2_diet_cannot_move_an_agents_workspace
+FAILED tests/plobi/test_profile_scope_roster.py::test_roster_scope_matches_by_profile_name_not_by_dir
+12 failed, 24 passed in 8.83s

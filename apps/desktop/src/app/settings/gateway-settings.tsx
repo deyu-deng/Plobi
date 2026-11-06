@@ -12,7 +12,7 @@ import { selectableCardClass } from '@/lib/selectable-card'
 import { cn } from '@/lib/utils'
 import { previewGatewaySwitch } from '@/store/gateway-switch'
 import { notify, notifyError } from '@/store/notifications'
-import { $profiles, refreshActiveProfile } from '@/store/profile'
+import { $profiles, refreshActiveProfile } from '@/store/scope'
 
 import { CONTROL_TEXT } from './constants'
 import { EmptyState, ListRow, LoadingState, Pill, SettingsContent, SettingsGroup } from './primitives'

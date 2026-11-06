@@ -351,7 +351,9 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
   // selectable row. Measured on this machine 2026-10-27 with the hub live: the payload
   // carried `qwen-acp` (authenticated: false, nobody ever signed in) beside the 18
   // usable hub models, and the composer was pinned to it.
-  const usable = providers.filter(provider => provider.authenticated !== false)
+  const usable = providers.filter(
+    provider => provider.selectable !== false && provider.authenticated !== false
+  )
   const hubRow = usable.find(provider => QUOTA_HUB_ROW.test(provider.slug))
 
   if (!hubRow) {

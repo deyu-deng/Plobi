@@ -18,6 +18,8 @@
  * logged rather than dropped.
  */
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 
 export interface DesktopProxyView {
   declared?: boolean
@@ -182,4 +184,67 @@ export function restoreLoopbackSystemProxy(
   registry.clear(['ProxyServer', 'AutoConfigURL', 'ProxyOverride'])
   log(`[egress-proxy] quit: 回环代理 ${said.server} → 交还直连，机器不至于跟着 App 一起没网`)
   return 'handed-back'
+}
+
+/**
+ * WP-QUIT-CLEAN (11-05): the marker that tells the egress side "this one was a user quit".
+ *
+ * Measured 11-04/11-05: `before-quit` rewrote the registry, but nothing told the two *detached*
+ * helpers — the perpetual guard (`agent/egress/proxy_guard.py`, pid 38384, still alive after the
+ * app was gone, its pid file naming a dead pid) and the watchdog (`watchdog.py`, 20s tick whose
+ * `taken-over` rule puts the takeover straight back). So the machine finished every session
+ * pointing at a port nobody listened on.
+ *
+ * Why a marker instead of a kill from here: `taskkill` on a pid we cannot verify from Node is
+ * exactly the bystander-kill `system_proxy._stop_guard` was hardened against (Windows recycles
+ * pids, and the guard's own parent is an intentionally dead `cmd /c start` shim, so there is no
+ * parent chain to check either). The desktop therefore states the *intent* with a timestamp, and
+ * each helper retires itself — including its own pid file — on its next tick.
+ */
+export const QUIT_MARKER_NAME = 'user-quit.json'
+
+/** Where the egress side keeps runtime state: `<PLOBI_HOME>/egress/runtime` (see `engine.egress_dir`). */
+export function egressRuntimeDir(plobiHome: string): string {
+  return path.join(plobiHome, 'egress', 'runtime')
+}
+
+export interface QuitMarker {
+  reason: 'user-quit'
+  at: number
+}
+
+/**
+ * Leave a **timestamped** "user quit" note for the detached helpers.
+ *
+ * Timestamped and not merely present: a stale marker must never retire a helper started after it,
+ * so every reader compares `at` against its own start time. Returns false when the write fails —
+ * the registry hand-back has already happened by then, which is the part the machine needs.
+ */
+export function writeQuitMarker(runtimeDir: string, now: number = Date.now()): boolean {
+  try {
+    mkdirSync(runtimeDir, { recursive: true })
+    const marker: QuitMarker = { reason: 'user-quit', at: now }
+    writeFileSync(path.join(runtimeDir, QUIT_MARKER_NAME), JSON.stringify(marker), 'utf8')
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The quit path's one call: give the machine its routing back **and** tell the permanent helpers
+ * this exit was deliberate. Never throws — a quit handler that fails here leaves the machine on a
+ * dead proxy, so both halves are best-effort by construction.
+ */
+export function releaseEgressOnQuit(log: (line: string) => void, runtimeDir: string): QuitProxyVerdict {
+  const verdict = restoreLoopbackSystemProxy(log)
+
+  if (writeQuitMarker(runtimeDir)) {
+    log('[egress-proxy] quit: 已告知 egress 侧「本次是用户主动退出」——独立守护与看门狗下一个 tick 自行收尾')
+  } else {
+    log('[egress-proxy] quit: 退出标记没写成；系统代理已按上面的结论处理，但独立守护只能等它自己判定')
+  }
+
+  return verdict
 }

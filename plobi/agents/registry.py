@@ -43,6 +43,171 @@ class RegistryError(ValueError):
     pass
 
 
+# ---------------------------------------------------------------------------
+# 运行时 slug：由名册 name 机械派生（2026-11-05，profile 连根拔 · 后端批）
+# ---------------------------------------------------------------------------
+#
+# 改造前这里有一格 ``AgentEntry.profile``：名册上可以单独填一个 profile 名，
+# 于是同一个 Agent 有两处真相——名册 name 与 profile 名。它们一旦分叉，
+# ``souls/`` 文件名、``memory/agents/`` 目录、``resolve_agent_slug`` 与 ``-p``
+# 参数就会指向不同地方，读侧算不出自己那份身份就静默回落到 L1 总秘书
+# （10-31 现核：名册 24 行里 5 行中招）。
+#
+# 现在 slug 是**派生物**，不是数据：一个 name 只可能派生出同一个 slug。
+# 派生不出来（名字形状不合法 / 撞保留名）就回空串——调用方据此不给身份，
+# 而不是悄悄落去 L1。
+
+#: 内置映射表（随代码走）。只装「slug 必须与历史一字不差」的那几行，
+#: 见 ``runtime_slugs.yaml`` 自己的注释。
+RUNTIME_SLUG_TABLE_PATH = Path(__file__).with_name("runtime_slugs.yaml")
+
+#: 与 ``plobi_cli/identity.py::_PROFILE_ID_RE`` **同一条**形状规则。这里内联一份是
+#: 有意的：:attr:`AgentEntry.profile_name` 是属性，而那条路径上刻意不 import
+#: ``plobi_cli``（见该属性的注释）。两份规则由 :func:`_runtime_slug_shape_rule`
+#: 与 tests 钉住。
+_RUNTIME_SLUG_RE = re.compile(
+    r"^[a-z0-9\u4e00-\u9fff\uff00-\uffef][a-z0-9\u4e00-\u9fff\uff00-\uffef_-]{0,63}$"
+)
+
+#: ``plobi_cli.agent_identity._RESERVED_NAMES`` 的同一份清单（理由同上：不能 import）。
+#: 撞上它们意味着「这个家永远建不出来」——``plobi`` 就是 Plobi 自己的安装。
+_RUNTIME_SLUG_RESERVED = frozenset({"plobi", "default", "test", "tmp", "root", "sudo"})
+
+#: L1（总秘书）在名册里的 name。``default`` 虽是保留名，却是它**专属**的 slug
+#: （``runtime_slugs.yaml``: ``secretary: default``）：保留名撞车只对它一人开例外。
+_L1_ROSTER_NAME = "secretary"
+
+_runtime_slug_cache: Optional[dict[str, str]] = None
+_runtime_slug_cache_stamp: object = object()
+
+
+def runtime_slug_table_path() -> Path:
+    """用户可覆盖的那一份：``$PLOBI_HOME/plobi/runtime-slugs.yaml``（与 projects.yaml 同层）。"""
+    from plobi_constants import get_shared_plobi_root
+
+    return get_shared_plobi_root() / "plobi" / "runtime-slugs.yaml"
+
+
+def _read_runtime_slug_yaml(path: Path) -> dict[str, str]:
+    """读一张 ``slugs:`` 表（**保留原始键**）；读不到 / 格式不对就当空表 + warning。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        import yaml
+
+        raw = yaml.safe_load(text) or {}
+    except Exception as exc:  # noqa: BLE001 - 一张映射表坏掉不该让名册读不出来
+        logger.warning("plobi: runtime slug table %s ignored: %s", path, exc)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    # 两种结构都吃：``slugs:`` 嵌套（老写法）与**扁平顶层映射**（施工单定的形状）。
+    nested = raw.get("slugs")
+    table = nested if isinstance(nested, dict) else {
+        k: v for k, v in raw.items() if not isinstance(v, (dict, list))
+    }
+    out: dict[str, str] = {}
+    for key, value in table.items():
+        name = str(key or "").strip()
+        slug = str(value or "").strip().lower()
+        if name and slug:
+            out[name] = slug
+    return out
+
+
+def _merge_slug_table(*tables: "dict[str, str]") -> "dict[str, str]":
+    """按 ``casefold`` 去重地合并多张表；**后传的优先**（用户表压内置表）。"""
+    merged: "dict[str, str]" = {}
+    origin: "dict[str, str]" = {}
+    for table in tables:
+        for name, slug in table.items():
+            key = name.casefold()
+            if key in origin:
+                merged.pop(origin[key], None)
+            origin[key] = name
+            merged[name] = slug
+    return merged
+
+
+def runtime_slug_table() -> "dict[str, str]":
+    """内置表 + 用户覆盖（同名用户优先），按用户表 mtime 缓存。"""
+    global _runtime_slug_cache, _runtime_slug_cache_stamp
+
+    user_path = runtime_slug_table_path()
+    # 缓存键必须带上路径本身：开发态与装机版各有各的 PLOBI_HOME（2026-11-05 数据隔离），
+    # 只按 mtime 做键的话，两份表"都不存在"（stamp=None）或恰好同一时刻被写，
+    # 就会把 A 家的表喂给 B 家的进程——派生出的 slug 会指着别人的 souls/ 与记忆目录。
+    try:
+        stamp: object = (str(user_path), user_path.stat().st_mtime_ns)
+    except OSError:
+        stamp = (str(user_path), None)
+    if _runtime_slug_cache is not None and _runtime_slug_cache_stamp == stamp:
+        return _runtime_slug_cache
+    merged = _merge_slug_table(
+        _read_runtime_slug_yaml(RUNTIME_SLUG_TABLE_PATH),
+        _read_runtime_slug_yaml(user_path),
+    )
+    _runtime_slug_cache = merged
+    _runtime_slug_cache_stamp = stamp
+    return merged
+
+
+def reset_runtime_slug_cache() -> None:
+    """丢掉缓存（测试换了 PLOBI_HOME / 改了映射表时用）。"""
+    global _runtime_slug_cache, _runtime_slug_cache_stamp
+
+    _runtime_slug_cache = None
+    _runtime_slug_cache_stamp = object()
+
+
+def _slug_from_table(table: "dict[str, str]", name: str) -> str:
+    """按「精确 name → name.lower()」两级在表里找 slug；找不到回空串。"""
+    if name in table:
+        return table[name]
+    low = name.lower()
+    for key, slug in table.items():
+        if key.lower() == low:
+            return slug
+    return ""
+
+
+def derive_runtime_slug(name: str) -> str:
+    """名册 ``name`` → 运行时 slug（内部标识）；派生不出来回空串。
+
+    规则：
+      1. 表里命中（先精确 ``name``，再 ``name.lower()``）→ 用那一条（历史值一字不改）；
+      2. 未命中且名字是 ASCII → ``name.lower()``；**非 ASCII 名派生不出 ASCII
+         slug，必须显式登记**，未登记回空串；
+      3. 结果必须过形状校验（与 ``plobi_cli.agent_identity.validate_profile_name`` 同一条
+         规则）且不撞保留名，否则回空串——等于「没有可路由身份」，调用方据此
+         不给身份，而不是悄悄落去 L1。
+
+    这是 :attr:`AgentEntry.profile_name` 的唯一实现，也是 ``souls/<slug>.md``、
+    ``memory/agents/<slug>/`` 与 ``-p`` 参数的共同来源。
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return ""
+    slug = _slug_from_table(runtime_slug_table(), raw)
+    if not slug:
+        if not raw.isascii():
+            return ""
+        slug = raw.lower()
+    if slug.casefold() == "default":
+        # ``default`` 是 L1（总秘书）**专属**的 slug（``runtime_slugs.yaml``:
+        # ``secretary: default``）。Batch 2a §3：撞保留名一律返空串 = 没有可路由
+        # 身份（不抛异常、不 400）。**唯一例外**是 L1 自己那一行——它是 ``default``
+        # 这个家的合法主，返空会顺手把 ``plobi -p default`` 弄断。
+        return "default" if raw.casefold() == _L1_ROSTER_NAME else ""
+    if not _RUNTIME_SLUG_RE.match(slug):
+        return ""
+    if slug in _RUNTIME_SLUG_RESERVED:
+        return ""
+    return slug
+
+
 # R-012: L2 agent taxonomy. ``butler`` is the default so legacy rows
 # (no category key) fold into the catch-all — no migration required.
 # ``courses`` 是裁定 121 二那一格（用户拍「新建一个 L2 品类 Courses，把课程放进去」）：
@@ -311,7 +476,11 @@ class AgentEntry:
 
     name: str
     role: str = "l2_project"
-    profile: str = ""  # plobi profile 名；空 = 用 name
+    # 2026-11-05（profile 连根拔 · 后端批）：这里原来是一格可填写的 ``profile`` 名
+    # （``profile: str = ""  # 空 = 用 name``）。现在**没有这一格**——运行时 slug
+    # 由 :func:`derive_runtime_slug` 按 ``name`` 机械派生（见 :attr:`profile_name`）。
+    # 老形状的 ``projects.yaml`` 若还写着 ``profile:``，读盘时静默忽略，下一次
+    # ``save()`` 会把那一行键自然抹掉（数据不用手改）。
     provider: str = ""  # 可选覆盖；空 = 默认路由
     model: str = ""  # 可选覆盖；空 = 默认路由
     mind_subtree: str = ""  # 相对 MIND_ROOT 的项目子树（L2 直读）
@@ -387,7 +556,7 @@ class AgentEntry:
         # registry key verbatim (``Aura``) makes ``plobi --profile Aura serve``
         # fall through to argparse, which then reads ``Aura`` as a subcommand
         # and exits 2. The base documents the same requirement: normalize before
-        # validation / subprocess spawn (plobi_cli/agent_identity.py:303-318, #18498).
+        # validation / subprocess spawn (plobi_cli/identity.py:303-318, #18498).
         #
         # Normalized inline instead of importing that helper: this module
         # deliberately avoids depending on plobi_cli at attribute time (see the
@@ -419,12 +588,11 @@ class AgentEntry:
 
         if self.role == L2_COURSE:
             return ""
-        raw = (self.profile or self.name).strip()
-        if not raw:
-            return ""
-        if raw.casefold() == "default":
-            return "default"
-        return raw.lower()
+        # 2026-11-05：**派生物，不是数据**。以前这里是 ``self.profile or self.name``
+        # ——名册上多一个可填写的一格，就有了「name 与 profile 名不一致」这条分叉；
+        # 现在只读 ``name``，并在 ``runtime_slugs.yaml`` 里为历史那 14 行钉住旧值，
+        # 保证 ``souls/<slug>.md`` / 记忆目录 / ``-p`` 参数一个都不变。
+        return derive_runtime_slug(self.name)
 
     @property
     def has_model_override(self) -> bool:
@@ -453,8 +621,8 @@ class AgentEntry:
 
     def to_dict(self) -> dict:
         data: dict = {"role": self.role}
-        if self.profile:
-            data["profile"] = self.profile
+        # 2026-11-05：``profile`` 不再落盘、不再透出——slug 由 name 派生，
+        # 写进 YAML 只会让它第二次变成「另一处真相」。
         if self.provider:
             data["provider"] = self.provider
         if self.model:
@@ -538,7 +706,7 @@ class AgentEntry:
         return cls(
             name=name,
             role=str(raw.get("role") or "l2_project"),
-            profile=str(raw.get("profile") or ""),
+            # 老形状的 ``profile:`` 键在这里被**静默忽略**（2026-11-05 降级为派生）。
             provider=str(raw.get("provider") or ""),
             model=str(raw.get("model") or ""),
             mind_subtree=str(raw.get("mind_subtree") or ""),
@@ -772,6 +940,17 @@ class AgentRegistry:
         # 分身。改已有条目（键相同）不在此列：存量 ``Nymo``/``nymo`` 已经成对躺在
         # projects.yaml 里，读它们 / 补它们的字段不许报错（R-071 要的是不再新增，
         # 不是替用户改他的数据）。
+        # 2b-1 风险②：``default`` 是 L1 总秘书的保留名。名册里若真有一行叫
+        # default，桌面端的分桶键（L1 空串 → ``default``）会和它撞在一起，两边
+        # 会话被合并。这里必须**明确拒绝**并给出可读错误串，而不是让上层回 400
+        # 空响应——用户看得到原因才知道要改名。
+        # 存量行不受影响：只在新增（键还不在表里）时拦，不动用户已有数据。
+        if entry.name not in self.agents and (entry.name or "").strip().lower() == "default":
+            raise RegistryError(
+                f"agent name {entry.name!r} is reserved for the L1 secretary "
+                f"(slug {_L1_ROSTER_NAME!r} → 'default'); rename the agent and retry"
+            )
+
         if entry.name not in self.agents:
             twin = self.find_case_twin(entry.name)
             if twin:
@@ -792,25 +971,11 @@ class AgentRegistry:
             seeded = default_project_path(entry.category)
             if seeded:
                 entry = replace(entry, project_path=seeded, project_paths=(seeded,))
-        # 派生名撞上保留名 / 子命令 ⇒ 那个家**永远建不出来**。项目分身叫 ``Plobi`` 就是
-        # 这一类：小写化是保留名 ``plobi``，``plobi -p plobi --help`` 退 0（argparse 认），
-        # 死在后面那句 reserved 校验（2026-10-13 脑搬家线现核）。以前只给一句
-        # "建议填 ``l2-plobi``"（:func:`profile_name_blocker`），没人去填，那条记录就一直红着。
-        # 现在写入时把推荐名落成**显式 profile**：显示名仍是 ``Plobi``，内部家叫 ``l2-plobi``。
-        # 那 11 条本来能用的名字一字不改——改它们要搬 ``state.db``，会把每个分身已有的会话
-        # 历史孤儿化，那不是"修一个名字"该有的代价。两案（改名 / 项目分身干脆没有家）里取这一条。
-        if not (entry.profile or "").strip() and (entry.profile_name or "").strip():
-            from dataclasses import replace as _replace
-
-            try:
-                hint = suggested_profile_name(entry) if profile_name_blocker(entry) else ""
-            except ImportError:
-                # 判据住在 plobi_cli，而这台/这档测试里它未必解析得到真模块
-                # （见 :attr:`AgentEntry.profile_name` 那段注释）。拿不到判据就**不挡登记**：
-                # 这条是机会性改进，不该变成写入路径上的新硬依赖。
-                hint = ""
-            if hint and not self._profile_taken_by_other(hint, entry.name):
-                entry = _replace(entry, profile=hint)
+        # 2026-11-05：这里原来有一段「派生名撞保留名 ⇒ 把推荐名落成显式 profile」的
+        # 自愈逻辑（项目分身叫 ``Plobi`` 时内部家写成 ``l2-plobi``）。那一格已经没了：
+        # slug 由 name 派生，这类撞保留名的历史行改由 ``runtime_slugs.yaml`` 的映射表
+        # 钉住（``Plobi: l2-plobi``）。登记路径不再改写用户数据，也不再需要那次
+        # ``plobi_cli`` 的探测（原来的 try/ImportError 兜底随之消失）。
         self.agents[entry.name] = entry
         return entry
 
@@ -1075,15 +1240,23 @@ class AgentRegistry:
 
 
 def suggested_profile_name(entry: AgentEntry) -> str:
-    """给这条记录推荐一个能用的 profile 名（推荐不出来为空串）。"""
+    """给这条记录推荐一个能登记进 slug 表的运行时 slug（推荐不出来为空串）。
+
+    2026-11-05 之后 slug 不是可填写的一格：这个值唯一的用处是往
+    ``runtime-slugs.yaml`` 写一行 ``<name>: <slug>``。候选依次是
+    ``name.lower()``（ASCII 名多数直接合法）、``l2-<name.lower()>``、
+    ``agent-<name.lower()>``，都要过 ``validate_profile_name`` 与本地派生形状。
+    """
     from plobi_cli.agent_identity import validate_profile_name
 
-    for candidate in (f"l2-{entry.profile_name}", f"l2-{entry.name.strip().lower()}"):
+    base = entry.name.strip().lower()
+    for candidate in (base, f"l2-{base}", f"agent-{base}"):
         try:
             validate_profile_name(candidate)
         except ValueError:
             continue
-        return candidate
+        if derive_runtime_slug(candidate) == candidate:
+            return candidate
     return ""
 
 
@@ -1105,16 +1278,24 @@ def profile_name_blocker(entry: AgentEntry) -> str:
         return ""
 
     canon = entry.profile_name
-    try:
-        validate_profile_name(canon)
-    except ValueError as exc:
-        hint = suggested_profile_name(entry)
-        advice = f"给这条记录单独填一个能用的运行时名字，比如 ``{hint}``；" if hint else ""
-        return (
-            f"智能体「{entry.display_name or entry.name}」起不来：它的运行时名字"
-            f" ``{canon}`` 不能用（{exc}）。{advice}改完再登记一次就能问到它了。"
-        )
-    return ""
+    # 2026-11-05：判据从「名册上显式 profile 缺失」改成「派生 slug 为空或形状不合法」。
+    # 派生值为空涵盖三种形状：非 ASCII 名未登记、结果过不了形状规则、撞保留名。
+    # **文案一个字不动**——tests/plobi_cli 里有断言钉着这句中文。
+    if canon and _RUNTIME_SLUG_RE.match(canon):
+        try:
+            validate_profile_name(canon)
+        except ValueError as exc:
+            reason = str(exc)
+        else:
+            return ""
+    else:
+        reason = "派生不出可用的运行时名字"
+    hint = suggested_profile_name(entry)
+    advice = f"给这条记录单独填一个能用的运行时名字，比如 ``{hint}``；" if hint else ""
+    return (
+        f"智能体「{entry.display_name or entry.name}」起不来：它的运行时名字"
+        f" ``{canon}`` 不能用（{reason}）。{advice}改完再登记一次就能问到它了。"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1472,17 +1653,31 @@ def _registry_and_entry_for_profile(profile_name: str):
 
 
 def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[AgentEntry]:
-    for entry in entries:
-        if entry.archived:
-            continue
-        landed = (entry.profile_name or "").casefold()
-        if landed and landed == want:
-            return entry
-        # C 刀：``PLOBI_AGENT_ID`` 带的是**名册 name**（裁定 180 的身份），不一定是
-        # profile 名——一行可以 ``name: Stithy`` 而 ``profile: l2-stithy``。老形状
-        # （家在 profiles/ 下）走上面那段；新形状（共享层 + AGENT_ID）走这段。
-        if entry.name.casefold() == want:
-            return entry
+    """作用域值 → 名册那一行；**指代不唯一就给 None**（2026-11-05）。
+
+    11-05 之前这里是"谁先撞上就返回谁"：``profile_name`` 是本行派生的 slug、
+    ``name`` 是身份键，两个口径混在同一个 casefold 空间里比较，一旦两行撞车
+    （``Nymo`` / ``nymo`` 这种存量对，或某行的 slug 恰好等于另一行的 name），
+    返回哪一行取决于名册里的行序——那不是身份，那是抽签。
+
+    现在的判据：先按 ``profile_name``（slug）找，**只认唯一命中**；slug 一个都
+    不中再按 ``name`` 找，同样只认唯一命中。两轮都撞车 ⇒ None。调用方拿 None
+    的表现与"名册里没有这一行"完全一致（404 / 不进桶），宁可说不认识，也不
+    把会话挂到别人的家里去。
+    """
+    alive = [e for e in entries if not e.archived]
+
+    by_slug = [e for e in alive if (e.profile_name or "").casefold() == want]
+    if len(by_slug) == 1:
+        return by_slug[0]
+    if len(by_slug) > 1:
+        return None
+    # C 刀：``PLOBI_AGENT_ID`` 带的是**名册 name**（裁定 180 的身份），不一定是
+    # profile 名——一行可以 ``name: Stithy`` 而 ``profile: l2-stithy``。老形状
+    # （家在 profiles/ 下）走上面那段；新形状（共享层 + AGENT_ID）走这段。
+    by_name = [e for e in alive if e.name.casefold() == want]
+    if len(by_name) == 1:
+        return by_name[0]
     return None
 
 
@@ -1682,6 +1877,10 @@ def set_profile_model_override(profile_name: str, provider: str, model: str) -> 
 # ---------------------------------------------------------------------------
 
 AGENDA_TEMPLATE_NAME = "agenda"
+# 日程 L2 的运行时 slug（内部标识）。2026-11-05 之后它**不再写进条目**
+# （``AgentEntry.profile`` 已删除），slug 由 name ``agenda`` 经
+# ``runtime_slugs.yaml`` 派生成 ``l2-agenda``。常量留给测试与需要这个名字的
+# 调用方对齐。
 AGENDA_TEMPLATE_PROFILE = "l2-agenda"
 AGENDA_TEMPLATE_ROLE = "l2_agenda"
 
@@ -1702,7 +1901,6 @@ def agenda_template_entry() -> AgentEntry:
     return AgentEntry(
         name=AGENDA_TEMPLATE_NAME,
         role=AGENDA_TEMPLATE_ROLE,
-        profile=AGENDA_TEMPLATE_PROFILE,
         mind_subtree="Surface/dossiers/projects/Plobi",
         skills=("plobi-l2-resident",),
         description="日程采集 → SQLite → 看板 → 钉钉 闭环",
@@ -1717,7 +1915,7 @@ def is_agenda_entry(entry: AgentEntry) -> bool:
     """
     role = (entry.role or "").strip().lower()
     name = (entry.name or "").strip().lower()
-    profile = (entry.profile or "").strip().lower()
+    profile = entry.profile_name.strip().lower()
     desc = entry.description or ""
     if any(marker in role for marker in _AGENDA_ROLE_MARKERS):
         return True
@@ -1758,7 +1956,6 @@ def register_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentE
         template = AgentEntry(
             name="secretary-agenda",
             role=template.role,
-            profile=template.profile,
             provider=template.provider,
             model=template.model,
             mind_subtree=template.mind_subtree,
@@ -2015,7 +2212,6 @@ def ensure_mind_project_agents(
         entry_obj = AgentEntry(
             name=safe_id,
             role="l2_project",
-            profile="",
             provider="",
             model="",
             mind_subtree=f"{relative}/{entry.name}",
@@ -2896,6 +3092,21 @@ def build_l2_identity_soul_block(
         "「派完这一轮就交不出成品」不是自己动手的理由：派完先回一句「已经派下去了，"
         "结果回来我接着看」，这就是交付。"
     )
+    # 11-04：派工时必须说清「这是哪一类专家」。用户点名的口径是两条腿分开——
+    # 带 expert 的那几趟进左栏「专家」抽屉、点得开日志；不带的算普通子智能体，
+    # 只进底栏那一格。不带 expert 就等于把专家降级成普通子智能体，用户看不见它。
+    lines.append(
+        "- 派工时 `expert` 不是可选项：动文件填 `file`、查网页填 `browser`、"
+        "装/跑/修软件填 `software`、系统与窗口操作填 `computer`。只有**不属于这四类**的"
+        "杂活才不带 expert——那种是普通子智能体，日志进底栏那一格，不会出现在「专家」抽屉里。"
+    )
+    # 外部会话：规则只能按目录与标题判，判不准的会停在「未判」。让 L2 主动收口，
+    # 别让用户自己去一条条点（用户 11-04：目录相同肯定是有关的，剩下交给 L2 判）。
+    lines.append(
+        "- 本机别的 AI 软件里的会话，扫描时每条都带一个判断：**工作目录或标题点到你的直接算有关**，"
+        "剩下的停在「未判」。未判的别放着——用 `external_sessions_scan` 扫一遍，读标题与项目判一次，"
+        "再用 `external_sessions_mark` 记下来；判不准就留空，不要猜。"
+    )
     lines += [
         "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",
         "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，不要拿别的项目的进度顶。",
@@ -2977,7 +3188,7 @@ def identity_name_for_key(key: str | None) -> str:
         if getattr(entry, "archived", False):
             continue
         candidates = {entry.name, entry.name.lower()}
-        for attr in ("profile", "profile_name"):
+        for attr in ("profile_name",):
             value = str(getattr(entry, attr, "") or "").strip()
             if value:
                 candidates.add(value)

@@ -40,7 +40,7 @@ import type { ThreadSpeaker } from '@/components/assistant-ui/thread/types'
 import { useI18n } from '@/i18n'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { cn } from '@/lib/utils'
-import { $gatewaySwapTarget } from '@/store/profile'
+import { $gatewaySwapTarget } from '@/store/scope'
 import { $busy, $messages, $messagesEmpty } from '@/store/session'
 
 import { type ChatScope, chatScopeKey } from './scope'

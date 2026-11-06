@@ -255,6 +255,18 @@ export interface ModelOptionProvider {
   ui_key?: string
   total_models?: number
   warning?: string
+  /** Gateway availability verdict: false when the hub leg is down (proxy/VPN
+   *  node unreachable, quota exhausted, missing CLI, refused). The chat pickers
+   *  must not offer a leg that the hub says is dead even if credentials/models
+   *  still look present. */
+  live?: boolean
+  /** Gateway selection verdict: false when the leg exists but must not be
+   *  offered (live=false, or the hub chooses to hide a leg). Filter chat pickers
+   *  with `selectable !== false`. */
+  selectable?: boolean
+  /** Human-readable reason behind `live=false` / `selectable=false`, e.g.
+   *  "VPN 节点连不上" or "no CLI". Surfaced on disabled rows. */
+  unselectable_reason?: string
   /** True when the provider has usable credentials. False for canonical
    *  providers surfaced by `include_unconfigured` that the user hasn't set up
    *  yet — render these with a setup affordance instead of hiding them. */
@@ -295,13 +307,17 @@ export interface PaginatedSessions {
   offset: number
   sessions: SessionInfo[]
   total: number
-  /** Listable conversation count per profile (children excluded), keyed by
-   *  profile name. Lets the sidebar scope its "Load more" footer to the active
-   *  profile instead of the global total. Present only on
-   *  `/api/profiles/sessions`. */
+  /** Listable conversation count per **agent** (children excluded), keyed by
+   *  roster `name`; the L1 bucket is `default`. Lets the sidebar scope its
+   *  "Load more" footer to the active agent instead of the global total.
+   *  Present only on `/api/agents/sessions`. */
+  agent_totals?: Record<string, number>
+  /** @deprecated 旧的按 profile 家名分桶的总账（2026-11-05 profile 连根拔）。
+   *  键同样是名册 name，只是名字还留着老口径；新代码读 {@link agent_totals}，
+   *  取不到时再回落这一份以兼容未升级的后端。 */
   profile_totals?: Record<string, number>
   /** Per-profile read failures from the cross-profile aggregator (e.g. a locked
-   *  or corrupt state.db). Present only on `/api/profiles/sessions`. */
+   *  or corrupt state.db). Present only on `/api/agents/sessions`. */
   errors?: Array<{ profile: string; error: string }>
 }
 
@@ -359,11 +375,18 @@ export interface SessionInfo {
   /** Handoff lifecycle: 'pending' | 'in_progress' | 'completed' | 'failed'. */
   handoff_state?: null | string
   handoff_error?: null | string
-  /** Owning profile name, set by the cross-profile aggregator
-   *  (`/api/profiles/sessions`). Absent on legacy single-profile responses,
-   *  which the UI treats as the default profile. */
+  /** Owning **agent** — the roster `name`, i.e. `sessions.agent_id` in the
+   *  ledger. Empty string = L1 (总秘书) / unowned: that is the schema's own
+   *  convention (缺口 B), so "no owner" is never `undefined` here. Written by
+   *  the backend on every list response; the desktop keys all ownership
+   *  decisions (sidebar nesting, L1 bypass sweep, scope hand-offs) off it. */
+  agent_id: string
+  /** @deprecated 旧的归属标签（家名 → 后来是名册 name）。2026-11-05 起归属键
+   *  一律读 {@link agent_id}；这个字段只剩「随响应回来什么就留着什么」的兼容
+   *  用途，**不要再拿它做判断**。 */
   profile?: string
-  /** True when {@link profile} is the default profile. */
+  /** @deprecated 由 {@link profile} 派生，随它一起废弃。L1 判据改用
+   *  `agent_id === ''`。 */
   is_default_profile?: boolean
 }
 

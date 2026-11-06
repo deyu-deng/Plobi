@@ -1,0 +1,132 @@
+﻿=== entry\.profile\b
+apps/desktop/src/store/gateway.ts:112:  const conn = await desktop.getConnection(entry.profile)
+apps/desktop/src/store/gateway.ts:115:  void desktop.touchBackend?.(entry.profile).catch(() => undefined)
+apps/desktop/src/store/gateway.ts:257:      void desktop?.touchBackend?.(entry.profile).catch(() => undefined)
+=== PLOBI_PROFILE
+agent/secret_scope.py:99:    "PLOBI_HOME", "PLOBI_PROFILE", "PLOBI_GATEWAY_LOCK_DIR",
+plobi_cli/config.py:181:# * ``PLOBI_HOME`` / ``PLOBI_PROFILE`` / ``PLOBI_CONFIG`` /
+plobi_cli/config.py:213:    "PLOBI_HOME", "PLOBI_PROFILE", "PLOBI_CONFIG", "PLOBI_ENV",
+plobi_cli/config.py:228:            "(PLOBI_HOME, PLOBI_PROFILE, ...) cannot be persisted via "
+plobi_cli/kanban.py:1003:    for env in ("PLOBI_AGENT_ID", "PLOBI_PROFILE_NAME", "PLOBI_PROFILE"):
+plobi_cli/kanban_db.py:7673:        # _apply_profile_override() via PLOBI_PROFILE (set below).
+plobi_cli/kanban_db.py:7733:    # PLOBI_PROFILE is the author the kanban_comment tool defaults to.
+plobi_cli/kanban_db.py:7737:    env["PLOBI_PROFILE"] = profile_arg
+plobi_cli/kanban_db.py:8118:            # operator-controlled PLOBI_PROFILE values like "plobi-system"
+plobi_cli/kanban_decompose.py:166:        os.environ.get("PLOBI_PROFILE")
+plobi_cli/kanban_specify.py:136:        os.environ.get("PLOBI_PROFILE")
+scripts/plobi/isolate_profile_configs.py:110:        print(json.dumps({"error": "跑这一句时不要让 PLOBI_PROFILE/--profile 指进分身家"},
+tests/plobi/test_l2_shared_skills.py:58:    monkeypatch.delenv("PLOBI_PROFILE", raising=False)
+tests/plobi/test_profile_lazy_home_off.py:15:  ④ **kanban 的腿不丢**：worker 子进程 argv 仍带 `-p <assignee>`、`PLOBI_PROFILE` 仍在；
+tests/plobi/test_profile_lazy_home_off.py:72:        "PLOBI_PROFILE",
+tests/plobi/test_profile_lazy_home_off.py:157:    """④ kanban worker 的 argv 仍带 `-p <assignee>`、`PLOBI_PROFILE` 仍在。"""
+tests/plobi/test_profile_lazy_home_off.py:190:    assert captured["env"].get("PLOBI_PROFILE") == "l2-agenda"
+tests/plobi_cli/test_cli_help_says_agent_not_profile.py:11:* ``PLOBI_PROFILE`` / ``PLOBI_PROFILE_NAME`` 环境变量 —— 外部脚本还在传，读它们的回落没撤
+tests/plobi_cli/test_config.py:1512:            "PLOBI_PROFILE",
+tests/plobi_cli/test_kanban_core_functionality.py:2696:    + "comment from worker" prefix so a misleading PLOBI_PROFILE name
+tests/plobi_cli/test_kanban_core_functionality.py:2815:    assert env.get("PLOBI_PROFILE") == "some-profile"
+tests/tools/test_code_execution_windows_env.py:272:        "PLOBI_HOME", "PLOBI_PROFILE", "PLOBI_CONFIG", "PLOBI_ENV",
+tests/tools/test_code_execution_windows_env.py:321:        "PLOBI_PROFILE": "default",                 # allowlisted → kept
+tests/tools/test_execute_code_approval_cluster.py:288:        "PLOBI_HOME": "/h", "PLOBI_PROFILE": "p",
+tests/tools/test_execute_code_approval_cluster.py:301:    for kept in ("PLOBI_HOME", "PLOBI_PROFILE", "PLOBI_CONFIG", "PLOBI_ENV", "PATH"):
+tests/tools/test_kanban_redaction.py:25:    monkeypatch.setenv("PLOBI_PROFILE", "test-worker")
+tests/tools/test_kanban_tools.py:156:    monkeypatch.setenv("PLOBI_PROFILE", "test-worker")
+tests/tools/test_kanban_tools.py:604:    monkeypatch.setenv("PLOBI_PROFILE", "test-worker")
+tests/tools/test_kanban_tools.py:660:    monkeypatch.setenv("PLOBI_PROFILE", "test-worker")
+tests/tools/test_kanban_tools.py:725:    monkeypatch.setenv("PLOBI_PROFILE", "test-worker")
+tests/tools/test_kanban_tools.py:914:        # Author defaults to PLOBI_PROFILE env we set in the fixture
+tests/tools/test_kanban_tools.py:929:    derived from ``PLOBI_PROFILE`` so a worker can't forge a comment
+tests/tools/test_kanban_tools.py:944:        # Author comes from PLOBI_PROFILE in the fixture, not the
+tests/tools/test_kanban_tools.py:1569:    # PLOBI_PROFILE — never to a caller-controlled string.
+tests/tools/test_kanban_tools.py:1723:    monkeypatch.setenv("PLOBI_PROFILE", "test-orchestrator")
+tests/tools/test_kanban_tools.py:1930:    monkeypatch.setenv("PLOBI_PROFILE", "alt-worker")
+tools/code_execution_tool.py:109:    "PLOBI_PROFILE",
+tools/kanban_tools.py:818:    author = os.environ.get("PLOBI_PROFILE") or "worker"
+tools/kanban_tools.py:939:                created_by=os.environ.get("PLOBI_PROFILE") or "worker",
+tools/kanban_tools.py:1037:            or os.environ.get("PLOBI_PROFILE")
+website/docs/user-guide/features/code-execution.md:228:- `PLOBI_PROFILE`
+website/docs/user-guide/features/kanban-worker-lanes.md:44:| `PLOBI_PROFILE` | the worker's own profile name (for `kanban_comment` author attribution) |
+website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/user-guide/features/kanban-worker-lanes.md:44:| `PLOBI_PROFILE` | worker 自身的 profile 名称（用于 `kanban_comment` 作者归因） |
+=== is_default_profile
+apps/desktop/electron/main.ts:11013:    s.is_default_profile = false
+apps/desktop/src/app/session/hooks/use-session-actions/utils.ts:164:    is_default_profile: profileKey === 'default',
+apps/desktop/src/types/plobi.ts:390:  is_default_profile?: boolean
+plobi_cli/uninstall.py:596:    is_default_profile = _is_default_plobi_home(plobi_home)
+plobi_cli/uninstall.py:597:    named_profiles = _discover_named_profiles() if is_default_profile else []
+plobi_cli/web_server.py:4428:                    s["is_default_profile"] = profile_name == "default"
+plobi_cli/web_server.py:4618:            s["is_default_profile"] = not owner
+plobi_cli/web_server.py:11045:    annotated["is_default_profile"] = profile == "default"
+tests/plobi/test_session_ledger_scope.py:392:    assert by_id["s-l1"]["is_default_profile"] is True
+tests/plobi/test_session_ledger_scope.py:424:    assert by_id["s-chat"]["is_default_profile"] is False
+tests/plobi_cli/test_web_server.py:1270:        assert row["is_default_profile"] is True
+tests/plobi_cli/test_web_server.py:1305:        assert row["is_default_profile"] is False
+tests/plobi_cli/test_web_server_cron_profiles.py:76:    assert job["is_default_profile"] is False
+tests/plobi_cli/test_web_server_cron_profiles.py:242:    assert by_id[default_job["id"]]["is_default_profile"] is True
+tests/plobi_cli/test_web_server_cron_profiles.py:245:    assert by_id[worker_job["id"]]["is_default_profile"] is False
+web/src/lib/api.ts:2136:  is_default_profile?: boolean;
+=== /api/profiles
+apps/desktop/src/app/desktop-controller.tsx:1547:      // `$profiles` (the user-facing list from GET /api/profiles) — agent-pool
+apps/desktop/src/plobi.test.ts:69:        path: '/api/profiles',
+apps/desktop/src/plobi.test.ts:90:        path: '/api/profiles',
+apps/desktop/src/plobi.ts:72:// /api/profiles runs list_profiles(), which does a recursive skill-tree walk
+apps/desktop/src/plobi.ts:1134:    path: '/api/profiles',
+apps/desktop/src/plobi.ts:1141:    path: '/api/profiles',
+apps/desktop/src/plobi.ts:1149:    path: `/api/profiles/${encodeURIComponent(name)}`,
+apps/desktop/src/plobi.ts:1157:    path: `/api/profiles/${encodeURIComponent(name)}`,
+apps/desktop/src/plobi.ts:1180:    path: `/api/profiles/${encodeURIComponent(name)}/setup-command`
+plobi_cli/main.py:364:    `POST /api/profiles` 已 410，懒建是最后一条还开着的口子。用户 10-25 改判
+plobi_cli/web_server.py:4444:@app.get("/api/profiles/sessions")
+plobi_cli/web_server.py:4491:    2026-11-05（profile 连根拔 · 2b-1）：``/api/profiles/sessions`` 的别名，
+plobi_cli/web_server.py:13743:@app.get("/api/profiles")
+plobi_cli/web_server.py:13753:        _log.exception("GET /api/profiles failed; falling back to the roster")
+plobi_cli/web_server.py:13757:@app.post("/api/profiles")
+plobi_cli/web_server.py:13760:    # **只关入口**：`GET /api/profiles`（列表）照旧，库函数 `create_profile()` 照旧，
+plobi_cli/web_server.py:13817:        _log.exception("POST /api/profiles failed")
+plobi_cli/web_server.py:13889:@app.get("/api/profiles/active")
+plobi_cli/web_server.py:13911:@app.post("/api/profiles/active")
+plobi_cli/web_server.py:13927:        _log.exception("POST /api/profiles/active failed")
+plobi_cli/web_server.py:13932:@app.get("/api/profiles/{name}/setup-command")
+plobi_cli/web_server.py:13937:@app.post("/api/profiles/{name}/open-terminal")
+plobi_cli/web_server.py:13986:        _log.exception("POST /api/profiles/%s/open-terminal failed", name)
+plobi_cli/web_server.py:13991:@app.patch("/api/profiles/{name}")
+plobi_cli/web_server.py:14007:        _log.exception("PATCH /api/profiles/%s failed", name)
+plobi_cli/web_server.py:14012:@app.delete("/api/profiles/{name}")
+plobi_cli/web_server.py:14026:        _log.exception("DELETE /api/profiles/%s failed", name)
+plobi_cli/web_server.py:14036:    名册 name，再交给与 ``/api/profiles/...`` 同一套实现——
+plobi_cli/web_server.py:14060:@app.get("/api/profiles/{name}/soul")
+plobi_cli/web_server.py:14072:@app.put("/api/profiles/{name}/soul")
+plobi_cli/web_server.py:14079:        _log.exception("PUT /api/profiles/%s/soul failed", name)
+plobi_cli/web_server.py:14084:@app.put("/api/profiles/{name}/description")
+plobi_cli/web_server.py:14109:        _log.exception("PUT /api/profiles/%s/description failed", name)
+plobi_cli/web_server.py:14114:@app.put("/api/profiles/{name}/model")
+plobi_cli/web_server.py:14165:        _log.exception("PUT /api/profiles/%s/model failed", name)
+plobi_cli/web_server.py:14172:# 内部与 /api/profiles/<家名>/... **同一实现、同一寻址口径**（_agent_scope_name）；
+plobi_cli/web_server.py:14194:@app.post("/api/profiles/{name}/describe-auto")
+plobi_cli/web_server.py:14209:        _log.exception("POST /api/profiles/%s/describe-auto failed", name)
+plobi_state.py:172:#   ③ 桌面侧栏在 Agent 作用域列哪些会话（/api/profiles/sessions）
+tests/plobi/test_profile_lazy_home_off.py:6:rc 2 · `POST /api/profiles` 已 410），本刀把它关上：**家目录不再被任何入口建出来**。
+tests/plobi/test_profile_scope_roster.py:5:病根：后端读面三处（``GET /api/sessions``／``GET /api/profiles/sessions``／
+tests/plobi/test_profile_scope_roster.py:106:    resp = client.get("/api/profiles/sessions?profile=srtp&limit=50&offset=0")
+tests/plobi/test_profile_scope_roster.py:140:    resp = client.get("/api/profiles/sessions?profile=no-such-row")
+tests/plobi/test_profile_scope_roster.py:157:    assert client.get("/api/profiles/sessions?profile=all").status_code == 200
+tests/plobi/test_profile_scope_roster.py:158:    assert client.get("/api/profiles/sessions?profile=default").status_code == 200
+tests/plobi_cli/test_profile_model_clear.py:1:"""`PUT /api/profiles/{name}/model` 现在也能**撤回**这一行的覆盖（WP-MODEL-OVERRIDE-CLEAR，用户 14:0x 拍的甲）。
+tests/plobi_cli/test_profile_model_clear.py:68:    put = client.put("/api/profiles/aura/model", json={"provider": "moonshot", "model": "k2"})
+tests/plobi_cli/test_profile_model_clear.py:74:    clear = client.put("/api/profiles/aura/model", json={"provider": "", "model": ""})
+tests/plobi_cli/test_profile_model_clear.py:90:    half = client.put("/api/profiles/aura/model", json={"provider": "", "model": "k2"})
+tests/plobi_cli/test_profile_model_clear.py:95:    empty_body = client.put("/api/profiles/aura/model", json={})
+tests/plobi_cli/test_profile_model_clear.py:104:    res = client.put("/api/profiles/aura/model", json={"provider": "", "model": ""})
+tests/plobi_cli/test_profile_model_clear.py:125:    first = client.put("/api/profiles/sindri/model", json={"provider": "", "model": ""})
+tests/plobi_cli/test_profile_model_clear.py:126:    second = client.put("/api/profiles/sindri/model", json={"provider": "", "model": ""})
+tests/plobi_cli/test_web_server.py:1155:        resp = self.client.get("/api/profiles/sessions?limit=20&offset=0")
+tests/plobi_cli/test_web_server.py:1164:        full = self.client.get("/api/profiles/sessions?limit=20&offset=0&full=1")
+tests/plobi_cli/test_web_server.py:1265:        resp = self.client.get("/api/profiles/sessions?limit=20&min_messages=0")
+tests/plobi_cli/test_web_server.py:1274:        resp = self.client.get("/api/profiles/sessions?archived=bogus")
+tests/plobi_cli/test_web_server.py:3890:        resp = self.client.get("/api/profiles")
+tests/plobi_cli/test_web_server.py:3917:        resp = self.client.get("/api/profiles")
+tests/plobi_cli/test_web_server.py:3932:        retired = self.client.post("/api/profiles", json={"name": "test-prof"})
+=== transfer\(
+optional-skills/blockchain/evm/SKILL.md:140:Decode uses 4byte.directory to translate 0xa9059cbb -> transfer(address,uint256).
+optional-skills/blockchain/evm/scripts/evm_client.py:1246:    # Decode known transfer(address,uint256) manually as fallback
+optional-skills/blockchain/evm/scripts/evm_client.py:1250:        if sig == "transfer(address,uint256)" and len(input_data) == 138:
+website/docs/user-guide/skills/optional/blockchain/blockchain-evm.md:156:Decode uses 4byte.directory to translate 0xa9059cbb -> transfer(address,uint256).
+website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/user-guide/skills/optional/blockchain/blockchain-evm.md:156:解码使用 4byte.directory 将 0xa9059cbb 转换为 transfer(address,uint256)。

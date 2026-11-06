@@ -1,4 +1,4 @@
-import { useStore } from '@nanostores/react'
+﻿import { useStore } from '@nanostores/react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
@@ -25,7 +25,7 @@ import {
   toggleToolset as toggleToolsetGlobal,
   toggleToolsetForAgent
 } from '@/plobi'
-import { $consoleAgents } from '@/app/console/store/agents'
+import { $consoleAgents, $consoleL1Agent } from '@/app/console/store/agents'
 import type { RosterAgent } from '@/app/settings/agent-model-overrides'
 import { putAgentToolPrefs } from '@/app/console/api'
 import { Switch } from '@/components/ui/switch'
@@ -36,7 +36,7 @@ import { queryClient, writeCache } from '@/lib/query-client'
 import { normalize } from '@/lib/text'
 import { $gateway } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
-import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, normalizeProfileKey } from '@/store/scope'
 import type { SkillInfo, ToolsetInfo } from '@/types/plobi'
 
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
@@ -65,11 +65,17 @@ import { SkillsHub } from './hub'
 import { McpTab } from './mcp-tab'
 import { $skillsSortDesc, $toolsetsSortDesc } from './store'
 
-const SKILLS_MODES = ['skills', 'toolsets', 'mcp', 'hub'] as const
+export const SKILLS_MODES = ['skills', 'toolsets', 'mcp', 'hub'] as const
+export type SkillsMode = (typeof SKILLS_MODES)[number]
+/** 顶部那排 Tab 行末的两个数。嵌进设置时由宿主导航画，所以这一屏要把它们报上去。 */
+export interface SkillsCounts {
+  skills: number | null
+  toolsets: number | null
+}
 
 // Skills + toolsets live in the RQ cache so switching tabs/pages paints the
 // cached lists instantly (no reload flash) and mount only fires a deduped
-// background refetch. A profile swap globally invalidates (see store/profile),
+// background refetch. A profile swap globally invalidates (see store/scope),
 // so these plain keys refetch against the new backend automatically.
 const SKILLS_QUERY_KEY = ['skills-list'] as const
 const TOOLSETS_QUERY_KEY = ['toolsets-list'] as const
@@ -88,7 +94,7 @@ const TOOL_CALLS_TTL_MS = 10 * 60 * 1000
 const toolCallsCache = new Map<string, { at: number; value: Record<string, number> }>()
 
 async function loadToolCalls(force = false): Promise<Record<string, number>> {
-  const key = normalizeProfileKey($activeGatewayProfile.get())
+  const key = normalizeProfileKey($scopeAgent.get())
   const cached = toolCallsCache.get(key)
 
   if (!force && cached && Date.now() - cached.at < TOOL_CALLS_TTL_MS) {
@@ -101,7 +107,7 @@ async function loadToolCalls(force = false): Promise<Record<string, number>> {
 
   // Only cache if the active profile hasn't changed during the request — else a
   // switch mid-flight would file this result under the wrong profile's key.
-  if (normalizeProfileKey($activeGatewayProfile.get()) === key) {
+  if (normalizeProfileKey($scopeAgent.get()) === key) {
     toolCallsCache.set(key, { at: Date.now(), value })
   }
 
@@ -186,12 +192,51 @@ const visibleToolsetCount = (toolsets: ToolsetInfo[]) => toolsets.filter(ts => i
 
 interface SkillsViewProps extends React.ComponentProps<'section'> {
   setStatusbarItemGroup?: SetStatusbarItemGroup
+  /**
+   * Embedded mode (rendered inside Settings → Capabilities, URL is
+   * `/settings?tab=capabilities`). The Skills page drives its own
+   * Skills/Tools/MCP/Hub tabs off the same `tab` URL param as Settings'
+   * active view; switching tabs in embedded mode would write `tab=toolsets`
+   * into the Settings URL, which Settings' enum rejects and coerces back to
+   * `config:model` — landing the user in the Model pane. In embedded mode we
+   * keep the mode in local state and never touch the URL.
+   */
+  embedded?: boolean
+  /**
+   * 嵌在设置里时，这四张表由**宿主的左导航**选（与 Providers 下面那三枚子项同一形状），
+   * 所以这一屏不再自己画顶部那排大 Tab。宿主给 mode 就以宿主为准；不给（例如直接开
+   * `/skills`）就还是它自己的那一套。
+   */
+  mode?: SkillsMode
+  onCountsChange?: (counts: SkillsCounts) => void
+  onModeChange?: (mode: SkillsMode) => void
 }
 
-export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...props }: SkillsViewProps) {
+export function SkillsView({
+  embedded = false,
+  mode: controlledMode,
+  onCountsChange,
+  onModeChange,
+  setStatusbarItemGroup: _setStatusbarItemGroup,
+  ...props
+}: SkillsViewProps) {
   const { t } = useI18n()
   const gateway = useStore($gateway) as PlobiGateway | null
-  const [mode, setMode] = useRouteEnumParam('tab', SKILLS_MODES, 'skills')
+  const [routeMode, setRouteMode] = useRouteEnumParam('tab', SKILLS_MODES, 'skills')
+  const [localMode, setLocalMode] = useState<SkillsMode>('skills')
+  const mode = controlledMode ?? (embedded ? localMode : routeMode)
+  const setMode = useCallback(
+    (next: SkillsMode) => {
+      if (onModeChange) {
+        onModeChange(next)
+      } else if (embedded) {
+        setLocalMode(next)
+      } else {
+        setRouteMode(next)
+      }
+    },
+    [embedded, onModeChange, setRouteMode]
+  )
 
   // ─── Agent 作用域（2026-10-20 用户裁定 C；10-31 换键） ───────────────────
   // 带 `?agent=<名册 id>` 进来，这一页就是**这个 Agent 自己的**能力页：四张表
@@ -207,7 +252,30 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     return value ? value : null
   }, [search])
 
-  const scopedAgent = useStore($consoleAgents).find(agent => agent.id === scopedAgentId)
+  const consoleAgents = useStore($consoleAgents)
+  // L1 那一行不在左栏名单里（用户 11-05：名册分开标、地位平等），能力页要按 id
+  // 把它的名字认出来，所以单独取一份。
+  const l1Agent = useStore($consoleL1Agent)
+
+  const scopedAgent = useMemo(() => {
+    if (!scopedAgentId) {
+      return undefined
+    }
+
+    const exact = consoleAgents.find(agent => agent.id === scopedAgentId)
+
+    if (exact) {
+      return exact
+    }
+
+    if (l1Agent && l1Agent.id.toLowerCase() === scopedAgentId.toLowerCase()) {
+      return l1Agent
+    }
+
+    const lower = scopedAgentId.toLowerCase()
+
+    return consoleAgents.find(agent => agent.id.toLowerCase() === lower)
+  }, [consoleAgents, l1Agent, scopedAgentId])
 
   // Agent 页要能区分两种「关」：全局关掉的（锁住，开不了）与本 Agent 关掉的（可点开）。
   // 全局那一份只在 Agent 模式才查——全局页本身就是它，不必再查一遍。
@@ -606,10 +674,22 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     </DetailPane>
   )
 
+  // 计数报给宿主（嵌在设置里时，那排 Tab 不画了，数还得让人看见）。两个数是派生值，
+  // 只在真的变了才往外报一次，避免每次渲染都推一遍让设置重排。
+  const skillsCount = skills?.length ?? null
+  const toolsetCount = toolsets ? visibleToolsetCount(toolsets) : null
+
+  useEffect(() => {
+    onCountsChange?.({ skills: skillsCount, toolsets: toolsetCount })
+  }, [onCountsChange, skillsCount, toolsetCount])
+
   return (
     <PageSearchShell
       {...props}
       activeTab={mode}
+      // 表头只写 Agent 名（用户 11-05）。设置里嵌进去的那一份是全局真源，不传。
+      pageTitle={embedded ? undefined : scopedAgent?.name}
+      showBack={!embedded}
       onSearchChange={setQuery}
       onTabChange={id => setMode(id as (typeof SKILLS_MODES)[number])}
       // MCP manages a handful of entries with the editor right there —
@@ -624,12 +704,18 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
             : t.skills.searchToolsets
       }
       searchValue={query}
-      tabs={[
-        { id: 'skills', label: t.skills.tabSkills, meta: skills?.length ?? null },
-        { id: 'toolsets', label: t.skills.tabToolsets, meta: toolsets ? visibleToolsetCount(toolsets) : null },
-        { id: 'mcp', label: t.skills.tabMcp },
-        { id: 'hub', label: t.skills.tabHub }
-      ]}
+      // 嵌在设置里时这一排整个不画：四张表改由左导航那四枚子项选（与 Providers
+      // 下面那三枚同一形状），顶部只留同款那一栏搜索。
+      tabs={
+        embedded
+          ? undefined
+          : [
+              { id: 'skills', label: t.skills.tabSkills, meta: skillsCount },
+              { id: 'toolsets', label: t.skills.tabToolsets, meta: toolsetCount },
+              { id: 'mcp', label: t.skills.tabMcp },
+              { id: 'hub', label: t.skills.tabHub }
+            ]
+      }
     >
       {mode === 'hub' ? (
         <SkillsHub query={query} />

@@ -328,6 +328,22 @@ export const en: Translations = {
       resumeYes: 'you can jump back into its own session',
       resumeNo: 'no registered way back to that screen yet',
       sessionId: 'session',
+      intro: {
+        codebuddy: 'Tencent coding agent: takes "write code + run commands" jobs, and reports its usage back.',
+        agy: 'Antigravity CLI: takes "edit files + run terminal" jobs; it reports no usage.',
+        cline: 'Coding agent inside VS Code: takes file edits and command runs; review the edits in the editor.',
+        gemini: 'Google CLI: reads files, writes code, runs commands; permissions follow its own mode.',
+        opencode: 'Open-source terminal coding agent: takes code edits and command runs; it keeps its own session.',
+        codex: 'OpenAI CLI: reads and edits files, runs commands; whether it works depends on its own login.',
+        claude: 'Anthropic CLI: reads and edits files, runs terminal commands; its permission mode must be open at launch.',
+        qoder: 'Alibaba coding IDE: mostly code jobs, and it can resume its own session.'
+      },
+      introFallback: 'Newly supported: no written intro yet.',
+      allowSwitch: 'Allow handing work to it',
+      setup: 'Not set up yet — open setup',
+      switchOff: 'This switch is off: no work will be handed to it.',
+      installGuide: 'Not found on this machine — install it first, then come back and refresh here.',
+      loginGuide: 'Installed but not signed in — sign in inside its own app, then come back and refresh here.',
       notInstalled: 'not installed on this machine',
       sessionsTitle: 'External conversations',
       sessionsNote: 'Where each app keeps its conversations on this machine, whether they can be read, and whether you can speak to them from here.',
@@ -768,6 +784,9 @@ export const en: Translations = {
       cantReach: "We couldn't reach the update server.",
       tapCheck: 'Tap "Check now" to look for updates.',
       updateReady: count => `A new update is ready (${count} change${count === 1 ? '' : 's'} included).`,
+      updateReadyVersion: value => `Version ${value} is available.`,
+      upgradeTo: value => `Upgrade to ${value}`,
+      downloadingUpdate: 'Downloading the new version…',
       lastChecked: age => `Last checked ${age}`,
       justNowSuffix: ' · just now',
       automaticUpdates: 'Automatic updates',
@@ -1365,7 +1384,8 @@ export const en: Translations = {
     ageHours: hours => `${hours}h ago`,
     durationSeconds: seconds => `${seconds}s`,
     durationMinutes: (minutes, seconds) => `${minutes}m ${seconds}s`,
-    tokens: value => `${value} tok`
+    tokens: value => `${value} tok`,
+    nameLabel: 'Name'
   },
 
   commandCenter: {
@@ -1682,10 +1702,6 @@ export const en: Translations = {
       }
     },
     platformIntro: {}
-  },
-
-  profiles: {
-    nameLabel: 'Name',
   },
 
   mindPending: {

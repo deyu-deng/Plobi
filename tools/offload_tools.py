@@ -19,6 +19,15 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from plobi.delegation.external_capabilities import (
+    PERMISSION_LEVELS,
+    capabilities,
+    permission_alias,
+    permission_levels_text,
+    supports,
+    unsupported_note,
+    vendor_list_text,
+)
 from plobi.delegation.offload import (
     CAP_PERMISSION_MODE,
     CAP_STREAMING,
@@ -77,7 +86,9 @@ def agent_roster() -> List[ExternalAgent]:
     就该在名册里出现，两处各列一份迟早不一致（裁 94）。
     """
     from agent import external_offload as channel
+    from plobi.delegation.config import offload_disabled
 
+    disabled = offload_disabled()
     roster: List[ExternalAgent] = []
     for name in channel.EXTERNAL_AGENTS:
         binary = channel.resolve_command(name)
@@ -101,6 +112,7 @@ def agent_roster() -> List[ExternalAgent]:
                     CAP_USAGE_REPORT: name == channel.AGENT_CODEBUDDY,
                     CAP_STREAMING: False,
                 },
+                allowed=name not in disabled,
             )
         )
     return roster
@@ -258,7 +270,7 @@ STATUS_SCHEMA = {
 RUN_SCHEMA = {
     "name": "external_offload_run",
     "description": (
-        "把**一整段能独立验收**的活交给本机的外部 AI 软件（Qoder / CodeBuddy / agy），"
+        "把**一整段能独立验收**的活交给本机的外部 AI 软件，"
         "你自己只负责拆活、验收、把结果拼回用户的话。"
         "**默认先想到它**：用户点名某台软件，或这段活是一整块（写文件、跑脚本、查资料出成品）"
         "且不需要本会话的上下文时，先 external_offload_status 看谁可用，再交出去——"
@@ -272,7 +284,9 @@ RUN_SCHEMA = {
         "properties": {
             "task": {"type": "string", "description": "要外包的那一段，一句话说清做到什么程度。"},
             "cwd": {"type": "string", "description": "它干活的项目目录（产出就落这里）。"},
-            "agent": {"type": "string", "description": "交给谁；先查 external_offload_status。默认 codebuddy。"},
+            "agent": {"type": "string", "description":
+                "交给谁；名字只认 external_offload_status 返回的那份本机清单，别照下面任何一句示例猜。"
+                "留空＝用默认那家。"},
             "permission_mode": {"type": "string", "description":
                 "该 Agent 自带的权限档名，档名各家不通用（CodeBuddy 是 `bypassPermissions`，"
                 "Qoder 是 `bypass_permissions`）。留空＝用该家登记的默认档："
@@ -287,7 +301,7 @@ RUN_SCHEMA = {
 SCAN_SCHEMA = {
     "name": "external_sessions_scan",
     "description": (
-        "列出本机上各家 AI 软件的会话（Qoder / CodeBuddy / Marvis），并带上**已经自动算好的**相关判断："
+        "列出本机上各家 AI 软件的会话（" + vendor_list_text() + "），并带上**已经自动算好的**相关判断："
         "`related=true`（项目目录或标题点到你）／`null`（还没判断）／`false`（你标过无关）。"
         "用户问「有哪些跟我有关的对话」、或你要决定跟哪条继续谈之前，先扫这一遍；"
         "**判不准的别猜**，看完标题与项目再决定，标完用 external_sessions_mark 记下来。"
@@ -309,7 +323,7 @@ MARK_SCHEMA = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "vendor": {"type": "string", "description": "哪家软件：qoder / codebuddy / marvis。"},
+                        "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
                         "id": {"type": "string", "description": "scan 回来的会话号。"},
                         "related": {"type": "boolean", "description": "跟你有关＝true，无关＝false。"},
                     },
@@ -329,7 +343,7 @@ RENAME_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "vendor": {"type": "string", "description": "qoder / codebuddy / marvis / cursor / agy。"},
+            "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
             "id": {"type": "string", "description": "scan 回来的会话号。"},
             "title": {"type": "string", "description": "新名字，一句话。"},
         },
@@ -343,8 +357,8 @@ ARCHIVE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "vendor": {"type": "string"},
-            "id": {"type": "string"},
+            "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
+            "id": {"type": "string", "description": "scan 回来的会话号。"},
             "archived": {"type": "boolean", "description": "true 收起来，false 放回来。默认 true。"},
         },
         "required": ["vendor", "id"],
@@ -360,10 +374,83 @@ DELETE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "vendor": {"type": "string"},
-            "id": {"type": "string"},
+            "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
+            "id": {"type": "string", "description": "scan 回来的会话号。"},
         },
         "required": ["vendor", "id"],
+    },
+}
+
+
+# ── 通用原子工具（11-04 用户拍的形状）────────────────────────────────────
+#
+# 六枚会话工具共享同一对定位参数 `vendor + id`，模型不必为每家记一套工具名。
+# 各家差异全在 `external_capabilities.py`：不支持的动作当场报错，绝不静默成功。
+# 「派新活」的 status/run 是另一组动词，不并进来——它们的参数是调用参数，不是会话操作。
+
+SEND_SCHEMA = {
+    "name": "external_session_send",
+    "description": (
+        "往一条外部 AI 软件的会话里说一句话（像人一样接着聊）。"
+        "先 external_sessions_scan 看 capabilities：只有带 `send` 的那家能说话，"
+        "带 `attachments` 的才收附件。不支持就别试，工具会当场拒。"
+        "回包里带 prefs（这条会话记下的模型/权限预设）与 prefs_applied——"
+        "今天没有一家能在续接时自动应用预设，看到 false 是实话，不是失败。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
+            "id": {"type": "string", "description": "scan 回来的会话号。"},
+            "text": {"type": "string", "description": "要说的话。"},
+            "attachments": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "附件路径。今天没有一家支持，给了会当场报错而不是悄悄丢掉。",
+            },
+        },
+        "required": ["vendor", "id", "text"],
+    },
+}
+
+MODEL_SCHEMA = {
+    "name": "external_session_model",
+    "description": (
+        "给一条外部会话记下「下次从 Plobi 续接时想用的模型」。"
+        "**这是 Plobi 侧的会话预设，不是去改对方软件里那条会话**——对方多数不允许改已创建会话的模型。"
+        "传空串清掉预设。能不能在续接时自动带上，看 scan 里的 `apply_on_send`。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
+            "id": {"type": "string", "description": "scan 回来的会话号。"},
+            "model": {"type": "string", "description": "模型名；传空串＝清掉预设，回到那家自己的默认。"},
+        },
+        "required": ["vendor", "id", "model"],
+    },
+}
+
+PERMISSION_SCHEMA = {
+    "name": "external_session_permission",
+    "description": (
+        "给一条外部会话记下「下次续接时想用的权限档」。档位只认归一化的三档 "
+        + permission_levels_text()
+        + "，各家的真名由能力表翻译，不用你猜。同样是 Plobi 侧预设，不是改对方软件。"
+        "传空串清掉预设。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
+            "id": {"type": "string", "description": "scan 回来的会话号。"},
+            "level": {
+                "type": "string",
+                "enum": ["", *PERMISSION_LEVELS],
+                "description": "归一化档位；" + permission_levels_text() + "。传空串＝清掉预设。",
+            },
+        },
+        "required": ["vendor", "id", "level"],
     },
 }
 
@@ -421,6 +508,7 @@ def _handle_scan(args: Dict[str, Any], **_kw: Any) -> str:
     rows = [
         {
             "id": item["id"],
+            "capabilities": (capabilities(item["vendor"]).as_list() if capabilities(item["vendor"]) else []),
             "project": item.get("project") or "",
             "related": item.get("related"),
             "related_source": item.get("related_source"),
@@ -430,11 +518,16 @@ def _handle_scan(args: Dict[str, Any], **_kw: Any) -> str:
         }
         for item in payload["sessions"]
     ]
+    # 能力位也挂在 source 上：一家软件整体能做什么，不必逐行翻。
+    sources = []
+    for source in payload.get("sources", []):
+        spec = capabilities(source.get("vendor"))
+        sources.append({**source, "capabilities": spec.as_list() if spec else []})
     counts = {"related": 0, "unknown": 0, "unrelated": 0}
     for row in rows:
         counts["related" if row["related"] is True else "unrelated" if row["related"] is False else "unknown"] += 1
 
-    return json.dumps({"counts": counts, "ok": True, "sessions": rows[:80], "sources": payload.get("sources", [])},
+    return json.dumps({"counts": counts, "ok": True, "sessions": rows[:80], "sources": sources},
                       ensure_ascii=False)
 
 
@@ -449,6 +542,68 @@ def _handle_mark(args: Dict[str, Any], **_kw: Any) -> str:
     from plobi.delegation.external_sessions import mark_for_agent
 
     result = mark_for_agent(agent, [item for item in items if isinstance(item, dict)])
+
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _session_target(args: Dict[str, Any]) -> tuple[str, str]:
+    return str(args.get("vendor") or "").strip().lower(), str(args.get("id") or "").strip()
+
+
+def _handle_send(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，判不了归属"}, ensure_ascii=False)
+
+    vendor, session_id = _session_target(args)
+    if not supports(vendor, "send"):
+        return json.dumps({"ok": False, "error": unsupported_note(vendor, "send")}, ensure_ascii=False)
+    if args.get("attachments") and not supports(vendor, "attachments"):
+        # 附件不能悄悄丢：模型以为带上了、对方其实什么都没收到，是最坏的一种假成功。
+        return json.dumps({"ok": False, "error": unsupported_note(vendor, "attachments")}, ensure_ascii=False)
+
+    from plobi.delegation.external_sessions import prefs_for_agent, send_for_agent
+
+    result = send_for_agent(agent, vendor, session_id, str(args.get("text") or ""))
+    if result.get("ok"):
+        spec = capabilities(vendor)
+        data = result.setdefault("data", {})
+        data["prefs"] = prefs_for_agent(agent, vendor, session_id)
+        data["prefs_applied"] = bool(spec and spec.apply_on_send)
+
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _handle_model(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，记不了预设"}, ensure_ascii=False)
+
+    vendor, session_id = _session_target(args)
+    from plobi.delegation.external_sessions import set_prefs_for_agent
+
+    result = set_prefs_for_agent(agent, vendor, session_id, model=str(args.get("model") or "").strip())
+
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _handle_permission(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，记不了预设"}, ensure_ascii=False)
+
+    vendor, session_id = _session_target(args)
+    level = str(args.get("level") or "").strip().lower()
+    if level and level not in PERMISSION_LEVELS:
+        return json.dumps({"ok": False, "error": f"权限档只认 {permission_levels_text()}"}, ensure_ascii=False)
+
+    from plobi.delegation.external_sessions import set_prefs_for_agent
+
+    result = set_prefs_for_agent(agent, vendor, session_id, permission_level=level)
+    if result.get("ok"):
+        # 把归一化档对应的这家真名一起交回去，省得模型下次拿别家的档名来凑。
+        result["data"]["level"] = level or None
+        result["data"]["vendor_flag"] = permission_alias(vendor, level) if level else None
 
     return json.dumps(result, ensure_ascii=False)
 
@@ -520,6 +675,33 @@ registry.register(
     toolset=TOOLSET,
     schema=DELETE_SCHEMA,
     handler=_handle_delete,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_session_send",
+    toolset=TOOLSET,
+    schema=SEND_SCHEMA,
+    handler=_handle_send,
+    check_fn=_check_drivable,
+    emoji="💬",
+)
+
+registry.register(
+    name="external_session_model",
+    toolset=TOOLSET,
+    schema=MODEL_SCHEMA,
+    handler=_handle_model,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_session_permission",
+    toolset=TOOLSET,
+    schema=PERMISSION_SCHEMA,
+    handler=_handle_permission,
     check_fn=_check_drivable,
     emoji="🗂",
 )

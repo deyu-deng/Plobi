@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
-import { $activeGatewayProfile, $freshSessionRequest, normalizeProfileKey } from '@/store/profile'
+import { $scopeAgent, $freshSessionRequest, normalizeProfileKey } from '@/store/scope'
 import { resolveNewSessionCwd } from '@/store/projects'
 import { $agentCwd, $currentCwd, setActiveSessionId, setAwaitingResponse, setBusy, setCurrentBranch, setCurrentCwd, setFreshDraftReady, setMessages, setSelectedStoredSessionId } from '@/store/session'
 
@@ -70,7 +70,7 @@ export function useConversationReset({
     }
 
     if (level === 'l1') {
-      forgetL1MainSession(normalizeProfileKey($activeGatewayProfile.get() || 'default'))
+      forgetL1MainSession(normalizeProfileKey($scopeAgent.get() || 'default'))
       prepareFreshDraftInPlace()
 
       return

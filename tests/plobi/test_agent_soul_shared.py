@@ -44,7 +44,7 @@ def soul_home(tmp_path, monkeypatch):
 
 
 def _entry(name: str = "Stithy", role: str = "l2_project") -> AgentEntry:
-    return AgentEntry(name=name, role=role, profile=name.lower())
+    return AgentEntry(name=name, role=role)
 
 
 def test_l2_identity_lands_in_the_shared_layer(soul_home):
@@ -197,9 +197,7 @@ def test_a_name_that_slugifies_differently_still_reads_its_own_soul(
         f"    category: courses\n    profile: l2-course-ee\n",
     )
 
-    entry = AgentEntry(
-        name=name, role="l2_project", profile="l2-course-ee", category="courses"
-    )
+    entry = AgentEntry(name=name, role="l2_project", category="courses")
     assert ensure_l2_identity_soul(entry) is True
     (soul_home / "SOUL.md").write_text("L1-SECRETARY-SOUL", encoding="utf-8")
 

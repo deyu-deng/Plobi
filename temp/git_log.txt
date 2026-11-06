@@ -1,0 +1,5 @@
+﻿3920ba72 [WP-UPDATE-ONE-CLICK] 版本各归各位：面板显示**壳的**版本，后端的版本另起一行
+32078e15 [WP-UPDATE-ONE-CLICK] 后端能真更新：浅 clone 先补深再判祖先，安装器的 tag 槽位用显式 refspec
+8cff7645 [WP-PROFILE-CANCEL] 第七轮：`plobi_cli/profiles.py` 搬成 `plobi_cli/agent_identity.py`——83 档引用一次改口（命令面与行为一字不动），旧地址只留一枚纯转发的门牌（router.py 在 WP-L3-EXPERTS 名下在派，本线不签她的档），并配一条判据看住门牌里不许再长实现
+c04c940b [WP-RELEASE-DESKTOP] release: 桌面 0.3.2（版本号全线 SemVer 同号 + 探针超时不再当成 venv 坏）
+56b25b2e [WP-RELEASE-DESKTOP] release: 桌面 0.3.1（版本号 + CHANGELOG）

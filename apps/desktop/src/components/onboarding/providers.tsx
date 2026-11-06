@@ -1,6 +1,6 @@
-import { RowButton } from '@/components/ui/row-button'
+import { ListRow, ProviderStatusBadge } from '@/app/settings/primitives'
 import { useI18n } from '@/i18n'
-import { Check, ChevronRight, Terminal } from '@/lib/icons'
+import { ChevronRight, Terminal } from '@/lib/icons'
 import type { OAuthProvider } from '@/types/plobi'
 
 const PROVIDER_DISPLAY: Record<string, { order: number; title: string }> = {
@@ -65,28 +65,19 @@ export function FeaturedProviderRow({
 function ConnectedTag() {
   const { t } = useI18n()
 
-  return (
-    <span className="inline-flex items-center gap-1 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-      <Check className="size-3" />
-      {t.onboarding.connected}
-    </span>
-  )
+  return <ProviderStatusBadge state="ok">{t.onboarding.connected}</ProviderStatusBadge>
 }
-
-export const PROVIDER_ROW_CLASS =
-  'group flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-(--ui-control-hover-background)'
 
 export function KeyProviderRow({ onClick }: { onClick: () => void }) {
   const { t } = useI18n()
 
   return (
-    <RowButton className={PROVIDER_ROW_CLASS} onClick={onClick}>
-      <div className="min-w-0">
-        <span className="text-[length:var(--conversation-text-font-size)] font-semibold">OpenRouter</span>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.onboarding.openRouterPitch}</p>
-      </div>
-      <ChevronRight className="size-4 text-muted-foreground transition group-hover:text-foreground" />
-    </RowButton>
+    <ListRow
+      action={<ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+      description={t.onboarding.openRouterPitch}
+      onActivate={onClick}
+      title="OpenRouter"
+    />
   )
 }
 
@@ -102,17 +93,20 @@ export function ProviderRow({
   const Trail = provider.flow === 'external' ? Terminal : ChevronRight
 
   return (
-    <RowButton className={PROVIDER_ROW_CLASS} onClick={() => onSelect(provider)}>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[length:var(--conversation-text-font-size)] font-semibold">
-            {providerTitle(provider)}
-          </span>
-          {loggedIn ? <ConnectedTag /> : null}
-        </div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t.onboarding.flowSubtitles[provider.flow]}</p>
-      </div>
-      <Trail className="size-4 text-muted-foreground transition group-hover:text-foreground" />
-    </RowButton>
+    <ListRow
+      action={<Trail className="size-4 shrink-0 text-muted-foreground" />}
+      description={t.onboarding.flowSubtitles[provider.flow]}
+      onActivate={() => onSelect(provider)}
+      title={
+        <span className="flex items-center gap-2">
+          {loggedIn ? (
+            <ConnectedTag />
+          ) : (
+            <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--ui-stroke-secondary)" />
+          )}
+          {providerTitle(provider)}
+        </span>
+      }
+    />
   )
 }

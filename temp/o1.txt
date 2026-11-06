@@ -1,0 +1,31 @@
+﻿.....F...F...................FFFFFFF                                     [100%]
+================================== FAILURES ===================================
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:43: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:43: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:598: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:43: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:43: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:43: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:783: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:43: TypeError: AgentEntry.__init__() got an unexpected keyword argument 'profile'
+E   AttributeError: 'AgentEntry' object has no attribute 'profile'. Did you mean: 'provider'?
+D:\Projects\Plobi\Plobi-Desktop\Code\tests\plobi\test_agent_registry.py:872: AttributeError: 'AgentEntry' object has no attribute 'profile'. Did you mean: 'provider'?
+=========================== short test summary info ===========================
+FAILED tests/plobi/test_agent_registry.py::test_round_trip_preserves_entries
+FAILED tests/plobi/test_agent_registry.py::test_missing_profile_field_falls_back_to_name
+FAILED tests/plobi/test_agent_registry.py::test_studio_cwd_still_lands_when_agent_has_display_name
+FAILED tests/plobi/test_agent_registry.py::test_spawn_writes_model_section_when_provider_resolves
+FAILED tests/plobi/test_agent_registry.py::test_spawn_skips_unresolvable_provider_without_failing
+FAILED tests/plobi/test_agent_registry.py::test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model
+FAILED tests/plobi/test_agent_registry.py::test_profile_name_is_normalized_to_the_on_disk_id
+FAILED tests/plobi/test_agent_registry.py::test_spawn_without_model_override_inherits_the_configured_default
+FAILED tests/plobi/test_agent_registry.py::test_agenda_template_carries_no_model_override
+9 failed, 27 passed in 1.31s

@@ -70,11 +70,19 @@ def _roster(rows: dict) -> None:
     )
 
 
-def _effective(home_dir: Path) -> dict:
-    """那个家**实际读到的**那份配置——走被测代码自己的解析函数，不手拼路径。"""
+def _effective(agent_id: str) -> dict:
+    """**这个身份**实际读到的配置——走被测代码自己的解析函数，不手拼路径。
+
+    2026-11-05 之后「哪个 Agent」由 ``PLOBI_AGENT_ID``（名册 ``name``）决定，不再由
+    ``PLOBI_HOME`` 指进某个 ``profiles/<slug>`` 子家决定：家就是共享根，身份是环境变量。
+    所以这里钉 env，不钉家。
+    """
     from plobi_cli import config as cfg
 
-    os.environ["PLOBI_HOME"] = str(home_dir)
+    if agent_id:
+        os.environ["PLOBI_AGENT_ID"] = agent_id
+    else:
+        os.environ.pop("PLOBI_AGENT_ID", None)
     cfg._LOAD_CONFIG_CACHE.clear()
     return cfg.load_config()
 
@@ -102,7 +110,7 @@ def test_a_project_agent_reads_its_workspace_from_the_roster_row(home):
     profile_dir.mkdir(parents=True)
     _roster({"Plobi": _project_row("Plobi", "l2-plobi", workspace)})
 
-    cfg = _effective(profile_dir)
+    cfg = _effective("Plobi")
 
     assert cfg["terminal"]["cwd"] == str(workspace.absolute())
 
@@ -119,7 +127,7 @@ def test_the_roster_wins_over_the_top_level_file(home):
     profile_dir.mkdir(parents=True)
     _roster({"Wins": _project_row("Wins", "l2-wins", workspace)})
 
-    assert _effective(profile_dir)["terminal"]["cwd"] != "."
+    assert _effective("Wins")["terminal"]["cwd"] != "."
 
 
 def test_a_dead_project_path_never_becomes_a_cwd(home):
@@ -133,7 +141,7 @@ def test_a_dead_project_path_never_becomes_a_cwd(home):
     profile_dir.mkdir(parents=True)
     _roster({"Ghost": _project_row("Ghost", "l2-ghost", ghost)})
 
-    cfg = _effective(profile_dir)
+    cfg = _effective("Ghost")
 
     assert not ghost.exists()
     assert cfg["terminal"]["cwd"] != str(ghost)
@@ -146,12 +154,15 @@ def test_butler_and_agenda_rows_get_no_cwd(home, role):
     profile_dir.mkdir(parents=True)
     _roster({
         "agenda": {
-            "name": "agenda", "role": role, "profile": "l2-agenda",
-            "category": "butler", "project_path": "",
+            "name": "agenda",
+            "role": role,
+            "profile": "l2-agenda",
+            "category": "butler",
+            "project_path": "",
         }
     })
 
-    assert _effective(profile_dir)["terminal"]["cwd"] == "."
+    assert _effective("agenda")["terminal"]["cwd"] == "."
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +184,7 @@ def test_moving_the_folder_in_the_roster_moves_the_agent_without_a_restart(home)
     profile_dir.mkdir(parents=True)
     _roster({"Move": _project_row("Move", "l2-move", first)})
 
-    assert _effective(profile_dir)["terminal"]["cwd"] == str(first.absolute())
+    assert _effective("Move")["terminal"]["cwd"] == str(first.absolute())
 
     # 不重启进程、不清缓存：只改名册那一行。
     from plobi_cli import config as cfg
@@ -202,19 +213,25 @@ def test_spawning_a_project_agent_leaves_no_config_yaml_in_its_home(home):
 
     workspace = home / "spawned"
     workspace.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-spawned"
-    profile_dir.mkdir(parents=True)  # 家已落地但没有 config.yaml——旧代码会在这里造一份
     reg = AgentRegistry.load()
     reg.upsert(
         AgentEntry(
-            name="Spawned", role="l2_project", profile="l2-spawned",
-            project_path=str(workspace), category="projects",
+            name="Spawned",
+            role="l2_project",
+            project_path=str(workspace),
+            category="projects",
         )
     )
+    top_config = home / ".plobi" / "config.yaml"
 
     result = reg.spawn("Spawned")
 
-    assert not (Path(result["profile_dir"]) / "config.yaml").exists()
+    # B 刀之后 spawn 不再给这行分配家：返回值里连 ``profile_dir`` 这个键都没有，
+    # 顶层那一份也不多出 ``terminal:``（cwd 是读时叠的，不落盘）、模型仍是顶层原值。
+    assert "profile_dir" not in result
+    after = yaml.safe_load(top_config.read_text(encoding="utf-8")) or {}
+    assert "terminal" not in after
+    assert (after.get("model") or {}).get("default") == "workbuddy/top-one"
 
 
 def test_a_stale_copy_left_in_the_home_is_not_read(home):
@@ -235,7 +252,7 @@ def test_a_stale_copy_left_in_the_home_is_not_read(home):
     )
     _roster({"Stale": _project_row("Stale", "l2-stale", workspace)})
 
-    cfg = _effective(profile_dir)
+    cfg = _effective("Stale")
 
     assert cfg["terminal"]["cwd"] == str(workspace.absolute())
     assert cfg["model"]["default"] == "workbuddy/top-one"
@@ -262,8 +279,12 @@ def test_the_l2_diet_cannot_move_an_agents_workspace(home):
     profile_dir = home / ".plobi" / "profiles" / "l2-diet"
     profile_dir.mkdir(parents=True)
     _roster({"Diet": _project_row("Diet", "l2-diet", workspace)})
-    before = _effective(profile_dir)["terminal"]["cwd"]
+    before = _effective("Diet")["terminal"]["cwd"]
 
     apply_l2_project_diet(profile_dir)
 
-    assert _effective(profile_dir)["terminal"]["cwd"] == before == str(workspace.absolute())
+    assert (
+        _effective("Diet")["terminal"]["cwd"]
+        == before
+        == str(workspace.absolute())
+    )

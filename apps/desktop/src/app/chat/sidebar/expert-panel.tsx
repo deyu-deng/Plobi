@@ -62,6 +62,10 @@ export function useAgentExperts(agentId: string): ExpertRun[] {
  *
  * 和一级抽屉行同一套行高与内距，只是缩进在抽屉里；点它是「打开这张嘴」而不是展开，
  * 所以没有折角——折角是「还有下一层」的承诺，这里没有下一层。
+ *
+ * **永远可点**（11-04 用户：「这几个专家为什么不能点击…根本点击不了」）：
+ * 没派过活时也打开一张卡，写清这个角色是什么、能干什么、怎么让它出场。
+ * 灰着但点不动是最糟的一种——用户以为是坏了。
  */
 export function ExpertRoleRow({
   onOpen,
@@ -78,14 +82,12 @@ export function ExpertRoleRow({
 
   return (
     <button
-      aria-disabled={idle || undefined}
       className={cn(
         'flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium transition-colors duration-100 ease-out',
         idle
-          ? 'cursor-default text-(--ui-text-quaternary)'
+          ? 'text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary) hover:transition-none'
           : 'text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none'
       )}
-      disabled={idle}
       onClick={onOpen}
       title={running ? `${t.console[role.labelKey]} · ${elapsedText(running)}` : t.console[role.labelKey]}
       type="button"

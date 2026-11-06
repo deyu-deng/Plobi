@@ -316,6 +316,22 @@ export const zh: Translations = {
       resumeYes: '可以回到它自己那条会话',
       resumeNo: '尚未登记回到该界面的入口',
       sessionId: '会话',
+      intro: {
+        codebuddy: '腾讯的编程 Agent：能接「写代码 + 跑命令」这类活，也是少数会把用量报回来的。',
+        agy: 'Antigravity 的命令行：能接「改文件 + 跑终端」的活，用多少它不回报。',
+        cline: 'VS Code 里的编程 Agent：能接读写文件、跑命令的活，改完可在编辑器里看一眼。',
+        gemini: 'Google 的命令行：能接读文件、写代码、跑命令，权限按它自己的档走。',
+        opencode: '终端里的开源编程 Agent：能接改代码、跑命令的活，会话由它自己保管。',
+        codex: 'OpenAI 的命令行：能接读改文件、跑命令的活，能不能用得看它自己的登录凭据。',
+        claude: 'Anthropic 的命令行：能接读改文件、跑终端的活，权限档要在它启动时放开。',
+        qoder: '阿里的编程 IDE：主要接代码类活，且实测能回到它自己那条会话接着聊。'
+      },
+      introFallback: '新适配的一家：还没有写好的简介。',
+      allowSwitch: '允许把活交给它',
+      setup: '还没配好，去配置',
+      switchOff: '这一格是关的：不会把活派给它。',
+      installGuide: '这台机器上没找到它，先去装：装好后回到这里刷新一次。',
+      loginGuide: '装好了但还没登录：在它自己的界面里登录一次，回来刷新一次。',
       notInstalled: '本机未安装',
       sessionsTitle: '外部会话',
       sessionsNote: '这些软件把对话存在本机哪里、能不能读、能不能从这里说话。',
@@ -957,6 +973,9 @@ export const zh: Translations = {
       cantReach: '无法连接更新服务器。',
       tapCheck: '点击"立即检查"以查找更新。',
       updateReady: count => `已准备好新更新 (包含 ${count} 项更改)。`,
+      updateReadyVersion: value => `有新版 ${value}。`,
+      upgradeTo: value => `升级到 ${value}`,
+      downloadingUpdate: '正在下载新版…',
       lastChecked: age => `上次检查:${age}`,
       justNowSuffix: ' · 刚刚',
       automaticUpdates: '自动更新',
@@ -1438,7 +1457,7 @@ export const zh: Translations = {
   },
   surface: {
     title: '知识库',
-    subtitle: (agents, withHome) => `${agents} 个 Agent · ${withHome} 个已有档案`,
+    subtitle: (agents, withHome) => `${agents} 个 Agent · ${withHome} 个已有目录`,
     searchPlaceholder: '搜索笔记…',
     all: '全部',
     loading: '加载中…',
@@ -1466,10 +1485,10 @@ export const zh: Translations = {
     milestones: (done, total) => `${done}/${total} 个里程碑`,
     workDir: '工作目录',
     copyPath: '复制路径',
-    notBuilt: '该档案尚未创建',
+    notBuilt: '该目录尚未创建',
     notBuiltDesc: filename => `应当是：${filename}`,
     noHome: '未接入',
-    noHomeDesc: '名册里这个 Agent 还没有档案文件夹，所以这里没有可读的内容。',
+    noHomeDesc: '名册里这个 Agent 还没有工作目录，所以这里没有可读的内容。',
     categories: { projects: '项目', research: '研究', courses: '课程', butler: '管家', events: '事件' },
     docs: {
       plan: '计划',
@@ -1534,7 +1553,8 @@ export const zh: Translations = {
     ageHours: hours => `${hours} 小时前`,
     durationSeconds: seconds => `${seconds} 秒`,
     durationMinutes: (minutes, seconds) => `${minutes} 分 ${seconds} 秒`,
-    tokens: value => `${value} 词元`
+    tokens: value => `${value} 词元`,
+    nameLabel: '名称'
   },
 
   commandCenter: {
@@ -1850,10 +1870,6 @@ export const zh: Translations = {
     }
   },
 
-  profiles: {
-    nameLabel: '名称',
-  },
-
   mindPending: {
     label: '待批',
     count: count => `${count} 条待批`,
@@ -2038,7 +2054,7 @@ export const zh: Translations = {
     agentMenuCopyFailed: '复制 ID 失败：',
     agentMenuArchive: '归档这个 Agent',
     agentMenuArchiveConfirmTitle: '归档这个 Agent？',
-    agentMenuArchiveConfirmBody: '{name} 会从左栏消失，它的档案会被收进归档区。东西不会被删，之后还能从归档里找回来。',
+    agentMenuArchiveConfirmBody: '{name} 会从左栏消失，它的文件夹会被收进归档区。东西不会被删，之后还能从归档里找回来。',
     agentMenuArchiveCancel: '取消',
     agentMenuArchiveConfirmAction: '归档',
     agentMenuArchived: 'Agent 已归档。',
@@ -3558,7 +3574,7 @@ export const zh: Translations = {
       agenda: '日程',
       diary: '日记',
       files: '工作区文件',
-      progress: '档案',
+      progress: '资料',
       review: '审阅',
       browser: '浏览器',
       terminal: '终端'
@@ -3567,7 +3583,7 @@ export const zh: Translations = {
       agenda: '今天的日程时间轴',
       diary: '写今天这一篇',
       files: '浏览当前 Agent 的目录',
-      progress: '这个 Agent 的档案：计划、进展与资料',
+      progress: '这个 Agent 的工作资料：计划、进展与归档',
       review: '查看当前工作区的改动',
       browser: '在内置浏览器打开网页',
       terminal: '在当前目录打开终端'

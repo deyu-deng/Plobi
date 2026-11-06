@@ -6,11 +6,13 @@
  * 1. **The card list is the scan result.** Plobi never downloads an app or a CLI, so
  *    the hub only lists what is on this machine, and a row that is not here is absent
  *    rather than "go install it".
- * 2. **No mechanics on screen.** A card is an icon, the product's name, one short line
- *    saying what quota it is, and one control: `+` before it is configured, a switch
- *    afterwards. Why a leg cannot serve a turn right now (expired credential, a
- *    text-only transport, a CLI we have not wired a login for) is a tooltip on that
- *    control — never a paragraph under the row, and never a machine token like `ok`.
+ * 2. **No mechanics on screen.** A card is a status dot, the product's name, one short
+ *    line saying what quota it is, and one control: `+` before it is configured, a
+ *    switch afterwards. Why a leg cannot serve a turn right now (expired credential,
+ *    a text-only transport, a CLI we have not wired a login for) is a short line
+ *    *under* the row (user, 2026-11-04 — long tooltips overlapped the control and
+ *    offered no way out; the reason text moved below, and the control stays operable
+ *    to turn the leg off). It is never a machine token like `ok`.
  */
 
 export interface AuthCatalogRow {
@@ -71,7 +73,7 @@ export const QUOTA_CARD_INTROS: Record<string, string> = {
 export type RoutingVerdict = 'off' | 'on' | 'unknown'
 
 /** The one control a row is allowed to show. See `Docs/specs/settings-card-system.md` §2. */
-export type CardControl = 'loader' | 'none' | 'plus' | 'switch'
+export type CardControl = 'disabled' | 'loader' | 'none' | 'plus' | 'switch'
 
 /**
  * The card grammar, as a decision rather than as markup:
@@ -84,12 +86,19 @@ export type CardControl = 'loader' | 'none' | 'plus' | 'switch'
  * - a signed-out software that this machine can start a sign-in for shows `+`;
  * - the browser step in flight is the one middle state a click can own.
  *
- * "Unusable right now" is deliberately absent: that is not a shape, it is the
- * tooltip on whichever control is already here (`cardDetail`).
+ * "Unusable right now" was deliberately absent (a tooltip shape, not a control
+ * shape) until the switch gained a *disabled* state (user 2026-11-04): when the
+ * hub cannot serve this leg, an *on* switch must still show the reason instead of
+ * pretending the toggle works. So an on-but-unusable leg renders a disabled
+ * switch; everything else keeps its old shape.
  */
-export function cardControl(card: LoginCard, routing: RoutingVerdict): CardControl {
+export function cardControl(card: LoginCard, routing: RoutingVerdict, usable = true): CardControl {
   if (routing === 'off') {
     return 'switch'
+  }
+
+  if (routing === 'on' && !usable) {
+    return 'disabled'
   }
 
   if (routing === 'on') {
@@ -104,13 +113,20 @@ export function cardControl(card: LoginCard, routing: RoutingVerdict): CardContr
 }
 
 /**
- * The whole explanation of a row, in the one place it is allowed to live: the
- * control's tooltip. `reason` is the store's human line for why the leg cannot
- * serve a turn right now; `error` is what the shell said when a click failed.
- * Neither is ever body copy — see `Docs/specs/settings-card-system.md` §4.
+ * The whole explanation of a row. Since 2026-11-04 it renders as a short line
+ * *under* the card (never a tooltip on the control — tooltips were long, overlapped
+ * the switch/arrow, and could not be dismissed by an action). `reason` is the
+ * store's human line for why the leg cannot serve a turn right now; `error` is what
+ * the shell said when a click failed. The control next to it stays operable so the
+ * user can act on the message (turn the leg off) instead of just reading it.
  */
-export function cardDetail(card: LoginCard, error?: string, reason?: string): string {
-  return [reason, card.detail, error].filter(Boolean).join(' · ')
+export function cardDetail(
+  card: LoginCard,
+  error?: string,
+  reason?: string,
+  unselectableReason?: string
+): string {
+  return [reason, unselectableReason, card.detail, error].filter(Boolean).join(' · ')
 }
 
 

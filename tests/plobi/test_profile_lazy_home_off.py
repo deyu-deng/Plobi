@@ -58,7 +58,7 @@ def _root(home) -> Path:
 def _seed_roster(root: Path, name: str, profile: str) -> None:
     """名册写共享层那一份（`default_path()` = `<root>/plobi/projects.yaml`）。"""
     reg = AgentRegistry(root / "plobi" / "projects.yaml")
-    reg.upsert(AgentEntry(name=name, role="l2_agenda", profile=profile))
+    reg.upsert(AgentEntry(name=name, role="l2_agenda"))
     reg.save()
 
 
@@ -67,8 +67,12 @@ def _run_cli(root: Path, *args: str) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PLOBI_HOME"] = str(root)
     env["PYTHONPATH"] = str(CODE_ROOT)
-    for stale in ("PLOBI_AGENT_ID", "PLOBI_PROFILE", "PLOBI_PROJECTS_CONFIG",
-                  "PLOBI_MODELS_CONFIG"):
+    for stale in (
+        "PLOBI_AGENT_ID",
+        "PLOBI_PROFILE",
+        "PLOBI_PROJECTS_CONFIG",
+        "PLOBI_MODELS_CONFIG",
+    ):
         env.pop(stale, None)
     return subprocess.run(
         [sys.executable, "-c", _PROBE, *args],
@@ -84,13 +88,14 @@ def _probe_values(out: str) -> tuple[str, str]:
     home = agent = ""
     for line in out.splitlines():
         if line.startswith("HOME="):
-            home = line[len("HOME="):].strip()
+            home = line[len("HOME=") :].strip()
         elif line.startswith("AGENT="):
-            agent = line[len("AGENT="):].strip()
+            agent = line[len("AGENT=") :].strip()
     return home, agent
 
 
 # ── ① 盘上不长那个家 ────────────────────────────────────────────────────────
+
 
 def test_dash_p_does_not_create_the_home(tmp_path):
     """① 家不存在的名字 ⇒ 盘上**不长**那个家（一个字节都不建）。"""
@@ -120,6 +125,7 @@ def test_dash_p_folds_to_the_shared_root(tmp_path):
 
 # ── ③ 身份跟着 `-p` 走，且是名册的 name ─────────────────────────────────────
 
+
 def test_identity_is_the_roster_name_not_the_profile_name(tmp_path):
     """③ `PLOBI_AGENT_ID` = 名册那一行的 **name**（不是 profile 名）。"""
     root = tmp_path / ".plobi"
@@ -140,11 +146,12 @@ def test_agent_id_lookup_returns_the_roster_name(home):
     _seed_roster(_root(home), "agenda", "l2-agenda")
 
     assert _agent_id_for_profile("l2-agenda") == "agenda"
-    assert _agent_id_for_profile("agenda") == "agenda"   # 名册 name 也认
+    assert _agent_id_for_profile("agenda") == "agenda"  # 名册 name 也认
     assert _agent_id_for_profile("查无此行") == ""
 
 
 # ── ④ kanban 的腿不丢 ───────────────────────────────────────────────────────
+
 
 def test_kanban_worker_still_spawns_with_dash_p(tmp_path, monkeypatch):
     """④ kanban worker 的 argv 仍带 `-p <assignee>`、`PLOBI_PROFILE` 仍在。"""
@@ -185,6 +192,7 @@ def test_kanban_worker_still_spawns_with_dash_p(tmp_path, monkeypatch):
 
 # ── ⑤ 老装机逐字不变 ────────────────────────────────────────────────────────
 
+
 def test_an_existing_home_is_used_verbatim(home):
     """⑤ 家**在**时仍用那一家（不折回共享根）。"""
     from plobi_cli.main import _fold_to_shared_root
@@ -206,6 +214,7 @@ def test_an_illegal_name_still_reports_failure_instead_of_raising(home):
 
 
 # ── ⑥ 显式 `-p` 与粘性 `active_profile` 走两条不同的路 ──────────────────────
+
 
 def test_explicit_dash_p_without_a_roster_row_refuses(tmp_path):
     """⑥ 显式 `-p` 而名册里没有这一行 ⇒ 报错退出（不许以 L1 的身份替人干活）。"""
