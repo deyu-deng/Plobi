@@ -125,7 +125,40 @@ def test_brand_color_clears_fluent_contrast_on_both_themes():
     assert _ratio(shell, cream) >= 3.0, "底板与形之间不过 3.0:1"
 
 
-def test_generation_is_deterministic(tmp_path):
+def test_upstream_brand_assets_are_gone():
+    """上游 Nous 的品牌图形不许还留在渲染层能拿到的地方。
+
+    R-052 那份"9 个位置"清单漏了 `brand-mark.tsx`，About 那一屏一直挂着
+    `nous-girl.jpg`（戴耳机女孩）。这一条同时盯**引用**与**文件本身**——
+    只换引用不删文件，下次有人 grep 图片名又会把它捡回来。
+
+    ⏸ `public/plobi.png` 与 `public/plobi-sprite.png` 同样是上游美术（蓝色翅膀、
+    手持双蛇杖的像素骑士，7-14 那批），但**全仓零引用**、属内容资产不是图标位，
+    删不删归 R-054 对外门面那一刀，本条不替它决定，所以不在 banned 里。
+    """
+    banned = ("nous-girl",)
+    roots = [ROOT / "apps/desktop/src", ROOT / "apps/desktop/public", ROOT / "web", ROOT / "website/static"]
+    for base in roots:
+        if not base.is_dir():
+            continue
+        for p in base.rglob("*"):
+            if not p.is_file() or "node_modules" in p.parts:
+                # node_modules 里 @nous-research/ui 自带一个 nous-girl 徽章组件，那是**依赖内部**，
+                # 我们没 import 它。把它算成残留是判据错，不是残留错（第一版就是这么红过一次）。
+                continue
+            if any(b in p.name for b in banned):
+                raise AssertionError(f"上游品牌资产还在：{p.relative_to(ROOT)}")
+            if p.suffix in {".tsx", ".ts", ".html", ".css", ".json"}:
+                text = p.read_text(encoding="utf-8", errors="replace")
+                if any(b in text for b in banned):
+                    raise AssertionError(f"{p.relative_to(ROOT)} 仍引用上游品牌资产")
+    # 内部品牌位必须吃生成出来的那张
+    src = (ROOT / "apps/desktop/src/components/brand-mark.tsx").read_text(encoding="utf-8")
+    assert "plobi-mark.png" in src, "BrandMark 没吃 brand_icons.py 生成的那张"
+    assert (ROOT / "apps/desktop/public/plobi-mark.png").exists()
+
+
+def test_generation_is_deterministic():
     a = subprocess.run([sys.executable, str(SCRIPT), "--check"], capture_output=True, text=True)
     assert a.returncode == 0, a.stdout + a.stderr
     assert "GREEN" in a.stdout

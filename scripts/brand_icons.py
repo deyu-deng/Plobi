@@ -252,6 +252,10 @@ def assets():
         "apps/desktop/assets/icon.ico": ("b", ico),
         "apps/desktop/assets/icon.icns": ("b", icns),
         "apps/desktop/public/apple-touch-icon.png": ("b", png_bytes(im[180])),
+        # 软件内部品牌位（BrandMark）吃这张：裸陶土形 + 透明底，由组件自己配白底方块。
+        # 它替掉的是 apps/desktop/public/nous-girl.jpg —— 上游 Nous 的戴耳机女孩，
+        # R-052 那份"9 个位置"清单没包含这一处。
+        "apps/desktop/public/plobi-mark.png": ("b", png_bytes(bare_image(512, SHELL, 0.90))),
         "website/static/img/favicon.ico": ("b", ico),
         "website/static/img/favicon-16x16.png": ("b", png_bytes(im[16])),
         "website/static/img/favicon-32x32.png": ("b", png_bytes(im[32])),
