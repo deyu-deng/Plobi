@@ -83,7 +83,13 @@ test('only a loopback proxy is ours to undo — and it goes back to DIRECT', () 
   const box = fakeRegistry('    ProxyEnable    REG_DWORD    0x1\n    ProxyServer    REG_SZ    127.0.0.1:7895\n')
 
   assert.equal(restoreLoopbackSystemProxy(line => said.push(line), box.registry), 'handed-back')
-  assert.deepEqual(box.calls, ['disable', 'clear:ProxyServer,AutoConfigURL,ProxyOverride'], box.calls)
+  // 第三个参数是断言消息，要一句话：以前这里把 `box.calls`（string[]）直接塞进去，
+  // `node:assert` 的 message 只认 string | Error，于是 electron 那份 typecheck 一直红一格。
+  assert.deepEqual(
+    box.calls,
+    ['disable', 'clear:ProxyServer,AutoConfigURL,ProxyOverride'],
+    box.calls.join(' | ')
+  )
   assert.match(said.join('\n'), /127\.0\.0\.1:7895/)
 })
 
