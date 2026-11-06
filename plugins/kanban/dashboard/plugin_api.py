@@ -2129,7 +2129,7 @@ def list_profile_roster():
     just less precisely.
     """
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         profiles = profiles_mod.list_identity_profiles()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"failed to list profiles: {exc}")
@@ -2159,7 +2159,7 @@ def update_profile_description(profile_name: str, payload: DescribeBody):
     ``--overwrite``.
     """
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         canon = profiles_mod.normalize_profile_name(profile_name)
         text = (payload.description or "").strip()
         if canon == "default":
@@ -2286,7 +2286,7 @@ def get_orchestration_settings():
     resolved_orch = explicit_orch
     resolved_default = explicit_default
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         active_default = profiles_mod.get_active_profile_name() or "default"
         # 身份判据问名册那一行（裁 192），不问家目录：家都退役了，问目录会把用户配的
         # orchestrator / default_assignee 静默换成 active_default（配置被无声忽略）。
@@ -2334,7 +2334,7 @@ def set_orchestration_settings(payload: OrchestrationSettingsBody):
 
     # Validate any non-empty profile names exist before saving.
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
     except Exception:
         profiles_mod = None  # type: ignore
 

@@ -89,7 +89,7 @@ def test_delete_empty_sessions_scopes_by_agent(db):
 # ---------------------------------------------------------------------------
 
 
-def test_agent_id_for_profile_maps_via_registry(tmp_path, monkeypatch):
+def test_agent_id_for_profile_maps_name_via_registry(tmp_path, monkeypatch):
     import plobi_cli.web_server as ws
 
     monkeypatch.setattr(Path_home := __import__("pathlib").Path, "home", lambda: tmp_path)
@@ -103,7 +103,7 @@ def test_agent_id_for_profile_maps_via_registry(tmp_path, monkeypatch):
         yaml.safe_dump(
             {
                 "version": REGISTRY_VERSION,
-                "agents": {"aura": {"name": "aura", "role": "l2_project", "profile": "l2-aura", "category": "projects"}},
+                "agents": {"aura": {"name": "aura", "role": "l2_project", "category": "projects"}},
             },
             sort_keys=False,
             allow_unicode=True,
@@ -111,8 +111,8 @@ def test_agent_id_for_profile_maps_via_registry(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    assert ws._agent_id_for_profile("l2-aura") == "aura"
-    assert ws._agent_id_for_profile("l2-AURA") == "aura"  # 家名大小写不敏感
+    assert ws._agent_id_for_profile("aura") == "aura"
+    assert ws._agent_id_for_profile("AURA") == "aura"  # 名字大小写不敏感
     assert ws._agent_id_for_profile("no-such-home") == ""
     assert ws._agent_id_for_profile(None) == ""
 
@@ -164,7 +164,7 @@ def panel_scope(tmp_path, monkeypatch):
         yaml.safe_dump(
             {
                 "version": REGISTRY_VERSION,
-                "agents": {"aura": {"name": "aura", "role": "l2_project", "profile": "l2-aura", "category": "projects"}},
+                "agents": {"aura": {"name": "aura", "role": "l2_project", "category": "projects"}},
             },
             sort_keys=False,
             allow_unicode=True,
@@ -191,7 +191,7 @@ def test_skill_toggle_under_agent_scope_writes_roster_row(panel_scope):
     import plobi_cli.web_server as ws
 
     body = ws.SkillToggle(name="my-skill", enabled=False)
-    result = asyncio.run(ws.toggle_skill(body, profile="l2-aura"))
+    result = asyncio.run(ws.toggle_skill(body, agent="aura"))
     assert result == {"ok": True, "name": "my-skill", "enabled": False}
 
     # 名册行记了偏好……
@@ -202,7 +202,7 @@ def test_skill_toggle_under_agent_scope_writes_roster_row(panel_scope):
     assert "global-off" in (on_disk.get("skills") or {}).get("disabled", [])
 
     # 开回来：从行里移除，全局表依旧。
-    asyncio.run(ws.toggle_skill(ws.SkillToggle(name="my-skill", enabled=True), profile="l2-aura"))
+    asyncio.run(ws.toggle_skill(ws.SkillToggle(name="my-skill", enabled=True), agent="aura"))
     assert "my-skill" not in _roster_entry().disabled_skills
 
 
@@ -216,7 +216,7 @@ def test_toolset_toggle_under_agent_scope_subtracts_from_whitelist(panel_scope):
     assert len(on_rows) >= 2, "fixture whitelist should enable >=2 configurable toolsets"
     target, untouched = on_rows[0]["name"], on_rows[1]["name"]
 
-    result = asyncio.run(ws.toggle_toolset(target, ws.ToolsetToggle(enabled=False), profile="l2-aura"))
+    result = asyncio.run(ws.toggle_toolset(target, ws.ToolsetToggle(enabled=False), agent="aura"))
     assert result == {"ok": True, "name": target, "enabled": False}
     assert target in _roster_entry().disabled_toolsets
 
@@ -225,7 +225,7 @@ def test_toolset_toggle_under_agent_scope_subtracts_from_whitelist(panel_scope):
     assert target in (on_disk.get("platform_toolsets") or {}).get("cli", [])
 
     # GET 视图：目标对这个 Agent 是关的，别的照旧；flat 视图仍是开的。
-    rows = {r["name"]: r for r in asyncio.run(ws.get_toolsets(profile="l2-aura"))}
+    rows = {r["name"]: r for r in asyncio.run(ws.get_toolsets(agent="aura"))}
     assert rows[target]["enabled"] is False
     assert rows[untouched]["enabled"] is True
     flat = {r["name"]: r for r in asyncio.run(ws.get_toolsets(profile=None))}
@@ -273,7 +273,6 @@ def mixed_ledger(tmp_path, monkeypatch):
                     "aura": {
                         "name": "aura",
                         "role": "l2_project",
-                        "profile": "l2-aura",
                         "category": "projects",
                     }
                 },
@@ -356,22 +355,22 @@ def test_say_delivers_into_the_session_the_desktop_opens(mixed_ledger):
         db.close()
 
 
-def test_profiles_sessions_endpoint_reads_the_ledger_not_the_home(mixed_ledger):
-    """桌面侧栏那个端点：家名只圈行，不选库（修前它读分家库 ⇒ 永远空）。"""
+def test_agent_sessions_endpoint_reads_the_ledger_not_the_home(mixed_ledger):
+    """桌面侧栏那个端点：作用域名只圈行，不选库（修前它读分家库 ⇒ 永远空）。"""
     import plobi_cli.web_server as ws
 
-    result = ws.get_profiles_sessions(profile="l2-aura", min_messages=1, limit=50)
+    result = ws.get_agent_sessions(agent="aura", min_messages=1, limit=50)
     ids = {s["id"] for s in result["sessions"]}
     assert ids == {"s-chat"}
     row = result["sessions"][0]
-    assert row["profile"] == "l2-aura"  # 家名照打（桌面那几处认它）
-    assert result["profile_totals"] == {"l2-aura": 1}
+    assert row["agent_id"] == "aura"  # 归属＝名册 name
+    assert result["agent_totals"] == {"aura": 1}
     # cron 转录不在侧栏可见集里（ exclude_sources 那一等的另一半：来源圈定）。
-    cron_view = ws.get_profiles_sessions(profile="l2-aura", source="cron", limit=50)
+    cron_view = ws.get_agent_sessions(agent="aura", source="cron", limit=50)
     assert {s["id"] for s in cron_view["sessions"]} == {"s-cron"}
 
 
-def test_profiles_sessions_all_mode_tags_each_row_by_its_agent(mixed_ledger):
+def test_agent_sessions_all_mode_tags_each_row_by_its_agent(mixed_ledger):
     """'all' 读全库，每行按归属 Agent 打家名；L1 行 = default。"""
     import plobi_cli.web_server as ws
 
@@ -384,21 +383,20 @@ def test_profiles_sessions_all_mode_tags_each_row_by_its_agent(mixed_ledger):
     finally:
         db.close()
 
-    result = ws.get_profiles_sessions(profile="all", min_messages=1, limit=50)
+    result = ws.get_agent_sessions(agent="all", min_messages=1, limit=50)
     by_id = {s["id"]: s for s in result["sessions"]}
-    assert by_id["s-chat"]["profile"] == "l2-aura"
-    assert by_id["s-said"]["profile"] == "l2-aura"  # say 开的会话也归这个 Agent
-    assert by_id["s-l1"]["profile"] == "default"
-    assert by_id["s-l1"]["is_default_profile"] is True
-    assert result["profile_totals"]["l2-aura"] == 2
-    assert result["profile_totals"]["default"] == 1
+    assert by_id["s-chat"]["agent_id"] == "aura"
+    assert by_id["s-said"]["agent_id"] == "aura"  # say 开的会话也归这个 Agent
+    assert by_id["s-l1"]["agent_id"] == ""
+    assert result["agent_totals"]["aura"] == 2
+    assert result["agent_totals"]["default"] == 1
 
 
 def test_l1_scope_does_not_dress_agent_sessions_as_l1(mixed_ledger):
     """L1 作用域也要按归属打标签——否则 L1 的旁路清理会把 Agent 的对话归档掉。
 
-    2026-10-21 现场：`get_profiles_sessions(profile="default")` 曾是「整页都打
-    `profile_name`」，于是 Agent 的会话在 L1 眼里也是 `default`；桌面的
+    2026-10-21 现场：`get_agent_sessions(agent="default")` 曾是「整页都打
+    归属键」，于是 Agent 的会话在 L1 眼里也是 `default`；桌面的
     `collectL1BypassSessionIds` 只认这个标签，就把它们当「L1 旁路会话」扫进了
     归档（真库里 `chan_…` 14 条消息、archived=1 就是它写的）。
     """
@@ -413,12 +411,11 @@ def test_l1_scope_does_not_dress_agent_sessions_as_l1(mixed_ledger):
     finally:
         db.close()
 
-    result = ws.get_profiles_sessions(profile="default", min_messages=1, limit=50)
+    result = ws.get_agent_sessions(agent="default", min_messages=1, limit=50)
     by_id = {s["id"]: s for s in result["sessions"]}
 
     # L1 自己的两行 = default（旁路清理该看见它们）
-    assert by_id["s-l1-main"]["profile"] == "default"
-    assert by_id["s-l1-bypass"]["profile"] == "default"
-    # Agent 的行必须带它自己的家名（旁路清理据此放过它）
-    assert by_id["s-chat"]["profile"] == "l2-aura"
-    assert by_id["s-chat"]["is_default_profile"] is False
+    assert by_id["s-l1-main"]["agent_id"] == ""
+    assert by_id["s-l1-bypass"]["agent_id"] == ""
+    # Agent 的行必须带它自己的归属键（旁路清理据此放过它）
+    assert by_id["s-chat"]["agent_id"] == "aura"

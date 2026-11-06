@@ -1179,351 +1179,33 @@ class TestRenameProfile:
 # ===================================================================
 
 class TestExportImport:
-    """Tests for export_profile() / import_profile()."""
-
-    def test_export_creates_tar_gz(self, profile_env, tmp_path):
-        create_profile("coder", no_alias=True)
-        # Put a marker file so we can verify content
-        profile_dir = get_profile_dir("coder")
-        (profile_dir / "marker.txt").write_text("hello")
-
-        output = tmp_path / "export" / "coder.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        result = export_profile("coder", str(output))
-
-        assert Path(result).exists()
-        assert tarfile.is_tarfile(str(result))
-
-    def test_import_restores_from_archive(self, profile_env, tmp_path):
-        # Create and export a profile
-        create_profile("coder", no_alias=True)
-        profile_dir = get_profile_dir("coder")
-        (profile_dir / "marker.txt").write_text("hello")
-
-        archive_path = tmp_path / "export" / "coder.tar.gz"
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("coder", str(archive_path))
-
-        # Delete the profile, then import it back under a new name
-        import shutil
-        shutil.rmtree(profile_dir)
-        assert not profile_dir.is_dir()
-
-        imported = import_profile(str(archive_path), name="coder")
-        assert imported.is_dir()
-        assert (imported / "marker.txt").read_text() == "hello"
-
-    def test_import_to_existing_name_raises(self, profile_env, tmp_path):
-        create_profile("coder", no_alias=True)
-        profile_dir = get_profile_dir("coder")
-
-        archive_path = tmp_path / "export" / "coder.tar.gz"
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("coder", str(archive_path))
-
-        # Importing to same existing name should fail
-        with pytest.raises(FileExistsError):
-            import_profile(str(archive_path), name="coder")
-
-    def test_import_with_explicit_name_does_not_mutate_existing_archive_root_profile(
-        self, profile_env, tmp_path
-    ):
-        create_profile("victim", no_alias=True)
-        victim_dir = get_profile_dir("victim")
-        (victim_dir / "marker.txt").write_text("original")
-
-        archive_path = tmp_path / "export" / "victim.tar.gz"
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(archive_path, "w:gz") as tf:
-            data = b"imported"
-            info = tarfile.TarInfo("victim/marker.txt")
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
-
-        imported = import_profile(str(archive_path), name="renamed")
-
-        assert imported == get_profile_dir("renamed")
-        assert (imported / "marker.txt").read_text() == "imported"
-        assert (victim_dir / "marker.txt").read_text() == "original"
-
-    def test_import_rejects_archive_with_multiple_top_level_directories(
-        self, profile_env, tmp_path
-    ):
-        archive_path = tmp_path / "export" / "multi-root.tar.gz"
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with tarfile.open(archive_path, "w:gz") as tf:
-            for member_name, data in (
-                ("alpha/marker.txt", b"a"),
-                ("beta/marker.txt", b"b"),
-            ):
-                info = tarfile.TarInfo(member_name)
-                info.size = len(data)
-                tf.addfile(info, io.BytesIO(data))
-
-        with pytest.raises(ValueError, match="exactly one top-level directory"):
-            import_profile(str(archive_path), name="coder")
-
-        assert not get_profile_dir("coder").exists()
-
-    def test_import_rejects_traversal_archive_member(self, profile_env, tmp_path):
-        archive_path = tmp_path / "export" / "evil.tar.gz"
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        escape_path = tmp_path / "escape.txt"
-
-        with tarfile.open(archive_path, "w:gz") as tf:
-            info = tarfile.TarInfo("../../escape.txt")
-            data = b"pwned"
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
-
-        with pytest.raises(ValueError, match="Unsafe archive member path"):
-            import_profile(str(archive_path), name="coder")
-
-        assert not escape_path.exists()
-        assert not get_profile_dir("coder").exists()
-
-    def test_import_rejects_absolute_archive_member(self, profile_env, tmp_path):
-        archive_path = tmp_path / "export" / "evil-abs.tar.gz"
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        absolute_target = tmp_path / "abs-escape.txt"
-
-        with tarfile.open(archive_path, "w:gz") as tf:
-            info = tarfile.TarInfo(str(absolute_target))
-            data = b"pwned"
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
-
-        with pytest.raises(ValueError, match="Unsafe archive member path"):
-            import_profile(str(archive_path), name="coder")
-
-        assert not absolute_target.exists()
-        assert not get_profile_dir("coder").exists()
-
-    def test_export_nonexistent_raises(self, profile_env, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            export_profile("nonexistent", str(tmp_path / "out.tar.gz"))
-
-    # ---------------------------------------------------------------
-    # Default profile export / import
-    # ---------------------------------------------------------------
-
-    def test_export_default_creates_valid_archive(self, profile_env, tmp_path):
-        """Exporting the default profile produces a valid tar.gz."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("model: test")
-
-        output = tmp_path / "export" / "default.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        result = export_profile("default", str(output))
-
-        assert Path(result).exists()
-        assert tarfile.is_tarfile(str(result))
-
-    def test_export_default_includes_profile_data(self, profile_env, tmp_path):
-        """Profile data files end up in the archive (credentials excluded)."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("model: test")
-        (default_dir / ".env").write_text("KEY=val")
-        (default_dir / "SOUL.md").write_text("Be nice.")
-        mem_dir = default_dir / "memories"
-        mem_dir.mkdir(exist_ok=True)
-        (mem_dir / "MEMORY.md").write_text("remember this")
-
-        output = tmp_path / "export" / "default.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("default", str(output))
-
-        with tarfile.open(str(output), "r:gz") as tf:
-            names = tf.getnames()
-
-        assert "default/config.yaml" in names
-        assert "default/.env" not in names  # credentials excluded
-        assert "default/SOUL.md" in names
-        assert "default/memories/MEMORY.md" in names
-
-    def test_export_default_excludes_infrastructure(self, profile_env, tmp_path):
-        """Repo checkout, worktrees, profiles, databases are excluded."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("ok")
-
-        # Create dirs/files that should be excluded
-        for d in ("plobi-agent", ".worktrees", "profiles", "bin",
-                  "image_cache", "logs", "sandboxes", "checkpoints"):
-            sub = default_dir / d
-            sub.mkdir(exist_ok=True)
-            (sub / "marker.txt").write_text("excluded")
-
-        for f in ("state.db", "gateway.pid", "gateway_state.json",
-                  "processes.json", "errors.log", ".plobi_history",
-                  "active_profile", ".update_check", "auth.lock"):
-            (default_dir / f).write_text("excluded")
-
-        output = tmp_path / "export" / "default.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("default", str(output))
-
-        with tarfile.open(str(output), "r:gz") as tf:
-            names = tf.getnames()
-
-        # Config is present
-        assert "default/config.yaml" in names
-
-        # Infrastructure excluded
-        excluded_prefixes = [
-            "default/plobi-agent", "default/.worktrees", "default/profiles",
-            "default/bin", "default/image_cache", "default/logs",
-            "default/sandboxes", "default/checkpoints",
-        ]
-        for prefix in excluded_prefixes:
-            assert not any(n.startswith(prefix) for n in names), \
-                f"Expected {prefix} to be excluded but found it in archive"
-
-        excluded_files = [
-            "default/state.db", "default/gateway.pid",
-            "default/gateway_state.json", "default/processes.json",
-            "default/errors.log", "default/.plobi_history",
-            "default/active_profile", "default/.update_check",
-            "default/auth.lock",
-        ]
-        for f in excluded_files:
-            assert f not in names, f"Expected {f} to be excluded"
-
-    def test_export_default_excludes_pycache_at_any_depth(self, profile_env, tmp_path):
-        """__pycache__ dirs are excluded even inside nested directories."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("ok")
-        nested = default_dir / "skills" / "my-skill" / "__pycache__"
-        nested.mkdir(parents=True)
-        (nested / "cached.pyc").write_text("bytecode")
-
-        output = tmp_path / "export" / "default.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("default", str(output))
-
-        with tarfile.open(str(output), "r:gz") as tf:
-            names = tf.getnames()
-
-        assert not any("__pycache__" in n for n in names)
-
-    def test_export_default_uses_allowlist_for_unrelated_dirs(self, profile_env, tmp_path):
-        """Unrelated directories under PLOBI_HOME are excluded by allow-list (#58394).
-
-        Docker/custom deployments often set PLOBI_HOME to a working
-        directory that also contains unrelated user projects (``x11-dev/``,
-        etc.).  The root-level allow-list filters those out so only known
-        Plobi artifacts end up in the archive. Replaces the old
-        exhaustive blacklist.
-        """
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("ok")
-        (default_dir / "SOUL.md").write_text("soul")
-        # Allowed subdirectory with content
-        (default_dir / "skills" / "demo").mkdir(parents=True)
-        (default_dir / "skills" / "demo" / "SKILL.md").write_text("hi")
-        # Unrelated directory — should NOT appear in the archive
-        unrelated = default_dir / "x11-dev" / "usr" / "lib"
-        unrelated.mkdir(parents=True)
-        (unrelated / "libXi.so").write_text("data")
-
-        output = tmp_path / "export" / "default.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        result = export_profile("default", str(output))
-
-        with tarfile.open(str(result), "r:gz") as tf:
-            names = set(tf.getnames())
-
-        # Allowed artifacts present
-        assert any(n.endswith("config.yaml") for n in names)
-        assert any(n.endswith("SOUL.md") for n in names)
-        assert any(n.endswith("skills/demo/SKILL.md") for n in names)
-        # Unrelated artifact excluded
-        assert not any("x11-dev" in n for n in names)
-        assert not any("libXi.so" in n for n in names)
-
-    def test_export_default_handles_broken_symlinks(self, profile_env, tmp_path):
-        """Broken symlinks inside allowed artifacts are preserved, not crashed (#58394).
-
-        ``shutil.copytree``'s default is ``symlinks=False``, which follows
-        symlinks and crashes on broken ones. Use ``symlinks=True`` so stale
-        symlinks inside *allowed* artifacts (e.g. ``skills/``) survive as
-        symlinks; the link and its target are both retained.
-        """
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("ok")
-        # Place broken symlink *inside* the allowed ``skills/`` tree so the
-        # root-level allow-list passes the directory through; the
-        # symlinks=True flag must then preserve the link instead of
-        # following and crashing.
-        broken_dir = default_dir / "skills" / "with-broken-links"
-        broken_dir.mkdir(parents=True)
-        (broken_dir / "broken_link").symlink_to("/nonexistent/path")
-        # Valid symlink for comparison
-        (broken_dir / "valid_target.txt").write_text("real data")
-        (broken_dir / "valid_link").symlink_to(
-            broken_dir / "valid_target.txt"
-        )
-
-        output = tmp_path / "export" / "default.tar.gz"
-        output.parent.mkdir(parents=True, exist_ok=True)
-        result = export_profile("default", str(output))
-
-        assert result.exists()
-        with tarfile.open(str(result), "r:gz") as tf:
-            names = set(tf.getnames())
-        # Allowed artifact survived
-        assert any(n.endswith("config.yaml") for n in names)
-        # Broken symlink inside an allowed dir was preserved as a symlink
-        # (without crashing) — tar entry name recorded as the link path.
-        assert any(
-            "with-broken-links/broken_link" in n for n in names
-        ), (
-            f"broken_link should survive; tarfile names: {sorted(names)[:30]}"
-        )
-        # Valid symlink + target also kept
-        assert any("valid_link" in n for n in names)
-        assert any("valid_target.txt" in n for n in names)
-
-    def test_import_default_without_name_raises(self, profile_env, tmp_path):
-        """Importing a default export without --name gives clear guidance."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("ok")
-
-        archive = tmp_path / "export" / "default.tar.gz"
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("default", str(archive))
-
-        with pytest.raises(ValueError, match="Cannot import as 'default'"):
-            import_profile(str(archive))
-
-    def test_import_default_with_explicit_default_name_raises(self, profile_env, tmp_path):
-        """Explicitly importing as 'default' is also rejected."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("ok")
-
-        archive = tmp_path / "export" / "default.tar.gz"
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("default", str(archive))
-
-        with pytest.raises(ValueError, match="Cannot import as 'default'"):
-            import_profile(str(archive), name="default")
-
-    def test_import_default_export_with_new_name_roundtrip(self, profile_env, tmp_path):
-        """Export default → import under a different name → data preserved."""
-        default_dir = get_profile_dir("default")
-        (default_dir / "config.yaml").write_text("model: opus")
-        mem_dir = default_dir / "memories"
-        mem_dir.mkdir(exist_ok=True)
-        (mem_dir / "MEMORY.md").write_text("important fact")
-
-        archive = tmp_path / "export" / "default.tar.gz"
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        export_profile("default", str(archive))
-
-        imported = import_profile(str(archive), name="backup")
-        assert imported.is_dir()
-        assert (imported / "config.yaml").read_text() == "model: opus"
-        assert (imported / "memories" / "MEMORY.md").read_text() == "important fact"
+    """``export_profile`` / ``import_profile`` **已退役**（2026-11-06，裁 178 乙案第 4 步）。
+
+    这两个库函数只操作**家目录**：导出时整份家打包，导入时 ``shutil.move`` 出
+    ``profiles/<名>/``。家目录那条腿 10-24／10-25 就退休了，CLI 的两个口 10-27 也
+    退 2 —— 但**库函数本体**还活着：谁从代码里一调，就又把分身概念复活（它会
+    造出 ``profiles/<名>/``），而这正是 10-24／10-25 反复清掉的东西。
+
+    这里把它们钉死：退、而且**一个盘都不碰**。现在能用的导出是
+    :func:`export_identity`（名册那一行 ＋ 它的身份文件），CLI 的
+    ``plobi profile export`` 走的就是它；「凭据不许进包」那条判据在
+    ``tests/plobi_cli/test_profile_export_credentials.py``。
+    """
+
+    def test_import_refuses_and_creates_no_home(self, profile_env, tmp_path):
+        archive = tmp_path / "coder.tar.gz"
+        archive.write_bytes(b"not really an archive")
+        with pytest.raises(RuntimeError) as exc:
+            import_profile(str(archive), name="coder")
+        assert "退役" in str(exc.value)
+        assert not (profile_env / ".plobi" / "profiles" / "coder").exists()
+
+    def test_export_refuses_and_creates_no_file(self, profile_env, tmp_path):
+        output = tmp_path / "coder.tar.gz"
+        with pytest.raises(RuntimeError) as exc:
+            export_profile("coder", str(output))
+        assert "退役" in str(exc.value)
+        assert not output.exists()
 
 
 # ===================================================================
@@ -1923,13 +1605,22 @@ class TestProfilesToServe:
         serve = profiles_to_serve(multiplex=True)
         assert [n for n, _ in serve] == ["default"]
 
-def test_registry_profile_name_matches_base_normalizer():
-    """registry 的内联规范化必须与底座那个函数同一个口径（防漂移）。"""
-    from plobi.agents.registry import AgentEntry
-    from plobi_cli.agent_identity import normalize_profile_name
+def test_registry_profile_name_is_the_derived_runtime_slug():
+    """名册行的内部门牌号＝**派生 slug**（一份真源），不是归一化后的名字。
+
+    2026-11-06：这一格以前是「归一化后的名字」（名册上可填的那一格），所以这里原来
+    拿它跟底座的 ``normalize_profile_name`` 比口径。现在它是
+    :func:`derive_runtime_slug` 的派生值——保留名（``default``／``plobi``…）派生不出来
+    就是空串（＝没有可路由身份），那不是漂移，是判据。
+    """
+    from plobi.agents.registry import AgentEntry, derive_runtime_slug
 
     for raw in ("Aura", "L2-Aura", "default", "DEFAULT", "  Prism  "):
-        assert AgentEntry(name=raw, role="l2_project").profile_name == normalize_profile_name(raw)
+        entry = AgentEntry(name=raw, role="l2_project")
+        assert entry.profile_name == derive_runtime_slug(raw)
+
+    # 保留名派不出内部门牌号 ⇒ 空串（不是「叫 default 的那个人」）
+    assert AgentEntry(name="default", role="l2_project").profile_name == ""
 
 
 # ===================================================================

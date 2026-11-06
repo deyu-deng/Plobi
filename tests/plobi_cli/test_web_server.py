@@ -912,14 +912,12 @@ class TestWebServerEndpoints:
         assert target.is_file()
         assert target.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
-    def test_chat_image_upload_writes_to_requested_profile_images(self):
-        from plobi_cli import agent_identity as profiles_mod
-
-        worker_home = profiles_mod.get_profile_dir("worker")
-        worker_home.mkdir(parents=True)
+    def test_chat_image_upload_writes_to_images_dir(self):
+        """上传图落在**主家** ``images/``：图不再属于某个家（profile 连根拔后没有「谁的图」）。"""
+        from plobi_constants import get_plobi_home
 
         resp = self.client.post(
-            "/api/chat/image-upload?profile=worker",
+            "/api/chat/image-upload",
             json={
                 "data_url": "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
                 "filename": "drop.gif",
@@ -928,7 +926,7 @@ class TestWebServerEndpoints:
 
         assert resp.status_code == 200
         target = Path(resp.json()["path"])
-        assert target.parent == worker_home / "images"
+        assert target.parent == get_plobi_home() / "images"
         assert target.is_file()
         assert target.read_bytes().startswith(b"GIF89a")
 
@@ -1152,7 +1150,7 @@ class TestWebServerEndpoints:
         """The cross-profile aggregate applies the same list projection."""
         self._create_session_with_heavy_fields("lean-profiles-row")
 
-        resp = self.client.get("/api/profiles/sessions?limit=20&offset=0")
+        resp = self.client.get("/api/agents/sessions?limit=20&offset=0")
         assert resp.status_code == 200
         rows = [s for s in resp.json()["sessions"] if s["id"] == "lean-profiles-row"]
         assert rows, "created session missing from profiles list"
@@ -1161,7 +1159,7 @@ class TestWebServerEndpoints:
         assert "model_config" not in row
         assert row["profile"] == "default"
 
-        full = self.client.get("/api/profiles/sessions?limit=20&offset=0&full=1")
+        full = self.client.get("/api/agents/sessions?limit=20&offset=0&full=1")
         assert full.status_code == 200
         full_rows = [s for s in full.json()["sessions"] if s["id"] == "lean-profiles-row"]
         assert full_rows and full_rows[0]["system_prompt"].startswith("# SOUL.md")
@@ -1262,7 +1260,7 @@ class TestWebServerEndpoints:
         finally:
             db.close()
 
-        resp = self.client.get("/api/profiles/sessions?limit=20&min_messages=0")
+        resp = self.client.get("/api/agents/sessions?limit=20&min_messages=0")
         assert resp.status_code == 200
         data = resp.json()
         row = next(s for s in data["sessions"] if s["id"] == "agg-me")
@@ -1271,7 +1269,7 @@ class TestWebServerEndpoints:
         assert isinstance(data.get("errors"), list)
 
     def test_profiles_sessions_rejects_unknown_archived_value(self):
-        resp = self.client.get("/api/profiles/sessions?archived=bogus")
+        resp = self.client.get("/api/agents/sessions?archived=bogus")
         assert resp.status_code == 400
 
     def test_sessions_endpoint_reads_requested_profile(self):
@@ -1301,8 +1299,9 @@ class TestWebServerEndpoints:
         assert "worker-only" in ids
         assert "default-only" not in ids
         row = next(s for s in data["sessions"] if s["id"] == "worker-only")
-        assert row["profile"] == "worker"
-        assert row["is_default_profile"] is False
+        assert row["agent_id"] == worker
+        assert "profile" not in row and "is_default_profile" not in row, \
+            "会话行只认 agent_id（2c：profile 字段整条删）"
 
         stats = self.client.get("/api/sessions/stats?profile=worker").json()
         assert stats["total"] == 1
@@ -3887,41 +3886,23 @@ class TestNewEndpoints:
         from plobi_constants import get_plobi_home
         get_plobi_home().mkdir(parents=True, exist_ok=True)
 
-        resp = self.client.get("/api/profiles")
+        resp = self.client.get("/api/agents/roster")
         assert resp.status_code == 200
         names = [p["name"] for p in resp.json()["profiles"]]
         assert "default" in names
 
     def test_profiles_list_falls_back_when_profile_listing_fails(self, monkeypatch):
-        from plobi_constants import get_plobi_home
+        """家目录扫描退役之后，名册列表不再经过 list_profiles()：它炸了名册也照样出。"""
         import plobi_cli.agent_identity as profiles_mod
-
-        plobi_home = get_plobi_home()
-        plobi_home.mkdir(parents=True, exist_ok=True)
-        (plobi_home / "config.yaml").write_text(
-            "model:\n  provider: openrouter\n  name: anthropic/claude-sonnet-4.6\n",
-            encoding="utf-8",
-        )
-        named = plobi_home / "profiles" / "multi-agent"
-        named.mkdir(parents=True)
-        (named / ".env").write_text("EXAMPLE=1\n", encoding="utf-8")
-        (named / "skills" / "demo").mkdir(parents=True)
-        (named / "skills" / "demo" / "SKILL.md").write_text("---\nname: demo\n---\n", encoding="utf-8")
-
+        _register_roster_agent("multi-agent")
         monkeypatch.setattr(
-            profiles_mod,
-            "list_profiles",
-            lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+            profiles_mod, "list_profiles", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
         )
-
-        resp = self.client.get("/api/profiles")
-
+        resp = self.client.get("/api/agents/roster")
         assert resp.status_code == 200
         profiles = {p["name"]: p for p in resp.json()["profiles"]}
         assert profiles["default"]["is_default"] is True
-        assert profiles["default"]["provider"] == "openrouter"
-        assert profiles["multi-agent"]["has_env"] is True
-        assert profiles["multi-agent"]["skill_count"] == 1
+        assert "multi-agent" in profiles
 
     def test_profiles_create_rename_delete_round_trip(self, monkeypatch):
         # Stub gateway service teardown so the test doesn't shell out to
@@ -3929,32 +3910,26 @@ class TestNewEndpoints:
         import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
 
+        # 建 / 改名 / 删三个旧入口全部下线（2c）。/api/agents/{name} 上只挂 kanban 的 PATCH，
+        # 所以这三个动作现在都是框架级拒绝；名册一个字都不许被顺手改掉。
         retired = self.client.post("/api/profiles", json={"name": "test-prof"})
-        assert retired.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
-        # rename / delete 这两口**没退役**，所以这一条照样要有个家——改走库函数拿它。
-        profiles_mod.create_profile("test-prof")
+        assert retired.status_code in (404, 405), "旧建家入口整组下线（2c）"
 
-        renamed = self.client.patch(
-            "/api/profiles/test-prof",
-            json={"new_name": "test-prof-2"},
-        )
-        assert renamed.status_code == 200
+        renamed = self.client.patch("/api/agents/test-prof", json={"new_name": "test-prof-2"})
+        assert renamed.status_code in (400, 404, 405, 422)
 
-        names = [p["name"] for p in self.client.get("/api/profiles").json()["profiles"]]
-        assert "test-prof" not in names
-        assert "test-prof-2" in names
+        deleted = self.client.delete("/api/agents/test-prof-2")
+        assert deleted.status_code in (404, 405)
 
-        deleted = self.client.delete("/api/profiles/test-prof-2")
-        assert deleted.status_code == 200
-        names = [p["name"] for p in self.client.get("/api/profiles").json()["profiles"]]
-        assert "test-prof-2" not in names
+        names = [p["name"] for p in self.client.get("/api/agents/roster").json()["profiles"]]
+        assert "test-prof" not in names and "test-prof-2" not in names
 
     def test_profile_setup_command_uses_named_profile_wrapper(self):
         from plobi_constants import get_plobi_home
 
         (get_plobi_home() / "profiles" / "coder").mkdir(parents=True)
 
-        resp = self.client.get("/api/profiles/coder/setup-command")
+        resp = self.client.get("/api/agents/coder/setup-command")
 
         assert resp.status_code == 200
         assert resp.json()["command"] == "coder setup"
@@ -3964,7 +3939,7 @@ class TestNewEndpoints:
 
         get_plobi_home().mkdir(parents=True, exist_ok=True)
 
-        resp = self.client.get("/api/profiles/default/setup-command")
+        resp = self.client.get("/api/agents/default/setup-command")
 
         assert resp.status_code == 200
         assert resp.json()["command"] == "plobi setup"
@@ -3983,7 +3958,7 @@ class TestNewEndpoints:
         # 第 4 步）之后，建别名只剩两个真口：`plobi profile alias add`（main.py 那一支）与
         # `profile_distribution` 的落点计划。所以这一条改成钉 410，别名文件的逐字形状由那两个口
         # 自己的用例去钉——不在这里借一个已退役的入口假装还测着。
-        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        assert resp.status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
 
         # 别名文件本身的形状照旧要钉：它由 `create_wrapper_script()` 生成，`plobi profile alias add`
         # 与 `profile_distribution` 调的都是这一只——与建家入口无关。
@@ -4012,7 +3987,7 @@ class TestNewEndpoints:
 
         assert self.client.post(
             "/api/profiles", json={"name": "cloned", "clone_from": "default"}
-        ).status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        ).status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
         # 旧入口的语义是"给了 clone_from 就带 clone_config"，照原样交给库函数。
         profiles_mod.create_profile("cloned", clone_from="default", clone_config=True)
         cloned_root = get_plobi_home() / "profiles" / "cloned"
@@ -4023,8 +3998,8 @@ class TestNewEndpoints:
         # 克隆出来的家不该长出自己的 config.yaml——长出来就是复印机又开动了。
         assert not (cloned_root / "config.yaml").exists(), \
             "裁 42：配置只有一份，克隆不许造出第二份 config.yaml"
-        profiles = {p["name"]: p for p in self.client.get("/api/profiles").json()["profiles"]}
-        assert profiles["cloned"]["skill_count"] == 1
+        # 名册只列名册行；`create_profile()` 造的是家目录，不进名册（所以不再从 roster 断言技能数）。
+        # 技能落盘这一格上面已经按家路径钉住了。
 
     def test_profiles_create_with_clone_from_duplicates_source(self, monkeypatch):
         from plobi_constants import get_plobi_home
@@ -4041,7 +4016,7 @@ class TestNewEndpoints:
         # Duplicate it via an explicit clone_from source (not "default").
         assert self.client.post(
             "/api/profiles", json={"name": "source-prof-copy", "clone_from": "source-prof"}
-        ).status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        ).status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
         profiles_mod.create_profile("source-prof-copy", clone_from="source-prof", clone_config=True)
         cloned_skill = (
             get_plobi_home() / "profiles" / "source-prof-copy" / "skills" / "custom" / "src-skill" / "SKILL.md"
@@ -4063,7 +4038,7 @@ class TestNewEndpoints:
         assert self.client.post(
             "/api/profiles",
             json={"name": "full-copy", "clone_from": "full-src", "clone_all": True},
-        ).status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        ).status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
         profiles_mod.create_profile("full-copy", clone_from="full-src", clone_all=True)
         target_dir = get_plobi_home() / "profiles" / "full-copy"
         assert (target_dir / "config.yaml").read_text(encoding="utf-8") == "model:\n  provider: source-only\n"
@@ -4089,7 +4064,7 @@ class TestNewEndpoints:
         # `seed_profile_skills` 循环）。`-p <name>` 的懒建**故意**是 `no_skills=True` 的空壳
         # （裁 42 §42.2 的终态），所以"建一个家就顺手种一份技能"这件事在本仓已经没有入口。
         # 这一条改成钉 410；`skill_count` 那一格由同步环自己的用例去钉。
-        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        assert resp.status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
 
         # 播种这件事本身照旧要钉：家由库函数给，技能由 `seed_profile_skills()` 种
         # （`plobi update` 的同步环调的就是这一只）。
@@ -4097,8 +4072,7 @@ class TestNewEndpoints:
         profiles_mod.seed_profile_skills(get_plobi_home() / "profiles" / "fresh")
         seeded_skill = get_plobi_home() / "profiles" / "fresh" / "skills" / "software-development" / "plan" / "SKILL.md"
         assert seeded_skill.exists()
-        profiles = {p["name"]: p for p in self.client.get("/api/profiles").json()["profiles"]}
-        assert profiles["fresh"]["skill_count"] == 1
+        # 同上：家目录不在名册里，技能数由家路径那一格钉。
 
     def test_profiles_create_builder_fields_model_mcp_and_keep_skills(self, monkeypatch):
         """建家入口退役后这一口回 410——**照实登记：那段逻辑没有别的调用方，随入口一起停了**。
@@ -4122,9 +4096,8 @@ class TestNewEndpoints:
             },
         )
 
-        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
-        assert resp.json()["ok"] is False
-        assert "POST /api/agents" in resp.json()["error"], "410 那句要说出去哪儿：名册一行才是加 Agent 的路"
+        assert resp.status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
+        assert resp.json() == {"detail": "Method Not Allowed"}, "下线后只剩框架级的 405，不再有指路文案"
 
     def test_profile_open_terminal_uses_macos_terminal(self, monkeypatch):
         from plobi_constants import get_plobi_home
@@ -4135,7 +4108,7 @@ class TestNewEndpoints:
         monkeypatch.setattr(web_server.sys, "platform", "darwin")
         monkeypatch.setattr(web_server.subprocess, "Popen", lambda args, **kwargs: calls.append(args))
 
-        resp = self.client.post("/api/profiles/coder/open-terminal")
+        resp = self.client.post("/api/agents/coder/open-terminal")
 
         assert resp.status_code == 200
         assert calls
@@ -4151,7 +4124,7 @@ class TestNewEndpoints:
         monkeypatch.setattr(web_server.sys, "platform", "win32")
         monkeypatch.setattr(web_server.subprocess, "Popen", lambda args, **kwargs: calls.append(args))
 
-        resp = self.client.post("/api/profiles/coder/open-terminal")
+        resp = self.client.post("/api/agents/coder/open-terminal")
 
         assert resp.status_code == 200
         assert calls
@@ -4163,15 +4136,17 @@ class TestNewEndpoints:
 
         # 退役的是**入口**，不是校验：名字合法性照旧由 `profiles.validate_profile_name`
         # 把着（`test_profiles.py` 那十几条直接调库函数在钉它）。这一口现在连名字都不看。
-        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        assert resp.status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
 
     def test_profiles_delete_default_forbidden(self):
-        resp = self.client.delete("/api/profiles/default")
-        assert resp.status_code == 400
+        # 旧 DELETE /api/profiles/{name} 已删；/api/agents/{name} 上只挂了 kanban 的 PATCH，
+        # 所以 DELETE 落到框架的 405（路径在、方法不在）。
+        resp = self.client.delete("/api/agents/default")
+        assert resp.status_code in (404, 405)
 
     def test_profiles_delete_not_found(self):
-        resp = self.client.delete("/api/profiles/does-not-exist")
-        assert resp.status_code == 404
+        resp = self.client.delete("/api/agents/does-not-exist")
+        assert resp.status_code in (404, 405)
 
     def test_profile_soul_round_trip(self, monkeypatch):
         import plobi_cli.agent_identity as profiles_mod
@@ -4182,26 +4157,26 @@ class TestNewEndpoints:
         # WP-PROFILE-STOP-SEEDING: 创建侧不再种一份默认 SOUL.md（人设共享一份
         # ＋名册行人设片段，裁 42.2 / 156），所以新家的这一格先必须是「没有自己的
         # 那份」。这条判据原来断 exists is True，断的其实是那粒播种。
-        get1 = self.client.get("/api/profiles/soul-prof/soul")
+        get1 = self.client.get("/api/agents/soul-prof/soul")
         assert get1.status_code == 200
         assert get1.json()["exists"] is False
         assert get1.json()["content"] == ""
 
         put = self.client.put(
-            "/api/profiles/soul-prof/soul",
+            "/api/agents/soul-prof/soul",
             json={"content": "# Edited soul"},
         )
         assert put.status_code == 200
 
-        got = self.client.get("/api/profiles/soul-prof/soul").json()
+        got = self.client.get("/api/agents/soul-prof/soul").json()
         assert got["content"] == "# Edited soul"
         # 写过之后这一格才归这个家所有
         assert got["exists"] is True
 
-        self.client.delete("/api/profiles/soul-prof")
+        self.client.delete("/api/agents/soul-prof")
 
     def test_profile_soul_unknown_profile_404(self):
-        resp = self.client.get("/api/profiles/nonexistent/soul")
+        resp = self.client.get("/api/agents/nonexistent/soul")
         assert resp.status_code == 404
 
     # --- New profiles endpoints: active / description / model / describe-auto ---
@@ -4210,7 +4185,7 @@ class TestNewEndpoints:
         from plobi_constants import get_plobi_home
         get_plobi_home().mkdir(parents=True, exist_ok=True)
 
-        resp = self.client.get("/api/profiles/active")
+        resp = self.client.get("/api/agents/active")
         assert resp.status_code == 200
         data = resp.json()
         assert data["active"] == "default"
@@ -4223,13 +4198,13 @@ class TestNewEndpoints:
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
         profiles_mod.create_profile("router")
 
-        resp = self.client.post("/api/profiles/active", json={"name": "router"})
+        resp = self.client.post("/api/agents/active", json={"name": "router"})
         assert resp.status_code == 200
         assert resp.json()["active"] == "router"
-        assert self.client.get("/api/profiles/active").json()["active"] == "router"
+        assert self.client.get("/api/agents/active").json()["active"] == "router"
 
     def test_profiles_set_active_unknown_404(self):
-        resp = self.client.post("/api/profiles/active", json={"name": "ghost"})
+        resp = self.client.post("/api/agents/active", json={"name": "ghost"})
         assert resp.status_code == 404
 
     def test_profile_description_round_trip(self, monkeypatch):
@@ -4237,10 +4212,10 @@ class TestNewEndpoints:
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
-        profiles_mod.create_profile("desc-prof")
+        _register_roster_agent("desc-prof")
 
         put = self.client.put(
-            "/api/profiles/desc-prof/description",
+            "/api/agents/desc-prof/description",
             json={"description": "Handles code review"},
         )
         assert put.status_code == 200
@@ -4248,13 +4223,13 @@ class TestNewEndpoints:
         assert body["description"] == "Handles code review"
         assert body["description_auto"] is False
 
-        profiles = {p["name"]: p for p in self.client.get("/api/profiles").json()["profiles"]}
+        profiles = {p["name"]: p for p in self.client.get("/api/agents/roster").json()["profiles"]}
         assert profiles["desc-prof"]["description"] == "Handles code review"
         assert profiles["desc-prof"]["description_auto"] is False
 
     def test_profile_description_unknown_404(self):
         resp = self.client.put(
-            "/api/profiles/nope/description", json={"description": "x"}
+            "/api/agents/nope/description", json={"description": "x"}
         )
         assert resp.status_code == 404
 
@@ -4267,25 +4242,21 @@ class TestNewEndpoints:
         # 而那一口的落点**早就不是家自己那份 config.yaml**了（裁 166 决定二：写名册行的覆盖，
         # 生效值读时叠）。旧断言读 `profiles/model-prof/config.yaml` 是在读一个已收走的东西，
         # 它以前能过，是因为退役的那个入口顺手写了这一份。
-        profiles_mod.create_profile("model-prof")
+        # 名册行才是这一口的真源：家目录已经不参与解析，所以用桥 helper 登记一行。
+        _register_roster_agent("model-prof")
         from plobi.agents import registry as agent_registry
 
         roster = agent_registry.default_path()
-        roster.parent.mkdir(parents=True, exist_ok=True)
-        roster.write_text(
-            "agents:\n  Model Prof:\n    role: l2_project\n    profile: model-prof\n",
-            encoding="utf-8",
-        )
 
         resp = self.client.put(
-            "/api/profiles/model-prof/model",
+            "/api/agents/model-prof/model",
             json={"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
         assert resp.json()["provider"] == "openrouter"
 
         import yaml
-        row = yaml.safe_load(roster.read_text(encoding="utf-8"))["agents"]["Model Prof"]
+        row = yaml.safe_load(roster.read_text(encoding="utf-8"))["agents"]["model-prof"]
         assert row["provider"] == "openrouter"
         assert row["model"] == "anthropic/claude-sonnet-4.6"
         # 反向那一格也要成立：这一口不再往家里写第二份配置。
@@ -4296,19 +4267,31 @@ class TestNewEndpoints:
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
-        profiles_mod.create_profile("model-prof2")
+        _register_roster_agent("model-prof2")
+        # 语义已定死（裁 166 决定二）：两键都给、都留空 **不是** 400，而是「撤回这一行的覆盖」。
+        # 真该 400 的只有「只给一半 / 一个键都不给」——那两格在下面两条里钉。
         resp = self.client.put(
-            "/api/profiles/model-prof2/model",
+            "/api/agents/model-prof2/model",
             json={"provider": "", "model": ""},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert resp.json()["cleared"] is True
+
+        half = self.client.put(
+            "/api/agents/model-prof2/model",
+            json={"provider": "openrouter", "model": ""},
+        )
+        assert half.status_code == 400
+
+        missing = self.client.put("/api/agents/model-prof2/model", json={})
+        assert missing.status_code == 400
 
     def test_profile_describe_auto_success(self, monkeypatch):
         import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
-        profiles_mod.create_profile("auto-prof")
+        _register_roster_agent("auto-prof")
 
         from plobi_cli import profile_describer
         monkeypatch.setattr(
@@ -4319,7 +4302,7 @@ class TestNewEndpoints:
             ),
         )
 
-        resp = self.client.post("/api/profiles/auto-prof/describe-auto", json={})
+        resp = self.client.post("/api/agents/auto-prof/describe-auto", json={})
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
@@ -4342,7 +4325,7 @@ class TestNewEndpoints:
             ),
         )
 
-        resp = self.client.post("/api/profiles/auto-fail/describe-auto", json={})
+        resp = self.client.post("/api/agents/auto-fail/describe-auto", json={})
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is False

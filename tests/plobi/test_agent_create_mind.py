@@ -231,13 +231,16 @@ def test_existing_key_held_by_another_project_name_is_refused(client, mind_home,
 
 
 def test_reserved_profile_name_is_refused_before_anything_lands(client, mind_home, tmp_path):
+    # 11-06：``Plobi`` 不再是好例子——``runtime_slugs.yaml`` 为历史那行钉了
+    # ``Plobi: l2-plobi``，它派生得出合法 slug。换一个**真**撞保留名的：
+    # ``Root`` → ``root``（``_RUNTIME_SLUG_RESERVED``）。
     response = client.post(
-        "/api/agents", json={"id": "plobi", "name": "Plobi", "category": "projects"}
+        "/api/agents", json={"id": "root", "name": "Root", "category": "projects"}
     )
 
     assert response.status_code == 400, response.json()
-    assert "plobi" in response.json()["error"].lower()
-    assert live_registry().get("plobi") is None
+    assert "root" in response.json()["error"].lower()
+    assert live_registry().get("root") is None
     assert tree_names(tmp_path / "mind") == []
 
 

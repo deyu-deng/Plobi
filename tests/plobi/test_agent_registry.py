@@ -323,11 +323,11 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # （`_effective_config(spawn_env, profile)` 把 PLOBI_HOME 指到
     # ``profiles/<profile>``，`ensure_plobi_home()` 对不存在的 named home 是
     # 拒绝而非播种）。所以家由测试自己预建——模拟「显式 -p 过的机器」。
-    # 注意用 ``result["profile"]``（那一行没显式传 profile，``profile_name``
+    # 注意用 ``_slug_of(result)``（那一行没显式传 profile，``profile_name``
     # 回退成名册 name「agenda」），别硬编码「l2-agenda」。
     # 「名册加一行不建家」那条不变量由 test_registry_no_home.py 钉，这里改回钉
     # **不往家里写**（本用例真正的主题：复印件）。
-    profile_dir = _seed_profile_dir(spawn_env, result["profile"])
+    profile_dir = _seed_profile_dir(spawn_env, _slug_of(result))
 
     from plobi.routing import ModelRouter
     from plobi.routing.models import shared_config_path
@@ -348,7 +348,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # 判据①的另一半：也不许带配置文件复印件
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
     # 名册行上的覆盖仍生效——读时叠：只有这个分身读到它自己那一行，顶层照旧
-    profile_model = _effective_config(spawn_env, result["profile"])["model"]
+    profile_model = _effective_config(spawn_env, _slug_of(result))["model"]
     assert profile_model["provider"] == "deepseek"
     assert profile_model["default"] == "deepseek-chat"
     assert _effective_config(spawn_env)["model"] == _CONFIGURED_DEFAULT
@@ -579,7 +579,15 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     from plobi.agents import registry as registry_mod
 
     # Stub plobi_cli.agent_identity 让 reg.spawn 能找到 profile_dir。
+    # 底座从**真模块**整本拷一份再改三个口：import 机制在 ``sys.modules`` 命中那一跳会把
+    # 这个 fake setattr 回 ``plobi_cli.agent_identity`` 这个包属性上，teardown 只还原
+    # ``sys.modules``、不还原包属性——于是后面任何 ``from plobi_cli import agent_identity``
+    # 都拿到这个只有三个函数的空壳，撞出 ``no attribute 'normalize_profile_name'``
+    # 这种与本次改动无关的红条（2026-11-06 全量跑 test_agent_tool_prefs 时踩到）。
     fake = types.ModuleType("plobi_cli.agent_identity")
+    import plobi_cli.agent_identity as _real_identity
+
+    fake.__dict__.update(_real_identity.__dict__)
     fake.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
     fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
@@ -609,7 +617,7 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     reg.save()
     result = reg.spawn("Plobi")
 
-    assert result["profile"] == "l2-plobi"
+    assert _slug_of(result) == "l2-plobi"
     assert registry_mod.project_cwd_for_profile("l2-plobi") == str(project_dir.absolute())
     # 生效链上同样读得到（不只那个查询函数）：名册行覆盖 → 顶层 → 出厂默认。
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
@@ -637,6 +645,17 @@ def _resolvable_provider_name() -> str:
     name = sorted(PROVIDER_REGISTRY)[0]
     assert resolve_provider(name) == name
     return name
+
+
+def _slug_of(result: dict) -> str:
+    """spawn 返回体里的身份 → 它的运行时 slug（家目录名 / ``-p`` 参数那种写法）。
+
+    返回体已经没有 ``profile`` 这一格了（2026-11-06 连根拔：身份＝名册 name，
+    slug 只是它派生出来的运行时写法），所以测试自己按同一条规则派生一次。
+    """
+    from plobi.agents.registry import derive_runtime_slug
+
+    return derive_runtime_slug(result["name"])
 
 
 def _seed_profile_dir(home, profile: str) -> Path:
@@ -674,9 +693,9 @@ def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
     assert "profile_dir" not in result
     assert "-p" not in result["command"]
     # 这一行要按家读配置 ⇒ 家由测试预建；spawn 不许往里写任何东西。
-    profile_dir = _seed_profile_dir(spawn_env, result["profile"])
+    profile_dir = _seed_profile_dir(spawn_env, _slug_of(result))
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
-    model = _effective_config(home, result["profile"])["model"]
+    model = _effective_config(home, _slug_of(result))["model"]
     assert model["provider"] == provider
     assert model["default"] == "a-model"
     # 「配一次大家用」：顶层那一份没被这一行带跑。
@@ -699,7 +718,7 @@ def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, home, capl
     assert excinfo.value.code == "invalid_provider"
 
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
-    profile_dir = _seed_profile_dir(spawn_env, "l2-proj")
+    profile_dir = _seed_profile_dir(spawn_env, "proj")
     reg = AgentRegistry.load()
     reg.upsert(
         _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
@@ -711,7 +730,7 @@ def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, home, capl
 
     with caplog.at_level(logging.WARNING, logger="plobi.agents.registry"):
         result = reg.spawn("proj")  # 不许抛
-        profile_cfg = _effective_config(home, "l2-proj")
+        profile_cfg = _effective_config(home, "proj")
 
     assert result["routing_ok"] is True
     # WP-REGISTRY-NO-HOME：以前这里断言「spawn 复用了那个已存在的家」
@@ -738,7 +757,7 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
     project_dir = Path(home) / "workspace"
     project_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir = _seed_profile_dir(spawn_env, "l2-proj")
+    profile_dir = _seed_profile_dir(spawn_env, "proj")
 
     reg = AgentRegistry.load()
     reg.upsert(
@@ -751,7 +770,7 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
 
     result = reg.spawn("proj")
 
-    cfg = _effective_config(home, result["profile"])
+    cfg = _effective_config(home, _slug_of(result))
     assert cfg["terminal"]["cwd"] == str(project_dir.absolute())
     assert cfg["model"] == _effective_config(home)["model"] == _CONFIGURED_DEFAULT
     assert not (profile_dir / "config.yaml").exists()
@@ -794,7 +813,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     于是生效值逐字等于顶层那一份，而不是"某处落盘的值没被改写"。
     """
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
-    profile_dir = _seed_profile_dir(spawn_env, "l2-proj")
+    profile_dir = _seed_profile_dir(spawn_env, "proj")
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
     reg.upsert(
@@ -804,7 +823,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
 
     result = reg.spawn("proj")
 
-    model = _effective_config(home, result["profile"])["model"]
+    model = _effective_config(home, _slug_of(result))["model"]
     assert model == _CONFIGURED_DEFAULT, "分身被盖上了它没被选择的模型"
     rendered = json.dumps(model, ensure_ascii=False)
     assert "aigw" not in rendered, rendered
@@ -822,14 +841,14 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
 
     # 控制组：同一条读链在记录**确实**写了覆盖时必须落到那个分身。没有这一段，
     # 上面那句「没写」可能只是覆盖整条根本不生效的假绿。
-    _seed_profile_dir(spawn_env, "l2-ctrl")
+    _seed_profile_dir(spawn_env, "ctrl")
     provider = _resolvable_provider_name()
     reg.upsert(
         _entry(name="ctrl", role="l2_planner", provider=provider, model="a-chosen-model",)
     )
     reg.save()
     reg.spawn("ctrl")
-    ctrl_model = _effective_config(home, "l2-ctrl")["model"]
+    ctrl_model = _effective_config(home, "ctrl")["model"]
     assert ctrl_model["provider"] == provider
     assert ctrl_model["default"] == "a-chosen-model"
     # 而且只有它变：顶层那一份仍是用户配的那一个，别人没被这一行带跑。
@@ -859,6 +878,9 @@ def test_agenda_template_carries_no_model_override(spawn_env, home):
     assert "aigw" not in rendered and "workbuddy" not in rendered, rendered
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
     assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
-    assert AgentEntry(name="Default", role="l2_project").profile_name == "default"
+    # 11-06：``default`` 是 L1（名册 name ``secretary``）专属的 slug，别人撞上它一律
+    # 派生空串＝没有可路由身份（``derive_runtime_slug`` 里那道保留名闸）。
+    assert AgentEntry(name="Default", role="l2_project").profile_name == ""
+    assert AgentEntry(name="secretary", role="l1_secretary").profile_name == "default"
     # 空值不许炸（未设 profile 的老行）
     assert AgentEntry(name="", role="l2_project").profile_name == ""

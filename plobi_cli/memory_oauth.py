@@ -52,7 +52,7 @@ def _scope_to_profile(profile: Optional[str]):
         yield
         return
 
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     from plobi_constants import reset_plobi_home_override, set_plobi_home_override
 
     try:

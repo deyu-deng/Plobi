@@ -271,14 +271,20 @@ def _label(entry) -> str:
 
 
 def _matches(entry, needle: str) -> bool:
-    """Accept the registry key, the display name, or the profile name."""
-    names = {entry.name, entry.display_name, entry.profile_name or entry.name}
+    """认三个键：名册 name、display_name，以及这一行派生的运行时 slug。
+
+    ``profile:`` 那一格已经删了（2026-11-06），但 ``profile_name`` 这个**属性**还在
+    ——它是 :func:`derive_runtime_slug` 的产物（``l2-course-ee`` 这种历史写法钉在
+    ``runtime_slugs.yaml`` 里）。用户手里、日志里、老脚本里还都是这些 slug，问一声
+    「问问 l2-aura」不该说找不到人。
+    """
+    names = {entry.name, entry.display_name, getattr(entry, "profile_name", "")}
     return needle in {name.strip().casefold() for name in names if name}
 
 
 def _same_home_identity(entry) -> str:
-    """一个分身在这台机器上的家（小写 profile 名）——两条记录撞上同一个家就是同一个人。"""
-    return (entry.profile_name or entry.name).strip().casefold()
+    """同一个人的判据：名册 name 小写化。家已经只剩共享根那一份，身份就是这一行。"""
+    return (entry.name or "").strip().casefold()
 
 
 def _pick_row_for_one_home(entries, asked: str):

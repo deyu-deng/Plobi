@@ -353,7 +353,9 @@ def test_dissolve_archives_and_hides_from_default_list(
     import types as _types
 
     if not hasattr(fake_plobi_cli, "profiles"):
+        _real_ident_mod = __import__("plobi_cli.agent_identity", fromlist=["*"])
         fake_profiles = _types.ModuleType("plobi_cli.agent_identity")
+        fake_profiles.__dict__.update(_real_ident_mod.__dict__)
         fake_profiles.get_profile_dir = lambda name: fake_profile
         fake_plobi_cli.agent_identity = fake_profiles
     else:
@@ -406,7 +408,9 @@ def test_dissolve_is_idempotent(client, _isolated_state, monkeypatch, tmp_path):
     fake_plobi_cli = sys.modules.get("plobi_cli") or types.ModuleType("plobi_cli")
     sys.modules["plobi_cli"] = fake_plobi_cli
     if not hasattr(fake_plobi_cli, "profiles"):
+        _real_ident_mod = __import__("plobi_cli.agent_identity", fromlist=["*"])
         fake_plobi_cli.agent_identity = types.ModuleType("plobi_cli.agent_identity")
+        fake_plobi_cli.agent_identity.__dict__.update(_real_ident_mod.__dict__)
     fake_plobi_cli.agent_identity.get_profile_dir = lambda name: fake_profile
 
     first = client.post("/api/agents/already/dissolve")

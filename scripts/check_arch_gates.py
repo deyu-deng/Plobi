@@ -116,6 +116,12 @@ def main() -> int:
             "-m",
             "pytest",
             "tests/plobi/test_console_arch_guard.py",
+            # 概念退役那两道牙（WP-PROFILE-CANCEL 第六轮＋11-06 收尾）：命令行那句说明书
+            # 不许再教「profile」，人读面与两个建家入口必须关着。原来它们只在常规套件里
+            # 跑（跑套件就咬），但 pre-commit 是**最后一道**——今天这一笔不该是绕过牙的那
+            # 一步（2026-11-06 用户令接手这刀时补上；那格原属 WP-REPO-MAP，见登记册那一行）。
+            "tests/plobi_cli/test_cli_help_says_agent_not_profile.py",
+            "tests/plobi/test_identity_surfaces_readable.py",
             "-q",
             "--basetemp=.pytest-run",
         ],

@@ -37,9 +37,9 @@ import type {
   ModelOptionsResponse,
   NetworkEgressRecord,
   NetworkPoolImport,
-  NetworkSubscriptionImport,
   NetworkSection,
   NetworkStatus,
+  NetworkSubscriptionImport,
   OAuthPollResponse,
   OAuthProvidersResponse,
   OAuthStartResponse,
@@ -47,8 +47,6 @@ import type {
   PaginatedSessions,
   PlobiConfig,
   PlobiConfigRecord,
-  ProfileCreatePayload,
-  ProfileSetupCommand,
   ProfileSoul,
   ProfilesResponse,
   SessionInfo,
@@ -254,6 +252,7 @@ export async function listAllProfileSessions(
   // 2026-11-05（profile 连根拔 · 2b-1）：走新别名 /api/agents/sessions，圈定键
   // 只用 agent=名册 name，不再发 profile=。
   const scope = encodeURIComponent(profile)
+
   const result = await window.plobiDesktop.api<PaginatedSessions>({
     path:
       `/api/agents/sessions?limit=${limit}&offset=0&min_messages=${Math.max(0, minMessages)}` +
@@ -1131,31 +1130,9 @@ export function deleteCronJob(jobId: string): Promise<{ ok: boolean }> {
 
 export function getProfiles(): Promise<ProfilesResponse> {
   return window.plobiDesktop.api<ProfilesResponse>({
-    path: '/api/profiles',
+    // 2026-11-06：产品面身份键是名册 name，列表端点搬到 /api/agents/roster。
+    path: '/api/agents/roster',
     timeoutMs: STARTUP_REQUEST_TIMEOUT_MS
-  })
-}
-
-export function createProfile(body: ProfileCreatePayload): Promise<{ name: string; ok: boolean; path: string }> {
-  return window.plobiDesktop.api<{ name: string; ok: boolean; path: string }>({
-    path: '/api/profiles',
-    method: 'POST',
-    body
-  })
-}
-
-export function renameProfile(name: string, newName: string): Promise<{ name: string; ok: boolean; path: string }> {
-  return window.plobiDesktop.api<{ name: string; ok: boolean; path: string }>({
-    path: `/api/profiles/${encodeURIComponent(name)}`,
-    method: 'PATCH',
-    body: { new_name: newName }
-  })
-}
-
-export function deleteProfile(name: string): Promise<{ ok: boolean; path: string }> {
-  return window.plobiDesktop.api<{ ok: boolean; path: string }>({
-    path: `/api/profiles/${encodeURIComponent(name)}`,
-    method: 'DELETE'
   })
 }
 
@@ -1172,12 +1149,6 @@ export function updateProfileSoul(name: string, content: string): Promise<{ ok: 
     path: `/api/agents/${encodeURIComponent(name)}/soul`,
     method: 'PUT',
     body: { content }
-  })
-}
-
-export function getProfileSetupCommand(name: string): Promise<ProfileSetupCommand> {
-  return window.plobiDesktop.api<ProfileSetupCommand>({
-    path: `/api/profiles/${encodeURIComponent(name)}/setup-command`
   })
 }
 

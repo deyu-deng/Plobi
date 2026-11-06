@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from plobi_cli import kanban_db as kb
-from plobi_cli import agent_identity as profiles_mod
+import plobi_cli.agent_identity as profiles_mod
 
 logger = logging.getLogger(__name__)
 

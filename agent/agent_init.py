@@ -257,6 +257,37 @@ def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, An
     agent.request_overrides = overrides
 
 
+def _memory_provider_identity() -> str:
+    """记忆 provider 那把身份：**会话身份**优先，共享层回落进程级那一份。
+
+    真源是 ``plobi.agents.registry._active_agent_profile_name``——先问
+    ``PLOBI_AGENT_ID``（spawn 出去的子进程注入）→ 再问会话级 ContextVar（桌面／
+    api-server 开的那次 Agent 会话）→ 回退到旧家目录形状 → 都不是就是 ''。
+
+    以前这里直接取进程级的 ``get_active_profile_name()``：它只看 ``PLOBI_HOME`` 落在
+    哪儿，于是**一台后端替多个 Agent 干活时，大家的记忆都落到同一个 peer**（那个进程
+    级身份对每个 Agent 都一样——这台机器上是 "custom"，因为 ``PLOBI_HOME`` 不是
+    ``~/.plobi``）⇒ 记忆 provider 那边的 ``agent_identity`` 元数据对谁都一样，
+    裁 179 说的「记忆按 Agent 分持」等于没分。
+
+    共享层那个会话（没有 per-agent 身份）仍回落进程级那一份，**行为一字不动**。
+    """
+    try:
+        from plobi.agents.registry import _active_agent_profile_name
+
+        identity = (_active_agent_profile_name() or "").strip()
+        if identity:
+            return identity
+    except Exception:  # noqa: BLE001 - 真源口不可用就回落
+        pass
+    try:
+        from plobi_cli.agent_identity import get_active_profile_name
+
+        return get_active_profile_name()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def init_agent(
     agent,
     base_url: str = None,
@@ -1408,11 +1439,13 @@ def init_agent(
                     # Thread gateway session key for stable per-chat Honcho session isolation
                     if agent._gateway_session_key:
                         _init_kwargs["gateway_session_key"] = agent._gateway_session_key
-                    # Profile identity for per-profile provider scoping
+                    # 身份（每个 Agent 一份）：真源见 ``_memory_provider_identity``——
+                    # 会话身份优先（``PLOBI_AGENT_ID`` → 会话 ContextVar → 旧家目录），
+                    # 共享层回落进程级那一份。以前这里取的是进程级的
+                    # ``get_active_profile_name()``，于是一台后端替多个 Agent 干活时，
+                    # **大家的记忆都落到同一个 peer**（裁 179 的分持等于没分）。
                     try:
-                        from plobi_cli.agent_identity import get_active_profile_name
-                        _profile = get_active_profile_name()
-                        _init_kwargs["agent_identity"] = _profile
+                        _init_kwargs["agent_identity"] = _memory_provider_identity()
                         _init_kwargs["agent_workspace"] = "plobi"
                     except Exception:
                         pass

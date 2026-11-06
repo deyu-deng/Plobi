@@ -451,7 +451,9 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     import sys
     import types
 
+    _real_ident_mod = __import__("plobi_cli.agent_identity", fromlist=["*"])
     fake_profiles = types.ModuleType("plobi_cli.agent_identity")
+    fake_profiles.__dict__.update(_real_ident_mod.__dict__)
     fake_profiles.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
     fake_profiles.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake_profiles.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()

@@ -1130,7 +1130,15 @@ def identity_store_key(name: str) -> str:
 
 
 def _roster_row(name: str):
-    """名册里那一行：先按 ``name`` 精确找，再按 ``profile_name`` 找；找不到给 None。"""
+    """名册里那一行：先按 ``name`` 精确找，再按 ``profile_name`` 找；找不到给 None。
+
+    **旧写法也要找得到那个人**（2026-11-06 补）：改过名以后，用户与模型手里那句旧
+    名字（``aura``／``l2-course-x``）还得指向同一个人——那张别名表就是为这件事
+    存在的（``plobi/agents/identity_aliases.py``：改名时记一条「旧写法 → 现名」）。
+    这里原来只按名册 name 与派生 slug 找，于是改名之后旧写法直接报「没有这个人」，
+    而那句话是**假的**（那个人只是换了名字）。别名表**只服务解析**，不参与任何存在性
+    判据：判据照旧只问名册那一行（裁定 192）。
+    """
     from plobi.agents.registry import AgentRegistry
 
     try:
@@ -1143,6 +1151,22 @@ def _roster_row(name: str):
             return registry, entry
     for entry in registry.entries():
         if (entry.profile_name or "").casefold() == canon.casefold():
+            return registry, entry
+    # 名册里没有这一行 ⇒ 最后问一次别名表：旧写法翻回现名再找一遍。
+    try:
+        from plobi.agents.identity_aliases import resolve_identity_alias
+    except Exception:  # noqa: BLE001 - 别名表不可用就少一种写法
+        return registry, None
+    try:
+        resolved = resolve_identity_alias(canon)
+    except Exception:  # noqa: BLE001
+        return registry, None
+    if not resolved or resolved.casefold() == canon.casefold():
+        return registry, None
+    for entry in registry.entries():
+        if entry.name.casefold() == resolved.casefold():
+            return registry, entry
+        if (entry.profile_name or "").casefold() == resolved.casefold():
             return registry, entry
     return registry, None
 
@@ -1253,9 +1277,15 @@ def export_identity(name: str, output_path: str) -> Path:
     with tempfile.TemporaryDirectory() as tmpdir:
         staged = Path(tmpdir) / entry.name
         staged.mkdir(parents=True, exist_ok=True)
+        # 名册行上有一格 ``secret_overrides``（裁定 42 §42.2 第 6 项：人设片段／模型／密钥
+        # ——只有这三样允许按 Agent 不同）。**密钥不许跟着导出去**：旧形状那条导出
+        # （``export_profile``）会过滤 ``auth.json``／``.env``，退役后这一格就没人管了，
+        # 于是包会带着 API key 走。导出的是**配置**，不是凭据（凭据走共享层那份池子）。
+        row = entry.to_dict()
+        row.pop("secret_overrides", None)
         with io.open(staged / "agent.yaml", "w", encoding="utf-8", newline="\n") as f:
             yaml.safe_dump(
-                {"agents": {entry.name: entry.to_dict()}},
+                {"agents": {entry.name: row}},
                 f,
                 sort_keys=False,
                 allow_unicode=True,
@@ -3002,10 +3032,21 @@ def _default_export_ignore(root_dir: Path):
 
 
 def export_profile(name: str, output_path: str) -> Path:
-    """Export a profile to a tar.gz archive.
+    """**已退役**（2026-11-06）：导「家」这条路已经没有家可导了。
 
-    Returns the output file path.
+    家退休之后，一个 Agent 在盘上拥有的东西是：名册那一行（它的模型覆盖、工作目录、
+    人设片段、密钥覆盖）＋ 它的身份文件（``souls/<名册 name>.md``）＋ 它那一份排程
+    存储 ＋ 它那一份记忆目录。这些都在**共享层**里按名册行分着，不再是「一整个家
+    目录」⇒ 旧形状那个导出（整份家 ＋ 凭据过滤）没有对应的对象了。
+
+    现在能用的是 :func:`export_identity`（名册那一行 ＋ 它的身份文件），CLI 的
+    ``plobi profile export`` 走的就是它。
     """
+    raise RuntimeError(
+        "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再「一家一个分身」——"
+        "没有家目录可导。现在导的是名册那一行 ＋ 它的身份文件（plobi profile export）。"
+    )
+    # ── 以下是退役前的实现，原样留着当这段历史 ──
     import tempfile
 
     canon = normalize_profile_name(name)
@@ -3125,11 +3166,23 @@ def _inspect_profile_archive_roots(archive: Path) -> set[str]:
 
 
 def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
-    """Import a profile from a tar.gz archive.
+    """**已退役**（2026-11-06，裁 178 乙案第 4 步）：这条入口只搬「家」，而家已经没有了。
 
-    If *name* is not given, infers it from the archive's top-level directory.
-    Returns the imported profile directory.
+    它以前做的事是 ``shutil.move`` 出 ``profiles/<name>/``——那是「一家一个分身」那个
+    概念最后一条活路；留着它就等于分身随时能回来（10-24／10-25 清过三次的东西）。
+    CLI 那两个口（``plobi profile import``／``plobi profile install``）10-27 已经退 2
+    并说清原因；这里把**库函数本体**也关上，免得谁从代码里一调就把分身概念复活。
+
+    要加一个 Agent：桌面「新建智能体」或 ``POST /api/agents``（名册一行）。
+    判据在 ``tests/plobi_cli/test_retired_home_entries.py``：这条口必须退，且**不许**
+    在盘上造出 ``profiles/<name>/``。
     """
+    raise RuntimeError(
+        "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再「一家一个分身」。"
+        "这条入口只搬「家」，而家已经没有了——搬进来只会把分身概念复活。"
+        "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。"
+    )
+    # ── 以下是退役前的实现，原样留着当这段历史（CLI 那边同一个形状：先退 2、旧身子留在下面）──
     import tempfile
 
     archive = Path(archive_path)

@@ -59,20 +59,22 @@ describe('Plobi REST session helpers', () => {
     )
   })
 
-  it('uses a longer timeout for profile listing during desktop startup', async () => {
+  it('keeps the long timeout on the roster read at desktop startup', async () => {
     api.mockResolvedValue({ profiles: [] })
 
     await getProfiles()
 
+    // 2b-1 之后列表端点是 /api/agents/roster（产品面身份键=名册 name），
+    // 超时仍然放宽，因为它一样要在启动那几秒里把名册读完。
     expect(api).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: '/api/profiles',
+        path: '/api/agents/roster',
         timeoutMs: 60_000
       })
     )
   })
 
-  it('uses a longer timeout for active profile refresh during desktop startup', async () => {
+  it('uses a longer timeout for active agent refresh during desktop startup', async () => {
     api.mockResolvedValueOnce({ current: 'default' }).mockResolvedValueOnce({ profiles: [] })
 
     await refreshActiveProfile()
@@ -87,7 +89,7 @@ describe('Plobi REST session helpers', () => {
     expect(api).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        path: '/api/profiles',
+        path: '/api/agents/roster',
         timeoutMs: 60_000
       })
     )

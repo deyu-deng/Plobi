@@ -194,7 +194,7 @@ def test_a_name_that_slugifies_differently_still_reads_its_own_soul(
         tmp_path,
         monkeypatch,
         f"version: 1\nagents:\n  {name}:\n    role: l2_project\n"
-        f"    category: courses\n    profile: l2-course-ee\n",
+        f"    category: courses\n",
     )
 
     entry = AgentEntry(name=name, role="l2_project", category="courses")
@@ -238,13 +238,13 @@ def test_an_unresolvable_identity_never_borrows_the_l1_secretary_soul(
 def test_identity_name_for_key_maps_every_spelling_of_the_same_row(
     soul_home, tmp_path, monkeypatch
 ):
-    """身份的写法不止一种（名册 name／记忆 slug／profile 家名／身份文件名），都要翻回同一行。"""
+    """身份的写法不止一种（名册 name／记忆 slug／派生的运行时 slug／身份文件名），都要翻回同一行。"""
     name = "电子工程训练（乙）"
     _roster(
         tmp_path,
         monkeypatch,
         f"version: 1\nagents:\n  {name}:\n    role: l2_project\n"
-        f"    category: courses\n    profile: l2-course-ee\n",
+        f"    category: courses\n",
     )
 
     from plobi.agents.registry import identity_name_for_key, shared_soul_path_for
@@ -254,7 +254,6 @@ def test_identity_name_for_key_maps_every_spelling_of_the_same_row(
         name,
         name.lower(),
         resolve_agent_slug(name),
-        "l2-course-ee",
         shared_soul_path_for(name).stem,
     ):
         assert identity_name_for_key(key) == name, key

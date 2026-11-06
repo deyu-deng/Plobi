@@ -2535,7 +2535,7 @@ async def fs_default_cwd(profile: str | None = None):
     """
     profile_home: Path | None = None
     if profile:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         try:
             canon = profiles_mod.normalize_profile_name(profile)
@@ -4423,9 +4423,9 @@ def get_sessions(
                     s.get("ended_at") is None
                     and (now - s.get("last_active", s.get("started_at", 0))) < 300
                 )
-                if profile_name:
-                    s["profile"] = profile_name
-                    s["is_default_profile"] = profile_name == "default"
+                # 2026-11-06（profile 连根拔 · 收尾）：会话行不再带 `profile` /
+                # `is_default_profile`。归属键只有 `agent_id`（空串＝L1），
+                # 前端 `resolveScopedSessions` 只认它。
                 # SQLite stores the flag as 0/1; expose a real JSON boolean.
                 s["archived"] = bool(s.get("archived"))
                 _honest_session_cost(s)
@@ -4439,38 +4439,6 @@ def get_sessions(
     except Exception:
         _log.exception("GET /api/sessions failed")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/api/profiles/sessions")
-def get_profiles_sessions(
-    limit: int = 20,
-    offset: int = 0,
-    min_messages: int = 0,
-    archived: str = "exclude",
-    order: str = "recent",
-    profile: str = "all",
-    agent: Optional[str] = None,
-    source: str = None,
-    exclude_sources: str = None,
-    full: bool = False,
-):
-    """旧路径，本批保留（硬约束 1）。
-
-    2026-11-05（profile 连根拔 · 2b-1）：实现抽到 :func:`_sessions_for_scope`，
-    本端点与 ``/api/agents/sessions`` 共用。``agent``（名册 name）是本批新增的
-    产品面参数名，优先于残留的 ``profile``；两者都只做行级圈定。
-    """
-    return _sessions_for_scope(
-        limit=limit,
-        offset=offset,
-        min_messages=min_messages,
-        archived=archived,
-        order=order,
-        scope=_session_scope_arg(agent, profile),
-        source=source,
-        exclude_sources=exclude_sources,
-        full=full,
-    )
 
 
 @app.get("/api/agents/sessions")
@@ -10812,7 +10780,7 @@ def _cron_profile_dicts() -> List[Dict[str, Any]]:
     家目录退休之后，目录扫描只剩 ``default`` 一行——面板上就再也选不到「日程秘书那一行」
     的排程，``?profile=all`` 也只看得到默认那一份。这里问**名册**（裁 192：身份＝名册那一行）。
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     shared = _cron_runtime_home()
     try:
@@ -10882,7 +10850,7 @@ def _cron_store_root() -> Path:
     而是住在共享根下（用户 10-27 拍板：共享根下按名册行分一份）。
     """
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         # 走 **profiles 模块那一份**家的解析（不是 plobi_constants 那一份）：
         # 重定向过家的调用方与测试必须看到同一份根，否则它写进去的排程输出
@@ -10898,7 +10866,7 @@ def _cron_store_dir_for(slug: str) -> Path:
     键＝**名册 name**（与身份文件 ``souls/<名册 name>.md`` 同一把钥匙），
     目录名的净化走 ``profiles.identity_store_key``（与删／改名那两处同一把尺）。
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     return _cron_store_root() / "agents" / profiles_mod.identity_store_key(slug)
 
@@ -10910,7 +10878,7 @@ def _cron_runtime_home() -> Path:
     现在身份＝名册那一行、家只有一份（裁 166／178 乙案），所以运行时家就是共享根。
     """
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         return Path(profiles_mod._get_default_plobi_home())
     except Exception:
@@ -10925,7 +10893,7 @@ def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
     拍板：**共享根下按名册行分一份**（``<shared>/cron/agents/<slug>/``），
     不再是 ``profiles/<slug>/``——家目录那条腿已经退休。
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     raw = (profile or "default").strip() or "default"
     try:
@@ -10991,7 +10959,7 @@ def _scope_name_for_read(profile: Optional[str]) -> str:
     三个都算数的：``default``（L1 那个伪作用域）· 名册里查得到的行 · 家**还在**盘上的
     （``coder`` 那具空壳还在，别人正按老口径用它）。三样都不沾 ⇒ 404，与从前同一句话。
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     raw = (profile or "default").strip() or "default"
     canon = profiles_mod.normalize_profile_name(raw)
@@ -12999,7 +12967,7 @@ def _profile_cli_args(profile: Optional[str]) -> List[str]:
     requested = (profile or "").strip()
     if not requested or requested.lower() in {"current", "default"}:
         return []
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     _resolve_profile_dir(requested)
     return ["-p", profiles_mod.normalize_profile_name(requested)]
 
@@ -13578,7 +13546,7 @@ def _resolve_profile_dir(name: str) -> Path:
     所以这里问的是**名册里有没有这一行**，给回去的是**共享根**——
     以前给回去的是 ``profiles/<name>/``，那目录早就不在了（10-24 搬走、10-27 删净）。
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     try:
         canon = profiles_mod.normalize_profile_name(name)
     except ValueError as e:
@@ -13603,7 +13571,7 @@ def _shared_soul_path_for(name: str) -> Path:
     ``SOUL.md``（人设共享一份 ＋ 名册行人设片段作覆盖，裁 42.2）。
     """
     from plobi.agents.registry import entry_for_profile, shared_soul_path_for, shared_souls_root
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     canon = profiles_mod.normalize_profile_name(name)
     entry = entry_for_profile(canon)
@@ -13618,7 +13586,7 @@ def _profile_setup_command(name: str) -> str:
     return "plobi setup" if name == "default" else f"{name} setup"
 
 
-def _write_profile_model(profile_dir: Path, provider: str, model: str) -> None:
+def _write_profile_model(identity: str, provider: str, model: str) -> None:
     """给这一个 Agent 选主模型＝写**名册那一行的覆盖**（裁 166 决定二／ADR-0013 DoD#1）。
 
     以前这一句是 ``set_plobi_home_override(profile_dir)`` + ``load_config``/``save_config``，
@@ -13636,7 +13604,10 @@ def _write_profile_model(profile_dir: Path, provider: str, model: str) -> None:
 
     provider, model = _normalize_main_model_assignment(provider, model)
     try:
-        set_profile_model_override(Path(profile_dir).name, provider, model)
+        # 家目录退休后 identity_home() 恒等于共享根，`Path(profile_dir).name` 拿到的是
+        # 家目录名（如 plobi_test）而不是身份名 ⇒ 每次都撞「这名册里没有这一行」。
+        # 身份名由调用方直接给（URL 里那个 name 已是 _agent_scope_name 归一过的））。
+        set_profile_model_override(identity, provider, model)
     except RegistryError as e:
         raise ValueError(str(e)) from e
 
@@ -13740,153 +13711,26 @@ def _disable_unselected_skills(profile_dir: Path, keep: List[str]) -> int:
     return disabled_count
 
 
-@app.get("/api/profiles")
-async def list_profiles_endpoint():
+@app.get("/api/agents/roster")
+async def list_agent_roster_endpoint():
     # 10-27 改名册语义（用户拍板）：这份名单问**名册**（裁 192），不扫目录——
     # 家退休之后目录扫描只剩 ``default`` 一行，用户看到的就是空名单。
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     try:
         loop = asyncio.get_running_loop()
         profiles = await loop.run_in_executor(None, profiles_mod.list_identity_profiles)
         return {"profiles": [_profile_to_dict(p) for p in profiles]}
     except Exception:
-        _log.exception("GET /api/profiles failed; falling back to the roster")
+        _log.exception("GET /api/agents/roster failed; falling back to the roster")
         return {"profiles": _fallback_profile_dicts(profiles_mod)}
 
 
-@app.post("/api/profiles")
-async def create_profile_endpoint(body: ProfileCreate):
-    # 裁 178 乙案第 4 步收口（用户 10-24 21:1x 面令）：这一口 410 Gone。
-    # **只关入口**：`GET /api/profiles`（列表）照旧，库函数 `create_profile()` 照旧，
-    # 加 Agent 走 `POST /api/agents`（名册一行）。
-    from fastapi.responses import JSONResponse
-
-    return JSONResponse(
-        status_code=410,
-        content={
-            "ok": False,
-            "error": (
-                "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再“一家一个分身”。"
-                " 要加 Agent 走 POST /api/agents；只需要进程落点用 plobi -p <name>。"
-            ),
-        },
-    )
-    from plobi_cli import agent_identity as profiles_mod
-    explicit_source = (body.clone_from or "").strip()
-    if explicit_source:
-        # Duplicating a specific profile: clone its config/skills/SOUL (or full
-        # state when clone_all) from the named source rather than "default".
-        clone = True
-        clone_from = explicit_source
-        clone_config = not body.clone_all
-    elif body.clone_all:
-        # Preserve the dashboard's historical clone-all behavior: a full-copy
-        # request with no explicit dropdown source copies from default.
-        clone = True
-        clone_from = "default"
-        clone_config = False
-    else:
-        clone = body.clone_from_default
-        clone_from = "default" if clone else None
-        clone_config = clone
-    try:
-        path = profiles_mod.create_profile(
-            name=body.name,
-            clone_from=clone_from,
-            clone_all=body.clone_all,
-            clone_config=clone_config,
-            no_skills=body.no_skills,
-            description=body.description,
-        )
-        # Match the CLI's profile-create flow: fresh named profiles get the
-        # bundled skills installed. When cloning from default, create_profile()
-        # has already copied the source profile's skills, including any
-        # user-installed skills. When no_skills=True, create_profile() wrote
-        # the opt-out marker and seed_profile_skills() will no-op.
-        if not clone:
-            profiles_mod.seed_profile_skills(path, quiet=True)
-
-        # Match the CLI's profile-create flow: named profiles should get a
-        # wrapper in ~/.local/bin when the alias is safe to create.
-        collision = profiles_mod.check_alias_collision(body.name)
-        if not collision:
-            profiles_mod.create_wrapper_script(body.name)
-    except (ValueError, FileExistsError, FileNotFoundError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        _log.exception("POST /api/profiles failed")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # Optional explicit model assignment for the new profile. Best-effort:
-    # the profile already exists, so a model-write hiccup must not 500 the
-    # whole create — the user can set the model later from the Models page
-    # or `<profile> setup`.
-    provider = (body.provider or "").strip()
-    model = (body.model or "").strip()
-    model_set = False
-    if provider and model:
-        try:
-            _write_profile_model(path, provider, model)
-            model_set = True
-        except Exception:
-            _log.exception("Setting model for new profile %s failed", body.name)
-
-    # Optional MCP servers. Best-effort, same rationale as model assignment.
-    mcp_written = 0
-    if body.mcp_servers:
-        try:
-            mcp_written = _write_profile_mcp_servers(path, body.mcp_servers)
-        except Exception:
-            _log.exception("Writing MCP servers for new profile %s failed", body.name)
-
-    # Optional "keep" skill selection — replace semantics. When the builder
-    # sends an explicit keep list, disable every seeded skill not in it.
-    # Best-effort. Skipped when keep_skills is empty (legacy: keep the bundle).
-    skills_disabled = 0
-    if body.keep_skills:
-        try:
-            skills_disabled = _disable_unselected_skills(path, body.keep_skills)
-        except Exception:
-            _log.exception("Applying skill selection for new profile %s failed", body.name)
-
-    # Optional skills-hub installs. Spawned async, scoped to the new profile
-    # via `-p <name>` (a fresh subprocess re-binds skills_hub.SKILLS_DIR to the
-    # profile's PLOBI_HOME at import). Returns PIDs for the UI to poll.
-    hub_installs: List[Dict[str, Any]] = []
-    for identifier in body.hub_skills:
-        ident = (identifier or "").strip()
-        if not ident:
-            continue
-        try:
-            proc = _spawn_plobi_action(
-                ["-p", body.name, "skills", "install", ident, "--yes"],
-                _hub_action_name("install", ident),
-            )
-            hub_installs.append({"identifier": ident, "pid": proc.pid})
-        except Exception:
-            _log.exception(
-                "Spawning hub-skill install %s for new profile %s failed",
-                ident,
-                body.name,
-            )
-            hub_installs.append({"identifier": ident, "pid": None})
-
-    return {
-        "ok": True,
-        "name": body.name,
-        "path": str(path),
-        "model_set": model_set,
-        "mcp_written": mcp_written,
-        "skills_disabled": skills_disabled,
-        "hub_installs": hub_installs,
-    }
 
 
 # 2026-11-05（profile 连根拔 · 2b-2）：产品面端点为 /api/agents/active，与旧路径共用同一实现。
 # 这一组只给 active 加别名：/api/agents/{name} 的 PATCH 已被 kanban 的 update_agent_route 占用
 # （那是改 Agent 元数据，不是改 profile home），rename / delete / setup-command 三个 CRUD 端点
 # 整组留到 2c 与旧路由一并迁移，避免两条不同语义抢同一路径模板。
-@app.get("/api/profiles/active")
 @app.get("/api/agents/active")
 async def get_active_profile_endpoint():
     """Deprecated: 名字里的 ``profile`` 已只是内部 slug，语义是「当前 Agent 身份」；产品面请用 ``/api/agents``。 Return the sticky active profile and the profile this dashboard
@@ -13896,7 +13740,7 @@ async def get_active_profile_endpoint():
     the profile new CLI invocations pick up. ``current`` is the profile
     the running dashboard/gateway is scoped to (derived from PLOBI_HOME).
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     try:
         active = profiles_mod.get_active_profile() or "default"
     except Exception:
@@ -13908,7 +13752,6 @@ async def get_active_profile_endpoint():
     return {"active": active, "current": current}
 
 
-@app.post("/api/profiles/active")
 @app.post("/api/agents/active")
 async def set_active_profile_endpoint(body: ProfileActiveUpdate):
     """Deprecated: 名字里的 ``profile`` 已只是内部 slug，语义是「当前 Agent 身份」；产品面请用 ``/api/agents``。 Set the sticky active profile (mirrors ``plobi profile use``).
@@ -13916,7 +13759,7 @@ async def set_active_profile_endpoint(body: ProfileActiveUpdate):
     Note: this does not retarget the already-running dashboard process —
     it changes which profile subsequent CLI commands and gateways use.
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     try:
         profiles_mod.set_active_profile(body.name)
     except FileNotFoundError as e:
@@ -13924,17 +13767,17 @@ async def set_active_profile_endpoint(body: ProfileActiveUpdate):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        _log.exception("POST /api/profiles/active failed")
+        _log.exception("POST /api/agents/active failed")
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True, "active": profiles_mod.normalize_profile_name(body.name)}
 
 
-@app.get("/api/profiles/{name}/setup-command")
+@app.get("/api/agents/{name}/setup-command")
 async def get_profile_setup_command(name: str):
     return {"command": _profile_setup_command(name)}
 
 
-@app.post("/api/profiles/{name}/open-terminal")
+@app.post("/api/agents/{name}/open-terminal")
 async def open_profile_terminal_endpoint(name: str):
     try:
         command = _profile_setup_command(name)
@@ -13983,49 +13826,9 @@ async def open_profile_terminal_endpoint(name: str):
     except HTTPException:
         raise
     except Exception as e:
-        _log.exception("POST /api/profiles/%s/open-terminal failed", name)
+        _log.exception("POST /api/agents/%s/open-terminal failed", name)
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True, "command": command}
-
-
-@app.patch("/api/profiles/{name}")
-async def rename_profile_endpoint(name: str, body: ProfileRename):
-    # 10-27 改名册语义（用户拍板）：改的是**名册那一行的键**，不是家目录。
-    # 11-02 全链（WP-AGENT-RENAME-FULL-CHAIN）：一次改名要跟着走十几处归属，
-    # 所以这里给一个 dry_run——先看清单，再动手。
-    from plobi_cli import agent_identity as profiles_mod
-    try:
-        if body.dry_run:
-            return profiles_mod.preview_identity_rename(name, body.new_name)
-        new_name = profiles_mod.rename_identity(name, body.new_name)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except (ValueError, FileExistsError, RuntimeError) as e:
-        # RuntimeError = 执行到某一步失败、已经动过的都退回去了（不是服务器坏了）。
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        _log.exception("PATCH /api/profiles/%s failed", name)
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"ok": True, "name": new_name}
-
-
-@app.delete("/api/profiles/{name}")
-async def delete_profile_endpoint(name: str):
-    """删掉**名册那一行** ＋ 它在共享层的那几份产物（留一份底）。
-
-    10-27 改名册语义（用户拍板）：家退休之后没有「分身家」可删了，删的对象是
-    那一行。仪表盘那边自己收确认，所以这里一律 ``yes=True``。"""
-    from plobi_cli import agent_identity as profiles_mod
-    try:
-        backup = profiles_mod.delete_identity(name, yes=True)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        _log.exception("DELETE /api/profiles/%s failed", name)
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"ok": True, "backup": str(backup)}
 
 
 def _agent_scope_name(name: str) -> str:
@@ -14057,7 +13860,6 @@ def _agent_scope_name(name: str) -> str:
 
 
 
-@app.get("/api/profiles/{name}/soul")
 async def get_profile_soul(name: str):
     _resolve_profile_dir(name)
     soul_path = _shared_soul_path_for(name)
@@ -14069,19 +13871,18 @@ async def get_profile_soul(name: str):
     return {"content": "", "exists": False}
 
 
-@app.put("/api/profiles/{name}/soul")
 async def update_profile_soul(name: str, body: ProfileSoulUpdate):
     _resolve_profile_dir(name)
     soul_path = _shared_soul_path_for(name)
     try:
         soul_path.write_text(body.content, encoding="utf-8")
     except OSError as e:
-        _log.exception("PUT /api/profiles/%s/soul failed", name)
+        _log.exception("PUT /api/agents/%s/soul failed", name)
         raise HTTPException(status_code=500, detail=f"Could not write SOUL.md: {e}")
     return {"ok": True}
 
 
-@app.put("/api/profiles/{name}/description")
+@app.put("/api/agents/{name}/description")
 async def update_profile_description_endpoint(name: str, body: ProfileDescriptionUpdate):
     """Set or clear a profile's role description (kanban routing signal).
 
@@ -14089,7 +13890,7 @@ async def update_profile_description_endpoint(name: str, body: ProfileDescriptio
     user-authored description (``description_auto: false``) so the
     auto-describer won't overwrite it on a sweep.
     """
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
     _resolve_profile_dir(name)
     text = (body.description or "").strip()
     canon = profiles_mod.normalize_profile_name(name)
@@ -14106,12 +13907,11 @@ async def update_profile_description_endpoint(name: str, body: ProfileDescriptio
     except HTTPException:
         raise
     except Exception as e:
-        _log.exception("PUT /api/profiles/%s/description failed", name)
+        _log.exception("PUT /api/agents/%s/description failed", name)
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True, "description": text, "description_auto": False}
 
 
-@app.put("/api/profiles/{name}/model")
 async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
     """给**这一个** Agent 设／撤名册那一行的主模型（裁定 166 决定二／WP-MODEL-OVERRIDE-CLEAR）。
 
@@ -14150,11 +13950,11 @@ async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
             from plobi.agents.registry import RegistryError, set_profile_model_override
 
             try:
-                set_profile_model_override(Path(profile_dir).name, "", "")
+                set_profile_model_override(name, "", "")
             except RegistryError as e:
                 raise ValueError(str(e)) from e
         else:
-            _write_profile_model(profile_dir, provider, model)
+            _write_profile_model(name, provider, model)
     except ValueError as e:
         # 那个家没有名册行（配置只有一份，没地方放"只属于它"的覆盖）＝调用方的前提不成立，
         # 不是服务端故障：照实 400，别报成 500 让人以为是模型写入炸了。
@@ -14162,7 +13962,7 @@ async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
     except HTTPException:
         raise
     except Exception as e:
-        _log.exception("PUT /api/profiles/%s/model failed", name)
+        _log.exception("PUT /api/agents/%s/model failed", name)
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True, "cleared": clearing, "provider": provider, "model": model}
 
@@ -14191,7 +13991,7 @@ async def update_agent_model_endpoint(name: str, body: ProfileModelUpdate):
 
 
 
-@app.post("/api/profiles/{name}/describe-auto")
+@app.post("/api/agents/{name}/describe-auto")
 async def describe_profile_auto_endpoint(name: str, body: ProfileDescribeAuto):
     """Auto-generate a profile's description via the auxiliary LLM
     (``auxiliary.profile_describer``). Mirrors ``plobi profile describe
@@ -14206,7 +14006,7 @@ async def describe_profile_auto_endpoint(name: str, body: ProfileDescribeAuto):
         from plobi_cli import profile_describer
         outcome = profile_describer.describe_profile(name, overwrite=bool(body.overwrite))
     except Exception as e:
-        _log.exception("POST /api/profiles/%s/describe-auto failed", name)
+        _log.exception("POST /api/agents/%s/describe-auto failed", name)
         raise HTTPException(status_code=500, detail=str(e))
     return {
         "ok": bool(outcome.ok),

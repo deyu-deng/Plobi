@@ -33,7 +33,9 @@ import yaml
 
 def _stub_plobi_profiles(monkeypatch, home: Path):
     """Stub the ``plobi_cli.agent_identity`` helpers used by ``AgentRegistry.spawn``."""
+    _real_ident_mod = __import__("plobi_cli.agent_identity", fromlist=["*"])
     fake = types.ModuleType("plobi_cli.agent_identity")
+    fake.__dict__.update(_real_ident_mod.__dict__)
     fake.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
     fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()

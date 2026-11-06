@@ -1176,7 +1176,6 @@ class AgentRegistry:
         return {
             "name": name,
             "role": entry.role,
-            "profile": entry.profile_name,
             # **没有 profile_dir**：名册加一行不再落一个家（B 刀）。
             # command 也不再带 `-p`——那是已判废的形状（裁定 42），身份靠
             # `PLOBI_AGENT_ID`（见 `plugins/plobi-north-star/agent_ask.build_child_command`）。
@@ -1277,7 +1276,9 @@ def profile_name_blocker(entry: AgentEntry) -> str:
         # （它的"问不到"由 :func:`agent_askability` 按角色那句说，不靠这里。）
         return ""
 
-    canon = entry.profile_name
+    # 2026-11-06（profile 连根拔）：`entry.profile_name` 这一格已从 AgentEntry 删掉，
+    # 身份名只有一个来源——名册 name 派生出的 slug。这里照旧只判那一个派生值。
+    canon = derive_runtime_slug(entry.name)
     # 2026-11-05：判据从「名册上显式 profile 缺失」改成「派生 slug 为空或形状不合法」。
     # 派生值为空涵盖三种形状：非 ASCII 名未登记、结果过不了形状规则、撞保留名。
     # **文案一个字不动**——tests/plobi_cli 里有断言钉着这句中文。
@@ -3188,11 +3189,15 @@ def identity_name_for_key(key: str | None) -> str:
         if getattr(entry, "archived", False):
             continue
         candidates = {entry.name, entry.name.lower()}
-        for attr in ("profile_name",):
-            value = str(getattr(entry, attr, "") or "").strip()
-            if value:
-                candidates.add(value)
-                candidates.add(value.lower())
+        # profile 名这一格已随概念一起删掉（2026-11-06）：身份名只剩「名册 name 派生的
+        # slug」这一种来历，直接派生同一个值放进来，别再去问一个不存在的属性。
+        try:
+            derived = derive_runtime_slug(entry.name)
+        except Exception:  # noqa: BLE001 - 派生不出来就少一种写法
+            derived = ""
+        if derived:
+            candidates.add(derived)
+            candidates.add(derived.lower())
         try:
             candidates.add(shared_soul_path_for(entry.name).stem)
         except Exception:  # noqa: BLE001 - 算不出文件名就少一种写法

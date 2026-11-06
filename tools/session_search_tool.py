@@ -160,7 +160,7 @@ def _resolve_profile_db(profile: str):
     if profile is None or not str(profile).strip():
         return None
 
-    from plobi_cli import agent_identity as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     canon = profiles_mod.normalize_profile_name(profile)
     profiles_mod.validate_profile_name(canon)
@@ -197,7 +197,7 @@ def _locate_session_db(session_id: str):
     from pathlib import Path
 
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         from plobi_state import SessionDB
     except Exception:
         return None, None

@@ -2,7 +2,7 @@
 
 用户 10-26 截图报「桌面启动失败 · Profile 'srtp' does not exist.」。
 
-病根：后端读面三处（``GET /api/sessions``／``GET /api/profiles/sessions``／
+病根：后端读面三处（``GET /api/sessions``／``GET /api/agents/sessions``／
 ``GET /api/sessions/{id}``）拿「家目录在不在盘上」当作用域存在性的判据，而 10-24 隔离
 把 23 具旧家搬进了 ``_quarantine-20261024/``——名册那 24 行还在、家没了 ⇒ 读面 404 ⇒
 桌面冷启动那条**没有 catch** 的 ``refreshSessions()`` 把它变成整台开机失败。
@@ -36,7 +36,7 @@ def roster(_isolate_plobi_home):
     reg.save()
 
 
-def _add(reg: AgentRegistry, name: str, profile: str | None = None) -> None:
+def _add(reg: AgentRegistry, name: str) -> None:
     reg.upsert(AgentEntry(name=name, role="l2_agenda"))
     reg.save()
 
@@ -81,16 +81,16 @@ def _seed_session(session_id: str, agent_id: str) -> None:
 
 def test_roster_scope_is_not_missing(roster):
     """① 名册里有的那一行 ⇒ 不是「不存在」。"""
-    _add(roster, "srtp", "srtp")
+    _add(roster, "srtp")
 
     assert _scope("srtp") == "srtp"
 
 
 def test_roster_scope_matches_by_profile_name_not_by_dir(roster):
-    """① 名册一行可以 ``name ≠ profile``（本机 24 行里 11 行如此）：两种写法都认。"""
-    _add(roster, "agenda", "l2-agenda")
+    """① 旧的家名写法（``l2-agenda``）照样归到名册 name —— 别名反查还在。"""
+    _add(roster, "agenda")
 
-    assert _scope("l2-agenda") == "l2-agenda"
+    assert _scope("l2-agenda") == "agenda"
     assert _scope("agenda") == "agenda"
 
 
@@ -99,11 +99,11 @@ def test_roster_scope_matches_by_profile_name_not_by_dir(roster):
 
 def test_scoped_list_returns_only_that_rows_sessions(client, roster):
     """② 名册行的作用域 ⇒ 只圈那一行的会话，不是全库。"""
-    _add(roster, "srtp", "srtp")
+    _add(roster, "srtp")
     _seed_session("row-of-srtp", "srtp")
     _seed_session("row-of-other", "other-agent")
 
-    resp = client.get("/api/profiles/sessions?profile=srtp&limit=50&offset=0")
+    resp = client.get("/api/agents/sessions?agent=srtp&limit=50&offset=0")
 
     assert resp.status_code == 200, resp.text
     ids = {row["id"] for row in resp.json()["sessions"]}
@@ -137,7 +137,7 @@ def test_invalid_scope_is_still_400(roster):
 
 def test_endpoint_still_404s_for_an_unknown_scope(client, roster):
     """③ 端点那一路也是同一个 404、同一句正文。"""
-    resp = client.get("/api/profiles/sessions?profile=no-such-row")
+    resp = client.get("/api/agents/sessions?agent=no-such-row")
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Profile 'no-such-row' does not exist."
@@ -154,8 +154,8 @@ def test_default_scope_is_unchanged(roster):
 
 def test_all_and_default_still_answer_on_the_endpoint(client, roster):
     """④ ``profile=all`` 与 ``profile=default`` 都还是 200。"""
-    assert client.get("/api/profiles/sessions?profile=all").status_code == 200
-    assert client.get("/api/profiles/sessions?profile=default").status_code == 200
+    assert client.get("/api/agents/sessions?agent=all").status_code == 200
+    assert client.get("/api/agents/sessions?agent=default").status_code == 200
 
 
 # ── ⑤ 一个字节都不重建 ─────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ def test_resolving_a_roster_scope_creates_no_home(roster):
     from plobi_constants import get_plobi_home
 
     root = get_plobi_home()
-    _add(roster, "srtp", "srtp")
+    _add(roster, "srtp")
 
     assert _scope("srtp") == "srtp"
 
@@ -188,7 +188,7 @@ def test_a_home_that_is_still_on_disk_still_resolves(roster):
 
 def test_sessions_endpoint_accepts_a_roster_scope(client, roster):
     """``GET /api/sessions`` 那一处也是问名册了。"""
-    _add(roster, "srtp", "srtp")
+    _add(roster, "srtp")
 
     resp = client.get("/api/sessions?profile=srtp&limit=20&offset=0")
 
@@ -197,7 +197,7 @@ def test_sessions_endpoint_accepts_a_roster_scope(client, roster):
 
 def test_session_detail_endpoint_accepts_a_roster_scope(client, roster):
     """``GET /api/sessions/{id}`` 那一处也是问名册了。"""
-    _add(roster, "srtp", "srtp")
+    _add(roster, "srtp")
     _seed_session("detail-row", "srtp")
 
     resp = client.get("/api/sessions/detail-row?profile=srtp")

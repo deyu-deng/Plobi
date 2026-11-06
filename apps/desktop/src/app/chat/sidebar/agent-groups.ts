@@ -103,20 +103,13 @@ export function agentNameSet(agents: readonly Pick<Agent, 'id'>[]): Set<string> 
 /**
  * 这一行能不能点进聊天页。
  *
- * 判据优先用后端 R-072 的 `navigable`（`agent_navigability`：点了之后 spawn
- * 不会失败的形状——课程行 heal 成 l2_course 后没有 profile 名、保留名建不出
- * 家、家还没落地，三者任一都不可点）。旧后端没透出时回落 profile 非空——名册里
- * `profile` 为空的是**数据记录**（`l2_course`：课是数据不是分身，裁定 40），
- * 它没有运行时可绑。以前点它会让客户端替它编一个 profile 名去起后端
- * （`agent.id` 那条回退），于是每一门课都是一场重启循环。既然点进去只能是
- * 一张空壳，行本身就不该可点。
+ * 判据只有后端 R-072 的 `navigable`（`agent_navigability`：点了之后 spawn
+ * 不会失败的形状——课程行 heal 成 l2_course 后没有运行时可绑、保留名建不出
+ * 家、家还没落地，三者任一都不可点）。11-06 收尾：`profile` 那格已经从响应里
+ * 删掉，这里也不再拿它兜底；读不到（老响应）按可点处理，不该因为缺字段把整栏点死。
  */
-export function isNavigableAgent(agent: Pick<Agent, 'profile'> & Partial<Pick<Agent, 'navigable'>>): boolean {
-  if (typeof agent.navigable === 'boolean') {
-    return agent.navigable
-  }
-
-  return Boolean((agent.profile ?? '').trim())
+export function isNavigableAgent(agent: Partial<Pick<Agent, 'navigable'>>): boolean {
+  return agent.navigable !== false
 }
 
 // 2026-11-05（profile 连根拔 · 桌面批）：L1 判据只有一个 —— 会话行的归属键
@@ -159,6 +152,7 @@ export function bucketSessionsByAgent<T extends { agent_id?: null | string }>(
       // 2b-1 风险③：孤儿归属原来是完全静默的，排查时只能靠猜。这里补一条
       // 可见告警，同一个 session id 只打一次（分桶每帧都会跑，不能刷屏）。
       const sessionId = (session as { id?: string }).id ?? '<no-id>'
+
       if (!warnedOrphanSessionIds.has(sessionId)) {
         warnedOrphanSessionIds.add(sessionId)
         console.warn(

@@ -44,9 +44,9 @@ export function AgentModelSection({ agent }: { agent: RosterAgent }) {
   }, [])
 
   const pick = useCallback(async (choice: AgentModelChoice) => {
-    // 后端按 profile_name 找那一行，而 profile_name 就是 `profile or name` ⇒ 缺 profile 时退回 id
-    // 不是猜，是同一份解析规则（AgentEntry.profile_name）。
-    const profileName = agent.profile || agent.id
+    // 后端按 `entry_for_profile` 找那一行：先认 slug、再认名册 name，而这一行的
+    // `id` 就是名册 name ⇒ 直接用它（11-06 收尾：响应里的 `profile` 已删）。
+    const profileName = agent.id
 
     if (choice.model === null || choice.model === FOLLOW_DEFAULT) {
       // 撤回＝两个键都显式给空串（WP-MODEL-OVERRIDE-CLEAR 落的语义）。
@@ -56,7 +56,7 @@ export function AgentModelSection({ agent }: { agent: RosterAgent }) {
     const parts = splitQualified(choice.model)
 
     return parts ? { assignment: parts, profileName } : null
-  }, [agent.id, agent.profile])
+  }, [agent.id])
 
   const onSave = useCallback(async (choice: AgentModelChoice) => {
     const intent = await pick(choice)

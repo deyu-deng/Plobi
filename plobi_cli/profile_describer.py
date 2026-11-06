@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from plobi_cli import agent_identity as profiles_mod
+import plobi_cli.agent_identity as profiles_mod
 from agent.skill_utils import is_excluded_skill_path
 
 logger = logging.getLogger(__name__)

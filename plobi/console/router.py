@@ -520,7 +520,6 @@ def agent_row(entry: AgentEntry, *, working: bool = False) -> dict:
         # 面上要分得开。读不到就整个键省略，前端按"没有读数"处理，不当"没走过模型"。
         "actualModel": (leg or {}).get("model"),
         "todayCalls": totals.calls,
-        "profile": entry.profile_name,
         "category": entry.category,
         # 11-05（用户）：名册 role 随行透出。L1 也进名册、与五类 L2 分开标但地位平等，
         # 前端据此识别「这一行是 L1 自己」，不再靠 profile 反查。

@@ -94,7 +94,7 @@ def test_rename_changes_the_rail_label_and_nothing_else(client, _isolated_state)
     row = response.json()["data"]
     assert row["name"] == "欧拉"
     assert row["id"] == "aura"
-    assert row["profile"] == "l2-aura"
+    assert "profile" not in row
     assert _stored(_isolated_state).display_name == "欧拉"
     # 落盘了（不是只在内存里漂着）
     reloaded = AgentRegistry.load(_isolated_state.path)

@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from plobi_cli import agent_identity as _identity
+import plobi_cli.agent_identity as _identity
 
 
 def __getattr__(name):  # PEP 562：`from plobi_cli.profiles import X` 走这里

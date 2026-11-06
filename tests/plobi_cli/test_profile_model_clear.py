@@ -1,4 +1,4 @@
-"""`PUT /api/profiles/{name}/model` 现在也能**撤回**这一行的覆盖（WP-MODEL-OVERRIDE-CLEAR，用户 14:0x 拍的甲）。
+"""`PUT /api/agents/{name}/model` 现在也能**撤回**这一行的覆盖（WP-MODEL-OVERRIDE-CLEAR，用户 14:0x 拍的甲）。
 
 三条硬规矩都在这文件里，不在注释里：
 
@@ -19,12 +19,10 @@ ROW = """
 agents:
   Aura:
     role: l2_project
-    profile: aura
     provider: deepseek
     model: deepseek-chat
   Kit:
     role: l2_project
-    profile: kit
     provider: openrouter
     model: x-top
 """
@@ -65,13 +63,13 @@ def _row(path, name):
 
 
 def test_setting_then_clearing_returns_that_row_to_the_shared_default(roster, client):
-    put = client.put("/api/profiles/aura/model", json={"provider": "moonshot", "model": "k2"})
+    put = client.put("/api/agents/aura/model", json={"provider": "moonshot", "model": "k2"})
 
     assert put.status_code == 200, put.text
     assert put.json()["cleared"] is False
     assert _row(roster, "Aura")["provider"] == "moonshot"
 
-    clear = client.put("/api/profiles/aura/model", json={"provider": "", "model": ""})
+    clear = client.put("/api/agents/aura/model", json={"provider": "", "model": ""})
 
     assert clear.status_code == 200, clear.text
     assert clear.json()["cleared"] is True
@@ -87,12 +85,12 @@ def test_setting_then_clearing_returns_that_row_to_the_shared_default(roster, cl
 def test_a_half_given_request_is_refused_and_the_row_is_untouched(roster, client):
     before = _row(roster, "Aura")
 
-    half = client.put("/api/profiles/aura/model", json={"provider": "", "model": "k2"})
+    half = client.put("/api/agents/aura/model", json={"provider": "", "model": "k2"})
 
     assert half.status_code == 400, half.text
     assert _row(roster, "Aura") == before, "半个请求被当成了清除——这条就是本格存在的理由"
 
-    empty_body = client.put("/api/profiles/aura/model", json={})
+    empty_body = client.put("/api/agents/aura/model", json={})
 
     assert empty_body.status_code == 400, empty_body.text
     assert _row(roster, "Aura") == before, "键都没给也被当成撤回"
@@ -101,7 +99,7 @@ def test_a_half_given_request_is_refused_and_the_row_is_untouched(roster, client
 def test_clearing_one_row_does_not_move_any_other_row(roster, client):
     kit_before = _row(roster, "Kit")
 
-    res = client.put("/api/profiles/aura/model", json={"provider": "", "model": ""})
+    res = client.put("/api/agents/aura/model", json={"provider": "", "model": ""})
 
     assert res.status_code == 200, res.text
     kit = _row(roster, "Kit")
@@ -109,7 +107,7 @@ def test_clearing_one_row_does_not_move_any_other_row(roster, client):
     # （`category: butler`、`registered: true`）——那不算"动了别行"。
     # 这一格要守的是**身份与路由那四格**不许漂，所以逐格点名比，不拿整 dict 相等当判据
     # （整 dict 相等会把"补默认键"误报成改坏别行，而把默认键省掉又是另一处真源分裂）。
-    for key in ("role", "profile", "provider", "model"):
+    for key in ("role", "provider", "model"):
         assert kit[key] == kit_before[key], key
     assert kit.get("provider") == "openrouter" and kit.get("model") == "x-top"
 
@@ -117,14 +115,14 @@ def test_clearing_one_row_does_not_move_any_other_row(roster, client):
 def test_clearing_a_row_that_had_no_override_is_idempotent(tmp_path, monkeypatch, client):
     path = tmp_path / "projects.yaml"
     path.write_text(
-        yaml.safe_dump({"agents": {"Sindri": {"role": "l2_project", "profile": "sindri"}}}, sort_keys=False),
+        yaml.safe_dump({"agents": {"Sindri": {"role": "l2_project"}}}, sort_keys=False),
         encoding="utf-8",
     )
     monkeypatch.setattr("plobi.agents.registry.default_path", lambda: path)
 
-    first = client.put("/api/profiles/sindri/model", json={"provider": "", "model": ""})
-    second = client.put("/api/profiles/sindri/model", json={"provider": "", "model": ""})
+    first = client.put("/api/agents/sindri/model", json={"provider": "", "model": ""})
+    second = client.put("/api/agents/sindri/model", json={"provider": "", "model": ""})
 
     assert first.status_code == 200 and second.status_code == 200
-    assert json.loads(json.dumps(_row(path, "Sindri")))["profile"] == "sindri"
+    assert _row(path, "Sindri")["role"] == "l2_project"
     assert not _row(path, "Sindri").get("provider")

@@ -30,8 +30,7 @@ function row(over: Partial<RosterAgent> = {}): RosterAgent {
     id: 'Aura',
     model: 'deepseek/deepseek-chat',
     name: 'Aura',
-    profile: 'aura',
-    status: 'idle',
+      status: 'idle',
     todayCalls: 0,
     ...over
   }
@@ -84,7 +83,7 @@ describe('AgentModelSection', () => {
 
     fireEvent.change(select, { target: { value: 'deepseek/k2' } })
 
-    await waitFor(() => expect(putAgentModel).toHaveBeenCalledWith('aura', { model: 'k2', provider: 'deepseek' }))
+    await waitFor(() => expect(putAgentModel).toHaveBeenCalledWith('Aura', { model: 'k2', provider: 'deepseek' }))
     expect(refreshConsoleAgents).toHaveBeenCalled()
   })
 
@@ -97,13 +96,13 @@ describe('AgentModelSection', () => {
 
     fireEvent.change(select, { target: { value: '' } })
 
-    await waitFor(() => expect(putAgentModel).toHaveBeenCalledWith('aura', null))
+    await waitFor(() => expect(putAgentModel).toHaveBeenCalledWith('Aura', null))
   })
 
-  it('falls back to the roster name when the row carries no profile — same rule the backend resolves by', async () => {
+  it('writes the override under the roster name — the only identity key left', async () => {
     putAgentModel.mockResolvedValue({ cleared: true, model: '', ok: true, provider: '' })
     refreshConsoleAgents.mockResolvedValue(undefined)
-    mount(row({ modelOverride: true, profile: undefined }))
+    mount(row({ modelOverride: true }))
 
     const select = (await screen.findByRole('combobox')) as HTMLSelectElement
 

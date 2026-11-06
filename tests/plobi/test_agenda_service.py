@@ -213,13 +213,11 @@ def test_list_agenda_dedupes_duplicate_event_ids(svc, monkeypatch):
     base = datetime.combine(today, datetime.min.time()).replace(hour=9)
     first = svc.create_manual(title="上午课", start_at=base)
 
-    def _double(_self, _conn, events):
+    def _double(*_args, **_kwargs):
         # Same Event object appended twice (first occurrence wins by design).
-        return list(events) + list(events)
+        return [first, first]
 
-    monkeypatch.setattr(
-        "plobi.agenda.service.AgendaService._order_by_confirmed_plans", _double
-    )
+    monkeypatch.setattr("plobi.agenda.service.store.list_events", _double)
 
     rows = svc.list_agenda()
     assert [r.id for r in rows] == [first.id]

@@ -47,12 +47,12 @@ def root(tmp_path, monkeypatch):
         base,
         {
             "aura": _row(
-                "l2-aura",
+                "aura",
                 disabled_skills=["aura-no-skill"],
                 disabled_toolsets=["browser"],
                 disabled_mcp_servers=["shared-server"],
             ),
-            "kit": _row("l2-kit"),
+            "kit": _row("kit"),
         },
     )
     _clear()
@@ -77,8 +77,9 @@ def _write_roster(base: Path, rows: dict) -> None:
     )
 
 
-def _row(profile: str, **extra) -> dict:
-    base = {"name": profile, "role": "l2_project", "profile": profile, "category": "projects"}
+def _row(name: str, **extra) -> dict:
+    # ``profile:`` 这一格已从名册删掉（2026-11-06 连根拔）：身份＝这一行的 name。
+    base = {"name": name, "role": "l2_project", "category": "projects"}
     base.update(extra)
     return base
 
@@ -113,11 +114,12 @@ def test_agent_entry_roundtrips_tool_blacklists(root):
 # ---------------------------------------------------------------------------
 
 
-def test_agent_disabled_sets_resolves_by_active_home(root):
+def test_agent_disabled_sets_resolves_by_active_home(root, monkeypatch):
     from plobi.agents.registry import agent_disabled_sets
 
-    # 分身会话：PLOBI_HOME 钉在 profile 家。
-    os.environ["PLOBI_HOME"] = str(root / "profiles" / "l2-aura")
+    # 分身会话：身份由 PLOBI_AGENT_ID（名册 name）带着；家只剩共享根那一份，
+    # 「PLOBI_HOME 钉在 profiles/<x>」这个老形状不再表示身份。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "aura")
     _clear()
     sets = agent_disabled_sets()
     assert sets["skills"] == {"aura-no-skill"}
@@ -125,24 +127,26 @@ def test_agent_disabled_sets_resolves_by_active_home(root):
     assert sets["mcp_servers"] == {"shared-server"}
 
     # 顶层家（L1 / flat）：没有 per-agent 偏好。
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
     os.environ["PLOBI_HOME"] = str(root)
     _clear()
     assert agent_disabled_sets() == {"skills": set(), "toolsets": set(), "mcp_servers": set()}
 
-    # 分身家但名册查无此行：全空，不猜。
-    os.environ["PLOBI_HOME"] = str(root / "profiles" / "l2-kit")
+    # 带了身份但名册查无此行：全空，不猜。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "kit")
     _clear()
     assert agent_disabled_sets() == {"skills": set(), "toolsets": set(), "mcp_servers": set()}
 
 
-def test_skill_disabled_names_union_agent_row(root):
+def test_skill_disabled_names_union_agent_row(root, monkeypatch):
     from agent.skill_utils import get_disabled_skill_names
 
-    os.environ["PLOBI_HOME"] = str(root / "profiles" / "l2-aura")
+    monkeypatch.setenv("PLOBI_AGENT_ID", "aura")
     _clear()
     # 全局表仍在（global-off-skill），名册行只做加法（aura-no-skill）。
     assert get_disabled_skill_names() == {"global-off-skill", "aura-no-skill"}
 
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
     os.environ["PLOBI_HOME"] = str(root)
     _clear()
     assert get_disabled_skill_names() == {"global-off-skill"}
@@ -152,11 +156,12 @@ def test_mcp_config_load_filters_agent_disabled_servers(root, monkeypatch):
     from tools.mcp_tool import _load_mcp_config
 
     monkeypatch.setenv("PLOBI_SAFE_MODE", "")
-    os.environ["PLOBI_HOME"] = str(root / "profiles" / "l2-aura")
+    monkeypatch.setenv("PLOBI_AGENT_ID", "aura")
     _clear()
     servers = _load_mcp_config()
     assert "shared-server" not in servers
 
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
     os.environ["PLOBI_HOME"] = str(root)
     _clear()
     assert "shared-server" in _load_mcp_config()

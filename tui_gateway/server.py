@@ -1017,7 +1017,7 @@ def _profile_home(profile: str | None) -> Path | None:
     if not name:
         return None
     try:
-        from plobi_cli import agent_identity as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         home = Path(profiles_mod.get_profile_dir(name))
     except Exception:
