@@ -20,6 +20,11 @@ Usage:
 
     # Override the release date (e.g. for a belated release)
     python scripts/release.py --bump minor --publish --date 2026.11.6
+
+    # Publish a hand-written body (Chinese) plus the English attachment
+    python scripts/release.py --publish \
+        --notes-file docs/plobi/releases/v0.3.0.md \
+        --notes-en-file docs/plobi/releases/Plobi-0.3.0-release-notes.en.md
 """
 
 import argparse
@@ -48,6 +53,15 @@ PYPROJECT_FILE = REPO_ROOT / "pyproject.toml"
 # tests/acp/test_registry_manifest.py enforces this lockstep so the release
 # bump touches both files atomically.
 ACP_REGISTRY_MANIFEST = REPO_ROOT / "acp_registry" / "agent.json"
+
+# The English half of a bilingual release notes pair rides along as an
+# ATTACHMENT on the same release: GitHub's release page has no language
+# switcher, so the Chinese body IS the page and the English one is a file
+# the reader downloads. The attachment name is fixed by the link the Chinese
+# body carries, so the script and the docs have to agree on it exactly --
+# `gh` takes the file name as the asset name, and a name that does not match
+# the link is a 404 nobody sees until a reader clicks it.
+EN_NOTES_ASSET_TEMPLATE = "Plobi-{version}-release-notes.en.md"
 
 # ──────────────────────────────────────────────────────────────────────
 # Git email → GitHub username mapping
@@ -2046,6 +2060,65 @@ def bump_version(current: str, part: str) -> str:
     return f"{major}.{minor}.{patch}"
 
 
+def notes_file_version(path: Path) -> str | None:
+    """The version a notes file is written for, read off its name.
+
+    The convention (docs/plobi/releases/README.md) is that the file name carries the
+    version: ``v0.2.0.md`` for the Chinese body,
+    ``Plobi-0.2.0-release-notes.en.md`` for the English one. Returns None when
+    the name carries no version -- the caller then has nothing to check
+    against and should not pretend otherwise.
+    """
+    match = re.match(
+        r"^(?:Plobi-)?v?(\d+\.\d+\.\d+)(?:-release-notes)?(?:\.en)?\.md$", path.name
+    )
+    return match.group(1) if match else None
+
+
+def english_asset_name(version: str) -> str:
+    """The attachment name the English notes are published under."""
+    return EN_NOTES_ASSET_TEMPLATE.format(version=version)
+
+
+def body_reference_problems(body: str, version: str, en_asset: str | None) -> list[str]:
+    """Links in the release body that would not resolve on the release page.
+
+    The body links to the English attachment by name and to the release page
+    by tag. Both are exact strings: if either names another version, or the
+    attachment is not going to be uploaded, the reader gets a 404. That stays
+    invisible after the fact -- the release page looks right, the link is not
+    -- so it is checked before anything is published.
+    """
+    problems = []
+    for ref in sorted(set(re.findall(r"releases/tag/(v\d+\.\d+\.\d+)", body))):
+        if ref != f"v{version}":
+            problems.append(
+                f"the body links to the release page of {ref}, "
+                f"but this run publishes v{version}"
+            )
+    asset_refs = set(
+        re.findall(r"releases/download/[^\s)\"'>]*/([^\s)\"'>/]+)", body)
+    )
+    for ref in sorted(asset_refs):
+        # The English attachment is the one the language line points at. Any
+        # asset that looks like it is a candidate -- a name that is merely
+        # close ("v0.3.0.en.md") is just as broken as a wrong version, and
+        # both 404.
+        if not (ref.endswith(".en.md") or "release-notes" in ref):
+            continue
+        if en_asset is None:
+            problems.append(
+                f"the body links to {ref}, but no English notes file was given "
+                f"(pass --notes-en-file) -- that link would 404"
+            )
+        elif ref != en_asset:
+            problems.append(
+                f"the body links to {ref}, but the English notes would be "
+                f"uploaded as {en_asset} -- that link would 404"
+            )
+    return problems
+
+
 def update_version_files(semver: str, release_date: str):
     """Update version strings in source files."""
     # Update __init__.py
@@ -2421,6 +2494,10 @@ def main():
                         help="Hand-written release notes (markdown) to publish as the "
                              "release body instead of the generated commit log. The "
                              "generated log is still attached to the release.")
+    parser.add_argument("--notes-en-file", type=str,
+                        help="Hand-written English release notes (markdown). Published "
+                             "as an attachment named Plobi-X.Y.Z-release-notes.en.md "
+                             "-- the name the Chinese body's language link points at.")
     args = parser.parse_args()
 
     # The release DATE is metadata (it lands in __release_date__); the
@@ -2443,6 +2520,54 @@ def main():
         print(f"Tag {tag_name} already exists -- that version is already released.")
         print("Bump the version first (--bump patch|minor|major) and release that.")
         return
+
+    # The release body is written by hand, and it has to be the body OF THIS
+    # version. Two things are checked before anything is built or pushed: the
+    # notes file must be written for the version this run releases, and every
+    # link inside it must resolve on the release page. Both are cheap, and
+    # both catch mistakes that stay invisible once the release is out.
+    hand_written = None
+    en_notes = None
+    en_asset = None
+
+    if args.notes_file:
+        notes_path = Path(args.notes_file)
+        if not notes_path.is_file():
+            print(f"  ✗ Notes file not found: {args.notes_file}")
+            return
+        notes_for = notes_file_version(notes_path)
+        if notes_for and notes_for != new_version:
+            print(f"  ✗ Notes file is for v{notes_for}, but this run would publish v{new_version}.")
+            print(f"    The version comes from the repo (get_current_version() = {current_version}),"
+                  " not from the last tag.")
+            if args.bump:
+                print(f"    '--bump {args.bump}' turns that into v{new_version}.")
+            print(f"    Write the notes for v{new_version}, or drop --bump.")
+            return
+        hand_written = notes_path.read_text(encoding="utf-8")
+
+    if args.notes_en_file:
+        en_path = Path(args.notes_en_file)
+        if not en_path.is_file():
+            print(f"  ✗ English notes file not found: {args.notes_en_file}")
+            return
+        en_for = notes_file_version(en_path)
+        if en_for and en_for != new_version:
+            print(f"  ✗ English notes file is for v{en_for}, but this run would publish v{new_version}.")
+            return
+        en_notes = en_path.read_text(encoding="utf-8")
+        en_asset = english_asset_name(new_version)
+
+    if hand_written is not None:
+        problems = body_reference_problems(hand_written, new_version, en_asset)
+        if problems:
+            for problem in problems:
+                print(f"  ✗ Notes file problem: {problem}.")
+            return
+        if en_asset is None and "releases/download/" not in hand_written:
+            print("  ! The body has no link to an English version.")
+            print("    Bilingual notes are the house style here: one Chinese body, "
+                  "one English attachment.")
 
     # Get previous tag
     prev_tag = get_last_tag()
@@ -2490,15 +2615,12 @@ def main():
     # reader wants on a release page -- but it is still worth keeping, so it
     # goes out as an attachment instead of being thrown away.
     release_notes = changelog
-    hand_written = None
-    if args.notes_file:
-        notes_path = Path(args.notes_file)
-        if not notes_path.is_file():
-            print(f"  ✗ Notes file not found: {args.notes_file}")
-            return
-        hand_written = notes_path.read_text(encoding="utf-8")
+    if hand_written is not None:
         release_notes = hand_written
         print(f"  ✓ Using hand-written notes from {args.notes_file}")
+    elif args.publish:
+        print("  ! No --notes-file: the release body would be the generated commit log.")
+        print("    That is a list of commits, not an update log -- write docs/plobi/releases/vX.Y.Z.md first.")
 
     # Dry run shows the body that would actually be published -- otherwise the
     # preview shows a commit log while the release gets the hand-written text.
@@ -2512,6 +2634,12 @@ def main():
         print(f"\n{'='*60}")
         print("  Publishing release...")
         print(f"{'='*60}")
+
+        if (REPO_ROOT / ".github" / "workflows" / "release-desktop.yml").is_file():
+            print("  ! The desktop workflow creates the release for this tag too.")
+            print("    Whichever gets there first makes the other fail, and the loser is")
+            print("    usually the one carrying the installers. Push the tag, let the")
+            print("    workflow build the release, then set the body on it.")
 
         # Update version files
         if args.bump:
@@ -2592,6 +2720,18 @@ def main():
             generated_file.write_text(changelog, encoding="utf-8")
             gh_cmd.append(f"{generated_file}#Changelog")
 
+        # The English notes ride along as an attachment. gh takes the file name
+        # as the asset name, and the body links to one exact name -- so publish
+        # under that name, whatever the source file happens to be called.
+        en_temp = None
+        if en_notes is not None:
+            en_upload = Path(args.notes_en_file)
+            if en_upload.name != en_asset:
+                en_upload = REPO_ROOT / en_asset
+                en_upload.write_text(en_notes, encoding="utf-8")
+                en_temp = en_upload
+            gh_cmd.append(str(en_upload))
+
         gh_bin = shutil.which("gh")
         if gh_bin:
             result = subprocess.run(
@@ -2606,6 +2746,8 @@ def main():
             changelog_file.unlink(missing_ok=True)
             if hand_written is not None:
                 generated_file.unlink(missing_ok=True)
+            if en_temp is not None:
+                en_temp.unlink(missing_ok=True)
             print(f"  ✓ GitHub release created: {result.stdout.strip()}")
             print(f"\n  🎉 Release v{new_version} ({tag_name}) published!")
         else:
@@ -2616,6 +2758,8 @@ def main():
             print(f"    Release notes kept at: {changelog_file}")
             if hand_written is not None:
                 print(f"    Generated changelog kept at: {generated_file}")
+            if en_temp is not None:
+                print(f"    English notes kept at: {en_temp}")
             print("    Tag was created locally. Create the release manually:")
             print(
                 f"    gh release create {tag_name} --title 'Plobi v{new_version} ({release_date})' "
