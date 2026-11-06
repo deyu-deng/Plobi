@@ -15,7 +15,7 @@ def all_assignees_spawnable(monkeypatch):
     those tasks into ``skipped_nonspawnable`` instead of spawning, which
     would break tests that assert spawn behavior.
     """
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: True)
 
 

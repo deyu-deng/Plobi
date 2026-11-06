@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from plobi_cli.profiles import _get_default_plobi_home
+from plobi_cli.agent_identity import _get_default_plobi_home
 
 import pytest
 
@@ -448,35 +448,35 @@ class TestResolveActiveHost:
     def test_profile_name_derives_host(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("PLOBI_HONCHO_HOST", None)
-            with patch("plobi_cli.profiles.get_active_profile_name", return_value="coder"):
+            with patch("plobi_cli.agent_identity.get_active_profile_name", return_value="coder"):
                 assert resolve_active_host() == "plobi_coder"
 
     def test_default_profile_returns_plobi(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("PLOBI_HONCHO_HOST", None)
-            with patch("plobi_cli.profiles.get_active_profile_name", return_value="default"):
+            with patch("plobi_cli.agent_identity.get_active_profile_name", return_value="default"):
                 assert resolve_active_host() == "plobi"
 
     def test_custom_profile_returns_plobi(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("PLOBI_HONCHO_HOST", None)
-            with patch("plobi_cli.profiles.get_active_profile_name", return_value="custom"):
+            with patch("plobi_cli.agent_identity.get_active_profile_name", return_value="custom"):
                 assert resolve_active_host() == "plobi"
 
     def test_profiles_import_failure_falls_back(self):
         import sys
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("PLOBI_HONCHO_HOST", None)
-            # Temporarily remove plobi_cli.profiles to simulate import failure
-            saved = sys.modules.get("plobi_cli.profiles")
-            sys.modules["plobi_cli.profiles"] = None  # type: ignore
+            # Temporarily remove plobi_cli.agent_identity to simulate import failure
+            saved = sys.modules.get("plobi_cli.agent_identity")
+            sys.modules["plobi_cli.agent_identity"] = None  # type: ignore
             try:
                 assert resolve_active_host() == "plobi"
             finally:
                 if saved is not None:
-                    sys.modules["plobi_cli.profiles"] = saved
+                    sys.modules["plobi_cli.agent_identity"] = saved
                 else:
-                    sys.modules.pop("plobi_cli.profiles", None)
+                    sys.modules.pop("plobi_cli.agent_identity", None)
 
 
 class TestProfileScopedConfig:

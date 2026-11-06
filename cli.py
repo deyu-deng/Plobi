@@ -12901,7 +12901,7 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
             # session on the next invocation. The "default" and "custom"
             # profile names use the standard PLOBI_HOME, so no -p needed.
             try:
-                from plobi_cli.profiles import get_active_profile_name
+                from plobi_cli.agent_identity import get_active_profile_name
                 _active_profile = get_active_profile_name()
             except Exception:
                 _active_profile = "default"
@@ -12945,7 +12945,7 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
         # Prepend profile name when not default
         try:
-            from plobi_cli.profiles import get_active_profile_name
+            from plobi_cli.agent_identity import get_active_profile_name
             profile = get_active_profile_name()
             if profile not in {"default", "custom"}:
                 symbol = f"{profile} {symbol}"

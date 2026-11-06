@@ -336,7 +336,7 @@ class GatewaySlashCommandsMixin:
     async def _handle_profile_command(self, event: MessageEvent) -> str:
         """Handle /profile — show active profile name and home directory."""
         from plobi_constants import display_plobi_home
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
 
         display = display_plobi_home()
         profile_name = get_active_profile_name()

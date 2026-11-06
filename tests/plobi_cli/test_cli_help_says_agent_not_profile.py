@@ -9,7 +9,7 @@
 
 * ``profile_name`` 这类 dest —— Python 标识符，屏上看不见（看得见的用法行由 metavar 管）
 * ``PLOBI_PROFILE`` / ``PLOBI_PROFILE_NAME`` 环境变量 —— 外部脚本还在传，读它们的回落没撤
-* ``plobi_cli/profiles.py`` 模块名 —— 建家与改名的库本体，别的线还在 import 它
+* ``plobi_cli/agent_identity.py`` 模块名 —— 建家与改名的库本体，别的线还在 import 它
 * ``notifier_profile`` / ``task_runs.profile`` 这些库里的列名 —— 迁移要碰数据
 
 牙的形状：新写一句带那个词的帮助，或者新加一个印着 ``profile_name`` 的位置参数，

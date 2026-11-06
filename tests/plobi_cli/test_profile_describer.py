@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from plobi_cli import profiles as profiles_mod
+from plobi_cli import agent_identity as profiles_mod
 from plobi_cli import profile_describer as describer
 
 

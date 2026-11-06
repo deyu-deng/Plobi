@@ -629,7 +629,7 @@ def find_profile_gateway_processes(
     processes: list[ProfileGatewayProcess] = []
     try:
         from gateway.status import get_running_pid
-        from plobi_cli.profiles import list_profiles
+        from plobi_cli.agent_identity import list_profiles
     except Exception:
         return processes
 
@@ -1396,7 +1396,7 @@ def _print_other_profiles_gateway_status() -> None:
     avoid confusing another profile's process with the current one.
     """
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
 
         current = get_active_profile_name()
         other_processes = [
@@ -1421,7 +1421,7 @@ def _gateway_list() -> None:
     check each profile individually.
     """
     try:
-        from plobi_cli.profiles import list_profiles, get_active_profile_name
+        from plobi_cli.agent_identity import list_profiles, get_active_profile_name
     except Exception:
         print("Unable to list profiles.")
         return

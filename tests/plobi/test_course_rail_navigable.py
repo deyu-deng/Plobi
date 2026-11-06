@@ -48,7 +48,7 @@ def home(tmp_path, monkeypatch):
     """Temp PLOBI_HOME + temp roster file; nothing leaks to the real home.
 
     这里**直接钉住 ``profile_exists``**（同 ``test_agent_edit.py`` 的手法），
-    而不是靠 ``PLOBI_HOME`` 让 ``plobi_cli.profiles`` 自己算出来：那套解析要看
+    而不是靠 ``PLOBI_HOME`` 让 ``plobi_cli.agent_identity`` 自己算出来：那套解析要看
     `native home`、`active_profile` 这些进程级状态，前一个测试文件如果碰过它们
     （实测：与 `test_agent_taxonomy.py` 同批跑时），本文件的「家落地了没有」读数
     就会飘——单跑绿、组合红，红的那条与用例本身无关。
@@ -60,7 +60,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(plobi_home / "plobi" / "projects.yaml"))
     monkeypatch.delenv("PLOBI_STATE_HOME", raising=False)
 
-    import plobi_cli.profiles as _profiles
+    import plobi_cli.agent_identity as _profiles
 
     monkeypatch.setattr(
         _profiles,

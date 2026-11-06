@@ -40,7 +40,7 @@ OK_DOC = "# Cron Job: fine\n\n**Job ID:** j3\n**Mode:** no_agent (script)\n\nall
 @pytest.fixture()
 def cron_home(tmp_path, monkeypatch):
     """An isolated default profile home, so nothing here touches the real PLOBI_HOME."""
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
 
     home = tmp_path / "plobi-home"
     (home / "cron").mkdir(parents=True)

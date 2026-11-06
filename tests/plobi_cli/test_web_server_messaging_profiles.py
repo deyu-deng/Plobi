@@ -15,7 +15,7 @@ import yaml
 def isolated_profiles(tmp_path, monkeypatch, _isolate_plobi_home):
     """Isolated default home + one named profile, each with its own .env."""
     from plobi_constants import get_plobi_home
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
 
     default_home = get_plobi_home()
     profiles_root = default_home / "profiles"

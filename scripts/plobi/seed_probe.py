@@ -2,7 +2,7 @@
 
 这档存在的理由是一条**判据分叉**，纸面上看不出来、只有跑一遍才分得开：
 
-* **创建侧**：`plobi_cli.profiles.create_profile()` 现在只落 `sessions`/`logs`
+* **创建侧**：`plobi_cli.agent_identity.create_profile()` 现在只落 `sessions`/`logs`
   （`_PROFILE_DIRS` 已由 `913d149f` 收成两项，`_CLONE_CONFIG_FILES` 已由同刀清空）——这一侧是做到了的。
 * **运行侧**：可一个会跑的 Agent 必然要 `load_config()`，而 `plobi_cli/config.py` 的
   `ensure_plobi_home()` 每轮都跑，会当场把九个目录**和一份 `SOUL.md`** 补回来。
@@ -66,7 +66,7 @@ def main(argv=None) -> int:
     os.environ["PLOBI_HOME"] = str(home)
     exit_code = 0
     try:
-        from plobi_cli.profiles import create_profile
+        from plobi_cli.agent_identity import create_profile
 
         created = create_profile(NAME)
         after_create = tree(created)

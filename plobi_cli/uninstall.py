@@ -439,7 +439,7 @@ def _discover_named_profiles():
     if profile support is unavailable or nothing is installed beyond the
     default root."""
     try:
-        from plobi_cli.profiles import list_profiles
+        from plobi_cli.agent_identity import list_profiles
     except Exception:
         return []
     try:

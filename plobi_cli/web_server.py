@@ -2531,7 +2531,7 @@ async def fs_default_cwd(profile: str | None = None):
     """
     profile_home: Path | None = None
     if profile:
-        from plobi_cli import profiles as profiles_mod
+        from plobi_cli import agent_identity as profiles_mod
 
         try:
             canon = profiles_mod.normalize_profile_name(profile)
@@ -2793,7 +2793,7 @@ def _collect_profile_gateway_topology() -> Dict[str, Any]:
       ``"none"`` when nothing is running.
     """
     try:
-        from plobi_cli.profiles import _check_gateway_running, profiles_to_serve
+        from plobi_cli.agent_identity import _check_gateway_running, profiles_to_serve
         from gateway.status import read_runtime_status
         homes = profiles_to_serve(True)
     except Exception:
@@ -10684,7 +10684,7 @@ def _cron_profile_dicts() -> List[Dict[str, Any]]:
     家目录退休之后，目录扫描只剩 ``default`` 一行——面板上就再也选不到「日程秘书那一行」
     的排程，``?profile=all`` 也只看得到默认那一份。这里问**名册**（裁 192：身份＝名册那一行）。
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
 
     shared = _cron_runtime_home()
     try:
@@ -10754,7 +10754,7 @@ def _cron_store_root() -> Path:
     而是住在共享根下（用户 10-27 拍板：共享根下按名册行分一份）。
     """
     try:
-        from plobi_cli import profiles as profiles_mod
+        from plobi_cli import agent_identity as profiles_mod
 
         # 走 **profiles 模块那一份**家的解析（不是 plobi_constants 那一份）：
         # 重定向过家的调用方与测试必须看到同一份根，否则它写进去的排程输出
@@ -10770,7 +10770,7 @@ def _cron_store_dir_for(slug: str) -> Path:
     键＝**名册 name**（与身份文件 ``souls/<名册 name>.md`` 同一把钥匙），
     目录名的净化走 ``profiles.identity_store_key``（与删／改名那两处同一把尺）。
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
 
     return _cron_store_root() / "agents" / profiles_mod.identity_store_key(slug)
 
@@ -10782,7 +10782,7 @@ def _cron_runtime_home() -> Path:
     现在身份＝名册那一行、家只有一份（裁 166／178 乙案），所以运行时家就是共享根。
     """
     try:
-        from plobi_cli import profiles as profiles_mod
+        from plobi_cli import agent_identity as profiles_mod
 
         return Path(profiles_mod._get_default_plobi_home())
     except Exception:
@@ -10797,7 +10797,7 @@ def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
     拍板：**共享根下按名册行分一份**（``<shared>/cron/agents/<slug>/``），
     不再是 ``profiles/<slug>/``——家目录那条腿已经退休。
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
 
     raw = (profile or "default").strip() or "default"
     try:
@@ -10848,7 +10848,7 @@ def _scope_name_for_read(profile: Optional[str]) -> str:
     三个都算数的：``default``（L1 那个伪作用域）· 名册里查得到的行 · 家**还在**盘上的
     （``coder`` 那具空壳还在，别人正按老口径用它）。三样都不沾 ⇒ 404，与从前同一句话。
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
 
     raw = (profile or "default").strip() or "default"
     try:
@@ -12827,7 +12827,7 @@ def _profile_cli_args(profile: Optional[str]) -> List[str]:
     requested = (profile or "").strip()
     if not requested or requested.lower() in {"current", "default"}:
         return []
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     _resolve_profile_dir(requested)
     return ["-p", profiles_mod.normalize_profile_name(requested)]
 
@@ -13406,7 +13406,7 @@ def _resolve_profile_dir(name: str) -> Path:
     所以这里问的是**名册里有没有这一行**，给回去的是**共享根**——
     以前给回去的是 ``profiles/<name>/``，那目录早就不在了（10-24 搬走、10-27 删净）。
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     try:
         canon = profiles_mod.normalize_profile_name(name)
     except ValueError as e:
@@ -13431,7 +13431,7 @@ def _shared_soul_path_for(name: str) -> Path:
     ``SOUL.md``（人设共享一份 ＋ 名册行人设片段作覆盖，裁 42.2）。
     """
     from plobi.agents.registry import entry_for_profile, shared_soul_path_for, shared_souls_root
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
 
     canon = profiles_mod.normalize_profile_name(name)
     entry = entry_for_profile(canon)
@@ -13572,7 +13572,7 @@ def _disable_unselected_skills(profile_dir: Path, keep: List[str]) -> int:
 async def list_profiles_endpoint():
     # 10-27 改名册语义（用户拍板）：这份名单问**名册**（裁 192），不扫目录——
     # 家退休之后目录扫描只剩 ``default`` 一行，用户看到的就是空名单。
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     try:
         loop = asyncio.get_running_loop()
         profiles = await loop.run_in_executor(None, profiles_mod.list_identity_profiles)
@@ -13599,7 +13599,7 @@ async def create_profile_endpoint(body: ProfileCreate):
             ),
         },
     )
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     explicit_source = (body.clone_from or "").strip()
     if explicit_source:
         # Duplicating a specific profile: clone its config/skills/SOUL (or full
@@ -13719,7 +13719,7 @@ async def get_active_profile_endpoint():
     the profile new CLI invocations pick up. ``current`` is the profile
     the running dashboard/gateway is scoped to (derived from PLOBI_HOME).
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     try:
         active = profiles_mod.get_active_profile() or "default"
     except Exception:
@@ -13738,7 +13738,7 @@ async def set_active_profile_endpoint(body: ProfileActiveUpdate):
     Note: this does not retarget the already-running dashboard process —
     it changes which profile subsequent CLI commands and gateways use.
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     try:
         profiles_mod.set_active_profile(body.name)
     except FileNotFoundError as e:
@@ -13815,7 +13815,7 @@ async def rename_profile_endpoint(name: str, body: ProfileRename):
     # 10-27 改名册语义（用户拍板）：改的是**名册那一行的键**，不是家目录。
     # 11-02 全链（WP-AGENT-RENAME-FULL-CHAIN）：一次改名要跟着走十几处归属，
     # 所以这里给一个 dry_run——先看清单，再动手。
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     try:
         if body.dry_run:
             return profiles_mod.preview_identity_rename(name, body.new_name)
@@ -13837,7 +13837,7 @@ async def delete_profile_endpoint(name: str):
 
     10-27 改名册语义（用户拍板）：家退休之后没有「分身家」可删了，删的对象是
     那一行。仪表盘那边自己收确认，所以这里一律 ``yes=True``。"""
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     try:
         backup = profiles_mod.delete_identity(name, yes=True)
     except FileNotFoundError as e:
@@ -13882,7 +13882,7 @@ async def update_profile_description_endpoint(name: str, body: ProfileDescriptio
     user-authored description (``description_auto: false``) so the
     auto-describer won't overwrite it on a sweep.
     """
-    from plobi_cli import profiles as profiles_mod
+    from plobi_cli import agent_identity as profiles_mod
     _resolve_profile_dir(name)
     text = (body.description or "").strip()
     canon = profiles_mod.normalize_profile_name(name)

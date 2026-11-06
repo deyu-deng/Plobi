@@ -303,7 +303,7 @@ def run_dump(args):
 
     # Profile
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
         profile = get_active_profile_name() or "(default)"
     except Exception:
         profile = "(default)"

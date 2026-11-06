@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from plobi_cli import profiles as profiles_mod
+from plobi_cli import agent_identity as profiles_mod
 
 REPO = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = REPO / "plugins" / "plobi-north-star"
@@ -390,9 +390,9 @@ def test_the_cron_scopes_point_at_the_roster_name_dir(monkeypatch, tmp_path):
         {"name": "agenda", "profile_name": "l2-agenda", "description": "日程秘书", "role": "l2_agenda"},
         {"name": "电工电子学", "profile_name": "l2-course-ee", "description": "课", "role": "l2_project"},
     ]
-    monkeypatch.setattr("plobi_cli.profiles.list_roster_agents", lambda *a, **k: agents)
-    monkeypatch.setattr("plobi_cli.profiles._read_config_model", lambda *a, **k: (None, None))
-    monkeypatch.setattr("plobi_cli.profiles._count_skills", lambda *a, **k: 0)
+    monkeypatch.setattr("plobi_cli.agent_identity.list_roster_agents", lambda *a, **k: agents)
+    monkeypatch.setattr("plobi_cli.agent_identity._read_config_model", lambda *a, **k: (None, None))
+    monkeypatch.setattr("plobi_cli.agent_identity._count_skills", lambda *a, **k: 0)
     monkeypatch.setattr(web_server, "_cron_runtime_home", lambda: tmp_path)
     monkeypatch.setattr(web_server, "_cron_store_root", lambda: tmp_path / "cron")
 

@@ -32,12 +32,12 @@ import yaml
 
 
 def _stub_plobi_profiles(monkeypatch, home: Path):
-    """Stub the ``plobi_cli.profiles`` helpers used by ``AgentRegistry.spawn``."""
-    fake = types.ModuleType("plobi_cli.profiles")
+    """Stub the ``plobi_cli.agent_identity`` helpers used by ``AgentRegistry.spawn``."""
+    fake = types.ModuleType("plobi_cli.agent_identity")
     fake.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
     fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
-    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
+    monkeypatch.setitem(sys.modules, "plobi_cli.agent_identity", fake)
 
 
 @pytest.fixture()

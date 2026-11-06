@@ -158,7 +158,7 @@ def _fire_kanban_lifecycle_hook(event: str, task_id: str, **fields: Any) -> None
     """
     try:
         from plobi_cli.plugins import invoke_hook
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
         try:
             profile_name = get_active_profile_name()
         except Exception:
@@ -2405,7 +2405,7 @@ def _canonical_assignee(assignee: Optional[str]) -> Optional[str]:
             return hit
     except Exception:
         pass
-    from plobi_cli.profiles import normalize_profile_name
+    from plobi_cli.agent_identity import normalize_profile_name
 
     return normalize_profile_name(raw)
 
@@ -6948,7 +6948,7 @@ def has_spawnable_ready(conn: sqlite3.Connection) -> bool:
     if not rows:
         return False
     try:
-        from plobi_cli.profiles import identity_exists  # local import: avoids cycle
+        from plobi_cli.agent_identity import identity_exists  # local import: avoids cycle
     except Exception:
         # Can't introspect — assume spawnable, preserve legacy behavior.
         return True
@@ -6974,7 +6974,7 @@ def has_spawnable_review(conn: sqlite3.Connection) -> bool:
     if not rows:
         return False
     try:
-        from plobi_cli.profiles import identity_exists  # local import: avoids cycle
+        from plobi_cli.agent_identity import identity_exists  # local import: avoids cycle
     except Exception:
         return True
     for row in rows:
@@ -7182,7 +7182,7 @@ def _dispatch_once_locked(
     _default_assignee_resolved = False
     if _default_assignee:
         try:
-            from plobi_cli.profiles import identity_exists as _pe
+            from plobi_cli.agent_identity import identity_exists as _pe
             _default_assignee_resolved = bool(_pe(_default_assignee))
         except Exception:
             # Profiles module not importable (test stubs, exotic envs).
@@ -7255,7 +7255,7 @@ def _dispatch_once_locked(
         # whole board stopped dispatching — every assigned task landed in
         # ``skipped_nonspawnable``（用户 10-27：「kanban 的能力要有」）。
         try:
-            from plobi_cli.profiles import identity_exists  # local import: avoids cycle
+            from plobi_cli.agent_identity import identity_exists  # local import: avoids cycle
         except Exception:
             identity_exists = None  # type: ignore[assignment]
         if identity_exists is not None and not identity_exists(row_assignee):
@@ -7395,7 +7395,7 @@ def _dispatch_once_locked(
             result.skipped_unassigned.append(row["id"])
             continue
         try:
-            from plobi_cli.profiles import identity_exists
+            from plobi_cli.agent_identity import identity_exists
         except Exception:
             identity_exists = None  # type: ignore[assignment]
         if identity_exists is not None and not identity_exists(row["assignee"]):
@@ -7633,7 +7633,7 @@ def _default_spawn(
     if not task.assignee:
         raise ValueError(f"task {task.id} has no assignee")
 
-    from plobi_cli.profiles import normalize_profile_name
+    from plobi_cli.agent_identity import normalize_profile_name
 
     profile_arg = normalize_profile_name(task.assignee)
 
@@ -7649,7 +7649,7 @@ def _default_spawn(
     # back to Path.home() / ".plobi" (the DEFAULT profile root), ignoring the
     # profile-specific config entirely.  Fixes profile-scoped fallback_providers
     # being invisible to kanban workers.
-    from plobi_cli.profiles import resolve_profile_env
+    from plobi_cli.agent_identity import resolve_profile_env
     try:
         env["PLOBI_HOME"] = resolve_profile_env(profile_arg)
     except FileNotFoundError:
@@ -8508,11 +8508,11 @@ def list_profiles_on_disk() -> list[str]:
     - the implicit ``default`` profile when the default Plobi root exists
 
     Reads profile paths directly so this module has no import dependency on
-    ``plobi_cli.profiles`` (which pulls in a large chunk of the CLI startup
+    ``plobi_cli.agent_identity`` (which pulls in a large chunk of the CLI startup
     path).
 
     判据从「那个家里有 ``config.yaml``」改成「那个家目录在」——与
-    :func:`plobi_cli.profiles.profile_exists` 同一句话。以前那份 ``config.yaml``
+    :func:`plobi_cli.agent_identity.profile_exists` 同一句话。以前那份 ``config.yaml``
     是每个分身家各一份的复印件，裁 166 / ADR-0013 把它收成顶层那一份之后分身家
     不再自带它；拿它当"这个 Agent 存在吗"的凭据会把名册上所有分身从看板收件人里
     悄悄抹掉（10-18 现核这台 24 个家，全中）。下划线/点号开头的目录不算家

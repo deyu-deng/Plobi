@@ -447,15 +447,15 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
         (profile_dir / "plobi").mkdir(exist_ok=True)
         (profile_dir / "plobi" / "models.json").write_text("{}", encoding="utf-8")
 
-    # stub plobi_cli.profiles（让 reg.spawn 走通；不真克隆）
+    # stub plobi_cli.agent_identity（让 reg.spawn 走通；不真克隆）
     import sys
     import types
 
-    fake_profiles = types.ModuleType("plobi_cli.profiles")
+    fake_profiles = types.ModuleType("plobi_cli.agent_identity")
     fake_profiles.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
     fake_profiles.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake_profiles.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
-    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake_profiles)
+    monkeypatch.setitem(sys.modules, "plobi_cli.agent_identity", fake_profiles)
 
     # stub AgentRegistry.spawn 走通到返回 profile_dir。
     original_spawn = registry_mod.AgentRegistry.spawn

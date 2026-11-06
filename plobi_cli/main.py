@@ -369,7 +369,7 @@ def _fold_to_shared_root(name: str) -> Optional[str]:
     名称非法 ⇒ 返 None（上层照旧报错）。
     """
     try:
-        from plobi_cli.profiles import get_profile_dir, normalize_profile_name, validate_profile_name
+        from plobi_cli.agent_identity import get_profile_dir, normalize_profile_name, validate_profile_name
         from plobi_constants import shared_root_for
 
         canon = normalize_profile_name(name)
@@ -523,7 +523,7 @@ def _apply_profile_override() -> None:
 
     # 1b. Reject values that can't be valid profile names (e.g. pytest's
     # "-p no:xdist" would be misread as profile "no:xdist" otherwise).
-    # Mirrors plobi_cli.profiles._PROFILE_ID_RE so we never call
+    # Mirrors plobi_cli.agent_identity._PROFILE_ID_RE so we never call
     # resolve_profile_env() with a value it must reject + sys.exit on.
     if profile_name is not None and consume == 2:
         import re as _re
@@ -576,7 +576,7 @@ def _apply_profile_override() -> None:
     if profile_name is not None:
         folded = False
         try:
-            from plobi_cli.profiles import resolve_profile_env
+            from plobi_cli.agent_identity import resolve_profile_env
 
             plobi_home = resolve_profile_env(profile_name)
         except FileNotFoundError as exc:
@@ -9998,7 +9998,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # which means the active profile is reliably synced regardless of whether
         # the caller's PLOBI_HOME env var points at the default or a named profile.
         try:
-            from plobi_cli.profiles import (
+            from plobi_cli.agent_identity import (
                 list_profiles,
                 seed_profile_skills,
             )
@@ -10036,7 +10036,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # .env-seeding fix (#44792). Copies the default install's .env so
         # those profiles keep the credentials they were effectively using.
         try:
-            from plobi_cli.profiles import backfill_profile_envs
+            from plobi_cli.agent_identity import backfill_profile_envs
 
             backfilled = backfill_profile_envs(quiet=True)
             if backfilled:
@@ -11057,7 +11057,7 @@ def _coalesce_session_name_args(argv: list) -> list:
 
 def cmd_profile(args):
     """Profile management — create, delete, list, switch, alias."""
-    from plobi_cli.profiles import (
+    from plobi_cli.agent_identity import (
         list_profiles,
         list_identity_profiles,
         identity_exists,
@@ -11328,7 +11328,7 @@ def cmd_profile(args):
         # Read or write a profile's description. The description is
         # consumed by the kanban decomposer to route tasks based on
         # role instead of name alone.
-        from plobi_cli import profiles as _profiles_mod
+        from plobi_cli import agent_identity as _profiles_mod
 
         all_flag = bool(getattr(args, "all_missing", False))
         auto_flag = bool(getattr(args, "auto", False))
@@ -11432,7 +11432,7 @@ def cmd_profile(args):
 
     elif action == "show":
         name = args.profile_name
-        from plobi_cli.profiles import (
+        from plobi_cli.agent_identity import (
             identity_exists,
             identity_home,
             _read_config_model,
@@ -11492,7 +11492,7 @@ def cmd_profile(args):
         remove = getattr(args, "remove", False)
         custom_name = getattr(args, "alias_name", None)
 
-        from plobi_cli.profiles import identity_exists, validate_alias_name
+        from plobi_cli.agent_identity import identity_exists, validate_alias_name
 
         if not identity_exists(name):
             print(f"Error: Profile '{name}' does not exist.")
@@ -11527,7 +11527,7 @@ def cmd_profile(args):
     elif action == "rename":
         # 10-27 改名册语义（用户拍板）：改的是**名册那一行的键**（名册 name ＝ 身份），
         # 连同身份文件、排程存储、总账里的归属键一起改。
-        from plobi_cli.profiles import rename_identity
+        from plobi_cli.agent_identity import rename_identity
 
         try:
             new_name = rename_identity(args.old_name, args.new_name)
@@ -11538,7 +11538,7 @@ def cmd_profile(args):
 
     elif action == "export":
         # 10-27 改名册语义（用户拍板）：导的是**名册那一行**（yaml）＋ 它的身份文件。
-        from plobi_cli.profiles import export_identity
+        from plobi_cli.agent_identity import export_identity
 
         name = args.profile_name
         output = args.output or f"{name}.tar.gz"
@@ -11561,7 +11561,7 @@ def cmd_profile(args):
             file=sys.stderr,
         )
         sys.exit(2)
-        from plobi_cli.profiles import import_profile
+        from plobi_cli.agent_identity import import_profile
 
         try:
             profile_dir = import_profile(
@@ -11648,7 +11648,7 @@ def cmd_profile(args):
             read_manifest,
             DistributionError,
         )
-        from plobi_cli.profiles import get_profile_dir, normalize_profile_name
+        from plobi_cli.agent_identity import get_profile_dir, normalize_profile_name
 
         name = args.profile_name
         try:
@@ -12025,7 +12025,7 @@ def cmd_dashboard(args):
     #     preselected in the UI's switcher.
     # `--isolated` opts out and preserves the old per-profile behavior.
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
         _launch_profile = get_active_profile_name()
     except Exception:
         _launch_profile = "default"

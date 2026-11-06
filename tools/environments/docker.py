@@ -131,7 +131,7 @@ def _get_active_profile_name() -> str:
     same process don't retroactively relabel running containers.
     """
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
 
         return get_active_profile_name() or "default"
     except Exception:

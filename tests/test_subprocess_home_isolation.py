@@ -514,7 +514,7 @@ class TestProfileBootstrap:
     """
 
     def test_profile_dirs_drops_home(self):
-        from plobi_cli.profiles import _PROFILE_DIRS
+        from plobi_cli.agent_identity import _PROFILE_DIRS
         assert "home" not in _PROFILE_DIRS
         assert {"sessions", "logs"} == set(_PROFILE_DIRS)
 
@@ -525,7 +525,7 @@ class TestProfileBootstrap:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("PLOBI_HOME", str(home))
 
-        from plobi_cli.profiles import create_profile
+        from plobi_cli.agent_identity import create_profile
         profile_dir = create_profile("testbot", no_alias=True)
         assert not (profile_dir / "home").exists()
         assert (profile_dir / "sessions").is_dir()

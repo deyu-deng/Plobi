@@ -976,7 +976,7 @@ class APIServerAdapter(BasePlatformAdapter):
         if explicit and explicit.strip():
             return explicit.strip()
         try:
-            from plobi_cli.profiles import get_active_profile_name
+            from plobi_cli.agent_identity import get_active_profile_name
             profile = get_active_profile_name()
             if profile and profile not in {"default", "custom"}:
                 return profile

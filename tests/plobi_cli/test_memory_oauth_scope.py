@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 import plobi_constants as pc
 from plobi_cli import memory_oauth
-from plobi_cli import profiles as profiles_mod
+from plobi_cli import agent_identity as profiles_mod
 
 
 def test_missing_home_no_longer_404s(monkeypatch):

@@ -1,7 +1,7 @@
 """B2: L2 常驻 Agent 注册表 — registry round-trip / routing 断言 / spawn。
 
 注册表 = $PLOBI_HOME/plobi/projects.yaml（profile-safe）；spawn 落地 profile
-（复用 plobi_cli.profiles.create_profile）+ 把路由写进**共享层那一份**
+（复用 plobi_cli.agent_identity.create_profile）+ 把路由写进**共享层那一份**
 plobi/models.json（ADR-0011 断言绿）。裁 42 / 166（ADR-0013）之后 spawn
 **不往分身家落任何配置**：模型与工作目录由名册那一行在读时叠
 （``plobi.agents.registry.profile_config_overlay`` → ``load_config``）。
@@ -289,7 +289,7 @@ def spawn_env(home, monkeypatch):
     仍保留 ``profile_exists`` 的本地口径：个别用例要靠 ``_seed_profile_dir``
     预建一个家来模拟"已有家"，读侧判据问的就是它。
     """
-    import plobi_cli.profiles as profiles_mod
+    import plobi_cli.agent_identity as profiles_mod
 
     def fake_profile_exists(name):
         return (Path(home) / ".plobi" / "profiles" / name).is_dir()
@@ -578,12 +578,12 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     """
     from plobi.agents import registry as registry_mod
 
-    # Stub plobi_cli.profiles 让 reg.spawn 能找到 profile_dir。
-    fake = types.ModuleType("plobi_cli.profiles")
+    # Stub plobi_cli.agent_identity 让 reg.spawn 能找到 profile_dir。
+    fake = types.ModuleType("plobi_cli.agent_identity")
     fake.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
     fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
-    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
+    monkeypatch.setitem(sys.modules, "plobi_cli.agent_identity", fake)
     monkeypatch.setenv("PLOBI_HOME", str(home / ".plobi"))
     monkeypatch.setenv(
         "PLOBI_PROJECTS_CONFIG", str(home / ".plobi" / "plobi" / "projects.yaml")

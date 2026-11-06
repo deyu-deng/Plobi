@@ -39,7 +39,7 @@ def _isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr("plobi.agents.registry.default_path", lambda: tmp_path / "projects.yaml")
     (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
-    import plobi_cli.profiles as _profiles
+    import plobi_cli.agent_identity as _profiles
 
     monkeypatch.setattr(_profiles, "profile_exists", lambda name: True, raising=False)
     registry = AgentRegistry(path=tmp_path / "projects.yaml")

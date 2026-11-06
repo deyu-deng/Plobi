@@ -65,7 +65,7 @@ def _capture_reroute(main_mod, monkeypatch) -> list:
 class TestUnifiedDashboardRouting:
     def test_profile_launch_attaches_to_running_dashboard(self, main_mod, monkeypatch):
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "worker_x"
         )
         monkeypatch.setattr(main_mod, "_dashboard_listening", lambda host, port: True)
         execs = []
@@ -80,7 +80,7 @@ class TestUnifiedDashboardRouting:
         """The attach path must open the browser at ?profile=<name> — that
         URL is the entire point of attaching (preselects the switcher)."""
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "worker_x"
         )
         monkeypatch.setattr(main_mod, "_dashboard_listening", lambda host, port: True)
         opened = []
@@ -95,7 +95,7 @@ class TestUnifiedDashboardRouting:
     def test_profile_launch_reexecs_machine_dashboard(self, main_mod, monkeypatch):
         monkeypatch.delenv("PLOBI_HOME", raising=False)
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "worker_x"
         )
         monkeypatch.setattr(main_mod, "_dashboard_listening", lambda host, port: False)
         launches = _capture_reroute(main_mod, monkeypatch)
@@ -130,7 +130,7 @@ class TestUnifiedDashboardRouting:
         """
         monkeypatch.setenv("PLOBI_HOME", "/opt/data/profiles/oracle")
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "oracle"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "oracle"
         )
         monkeypatch.setattr(main_mod, "_dashboard_listening", lambda host, port: False)
         launches = _capture_reroute(main_mod, monkeypatch)
@@ -155,7 +155,7 @@ class TestUnifiedDashboardRouting:
         loop. The guard keeps desktop pool backends per-profile."""
         monkeypatch.setenv("PLOBI_DESKTOP", "1")
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "worker_x"
         )
         listening_calls = []
         monkeypatch.setattr(
@@ -173,7 +173,7 @@ class TestUnifiedDashboardRouting:
 
     def test_isolated_flag_skips_routing(self, main_mod, monkeypatch):
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "worker_x"
         )
         listening_calls = []
         monkeypatch.setattr(
@@ -191,7 +191,7 @@ class TestUnifiedDashboardRouting:
 
     def test_default_profile_launch_skips_routing(self, main_mod, monkeypatch):
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "default"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "default"
         )
         listening_calls = []
         monkeypatch.setattr(
@@ -208,7 +208,7 @@ class TestUnifiedDashboardRouting:
         """The re-exec'd child carries --open-profile; the guard must treat
         that as 'already routed' and never re-exec again (no exec loop)."""
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "worker_x"
         )
         execs = []
         monkeypatch.setattr(main_mod.os, "execvpe", lambda *a, **k: execs.append(a))
@@ -223,7 +223,7 @@ class TestUnifiedDashboardRouting:
         tui_gateway/entry.py, so it must kick off MCP discovery itself or
         desktop sessions never see a profile's MCP tools."""
         monkeypatch.setattr(
-            "plobi_cli.profiles.get_active_profile_name", lambda: "default"
+            "plobi_cli.agent_identity.get_active_profile_name", lambda: "default"
         )
         monkeypatch.delenv("PLOBI_WEB_DIST", raising=False)
         monkeypatch.setattr(main_mod, "_sync_bundled_skills_quietly", lambda: None)

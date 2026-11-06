@@ -3546,7 +3546,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _profile = source.profile
             else:
                 try:
-                    from plobi_cli.profiles import get_active_profile_name
+                    from plobi_cli.agent_identity import get_active_profile_name
                     _profile = get_active_profile_name() or "default"
                 except Exception:
                     _profile = None
@@ -6822,7 +6822,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             pass
         try:
-            from plobi_cli.profiles import get_active_profile_name
+            from plobi_cli.agent_identity import get_active_profile_name
             _profile = get_active_profile_name()
             if _profile and _profile != "default":
                 logger.info("Active profile: %s", _profile)
@@ -7868,7 +7868,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     def _active_profile_name(self) -> str:
         """Return the profile name this gateway represents."""
         try:
-            from plobi_cli.profiles import get_active_profile_name
+            from plobi_cli.agent_identity import get_active_profile_name
             return get_active_profile_name() or "default"
         except Exception:
             return "default"
@@ -8532,7 +8532,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return 0
 
         try:
-            from plobi_cli.profiles import profiles_to_serve, get_active_profile_name
+            from plobi_cli.agent_identity import profiles_to_serve, get_active_profile_name
         except Exception:
             return 0
 
@@ -17022,7 +17022,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         by the /p/<profile>/ URL prefix or a per-credential adapter), falling
         back to the active profile (the multiplexer's own home).
         """
-        from plobi_cli.profiles import get_active_profile_name, get_profile_dir
+        from plobi_cli.agent_identity import get_active_profile_name, get_profile_dir
         try:
             name = (source.profile or "").strip() or get_active_profile_name() or "default"
             return get_profile_dir(name)

@@ -1313,7 +1313,7 @@ class TestProfileRestoration:
         original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
         def fake_import(name, *a, **kw):
-            if name == "plobi_cli.profiles":
+            if name == "plobi_cli.agent_identity":
                 raise ImportError("no profiles module")
             return original_import(name, *a, **kw)
 

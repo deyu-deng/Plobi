@@ -64,7 +64,7 @@ def fresh_registry(tmp_path, monkeypatch):
 
 def _land(tmp_path, *names: str) -> None:
     """把这几个 profile 家真的落到盘上——「登记 / 新建过」的证据。"""
-    from plobi_cli.profiles import normalize_profile_name
+    from plobi_cli.agent_identity import normalize_profile_name
 
     for name in names:
         (tmp_path / ".plobi" / "profiles" / normalize_profile_name(name)).mkdir(

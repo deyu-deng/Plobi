@@ -913,7 +913,7 @@ class TestWebServerEndpoints:
         assert target.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
     def test_chat_image_upload_writes_to_requested_profile_images(self):
-        from plobi_cli import profiles as profiles_mod
+        from plobi_cli import agent_identity as profiles_mod
 
         worker_home = profiles_mod.get_profile_dir("worker")
         worker_home.mkdir(parents=True)
@@ -3894,7 +3894,7 @@ class TestNewEndpoints:
 
     def test_profiles_list_falls_back_when_profile_listing_fails(self, monkeypatch):
         from plobi_constants import get_plobi_home
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         plobi_home = get_plobi_home()
         plobi_home.mkdir(parents=True, exist_ok=True)
@@ -3926,7 +3926,7 @@ class TestNewEndpoints:
     def test_profiles_create_rename_delete_round_trip(self, monkeypatch):
         # Stub gateway service teardown so the test doesn't shell out to
         # launchctl/systemctl on the host.
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
 
         retired = self.client.post("/api/profiles", json={"name": "test-prof"})
@@ -3970,7 +3970,7 @@ class TestNewEndpoints:
         assert resp.json()["command"] == "plobi setup"
 
     def test_profiles_create_creates_wrapper_alias_when_safe(self, monkeypatch, tmp_path):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         wrapper_dir = tmp_path / "bin"
         wrapper_dir.mkdir()
@@ -3999,7 +3999,7 @@ class TestNewEndpoints:
 
     def test_profiles_create_with_clone_from_copies_source_skills(self, monkeypatch):
         from plobi_constants import get_plobi_home
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
         (get_plobi_home() / "config.yaml").write_text(
@@ -4028,7 +4028,7 @@ class TestNewEndpoints:
 
     def test_profiles_create_with_clone_from_duplicates_source(self, monkeypatch):
         from plobi_constants import get_plobi_home
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
@@ -4050,7 +4050,7 @@ class TestNewEndpoints:
 
     def test_profiles_create_clone_all_from_named_source(self, monkeypatch):
         from plobi_constants import get_plobi_home
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
@@ -4071,7 +4071,7 @@ class TestNewEndpoints:
 
     def test_profiles_create_without_clone_seeds_bundled_skills(self, monkeypatch):
         from plobi_constants import get_plobi_home
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
 
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
@@ -4174,7 +4174,7 @@ class TestNewEndpoints:
         assert resp.status_code == 404
 
     def test_profile_soul_round_trip(self, monkeypatch):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
@@ -4217,7 +4217,7 @@ class TestNewEndpoints:
         assert data["current"] == "default"
 
     def test_profiles_set_active_round_trip(self, monkeypatch):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
@@ -4233,7 +4233,7 @@ class TestNewEndpoints:
         assert resp.status_code == 404
 
     def test_profile_description_round_trip(self, monkeypatch):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
@@ -4260,7 +4260,7 @@ class TestNewEndpoints:
 
     def test_profile_model_round_trip(self, monkeypatch):
         from plobi_constants import get_plobi_home
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步）。这一条要测的从来不是建家，是 PUT 模型那一口——
@@ -4292,7 +4292,7 @@ class TestNewEndpoints:
         assert not (get_plobi_home() / "profiles" / "model-prof" / "config.yaml").exists()
 
     def test_profile_model_requires_provider_and_model(self, monkeypatch):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
@@ -4304,7 +4304,7 @@ class TestNewEndpoints:
         assert resp.status_code == 400
 
     def test_profile_describe_auto_success(self, monkeypatch):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
@@ -4327,7 +4327,7 @@ class TestNewEndpoints:
         assert body["description_auto"] is True
 
     def test_profile_describe_auto_failure_is_not_auto(self, monkeypatch):
-        import plobi_cli.profiles as profiles_mod
+        import plobi_cli.agent_identity as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。

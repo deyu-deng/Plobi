@@ -1017,7 +1017,7 @@ def _profile_home(profile: str | None) -> Path | None:
     if not name:
         return None
     try:
-        from plobi_cli import profiles as profiles_mod
+        from plobi_cli import agent_identity as profiles_mod
 
         home = Path(profiles_mod.get_profile_dir(name))
     except Exception:
@@ -3415,7 +3415,7 @@ def _probe_config_health(cfg: dict) -> str:
 
 def _current_profile_name() -> str:
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
 
         return get_active_profile_name() or "default"
     except Exception:

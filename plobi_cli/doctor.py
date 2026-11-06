@@ -2351,7 +2351,7 @@ def run_doctor(args):
             check_warn(f"{_active_memory_provider} check failed", str(_e))
 
     try:
-        from plobi_cli.profiles import (
+        from plobi_cli.agent_identity import (
             list_identity_profiles,
             _get_wrapper_dir,
             identity_exists,

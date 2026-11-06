@@ -1667,7 +1667,7 @@ def test_dispatch_skips_nonspawnable_into_separate_bucket(kanban_home, monkeypat
     ``skipped_unassigned`` (which is operator-actionable) — they go in
     the dedicated ``skipped_nonspawnable`` bucket so health telemetry
     can suppress false-positive "stuck" warnings."""
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
     with kb.connect() as conn:
         t = kb.create_task(conn, title="for-terminal", assignee="orion-cc")
@@ -1681,7 +1681,7 @@ def test_has_spawnable_ready_false_when_only_terminal_lanes(kanban_home, monkeyp
     """``has_spawnable_ready`` returns False when every ready task is
     assigned to a control-plane lane — used by gateway/CLI dispatchers
     to silence the stuck-warn while terminals still have queued work."""
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
     with kb.connect() as conn:
         kb.create_task(conn, title="t1", assignee="orion-cc")
@@ -1693,7 +1693,7 @@ def test_has_spawnable_ready_true_when_real_profile_present(kanban_home, monkeyp
     """``has_spawnable_ready`` returns True as soon as ANY ready task
     has an assignee that maps to a real Plobi profile — preserves the
     real "stuck" signal when a daily/agent task is queued."""
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
     monkeypatch.setattr(
         profiles, "profile_exists", lambda name: name == "daily"
     )
@@ -2251,7 +2251,7 @@ def test_dispatch_worktree_task_persists_materialized_workspace_and_branch(kanba
     repo = tmp_path / "repo"
     _init_git_repo(repo)
     kb.create_board("worktree-board", default_workdir=str(repo))
-    import plobi_cli.profiles as profiles
+    import plobi_cli.agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda _name: True)
     spawns: list[tuple[str, str]] = []
 
@@ -2290,7 +2290,7 @@ def test_dispatch_worktree_task_rerun_reuses_existing_linked_worktree_and_branch
     repo = tmp_path / "repo"
     _init_git_repo(repo)
     kb.create_board("worktree-rerun-board", default_workdir=str(repo))
-    import plobi_cli.profiles as profiles
+    import plobi_cli.agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda _name: True)
     spawns: list[tuple[str, str]] = []
 
@@ -3827,7 +3827,7 @@ def test_has_spawnable_review_false_when_only_terminal_lanes(
     kanban_home, monkeypatch,
 ):
     """has_spawnable_review returns False when review tasks are terminal lanes."""
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
     with kb.connect() as conn:
         t = kb.create_task(conn, title="review", assignee="orion-cc")
@@ -3837,7 +3837,7 @@ def test_has_spawnable_review_false_when_only_terminal_lanes(
 
 def test_dispatch_review_skips_nonspawnable(kanban_home, monkeypatch):
     """Review tasks with non-existent profiles go to skipped_nonspawnable."""
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
     with kb.connect() as conn:
         t = kb.create_task(conn, title="review", assignee="orion-cc")

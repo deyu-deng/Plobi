@@ -7,7 +7,7 @@ profiles; leaking credentials in the archive is a security issue.
 
 import tarfile
 
-from plobi_cli.profiles import export_profile, _DEFAULT_EXPORT_EXCLUDE_ROOT
+from plobi_cli.agent_identity import export_profile, _DEFAULT_EXPORT_EXCLUDE_ROOT
 
 
 class TestCredentialExclusion:
@@ -34,9 +34,9 @@ class TestCredentialExclusion:
         (profile_dir / "memories").mkdir()
         (profile_dir / "memories" / "MEMORY.md").write_text("# Memories\n")
 
-        monkeypatch.setattr("plobi_cli.profiles._get_profiles_root", lambda: profiles_root)
-        monkeypatch.setattr("plobi_cli.profiles.get_profile_dir", lambda n: profile_dir)
-        monkeypatch.setattr("plobi_cli.profiles.validate_profile_name", lambda n: None)
+        monkeypatch.setattr("plobi_cli.agent_identity._get_profiles_root", lambda: profiles_root)
+        monkeypatch.setattr("plobi_cli.agent_identity.get_profile_dir", lambda n: profile_dir)
+        monkeypatch.setattr("plobi_cli.agent_identity.validate_profile_name", lambda n: None)
 
         output = tmp_path / "export.tar.gz"
         result = export_profile("testprofile", str(output))

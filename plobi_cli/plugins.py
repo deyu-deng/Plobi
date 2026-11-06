@@ -379,7 +379,7 @@ class PluginContext:
         """Return the active Plobi profile name (e.g. ``"default"``).
 
         Derived from ``PLOBI_HOME`` via
-        :func:`plobi_cli.profiles.get_active_profile_name`, so it works in
+        :func:`plobi_cli.agent_identity.get_active_profile_name`, so it works in
         every execution context — interactive CLI, gateway, and
         kanban-spawned worker sessions alike — without depending on
         ``_cli_ref`` (which is ``None`` outside an interactive CLI run).
@@ -389,7 +389,7 @@ class PluginContext:
         ``PLOBI_HOME`` points somewhere unrecognized.
         """
         try:
-            from plobi_cli.profiles import get_active_profile_name
+            from plobi_cli.agent_identity import get_active_profile_name
             return get_active_profile_name()
         except Exception:
             return "default"

@@ -5,7 +5,7 @@ commit: the original keyed the cache on the max mtime of only the TOP-LEVEL
 scan dirs, so adding/removing a skill inside a category subdir (which bumps
 the category dir's mtime, not the root's) served a stale list indefinitely.
 The signature now covers roots + immediate children (mirroring
-plobi_cli/profiles.py::_count_skills) plus the disabled-set, plus (mtime_ns,
+plobi_cli/agent_identity.py::_count_skills) plus the disabled-set, plus (mtime_ns,
 size) of the SKILL.md files the previous scan read — which is what catches an
 in-place edit. The TTL is only the backstop for the edit no fingerprint can
 see (same size AND same mtime_ns).

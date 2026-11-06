@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from plobi_constants import get_plobi_home
-from plobi_cli.profiles import _get_default_plobi_home
+from plobi_cli.agent_identity import _get_default_plobi_home
 from plugins.plugin_utils import SingletonSlot
 from typing import Any, TYPE_CHECKING
 
@@ -64,7 +64,7 @@ def resolve_active_host() -> str:
         return explicit
 
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
         profile = get_active_profile_name()
         return profile_host_key(profile)
     except Exception:

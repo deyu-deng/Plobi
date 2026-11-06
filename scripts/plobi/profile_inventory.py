@@ -77,7 +77,7 @@ def main(argv=None) -> int:
 
     from plobi_constants import (config_path_for_home, get_plobi_home,
                                  get_shared_plobi_root, shared_root_for)
-    from plobi_cli.profiles import _get_profiles_root
+    from plobi_cli.agent_identity import _get_profiles_root
 
     home = get_plobi_home()
     proot = _get_profiles_root()

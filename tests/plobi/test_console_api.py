@@ -47,10 +47,10 @@ def _isolated_state(tmp_path, monkeypatch):
     # 否则每个 project 用例都会往真的脑仓里写目录。
     (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
-    # 「家落地了没有」（registry._profile_landed → plobi_cli.profiles.profile_exists）
+    # 「家落地了没有」（registry._profile_landed → plobi_cli.agent_identity.profile_exists）
     # 在这个隔离环境里必须可控：真家是共享的，读它等于把本用例的读数交给那台机器。
     # 只承认 l2-agenda 有家——它就是被 spawn 过的那一行（AGENDA 的形状）。
-    import plobi_cli.profiles as _profiles
+    import plobi_cli.agent_identity as _profiles
 
     monkeypatch.setattr(
         _profiles, "profile_exists", lambda name: str(name).strip().lower() == "l2-agenda", raising=False
@@ -945,7 +945,7 @@ def _stub_agenda_materialisation(monkeypatch) -> dict[str, list[str]]:
         return False
 
     monkeypatch.setattr(AgentRegistry, "spawn", fake_spawn)
-    monkeypatch.setattr("plobi_cli.profiles.profile_exists", lambda name: False)
+    monkeypatch.setattr("plobi_cli.agent_identity.profile_exists", lambda name: False)
     monkeypatch.setattr("plobi.agents.registry.ensure_l2_agenda_toolsets", fake_toolsets)
     monkeypatch.setattr("plobi.agents.registry.ensure_l1_secretary_form", lambda: False)
     return calls

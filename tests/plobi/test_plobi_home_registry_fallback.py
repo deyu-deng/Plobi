@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 import plobi_constants
-from plobi_cli.profiles import resolve_profile_env
+from plobi_cli.agent_identity import resolve_profile_env
 
 
 @pytest.fixture()

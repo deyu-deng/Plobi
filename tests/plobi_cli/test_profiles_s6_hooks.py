@@ -1,4 +1,4 @@
-"""Tests for the Phase 4 s6 hooks in plobi_cli.profiles.
+"""Tests for the Phase 4 s6 hooks in plobi_cli.agent_identity.
 
 Specifically: _maybe_register_gateway_service,
 _maybe_unregister_gateway_service. The integration with
@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from plobi_cli.profiles import (
+from plobi_cli.agent_identity import (
     _maybe_register_gateway_service,
     _maybe_unregister_gateway_service,
 )

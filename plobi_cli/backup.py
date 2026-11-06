@@ -688,7 +688,7 @@ def run_import(args) -> None:
         restored_profiles = []
         if profiles_dir.is_dir():
             try:
-                from plobi_cli.profiles import (
+                from plobi_cli.agent_identity import (
                     create_wrapper_script, check_alias_collision,
                     _is_wrapper_dir_in_path, _get_wrapper_dir,
                 )
@@ -719,7 +719,7 @@ def run_import(args) -> None:
                         print('  Add to your shell config (~/.bashrc or ~/.zshrc):')
                         print('    export PATH="$HOME/.local/bin:$PATH"')
             except ImportError:
-                # plobi_cli.profiles might not be available (fresh install)
+                # plobi_cli.agent_identity might not be available (fresh install)
                 if any(profiles_dir.iterdir()):
                     print("\n  Profiles detected but aliases could not be created.")
                     print("  Run: plobi profile list  (after installing plobi)")

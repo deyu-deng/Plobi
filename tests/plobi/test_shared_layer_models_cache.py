@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from agent import models_dev
-from plobi_cli import profiles
+from plobi_cli import agent_identity as profiles
 
 
 def _profile_home(tmp_path):

@@ -26,7 +26,7 @@ from typing import Any, Optional
 
 from plobi_cli import kanban_db as kb
 from plobi_cli import kanban_swarm as ks
-from plobi_cli.profiles import get_active_profile_name
+from plobi_cli.agent_identity import get_active_profile_name
 
 
 # ---------------------------------------------------------------------------
@@ -1005,7 +1005,7 @@ def _profile_author() -> str:
         if v:
             return v
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
         return get_active_profile_name() or "user"
     except Exception:
         return "user"

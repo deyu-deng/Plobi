@@ -87,10 +87,10 @@ def _patch_list_profiles(names: list[str]):
         for n in names
     ]
     return [
-        patch("plobi_cli.profiles.list_profiles", return_value=fake_profiles),
-        patch("plobi_cli.profiles.list_roster_agents", return_value=fake_roster),
-        patch("plobi_cli.profiles.profile_exists", side_effect=lambda x: x in names),
-        patch("plobi_cli.profiles.get_active_profile_name", return_value=names[0] if names else "default"),
+        patch("plobi_cli.agent_identity.list_profiles", return_value=fake_profiles),
+        patch("plobi_cli.agent_identity.list_roster_agents", return_value=fake_roster),
+        patch("plobi_cli.agent_identity.profile_exists", side_effect=lambda x: x in names),
+        patch("plobi_cli.agent_identity.get_active_profile_name", return_value=names[0] if names else "default"),
     ]
 
 

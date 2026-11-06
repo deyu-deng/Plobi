@@ -2,7 +2,7 @@
 """身份判据＝**名册那一行**（裁 192），不是家目录。
 
 家目录那条腿退役之后（裁 42／178 乙案：10-24 隔离搬走 23 具家，10-27 用户签字把隔离区
-彻底删了），``plobi_cli.profiles.profile_exists()`` 对**每一个**真身份都返回 False。
+彻底删了），``plobi_cli.agent_identity.profile_exists()`` 对**每一个**真身份都返回 False。
 凡是拿它当「这个身份在不在」来问的地方都会变成假阴性——最要命的是看板：每一条有
 assignee 的任务都被判成「不可起」，派发整体瘫死（用户 10-27：「kanban 的能力要有」）。
 
@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from plobi_cli import kanban_db as kb
-from plobi_cli import profiles as profiles_mod
+from plobi_cli import agent_identity as profiles_mod
 
 
 ROSTER_YAML = (

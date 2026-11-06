@@ -387,7 +387,7 @@ class AgentEntry:
         # registry key verbatim (``Aura``) makes ``plobi --profile Aura serve``
         # fall through to argparse, which then reads ``Aura`` as a subcommand
         # and exits 2. The base documents the same requirement: normalize before
-        # validation / subprocess spawn (plobi_cli/profiles.py:303-318, #18498).
+        # validation / subprocess spawn (plobi_cli/agent_identity.py:303-318, #18498).
         #
         # Normalized inline instead of importing that helper: this module
         # deliberately avoids depending on plobi_cli at attribute time (see the
@@ -829,7 +829,7 @@ class AgentRegistry:
 
         把注册表条目标记 ``archived=True``（保留，列表默认不显示）。
         profile 目录的物理搬运由调用方（console router）在标记前后做，
-        因为路径解析依赖 ``plobi_cli.profiles`` —— registry 保持纯数据。
+        因为路径解析依赖 ``plobi_cli.agent_identity`` —— registry 保持纯数据。
         返回归档后的 entry；找不到则 ``RegistryError``。
         """
         entry = self.get(name)
@@ -1076,7 +1076,7 @@ class AgentRegistry:
 
 def suggested_profile_name(entry: AgentEntry) -> str:
     """给这条记录推荐一个能用的 profile 名（推荐不出来为空串）。"""
-    from plobi_cli.profiles import validate_profile_name
+    from plobi_cli.agent_identity import validate_profile_name
 
     for candidate in (f"l2-{entry.profile_name}", f"l2-{entry.name.strip().lower()}"):
         try:
@@ -1090,12 +1090,12 @@ def suggested_profile_name(entry: AgentEntry) -> str:
 def profile_name_blocker(entry: AgentEntry) -> str:
     """这条记录的 profile 家**永远建不出来**时，返回一句能行动的话（没问题返回空串）。
 
-    判据只有一份：``plobi_cli.profiles`` 的 profile 名校验。这里加的只有「改什么」——
+    判据只有一份：``plobi_cli.agent_identity`` 的 profile 名校验。这里加的只有「改什么」——
     项目分身叫 ``Plobi`` 时小写化就是保留名 ``plobi``（和 Plobi 自己的安装撞），
     以前用户只看到一句 "Profile name 'plobi' is reserved"，不知道要改哪一格，
     于是那个分身永远问不到（R-071 实测第二条）。
     """
-    from plobi_cli.profiles import validate_profile_name
+    from plobi_cli.agent_identity import validate_profile_name
 
     from plobi.routing.models import L2_COURSE
 
@@ -2553,7 +2553,7 @@ def shared_skills_root() -> Path:
     ``spawn`` may itself run inside a profile, and a 分身 must not inherit
     another 分身's copy as the shared root.
     """
-    from plobi_cli.profiles import get_profile_dir
+    from plobi_cli.agent_identity import get_profile_dir
 
     return get_profile_dir("default") / "skills"
 
@@ -3179,7 +3179,7 @@ def ensure_l1_secretary_form() -> bool:
     exists.
     """
     from plobi_cli.config import load_config, save_config
-    from plobi_cli.profiles import get_active_profile_name
+    from plobi_cli.agent_identity import get_active_profile_name
     from plobi_constants import get_plobi_home
 
     if get_active_profile_name() != "default":
@@ -3221,7 +3221,7 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
         # 已经印上去的 L1 合同纠掉。判据与
         # ``plugins/plobi-north-star/l1_budget.py:115 is_l1_default_profile()``
         # 同源（get_active_profile_name() == L1_PROFILE_NAME），只是没有 agent 实例。
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
 
         if get_active_profile_name() == "default":
             ensure_l1_secretary_routing_soul()

@@ -292,7 +292,7 @@ def agenda_state_db(home: Path | None = None) -> Path:
     except Exception:
         pass
     try:
-        from plobi_cli.profiles import get_profile_dir
+        from plobi_cli.agent_identity import get_profile_dir
 
         return get_profile_dir(profile) / "state.db"
     except Exception:

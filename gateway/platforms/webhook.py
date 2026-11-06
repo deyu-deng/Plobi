@@ -453,7 +453,7 @@ class WebhookAdapter(BasePlatformAdapter):
             # the single-profile gateway (don't 404 a would-be valid route).
             return None
         try:
-            from plobi_cli.profiles import profiles_to_serve
+            from plobi_cli.agent_identity import profiles_to_serve
             served = {name for name, _ in profiles_to_serve(multiplex=True)}
         except Exception:
             return _PROFILE_REJECTED

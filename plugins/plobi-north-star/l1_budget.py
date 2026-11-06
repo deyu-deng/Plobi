@@ -48,7 +48,7 @@ L1_COMPRESSION_THRESHOLD: float = 0.35
 #: 与 ``plugins/plobi-north-star/__init__.py::TOOLSET`` 同名。
 L1_TOOLSET: str = "plobi_north_star"
 
-#: L1 默认 profile 名。``plobi_cli.profiles.get_active_profile_name`` 在
+#: L1 默认 profile 名。``plobi_cli.agent_identity.get_active_profile_name`` 在
 #: ``PLOBI_HOME`` 是 ``~/.plobi`` 或 ``~/.plobi/profiles/default/`` 时
 #: 都返回这个字符串。L2/L3 用自定义 profile 名，自动豁免。
 L1_PROFILE_NAME: str = "default"
@@ -107,7 +107,7 @@ def _profile_name(agent: Any) -> Optional[str]:
         if isinstance(value, str) and value:
             return value
     try:
-        from plobi_cli.profiles import get_active_profile_name
+        from plobi_cli.agent_identity import get_active_profile_name
 
         return get_active_profile_name()
     except Exception:  # pragma: no cover - 解析失败按 None 计
@@ -117,7 +117,7 @@ def _profile_name(agent: Any) -> Optional[str]:
 def is_l1_default_profile(agent: Any) -> bool:
     """Return True iff ``agent`` 看起来是 default profile 上的 L1 总秘书。
 
-    判定纯读 agent 属性 + ``plobi_cli.profiles.get_active_profile_name``
+    判定纯读 agent 属性 + ``plobi_cli.agent_identity.get_active_profile_name``
     回落；不引入新 import 风暴。L2-agenda / L3 通常在自定义 profile 上
     （profile name != "default"），自动豁免。
     """

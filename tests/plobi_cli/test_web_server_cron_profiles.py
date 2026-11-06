@@ -20,7 +20,7 @@ def isolated_profiles(tmp_path, monkeypatch):
     所以 ``isolated_profiles["worker_alpha"]`` 给的是共享根（那才是这一行运行时的家），
     那一行自己的作业文件在 ``isolated_profiles["worker_store"]``。
     """
-    from plobi_cli import profiles
+    from plobi_cli import agent_identity as profiles
 
     default_home = tmp_path / ".plobi"
     (default_home / "plobi").mkdir(parents=True)

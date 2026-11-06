@@ -22,7 +22,7 @@
     ./.venv/Scripts/python.exe scripts/plobi/quarantine_profile_remnants.py --apply
 
 **读数口径**（ADR-0013 硬约束第 3 条：落点一律问代码自己的解析器，不手拼字面路径）：
-分母 ``profiles_root`` 走 ``plobi_cli.profiles._get_profiles_root()``；搬完之后立刻再测一遍
+分母 ``profiles_root`` 走 ``plobi_cli.agent_identity._get_profiles_root()``；搬完之后立刻再测一遍
 "那个家会读哪一份 ``models_dev_cache.json``"（``plobi_constants.shared_root_for``，纯函数、
 不读环境、也不缓存，所以进程内逐家问就够了，不必像 ``isolate_profile_configs.py`` 那样为
 ``load_config`` 逐家新起进程）。判据是**家数不变**＋**盘点表里甲组六类归零**＋**回退 0 家**＋**报错 0 家**。
@@ -229,7 +229,7 @@ def main(argv=None) -> int:
     ap.add_argument("--date", default=date.today().strftime("%Y%m%d"),
                     help="隔离目录的日期后缀（默认今天；写死是为了重跑幂等）")
     ap.add_argument("--profiles-root", default=None,
-                    help="调试用：覆盖 `plobi_cli.profiles._get_profiles_root()`")
+                    help="调试用：覆盖 `plobi_cli.agent_identity._get_profiles_root()`")
     ap.add_argument("--whole-house", action="store_true",
                     help="第 4 步整屋退役：把 profiles/<name> 整个移进 "
                          "<共享根>/_quarantine-<日期>/profiles/<name>（含 state.db/凭据/技能，只移不删）")
@@ -242,7 +242,7 @@ def main(argv=None) -> int:
         profiles_root = Path(args.profiles_root)
         root_source = "--profiles-root"
     else:
-        from plobi_cli.profiles import _get_profiles_root
+        from plobi_cli.agent_identity import _get_profiles_root
         profiles_root = _get_profiles_root()
         root_source = "_get_profiles_root()"
 

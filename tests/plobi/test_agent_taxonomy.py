@@ -336,7 +336,7 @@ def test_dissolve_archives_and_hides_from_default_list(
     fake_profile = tmp_path / "profiles" / "to-dissolve"
     fake_profile.mkdir(parents=True)
     monkeypatch.setattr(
-        "plobi_cli.profiles.get_profile_dir",
+        "plobi_cli.agent_identity.get_profile_dir",
         lambda name: fake_profile,
         raising=False,
     )
@@ -353,11 +353,11 @@ def test_dissolve_archives_and_hides_from_default_list(
     import types as _types
 
     if not hasattr(fake_plobi_cli, "profiles"):
-        fake_profiles = _types.ModuleType("plobi_cli.profiles")
+        fake_profiles = _types.ModuleType("plobi_cli.agent_identity")
         fake_profiles.get_profile_dir = lambda name: fake_profile
-        fake_plobi_cli.profiles = fake_profiles
+        fake_plobi_cli.agent_identity = fake_profiles
     else:
-        fake_plobi_cli.profiles.get_profile_dir = lambda name: fake_profile
+        fake_plobi_cli.agent_identity.get_profile_dir = lambda name: fake_profile
 
     # Dissolve.
     resp = client.post("/api/agents/to-dissolve/dissolve")
@@ -406,8 +406,8 @@ def test_dissolve_is_idempotent(client, _isolated_state, monkeypatch, tmp_path):
     fake_plobi_cli = sys.modules.get("plobi_cli") or types.ModuleType("plobi_cli")
     sys.modules["plobi_cli"] = fake_plobi_cli
     if not hasattr(fake_plobi_cli, "profiles"):
-        fake_plobi_cli.profiles = types.ModuleType("plobi_cli.profiles")
-    fake_plobi_cli.profiles.get_profile_dir = lambda name: fake_profile
+        fake_plobi_cli.agent_identity = types.ModuleType("plobi_cli.agent_identity")
+    fake_plobi_cli.agent_identity.get_profile_dir = lambda name: fake_profile
 
     first = client.post("/api/agents/already/dissolve")
     assert first.status_code == 200
