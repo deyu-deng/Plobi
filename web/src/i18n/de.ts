@@ -280,8 +280,8 @@ export const de: Translations = {
     },
   },
 
-  agentes: {
-    newAgents: "Neues Agent",
+  profiles: {
+    newProfile: "Neues Agent",
     name: "Name",
     namePlaceholder: "z. B. coder, writer usw.",
     nameRequired: "Name ist erforderlich",
@@ -289,8 +289,8 @@ export const de: Translations = {
       "Nur Kleinbuchstaben, Ziffern, _ und -; muss mit einem Buchstaben oder einer Ziffer beginnen; maximal 64 Zeichen.",
     invalidName: "Ungültiger Agentname",    cloneFrom: "Konfiguration klonen von",
     cloneFromNone: "Keine (leer)",
-    allAgentss: "Agents",
-    noAgentss: "Keine Agents gefunden.",
+    allProfiles: "Agents",
+    noProfiles: "Keine Agents gefunden.",
     defaultBadge: "Standard",
     hasEnv: "env",
     model: "Modell",

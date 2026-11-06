@@ -280,8 +280,8 @@ export const tr: Translations = {
     },
   },
 
-  ajanes: {
-    newAjane: "Yeni Ajan",
+  profiles: {
+    newProfile: "Yeni Ajan",
     name: "Ad",
     namePlaceholder: "örn. coder, writer, vb.",
     nameRequired: "Ad gereklidir",
@@ -289,8 +289,8 @@ export const tr: Translations = {
       "Yalnızca küçük harfler, rakamlar, _ ve - kullanılabilir; harf veya rakamla başlamalı; en fazla 64 karakter.",
     invalidName: "Geçersiz ajan adı",    cloneFrom: "Ajanden yapılandırmayı klonla",
     cloneFromNone: "Hiçbiri (boş)",
-    allAjanes: "Ajanlar",
-    noAjanes: "Ajan bulunamadı.",
+    allProfiles: "Ajanlar",
+    noProfiles: "Ajan bulunamadı.",
     defaultBadge: "varsayılan",
     hasEnv: "env",
     model: "Model",

@@ -35,6 +35,13 @@ def _npm() -> str:
     return shutil.which("npm") or "npm"
 
 
+def _tsc() -> str:
+    """仓库根那把 tsc（web 工程的类型检查用它）。"""
+    if os.name == "nt":
+        return str(ROOT / "node_modules" / ".bin" / "tsc.cmd")
+    return str(ROOT / "node_modules" / ".bin" / "tsc")
+
+
 def _run(cmd: list[str], cwd: Path) -> int:
     print("+", " ".join(cmd), f"(cwd={cwd})", flush=True)
     return subprocess.call(cmd, cwd=str(cwd))
@@ -170,7 +177,32 @@ def main() -> int:
         )
         return fe
 
-    print("Architecture gates passed (frontend + backend).")
+    # web 仪表盘（另一个前端工程，在 `web/`）：它的**类型真源**是 `web/src/i18n/types.ts`，
+    # 16 份语言文件必须与它对得上——键名一改就对不上（11-06 出过一次事故：四份语言文件把
+    # i18n 的键名也一起改了，西班牙语 `agentes`、土耳其语 `ajanes`…，而类型定义没跟着改
+    # ⇒ CI 的 web 构建当场炸）。
+    #
+    # ⚠️ 跑的是**真那条**：`web/tsconfig.json` 是 solution 文件（`files: []`），所以
+    # `tsc -p . --noEmit` **什么都查**（本地那正是它当时的假绿）；真检查在
+    # `tsconfig.app.json` 里，那才是应用代码。
+    wt = ROOT / "web"
+    if not (ROOT / "node_modules" / ".bin" / ("tsc.cmd" if os.name == "nt" else "tsc")).is_file():
+        print(
+            "ERROR: web 工程的类型检查无法执行 —— 仓库根 node_modules/.bin/tsc 缺失。"
+            "在仓库根跑 `npm ci`（workspace 依赖提升到根目录）。",
+            file=sys.stderr,
+        )
+        return 1
+    we = _run([_tsc(), "-p", "tsconfig.app.json", "--noEmit"], wt)
+    if we != 0:
+        print(
+            "\nArchitecture gate FAILED (web typecheck). "
+            "The locale files must match the `Translations` interface in web/src/i18n/types.ts "
+            "— if you renamed a key, rename it in every locale AND in that interface."
+        )
+        return we
+
+    print("Architecture gates passed (frontend + backend + web).")
     return 0
 
 

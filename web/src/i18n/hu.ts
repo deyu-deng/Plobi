@@ -280,8 +280,8 @@ export const hu: Translations = {
     },
   },
 
-  agentes: {
-    newAgente: "Új agent",
+  profiles: {
+    newProfile: "Új agent",
     name: "Név",
     namePlaceholder: "pl. coder, writer stb.",
     nameRequired: "A név kötelező",
@@ -289,8 +289,8 @@ export const hu: Translations = {
       "Csak kisbetűk, számjegyek, _ és - karakterek; betűvel vagy számjeggyel kell kezdődnie; legfeljebb 64 karakter.",
     invalidName: "Érvénytelen agentnév",    cloneFrom: "Konfiguráció klónozása ebből a agentból",
     cloneFromNone: "Nincs (üres)",
-    allAgentes: "Agentek",
-    noAgentes: "Nem található agent.",
+    allProfiles: "Agentek",
+    noProfiles: "Nem található agent.",
     defaultBadge: "alapértelmezett",
     hasEnv: "env",
     model: "Modell",

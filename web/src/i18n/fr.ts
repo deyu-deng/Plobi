@@ -280,8 +280,8 @@ export const fr: Translations = {
     },
   },
 
-  agentes: {
-    newAgente: "Nouveau agent",
+  profiles: {
+    newProfile: "Nouveau agent",
     name: "Nom",
     namePlaceholder: "ex. coder, writer, etc.",
     nameRequired: "Le nom est requis",
@@ -290,8 +290,8 @@ export const fr: Translations = {
     invalidName: "Nom de agent invalide",
     cloneFrom: "Cloner depuis le agent",
     cloneFromNone: "Aucun (vide)",
-    allAgentes: "Agents",
-    noAgentes: "Aucun agent trouvé.",
+    allProfiles: "Agents",
+    noProfiles: "Aucun agent trouvé.",
     defaultBadge: "défaut",
     hasEnv: "env",
     model: "Modèle",
