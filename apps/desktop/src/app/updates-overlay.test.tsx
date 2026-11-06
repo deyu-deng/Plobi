@@ -40,6 +40,7 @@ const release = (over: Partial<DesktopReleaseInfo> = {}): DesktopReleaseInfo => 
   assetUrl: 'https://example.invalid/Plobi-0.3.1-win-x64.exe',
   assetSize: 1024,
   reason: null,
+  status: 200,
   checkedAt: 0,
   ...over
 })
