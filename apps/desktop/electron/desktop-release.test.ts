@@ -135,6 +135,13 @@ test('the update helper installs the shell first, then the agent out of that pac
     const bundleAt = text.indexOf('-BundleDir')
 
     assert.ok(shellAt >= 0 && bundleAt > shellAt, 'the agent must be installed AFTER the shell swap (it comes out of that package)')
+
+    // The bundled branch runs the two stages that matter -- copy the source,
+    // install the locked wheels -- and NOT the whole script: recreating the
+    // venv costs minutes and the node stage would need the network.
+    assert.match(text, /-Stage repository -BundleDir/)
+    assert.match(text, /-Stage dependencies -BundleDir/)
+    assert.doesNotMatch(text, /-Stage venv/)
   } finally {
     try {
       fs.unlinkSync(helper)

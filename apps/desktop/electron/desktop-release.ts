@@ -498,8 +498,18 @@ export function writeUpdateHelper(opts: {
   if (isWindows) {
     lines.push(`if exist "${path.join(bundledAgent, 'scripts', 'install.ps1')}" (`)
     lines.push(`  rem --- 2a) bundled backend: install it out of the package, offline ---`)
+    // Two stages, not the whole script: `repository` copies the packaged source,
+    // `dependencies` installs the locked wheels from the packaged wheelhouse
+    // (offline). Skipping the venv stage keeps the venv that is already there
+    // (its Scripts\*.exe carry absolute paths -- recreating it costs minutes),
+    // and `uv sync` reconciles it with the new version's lockfile. The node
+    // stage is skipped too: the desktop's own node deps travel in the package,
+    // and npm would need the network.
     lines.push(
-      `  powershell -ExecutionPolicy Bypass -File "${path.join(bundledAgent, 'scripts', 'install.ps1')}" -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+      `  powershell -ExecutionPolicy Bypass -File "${path.join(bundledAgent, 'scripts', 'install.ps1')}" -Stage repository -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+    )
+    lines.push(
+      `  powershell -ExecutionPolicy Bypass -File "${path.join(bundledAgent, 'scripts', 'install.ps1')}" -Stage dependencies -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
     )
     lines.push(`) else (`)
     lines.push(`  rem --- 2b) source install: move the checkout to the same tag ---`)
