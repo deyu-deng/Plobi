@@ -245,3 +245,29 @@ def test_a_tag_that_does_not_exist_fails_loudly(_remote_with_tag) -> None:
 
     assert proc.returncode != 0, "不存在的 tag 竟然被当成成功"
     assert "v0.0.0-does-not-exist" in (proc.stdout + proc.stderr)
+
+
+def test_the_helpers_next_step_leaves_the_checkout_on_a_branch(_remote_with_tag) -> None:
+    """helper 的第 1b 步：tag checkout 之后要把 `main` 重新指到那一版并切回去。
+
+    不做这一步，检出就停在 **detached HEAD** 上 ⇒ 下一次更新没有分支可推
+    （`plobi update` 判 detached 而拒绝）⇒ 这台机器第二次就更新不了了。
+    那是 2026-11-06 那笔 helper 修复要治的病，这里把它钉住。
+    """
+    clone_dir, tagged = _remote_with_tag
+
+    # 先走安装器那一步：落到 tag 上（detached）。
+    proc = _run_install_repository(clone_dir, tag=TAG)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert _git(["rev-parse", "HEAD"], clone_dir) == tagged
+
+    # 再走 helper 的第 1b 步。
+    # 注意：`git checkout main` 会**在 stdout 上打一句提示**（main 与 origin/main 分叉了——
+    # 因为 main 现在指的是那一版 tag，而 origin/main 还指着浅 clone 的尖端），
+    # 那不是错误（rc=0），所以这里看返回码，不看 stdout 是不是空的。
+    assert _git(["branch", "-f", "main", f"refs/tags/{TAG}"], clone_dir) is not None
+    assert _git(["checkout", "main"], clone_dir) is not None
+
+    assert _git(["symbolic-ref", "--short", "HEAD"], clone_dir) == "main"
+    assert _git(["rev-parse", "main"], clone_dir) == tagged
+    assert _git(["rev-parse", "HEAD"], clone_dir) == tagged
