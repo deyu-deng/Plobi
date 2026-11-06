@@ -10,6 +10,9 @@ Usage:
     python scripts/release.py
 
     # Preview with semver bump
+    # NOTE: the version comes from the repo (__version__), NOT from the last
+    # tag -- so `--bump minor` moves it one notch past whatever the repo
+    # says. Check what it lands on before publishing.
     python scripts/release.py --bump minor
 
     # Create the release
@@ -2769,7 +2772,9 @@ def main():
     else:
         print(f"\n{'='*60}")
         print("  Dry run complete. To publish, add --publish")
-        print("  Example: python scripts/release.py --bump minor --publish")
+        print(f"  Example: python scripts/release.py --publish "
+              f"--notes-file docs/plobi/releases/v{new_version}.md")
+        print(f"  (the version comes from the repo, not from the last tag)")
         print(f"{'='*60}")
 
 
