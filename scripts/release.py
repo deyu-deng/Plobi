@@ -2417,6 +2417,10 @@ def main():
                         help="Mark as first release (no previous tag expected)")
     parser.add_argument("--output", type=str,
                         help="Write changelog to file instead of stdout")
+    parser.add_argument("--notes-file", type=str,
+                        help="Hand-written release notes (markdown) to publish as the "
+                             "release body instead of the generated commit log. The "
+                             "generated log is still attached to the release.")
     args = parser.parse_args()
 
     # The release DATE is metadata (it lands in __release_date__); the
@@ -2480,6 +2484,29 @@ def main():
         print(f"Changelog written to {args.output}")
     else:
         print(changelog)
+
+    # Hand-written notes win over the generated commit log. The generated log
+    # is a commit listing -- it carries internal wording and it is not what a
+    # reader wants on a release page -- but it is still worth keeping, so it
+    # goes out as an attachment instead of being thrown away.
+    release_notes = changelog
+    hand_written = None
+    if args.notes_file:
+        notes_path = Path(args.notes_file)
+        if not notes_path.is_file():
+            print(f"  ✗ Notes file not found: {args.notes_file}")
+            return
+        hand_written = notes_path.read_text(encoding="utf-8")
+        release_notes = hand_written
+        print(f"  ✓ Using hand-written notes from {args.notes_file}")
+
+    # Dry run shows the body that would actually be published -- otherwise the
+    # preview shows a commit log while the release gets the hand-written text.
+    if not args.publish and hand_written is not None:
+        print(f"\n{'='*60}")
+        print("  Release body (hand-written)")
+        print(f"{'='*60}")
+        print(release_notes)
 
     if args.publish:
         print(f"\n{'='*60}")
@@ -2548,7 +2575,7 @@ def main():
 
         # Create GitHub release
         changelog_file = REPO_ROOT / ".release_notes.md"
-        changelog_file.write_text(changelog, encoding="utf-8")
+        changelog_file.write_text(release_notes, encoding="utf-8")
 
         gh_cmd = [
             "gh", "release", "create", tag_name,
@@ -2556,6 +2583,14 @@ def main():
             "--notes-file", str(changelog_file),
         ]
         gh_cmd.extend(str(path) for path in artifacts)
+
+        # When the body is hand-written, keep the generated commit log as an
+        # attachment: it is the full history for anyone who wants it, without
+        # being the thing a reader sees first.
+        if hand_written is not None:
+            generated_file = REPO_ROOT / ".release_changelog_generated.md"
+            generated_file.write_text(changelog, encoding="utf-8")
+            gh_cmd.append(f"{generated_file}#Changelog")
 
         gh_bin = shutil.which("gh")
         if gh_bin:
@@ -2569,6 +2604,8 @@ def main():
 
         if result and result.returncode == 0:
             changelog_file.unlink(missing_ok=True)
+            if hand_written is not None:
+                generated_file.unlink(missing_ok=True)
             print(f"  ✓ GitHub release created: {result.stdout.strip()}")
             print(f"\n  🎉 Release v{new_version} ({tag_name}) published!")
         else:
@@ -2577,6 +2614,8 @@ def main():
             else:
                 print(f"  ✗ GitHub release failed: {result.stderr.strip()}")
             print(f"    Release notes kept at: {changelog_file}")
+            if hand_written is not None:
+                print(f"    Generated changelog kept at: {generated_file}")
             print("    Tag was created locally. Create the release manually:")
             print(
                 f"    gh release create {tag_name} --title 'Plobi v{new_version} ({release_date})' "
