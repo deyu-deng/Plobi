@@ -48,6 +48,46 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The backend travels INSIDE the installer (WP-BACKEND-IN-BUNDLE): the
+      # runtime source tree plus a wheelhouse of the LOCKED dependency wheels.
+      # The install then needs neither a git clone nor a PyPI resolve, and the
+      # shell and the agent can no longer drift -- they come from one package.
+      #
+      # Only the Windows leg bundles it for now: install.ps1 has the
+      # -BundleDir/-Wheelhouse mode, install.sh does not yet, so the macOS and
+      # Linux legs keep the git path and carry no bundle (their installers stay
+      # the size they are today).
+      - name: Build the backend bundle (runtime source + locked wheels)
+        if: matrix.platform == 'win'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1) the dashboard the backend serves (plobi_cli/web_dist) -- a build
+          #    artefact, not tracked in git, so it has to exist before we copy
+          #    the runtime tree into the package.
+          npm run build --workspace web
+
+          # 2) the locked dependency wheels, downloaded ONCE here and installed
+          #    offline on the user's machine. `--require-hashes` keeps the
+          #    lockfile's SHA256 verification, and `--only-binary` forbids
+          #    sdists (a sdist would have to be compiled on the user's
+          #    machine -- exactly what this bundle removes).
+          python -m pip install --quiet "uv==0.13.1"
+          uv export --format requirements-txt --extra all --no-emit-project \
+            -o apps/desktop/build/requirements.txt
+          python -m pip download --require-hashes --only-binary=:all: \
+            -r apps/desktop/build/requirements.txt -d apps/desktop/build/wheelhouse
+
+          # 3) the runtime source tree (the wheel only carries part of what the
+          #    backend reads by repo-relative path -- skills/, locales/, ...).
+          node apps/desktop/scripts/collect-backend-bundle.mjs
+
+      - name: Keep the bundle dirs present on the legs that do not bundle yet
+        if: matrix.platform != 'win'
+        shell: bash
+        run: mkdir -p apps/desktop/build/backend apps/desktop/build/wheelhouse
+
       - name: Build & package (${{ matrix.platform }})
         working-directory: apps/desktop
         shell: bash

@@ -107,7 +107,7 @@ test('canSelfUpdate says no on macOS (unsigned builds cannot be swapped in place
   assert.equal(canSelfUpdate('darwin'), false)
 })
 
-test('the update helper moves the agent to the same tag, then the shell, then starts the app', () => {
+test('the update helper installs the shell first, then the agent out of that package', () => {
   const helper = writeUpdateHelper({
     installerPath: 'C:\\Temp\\Plobi-0.3.2-win-x64.exe',
     installDir: 'D:\\Software\\Plobi',
@@ -119,14 +119,22 @@ test('the update helper moves the agent to the same tag, then the shell, then st
   try {
     const text = fs.readFileSync(helper, 'utf8')
 
-    // 1) the agent checkout goes to the release tag (shell and agent end up
-    //    on ONE version number)
+    // 1) the shell is replaced by the new installer
+    assert.match(text, /Plobi-0\.3\.2-win-x64\.exe" \/S \/D=D:\\Software\\Plobi/)
+    // 2) the agent is installed out of THAT package: the bundled backend when
+    //    the package carries one (no git, no PyPI), the checkout move
+    //    otherwise (shell and agent end up on ONE version number either way)
+    assert.match(text, /-BundleDir "D:\\Software\\Plobi\\resources\\backend"/)
+    assert.match(text, /-Wheelhouse "D:\\Software\\Plobi\\resources\\wheelhouse"/)
     assert.match(text, /-Tag "v0\.3\.2"/)
     assert.match(text, /install\.ps1/)
-    // 2) the shell is replaced by the new installer
-    assert.match(text, /Plobi-0\.3\.2-win-x64\.exe" \/S \/D=D:\\Software\\Plobi/)
     // 3) and the app starts again
     assert.match(text, /start "" "D:\\Software\\Plobi\\Plobi\.exe"/)
+
+    const shellAt = text.indexOf('/S /D=')
+    const bundleAt = text.indexOf('-BundleDir')
+
+    assert.ok(shellAt >= 0 && bundleAt > shellAt, 'the agent must be installed AFTER the shell swap (it comes out of that package)')
   } finally {
     try {
       fs.unlinkSync(helper)
@@ -149,16 +157,16 @@ test('the update helper waits for the app to exit before installing', () => {
     const text = fs.readFileSync(helper, 'utf8')
 
     // Installing over a running app half-succeeds: the wait has to come
-    // FIRST, before the checkout and before the installer.
+    // FIRST, before the shell swap and before the agent sync.
     assert.match(text, /tasklist \/FI "IMAGENAME eq Plobi\.exe"/)
     assert.match(text, /plobi_wait_exit/)
 
     const waitAt = text.indexOf('plobi_wait_exit')
-    const installAt = text.indexOf('install.ps1')
     const shellAt = text.indexOf('/S /D=')
+    const installAt = text.indexOf('install.ps1')
 
-    assert.ok(waitAt >= 0 && installAt > waitAt, 'the wait must come before the checkout move')
-    assert.ok(shellAt > installAt, 'the shell swap must come after the checkout move')
+    assert.ok(waitAt >= 0 && shellAt > waitAt, 'the wait must come before the shell swap')
+    assert.ok(installAt > shellAt, 'the agent sync must come after the shell swap')
   } finally {
     try {
       fs.unlinkSync(helper)

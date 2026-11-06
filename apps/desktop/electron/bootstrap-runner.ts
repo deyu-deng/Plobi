@@ -119,6 +119,35 @@ function hasExistingGitCheckout(activeRoot) {
   }
 }
 
+/**
+ * The bundled backend inside a packaged desktop app.
+ *
+ * A packaged build ships the agent (`resources/backend`) plus a wheelhouse of
+ * the locked dependency wheels (`resources/wheelhouse`). When they are there,
+ * the install must come FROM THE PACKAGE: no git clone, no PyPI resolve --
+ * and the shell and the agent can no longer drift apart, because both come
+ * out of the same package.
+ *
+ * Dev builds and packages built before this shipped have neither, so the git
+ * path stays and nothing else changes.
+ */
+export function resolveBundledBackend(resourcesPath?: string): { bundleDir: string; wheelhouse: string | null } | null {
+  const root = resourcesPath || (process as any).resourcesPath
+
+  if (!root) {
+    return null
+  }
+
+  const bundleDir = path.join(root, 'backend')
+  const wheelhouse = path.join(root, 'wheelhouse')
+
+  if (!fs.existsSync(path.join(bundleDir, 'scripts', 'install.ps1'))) {
+    return null
+  }
+
+  return { bundleDir, wheelhouse: fs.existsSync(wheelhouse) ? wheelhouse : null }
+}
+
 function cachedScriptPath(plobiHome, commit) {
   return path.join(bootstrapCacheDir(plobiHome), `install-${commit}.${process.platform === 'win32' ? 'ps1' : 'sh'}`)
 }
@@ -225,6 +254,20 @@ async function resolveInstallScript({
     emit({ type: 'log', line: `[bootstrap] using local ${installScriptName()} at ${localScript}` })
 
     return { path: localScript, source: 'local', kind: installScriptKind() }
+  }
+
+  // 2. Bundled backend: the package carries the agent AND its installer, so
+  //    the install needs neither GitHub nor a clone. Windows only for now --
+  //    install.sh has no -BundleDir mode yet, so the POSIX leg keeps the git
+  //    path (and carries no bundle).
+  const bundle = installScriptKind() === 'powershell' ? resolveBundledBackend() : null
+
+  if (bundle) {
+    const bundledScript = path.join(bundle.bundleDir, 'scripts', installScriptName())
+
+    emit({ type: 'log', line: `[bootstrap] using the bundled ${installScriptName()} at ${bundledScript}` })
+
+    return { path: bundledScript, source: 'bundled', kind: installScriptKind(), bundle }
   }
 
   // 2. Packaged path: download from GitHub at the pinned commit (1B's stamp).
@@ -571,7 +614,7 @@ function spawnBash(scriptPath, args, { emit, stageName, abortSignal, plobiHome }
 // is fresh-install only: once a managed checkout already exists, bootstrap is
 // a repair/update path and must not let an old packaged app detach the checkout
 // back to the commit baked into that app.
-function buildPinArgs(installStamp, { pinCommit = true } = {}) {
+function buildPinArgs(installStamp, { pinCommit = true, bundle = null } = {}) {
   const args = []
 
   if (pinCommit && installStamp && installStamp.commit) {
@@ -580,6 +623,16 @@ function buildPinArgs(installStamp, { pinCommit = true } = {}) {
 
   if (installStamp && installStamp.branch) {
     args.push('-Branch', installStamp.branch)
+  }
+
+  // The bundled backend IS the version: install it from the package, with the
+  // locked wheels that ship beside it (offline, hash-verified).
+  if (bundle) {
+    args.push('-BundleDir', bundle.bundleDir)
+
+    if (bundle.wheelhouse) {
+      args.push('-Wheelhouse', bundle.wheelhouse)
+    }
   }
 
   return args
@@ -606,13 +659,14 @@ async function fetchManifest({
   plobiHome,
   activeRoot,
   installStamp,
-  pinCommit
+  pinCommit,
+  bundle = null
 }) {
   const isPosix = installerKind === 'posix'
 
   const args = isPosix
     ? ['--manifest', ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit })]
-    : ['-Manifest', ...buildPinArgs(installStamp, { pinCommit })]
+    : ['-Manifest', ...buildPinArgs(installStamp, { pinCommit, bundle })]
 
   const result = await (isPosix ? spawnBash : spawnPowerShell)(scriptPath, args, {
     emit,
@@ -678,7 +732,8 @@ async function runStage({
   activeRoot,
   abortSignal,
   installStamp,
-  pinCommit
+  pinCommit,
+  bundle = null
 }) {
   const startedAt = Date.now()
   emit({ type: 'stage', name: stage.name, state: 'running' })
@@ -693,7 +748,13 @@ async function runStage({
         '--json',
         ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit })
       ]
-    : ['-Stage', stage.name, '-NonInteractive', '-Json', ...buildPinArgs(installStamp, { pinCommit })]
+    : [
+        '-Stage',
+        stage.name,
+        '-NonInteractive',
+        '-Json',
+        ...buildPinArgs(installStamp, { pinCommit, bundle })
+      ]
 
   const result = await (isPosix ? spawnBash : spawnPowerShell)(scriptPath, args, {
     emit,
@@ -832,7 +893,7 @@ async function runBootstrap(opts) {
 
   try {
     const existingCheckout = hasExistingGitCheckout(activeRoot)
-    const pinCommit = !existingCheckout
+    let pinCommit = !existingCheckout
 
     if (existingCheckout && installStamp && installStamp.commit) {
       emit({
@@ -846,6 +907,18 @@ async function runBootstrap(opts) {
     // 1. Resolve the platform installer.
     const scriptInfo = await resolveInstallScript({ installStamp, sourceRepoRoot, plobiHome, emit })
     const installerKind = scriptInfo.kind || 'powershell'
+    const bundle = scriptInfo.bundle || null
+
+    if (bundle) {
+      // The bundle IS the version -- pinning a commit would ask the installer to
+      // clone what the package already carries.
+      pinCommit = false
+
+      emit({
+        type: 'log',
+        line: `[bootstrap] installing the bundled backend from ${bundle.bundleDir} (no clone)`
+      })
+    }
 
     // 2. Fetch manifest
     const manifest = await fetchManifest({
@@ -855,7 +928,8 @@ async function runBootstrap(opts) {
       plobiHome,
       activeRoot,
       installStamp,
-      pinCommit
+      pinCommit,
+      bundle
     })
 
     emit({
@@ -884,7 +958,8 @@ async function runBootstrap(opts) {
         activeRoot,
         abortSignal,
         installStamp,
-        pinCommit
+        pinCommit,
+        bundle
       })
 
       if (ev.state === 'failed') {

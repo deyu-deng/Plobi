@@ -418,15 +418,19 @@ export async function downloadAsset(url: string, dest: string, timeoutMs = 30 * 
  *
  *   0. wait until this app is really gone -- its files are locked until
  *      then, and installing over a running app half-succeeds;
- *   1. the agent checkout moves to the same tag (so shell and agent share
- *      ONE version number -- 裁定 208), and the branch is put back on that
- *      commit (a tag checkout leaves a DETACHED head, and the next update
- *      has no branch to move);
- *   2. the new installer replaces the shell;
+ *   1. the new installer replaces the shell;
+ *   2. the agent is installed out of THAT package:
+ *        - the package carries the backend (its runtime source + the locked
+ *          dependency wheels): install it from the package -- no git, no
+ *          PyPI -- so shell and agent share ONE version number by
+ *          construction (裁定 208);
+ *        - it does not: move the checkout to the same tag and put the branch
+ *          back on that commit (a tag checkout leaves a DETACHED head, and the
+ *          next update has no branch to move);
  *   3. the app starts again.
  *
  * It must be detached: the app is quitting, and the venv shim it holds has
- * to be released before step 1 can touch the checkout.
+ * to be released before step 2 can touch the venv.
  */
 export function writeUpdateHelper(opts: {
   installerPath: string
@@ -463,41 +467,57 @@ export function writeUpdateHelper(opts: {
     lines.push('while pgrep -f "Plobi" >/dev/null 2>&1; do sleep 2; done')
   }
 
-  // ---- 1) the agent checkout moves to the same tag ------------------------
-  lines.push('rem --- 1) the agent checkout moves to the same tag ---')
-
-  if (isWindows) {
-    lines.push(
-      `powershell -ExecutionPolicy Bypass -File "${installScript}" -Tag "${opts.tag}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
-    )
-  } else {
-    lines.push(
-      `sh "${installScript}" --tag "${opts.tag}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" >> "$PLOBI_LOG" 2>&1`
-    )
-  }
-
-  // ---- 1b) the tag checkout leaves a DETACHED head -------------------------
-  // `branch -f` moves the pointer without touching the working tree (so the
-  // user's restored local edits survive), and `checkout main` then attaches
-  // the branch -- the trees are identical, so nothing is overwritten.
-  lines.push('rem --- 1b) the tag checkout leaves a detached HEAD: point main at the release commit and attach to it ---')
-
-  if (isWindows) {
-    lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "%PLOBI_LOG%" 2>&1`)
-    lines.push(`git -C "${agentDir}" checkout main >> "%PLOBI_LOG%" 2>&1`)
-  } else {
-    lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "$PLOBI_LOG" 2>&1`)
-    lines.push(`git -C "${agentDir}" checkout main >> "$PLOBI_LOG" 2>&1`)
-  }
-
-  // ---- 2) the shell is replaced by the new installer ----------------------
-  lines.push('rem --- 2) the shell is replaced by the new installer ---')
+  // ---- 1) the shell is replaced by the new installer ----------------------
+  //
+  // The shell swap comes FIRST now: a new package may carry the backend (its
+  // runtime source + the locked dependency wheels), and the backend sync below
+  // has to read them out of the NEW install dir. Order: install the shell,
+  // then install the agent out of the package that just landed.
+  lines.push('rem --- 1) the shell is replaced by the new installer ---')
 
   if (isWindows) {
     lines.push(`"${opts.installerPath}" /S /D=${opts.installDir} >> "%PLOBI_LOG%" 2>&1`)
   } else {
     lines.push(`chmod +x "${opts.installerPath}" >> "$PLOBI_LOG" 2>&1`)
     lines.push(`"${opts.installerPath}" --appimage-extract-and-run >> "$PLOBI_LOG%" 2>&1 &`)
+  }
+
+  // ---- 2) the agent is installed out of the same package --------------------
+  //
+  // Two shapes, decided by what the new package actually contains:
+  //   * it carries the backend (resources/backend + resources/wheelhouse):
+  //     install it FROM THE PACKAGE -- no git, no PyPI -- and the agent is the
+  //     same version as the shell by construction;
+  //   * it does not (an old package, or a source install): move the checkout
+  //     to the release tag, the way we always have.
+  lines.push('rem --- 2) the agent is installed from the same package ---')
+
+  const bundledAgent = path.join(opts.installDir, 'resources', 'backend')
+  const bundledWheelhouse = path.join(opts.installDir, 'resources', 'wheelhouse')
+
+  if (isWindows) {
+    lines.push(`if exist "${path.join(bundledAgent, 'scripts', 'install.ps1')}" (`)
+    lines.push(`  rem --- 2a) bundled backend: install it out of the package, offline ---`)
+    lines.push(
+      `  powershell -ExecutionPolicy Bypass -File "${path.join(bundledAgent, 'scripts', 'install.ps1')}" -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+    )
+    lines.push(`) else (`)
+    lines.push(`  rem --- 2b) source install: move the checkout to the same tag ---`)
+    lines.push(
+      `  powershell -ExecutionPolicy Bypass -File "${installScript}" -Tag "${opts.tag}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+    )
+    lines.push(
+      `  rem --- 2c) the tag checkout leaves a detached HEAD: point main at the release commit and attach to it ---`
+    )
+    lines.push(`  git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "%PLOBI_LOG%" 2>&1`)
+    lines.push(`  git -C "${agentDir}" checkout main >> "%PLOBI_LOG%" 2>&1`)
+    lines.push(`)`)
+  } else {
+    lines.push(
+      `sh "${installScript}" --tag "${opts.tag}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" >> "$PLOBI_LOG" 2>&1`
+    )
+    lines.push(`git -C "${agentDir}" branch -f main "refs/tags/${opts.tag}" >> "$PLOBI_LOG" 2>&1`)
+    lines.push(`git -C "${agentDir}" checkout main >> "$PLOBI_LOG" 2>&1`)
   }
 
   lines.push('rem --- 3) start the app again ---')

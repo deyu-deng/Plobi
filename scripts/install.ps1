@@ -56,7 +56,22 @@ param(
     #   * The canonical CLI one-liner (irm | iex) omits the flag too;
     #     terminal users don't need a desktop binary built for them, and
     #     `plobi desktop` already builds on demand.
-    [switch]$IncludeDesktop
+    [switch]$IncludeDesktop,
+
+    # --- Bundled backend (the desktop installer ships the agent) ---
+    #
+    # When the desktop package carries the backend (resources/backend plus a
+    # wheelhouse of the locked dependency wheels), the agent must be installed
+    # FROM THE PACKAGE: copy the runtime source tree and install the locked
+    # wheels offline. No git clone, no PyPI resolve -- the install becomes as
+    # self-contained as any other desktop app's, and the two halves can no
+    # longer drift (the shell's version and the agent's version come from the
+    # same package).
+    #
+    # Both are optional: without them this script behaves exactly as before
+    # (clone + resolve), which is what old packages and dev machines use.
+    [string]$BundleDir = "",
+    [string]$Wheelhouse = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -1270,12 +1285,59 @@ function Install-SystemPackages {
 # Installation
 # ============================================================================
 
+function Copy-BundledBackend {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+
+    # Copy the packaged runtime source over the installed tree. The venv stays
+    # where it is (its Scripts\*.exe carry absolute paths -- moving it breaks
+    # them), and every source entry is replaced rather than merged: a file the
+    # new version deleted must not linger and shadow the new one.
+    $skip = @('venv', '.venv', '.git', 'node_modules', '__pycache__')
+
+    $srcFull = (Resolve-Path -LiteralPath $Source).Path
+    $dstFull = [System.IO.Path]::GetFullPath($Destination)
+
+    if ($srcFull.TrimEnd('\','/') -eq $dstFull.TrimEnd('\','/')) {
+        Write-Info "Bundle and install dir are the same path; nothing to copy."
+        return
+    }
+
+    if (-not (Test-Path $Destination)) {
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    }
+
+    foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
+        if ($skip -contains $item.Name) { continue }
+
+        $dest = Join-Path $Destination $item.Name
+
+        if (Test-Path $dest) {
+            Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        Copy-Item -LiteralPath $item.FullName -Destination $dest -Recurse -Force
+    }
+}
+
 function Install-Repository {
     Write-Info "Installing to $InstallDir..."
 
     $didUpdate = $false
 
-    if (Test-Path $InstallDir) {
+    # Bundled backend: the package already carries the runtime source, so copy
+    # it instead of cloning. The layout stays byte-for-byte the same as a
+    # checkout, so every path the backend reads (skills/, plugins/,
+    # locales/, scripts/) keeps resolving exactly as before -- that is why we
+    # ship the source tree and not just the wheel.
+    if ($BundleDir -and (Test-Path $BundleDir)) {
+        Write-Info "Installing the bundled backend from $BundleDir (no clone)..."
+        Copy-BundledBackend -Source $BundleDir -Destination $InstallDir
+        $didUpdate = $true
+    }
+    elseif (Test-Path $InstallDir) {
         # Test-Path "$InstallDir\.git" returns True when .git is a file OR a
         # directory OR a symlink OR a submodule-style gitfile -- and also when
         # it's a broken stub left over from a failed previous install (e.g.
@@ -1579,14 +1641,19 @@ function Install-Repository {
         }
     }
 
-    # Set per-repo config (harmless if it fails)
-    Push-Location $InstallDir
-    git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null
-    # Pin autocrlf=false on the managed clone so git never renormalizes the
-    # repo's LF text files to CRLF in the working tree. Without this, the very
-    # next `plobi update` checkout aborts on a "dirty" tree the user never
-    # touched (see the update path above).
-    git -c windows.appendAtomically=false config core.autocrlf false 2>$null
+    # Set per-repo config (harmless if it fails) -- but only when the install
+    # dir really IS a git checkout. The bundled backend is a plain tree (no
+    # .git), and git answers that loudly ("not in a git directory"); a failed
+    # config call there would abort the whole stage.
+    if (Test-Path "$InstallDir\.git") {
+        Push-Location $InstallDir
+        git -c windows.appendAtomically=false config windows.appendAtomically false 2>$null
+        # Pin autocrlf=false on the managed clone so git never renormalizes the
+        # repo's LF text files to CRLF in the working tree. Without this, the very
+        # next `plobi update` checkout aborts on a "dirty" tree the user never
+        # touched (see the update path above).
+        git -c windows.appendAtomically=false config core.autocrlf false 2>$null
+    }
 
     # Post-clone pin: when a clone (or ZIP-fallback init) just landed us on
     # $Branch's tip, honour the higher-precedence $Commit / $Tag by checking
@@ -1846,7 +1913,27 @@ function Install-Dependencies {
     # without any hash verification -- they exist to keep installs working
     # when the lockfile is stale, missing, or out-of-sync with the
     # current extras spec, NOT because they're equivalent in posture.
-    if (Test-Path "uv.lock") {
+    if ($Wheelhouse -and (Test-Path $Wheelhouse)) {
+        # Tier 0' (bundled): the package ships the locked dependency wheels, so
+        # the install needs NO PyPI resolve at all -- `--no-index` forbids the
+        # network, `--offline` forbids uv's own fetches, and `--locked` keeps
+        # the lockfile's SHA256 verification (the wheels in the wheelhouse ARE
+        # the locked ones, so the hashes still check out).
+        Write-Info "Trying tier: bundled wheelhouse (offline) ..."
+        $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
+        Invoke-NativeWithRelaxedErrorAction { & $UvCmd sync --extra all --locked --no-index --find-links $Wheelhouse --offline }
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Main package installed from the bundled wheelhouse (offline, hash-verified)"
+            $script:InstalledTier = "bundled wheelhouse (offline)"
+            # Skip the rest of the tiered cascade -- we already have a
+            # complete, hash-verified install.
+            $skipPipFallback = $true
+        } else {
+            Write-Warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
+            $skipPipFallback = $false
+        }
+    }
+    elseif (Test-Path "uv.lock") {
         Write-Info "Trying tier: hash-verified (uv.lock) ..."
         # Critical flag choice: `--extra all`, NOT `--all-extras`.
         #   --all-extras = every [project.optional-dependencies] key,

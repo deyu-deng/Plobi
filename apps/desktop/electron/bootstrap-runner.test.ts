@@ -10,6 +10,7 @@ import {
   cachedScriptPath,
   hasExistingGitCheckout,
   installedAgentInstallScript,
+  resolveBundledBackend,
   resolveInstallScript,
   runBootstrap
 } from './bootstrap-runner'
@@ -323,4 +324,40 @@ test('resolveInstallScript still downloads for a genuine distributed (clean ci) 
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('the bundled backend is found inside a packaged app', () => {
+  const root = mkTmpHome()
+  const backend = path.join(root, 'backend')
+  fs.mkdirSync(path.join(backend, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(backend, 'scripts', 'install.ps1'), '# bundled\n')
+  fs.mkdirSync(path.join(root, 'wheelhouse'), { recursive: true })
+
+  const found = resolveBundledBackend(root)
+  assert.ok(found, 'the packaged backend was not recognised')
+  assert.equal(found!.bundleDir, backend)
+  assert.equal(found!.wheelhouse, path.join(root, 'wheelhouse'))
+
+  // No packaged installer => no bundle (dev builds, packages built before
+  // the backend travelled inside).
+  assert.equal(resolveBundledBackend(mkTmpHome()), null)
+})
+
+test('the pin args carry the bundle so the agent is installed from the package', () => {
+  const args = buildPinArgs(
+    { commit: 'abc1234', branch: 'main' },
+    {
+      pinCommit: false,
+      bundle: { bundleDir: 'D:\\App\\resources\\backend', wheelhouse: 'D:\\App\\resources\\wheelhouse' }
+    }
+  )
+
+  assert.deepEqual(args, [
+    '-Branch',
+    'main',
+    '-BundleDir',
+    'D:\\App\\resources\\backend',
+    '-Wheelhouse',
+    'D:\\App\\resources\\wheelhouse'
+  ])
 })
