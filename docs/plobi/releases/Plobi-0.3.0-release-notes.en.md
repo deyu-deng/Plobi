@@ -21,6 +21,8 @@ The installer is below.
 ### Improved
 
 - **Versions no longer get mixed up** — The first line is this program's version, the second is the backend's.
+- **The install is the whole thing** — The backend travels inside the installer: nothing to download separately, and no waiting on the network for dependencies. The shell and the backend end up on the same version.
+- **"Profile" is gone from the product** — An Agent is one row in the roster; the left rail, the settings page and the command line all call it an Agent now.
 - **Permissions have three levels** — Ask every time, auto-approve, or full access, switched next to the input box.
 - **Every status word says what to do next** — Not installed, not signed in, no path set, file missing, service not answering: each one comes with a sentence that tells you what to do.
 - **The main window can be card-style** — The conversation and the work surface are two cards you can drag into place, or show one of.
