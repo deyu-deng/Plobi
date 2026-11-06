@@ -1381,17 +1381,37 @@ function Install-Repository {
                     git -c windows.appendAtomically=false checkout --detach "refs/tags/$Tag"
                     if ($LASTEXITCODE -ne 0) { throw "git checkout tag $Tag failed (exit $LASTEXITCODE)" }
                 } else {
-                    git -c windows.appendAtomically=false checkout $Branch
-                    if ($LASTEXITCODE -ne 0) { throw "git checkout $Branch failed (exit $LASTEXITCODE)" }
-                    # Managed installs should follow origin/$Branch exactly. If
-                    # the checkout has diverged (or has local-only commits),
-                    # ff-only pull cannot succeed — mirror ``plobi update`` and
-                    # reset to the fetched remote so bootstrap/install can recover.
-                    git -c windows.appendAtomically=false pull --ff-only origin $Branch
-                    if ($LASTEXITCODE -ne 0) {
-                        Write-Warn "Fast-forward not possible; resetting managed install to origin/$Branch..."
-                        git -c windows.appendAtomically=false reset --hard "origin/$Branch"
-                        if ($LASTEXITCODE -ne 0) { throw "git reset --hard origin/$Branch failed (exit $LASTEXITCODE)" }
+                    # `$Branch` can be a branch OR a release TAG. CI builds stamp
+                    # `branch` as the tag they cut (v0.3.2) and the desktop
+                    # bootstrap passes exactly that through -Branch. But
+                    # `git fetch origin <tag>` only writes FETCH_HEAD -- it does
+                    # NOT create refs/tags/<tag> -- so the checkout below dies
+                    # with "pathspec 'v0.3.2' did not match any file(s) known to
+                    # git" and the install aborts (2026-11-06 acceptance run:
+                    # `git checkout v0.3.1 failed (exit 1)`). Detect which kind of
+                    # ref it is and fetch it so the LOCAL ref really exists.
+                    git -c windows.appendAtomically=false rev-parse --verify --quiet "refs/remotes/origin/$Branch"
+                    if ($LASTEXITCODE -eq 0) {
+                        git -c windows.appendAtomically=false checkout $Branch
+                        if ($LASTEXITCODE -ne 0) { throw "git checkout $Branch failed (exit $LASTEXITCODE)" }
+                        # Managed installs should follow origin/$Branch exactly. If
+                        # the checkout has diverged (or has local-only commits),
+                        # ff-only pull cannot succeed — mirror ``plobi update`` and
+                        # reset to the fetched remote so bootstrap/install can recover.
+                        git -c windows.appendAtomically=false pull --ff-only origin $Branch
+                        if ($LASTEXITCODE -ne 0) {
+                            Write-Warn "Fast-forward not possible; resetting managed install to origin/$Branch..."
+                            git -c windows.appendAtomically=false reset --hard "origin/$Branch"
+                            if ($LASTEXITCODE -ne 0) { throw "git reset --hard origin/$Branch failed (exit $LASTEXITCODE)" }
+                        }
+                    } else {
+                        # A tag: fetch it with an explicit refspec so refs/tags/<tag>
+                        # exists locally, then check it out detached (a pin, not a
+                        # branch to pull into).
+                        git -c windows.appendAtomically=false fetch origin "+refs/tags/${Branch}:refs/tags/${Branch}"
+                        if ($LASTEXITCODE -ne 0) { throw "git fetch tag $Branch failed (exit $LASTEXITCODE)" }
+                        git -c windows.appendAtomically=false checkout --detach "refs/tags/$Branch"
+                        if ($LASTEXITCODE -ne 0) { throw "git checkout tag $Branch failed (exit $LASTEXITCODE)" }
                     }
                 }
 

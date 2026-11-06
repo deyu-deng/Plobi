@@ -59,6 +59,27 @@ def _tail(text: str, limit: int = 240) -> str:
     return clean[-limit:]
 
 
+def _is_shallow(root: Path) -> bool:
+    """True iff this checkout is a shallow clone (its history is grafted).
+
+    A grafted checkout HIDES the ancestry, and two of the numbers we read
+    below are ancestry-dependent:
+
+    - ``rev-list origin/main..HEAD`` counts HEAD itself as a commit that is
+      "not on origin/main" (it cannot see that HEAD is an ancestor), so a
+      perfectly ordinary "behind" reads as "locally diverged";
+    - ``merge-base --is-ancestor HEAD origin/main`` fails for the same
+      reason.
+
+    The installer creates every managed checkout with ``--depth 1``
+    (``scripts/install.ps1``), so without this check EVERY managed install
+    refuses to update -- the 2026-11-06 acceptance run measured exactly
+    that: a checkout one day behind main reported ``ahead=1`` and the
+    update path refused with "本地有 1 个提交没在 origin/main 上".
+    """
+    return _git(root, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+
+
 def _pick_remote(repo_root: Path) -> Optional[str]:
     remotes = [r for r in _git(repo_root, "remote").stdout.splitlines() if r.strip()]
     if not remotes:
@@ -82,6 +103,7 @@ def git_update_state(repo_root: Optional[Path], *, fetch: bool) -> Dict[str, Any
         "install_root": str(root), "is_git": False, "applies": False, "reason": "",
         "remote": None, "branch": None, "head": None, "remote_ref": None,
         "behind": None, "ahead": None, "dirty_files": 0, "detail": "",
+        "shallow": False,
     }
     if not (root / ".git").exists():
         st["reason"] = "not_a_git_checkout"
@@ -112,12 +134,34 @@ def git_update_state(repo_root: Optional[Path], *, fetch: bool) -> Dict[str, Any
                         f"脏的行一律不碰。先提交或还原，再更新。")
         return st
 
+    shallow = _is_shallow(root)
+
     if fetch:
-        got = _git(root, "fetch", "--quiet", remote, branch)
-        if got.returncode != 0:
-            st["reason"] = "fetch_failed"
-            st["detail"] = _tail(got.stderr or got.stdout) or f"拉不到 {remote}/{branch}。"
-            return st
+        if shallow:
+            # 浅 clone：先把历史补深，否则下面数出来的「本地领先」是 graft
+            # 的假象（明明只是落后，却被判成分叉 —— 详见 _is_shallow）。
+            # 补深是一次性代价，之后这个检出就能正常快进。
+            got = _git(root, "fetch", "--quiet", "--unshallow", remote, branch)
+            if got.returncode != 0:
+                got = _git(root, "fetch", "--quiet", remote, branch)
+                if got.returncode != 0:
+                    st["reason"] = "fetch_failed"
+                    st["detail"] = _tail(got.stderr or got.stdout) or f"拉不到 {remote}/{branch}。"
+                    return st
+                # 补深失败但普通 fetch 成功：远端可能改写过历史（浅 clone 的
+                # 祖先本来就不在本地）。**不冤枉人** —— 说「判不出祖先关系」，
+                # 而不是把 HEAD 数成一个「本地提交」。
+                st["reason"] = "shallow_history"
+                st["detail"] = (f"这份检出是浅 clone（{remote}/{branch} 的历史只拉了一截），"
+                                f"补深失败 ⇒ 判不出祖先关系，不动工作树。")
+                return st
+            shallow = _is_shallow(root)
+        else:
+            got = _git(root, "fetch", "--quiet", remote, branch)
+            if got.returncode != 0:
+                st["reason"] = "fetch_failed"
+                st["detail"] = _tail(got.stderr or got.stdout) or f"拉不到 {remote}/{branch}。"
+                return st
 
     ref = st["remote_ref"]
     if _git(root, "rev-parse", "--verify", "--quiet", ref).returncode != 0:
@@ -126,6 +170,20 @@ def git_update_state(repo_root: Optional[Path], *, fetch: bool) -> Dict[str, Any
         return st
 
     st["behind"] = int(_git(root, "rev-list", "--count", f"HEAD..{ref}").stdout.strip() or 0)
+    if shallow:
+        # 还没补深（fetch=False 的那条路：仪表盘的 can_apply 不联网）。
+        # 落后格数仍可信（`HEAD..ref` 走远端那侧），但「本地领先」与祖先
+        # 关系判不了 —— apply 那一步会先补深再复核，所以这里不猜。
+        st["ahead"] = None
+        st["shallow"] = True
+        if not st["behind"]:
+            st["reason"] = "up_to_date"
+            return st
+        st["applies"] = True
+        st["reason"] = "ok"
+        st["detail"] = (f"浅 clone：落后 {st['behind']} 笔；"
+                        f"祖先关系判不了，apply 时会先补深历史再复核。")
+        return st
     st["ahead"] = int(_git(root, "rev-list", "--count", f"{ref}..HEAD").stdout.strip() or 0)
     if st["ahead"]:
         st["reason"] = "diverged"
