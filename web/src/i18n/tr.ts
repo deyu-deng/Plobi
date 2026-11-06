@@ -75,7 +75,7 @@ export const tr: Translations = {
       keys: "Anahtarlar",
       logs: "Günlükler",
       models: "Modeller",
-      profiles: "profiller : çoklu agent",
+      profiles: "Agents",
       plugins: "Eklentiler",
       sessions: "Oturumlar",
       skills: "Yetenekler",
@@ -280,17 +280,17 @@ export const tr: Translations = {
     },
   },
 
-  profiles: {
-    newProfile: "Yeni Profil",
+  ajanes: {
+    newAjane: "Yeni Ajan",
     name: "Ad",
     namePlaceholder: "örn. coder, writer, vb.",
     nameRequired: "Ad gereklidir",
     nameRule:
       "Yalnızca küçük harfler, rakamlar, _ ve - kullanılabilir; harf veya rakamla başlamalı; en fazla 64 karakter.",
-    invalidName: "Geçersiz profil adı",    cloneFrom: "Profilden yapılandırmayı klonla",
+    invalidName: "Geçersiz ajan adı",    cloneFrom: "Ajanden yapılandırmayı klonla",
     cloneFromNone: "Hiçbiri (boş)",
-    allProfiles: "Profiller",
-    noProfiles: "Profil bulunamadı.",
+    allAjanes: "Ajanlar",
+    noAjanes: "Ajan bulunamadı.",
     defaultBadge: "varsayılan",
     hasEnv: "env",
     model: "Model",
@@ -304,9 +304,9 @@ export const tr: Translations = {
     openInTerminal: "CLI komutunu kopyala",
     commandCopied: "Panoya kopyalandı",
     copyFailed: "Kopyalanamadı",
-    confirmDeleteTitle: "Profil silinsin mi?",
+    confirmDeleteTitle: "Ajan silinsin mi?",
     confirmDeleteMessage:
-      "Bu, '{name}' profilini kalıcı olarak siler — yapılandırma, anahtarlar, hatıralar, oturumlar, yetenekler, cron görevleri. Geri alınamaz.",
+      "Bu, '{name}' ajanini kalıcı olarak siler — yapılandırma, anahtarlar, hatıralar, oturumlar, yetenekler, cron görevleri. Geri alınamaz.",
     created: "Oluşturuldu",
     deleted: "Silindi",
     renamed: "Yeniden adlandırıldı",

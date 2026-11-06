@@ -75,7 +75,7 @@ export const hu: Translations = {
       keys: "Kulcsok",
       logs: "Naplók",
       models: "Modellek",
-      profiles: "profilok: több ügynök",
+      profiles: "Agents",
       plugins: "Bővítmények",
       sessions: "Munkamenetek",
       skills: "Készségek",
@@ -280,17 +280,17 @@ export const hu: Translations = {
     },
   },
 
-  profiles: {
-    newProfile: "Új profil",
+  agentes: {
+    newAgente: "Új agent",
     name: "Név",
     namePlaceholder: "pl. coder, writer stb.",
     nameRequired: "A név kötelező",
     nameRule:
       "Csak kisbetűk, számjegyek, _ és - karakterek; betűvel vagy számjeggyel kell kezdődnie; legfeljebb 64 karakter.",
-    invalidName: "Érvénytelen profilnév",    cloneFrom: "Konfiguráció klónozása ebből a profilból",
+    invalidName: "Érvénytelen agentnév",    cloneFrom: "Konfiguráció klónozása ebből a agentból",
     cloneFromNone: "Nincs (üres)",
-    allProfiles: "Profilok",
-    noProfiles: "Nem található profil.",
+    allAgentes: "Agentek",
+    noAgentes: "Nem található agent.",
     defaultBadge: "alapértelmezett",
     hasEnv: "env",
     model: "Modell",
@@ -304,9 +304,9 @@ export const hu: Translations = {
     openInTerminal: "CLI-parancs másolása",
     commandCopied: "Vágólapra másolva",
     copyFailed: "Nem sikerült másolni",
-    confirmDeleteTitle: "Törli a profilt?",
+    confirmDeleteTitle: "Törli a agentt?",
     confirmDeleteMessage:
-      "Ez véglegesen törli a(z) '{name}' profilt — konfigurációt, kulcsokat, emlékeket, munkameneteket, készségeket, cron-feladatokat. A művelet nem vonható vissza.",
+      "Ez véglegesen törli a(z) '{name}' agentt — konfigurációt, kulcsokat, emlékeket, munkameneteket, készségeket, cron-feladatokat. A művelet nem vonható vissza.",
     created: "Létrehozva",
     deleted: "Törölve",
     renamed: "Átnevezve",

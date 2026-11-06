@@ -10,7 +10,7 @@ import type {
   CronJob,
   CronDeliveryTarget,
   ModelOptionsResponse,
-  ProfileInfo,
+  AgentInfo,
   SkillInfo,
   ToolsetInfo,
 } from "@/lib/api";
@@ -510,7 +510,7 @@ const STATUS_TONE: Record<string, "success" | "warning" | "destructive"> = {
 
 export default function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
-  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
+  const [profiles, setProfiles] = useState<AgentInfo[]>([]);
   const [selectedProfile, setSelectedProfile] = useState("all");
   const [view, setView] = useState<"jobs" | "blueprints">("jobs");
   const [loading, setLoading] = useState(true);
@@ -535,7 +535,7 @@ export default function CronPage() {
 
   // New job modal state
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createProfile, setCreateProfile] = useState("default");
+  const [createAgent, setCreateProfile] = useState("default");
   const [createForm, setCreateForm] = useState<CronJobEditorState>(
     emptyCronJobForm,
   );
@@ -569,7 +569,7 @@ export default function CronPage() {
   const [availableToolsets, setAvailableToolsets] = useState<ToolsetInfo[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelOptionsResponse | null>(null);
 
-  const resourceProfile = editJob ? getJobProfile(editJob) : createProfile;
+  const resourceProfile = editJob ? getJobProfile(editJob) : createAgent;
 
   const openEditModal = useCallback((job: CronJob) => {
     setEditJob(job);
@@ -586,7 +586,7 @@ export default function CronPage() {
 
   useEffect(() => {
     api
-      .getProfiles()
+      .getAgents()
       .then((res) => setProfiles(res.profiles))
       .catch(() => setProfiles([]));
   }, []);
@@ -642,7 +642,7 @@ export default function CronPage() {
     }
     setCreating(true);
     try {
-      await api.createCronJob(payload, createProfile);
+      await api.createCronJob(payload, createAgent);
       showToast(t.common.create + " ✓", "success");
       setCreateForm(emptyCronJobForm());
       setCreateModalOpen(false);
@@ -845,7 +845,7 @@ export default function CronPage() {
                 <Label htmlFor="cron-profile">Profile</Label>
                 <Select
                   id="cron-profile"
-                  value={createProfile}
+                  value={createAgent}
                   onValueChange={(v) => setCreateProfile(v)}
                 >
                   {profiles.map((profile) => (

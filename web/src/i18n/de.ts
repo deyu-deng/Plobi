@@ -75,7 +75,7 @@ export const de: Translations = {
       keys: "Schlüssel",
       logs: "Protokolle",
       models: "Modelle",
-      profiles: "Profile : Multi-Agenten",
+      profiles: "Agents",
       plugins: "Plugins",
       sessions: "Sitzungen",
       skills: "Skills",
@@ -280,17 +280,17 @@ export const de: Translations = {
     },
   },
 
-  profiles: {
-    newProfile: "Neues Profil",
+  agentes: {
+    newAgents: "Neues Agent",
     name: "Name",
     namePlaceholder: "z. B. coder, writer usw.",
     nameRequired: "Name ist erforderlich",
     nameRule:
       "Nur Kleinbuchstaben, Ziffern, _ und -; muss mit einem Buchstaben oder einer Ziffer beginnen; maximal 64 Zeichen.",
-    invalidName: "Ungültiger Profilname",    cloneFrom: "Konfiguration klonen von",
+    invalidName: "Ungültiger Agentname",    cloneFrom: "Konfiguration klonen von",
     cloneFromNone: "Keine (leer)",
-    allProfiles: "Profile",
-    noProfiles: "Keine Profile gefunden.",
+    allAgentss: "Agents",
+    noAgentss: "Keine Agents gefunden.",
     defaultBadge: "Standard",
     hasEnv: "env",
     model: "Modell",
@@ -304,9 +304,9 @@ export const de: Translations = {
     openInTerminal: "CLI-Befehl kopieren",
     commandCopied: "In Zwischenablage kopiert",
     copyFailed: "Kopieren fehlgeschlagen",
-    confirmDeleteTitle: "Profil löschen?",
+    confirmDeleteTitle: "Agent löschen?",
     confirmDeleteMessage:
-      "Damit wird das Profil '{name}' dauerhaft gelöscht — Konfiguration, Schlüssel, Erinnerungen, Sitzungen, Skills, Cron-Aufgaben. Kann nicht rückgängig gemacht werden.",
+      "Damit wird das Agent '{name}' dauerhaft gelöscht — Konfiguration, Schlüssel, Erinnerungen, Sitzungen, Skills, Cron-Aufgaben. Kann nicht rückgängig gemacht werden.",
     created: "Erstellt",
     deleted: "Gelöscht",
     renamed: "Umbenannt",

@@ -44,7 +44,7 @@ function setSessionHeader(headers: Headers, token: string): void {
 
 // ── Global management-profile scope ──────────────────────────────────
 // The dashboard is a machine-level management surface: one header switcher
-// (ProfileProvider in App.tsx) decides which profile the management pages
+// (AgentProvider in App.tsx) decides which profile the management pages
 // read/write, and fetchJSON transparently appends ?profile=<name> to the
 // profile-scoped endpoint families below. "" = the dashboard process's own
 // profile (legacy behavior). Calls that already carry an explicit profile
@@ -595,18 +595,39 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  // Profiles
-  getProfiles: () =>
-    fetchJSON<{ profiles: ProfileInfo[] }>("/api/profiles"),
-  getActiveProfile: () =>
-    fetchJSON<ActiveProfileInfo>("/api/profiles/active"),
-  setActiveProfile: (name: string) =>
-    fetchJSON<{ ok: boolean; active: string }>("/api/profiles/active", {
+  // Agents（2026-11-06 profile 连根拔 · web 迁移）
+  //
+  // 旧 /api/profiles/* 整组已下线（后端不留别名，打上去只有 404/405），这一片
+  // 端点整组迁到 /api/agents/*。函数名与 AgentInfo 类型暂留旧称呼以免牵动
+  // AgentsPage 等调用点，但**路径与请求体一律按新契约**：
+  //   列表 = GET  /api/agents/roster         （返回形状与旧 /api/profiles 一致）
+  //   active = GET/POST /api/agents/active
+  // 铁律是不许 profile 概念回到产品面，这里只是过渡期的命名残留。
+  getAgents: () =>
+    fetchJSON<{ profiles: AgentInfo[] }>("/api/agents/roster"),
+  getActiveAgent: () =>
+    fetchJSON<ActiveAgentInfo>("/api/agents/active"),
+  setActiveAgent: (name: string) =>
+    fetchJSON<{ ok: boolean; active: string }>("/api/agents/active", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }),
-  createProfile: (body: {
+  /** 登记一条 Agent（旧 createAgent）。
+   *
+   *  新契约的 ``POST /api/agents`` **要 id + category**，语义是「登记一条项目型
+   *  L2」，会在 Mind 的 ``Surface/dossiers/projects/<id>`` 建三件套——脑仓不可达
+   *  时整次创建失败（R-013 扩写），这是与旧 profile 创建最大的行为差别。
+   *
+   *  旧 profile 那套 ``clone_from`` / ``clone_all`` / ``no_skills`` / ``keep_skills``
+   *  / ``hub_skills`` / ``mcp_servers`` 随 profile 概念一并下线，**这里不再发送**
+   *  （后端也不接了）。两个创建向导上对应的克隆/技能/MCP 选项因此已成摆设，
+   *  等页面改造成 AgentsPage 时一并拆掉。
+   *
+   *  模型不在 POST 里：选过模型就补一刀 ``PUT /api/agents/<id>/model``，让调用方
+   *  继续能靠 ``model_set`` 判断有没有落上。
+   */
+  createAgent: async (body: {
     name: string;
     clone_from?: string | null;
     clone_from_default?: boolean;
@@ -618,72 +639,128 @@ export const api = {
     mcp_servers?: McpServerCreate[];
     keep_skills?: string[];
     hub_skills?: string[];
-  }) =>
-    fetchJSON<{
+  }): Promise<{
+    ok: boolean;
+    name: string;
+    path: string;
+    model_set?: boolean;
+    mcp_written?: number;
+    skills_disabled?: number;
+    hub_installs?: Array<{ identifier: string; pid: number | null }>;
+  }> => {
+    const res = await fetchJSON<{
       ok: boolean;
-      name: string;
-      path: string;
-      model_set?: boolean;
-      mcp_written?: number;
-      skills_disabled?: number;
-      hub_installs?: Array<{ identifier: string; pid: number | null }>;
-    }>("/api/profiles", {
+      data?: { id?: string; projectPath?: string; projectPaths?: string[] };
+    }>("/api/agents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  updateProfileDescription: (name: string, description: string) =>
+      body: JSON.stringify({
+        id: body.name,
+        name: body.name,
+        category: "projects",
+        description: body.description ?? "",
+      }),
+    });
+
+    let modelSet: boolean | undefined;
+    if (body.provider && body.model) {
+      try {
+        await fetchJSON<unknown>(
+          `/api/agents/${encodeURIComponent(body.name)}/model`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider: body.provider,
+              model: body.model,
+            }),
+          },
+        );
+        modelSet = true;
+      } catch {
+        modelSet = false;
+      }
+    }
+
+    return {
+      ok: res.ok,
+      name: res.data?.id ?? body.name,
+      path: res.data?.projectPath ?? "",
+      model_set: modelSet,
+      hub_installs: [],
+    };
+  },
+  updateAgentDescription: (name: string, description: string) =>
     fetchJSON<{ ok: boolean; description: string; description_auto: boolean }>(
-      `/api/profiles/${encodeURIComponent(name)}/description`,
+      `/api/agents/${encodeURIComponent(name)}/description`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description }),
       },
     ),
-  describeProfileAuto: (name: string, overwrite = true) =>
-    fetchJSON<ProfileDescribeAutoResult>(
-      `/api/profiles/${encodeURIComponent(name)}/describe-auto`,
+  describeAgentAuto: (name: string, overwrite = true) =>
+    fetchJSON<AgentDescribeAutoResult>(
+      `/api/agents/${encodeURIComponent(name)}/describe-auto`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overwrite }),
       },
     ),
-  setProfileModel: (name: string, provider: string, model: string) =>
+  setAgentModel: (name: string, provider: string, model: string) =>
     fetchJSON<{ ok: boolean; provider: string; model: string }>(
-      `/api/profiles/${encodeURIComponent(name)}/model`,
+      `/api/agents/${encodeURIComponent(name)}/model`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, model }),
       },
     ),
-  renameProfile: (name: string, newName: string) =>
-    fetchJSON<{ ok: boolean; name: string; path: string }>(
-      `/api/profiles/${encodeURIComponent(name)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ new_name: newName }),
-      },
-    ),
-  deleteProfile: (name: string) =>
+  /** 改**身份名**（名册那一行的键）。
+   *
+   *  走 ``POST /api/agents/:id/rename``，不是 PATCH —— 新契约里 PATCH 那一格只改
+   *  「人和这个 Agent 的关系」（显示名/说明/图标/颜色/工作目录），改身份名会带着
+   *  会话历史、记忆、日程、看板卡一起搬，所以后端单独开了一个端点。请求体键是
+   *  ``newName``（旧的是 ``new_name``），返回 ``data.id`` 是落成后的新 id。
+   */
+  renameAgent: async (name: string, newName: string) => {
+    const res = await fetchJSON<{
+      ok: boolean;
+      data?: { id?: string; previousId?: string };
+    }>(`/api/agents/${encodeURIComponent(name)}/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newName }),
+    });
+    return {
+      ok: res.ok,
+      name: res.data?.id ?? newName,
+      path: "",
+    };
+  },
+  /** 解散（旧 dissolveAgent）。
+   *
+   *  新契约没有 DELETE：``POST /api/agents/:id/dissolve`` 是**归档**——目录挪进
+   *  ``profiles/_archived/<id>-<date>/``、名册行打 archived 标记，记录仍留在盘上。
+   *  真正删除是未来另开的、要二次确认的操作。调用点的文案因此不能再说「删除」。
+   */
+  dissolveAgent: (name: string) =>
     fetchJSON<{ ok: boolean }>(
-      `/api/profiles/${encodeURIComponent(name)}`,
-      { method: "DELETE" },
+      `/api/agents/${encodeURIComponent(name)}/dissolve`,
+      { method: "POST" },
     ),
-  getProfileSetupCommand: (name: string) =>
+  getAgentSetupCommand: (name: string) =>
     fetchJSON<{ command: string }>(
-      `/api/profiles/${encodeURIComponent(name)}/setup-command`,
+      `/api/agents/${encodeURIComponent(name)}/setup-command`,
     ),
-  getProfileSoul: (name: string) =>
+  getAgentSoul: (name: string) =>
     fetchJSON<{ content: string; exists: boolean }>(
-      `/api/profiles/${encodeURIComponent(name)}/soul`,
+      `/api/agents/${encodeURIComponent(name)}/soul`,
     ),
-  updateProfileSoul: (name: string, content: string) =>
+  updateAgentSoul: (name: string, content: string) =>
     fetchJSON<{ ok: boolean }>(
-      `/api/profiles/${encodeURIComponent(name)}/soul`,
+      `/api/agents/${encodeURIComponent(name)}/soul`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -2038,19 +2115,19 @@ export interface AnalyticsResponse {
   };
 }
 
-export interface ActiveProfileInfo {
+export interface ActiveAgentInfo {
   active: string;
   current: string;
 }
 
-export interface ProfileDescribeAutoResult {
+export interface AgentDescribeAutoResult {
   ok: boolean;
   reason: string;
   description: string | null;
   description_auto: boolean;
 }
 
-export interface ProfileInfo {
+export interface AgentInfo {
   name: string;
   path: string;
   is_default: boolean;

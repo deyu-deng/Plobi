@@ -4,7 +4,7 @@ import {
   Select,
   SelectOption,
 } from "@nous-research/ui/ui/components/select";
-import { useProfileScope } from "@/contexts/useProfileScope";
+import { useAgentScope } from "@/contexts/useAgentScope";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
  * Keys, Skills, MCP, Models) reads/writes the selected profile via the
  * fetchJSON ?profile= injection. Hidden when only one profile exists.
  */
-export function ProfileSwitcher({ collapsed }: ProfileSwitcherProps) {
-  const { profile, currentProfile, profiles, setProfile } = useProfileScope();
+export function AgentSwitcher({ collapsed }: ProfileSwitcherProps) {
+  const { profile, currentProfile, profiles, setProfile } = useAgentScope();
   const { t } = useI18n();
 
   const currentDashboardLabel = useMemo(

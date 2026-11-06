@@ -1,5 +1,5 @@
 import { Users } from "lucide-react";
-import { useProfileScope } from "@/contexts/useProfileScope";
+import { useAgentScope } from "@/contexts/useAgentScope";
 import { useI18n } from "@/i18n";
 
 /**
@@ -7,8 +7,8 @@ import { useI18n } from "@/i18n";
  * OTHER than the dashboard's own — every management write (config, keys,
  * skills, MCPs, model) and new Chat sessions land in that profile.
  */
-export function ProfileScopeBanner() {
-  const { profile, currentProfile } = useProfileScope();
+export function AgentScopeBanner() {
+  const { profile, currentProfile } = useAgentScope();
   const { t } = useI18n();
 
   if (!profile || profile === currentProfile) return null;

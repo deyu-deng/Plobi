@@ -39,7 +39,7 @@ import type {
   SkillHubPreview,
   SkillHubScan,
 } from "@/lib/api";
-import { useProfileScope } from "@/contexts/useProfileScope";
+import { useAgentScope } from "@/contexts/useAgentScope";
 import { ToolsetConfigDrawer } from "@/components/ToolsetConfigDrawer";
 import { SkillEditorDialog } from "@/components/SkillEditorDialog";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
@@ -150,7 +150,7 @@ export default function SkillsPage() {
   // the auto-injection).
   const {
     profile: selectedProfile,
-  } = useProfileScope();
+  } = useAgentScope();
 
   useEffect(() => {
     // Promise-chain shape: setState fires only inside async callbacks so the

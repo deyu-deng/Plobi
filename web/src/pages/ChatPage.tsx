@@ -56,7 +56,7 @@ import {
 } from "@/lib/chatImagePaste";
 import { PluginSlot } from "@/plugins";
 import { useTheme } from "@/themes";
-import { useProfileScope } from "@/contexts/useProfileScope";
+import { useAgentScope } from "@/contexts/useAgentScope";
 
 // Stable per-browser token identifying THIS chat tab's keep-alive PTY session.
 // Sent as ?attach=; lets a refresh/disconnect reattach to the same live process
@@ -296,7 +296,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // Profile-scoped chat: spawn the PTY under the globally selected
   // management profile. Changing it remounts the terminal (key below /
   // effect dep) so the user explicitly starts a fresh scoped session.
-  const { profile: scopedProfile } = useProfileScope();
+  const { profile: scopedProfile } = useAgentScope();
   const channel = useMemo(
     () => generateChannelId(`${resumeParam ?? ""}\0${scopedProfile}`),
     [resumeParam, scopedProfile],

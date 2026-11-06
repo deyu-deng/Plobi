@@ -10,22 +10,20 @@ from typing import Callable
 
 
 def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
-    """Attach the ``agent`` subcommand to ``subparsers`` (old name still parses).
+    """Attach the ``agent`` subcommand to ``subparsers``.
 
-    名字反过来了（11-05 随 `WP-PROFILE-CANCEL`）：**主名是 `plobi agent`**，
-    ``plobi profile`` 只作为手打惯了的旧写法收着——它是别名，不是命令族的名字。
-    派发靠 ``set_defaults(func=…)``，所以两个名字走的是同一个处理器，功能不缩。
+    11-05 的名字翻转已经完成，11-06 把 ``profile`` 别名也摘了（`WP-PROFILE-CANCEL`
+    收尾）：名册上的一行就叫 Agent，命令行只认 ``plobi agent``。旧写法不再解析，
+    不再出现在 ``--help`` 里，也不需要再向任何 Agent 解释这两个词是一回事。
 
-    第六轮（11-05）把 ``help=`` 那几行改口：这一屏是用户和外部 Agent 唯一读得到的
-    说明书。dest 仍叫 ``profile_name``（Python 标识符，取值在 main.py），屏上印出来
-    那一个由 ``metavar="AGENT"`` 接管。判据在
-    ``tests/plobi_cli/test_cli_help_says_agent_not_profile.py``。
+    派发靠 ``set_defaults(func=…)``。dest 仍叫 ``profile_name``——那是 Python
+    局部标识符（取值在 main.py），屏上印出来那一个由 ``metavar="AGENT"`` 接管。
+    判据在 ``tests/plobi_cli/test_cli_help_says_agent_not_profile.py``。
     """
     # ``plobi agent`` 是同一个命令族的名字（用户 10-27：Agent 就是名册上的一行，
     # 「profile」这个词不该再教给 Agent；11-05：也别再摆在菜单第一位）。
     profile_parser = subparsers.add_parser(
         "agent",
-        aliases=["profile"],
         help="Manage agents — the roster of identities",
     )
     profile_subparsers = profile_parser.add_subparsers(dest="profile_action")

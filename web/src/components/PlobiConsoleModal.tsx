@@ -9,7 +9,7 @@ import { Terminal, X } from "lucide-react";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
-import { useProfileScope } from "@/contexts/useProfileScope";
+import { useAgentScope } from "@/contexts/useAgentScope";
 import { api } from "@/lib/api";
 import { cn, themedBody } from "@/lib/utils";
 import { useTheme } from "@/themes";
@@ -115,7 +115,7 @@ export function PlobiConsoleModal({ open, onClose }: PlobiConsoleModalProps) {
     useState<ConnectionState>("connecting");
   const [consoleContext, setConsoleContext] = useState("pending");
   const [consoleProfile, setConsoleProfile] = useState("current");
-  const { profile } = useProfileScope();
+  const { profile } = useAgentScope();
   const { theme } = useTheme();
 
   const redrawInput = useCallback((line = lineRef.current) => {

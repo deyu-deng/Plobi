@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { useProfileScope } from "@/contexts/useProfileScope";
+import { useAgentScope } from "@/contexts/useAgentScope";
 import {
   AlignLeft,
   Check,
@@ -25,7 +25,7 @@ import {
 import spinners from "unicode-animations";
 import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
-import type { ActiveProfileInfo, ProfileInfo } from "@/lib/api";
+import type { ActiveAgentInfo, AgentInfo } from "@/lib/api";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
@@ -252,15 +252,15 @@ function ProfileActionsMenu({
   );
 }
 
-export default function ProfilesPage() {
+export default function AgentsPage() {
   const navigate = useNavigate();
-  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
-  const [activeInfo, setActiveInfo] = useState<ActiveProfileInfo | null>(null);
+  const [profiles, setProfiles] = useState<AgentInfo[]>([]);
+  const [activeInfo, setActiveInfo] = useState<ActiveAgentInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast, showToast } = useToast();
   const { t } = useI18n();
   const { setEnd } = usePageHeader();
-  const { setProfile } = useProfileScope();
+  const { setProfile } = useAgentScope();
 
   // Locale strings with English fallbacks. The enriched keys are optional in
   // the i18n type so untranslated locales don't break the build — they render
@@ -268,20 +268,20 @@ export default function ProfilesPage() {
   const L = useMemo(() => {
     const p = t.profiles;
     return {
-      activeProfile: p.activeProfile ?? "Active profile",
+      activeProfile: p.activeProfile ?? "Active agent",
       activeBadge: p.activeBadge ?? "active",
       setActive: p.setActive ?? "Set as active",
-      activeSet: p.activeSet ?? "Active profile set",
+      activeSet: p.activeSet ?? "Active agent set",
       gatewayRunning: p.gatewayRunning ?? "Gateway running",
       gatewayStopped: p.gatewayStopped ?? "Gateway stopped",
       gatewayRunningWarning:
         p.gatewayRunningWarning ??
-        "This profile's gateway is running — it will be stopped.",
+        "This agent's gateway is running — it will be stopped.",
       aliasBadge: p.aliasBadge ?? "alias",
       description: p.description ?? "Description",
       descriptionPlaceholder:
         p.descriptionPlaceholder ??
-        "What is this profile good at? Used to route kanban tasks by role.",
+        "What is this agent good at? Used to route kanban tasks by role.",
       noDescription: p.noDescription ?? "No description",
       editDescription: p.editDescription ?? "Edit description",
       descriptionSaved: p.descriptionSaved ?? "Description saved",
@@ -307,7 +307,7 @@ export default function ProfilesPage() {
       manageSkills: p.manageSkills ?? "Manage skills & tools",
       activeSetHint:
         p.activeSetHint ??
-        "Dashboard switched to manage {name}. New CLI/gateway runs will use this profile too.",
+        "Dashboard switched to manage {name}. New CLI/gateway runs will use this agent too.",
     };
   }, [t.profiles]);
 
@@ -393,7 +393,7 @@ export default function ProfilesPage() {
   }, [modelChoices]);
 
   const load = useCallback(() => {
-    Promise.all([api.getProfiles(), api.getActiveProfile().catch(() => null)])
+    Promise.all([api.getAgents(), api.getActiveAgent().catch(() => null)])
       .then(([res, active]) => {
         setProfiles(res.profiles);
         setActiveInfo(active);
@@ -412,7 +412,7 @@ export default function ProfilesPage() {
   }, [createModalOpen, loadModelChoices]);
 
   const isActive = useCallback(
-    (p: ProfileInfo) =>
+    (p: AgentInfo) =>
       activeInfo != null &&
       (activeInfo.active === p.name ||
         (activeInfo.active === "default" && p.is_default)),
@@ -437,7 +437,7 @@ export default function ProfilesPage() {
             (c) => `${c.provider}\u0000${c.model}` === modelChoice,
           )
         : undefined;
-      const res = await api.createProfile({
+      const res = await api.createAgent({
         name,
         clone_from: cloneFrom,
         clone_all: cloning && cloneAll,
@@ -481,7 +481,7 @@ export default function ProfilesPage() {
       return;
     }
     try {
-      await api.renameProfile(renamingFrom, target);
+      await api.renameAgent(renamingFrom, target);
       showToast(`${t.profiles.renamed}: ${renamingFrom} → ${target}`, "success");
       setRenamingFrom(null);
       setRenameTo("");
@@ -496,7 +496,7 @@ export default function ProfilesPage() {
     try {
       // The backend normalizes/validates the name; trust the canonical
       // value it returns rather than the raw input.
-      const { active } = await api.setActiveProfile(name);
+      const { active } = await api.setActiveAgent(name);
       setProfile(active);
       showToast(
         `${L.activeSet}: ${active} — ${L.activeSetHint.replace("{name}", active)}`,
@@ -535,7 +535,7 @@ export default function ProfilesPage() {
       setSoulText("");
       activeSoulRequest.current = name;
       try {
-        const soul = await api.getProfileSoul(name);
+        const soul = await api.getAgentSoul(name);
         if (activeSoulRequest.current === name) {
           setSoulText(soul.content);
         }
@@ -551,7 +551,7 @@ export default function ProfilesPage() {
   const handleSaveSoul = async (name: string) => {
     setSoulSaving(true);
     try {
-      await api.updateProfileSoul(name, soulText);
+      await api.updateAgentSoul(name, soulText);
       showToast(`${t.profiles.soulSaved}: ${name}`, "success");
       activeSoulRequest.current = null;
       setEditingSoulFor(null);
@@ -563,7 +563,7 @@ export default function ProfilesPage() {
   };
 
   const openDescEditor = useCallback(
-    (p: ProfileInfo) => {
+    (p: AgentInfo) => {
       if (editingDescFor === p.name) {
         closeEditor();
         return;
@@ -582,7 +582,7 @@ export default function ProfilesPage() {
     setDescSaving(true);
     activeDescRequest.current = name;
     try {
-      const res = await api.updateProfileDescription(name, descText);
+      const res = await api.updateAgentDescription(name, descText);
       // Profile-list state always reflects the persisted result, but only
       // touch the open editor if it's still showing this profile.
       setProfiles((prev) =>
@@ -615,7 +615,7 @@ export default function ProfilesPage() {
     setDescribing(true);
     activeDescRequest.current = name;
     try {
-      const res = await api.describeProfileAuto(name);
+      const res = await api.describeAgentAuto(name);
       const current = activeDescRequest.current === name;
       if (res.ok && res.description != null) {
         if (current) setDescText(res.description);
@@ -645,7 +645,7 @@ export default function ProfilesPage() {
   };
 
   const openModelEditor = useCallback(
-    (p: ProfileInfo) => {
+    (p: AgentInfo) => {
       if (editingModelFor === p.name) {
         closeEditor();
         return;
@@ -668,7 +668,7 @@ export default function ProfilesPage() {
     if (!picked) return;
     setModelSaving(true);
     try {
-      await api.setProfileModel(name, picked.provider, picked.model);
+      await api.setAgentModel(name, picked.provider, picked.model);
       showToast(`${L.modelSaved}: ${picked.model}`, "success");
       setProfiles((prev) =>
         prev.map((p) =>
@@ -703,7 +703,7 @@ export default function ProfilesPage() {
   const handleCopyTerminalCommand = async (name: string) => {
     let cmd: string;
     try {
-      const res = await api.getProfileSetupCommand(name);
+      const res = await api.getAgentSetupCommand(name);
       cmd = res.command;
     } catch (e) {
       showToast(`${t.status.error}: ${e}`, "error");
@@ -721,7 +721,7 @@ export default function ProfilesPage() {
     onDelete: useCallback(
       async (name: string) => {
         try {
-          await api.deleteProfile(name);
+          await api.dissolveAgent(name);
           showToast(`${t.profiles.deleted}: ${name}`, "success");
           load();
         } catch (e) {
@@ -753,7 +753,7 @@ export default function ProfilesPage() {
           className="uppercase"
           size="sm"
           outlined
-          onClick={() => navigate("/profiles/new")}
+          onClick={() => navigate("/agents/new")}
         >
           Build
         </Button>
@@ -810,7 +810,7 @@ export default function ProfilesPage() {
           }
           role="dialog"
           aria-modal="true"
-          aria-labelledby="create-profile-title"
+          aria-labelledby="create-agent-title"
         >
           <div
             className={cn(
@@ -830,7 +830,7 @@ export default function ProfilesPage() {
 
             <header className="p-5 pb-3 border-b border-border">
               <h2
-                id="create-profile-title"
+                id="create-agent-title"
                 className="font-mondwest text-display text-base tracking-wider"
               >
                 {t.profiles.newProfile}
@@ -839,10 +839,10 @@ export default function ProfilesPage() {
 
             <div className="min-h-0 overflow-y-auto p-5 grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="profile-name">{t.profiles.name}</Label>
+                <Label htmlFor="agent-name">{t.profiles.name}</Label>
 
                 <Input
-                  id="profile-name"
+                  id="agent-name"
                   autoFocus
                   placeholder={t.profiles.namePlaceholder}
                   value={newName}
@@ -882,12 +882,12 @@ export default function ProfilesPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="profile-description">
+                <Label htmlFor="agent-description">
                   {L.descriptionOptional}
                 </Label>
 
                 <textarea
-                  id="profile-description"
+                  id="agent-description"
                   className="flex min-h-[64px] w-full border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   placeholder={L.descriptionPlaceholder}
                   value={newDescription}
@@ -896,10 +896,10 @@ export default function ProfilesPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="profile-model">{L.modelOptional}</Label>
+                <Label htmlFor="agent-model">{L.modelOptional}</Label>
 
                 <Select
-                  id="profile-model"
+                  id="agent-model"
                   value={modelChoice}
                   disabled={modelChoices === null}
                   onValueChange={setModelChoice}
@@ -1235,7 +1235,7 @@ export default function ProfilesPage() {
           onClick={(e) => e.target === e.currentTarget && closeEditor()}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="profile-editor-title"
+          aria-labelledby="agent-editor-title"
         >
           <div
             className={cn(
@@ -1255,7 +1255,7 @@ export default function ProfilesPage() {
 
             <header className="p-5 pb-3 border-b border-border">
               <h2
-                id="profile-editor-title"
+                id="agent-editor-title"
                 className="font-mondwest text-display text-base tracking-wider"
               >
                 {editorKind === "model"
@@ -1320,7 +1320,7 @@ export default function ProfilesPage() {
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <Label
-                      htmlFor="profile-desc-editor"
+                      htmlFor="agent-desc-editor"
                       className="font-mondwest text-display text-xs tracking-wider text-muted-foreground"
                     >
                       {L.description}
@@ -1339,7 +1339,7 @@ export default function ProfilesPage() {
                   </div>
 
                   <textarea
-                    id="profile-desc-editor"
+                    id="agent-desc-editor"
                     className="flex min-h-[96px] w-full border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     placeholder={L.descriptionPlaceholder}
                     value={descText}
@@ -1362,14 +1362,14 @@ export default function ProfilesPage() {
               {editorKind === "soul" && (
                 <>
                   <Label
-                    htmlFor="profile-soul-editor"
+                    htmlFor="agent-soul-editor"
                     className="font-mondwest text-display text-xs tracking-wider text-muted-foreground"
                   >
                     {t.profiles.soulSection}
                   </Label>
 
                   <textarea
-                    id="profile-soul-editor"
+                    id="agent-soul-editor"
                     className="flex min-h-[280px] w-full border border-input bg-transparent px-3 py-2 text-sm font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     placeholder={t.profiles.soulPlaceholder}
                     value={soulText}

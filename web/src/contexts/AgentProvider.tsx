@@ -30,10 +30,10 @@ import { ProfileContext } from "@/contexts/profile-context";
  * flipped the sticky active_profile file (future CLI/gateway runs). The
  * switcher is the dashboard's write-target selector for Chat and management
  * pages. We now sync the switcher when the sticky active profile differs from
- * the dashboard process on load, and ProfilesPage updates the switcher when
+ * the dashboard process on load, and AgentsPage updates the switcher when
  * you click "Set as active".
  */
-export function ProfileProvider({ children }: { children: ReactNode }) {
+export function AgentProvider({ children }: { children: ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { pathname } = useLocation();
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -82,7 +82,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const urlProfile = searchParams.get("profile");
 
-    Promise.all([api.getProfiles(), api.getActiveProfile()])
+    Promise.all([api.getAgents(), api.getActiveAgent()])
       .then(([profilesRes, info]) => {
         if (cancelled) return;
 

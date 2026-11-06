@@ -66,10 +66,10 @@ import { useBelowBreakpoint } from "@nous-research/ui/hooks/use-below-breakpoint
 import { useSidebarStatus } from "@/hooks/useSidebarStatus";
 import { AuthWidget } from "@/components/AuthWidget";
 import { PageHeaderProvider } from "@/contexts/PageHeaderProvider";
-import { ProfileProvider } from "@/contexts/ProfileProvider";
-import { useProfileScope } from "@/contexts/useProfileScope";
-import { ProfileSwitcher } from "@/components/ProfileSwitcher";
-import { ProfileScopeBanner } from "@/components/ProfileScopeBanner";
+import { AgentProvider } from "@/contexts/AgentProvider";
+import { useAgentScope } from "@/contexts/useAgentScope";
+import { AgentSwitcher } from "@/components/AgentSwitcher";
+import { AgentScopeBanner } from "@/components/AgentScopeBanner";
 import { useSystemActions } from "@/contexts/useSystemActions";
 import type { SystemAction } from "@/contexts/system-actions-context";
 import ConfigPage from "@/pages/ConfigPage";
@@ -81,8 +81,8 @@ import LogsPage from "@/pages/LogsPage";
 import AnalyticsPage from "@/pages/AnalyticsPage";
 import ModelsPage from "@/pages/ModelsPage";
 import CronPage from "@/pages/CronPage";
-import ProfilesPage from "@/pages/ProfilesPage";
-import ProfileBuilderPage from "@/pages/ProfileBuilderPage";
+import AgentsPage from "@/pages/AgentsPage";
+import AgentBuilderPage from "@/pages/AgentBuilderPage";
 import SkillsPage from "@/pages/SkillsPage";
 import PluginsPage from "@/pages/PluginsPage";
 import McpPage from "@/pages/McpPage";
@@ -145,8 +145,11 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/channels": ChannelsPage,
   "/webhooks": WebhooksPage,
   "/system": SystemPage,
-  "/profiles": ProfilesPage,
-  "/profiles/new": ProfileBuilderPage,
+  "/agents": AgentsPage,
+  "/agents/new": AgentBuilderPage,
+  // 旧书签兼容：profile 概念已下线，/profiles* 一律落到 /agents*
+  "/profiles": () => <Navigate to="/agents" replace />,
+  "/profiles/new": () => <Navigate to="/agents/new" replace />,
   "/config": ConfigPage,
   "/env": EnvPage,
   "/docs": DocsPage,
@@ -188,7 +191,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
   { path: "/channels", label: "Channels", icon: Radio },
   { path: "/webhooks", label: "Webhooks", icon: Webhook },
   { path: "/pairing", label: "Pairing", icon: ShieldCheck },
-  { path: "/profiles", labelKey: "profiles", label: "Profiles", icon: Users },
+  { path: "/agents", labelKey: "profiles", label: "Agents", icon: Users },
   { path: "/config", labelKey: "config", label: "Config", icon: Settings },
   { path: "/env", labelKey: "keys", label: "Keys", icon: KeyRound },
   { path: "/system", label: "System", icon: Wrench },
@@ -480,7 +483,7 @@ export default function App() {
   }, []);
 
   return (
-    <ProfileProvider>
+    <AgentProvider>
     <div
       data-layout-variant={layoutVariant}
       className="flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-background-base text-text-primary antialiased"
@@ -537,7 +540,7 @@ export default function App() {
       )}
 
       <PluginSlot name="header-banner" />
-      <ProfileScopeBanner />
+      <AgentScopeBanner />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-14 lg:pt-0">
         <div className="flex min-h-0 min-w-0 flex-1">
@@ -609,7 +612,7 @@ export default function App() {
               </Button>
             </div>
 
-            <ProfileSwitcher collapsed={isDesktopCollapsed} />
+            <AgentSwitcher collapsed={isDesktopCollapsed} />
 
             <nav
               className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden border-t border-current/10 py-2"
@@ -736,7 +739,7 @@ export default function App() {
                     "min-h-0 flex flex-1 flex-col",
                 )}
               >
-                <ProfileKeyedRoutes>
+                <AgentKeyedRoutes>
                   <Routes>
                     {routes.map(({ key, path, element }) => (
                       <Route key={key} path={path} element={element} />
@@ -748,7 +751,7 @@ export default function App() {
                       }
                     />
                   </Routes>
-                </ProfileKeyedRoutes>
+                </AgentKeyedRoutes>
 
                 {embeddedChat &&
                   !chatOverriddenByPlugin &&
@@ -786,7 +789,7 @@ export default function App() {
 
       <PluginSlot name="overlay" />
     </div>
-    </ProfileProvider>
+    </AgentProvider>
   );
 }
 
@@ -800,8 +803,8 @@ export default function App() {
  * the new scope. The persistent ChatPage host below handles its own
  * remount (channel keyed on scopedProfile).
  */
-function ProfileKeyedRoutes({ children }: { children: ReactNode }) {
-  const { profile } = useProfileScope();
+function AgentKeyedRoutes({ children }: { children: ReactNode }) {
+  const { profile } = useAgentScope();
   return <div key={profile || "__own__"} className="contents">{children}</div>;
 }
 

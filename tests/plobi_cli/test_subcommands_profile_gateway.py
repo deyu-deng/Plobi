@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 
+import pytest
+
 from plobi_cli.subcommands.gateway import build_gateway_parser
 from plobi_cli.subcommands.profile import build_profile_parser
 
@@ -47,30 +49,29 @@ def _gateway_parser():
     return p
 
 
-def test_profile_subactions_and_dispatch():
+def test_agent_subactions_and_dispatch():
     p = _profile_parser()
-    ns = p.parse_args(["profile", "list"])
-    assert ns.command == "profile"
+    ns = p.parse_args(["agent", "list"])
+    assert ns.command == "agent"
     assert ns.profile_action == "list"
     assert ns.func is _h_profile
     # a representative arg-taking subaction
-    ns2 = p.parse_args(["profile", "show", "work"])
+    ns2 = p.parse_args(["agent", "show", "work"])
     assert ns2.profile_action == "show"
 
 
-def test_agent_is_the_name_and_profile_still_parses():
-    """主名换成 `agent`（11-05 随 `WP-PROFILE-CANCEL`），旧写法照样派发到同一个处理器。
+def test_profile_alias_is_gone():
+    """``profile`` 别名在 11-06 随 `WP-PROFILE-CANCEL` 收尾一并摘除。
 
-    取消一个概念不等于把用户手打惯的命令拿走：两个名字必须走同一个 ``func``、
-    同一套子动作——多一条实现就多一处以后会漂移的地方。
+    概念从产品面下线的定义就是「用户再也打不出这个词」：留着别名等于把旧词
+    继续写在 ``--help`` 里教给下一个人。只认 ``agent``。
     """
     p = _profile_parser()
-    new = p.parse_args(["agent", "list"])
-    old = p.parse_args(["profile", "list"])
 
-    assert new.command == "agent" and old.command == "profile"
-    assert new.profile_action == old.profile_action == "list"
-    assert new.func is old.func is _h_profile
+    with pytest.raises(SystemExit) as exc:
+        p.parse_args(["profile", "list"])
+
+    assert exc.value.code == 2
 
 
 def test_profile_has_expected_actions():
@@ -87,7 +88,7 @@ def test_profile_has_expected_actions():
         "import": ["/tmp/x.zip"],
     }
     for action, extra in cases.items():
-        ns = p.parse_args(["profile", action, *extra])
+        ns = p.parse_args(["agent", action, *extra])
         assert ns.profile_action == action
 
 

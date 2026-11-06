@@ -38,15 +38,16 @@ interface ModelChoice {
  * Composes the same elements the standalone Models / Skills / MCP pages
  * manage — Name, Description, Model+Provider, Skills (built-in/optional +
  * hub), MCP servers — into one stepped create flow. Nothing is written to
- * disk until "Create profile" on the final step; the single POST /api/profiles
- * call commits model + MCPs + skill selection synchronously and spawns any
- * hub-skill installs (which the success toast reports as in-progress).
+ * disk until "Create agent" on the final step.
  *
- * Skills use REPLACE semantics: the default bundle is seeded server-side, then
- * every seeded skill the user did NOT keep is disabled. The "Start from full
- * bundle" toggle keeps everything (sends no keep list).
+ * 2026-11-06（profile 连根拔 · web 迁移）：最终提交那一步现在打的是
+ * ``POST /api/agents``（旧 ``POST /api/profiles`` 已整组下线）。新端点只认
+ * id / category / name / description 这几格，所以模型改成提交后补一刀
+ * ``PUT /api/agents/<id>/model``，而 Skills 与 MCP 那两步**当前不再落盘**——
+ * 后端随 profile 概念一起砍掉了 clone/keep/hub 入参，这两步留着等页面改造时
+ * 拆掉或改接 per-agent 的 tool-prefs（``PUT /api/agents/<id>/tool-prefs``）。
  */
-export default function ProfileBuilderPage() {
+export default function AgentBuilderPage() {
   const navigate = useNavigate();
   const { toast, showToast } = useToast();
 
@@ -212,13 +213,13 @@ export default function ProfileBuilderPage() {
   const handleCreate = async () => {
     const n = name.trim();
     if (!PROFILE_NAME_RE.test(n)) {
-      showToast("Invalid profile name (lowercase, digits, - and _)", "error");
+      showToast("Invalid agent name (lowercase, digits, - and _)", "error");
       setStep("identity");
       return;
     }
     setCreating(true);
     try {
-      const res = await api.createProfile({
+      const res = await api.createAgent({
         name: n,
         clone_from: null,
         description: description.trim() || undefined,
@@ -235,7 +236,7 @@ export default function ProfileBuilderPage() {
           : `Profile "${n}" created`,
         "success",
       );
-      navigate("/profiles");
+      navigate("/agents");
     } catch (e) {
       showToast(`Create failed: ${e}`, "error");
     } finally {
@@ -250,7 +251,7 @@ export default function ProfileBuilderPage() {
     <div className="mx-auto w-full max-w-3xl space-y-6 p-4">
       <div className="flex items-center justify-between">
         <H2>New profile</H2>
-        <Button ghost onClick={() => navigate("/profiles")}>
+        <Button ghost onClick={() => navigate("/agents")}>
           Cancel
         </Button>
       </div>
@@ -300,7 +301,7 @@ export default function ProfileBuilderPage() {
                 <Label htmlFor="pb-desc">Description (optional)</Label>
                 <Input
                   id="pb-desc"
-                  placeholder="What this agent profile is for"
+                  placeholder="What this agent is for"
                   value={description}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setDescription(e.target.value)
@@ -584,7 +585,7 @@ export default function ProfileBuilderPage() {
         </Button>
         {step === "review" ? (
           <Button onClick={handleCreate} disabled={creating || !nameValid}>
-            {creating ? "Creating…" : "Create profile"}
+            {creating ? "Creating…" : "Create agent"}
           </Button>
         ) : (
           <Button
