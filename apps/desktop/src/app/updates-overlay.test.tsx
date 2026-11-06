@@ -110,7 +110,9 @@ describe('updates overlay: the desktop release view', () => {
 
   it('retries the release install itself after a failure, not the checkout update', async () => {
     const releaseInstall = vi.fn().mockResolvedValue({ ok: false, reason: 'download-failed', message: '下载失败' })
+
     const apply = vi.fn()
+
     ;(window as unknown as { plobiDesktop: unknown }).plobiDesktop = { updates: { apply, releaseInstall } }
     $desktopRelease.set(release())
 

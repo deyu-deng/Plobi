@@ -126,13 +126,16 @@ function isSkewToastSnoozed(): boolean {
 }
 
 const RELEASE_TOAST_ID = 'desktop-release-available'
-// 这一族按**版本号**记，不按时间：那把尺是给「一天能落一百笔」的分支用的，
-// 而发布物一版一份——同一个号只提醒一次，下一版（号变了）才再响。
+// 一个版本号一辈子只该被打扰一次 —— 但「一次」是**这一版**的事，不是「这个
+// 进程」的事：用户没看见（关机了、没在看）就得下次开机还提醒他。所以「已看过」
+// 记在**版本号**上、且**用户关掉那一声时才记**；同一个进程里同一个号最多响一次
+// （别每 30 分钟响一遍），出了新号才再响。
 const RELEASE_TOAST_SEEN_KEY = 'plobi:release-toast-seen-version'
+const releaseToastShown = new Set<string>()
 
 /**
  * 有新版的桌面端时响一声。分支更新那把尺用冷却窗口，是因为 main 一天能落
- * 上百笔；发布物不会——一个版本号一辈子只该被打扰一次。
+ * 上百笔；发布物不会——一个版本号值得被打扰一次，不值得被打扰一百次。
  */
 export function maybeNotifyDesktopRelease(release: DesktopReleaseInfo | null): void {
   if (!release?.newer || !release.latest) {
@@ -143,16 +146,21 @@ export function maybeNotifyDesktopRelease(release: DesktopReleaseInfo | null): v
     return
   }
 
+  if (releaseToastShown.has(release.latest)) {
+    return
+  }
+
   if (storedString(RELEASE_TOAST_SEEN_KEY) === release.latest) {
     return
   }
 
-  persistString(RELEASE_TOAST_SEEN_KEY, release.latest)
+  releaseToastShown.add(release.latest)
 
   notify({
     action: {
       label: translateNow('notifications.updatePlobi'),
       onClick: () => {
+        persistString(RELEASE_TOAST_SEEN_KEY, release.latest)
         openUpdateOverlayFor('client')
       }
     },
@@ -161,6 +169,7 @@ export function maybeNotifyDesktopRelease(release: DesktopReleaseInfo | null): v
     id: RELEASE_TOAST_ID,
     kind: 'info',
     message: translateNow('settings.about.updateReadyVersion', release.latest),
+    onDismiss: () => persistString(RELEASE_TOAST_SEEN_KEY, release.latest),
     title: translateNow('notifications.updateReadyTitle')
   })
 }

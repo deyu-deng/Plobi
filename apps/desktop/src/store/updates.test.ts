@@ -514,8 +514,19 @@ describe('desktop release (the shell itself)', () => {
     expect(notifySpy).not.toHaveBeenCalled()
   })
 
+  it('keeps reminding about a version the user never closed', () => {
+    maybeNotifyDesktopRelease(release({ latest: '0.3.7', tag: 'v0.3.7' }))
+    expect(notifySpy).toHaveBeenCalledTimes(1)
+
+    // Not closed yet ⇒ not written down: the next launch must say it again.
+    expect(storage.get('plobi:release-toast-seen-version')).toBeUndefined()
+
+    lastToast().onDismiss()
+    expect(storage.get('plobi:release-toast-seen-version')).toBe('0.3.7')
+  })
+
   it('publishes what the release check found', async () => {
-    const releaseCheck = vi.fn().mockResolvedValue(release())
+    const releaseCheck = vi.fn().mockResolvedValue(release({ latest: '0.3.9', tag: 'v0.3.9' }))
 
     ;(globalThis as unknown as { window: unknown }).window = {
       plobiDesktop: { updates: { releaseCheck } }
@@ -523,7 +534,7 @@ describe('desktop release (the shell itself)', () => {
 
     const info = await checkDesktopRelease()
 
-    expect(info?.latest).toBe('0.3.1')
+    expect(info?.latest).toBe('0.3.9')
     expect($desktopRelease.get()?.newer).toBe(true)
     expect(notifySpy).toHaveBeenCalledTimes(1)
   })
