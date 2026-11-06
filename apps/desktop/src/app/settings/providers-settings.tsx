@@ -23,16 +23,15 @@ import {
   markConnected,
   markDisconnected,
   quotaAppVerdict,
-  requestQuotaCatalog,
-  type ConnectedDesktopApp,
-  type QuotaAppVerdict
+  type QuotaAppVerdict,
+  requestQuotaCatalog
 } from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
-import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
+import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import { buildLoginCards, cardControl, cardDetail, type LoginCard, type RoutingVerdict } from './quota-login-cards'
@@ -526,6 +525,13 @@ function DesktopQuotasView() {
         // have used, carried per dropped model in the frame's `blocked` map.
         const unselectableReason = record?.blocked ? Object.values(record.blocked)[0] : undefined
 
+        // 帧里给的是码（`credential_expired` / `model_rejected`），是理由不是句子，
+        // 所以它和判决一样要先过 `quotaReason` 那张表再上屏。码本身留在
+        // `unselectableReason` 里给状态用，但绝不作为文案念给用户听。
+        const unselectableText = unselectableReason
+          ? quotaReason[unselectableReason] ?? t.desktop.quotaReason.unknown(unselectableReason)
+          : ''
+
         const verdictView: QuotaAppVerdict =
           !usable && verdict.state === 'ok'
             ? { reason: unselectableReason ?? 'not_offered', state: 'unusable' }
@@ -534,8 +540,8 @@ function DesktopQuotasView() {
         // The hub's reason belongs on the control that would fix it.
         const reason
           = !usable
-            ? unselectableReason
-              ?? (verdict.state === 'unusable'
+            ? unselectableText
+              || (verdict.state === 'unusable'
                 ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
                 : '')
             : ''
@@ -553,7 +559,7 @@ function DesktopQuotasView() {
           // The reason for a dark leg is body copy under the card (user 2026-11-04
           // ruling) — see `belowText`; the control tooltip only carries a click
           // failure, which an action (retry / turn off) can actually resolve.
-          belowText: reason || unselectableReason || undefined,
+          belowText: reason || undefined,
           detail: cardDetail(card, errorTitle, undefined, undefined),
           errorTitle,
           // A click that is still in flight is the only moment a control is disabled.

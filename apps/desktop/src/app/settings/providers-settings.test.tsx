@@ -22,6 +22,9 @@ const onboarding = atom({ manual: false })
 vi.mock('@/plobi', () => ({
   disconnectOAuthProvider: (providerId: string) => disconnectOAuthProvider(providerId),
   getEnvVars: () => getEnvVars(),
+  // providers-settings 在挂载时会问一次「aigw 这一行让不让选」（readHubSelectable），
+  // 以前这个 mock 只给了三个键，于是每条用例都先抛一个 No "getGlobalModelOptions" export。
+  getGlobalModelOptions: () => Promise.resolve({ providers: [] as Array<{ selectable?: boolean; slug: string }> }),
   listOAuthProviders: () => listOAuthProviders()
 }))
 
@@ -369,10 +372,11 @@ describe('Desktop Quotas cards are the hub catalog', () => {
 
     const control = await screen.findByRole('switch')
 
-    // The leg is unusable, so the switch stays pressable and carries the reason as its
-    // tooltip — and the reason is nowhere else on the page.
-    expect(control.getAttribute('title')).toMatch(/sign-in has expired/)
-    expect(screen.queryByText(/sign-in has expired/)).toBeNull()
+    // 11-04 之后这条理由不再挂在 switch 的 tooltip 上（那里只留点击失败），
+    // 而是卡片下方那一行 body copy（`below`，role="note"）。switch 仍然可以按，
+    // 因为按下去是"把这个腿关掉"，正是它该做的事。
+    expect(control.getAttribute('title')).toBeNull()
+    expect((await screen.findByRole('note')).textContent).toMatch(/sign-in has expired/)
   })
 
   it('names the refusal the same way it names an expired sign-in: on the control only', async () => {
@@ -385,8 +389,10 @@ describe('Desktop Quotas cards are the hub catalog', () => {
 
     const control = await screen.findByRole('switch')
 
-    expect(control.getAttribute('title')).toMatch(/did not serve that model/)
-    expect(screen.queryByText(/did not serve that model/)).toBeNull()
+    // 与上一条同样的落点：文案在卡片下方的 note 里，switch 上没有 tooltip，
+    // 而且理由码本身（`model_rejected`）不该作为句子漏到屏幕上。
+    expect(control.getAttribute('title')).toBeNull()
+    expect((await screen.findByRole('note')).textContent).toMatch(/did not serve that model/)
     expect(screen.queryByText('model_rejected')).toBeNull()
   })
 })
@@ -502,6 +508,10 @@ describe('Desktop Quotas switch', () => {
     expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy'])).toEqual({ state: 'off' })
 
     fireEvent.click(codeBuddySwitch())
+
+    // 打开是"请求"，不是判决：记录先落在 answered:false，等 hub 下一帧把真实模型
+    // 带回来才算 ok（user 2026-11-04）。所以这里必须补一帧，不能只等 UI。
+    frame('workbuddy', ['hy3'])
 
     await waitFor(() =>
       expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({
