@@ -242,7 +242,9 @@ describe('what the row says', () => {
     await waitFor(() => expect(switches(container).length).toBe(1))
     // 名字出现两次不奇怪：可见的那一处 + 开关的无障碍名（读屏要听得出"这是微信的开关"）。
     expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0)
-    expect(screen.getByText('Connected')).toBeTruthy()
+    // 11-07 起行上**不写状态词**：状态由控件形状说话（这里是 checked）。
+    expect(screen.queryByText('Connected')).toBeNull()
+    expect(switches(container)[0].getAttribute('data-state')).toBe('checked')
 
     for (const label of ['Stop', 'Start', 'Set up', 'Try once']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull()
@@ -267,19 +269,22 @@ describe('what the row says', () => {
       })
     ]))
 
-    render(<SourcesSettings />)
+    const { container } = render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByText('Not connected')).toBeTruthy())
-    expect(screen.getByText('Connected')).toBeTruthy()
-    expect(screen.getByText('Connection problem')).toBeTruthy()
-    // 出错那一行多的是**目录里那句人话**；执行方逐字原话要点开抽屉才出现（用户 10-22 拍的这一格）。
-    expect(screen.getByText('Manual verification required')).toBeTruthy()
+    // 11-07 定的语法：**形状说话**——未连接＝开关关、已连接＝开关开、出错＝开关旁一颗红点。
+    // 行上不再有"未连接／已连接"这些词（那是把状态复制成句子）。
+    await waitFor(() => expect(switches(container).length).toBe(3))
+    expect([...switches(container)].map(node => node.getAttribute('data-state')))
+      .toEqual(['unchecked', 'checked', 'checked'])
+    // 出错那一行多的是**目录里那句人话**，而且它进 tooltip 不进正文；执行方逐字原话只进抽屉。
+    expect(screen.getByTitle('Manual verification required')).toBeTruthy()
+    expect(screen.queryByText('Manual verification required')).toBeNull()
     expect(screen.queryByText('要人工验证码：这一轮按口径停手')).toBeNull()
-    // 正常态什么都不多写，未连接也不多说一句。
-    expect(screen.queryByText('Never ran')).toBeNull()
-    expect(screen.queryByText('Last run')).toBeNull()
-    expect(screen.queryByText('Turned off manually')).toBeNull()
-    expect(screen.queryByText('Last collection succeeded')).toBeNull()
+
+    // 正常态不写任何状态句子。
+    for (const word of ['Connected', 'Not connected', 'Connection problem', 'Never ran', 'Last run', 'Turned off manually']) {
+      expect(screen.queryByText(word)).toBeNull()
+    }
   })
 
   it('does not draw an off switch for a switch it could not read', async () => {
@@ -363,7 +368,8 @@ describe('what the row says', () => {
     render(<SourcesSettings />)
     await waitFor(() => expect(screen.getByText('DingTalk')).toBeTruthy())
 
-    expect(screen.getByText('The local collector is not ready')).toBeTruthy()
+    expect(screen.getByTitle('The local collector is not ready')).toBeTruthy()
+    expect(screen.queryByText('The local collector is not ready')).toBeNull()
     expect(screen.queryByText(/没有任何一方构造得出/)).toBeNull()
 
     fireEvent.click(screen.getByText('DingTalk'))
@@ -557,8 +563,7 @@ describe('what the row says', () => {
     ]))
 
     render(<SourcesSettings />)
-    await waitFor(() => expect(screen.getByText('Not connected')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /DingTalk/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /DingTalk/ }))
 
     await waitFor(() => expect(screen.getByTestId('source-probe-dingtalk').textContent)
       .toContain('本地库在位：D:/x/dingtalk_encrypt.db（v3）'))

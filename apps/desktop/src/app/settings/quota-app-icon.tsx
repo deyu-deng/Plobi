@@ -23,11 +23,10 @@ import SiOpencode from '@icons-pack/react-simple-icons/icons/SiOpencode'
 import SiQwen from '@icons-pack/react-simple-icons/icons/SiQwen'
 import type { ComponentType, SVGProps } from 'react'
 
-import { cn } from '@/lib/utils'
-
 import antigravityMark from './brand/antigravity.svg'
 import kiroMark from './brand/kiro.svg'
 import qoderMark from './brand/qoder.svg'
+import { EntityAvatar } from './entity-avatar'
 
 /** 官方标志的出处（2026-11-03 抓）。换素材时连这条一起换，别让它变成来路不明的文件。 */
 export const BRAND_MARK_SOURCES: Record<string, string> = {
@@ -62,31 +61,24 @@ const QUOTA_ICONS: Record<string, QuotaIconSpec> = {
 }
 
 export function QuotaAppIcon({ className, id, name }: { className?: string; id: string; name: string }) {
+  // 壳归 `EntityAvatar`（11-07 统一令）；这张订阅品牌表仍归订阅自己。
   const spec = QUOTA_ICONS[id]
   const monogram = (name || id || '?').trim().charAt(0).toUpperCase()
+  const Icon = spec?.Icon
 
   return (
-    <span
-      aria-hidden
-      className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--dt-foreground)_10%,transparent)]',
-        className
-      )}
-      // 品牌色底染 16%：字形在任何底色上都读得出来，又不压过那一行本身。
-      style={{ backgroundColor: `color-mix(in srgb, ${spec?.color ?? 'var(--dt-foreground)'} 16%, transparent)` }}
-    >
-      {spec?.mark ? (
-        // 官方标志原样上屏：不染色、不加底（整颗 `aria-hidden`，装饰而已）。
-        <img alt="" className="size-4 object-contain" draggable={false} src={spec.mark} />
-      ) : spec?.Icon ? (
-        // `title=""`：字形是装饰（整颗 `aria-hidden`），而 simple-icons 无条件渲染一个
-        // `<title>`，默认值是品牌名——那会在屏上多出第二个"CodeBuddy"，读屏也念两遍。
-        <spec.Icon aria-hidden className="size-4" color={spec.color} title="" />
-      ) : (
-        <span className="text-[0.8rem] font-semibold" style={{ color: spec?.color }}>
-          {monogram}
-        </span>
-      )}
-    </span>
+    <EntityAvatar
+      className={className}
+      color={spec?.color}
+      glyph={Icon
+        ? (
+            // `title=""`：字形是装饰（整颗 aria-hidden），而 simple-icons 无条件渲染一个
+            // `<title>`，默认值是品牌名——那会在屏上多出第二个"CodeBuddy"，读屏也念两遍。
+            <Icon aria-hidden className="size-4" color={spec?.color} title="" />
+          )
+        : undefined}
+      iconUrl={spec?.mark}
+      monogram={monogram}
+    />
   )
 }

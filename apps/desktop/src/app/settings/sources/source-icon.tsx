@@ -21,7 +21,8 @@ import { SiGooglecalendar, SiWechat } from '@icons-pack/react-simple-icons'
 import type { ComponentType, SVGProps } from 'react'
 
 import { Globe, Mail } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+
+import { EntityAvatar } from '../entity-avatar'
 
 type IconKind = 'brand' | 'generic'
 
@@ -63,50 +64,20 @@ export function SourceAvatar({
   iconUrl?: string
   sourceId: string
 }) {
-  const base = cn(
-    'inline-grid size-6 shrink-0 place-items-center overflow-hidden rounded-md text-[length:var(--conversation-caption-font-size)] font-medium',
-    className
-  )
-
-  // 抓来的图标优先，且**不给底染**：网站自己的 favicon 已经带了它自己的形状与颜色，
-  // 再套一层品牌色就变成两件事叠在一个 24px 方块里。
-  if (iconUrl) {
-    return (
-      <span aria-hidden="true" className={base} data-testid={`source-avatar-img-${sourceId}`}>
-        <img alt="" className="size-4 object-contain" src={iconUrl} />
-      </span>
-    )
-  }
-
+  // 壳归 `EntityAvatar`（11-07 统一令：信源与订阅共用同一颗图标语法）；这张品牌表仍归信源自己。
   const spec = SOURCE_ICONS[sourceId]
-
-  // 查不到 = 一个还没被这张表认领的信源（多半是第三方包，或它那个站没抓到图标）。
-  // 网站那一类退地球、邮箱那一类退信封、别的退首字母——**这不是错误**，所以不给中性底色之外
-  // 再加任何提示。邮箱那五家（QQ/163/Gmail/Outlook/自定义）都不在这张品牌表里：它们的名字
-  // 与服务器由包自己声明，图标就退这一格的通用形状，等谁真要给品牌徽标再往表里加行。
-  if (!spec) {
-    const Generic = category === 'website' ? Globe : category === 'email' ? Mail : null
-
-    return (
-      <span aria-hidden="true" className={cn(base, 'bg-(--ui-bg-tertiary) text-(--ui-text-tertiary)')}>
-        {Generic ? <Generic className="size-3.5" /> : monogramFor(displayName)}
-      </span>
-    )
-  }
-
-  const { Icon, color } = spec
+  const Icon = spec?.Icon
+  const Generic = !spec ? (category === 'website' ? Globe : category === 'email' ? Mail : null) : null
 
   return (
-    <span
-      aria-hidden="true"
-      className={base}
-      style={{
-        backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`,
-        color
-      }}
-    >
-      {Icon ? <Icon className="size-3.5" /> : spec.monogram ?? monogramFor(displayName)}
-    </span>
+    <EntityAvatar
+      className={className}
+      color={spec?.color}
+      glyph={Icon ? <Icon className="size-4" /> : Generic ? <Generic className="size-4" /> : undefined}
+      iconUrl={iconUrl}
+      monogram={spec?.monogram ?? monogramFor(displayName)}
+      testId={iconUrl ? `source-avatar-img-${sourceId}` : undefined}
+    />
   )
 }
 

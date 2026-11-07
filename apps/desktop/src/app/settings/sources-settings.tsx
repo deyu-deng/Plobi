@@ -26,12 +26,12 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
-import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { selectDesktopPaths } from '@/lib/desktop-fs'
-import { Layers3, Plus } from '@/lib/icons'
+import { Layers3 } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
+import { ConnectionControl } from './connection-control'
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, importSourceFile, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { $fold, decide, isOpen } from './sources/collapse'
@@ -328,31 +328,20 @@ function SourceRowView({
   return (
     <ListRow
       action={
-        // 行上**只有这一颗**。首装没配过时它是一颗加号（用户 11-05：「switch 初始状态都应该是一个 + 号」），
-        // 点它进引导；配过之后才换回开关。旧版这里最多三颗文字按钮，用户的话是「不要有这么多按钮」。
-        unconfigured
-          ? (
-              <Button
-                aria-label={fr.configure.replace('{name}', displayName)}
-                className="size-6 rounded-full p-0"
-                data-testid={`source-configure-${row.source}`}
-                disabled={busy}
-                onClick={onConfigure}
-                size="icon"
-                variant="ghost"
-              >
-                <Plus className="size-3.5" />
-              </Button>
-            )
-          : (
-              <Switch
-                aria-label={`${displayName} — ${labels[STATUS_KEY[status]]}`}
-                checked={checked}
-                disabled={busy || row.enabled === null}
-                onCheckedChange={next => { void onToggle(row, next) }}
-                size="xs"
-              />
-            )
+        // 行上**只有这一颗**，语法由 `ConnectionControl` 一处管（11-07 统一令）：
+        // 没配过 = 加号（点它进引导）；配过 = 开关；坏了不换控件，旁边一颗红点、原因进 tooltip。
+        <ConnectionControl
+          busy={busy || row.enabled === null}
+          checked={checked}
+          configureLabel={fr.configure.replace('{name}', displayName)}
+          configureTestId={`source-configure-${row.source}`}
+          error={status === 'error'}
+          errorTitle={status === 'error' ? statusReason(row, labels) : undefined}
+          mode={unconfigured ? 'configure' : 'toggle'}
+          onConfigure={onConfigure}
+          onToggle={next => { void onToggle(row, next) }}
+          toggleLabel={`${displayName} — ${labels[STATUS_KEY[status]]}`}
+        />
       }
       below={open
         ? (
@@ -366,15 +355,8 @@ function SourceRowView({
             />
           )
         : undefined}
-      description={
-        <span className="flex flex-wrap items-center gap-2">
-          <span aria-hidden="true" className={STATUS_DOT[status]} />
-          <span>{unconfigured ? fr.notConfigured : labels[STATUS_KEY[status]]}</span>
-          {/* 只有出错态多这一行，且是**目录里那句人话**（码不上屏，裁定 45.4）。
-              执行方逐字原话在抽屉里。正常态什么都不多写——用户 10-22：「不要有这么多东西」。 */
-            status === 'error' ? <span className="text-destructive">{statusReason(row, labels)}</span> : null}
-        </span>
-      }
+      /* 行上**不写状态句子**（用户 11-07 拍「形状说话，坏了才红点」）：正常态只看控件，
+         坏了在控件旁一颗红点、那句人话进 tooltip 与抽屉（裁定 45.4：码不上屏）。 */
       expanded={open}
       onActivate={onActivate}
       title={
@@ -398,12 +380,6 @@ const STATUS_KEY = {
   connected: 'statusConnected',
   disconnected: 'statusDisconnected',
   error: 'statusError'
-} as const
-
-const STATUS_DOT = {
-  connected: 'size-1.5 rounded-full bg-primary',
-  disconnected: 'size-1.5 rounded-full bg-(--ui-text-tertiary)',
-  error: 'size-1.5 rounded-full bg-destructive'
 } as const
 
 /** 点开的那片抽屉：原因／上一次／下一次／池里几条／日程里几条／设置／立即同步。 */

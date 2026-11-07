@@ -2032,12 +2032,9 @@ text-* variant utilities. */ .btn-arc {
     box-shadow: var(--dl-card-shadow);
   }
 
-  /* 卡里相邻两行之间一条虚线（Qoder 的 `border-b border-dashed … last:border-b-0`）。
-     判据落在"行"自己身上，不落在"卡内任意兄弟"上：通用配置屏、骨架屏、自带 grid 包层的
-     那些屏都不用为了分隔线去重排整块缩进。 */
-  .dl-card [data-slot='settings-row'] + [data-slot='settings-row'] {
-    border-top: 1px dashed var(--dl-card-line);
-  }
+  /* 卡里相邻两行之间**不画线**（用户 11-07 拍：一组一张卡、行内无线，靠上下呼吸分组）。
+     从前这里有一条虚线（照 Qoder 旧截图），与 `specs/settings-card-system.md` §1 的
+     「不要行间分隔线」打架；统一令选了后者，这条规则整条撤掉，不留半生效的样式。 */
 
   /* 小控件（导航条目、分组抬头里的按钮）那层的 squircle：Tailwind 的 rounded-*
      只能给半径，`corner-shape` 得自己写。老内核忽略这行照样是圆角，不坏。 */
