@@ -149,8 +149,9 @@ export function resolveBundledBackend(resourcesPath?: string): { bundleDir: stri
   return {
     bundleDir,
     wheelhouse: fs.existsSync(wheelhouse) ? wheelhouse : null,
-    // PortableGit + ripgrep travel in the package (Windows only) so the first
-    // launch needs no download for git/bash/rg.
+    // The toolchain travels in the package so the first launch needs no
+    // download: PortableGit + ripgrep (Windows only -- macOS and Linux ship
+    // git and bash), plus uv, CPython, Node.js and ffmpeg on every platform.
     toolchain: fs.existsSync(toolchain) ? toolchain : null
   }
 }
@@ -669,7 +670,7 @@ function buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit = tr
 
   // The bundled backend IS the version: install it from the package, with the
   // locked wheels that ship beside it (offline, hash-verified) — and the
-  // toolchain (uv, CPython) that ships beside those.
+  // toolchain (uv, CPython, Node.js, ffmpeg) that ships beside those.
   if (bundle) {
     args.push('--bundle-dir', bundle.bundleDir)
 
