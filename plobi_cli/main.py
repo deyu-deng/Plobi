@@ -11166,7 +11166,7 @@ def cmd_profile(args):
 
     elif action == "create":
         # 裁 178 乙案第 4 步收口（用户 10-24 21:1x 面令）：**入口关掉，能力留着**。
-        # `profiles.create_profile()` 本体不动——它是库函数，`test_profiles.py` 那十几条与
+        # `profiles.create_profile()` 本体不动——它是库函数，`test_agent_identity.py` 那十几条与
         # `test_l2_shared_skills.py` 都在测 clone/clone_all 那套机制。
         # WP-PROFILE-LAZY-HOME-OFF（用户 10-25 改判「不保留了。但是kanban的能力要有」）：
         # `-p <name>` 的懒建空壳也退了——家不在时折回共享根，身份取名册那一行。

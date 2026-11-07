@@ -51,3 +51,8 @@ fi
 # 缺句子＝指引断供，当场红：`no_credential`、`no_path_configured` 这一类他自己就能修的码，
 # 以前在屏幕上统一落「暂未适配」。
 "$PY" "$ROOT/scripts/check_status_copy_coverage.py"
+
+# 静态产品文案的语域（用户 11-07）：口语词、代办铺垫、第一人称代言、空形容词，四语一律不收。
+# 判据真身在 apps/desktop/src/i18n/copy-register.test.ts，这里只是把它在提交点上跑起来，
+# 免得「像行业标杆」这种要求只活在对话里。只动别处代码、没碰 i18n 时脚本自己跳过，不占时间。
+"$PY" "$ROOT/scripts/check_copy_register.py"
