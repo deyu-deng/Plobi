@@ -2126,53 +2126,60 @@ def body_reference_problems(body: str, version: str, en_asset: str | None) -> li
 # industry uses: a category, one item per line, a noun phrase in bold, the fact
 # after an em dash, no marketing adjectives, no internal bookkeeping.
 #
+# The wording rules below are **the same set as the product-copy register**
+# (``apps/desktop/src/i18n/copy-register.test.ts``): a release page is static
+# product copy too, so two rulers for one thing would drift. The copy register's
+# C1-C5 / EN / JA rules are reproduced verbatim here, plus the words this repo
+# had been shipping (说人话, 一片红灯, 摆在那儿, …).
+#
 # These lists are deliberately short. They name the words that made earlier
 # notes read like a chat message instead of a release page. A word that is
 # merely unusual is not a problem and is not listed here.
-COLLOQUIAL_ZH = (
-    "随手",
-    "当场",
-    "说人话",
-    "一片红灯",
-    "摆在那儿",
-    "话说回去",
-    "糊弄",
-    "省心",
-    "顺手",
-    "攒着",
-    "妥妥",
-    "稳稳的",
-    "神器",
-    "黑科技",
-    "王炸",
-    "保姆级",
-    "开箱即用",
-    "一键搞定",
-    "无缝",
-    "丝滑",
-    "一站式",
-    "强大",
-    "惊艳",
-    "极致",
-    "前所未有",
-    "耳目一新",
-    "简单易用",
+COLLOQUIAL_ZH_PATTERNS = (
+    ("句末语气词", re.compile(r"[啦呀呢吧哈哦哟嘛][。！!？?]?$")),
+    (
+        "第一人称代办腔",
+        re.compile(
+            r"我(来|來|先|这就|這就)?(帮|幫)|(让我|讓我)(来|來|先)?|"
+            r"以下是为您|以下為您|我为你|我為您|我给你(?!的)|我給您"
+        ),
+    ),
+    (
+        "空形容词",
+        re.compile(
+            r"丝滑|絲滑|无缝|無縫|极致|極致|强大|強大|高效|一站式|一键|一鍵|"
+            r"轻松搞定|輕鬆搞定|省心|完美|震撼|惊艳|驚艷|前所未有|耳目一新|"
+            r"简单易用|开箱即用|開箱即用|神器|黑科技|王炸|保姆级"
+        ),
+    ),
+    (
+        "口语词",
+        re.compile(
+            r"搞定|弄好|点一下|點一下|点开(?!关)|點開(?!關)|东西|東西|稍微|挺|"
+            r"随手|隨手|当场|當場|说人话|說人話|一片红灯|一片紅燈|摆在那儿|"
+            r"擺在那兒|话说回去|話說回去|糊弄|妥妥|稳稳的|穩穩的"
+        ),
+    ),
+    ("第一人称复数", re.compile(r"我们|我們|我们的|我們的|咱们|咱們")),
 )
 
-COLLOQUIAL_EN = (
-    "just works",
-    "handy",
-    "seamless",
-    "blazing",
-    "the good news",
-    "say goodbye",
-    "a piece of cake",
-    "rock solid",
-    "game changer",
-    "delighted",
-    "thrilled",
-    "now you can",
-    "you can now",
+COLLOQUIAL_EN_PATTERNS = (
+    (
+        "俚语营销词",
+        re.compile(
+            r"\b(awesome|amazing|seamless|effortless|oops|gonna|wanna|kinda|"
+            r"yay|super easy|just works|handy|rock solid|game changer|delighted|"
+            r"thrilled)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    ("第一人称", re.compile(r"\b(we|our|us)\b", re.IGNORECASE)),
+    ("寒暄与安抚", re.compile(r"\b(no worries|don't worry|feel free|sorry)\b", re.IGNORECASE)),
+)
+
+COLLOQUIAL_JA_PATTERNS = (
+    ("口语终助词", re.compile(r"(だよ|だね|かな|じゃん|だぜ)[。！!]?$")),
+    ("第一人称", re.compile(r"(私たち|僕|俺)")),
 )
 
 # Words that belong to the repo's own bookkeeping, not to a reader.
@@ -2225,23 +2232,29 @@ def notes_register_problems(body: str, language: str = "zh") -> list[str]:
         )
 
     if chinese:
-        words = COLLOQUIAL_ZH
+        patterns = COLLOQUIAL_ZH_PATTERNS
         sections = REGISTER_SECTIONS_ZH
-        address = ("你可以", "你需要", "你们", "咱们")
+        address = ("你可以", "你需要", "你们", "咱們", "咱们")
+        shape = "the item is not in the house shape: `- **Noun phrase** — fact`"
+    elif language == "ja":
+        patterns = COLLOQUIAL_JA_PATTERNS
+        sections = ()
+        address = ()
         shape = "the item is not in the house shape: `- **Noun phrase** — fact`"
     else:
-        words = COLLOQUIAL_EN
+        patterns = COLLOQUIAL_EN_PATTERNS
         sections = REGISTER_SECTIONS_EN
-        address = ("you can now", "your ", "you'll ")
+        address = ("you can ", "you should ", "you'll ", "you have to ", "your ", "you can now")
         shape = "the item is not in the house shape: `- **Noun phrase** — fact`"
 
-    lowered = body.lower()
-    probe = body if chinese else lowered
-    for word in words:
-        if word in body:
+    # 英文侧按小写查：句首大写的「You can now」同样要被抓出来。
+    probe = body if chinese else body.lower()
+    for label, pattern in patterns:
+        hit = pattern.search(body)
+        if hit:
             problems.append(
-                f"the body uses {word!r} -- the register of a release page is "
-                "factual, not conversational"
+                f"the body uses {hit.group(0)!r} ({label}) -- the register of a "
+                "release page is factual, not conversational"
             )
     for phrase in address:
         if phrase in probe:
@@ -2249,13 +2262,6 @@ def notes_register_problems(body: str, language: str = "zh") -> list[str]:
                 f"the body addresses the reader ({phrase!r}) -- release notes "
                 "describe what changed, they do not talk to the reader"
             )
-    if not chinese:
-        for phrase in ("you can ", "you should ", "you'll ", "you have to "):
-            if phrase in lowered:
-                problems.append(
-                    f"the body addresses the reader ({phrase!r}) -- release notes "
-                    "describe what changed, they do not talk to the reader"
-                )
 
     for bullet in _change_section_bullets(body, sections):
         if not _ITEM_SHAPE.match(bullet):

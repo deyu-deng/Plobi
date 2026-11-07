@@ -237,6 +237,20 @@ def test_register_guard_catches_the_same_things_in_english():
     assert any("you can now" in problem for problem in problems)
 
 
+def test_register_guard_catches_the_words_the_product_copy_register_bans():
+    """发布页与产品文案是同一把尺。
+
+    ``apps/desktop/src/i18n/copy-register.test.ts`` 的 C4 明令禁「点一下／点开／
+    搞定／弄好／东西／稍微／挺」——发布页也是静态文案，两边的尺不许分叉。
+    这条测试就是那个分叉的守卫：两边任何一边改了口径，另一边会在红里露出来。
+    """
+    module = _load_release_module()
+    for word in ("点一下", "点开", "搞定", "弄好", "东西", "稍微"):
+        body = _house_body() + f"\n{word}这条不算口语就奇了。\n"
+        problems = module.notes_register_problems(body, language="zh")
+        assert any(word in problem for problem in problems), (word, problems)
+
+
 def test_every_release_note_in_the_repo_survives_the_register_guard():
     """The repo's own notes have to pass the rule they are checked by.
 

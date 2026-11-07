@@ -18,7 +18,7 @@ Installers are attached below.
 - **Expert roles** — Four roles can be dispatched: file, browser, software and computer. The left rail shows the log of each one.
 - **Agenda checklists and attachments** — Agenda entries can carry a checklist and attachments.
 - **New sources** — Mailboxes (QQ, 163, Gmail, Outlook and self-hosted IMAP), Mubu, DingTalk, undergraduate course affairs and timetables.
-- **In-app update** — A new version is announced and can be applied in one step: the shell is replaced first, then the backend is installed from the same package. No git, no Python environment and no manual steps are required, and the shell and the backend end on the same version.
+- **In-app update** — A new version is announced and can be installed directly: the shell is replaced first, then the backend is installed from the same package. No git, no Python environment and no manual steps are required, and the shell and the backend end on the same version.
 - **Data directory choice** — The installer can ask for the folder that holds sessions, settings and memory; that folder is the one that gets used.
 
 ### Improved
