@@ -71,7 +71,7 @@ interface AgendaViewProps extends React.ComponentProps<'section'> {
   onClose: () => void
 }
 
-export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
+export function AgendaView({ now: pinnedNow, onClose }: AgendaViewProps) {
   const { t } = useI18n()
   const a = t.agenda
   const events = useStore($agendaEvents)
@@ -84,6 +84,27 @@ export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
   // 用户 10-23：年 / 月 / 周 / 日四态，仿鸿蒙日历；默认停在「日」，与右栏的
   // 「一次只显示一天」同一口径。
   const [mode, setMode] = useState<CalendarMode>('day')
+  // 「现在」线自带秒针：没钉住 `now`（本机走墙钟）时，每秒重读一次钟。
+  // 早先那一份只在每次重渲染时现读一次钟——于是那条线跳一下就不动了
+  // （用户 11-07 截图）。钉住的那一份是测试缝，不动它。
+  const [wallClock, setWallClock] = useState(() => new Date())
+
+  useEffect(() => {
+    if (pinnedNow) {
+      return undefined
+    }
+
+    // 月／年两态没有那根线，就别让整块板每秒重画一次。
+    if (mode !== 'day' && mode !== 'week') {
+      return undefined
+    }
+
+    const id = window.setInterval(() => setWallClock(new Date()), 1000)
+
+    return () => window.clearInterval(id)
+  }, [pinnedNow, mode])
+
+  const now = pinnedNow ?? wallClock
   const [anchor, setAnchor] = useState(() => calendarDayKey(now))
   const range = useMemo(() => rangeFor(mode, anchor), [anchor, mode])
   const rangeKey = `${range.from}|${range.to}`

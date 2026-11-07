@@ -122,4 +122,31 @@ describe('AgendaCalendar modes', () => {
     expect(onModeChange).toHaveBeenCalledWith('month')
     expect(onAnchorChange).not.toHaveBeenCalled()
   })
+
+  it('draws the "now" line on today only, dot and bar sharing one center', () => {
+    renderCalendar('day')
+
+    const nowEl = screen.getByTestId('calendar-now')
+
+    // 10:30 → 10.5 格 × 44px = 462px（带小数：秒也算进去）。
+    expect(nowEl.getAttribute('style')).toMatch(/top:\s*462px/)
+
+    // 点与线同一件（`console/right/now-line`）：点不再自带半格位移。
+    const dot = nowEl.querySelector('span:first-child') as HTMLElement
+    const bar = nowEl.querySelector('span:not(:first-child)') as HTMLElement
+
+    expect(dot.className).toContain('bg-(--ui-accent)')
+    expect(bar.className).toContain('bg-(--ui-accent)')
+    expect(dot.className).not.toContain('-translate-y')
+    expect(bar.className).not.toContain('-translate-y')
+  })
+
+  it('puts the "now" line in today\'s column only (week mode)', () => {
+    renderCalendar('week')
+
+    const nowEls = screen.getAllByTestId('calendar-now')
+
+    expect(nowEls).toHaveLength(1)
+    expect(nowEls[0].closest(`[data-testid="calendar-column-${ANCHOR}"]`)).toBeTruthy()
+  })
 })

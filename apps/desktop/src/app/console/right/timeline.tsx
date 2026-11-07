@@ -29,6 +29,8 @@ import {
   weekKeysOf
 } from './use-agenda-timeline'
 
+import { NowLine, nowMinutesOfDay } from './now-line'
+
 import {
   detailRowsForHeight,
   detailRowsOf,
@@ -50,21 +52,6 @@ function localDateKey(date: Date): string {
 
 function padHour(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`
-}
-
-/**
- * 此刻是当天第几分钟——**带小数**（秒也算进去）。
- *
- * 这根「现在」线要随时间连续爬：只算到分钟，落点就被量化成 0.73px 的台阶；
- * 而更早的写法连台阶都没有——它在每次重渲染时读一次钟，然后就不再动了。
- */
-function nowMinutesOfDay(date: Date): number {
-  return (
-    date.getHours() * 60 +
-    date.getMinutes() +
-    date.getSeconds() / 60 +
-    date.getMilliseconds() / 60000
-  )
 }
 
 /**
@@ -109,16 +96,11 @@ function blockBorderClass(block: TimelineBlock): string {
 /**
  * 「现在」那一根线（裁定 40 的 accent 条 ＋ 前头那颗点）。
  *
- * - **自带秒针**：每秒把当下换算成带小数的分钟，位置也跟着换成小数像素——
- *   于是它连续爬，而不是每分钟跳一格、或者干脆停在某次重渲染那一刻。
- * - **点与线同心**：点与线是同一个 flex 行的两端，由 `items-center` 一次居中；
- *   整行只搬一次（`-translate-y-1/2` 搬的是行自己）。早先那颗点自带
- *   `-translate-y-1/2`，在已经居中的行里又多抬了半格，于是点永远比线高
- *   3px（用户 11-07 截图：点与线的中心没对上）。
- * - **压在整点线上**：位置与整点发丝线同一套「分钟 → 像素」映射，
- *   所以整点时这根线正好落在那一小时的线上，不高不低。
+ * 形状在 `./now-line` 里（全屏日历那一张也用它），这一份只管**钟**：
+ * 自带秒针，每秒把当下换算成带小数的分钟，位置也跟着换成小数像素——
+ * 于是它连续爬，而不是每分钟跳一格、或者干脆停在某次重渲染那一刻。
  */
-function NowLine({ day }: { day: TimelineDay }) {
+function TodayNowLine({ day }: { day: TimelineDay }) {
   const [nowMinutes, setNowMinutes] = useState(() => nowMinutesOfDay(new Date()))
 
   useEffect(() => {
@@ -134,18 +116,7 @@ function NowLine({ day }: { day: TimelineDay }) {
     return null
   }
 
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-x-0 z-20 flex -translate-y-1/2 items-center"
-      data-testid="timeline-now"
-      // 小数像素：位置随秒数连续变，不被整像素台阶卡住。
-      style={{ top: Math.round(topPx * 100) / 100 }}
-    >
-      <span className="size-1.5 shrink-0 rounded-full bg-(--ui-accent) shadow-[0_0_0.375rem_color-mix(in_srgb,var(--ui-accent)_55%,transparent)]" />
-      <span className="block h-[2px] flex-1 bg-(--ui-accent)" />
-    </div>
-  )
+  return <NowLine testId="timeline-now" topPx={topPx} />
 }
 
 function DayAxis({
@@ -204,7 +175,7 @@ function DayAxis({
           </div>
         ))}
 
-        {isToday ? <NowLine day={day} /> : null}
+        {isToday ? <TodayNowLine day={day} /> : null}
 
         {avoidBands.map((band, index) => (
           // Faint full-width bands behind blocks; no title, no interaction.

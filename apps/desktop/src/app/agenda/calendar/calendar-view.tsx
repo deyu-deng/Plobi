@@ -14,6 +14,8 @@ import {
   type TimelineBlock
 } from '../../console/right/timeline-layout'
 
+import { NowLine, nowMinutesOfDay } from '../../console/right/now-line'
+
 import {
   CALENDAR_MODES,
   dayKeyOf,
@@ -361,9 +363,13 @@ function TimeAxis({
   const locale = currentI18nLocale()
   const today = dayKeyOf(now)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // 钟在走，但**别把用户滚走的位置拽回来**：只在换天／换视图时重新对一次。
+  const scrolledFor = useRef<string | null>(null)
   const hours = Array.from({ length: 24 }, (_, hour) => hour)
   const labelWidth = `${LABEL_GUTTER_FRACTION * 100}%`
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  // 带小数（秒也算进去）：这条线要随时间连续爬，不是每分钟跳一格。
+  const nowMinutes = nowMinutesOfDay(now)
+  const columnKey = columns.join(',')
 
   useEffect(() => {
     const scroller = scrollRef.current
@@ -372,9 +378,17 @@ function TimeAxis({
       return
     }
 
+    const key = `${anchor}|${columnKey}`
+
+    if (scrolledFor.current === key) {
+      return
+    }
+
+    scrolledFor.current = key
+
     const target = Math.max(0, (nowMinutes - 60) / 60 * HOUR_HEIGHT)
     scroller.scrollTop = target
-  }, [nowMinutes])
+  }, [anchor, columnKey, nowMinutes])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-2 pb-3">
@@ -446,10 +460,9 @@ function TimeAxis({
                     key={key}
                   >
                     {isToday ? (
-                      <span
-                        className="pointer-events-none absolute inset-x-0 z-20 h-px bg-red-500/70"
-                        style={{ top: (nowMinutes / 60) * HOUR_HEIGHT }}
-                      />
+                      // 形状与右栏那一根同一件（`console/right/now-line`）：点与线同心，
+                      // 位置按「分钟 → 像素」那套映射算（带小数，随钟点连续走）。
+                      <NowLine testId="calendar-now" topPx={(nowMinutes / 60) * HOUR_HEIGHT} />
                     ) : null}
                     {day.blocks.map(block => (
                       <TimeBlock block={block} key={block.id ?? `${block.startMinutes}-${block.title}`} onSelect={onSelectEvent} />

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $agendaError, $agendaEvents, $agendaLoading, $agendaSelectedId } from '@/store/agenda'
@@ -60,6 +60,57 @@ const NOW = new Date('2026-09-11T08:00:00')
 function renderBoard() {
   return render(<AgendaView now={NOW} onClose={() => {}} />)
 }
+
+function topPxOf(testId: string): number {
+  const style = screen.getByTestId(testId).getAttribute('style') ?? ''
+
+  return Number(style.match(/top:\s*(-?\d+(?:\.\d+)?)px/)?.[1])
+}
+
+describe('AgendaView 「现在」线随钟点走位 (WP-NOW-LINE-ALIGN)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    $agendaEvents.set([])
+    $agendaLoading.set(false)
+    $agendaError.set(null)
+    $agendaSelectedId.set(null)
+    getAgenda.mockResolvedValue([])
+    getTimetable.mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('本机走墙钟时每秒重读一次钟：那条线不再停在某次重渲染那一刻', async () => {
+    vi.useFakeTimers()
+
+    try {
+      vi.setSystemTime(new Date(2026, 8, 16, 10, 0, 0))
+
+      // 不钉 `now`（那是测试缝）⇒ 走墙钟。
+      render(<AgendaView onClose={() => {}} />)
+
+      expect(topPxOf('calendar-now')).toBeCloseTo(440, 2)
+
+      await act(async () => {
+        await vi.advanceTimersByTime(30_000)
+      })
+
+      // 30 秒过去：位置跟着走 30/60 分钟 × 44px/小时（约 0.37px）。
+      expect(topPxOf('calendar-now')).toBeCloseTo(440 + (30 / 60) * (44 / 60), 2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('钉住 `now` 的那一份不动（测试缝仍是那一份）', () => {
+    renderBoard()
+
+    // 08:00 → 8 格 × 44px = 352px。
+    expect(topPxOf('calendar-now')).toBeCloseTo(352, 2)
+  })
+})
 
 describe('AgendaView empty board (WP-A7-EMPTY)', () => {
   beforeEach(() => {
