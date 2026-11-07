@@ -285,7 +285,7 @@ export const zhHant = defineLocale({
       providers: '提供方',
       providerAccounts: '帳號',
       providerApiKeys: 'API 金鑰',
-      providerDesktopQuotas: '桌面額度',
+      providerSubscriptions: '訂閱額度',
       gateway: '閘道',
       apiKeys: '工具與金鑰',
       keysTools: '工具',
@@ -1105,20 +1105,89 @@ export const zhHant = defineLocale({
       searchKeys: '搜尋提供方…',
       noKeysMatch: '沒有符合的提供方。',
       loading: '正在載入提供方...',
-      desktopQuotas: {
-        title: '桌面額度',
-        intro: '這台機器上各個軟體的訂閱額度。',
-        // 卡片講「這是什麼」，形狀講「它現在是什麼狀態」。這三句只給讀屏和 tooltip，
-        // 不當正文上屏。
+      subscriptions: {
+        title: '訂閱額度',
+        intro: '用這些軟體已訂閱的額度驅動 Plobi，不額外走 API 計費。',
         configure: '設定',
         useQuota: '在 Plobi 中使用',
         connecting: '等待登入完成',
-        // 斷開是使用者自己按下的開關，不是故障：它只讓 Plobi 不再走這條額度，
-        // 對那個軟體自己的登入狀態一字不提。
         disconnectConfirm: provider =>
           `不再在 Plobi 裡使用 ${provider}？它的模型不會再出現在這裡。這不會登出 ${provider} 自己的登入。`,
         disconnectedToast: provider => `Plobi 已不再使用 ${provider}。`,
-        connectError: provider => `無法連線 ${provider}`
+        connectError: provider => `無法連線 ${provider}`,
+        emptyTitle: '額度閘道未啟動',
+        emptyIntro: '訂閱額度由本機的額度閘道提供，它現在沒有回應。可能是閘道沒有執行，也可能是它的設定還沒生成。',
+        expectedConfigPath: path => `期望的設定：${path}`,
+        retry: '重試',
+        cardIntroFallback: name => `${name} 的訂閱額度`,
+        cardIntros: {
+          antigravity: 'Antigravity 的訂閱額度',
+          antigravity_cli: 'Antigravity 命令列的訂閱額度',
+          claude_code_cli: 'Claude Code 的訂閱額度',
+          cline_cli: 'Cline 的訂閱額度',
+          codex_cli: 'Codex CLI 的訂閱額度',
+          cursor: 'Cursor 的訂閱額度',
+          gemini_api: 'Gemini 的 API 額度',
+          kiro_cli: 'Kiro 的訂閱額度',
+          marvis_cli: 'Marvis 命令列的訂閱額度',
+          marvis_gui: 'Marvis 的訂閱額度',
+          opencode_api: 'OpenCode Zen 的 API 額度',
+          opencode_cli: 'OpenCode 的訂閱額度',
+          qoder: 'Qoder 的訂閱額度',
+          qwen_cli: 'Qwen Code 的訂閱額度',
+          workbuddy: 'WorkBuddy 的訂閱額度',
+          workbuddy_cli: 'WorkBuddy 命令列的訂閱額度'
+        },
+        state: {
+          ready: '已連接',
+          signed_out: '未登入',
+          not_installed: '未安裝',
+          not_enabled: '未啟用',
+          unavailable: '暫不可用'
+        },
+        reason: {
+          ok: '可用',
+          credential_missing: '未登入',
+          credential_expired: '登入已過期',
+          install_missing: '未偵測到安裝',
+          not_enabled_in_config: '未在閘道啟用',
+          network_unreachable: '網路不可達',
+          no_proxy: '未設定代理節點',
+          proxy_unreachable: '代理節點不可達',
+          login_unsupported: '無法自動登入',
+          unknown: '狀態未知'
+        },
+        setup: {
+          title: name => `設定 ${name}`,
+          installBody: name => `${name} 還沒裝。下面這一條是安裝命令，跑完會自動接著做登入。`,
+          installAction: '安裝',
+          installing: '正在安裝',
+          installFailed: name => `安裝 ${name} 失敗`,
+          installMissingAfter: name => `命令跑完了，但沒有偵測到 ${name}。可能需要重開終端，或換一種安裝方式`,
+          installUnsupported: '這一版不能代為安裝，請按下面的命令手動執行',
+          downloadBody: name => `${name} 需要從官網裝。裝好之後按「我已安裝，重新偵測」。`,
+          downloadAction: '開啟官網下載',
+          manualBody: name => `沒有可用的自動安裝方式。請按官方說明裝好 ${name}，然後按「我已安裝，重新偵測」。`,
+          recheckAction: '我已安裝，重新偵測',
+          rechecking: '正在偵測',
+          recheckMissing: name => `還是沒偵測到 ${name}`,
+          loginBody: (name, method) => `${name} 已安裝。登入方式：${method}。按下面的按鈕開始，登入完成後這一行會自動變成開關。`,
+          loginAction: '開始登入',
+          loginWaiting: '等待登入完成。完成後這一行會自動變成開關',
+          loginFailed: name => `無法啟動 ${name} 的登入`,
+          loginUnsupported: name => `${name} 的登入要在它自己那邊完成，登入之後回到這裡重試`,
+          networkBody: '這一步過不去是連不上目標服務，不是設定寫錯了。',
+          networkHint: '先在「代理」裡設好節點，再回到這裡重試。',
+          networkAction: '去設定代理',
+          method: {
+            apikey: 'API 金鑰',
+            cliAuth: '命令列登入',
+            localSession: '本機會話',
+            oauth: '瀏覽器授權',
+            qr: '掃碼',
+            unknown: '未公開'
+          }
+        }
       }
     },
     sessions: {

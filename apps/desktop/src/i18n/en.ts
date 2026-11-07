@@ -364,7 +364,7 @@ export const en: Translations = {
       providers: 'Providers',
       providerAccounts: 'Accounts',
       providerApiKeys: 'API keys',
-      providerDesktopQuotas: 'Desktop Quotas',
+      providerSubscriptions: 'Subscriptions',
       gateway: 'Gateway',
       apiKeys: 'Tools & Keys',
       keysTools: 'Tools',
@@ -1055,20 +1055,89 @@ export const en: Translations = {
       searchKeys: 'Search providers…',
       noKeysMatch: 'No providers match your search.',
       loading: 'Loading providers...',
-      desktopQuotas: {
-        title: 'Desktop Quotas',
-        intro: 'Subscription quota from the apps on this machine.',
-        // The card says what the software is; its shape says what state it is in.
-        // These three labels are for assistive tech and the tooltip, never body copy.
-        configure: 'Configure',
+      subscriptions: {
+        title: 'Subscriptions',
+        intro: 'Drive Plobi with the subscription quota from apps you already pay for. No extra API billing.',
+        configure: 'Set up',
         useQuota: 'Use in Plobi',
         connecting: 'Waiting for the sign-in',
-        // Turning this off is the user's own switch, not a failure: it stops Plobi
-        // from routing through this software and says nothing about the app itself.
         disconnectConfirm: provider =>
           `Stop using ${provider} in Plobi? Its models will no longer be offered here. This does not sign you out of ${provider} itself.`,
         disconnectedToast: provider => `${provider} is no longer used in Plobi.`,
-        connectError: provider => `Could not connect to ${provider}`
+        connectError: provider => `Could not connect to ${provider}`,
+        emptyTitle: 'Quota gateway is not running',
+        emptyIntro: 'Subscriptions come from the local quota gateway, and it is not answering. Either the gateway is not running, or its config has not been generated yet.',
+        expectedConfigPath: path => `Expected config: ${path}`,
+        retry: 'Retry',
+        cardIntroFallback: name => `${name} subscription quota`,
+        cardIntros: {
+          antigravity: 'Antigravity subscription quota',
+          antigravity_cli: 'Antigravity CLI subscription quota',
+          claude_code_cli: 'Claude Code subscription quota',
+          cline_cli: 'Cline subscription quota',
+          codex_cli: 'Codex CLI subscription quota',
+          cursor: 'Cursor subscription quota',
+          gemini_api: 'Gemini API quota',
+          kiro_cli: 'Kiro subscription quota',
+          marvis_cli: 'Marvis CLI subscription quota',
+          marvis_gui: 'Marvis subscription quota',
+          opencode_api: 'OpenCode Zen API quota',
+          opencode_cli: 'OpenCode subscription quota',
+          qoder: 'Qoder subscription quota',
+          qwen_cli: 'Qwen Code subscription quota',
+          workbuddy: 'WorkBuddy subscription quota',
+          workbuddy_cli: 'WorkBuddy CLI subscription quota'
+        },
+        state: {
+          ready: 'Connected',
+          signed_out: 'Not signed in',
+          not_installed: 'Not installed',
+          not_enabled: 'Not enabled',
+          unavailable: 'Unavailable'
+        },
+        reason: {
+          ok: 'Usable',
+          credential_missing: 'Not signed in',
+          credential_expired: 'Sign-in expired',
+          install_missing: 'Not detected on this machine',
+          not_enabled_in_config: 'Not enabled in the gateway',
+          network_unreachable: 'Network unreachable',
+          no_proxy: 'No proxy node configured',
+          proxy_unreachable: 'Proxy node unreachable',
+          login_unsupported: 'Cannot sign in automatically',
+          unknown: 'Unknown state'
+        },
+        setup: {
+          title: name => `Set up ${name}`,
+          installBody: name => `${name} is not installed. The command below installs it, then sign-in follows on its own.`,
+          installAction: 'Install',
+          installing: 'Installing',
+          installFailed: name => `Could not install ${name}`,
+          installMissingAfter: name => `The command finished but ${name} is still not detected. Reopen the terminal, or try another install route`,
+          installUnsupported: 'This build cannot install it for you. Run the command below by hand',
+          downloadBody: name => `${name} installs from its official site. When it is done, press "I have installed it, check again".`,
+          downloadAction: 'Open download page',
+          manualBody: name => `No automatic install is available. Install ${name} as its vendor documents, then press "I have installed it, check again".`,
+          recheckAction: 'I have installed it, check again',
+          rechecking: 'Checking',
+          recheckMissing: name => `${name} is still not detected`,
+          loginBody: (name, method) => `${name} is installed. Sign-in method: ${method}. Press the button below; when sign-in finishes this row becomes a switch.`,
+          loginAction: 'Sign in',
+          loginWaiting: 'Waiting for sign-in. This row becomes a switch when it finishes',
+          loginFailed: name => `Could not start sign-in for ${name}`,
+          loginUnsupported: name => `Sign in to ${name} in the app itself, then come back and retry`,
+          networkBody: 'This step fails because the target service cannot be reached, not because the config is wrong.',
+          networkHint: 'Set up a node in Proxy first, then come back and retry.',
+          networkAction: 'Open Proxy settings',
+          method: {
+            apikey: 'API key',
+            cliAuth: 'CLI sign-in',
+            localSession: 'Local session',
+            oauth: 'Browser authorization',
+            qr: 'QR code',
+            unknown: 'Not published'
+          }
+        }
       }
     },
     sessions: {

@@ -311,7 +311,7 @@ export interface Translations {
       providers: string
       providerAccounts: string
       providerApiKeys: string
-      providerDesktopQuotas: string
+      providerSubscriptions: string
       gateway: string
       apiKeys: string
       keysTools: string
@@ -935,7 +935,7 @@ export interface Translations {
       searchKeys: string
       noKeysMatch: string
       loading: string
-      desktopQuotas: {
+      subscriptions: {
         title: string
         intro: string
         configure: string
@@ -944,6 +944,43 @@ export interface Translations {
         disconnectConfirm: (provider: string) => string
         disconnectedToast: (provider: string) => string
         connectError: (provider: string) => string
+        /** Answered-but-empty catalog: the gateway is not replying. */
+        emptyTitle: string
+        emptyIntro: string
+        expectedConfigPath: (path: string) => string
+        retry: string
+        /** Fallback subtitle when an app has no entry in `cardIntros`. */
+        cardIntroFallback: (name: string) => string
+        /** app id (underscored) → subtitle, so all four locales carry their own copy. */
+        cardIntros: Record<string, string>
+        /** Hub state → human name, for badges and screen readers. */
+        state: Record<string, string>
+        /** Hub reason code → the sentence that explains a dark or unconfigured card. */
+        reason: Record<string, string>
+        setup: {
+          title: (name: string) => string
+          installBody: (name: string) => string
+          installAction: string
+          installing: string
+          installFailed: (name: string) => string
+          installMissingAfter: (name: string) => string
+          installUnsupported: string
+          downloadBody: (name: string) => string
+          downloadAction: string
+          manualBody: (name: string) => string
+          recheckAction: string
+          rechecking: string
+          recheckMissing: (name: string) => string
+          loginBody: (name: string, method: string) => string
+          loginAction: string
+          loginWaiting: string
+          loginFailed: (name: string) => string
+          loginUnsupported: (name: string) => string
+          networkBody: string
+          networkHint: string
+          networkAction: string
+          method: Record<string, string>
+        }
       }
     }
     sessions: {

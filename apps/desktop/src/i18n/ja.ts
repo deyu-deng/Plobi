@@ -292,7 +292,7 @@ export const ja = defineLocale({
       providers: 'プロバイダー',
       providerAccounts: 'アカウント',
       providerApiKeys: 'API キー',
-      providerDesktopQuotas: 'デスクトップ割り当て',
+      providerSubscriptions: 'サブスクリプション',
       gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',
       keysTools: 'ツール',
@@ -1130,20 +1130,89 @@ export const ja = defineLocale({
       searchKeys: 'プロバイダーを検索…',
       noKeysMatch: '一致するプロバイダーがありません。',
       loading: 'プロバイダーを読み込み中...',
-      desktopQuotas: {
-        title: 'デスクトップ割り当て',
-        intro: 'このマシンにあるアプリのサブスクリプション割り当て。',
-        // カードは「何が使えるか」だけを述べ、状態は形が伝えます。この 3 つは
-        // スクリーンリーダーとツールチップ用で、本文には出しません。
+      subscriptions: {
+        title: 'サブスクリプション',
+        intro: 'すでに契約しているアプリの枠を Plobi の実行に使う。API 課金は増やさない。',
         configure: '設定',
         useQuota: 'Plobi で使う',
-        connecting: 'サインインの完了を待っています',
-        // 切断はユーザー自身が押したスイッチであり、故障ではありません。Plobi が
-        // そのアプリを経由しないようにするだけで、アプリ側のサインインには触れません。
+        connecting: 'ログイン待ち',
         disconnectConfirm: provider =>
           `Plobi で ${provider} を使わなくしますか？このアプリ名はここで表示されなくなります。${provider} 自体のサインアウトは行われません。`,
         disconnectedToast: provider => `Plobi は ${provider} を使わなくなりました。`,
-        connectError: provider => `${provider} に接続できませんでした`
+        connectError: provider => `${provider} に接続できませんでした`,
+        emptyTitle: '枠のゲートウェイが起動していない',
+        emptyIntro: 'サブスクリプションの枠はこの端末のゲートウェイが返す。いま応答がない。起動していないか、設定がまだ生成されていない。',
+        expectedConfigPath: path => `期待する設定：${path}`,
+        retry: '再試行',
+        cardIntroFallback: name => `${name} のサブスクリプション枠`,
+        cardIntros: {
+          antigravity: 'Antigravity のサブスクリプション枠',
+          antigravity_cli: 'Antigravity CLI のサブスクリプション枠',
+          claude_code_cli: 'Claude Code のサブスクリプション枠',
+          cline_cli: 'Cline のサブスクリプション枠',
+          codex_cli: 'Codex CLI のサブスクリプション枠',
+          cursor: 'Cursor のサブスクリプション枠',
+          gemini_api: 'Gemini の API 枠',
+          kiro_cli: 'Kiro のサブスクリプション枠',
+          marvis_cli: 'Marvis CLI のサブスクリプション枠',
+          marvis_gui: 'Marvis のサブスクリプション枠',
+          opencode_api: 'OpenCode Zen の API 枠',
+          opencode_cli: 'OpenCode のサブスクリプション枠',
+          qoder: 'Qoder のサブスクリプション枠',
+          qwen_cli: 'Qwen Code のサブスクリプション枠',
+          workbuddy: 'WorkBuddy のサブスクリプション枠',
+          workbuddy_cli: 'WorkBuddy CLI のサブスクリプション枠'
+        },
+        state: {
+          ready: '接続済み',
+          signed_out: '未ログイン',
+          not_installed: '未インストール',
+          not_enabled: '未有効',
+          unavailable: '利用できない'
+        },
+        reason: {
+          ok: '利用可能',
+          credential_missing: '未ログイン',
+          credential_expired: 'ログインの期限切れ',
+          install_missing: 'インストールが見つからない',
+          not_enabled_in_config: 'ゲートウェイで未有効',
+          network_unreachable: 'ネットワークに届かない',
+          no_proxy: 'プロキシのノードが未設定',
+          proxy_unreachable: 'プロキシのノードに届かない',
+          login_unsupported: '自動ログインに対応していない',
+          unknown: '状態不明'
+        },
+        setup: {
+          title: name => `${name} を設定`,
+          installBody: name => `${name} はまだ入っていない。下のコマンドで入れたあと、そのままログインに進む。`,
+          installAction: 'インストール',
+          installing: 'インストール中',
+          installFailed: name => `${name} をインストールできなかった`,
+          installMissingAfter: name => `コマンドは終わったが ${name} が見つからない。ターミナルを開き直すか、別の方法で入れる`,
+          installUnsupported: 'このビルドは代行インストールに対応していない。下のコマンドを手で実行する',
+          downloadBody: name => `${name} は公式サイトから入れる。入れたら「インストール済み、再検出」を押す。`,
+          downloadAction: 'ダウンロードページを開く',
+          manualBody: name => `自動インストールの手段がない。公式の手順で ${name} を入れてから「インストール済み、再検出」を押す。`,
+          recheckAction: 'インストール済み、再検出',
+          rechecking: '検出中',
+          recheckMissing: name => `${name} がまだ見つからない`,
+          loginBody: (name, method) => `${name} は導入済み。ログイン方法：${method}。下のボタンで開始し、終わるとこの行はスイッチになる。`,
+          loginAction: 'ログイン開始',
+          loginWaiting: 'ログイン待ち。終わるとこの行はスイッチになる',
+          loginFailed: name => `${name} のログインを開始できなかった`,
+          loginUnsupported: name => `${name} のログインはアプリ側で行う。ログイン後にここへ戻って再試行`,
+          networkBody: 'この段階で止まるのは接続先に届かないためで、設定の誤りではない。',
+          networkHint: '先に「プロキシ」でノードを設定し、ここへ戻って再試行する。',
+          networkAction: 'プロキシ設定を開く',
+          method: {
+            apikey: 'API キー',
+            cliAuth: 'CLI ログイン',
+            localSession: 'ローカルセッション',
+            oauth: 'ブラウザ認証',
+            qr: 'QR コード',
+            unknown: '非公開'
+          }
+        }
       }
     },
     sessions: {

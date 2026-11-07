@@ -240,6 +240,18 @@ declare global {
           login?: null | { detail?: string; state?: string; url?: string }
           name: string
           reason: string
+          /** The one field the control shape reads (ready / signed_out / …). */
+          state: 'ready' | 'signed_out' | 'not_installed' | 'not_enabled' | 'unavailable'
+          /** A code, not a sentence: the renderer translates it. */
+          reason_code: string
+          app_kind: 'api' | 'cli' | 'desktop-app'
+          login_method: string
+          /** Official download page — desktop apps only, `null` for CLIs. */
+          download: null | string
+          /** How a CLI gets installed when we can automate it (`npm` / `pip` / …). */
+          install_kind: null | string
+          install_command: null | string
+          intro_key: string
         }>
       >
       getBootstrapState: () => Promise<DesktopBootstrapState>
@@ -275,6 +287,25 @@ declare global {
         start: () => Promise<{ ok: boolean; running: boolean; baseUrl?: string; pid?: number | null; error?: string }>
         stop: () => Promise<{ ok: boolean; running: boolean }>
         status: () => Promise<{ running: boolean; pid: number | null; baseUrl: string; port: number }>
+        /** Where the hub expects its config (`~`-redacted), for the empty-state hint. */
+        configPath: () => Promise<{ configPath: null | string; hubFound: boolean }>
+        /**
+         * Install one CLI leg. Only an app id crosses the bridge — the command is
+         * looked up in the hub's own manifest, so the renderer cannot smuggle one.
+         */
+        install: (appId: string) => Promise<{
+          ok: boolean
+          /** Did the probe see it afterwards? */
+          installed?: boolean
+          /** e.g. 'not_cli', 'no_install_recipe', 'install_failed', 'HUB_UNREACHABLE'. */
+          code?: string
+          detail?: string
+          /** Desktop apps answer with their official download page instead. */
+          download?: null | string
+          /** Last lines of the installer's output, for the failure line. */
+          tail?: string
+          exitCode?: number | null
+        }>
         auth: (appId: string) => Promise<{
           ok: boolean
           token?: string

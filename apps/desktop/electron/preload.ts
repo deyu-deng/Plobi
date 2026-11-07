@@ -309,6 +309,12 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
     start: () => ipcRenderer.invoke('plobi-gateway:start'),
     stop: () => ipcRenderer.invoke('plobi-gateway:stop'),
     status: () => ipcRenderer.invoke('plobi-gateway:status'),
+    // Where the hub expects its config, `~`-redacted. Used only to explain an
+    // empty Desktop Quotas screen; never to read or write the file.
+    configPath: () => ipcRenderer.invoke('plobi-gateway:config-path'),
+    // First-run guidance: install one CLI leg. The renderer names the app only —
+    // the command itself lives in the hub's own manifest, never in a payload.
+    install: (appId: string) => ipcRenderer.invoke('plobi-gateway:install', appId),
     auth: (appId: string) => ipcRenderer.invoke('plobi-gateway:auth', appId)
   }
 })

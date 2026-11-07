@@ -352,7 +352,7 @@ export const zh: Translations = {
       providers: '提供方',
       providerAccounts: '账号',
       providerApiKeys: 'API 密钥',
-      providerDesktopQuotas: '桌面额度',
+      providerSubscriptions: '订阅额度',
       gateway: '网关',
       apiKeys: '工具与密钥',
       keysTools: '工具',
@@ -1237,20 +1237,96 @@ export const zh: Translations = {
       searchKeys: '搜索提供方…',
       noKeysMatch: '没有匹配的提供方。',
       loading: '正在加载提供方...',
-      desktopQuotas: {
-        title: '桌面额度',
-        intro: '这台机器上各个软件的订阅额度。',
-        // 卡片讲「这是什么」，形状讲「它现在是什么状态」。这三句只给读屏和 tooltip，
-        // 不当正文上屏。
+      subscriptions: {
+        title: '订阅额度',
+        // 11-07 改名：这一屏不是「这台机器上有什么」，而是「接入哪些软件的已付额度」。
+        intro: '用这些软件已订阅的额度驱动 Plobi，不额外走 API 计费。',
         configure: '配置',
         useQuota: '在 Plobi 中使用',
         connecting: '等待登录完成',
-        // 断开是用户自己按下的开关，不是故障：它只让 Plobi 不再走这条额度，
-        // 对那个软件自己的登录状态一字不提。
         disconnectConfirm: provider =>
           `不再在 Plobi 里使用 ${provider}？它的模型不会再出现在这里。这不会退出 ${provider} 自己的登录。`,
         disconnectedToast: provider => `Plobi 已不再使用 ${provider}。`,
-        connectError: provider => `无法连接 ${provider}`
+        connectError: provider => `无法连接 ${provider}`,
+        // 空态：目录没答上来，说明网关没在应答——讲清为什么空、能按什么、缺的是哪份落点。
+        emptyTitle: '额度网关未启动',
+        emptyIntro: '订阅额度由本机的额度网关提供，它现在没有应答。可能是网关没有运行，也可能是它的配置还没生成。',
+        expectedConfigPath: path => `期望的配置：${path}`,
+        retry: '重试',
+        // 卡片副标题：适配表里没登记这一项时的兜底句，仍是「这是什么额度」的口径。
+        cardIntroFallback: name => `${name} 的订阅额度`,
+        cardIntros: {
+          antigravity: 'Antigravity 的订阅额度',
+          antigravity_cli: 'Antigravity 命令行的订阅额度',
+          claude_code_cli: 'Claude Code 的订阅额度',
+          cline_cli: 'Cline 的订阅额度',
+          codex_cli: 'Codex CLI 的订阅额度',
+          cursor: 'Cursor 的订阅额度',
+          gemini_api: 'Gemini 的 API 额度',
+          kiro_cli: 'Kiro 的订阅额度',
+          marvis_cli: 'Marvis 命令行的订阅额度',
+          marvis_gui: 'Marvis 的订阅额度',
+          opencode_api: 'OpenCode Zen 的 API 额度',
+          opencode_cli: 'OpenCode 的订阅额度',
+          qoder: 'Qoder 的订阅额度',
+          qwen_cli: 'Qwen Code 的订阅额度',
+          workbuddy: 'WorkBuddy 的订阅额度',
+          workbuddy_cli: 'WorkBuddy 命令行的订阅额度'
+        },
+        // 状态名只给读屏和徽标用，卡片不念状态。
+        state: {
+          ready: '已连接',
+          signed_out: '未登录',
+          not_installed: '未安装',
+          not_enabled: '未启用',
+          unavailable: '暂不可用'
+        },
+        // 原因码是机器话，上屏前在这里翻成人话。
+        reason: {
+          ok: '可用',
+          credential_missing: '未登录',
+          credential_expired: '登录已过期',
+          install_missing: '未检测到安装',
+          not_enabled_in_config: '未在网关启用',
+          network_unreachable: '网络不可达',
+          no_proxy: '未配置代理节点',
+          proxy_unreachable: '代理节点不可达',
+          login_unsupported: '无法自动登录',
+          unknown: '状态未知'
+        },
+        // 首次配置：加号按下去之后逐级推进的那几步。每一步都收在同一句上——
+        // 重新读一遍目录，让开关自己长出来，而不是在本地假装已经好了。
+        setup: {
+          title: name => `配置 ${name}`,
+          installBody: name => `${name} 还没装。下面这一条是安装命令，跑完会自动接着做登录。`,
+          installAction: '安装',
+          installing: '正在安装',
+          installFailed: name => `安装 ${name} 失败`,
+          installMissingAfter: name => `命令跑完了，但没有检测到 ${name}。可能需要重开终端，或换一种安装方式`,
+          installUnsupported: '这一版不能代为安装，请按下面的命令手动执行',
+          downloadBody: name => `${name} 需要从官网装。装好之后按「我已安装，重新检测」。`,
+          downloadAction: '打开官网下载',
+          manualBody: name => `没有可用的自动安装方式。请按官方说明装好 ${name}，然后按「我已安装，重新检测」。`,
+          recheckAction: '我已安装，重新检测',
+          rechecking: '正在检测',
+          recheckMissing: name => `还是没检测到 ${name}`,
+          loginBody: (name, method) => `${name} 已安装。登录方式：${method}。按下面的按钮开始，登录完成后这一行会自动变成开关。`,
+          loginAction: '开始登录',
+          loginWaiting: '等待登录完成。完成后这一行会自动变成开关',
+          loginFailed: name => `无法启动 ${name} 的登录`,
+          loginUnsupported: name => `${name} 的登录要在它自己那边完成，登录之后回到这里重试`,
+          networkBody: '这一步过不去是连不上目标服务，不是配置写错了。',
+          networkHint: '先在「代理」里配好节点，再回到这里重试。',
+          networkAction: '去配置代理',
+          method: {
+            apikey: 'API 密钥',
+            cliAuth: '命令行登录',
+            localSession: '本地会话',
+            oauth: '浏览器授权',
+            qr: '扫码',
+            unknown: '未公开'
+          }
+        }
       }
     },
     sessions: {
