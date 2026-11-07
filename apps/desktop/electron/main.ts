@@ -176,6 +176,7 @@ import {
 } from './session-windows'
 import { registerGenOffice } from './genoffice'
 import { nativeOverlayWidth as computeNativeOverlayWidth, macTitleBarOverlayHeight } from './titlebar-overlay-width'
+import { appIconPaths } from './app-icon-paths'
 import { resolveBehindCount, shouldCountCommits } from './update-count'
 import { readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
 import {
@@ -589,11 +590,13 @@ const WINDOW_BUTTON_POSITION = {
 // (pure + unit-testable); computeNativeOverlayWidth() applies it per platform.
 // It's only the pre-layout fallback — the renderer measures the exact overlay
 // width live via the Window Controls Overlay API.
-const APP_ICON_PATHS = [
-  path.join(APP_ROOT, 'public', 'apple-touch-icon.png'),
-  path.join(APP_ROOT, 'dist', 'apple-touch-icon.png'),
-  path.join(unpackedPathFor(APP_ROOT), 'dist', 'apple-touch-icon.png')
-]
+const APP_ICON_PATHS = appIconPaths({
+  isWindows: IS_WINDOWS,
+  appRoot: APP_ROOT,
+  resourcesPath: process.resourcesPath,
+  unpackedRoot: unpackedPathFor(APP_ROOT),
+  join: path.join
+})
 
 let rendererTitleBarTheme = null
 const terminalSessions = new Map()
@@ -4020,6 +4023,11 @@ async function ensureRuntime(backend) {
       activeRoot: backend.activeRoot,
       sourceRepoRoot: SOURCE_REPO_ROOT,
       plobiHome: PLOBI_HOME,
+      // The installer page recorded a data directory => the user picked it.
+      // The installer honours that choice verbatim; a machine's own disk policy
+      // does not veto it (2026-11-07: the packaged app refused to start
+      // because the default lands on the system drive).
+      userChoseDataDir: Boolean(readInstallerRecordedDataDir()),
       logRoot: path.join(PLOBI_HOME, 'logs'),
       abortSignal: bootstrapAbortController.signal,
       onEvent: ev => {
