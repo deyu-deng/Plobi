@@ -951,11 +951,11 @@ def test_agenda_routes_still_mounted():
 
 
 # --------------------------------------------------------------------------- #
-# startup seeding — the agenda L2 is a permanent registry row, not rail fiction
+# startup — 裁定 211：启动路径不替用户写任何 Agent 行
 # --------------------------------------------------------------------------- #
 
 
-def _stub_agenda_materialisation(monkeypatch) -> dict[str, list[str]]:
+def _stub_agent_materialisation(monkeypatch) -> dict[str, list[str]]:
     """Record — never run — the two writes that build a profile on disk.
 
     ``spawn`` clones a whole profile home and the L2 toolset pass writes inside
@@ -980,27 +980,25 @@ def _stub_agenda_materialisation(monkeypatch) -> dict[str, list[str]]:
     return calls
 
 
-def test_startup_seed_registers_agenda_without_materialising_a_profile(
-    _isolated_state, monkeypatch
-):
-    """The desktop/serve backend must seed the agenda L2 before it serves — as a row.
+def test_startup_registers_no_agent_row_at_all(_isolated_state, monkeypatch):
+    """首装：后端不许替用户写任何 Agent 行——**只有一个 L1、零 L2**。
 
-    ``GET /api/agents`` reads ``projects.yaml`` and writes nothing, so without
-    this seed a home whose registry only holds human projects shows a rail with
-    no 日程管家 at all. Visibility, though, is the whole of what the rail needs:
-    materializing ``profiles/l2-agenda`` at boot handed every user an empty
-    12K profile skeleton they never asked for, so both writes are pinned absent.
+    旧形状：lifespan startup 里那句 ``_seed_agenda_agent()`` 无条件往
+    ``projects.yaml`` 写一行 ``agenda`` ⇒ 每个新用户都收到一条自己没要的 L2
+    （用户 11-07：「按道理初次下载这个软件应该是一个 L2 Agent 都没有的。只有一个 L1。」）。
+    裁定 211 把那句删了：名册里有什么，只由用户（控制台／CLI）或 L1（按需）决定；
+    能力来自**工具**（``agenda_read``／``agenda_write`` 所有角色都有），不来自多造一个角色。
+    顺带钉住：启动也不许顺手建 ``profiles/l2-agenda`` 那个空家。
     """
     from plobi_cli import web_server
 
-    calls = _stub_agenda_materialisation(monkeypatch)
+    calls = _stub_agent_materialisation(monkeypatch)
     console_router.set_registry(None)  # a fresh server reads the row back off disk
 
     with TestClient(web_server.app):
         rows = console_router.list_agents()
 
-    assert [row["id"] for row in rows] == ["agenda"]
-    assert rows[0]["name"] == "日程秘书"
+    assert [row["id"] for row in rows] == []
     assert calls == {"spawn": [], "toolsets": []}
 
 
@@ -1030,40 +1028,14 @@ def test_startup_puts_the_default_home_into_l1_secretary_shape(
     with TestClient(web_server.app):
         rows = console_router.list_agents()
 
-    assert [row["id"] for row in rows] == ["agenda"]
+    # 裁定 211：首装只有一个 L1、零 L2 —— 名册里一行都没有。
+    assert [row["id"] for row in rows] == []
     cfg = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
     assert "plobi-north-star" in cfg["plugins"]["enabled"]
     assert cfg["toolsets"] == list(L1_MID_TOOLSETS)
     assert "terminal" not in cfg["platform_toolsets"]["cli"]
     assert (home / "SOUL.md").read_text(encoding="utf-8").count(L1_SOUL_BEGIN) == 1
     assert not (home / "profiles").exists()
-
-
-def test_seed_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
-    """A failed seed may not take the backend down with it.
-
-    The agenda L2 ships with the product, and the secretary write paths re-seed
-    on first use, so startup logs and keeps serving.
-    """
-    import logging
-
-    from plobi_cli import web_server
-
-    def explode(*args, **kwargs):
-        raise RuntimeError("registry offline")
-
-    monkeypatch.setattr("plobi.agents.registry.register_agenda_agent", explode)
-
-    with caplog.at_level(logging.WARNING, logger="plobi_cli.web_server"):
-        with TestClient(
-            web_server.app,
-            headers={web_server._SESSION_HEADER_NAME: web_server._SESSION_TOKEN},
-        ) as test_client:
-            response = test_client.get("/api/agents")
-
-    assert response.status_code == 200
-    assert response.json()["ok"] is True
-    assert any("agenda L2" in record.getMessage() for record in caplog.records), caplog.text
 
 
 def test_l1_secretary_shape_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
@@ -1080,7 +1052,6 @@ def test_l1_secretary_shape_failure_does_not_break_startup(_isolated_state, monk
     def explode(*args, **kwargs):
         raise RuntimeError("config offline")
 
-    monkeypatch.setattr("plobi.agents.registry.register_agenda_agent", lambda: (None, False))
     monkeypatch.setattr("plobi.agents.registry.ensure_l1_secretary_form", explode)
 
     with caplog.at_level(logging.WARNING, logger="plobi_cli.web_server"):

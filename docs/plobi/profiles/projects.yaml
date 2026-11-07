@@ -17,8 +17,9 @@ agents:
     skills: [plobi-morning-report, plobi-message-digest]
     description: L1 日程秘书 — 统筹、决策、派工、收摘要
 
-  # 示例 L2：日程秘书。L1 的 plobi_secretary_ask 在名单里没有日程角色时
-  # 只会按此模板 spawn **一个**（S2），不会任意新建其它 L2。
+  # 示例 L2：一个专管日程的角色。**这不是出厂件**——产品不替用户建任何 L2
+  # （裁定 211：首装只有 L1、零 L2、零预置定时任务）；这一行是给你抄过去改的示例。
+  # 要一个专管日程的角色，自己加一条，或让 L1 按你的事建一个。
   agenda:
     role: l2_agenda
     profile: l2-agenda

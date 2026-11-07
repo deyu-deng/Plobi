@@ -168,27 +168,6 @@ def _warm_gateway_module() -> None:
         pass
 
 
-def _seed_agenda_agent() -> None:
-    """Idempotently register the agenda L2 so ``GET /api/agents`` always sees it.
-
-    The registry YAML is the source of truth and the row used to be created only
-    by the secretary write paths, so a home that never routed through them shows
-    an empty AGENTS rail. Seeding failure must not take the backend down — the
-    secretary paths still seed on first use, so log and carry on.
-
-    Registration only: the left rail needs the row, and ``profiles/l2-agenda``
-    is the secretary's own promise to make the first time it lands a 日程. A boot
-    that materialized it shipped every user a 12K empty profile they never asked
-    for (see :func:`plobi.agents.registry.register_agenda_agent`).
-    """
-    try:
-        from plobi.agents.registry import register_agenda_agent
-
-        register_agenda_agent()
-    except Exception as exc:
-        _log.warning("plobi: agenda L2 startup seed skipped: %s", exc)
-
-
 def _apply_l1_secretary_form() -> None:
     """Put the default profile into L1 secretary shape before serving a turn.
 
@@ -196,8 +175,8 @@ def _apply_l1_secretary_form() -> None:
     what belongs here is *when* it happens. ``plobi-north-star`` is opt-in, and the
     only code that used to narrow L1 / write its SOUL fence ran from that plugin's
     ``register()`` — so on a home that never opted in, nothing was ever going to
-    make L1 a secretary. Same no-cost rule as ``_seed_agenda_agent``: a failed
-    pass must not take the backend down, the plugin re-applies it on every load.
+    make L1 a secretary. A failed pass must not take the backend down; the plugin
+    re-applies it on every load.
     """
     try:
         from plobi.agents.registry import ensure_l1_secretary_form
@@ -228,11 +207,11 @@ async def _lifespan(app: "FastAPI"):
     # event loop during lifespan startup — see _get_event_state's docstring.
     app.state.chat_argv_lock = asyncio.Lock()
 
-    # Synchronous, before `yield`: the console left rail reads GET /api/agents
-    # on first paint, so the seeded row has to be on disk by then.
-    _seed_agenda_agent()
-    # Same reason, same shape: L1 answers the very first desktop turn, so its
+    # Synchronous, before `yield`: L1 answers the very first desktop turn, so its
     # narrow toolsets + secretary SOUL fence have to be on disk before it does.
+    # 裁定 211：**启动路径不替用户写任何 Agent 行**——首装只有一个 L1、零 L2。
+    # （原来这里有一句 ``_seed_agenda_agent()``，它无条件往名册写一行 ``agenda``，
+    # 于是每个新用户都收到一条自己没要的 L2；那条函数与它的调用已一并删掉。）
     _apply_l1_secretary_form()
 
     # Fire plobi_cli.gateway import into a background thread so the event

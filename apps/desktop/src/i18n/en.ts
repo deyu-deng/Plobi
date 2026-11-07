@@ -549,7 +549,7 @@ export const en: Translations = {
             no_path_configured: "No file pointed at yet. Open this row and pick a local file in the path field.",
             file_missing: "Nothing is at that path. Export it again, or point the path at where it lives now.",
             file_unreadable: "The file is there but won't parse — no permission, or it isn't the format it claims. Try another file.",
-            go_missing: "This machine has no build toolchain, so the WeChat collector can't be built. Installing one needs your say-so.",
+            go_missing: "This machine has no build toolchain, so the WeChat collector cannot be built. Installing one requires your confirmation.",
             build_missing: "The WeChat collector hasn't been built yet. Flipping the switch won't build it for you.",
             key_missing: "The WeChat data key hasn't been obtained: the library is on this machine but sealed, so nothing is collected.",
             not_listening: "The collection service isn't answering. Flipping the switch tries again; if it stays silent it's broken, not unconfigured.",
@@ -781,7 +781,7 @@ export const en: Translations = {
       onLatest: "You're on the latest version.",
       installing: 'An update is currently installing.',
       cantUpdate: "This build can't update itself from inside the app.",
-      cantReach: "We couldn't reach the update server.",
+      cantReach: "The update server could not be reached.",
       tapCheck: 'Tap "Check now" to look for updates.',
       updateReady: count => `A new update is ready (${count} change${count === 1 ? '' : 's'} included).`,
       updateReadyVersion: value => `Version ${value} is available.`,
@@ -1834,7 +1834,7 @@ export const en: Translations = {
       finishReview: 'Finish review & start collecting',
       pendingTitle: 'New conversations awaiting a choice',
       pendingEmptyTitle: 'No new conversations',
-      pendingEmptyDesc: 'New talkers appear here for a one-click collect/exclude.',
+      pendingEmptyDesc: 'Collect or exclude new talkers here.',
       collect: 'Collect',
       exclude: 'Exclude',
       modeKnown: 'collecting',
@@ -1895,7 +1895,7 @@ export const en: Translations = {
     agentMenuCopyFailed: 'Failed to copy the ID: ',
     agentMenuArchive: 'Archive this agent',
     agentMenuArchiveConfirmTitle: 'Archive this agent?',
-    agentMenuArchiveConfirmBody: '{name} will leave the left rail and its archive will be filed away. Nothing is deleted, and you can bring it back from the archive.',
+    agentMenuArchiveConfirmBody: '{name} will be removed from the left rail and its folder moved to the archive. Nothing is deleted and it can be restored from there.',
     agentMenuArchiveCancel: 'Cancel',
     agentMenuArchiveConfirmAction: 'Archive',
     agentMenuArchived: 'Agent archived.',
@@ -1930,7 +1930,7 @@ export const en: Translations = {
     agentsLoading: 'Loading agents',
     agentsLoadFailed: 'Could not load agents',
     agentsEmptyTitle: 'No agents yet',
-    agentsEmptyDesc: 'The schedule secretary appears here once the backend registers one.',
+    agentsEmptyDesc: 'Add one when you need it.',
     // 11-01: the two nouns of the middle switch. Inside "Outsourced", what the L2 handed
     // to another app and your own conversations in that app are one thing — one word.
     tabAgents: 'Agents',
@@ -2435,11 +2435,11 @@ export const en: Translations = {
     secretaryL1Placeholder: 'Ask the chief secretary…',
     secretaryL2Placeholder: name => `Ask ${name}…`,
     newSessionPlaceholders: [
-      'What are we building?',
+      'What are you building?',
       'Give Plobi a task',
       "What's on your mind?",
       'Describe what you need',
-      'What should we tackle?',
+      'What would you like to tackle?',
       'Ask anything',
       'Start with a goal'
     ],
@@ -2662,7 +2662,7 @@ export const en: Translations = {
       'The remote backend is applying the update and will restart. Plobi reconnects automatically when it’s back.',
     applyingClose: 'This window will close while the update runs, then Plobi reopens on its own.',
     errorTitle: 'Update didn’t finish',
-    errorBody: 'No worries — nothing was lost. You can try again now.',
+    errorBody: 'Nothing was lost. Try again now.',
     notNow: 'Not now',
     applyStatus: {
       preparing: 'Updating backend…',
@@ -2764,19 +2764,19 @@ export const en: Translations = {
     signInFailed: 'Sign-in failed. Try again.',
     pickDifferentProvider: 'Pick a different provider',
     signInWith: provider => `Sign in with ${provider}`,
-    openedBrowser: provider => `We opened ${provider} in your browser.`,
+    openedBrowser: provider => `${provider} was opened in your browser.`,
     authorizeThere: 'Authorize Plobi there.',
     copyAuthCode: 'Copy the authorization code and paste it below.',
     pasteAuthCode: 'Paste authorization code',
     reopenAuthPage: 'Re-open authorization page',
     autoBrowser: provider =>
-      `We opened ${provider} in your browser. Authorize Plobi there and you'll be connected automatically — nothing to copy or paste.`,
+      `${provider} was opened in your browser. Authorize Plobi there and you'll be connected automatically — nothing to copy or paste.`,
     reopenSignInPage: 'Re-open sign-in page',
     waitingAuthorize: 'Waiting for you to authorize...',
     externalPending: provider =>
       `${provider} signs in through its own CLI. Run this command in a terminal, then come back and pick "I've signed in":`,
     signedIn: "I've signed in",
-    deviceCodeOpened: provider => `We opened ${provider} in your browser. Enter this code there:`,
+    deviceCodeOpened: provider => `${provider} was opened in your browser. Enter this code there:`,
     reopenVerification: 'Re-open verification page',
     copy: 'Copy',
     defaultModel: 'Default model',
@@ -3369,7 +3369,7 @@ export const en: Translations = {
       not_offered: 'This channel is not currently offered by the gateway',
       // Not a name list and not a verdict we invented: the upstream refused this id
       // twice in a row, so it sits out a while and comes back when it works again.
-      model_rejected: 'the app did not serve that model the last two times we asked',
+      model_rejected: 'the app did not serve that model on the last two attempts',
       // Measured 2026-10-28: the Free pool answers 429 over HTTP; only a paid plan (or a
       // key) can serve a turn. Tooltip only — the row itself just is not offered.
       no_subscription: 'this channel needs a paid plan or an API key before Plobi can use it',

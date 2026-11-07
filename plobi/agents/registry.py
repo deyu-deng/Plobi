@@ -1928,9 +1928,15 @@ def is_agenda_entry(entry: AgentEntry) -> bool:
 
 
 def find_agenda_agent(registry: AgentRegistry | None = None) -> Optional[AgentEntry]:
-    """First matching agenda L2, preferring an exact ``l2_agenda`` role."""
+    """The **live** agenda L2 row, preferring an exact ``l2_agenda`` role.
+
+    裁定 211：归档 = 退役。已归档的那行**不再占着槽位**——旧形状它照样算，
+    于是用户归档掉产品替他播种的那条之后，连**自己**再建一条都建不成
+    （``POST /api/agents`` 返 409「agenda L2 already exists」，撞的是一条
+    已经退役的行）。
+    """
     reg = registry or load_registry()
-    found = [entry for entry in reg.entries() if is_agenda_entry(entry)]
+    found = [entry for entry in reg.live_entries() if is_agenda_entry(entry)]
     if not found:
         return None
     found.sort(key=lambda entry: (0 if entry.role == AGENDA_TEMPLATE_ROLE else 1, entry.name))
@@ -1951,6 +1957,19 @@ def register_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentE
     existing = find_agenda_agent(reg)
     if existing is not None:
         return existing, False
+
+    # 退役的那条**占着名字**（归档 = 退役，不是删除）。旧形状走到这里会另建一条
+    # ``secretary-agenda``，于是名册里出现两行、都显示「日程秘书」（左栏短名表
+    # 两个 id 映射到同一个词）——用户看着像「又冒出来一个」。
+    # 这里改成**复活**那一条：同一行、同一个身份文件，退役的那位回来上班。
+    from dataclasses import replace as _replace
+
+    retired = next((e for e in reg.entries() if e.archived and is_agenda_entry(e)), None)
+    if retired is not None:
+        revived = _replace(retired, archived=False, archived_at="")
+        reg.upsert(revived)
+        reg.save()
+        return revived, False
 
     template = agenda_template_entry()
     if template.name in reg.agents:
