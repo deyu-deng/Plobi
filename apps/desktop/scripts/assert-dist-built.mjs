@@ -16,6 +16,7 @@
 import { existsSync, statSync, readdirSync, openSync, readSync, closeSync } from "fs"
 import { join, resolve } from "path"
 import { isMain } from "./utils.mjs"
+import { looksRunnable } from "./build-chatlog.mjs"
 
 /**
  * Binaries that MUST be inside `build/backend` for the packaged app to work.
@@ -63,9 +64,14 @@ export function checkBackendBinaries(backendDir, platform = process.platform) {
     const size = statSync(full).size
     // `go build -o` writes a Go archive and exits 0 when the target package is
     // not `main`; the magic bytes are what separates that from a real binary.
+    //
+    // The judgement lives in build-chatlog.mjs (looksRunnable) — one source of
+    // truth, and it knows all three executable formats (PE/ELF/Mach-O).  The old
+    // platform-branched check here knew only MZ and ELF, so a perfectly good
+    // **Mach-O** (the macOS build) was rejected as "not a runnable binary" and
+    // the mac packaging died over a binary that was right there.
     const magic = readMagic(full)
-    const wanted = platform === "win32" ? "MZ" : "\x7fELF"
-    if (!magic.startsWith(wanted) || size <= 1048576) {
+    if (!looksRunnable(magic) || size <= 1048576) {
       problems.push({
         ...item,
         full,

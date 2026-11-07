@@ -149,3 +149,15 @@ test('checkBackendBinaries expects no extension off Windows', () => {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }
 })
+
+test('checkBackendBinaries accepts the macOS Mach-O build', () => {
+  // The macOS collector is a Mach-O.  The check used to demand ELF on every
+  // non-Windows platform, so the mac packaging died over a binary that was
+  // right there (2026-11-07 CI: run 42359753097, "Build mac" red).
+  const { tempRoot, backendDir } = makeBackend('darwin', full => writeFakeBinary(full, '\xcf\xfa\xed\xfe'))
+  try {
+    assert.deepEqual(checkBackendBinaries(backendDir, 'darwin'), { ok: true, problems: [] })
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})

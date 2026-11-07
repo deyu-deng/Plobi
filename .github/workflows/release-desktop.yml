@@ -151,6 +151,19 @@ jobs:
           mkdir -p "$dest"
           cp -f "$src" "$dest/${{ matrix.chatlog_binary }}"
           chmod +x "$dest/${{ matrix.chatlog_binary }}" || true
+
+      # The collector engine is a Go binary: CI downloads it into the runtime
+      # tree, so the checkout has an untracked file by design.  The vendored
+      # .gitignore only covers `*.exe`, which is why Windows looked clean
+      # (chatlog.exe) while mac/linux did not (chatlog, no extension) — and
+      # the packaging guard ("a package must point at a commit") then refused
+      # to package.  Say it is build output, locally: a CI-only ignore rule,
+      # not a committed one (the vendored tree is not ours to edit).
+      - name: Mark the downloaded collector engine as build output
+        shell: bash
+        run: |
+          echo "plobi/collectors/chatlog/vendor/chatlog/bin/" >> .git/info/exclude
+          git status --porcelain | head -5 || true
           ls -l "$dest/${{ matrix.chatlog_binary }}"
 
 
