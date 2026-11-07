@@ -24,9 +24,11 @@ Installers are attached below.
 ### Improved
 
 - **Separate version numbers** — The first line is the desktop version and the second is the backend version; the two no longer share one number.
-- **Backend ships with the installer** — Installing no longer downloads dependencies separately, and the shell and the backend end up on the same version.
+- **Backend ships with the installer** — The backend's runtime source and its locked dependency wheels come with the package, so its dependencies install from the package; the shell and the backend end up on the same version.
 - **Toolchain ships with the installer** — git, bash and ripgrep come with the package, so the first launch no longer downloads them.
-- **One name for agents** — "Profile" is gone from the product; the left rail, the settings page and the command line all use Agent.
+- **One name for agents** — The interface says Agent and nothing else: "profile" is gone from the product, and the left rail, the settings page and the command line all use Agent.
+- **A fresh install has one agent** — The previous version added an agenda secretary on its own; a fresh install now has the chief secretary only. Roles are created by the user, or by the chief secretary when the user asks for one.
+- **No preset scheduled jobs** — The previous version scheduled a nightly plan for 20:00 on its own; this version presets none, and scheduled jobs are set by the user.
 - **Three permission levels** — Ask every time, auto-approve and full access, switched next to the input box.
 - **Status text carries a next step** — Not installed, not signed in, no path configured, file missing and service not listening each come with a matching instruction.
 - **Card layout** — The conversation and the work surface appear as two cards that can be dragged into place, or one of them can be shown alone.
