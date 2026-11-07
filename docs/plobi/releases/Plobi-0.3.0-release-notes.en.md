@@ -19,6 +19,7 @@ Installers are attached below.
 - **Agenda checklists and attachments** — Agenda entries can carry a checklist and attachments.
 - **New sources** — Mailboxes (QQ, 163, Gmail, Outlook and self-hosted IMAP), Mubu, DingTalk, undergraduate course affairs and timetables.
 - **In-app update** — The desktop app can download a new version, install it, bring the backend to the same version and restart.
+- **Data directory choice** — The installer can ask for the folder that holds sessions, settings and memory; that folder is the one that gets used.
 
 ### Improved
 
