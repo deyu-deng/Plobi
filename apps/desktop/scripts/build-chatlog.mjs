@@ -41,6 +41,32 @@ const OUT = path.join(BIN_DIR, BIN_NAME)
 const args = process.argv.slice(2)
 const FORCE = args.includes('--force')
 
+/**
+ * Executable magics we accept, by platform-agnostic bytes.
+ *
+ * PE (Windows) starts with `MZ`; ELF (Linux, and macOS when cross-built) starts with
+ * 0x7F 'E' 'L' 'F'; Mach-O (macOS native) starts with one of 0xFEEDFACF (64-bit),
+ * 0xFEEDFACE (32-bit) or 0xCAFEBABE (universal/fat) -- on disk little-endian for the
+ * first two, big-endian for the fat one.
+ *
+ * The macOS build is a Mach-O: the old check only knew MZ/ELF, so a **41 MB Mach-O was
+ * rejected as "not a runnable binary"** after a perfectly good build. Accepting the
+ * three Mach-O magics fixes it; we no longer branch on the platform at all, because
+ * a cross-built ELF on Windows would be just as wrong to reject.
+ */
+const RUNNABLE_MAGICS = [
+  'MZ', // PE / Windows
+  '\x7fELF', // ELF / Linux
+  '\xcf\xfa\xed\xfe', // Mach-O 64-bit (0xFEEDFACF)
+  '\xce\xfa\xed\xfe', // Mach-O 32-bit (0xFEEDFACE)
+  '\xca\xfe\xba\xbe', // Mach-O universal / fat (0xCAFEBABE)
+]
+
+/** True when the first bytes look like a runnable native binary. */
+export function looksRunnable(magic) {
+  return RUNNABLE_MAGICS.some((known) => magic.startsWith(known))
+}
+
 function say(msg) {
   console.log(`[build-chatlog] ${msg}`)
 }
@@ -108,19 +134,24 @@ function findCC() {
   if (!IS_WINDOWS) return process.env.CC || 'cc'
 
   const explicit = process.env.PLOBI_CHATLOG_CC || process.env.CC
+  const candidates = [
+    'D:/Runtimes/Languages/mingw-w64/bin/gcc.exe',
+    'C:/msys64/mingw64/bin/gcc.exe',
+    'C:/msys64/ucrt64/bin/gcc.exe',
+    'C:/msys64/clang64/bin/clang.exe',
+    'C:/mingw64/bin/gcc.exe',
+    'C:/TDM-GCC-64/bin/gcc.exe',
+    'C:/ProgramData/mingw64/mingw64/bin/gcc.exe',
+    'C:/ProgramData/chocolatey/bin/gcc.exe',
+    'C:/ProgramData/chocolatey/lib/mingw/tools/install/bin/gcc.exe',
+    `${process.env.USERPROFILE || 'C:/Users/Default'}/scoop/apps/mingw/current/bin/gcc.exe`
+  ]
   const found =
-    firstFile([explicit]) ||
-    onPath('gcc') ||
-    firstFile([
-      'D:/Runtimes/Languages/mingw-w64/bin/gcc.exe',
-      'C:/msys64/mingw64/bin/gcc.exe',
-      'C:/msys64/ucrt64/bin/gcc.exe',
-      'C:/mingw64/bin/gcc.exe',
-      'C:/TDM-GCC-64/bin/gcc.exe',
-      'C:/ProgramData/mingw64/mingw64/bin/gcc.exe',
-      'C:/ProgramData/chocolatey/bin/gcc.exe'
-    ])
-  if (!found) return null
+    firstFile([explicit]) || onPath('gcc') || firstFile(candidates)
+  if (!found) {
+    say(`no C compiler found; tried: ${[explicit, ...candidates].filter(Boolean).join(', ')}`)
+    return null
+  }
   say(`cc: ${found}`)
   return found
 }
@@ -189,7 +220,14 @@ function main() {
   if (!cc) {
     die(
       'no C compiler found; the collector engine needs CGO.\n' +
-        '  Install mingw-w64 (or MSYS2) and put gcc on PATH, or point CC at gcc.exe,\n' +
+        '  On a CI runner, the image does NOT ship mingw-w64 -- install it first:\n' +
+        '    - uses: msys2/setup-msys2@v2\n' +
+        '      with:\n' +
+        '        msystem: MINGW64\n' +
+        '        install: mingw-w64-x86_64-gcc\n' +
+        '    (the compiler then lands at C:/msys64/mingw64/bin/gcc.exe, which this\n' +
+        '    script finds on its own)\n' +
+        '  Locally: install mingw-w64 (or MSYS2) and put gcc on PATH, or point CC at gcc.exe,\n' +
         '  then run: npm run build:chatlog'
     )
   }
@@ -207,7 +245,14 @@ function main() {
 
   say(`building ${path.relative(REPO_ROOT, OUT)} from ${target} ...`)
   const started = Date.now()
-  const build = spawnSync(go, ['build', '-trimpath', '-o', OUT, target], {
+  // Windows: a mingw-linked CGO binary dynamically imports libgcc_s_seh-1.dll,
+  // libstdc++-6.dll and libwinpthread-1.dll -- those exist on the CI runner but
+  // **not on the user's machine**, so the packaged collector would die with
+  // "DLL not found" even though the build was green. Link the runtime
+  // statically so the exe is self-contained. (Linux/macOS link against the
+  // system libc, which every user machine has -- no need there.)
+  const ldflags = IS_WINDOWS ? '-extldflags "-static" -w -s' : '-w -s'
+  const build = spawnSync(go, ['build', '-trimpath', `-ldflags=${ldflags}`, '-o', OUT, target], {
     cwd: SRC_DIR,
     stdio: 'inherit',
     env: { ...process.env, CGO_ENABLED: '1', CC: cc }
@@ -231,8 +276,8 @@ function main() {
   } catch {
     /* fall through to the hard failure below */
   }
-  const looksRunnable = IS_WINDOWS ? magic.startsWith('MZ') : magic.startsWith('\x7fELF')
-  if (!looksRunnable) {
+  const looksRunnableBinary = looksRunnable(magic)
+  if (!looksRunnableBinary) {
     die(
       `go build reported success but ${OUT} is not a runnable binary ` +
         `(magic ${JSON.stringify(magic)}, ${size} B).\n` +
@@ -243,4 +288,7 @@ function main() {
   say(`built in ${((Date.now() - started) / 1000).toFixed(1)}s: ${path.relative(REPO_ROOT, OUT)} (${(size / 1048576).toFixed(1)} MB)`)
 }
 
-main()
+// Only build when this file is *run* -- the test imports looksRunnable from it.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main()
+}
