@@ -205,7 +205,7 @@ const authRow = (id: string, over: Partial<AuthCatalogRow> = {}): AuthCatalogRow
   ...over
 })
 
-describe('Desktop Quotas cards are the hub catalog', () => {
+describe('Subscriptions cards are the hub catalog', () => {
   /** The frame the main process pushes when the hub vouches for a model. */
   function frame(id: string, over: { blocked?: Record<string, string>; models?: string[] } = {}) {
     applyDiscoveredQuotaApps([
@@ -234,7 +234,7 @@ describe('Desktop Quotas cards are the hub catalog', () => {
     $connectedDesktopApps.set({})
   })
 
-  async function renderDesktopQuotas() {
+  async function renderSubscriptions() {
     const { ProvidersSettings } = await import('./providers-settings')
 
     return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
@@ -246,23 +246,23 @@ describe('Desktop Quotas cards are the hub catalog', () => {
       authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })
     ])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
     expect(await screen.findByText('CodeBuddy')).toBeTruthy()
     expect(screen.getByText('Antigravity')).toBeTruthy()
     // The invariant, not a snapshot: a row never carries two controls, and a software
     // the hub did not list never appears at all.
     expect(screen.getAllByRole('switch')).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'Configure' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Set up' })).toHaveLength(1)
   })
 
   it('offers `+` for a signed-out software and a switch for one already in use', async () => {
     shell([authRow('antigravity'), authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
     frame('workbuddy', { models: ['hy3'] })
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
-    const plus = await screen.findByRole('button', { name: 'Configure' })
+    const plus = await screen.findByRole('button', { name: 'Set up' })
 
     expect((plus as HTMLButtonElement).disabled).toBe(false)
     // Shape is the state: the switch says "in use" without the row saying it in words.
@@ -329,11 +329,11 @@ describe('Desktop Quotas cards are the hub catalog', () => {
   it('gives a signed-in login-only CLI no control, because Plobi has nothing to toggle', async () => {
     shell([authRow('qwen-cli', { aggregate: false, kind: 'cli_login', live: true, reason: 'signed in' })])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
     expect(await screen.findByText('Qwen Code')).toBeTruthy()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
-    expect(screen.queryAllByRole('button', { name: 'Configure' })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Set up' })).toHaveLength(0)
   })
 
   it('gives the Gemini leg a plus, because signing it in is a click and not a terminal', async () => {
@@ -341,10 +341,10 @@ describe('Desktop Quotas cards are the hub catalog', () => {
     // Plobi can start. It used to be a login-only row whose button opened a video.
     shell([authRow('gemini_api', { kind: 'oauth', live: false })])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
     expect(await screen.findByText('Gemini CLI')).toBeTruthy()
-    expect(await screen.findByRole('button', { name: 'Configure' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Set up' })).toBeTruthy()
   })
 
   it('shows no software names while the shell has not answered', async () => {
@@ -356,19 +356,19 @@ describe('Desktop Quotas cards are the hub catalog', () => {
       requestQuotaApps: vi.fn()
     } as never
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
     expect(screen.queryByText('CodeBuddy')).toBeNull()
     expect(screen.queryByText('Antigravity')).toBeNull()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
-    expect(screen.queryAllByRole('button', { name: 'Configure' })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Set up' })).toHaveLength(0)
   })
 
   it('keeps the hub\'s reason on the control that would fix it, not on the row', async () => {
     shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
     frame('workbuddy', { blocked: { 'hy3': 'credential_expired' }, models: [] })
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
     const control = await screen.findByRole('switch')
 
@@ -385,7 +385,7 @@ describe('Desktop Quotas cards are the hub catalog', () => {
     shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
     frame('workbuddy', { blocked: { 'hy3': 'model_rejected' }, models: [] })
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
 
     const control = await screen.findByRole('switch')
 
@@ -400,7 +400,7 @@ describe('Desktop Quotas cards are the hub catalog', () => {
 // Turning the switch off is the user taking back the routing decision, and it has to
 // *stay* taken back: the hub re-reads every 60 seconds and will happily report the
 // app as serving the whole time. So it is a flag on the store record, not a deletion.
-describe('Desktop Quotas switch', () => {
+describe('Subscriptions switch', () => {
   function frame(id: string, models: string[]) {
     applyDiscoveredQuotaApps([
       { answered: true, apiKey: 'sk-local-dev-key', baseUrl: 'http://127.0.0.1:8000/v1', blocked: {}, id, models }
@@ -424,7 +424,7 @@ describe('Desktop Quotas switch', () => {
     } as never
   })
 
-  async function renderDesktopQuotas() {
+  async function renderSubscriptions() {
     const { ProvidersSettings } = await import('./providers-settings')
 
     return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
@@ -436,8 +436,10 @@ describe('Desktop Quotas switch', () => {
   }
 
   it('changes the shape when the hub starts serving it', async () => {
-    // First read: signed out, so a `+`. Second read (after the click): the hub says it
-    // is in, so the very same row shows a switch — the state moved into the shape.
+    // First read: signed out, so a `+`. The `+` now opens first-run setup instead of
+    // calling the shell itself; the sign-in inside it is what makes the hub answer
+    // "signed in", and the very same row then shows a switch — the state moved into
+    // the shape.
     const catalog = vi
       .fn()
       .mockResolvedValueOnce([authRow('antigravity')])
@@ -449,8 +451,9 @@ describe('Desktop Quotas switch', () => {
       requestQuotaApps: vi.fn()
     } as never
 
-    await renderDesktopQuotas()
-    fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+    await renderSubscriptions()
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }))
 
     await waitFor(() => expect(screen.getAllByRole('switch')).toHaveLength(1))
   })
@@ -458,7 +461,7 @@ describe('Desktop Quotas switch', () => {
   it('stops routing through the software when the user turns it off', async () => {
     frame('workbuddy', ['hy3'])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
     fireEvent.click(await screen.findByRole('switch'))
 
     // The hub's next frame still reports the models. The flag is what decides,
@@ -473,7 +476,7 @@ describe('Desktop Quotas switch', () => {
   it('asks first, and says which of the two switches this is', async () => {
     frame('workbuddy', ['hy3'])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
     fireEvent.click(await screen.findByRole('switch'))
 
     const asked = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? ''
@@ -488,7 +491,7 @@ describe('Desktop Quotas switch', () => {
     vi.mocked(window.confirm).mockReturnValue(false)
     frame('workbuddy', ['hy3'])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
     fireEvent.click(await screen.findByRole('switch'))
 
     expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({
@@ -501,7 +504,7 @@ describe('Desktop Quotas switch', () => {
   it('brings the software back on the switch, with no dialog', async () => {
     frame('workbuddy', ['hy3'])
 
-    await renderDesktopQuotas()
+    await renderSubscriptions()
     fireEvent.click(await screen.findByRole('switch'))
     vi.mocked(window.confirm).mockClear()
 
@@ -523,7 +526,7 @@ describe('Desktop Quotas switch', () => {
     expect(window.confirm).not.toHaveBeenCalled()
   })
 
-  it('starts the sign-in through the shell and waits on the spinner', async () => {
+  it('starts the sign-in through the shell and waits in the setup dialog', async () => {
     let release: (value: { models: string[]; ok: boolean }) => void = () => undefined
 
     auth.mockImplementationOnce(
@@ -533,17 +536,18 @@ describe('Desktop Quotas switch', () => {
         })
     )
 
-    await renderDesktopQuotas()
-    fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+    await renderSubscriptions()
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }))
 
     await waitFor(() => expect(auth).toHaveBeenCalledWith('antigravity'))
-    // The one middle state a press can own: the `+` becomes a spinner while the
-    // browser step is out, then goes back on its own.
-    expect(screen.getByRole('button', { name: 'Waiting for the sign-in' })).toBeTruthy()
+    // The browser half happens outside this window, so the dialog stops offering the
+    // button and says it is waiting, instead of inviting a second press.
+    expect(await screen.findByText(/Waiting for sign-in/)).toBeTruthy()
 
     release({ models: [], ok: true })
 
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Waiting for the sign-in' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull())
   })
 })
 

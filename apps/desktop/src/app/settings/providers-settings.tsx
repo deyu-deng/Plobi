@@ -14,7 +14,7 @@ import { SearchField } from '@/components/ui/search-field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { ChevronRight, Loader2, Plus, Terminal, Trash2 } from '@/lib/icons'
+import { ChevronRight, Loader2, Plus, RefreshCw, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
 import { disconnectOAuthProvider, getGlobalModelOptions, listOAuthProviders } from '@/plobi'
@@ -34,7 +34,16 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
-import { buildLoginCards, cardControl, cardDetail, type LoginCard, type RoutingVerdict } from './quota-login-cards'
+import {
+  buildLoginCards,
+  cardControl,
+  cardDetail,
+  cardDot,
+  type LoginCard,
+  type RoutingVerdict
+} from './quota-login-cards'
+import { SubscriptionSetupDialog } from './subscription-setup'
+import type { SettingsView } from './types'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
@@ -299,15 +308,19 @@ function NoProviderKeys() {
   )
 }
 
-// Desktop Quotas — third provider pillar (parallel to Account / API key). One card
-// per piece of software on this machine whose subscription quota Plobi can use, and
-// the card grammar lives in `Docs/specs/settings-card-system.md`: icon, name, one
-// short line, and exactly one control whose *shape* is the state. Nothing here
-// explains how the hub works, and nothing here names the software itself — the hub's
-// catalog does.
-function DesktopQuotasView() {
+// Subscriptions — third provider pillar (parallel to Account / API key): one card per
+// adapted app whose already-paid quota Plobi can drive. The card grammar lives in
+// `Docs/specs/settings-card-system.md`: icon, name, one short line, and exactly one
+// control whose *shape* is the state. Nothing here explains how the hub works, and
+// nothing here names the software itself — the hub's catalog does.
+function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
   const { t } = useI18n()
-  const dq = t.settings.providers.desktopQuotas
+  const subs = t.settings.providers.subscriptions
+  // The card the setup dialog is walking through, if any. Kept by id: the catalog is
+  // re-read every few seconds, so the dialog has to follow the *fresh* row rather than
+  // a snapshot taken when `+` was pressed — that is what makes the switch appear on
+  // its own once the sign-in lands.
+  const [setupId, setSetupId] = useState<null | string>(null)
   // The hub's own verdict per app, pushed by the main process: what is pickable right
   // now, and why the rest is not. Connected is not the same as usable — a sign-in can
   // expire or a channel may not bring tool calls back into our loop, and the card says
@@ -362,14 +375,37 @@ function DesktopQuotasView() {
     })
   }, [])
 
+  // Where the hub expects its config (`~`-redacted). Only the empty state uses it:
+  // an empty list with no explanation is the exact screen the user could not act on
+  // (2026-11-07), so the one piece of information that turns "nothing here" into
+  // "this file is missing" has to be on screen, in the shell's own words.
+  const [configPath, setConfigPath] = useState<null | string>(null)
+  const readConfigPath = useCallback(() => {
+    void window.plobiDesktop?.plobiGateway?.configPath?.().then(res => {
+      setConfigPath(res?.configPath ?? null)
+    })
+  }, [])
+
   // Ask the shell to re-read the hub whenever this view opens. The renderer cannot
   // read the hub itself (its preflight fails — the hub sends no CORS headers), so the
   // hub's own pickability verdict arrives on the pushed frame.
   useEffect(() => {
     requestQuotaCatalog()
     readAuthCatalog()
+    readConfigPath()
     readHubSelectable()
-  }, [readAuthCatalog, readHubSelectable])
+  }, [readAuthCatalog, readConfigPath, readHubSelectable])
+
+  // "Retry" on the empty state: ask the shell again, and go back to the skeleton
+  // while it answers so the button cannot look inert. Nothing here starts or
+  // restarts the gateway — pressing a button in Settings must not spawn processes.
+  const retryAuthCatalog = useCallback(() => {
+    setAuthCatalog(null)
+    requestQuotaCatalog()
+    readAuthCatalog()
+    readConfigPath()
+    readHubSelectable()
+  }, [readAuthCatalog, readConfigPath, readHubSelectable])
 
   // While a sign-in is waiting on him in the browser, keep asking. Without this the card
   // only updates when the view re-mounts, so a login that finished perfectly kept showing
@@ -389,12 +425,15 @@ function DesktopQuotasView() {
     return () => clearInterval(timer)
   }, [anyPending, readAuthCatalog])
 
-  // --- Connect handler (Antigravity via the compliant `agy` CLI route) ---
-  // The backend does NOT run an OAuth flow. It verifies the user's own `agy`
-  // CLI is installed and starts the local gateway. No token is returned, so
-  // success is keyed on `res.ok` alone.
-  const handleConnect = async (appId: string) => {
-    if (!window.plobiDesktop?.plobiGateway?.auth) {return}
+  // --- Sign-in handler, shared with the first-run dialog ---
+  // The backend does NOT run the OAuth dance itself: it starts whatever the app's own
+  // adapter can start (CLI auth command, browser hop, local session), so success is
+  // keyed on `res.ok` alone. It returns that verdict instead of swallowing it, because
+  // the setup dialog has to say out loud when a sign-in could not be started.
+  const handleConnect = async (appId: string): Promise<{ error?: string; ok: boolean }> => {
+    if (!window.plobiDesktop?.plobiGateway?.auth) {
+      return { ok: false }
+    }
     setConn((prev) => ({ ...prev, [appId]: 'connecting' }))
     setErrInfo((prev) => { const n = { ...prev }; delete n[appId];
 
@@ -430,12 +469,18 @@ function DesktopQuotasView() {
         setConn((prev) => ({ ...prev, [appId]: 'idle' }))
         requestQuotaCatalog()
         readAuthCatalog()
-      } else {
-        setConn((prev) => ({ ...prev, [appId]: 'error' }))
-        setErrInfo((prev) => ({ ...prev, [appId]: { code: res.code, message: res.error, installHint: res.installHint } }))
+
+        return { ok: true }
       }
+
+      setConn((prev) => ({ ...prev, [appId]: 'error' }))
+      setErrInfo((prev) => ({ ...prev, [appId]: { code: res.code, message: res.error, installHint: res.installHint } }))
+
+      return { error: res.error, ok: false }
     } catch {
       setConn((prev) => ({ ...prev, [appId]: 'error' }))
+
+      return { ok: false }
     }
   }
 
@@ -447,7 +492,7 @@ function DesktopQuotasView() {
   // *stop routing through this*. So it flips one flag on the store record, and
   // every read path (picker, landing spot, composer fallback) consults it.
   const handleTurnOff = (card: LoginCard) => {
-    if (!window.confirm(dq.disconnectConfirm(card.name))) {
+    if (!window.confirm(subs.disconnectConfirm(card.name))) {
       return
     }
 
@@ -465,7 +510,7 @@ function DesktopQuotasView() {
 
       return next
     })
-    notify({ kind: 'success', message: dq.disconnectedToast(card.name), title: card.name })
+    notify({ kind: 'success', message: subs.disconnectedToast(card.name), title: card.name })
   }
 
   // Only the person who turned this off may turn it back on, and that needs no
@@ -491,6 +536,11 @@ function DesktopQuotasView() {
   // OpenCode Zen shows up once, as the disabled static key entry on the Keys tab
   // (constants.ts OPENCODE_ZEN_, per the 2026-11-04 dedupe ruling); this leg must
   // not render a second card of the same name.
+  // The one line under the name. The hub sends an `intro_key`, the four locales own the
+  // sentence — a catalog row with no translation still gets a truthful fallback rather
+  // than an empty line (renamed semantics 2026-11-07).
+  const introOf = (card: LoginCard) => subs.cardIntros[card.introKey] ?? subs.cardIntroFallback(card.name)
+
   const desktopCards = useMemo(
     () => (authCatalog ?? []).filter(card => card.id !== 'opencode_api'),
     [authCatalog]
@@ -546,20 +596,26 @@ function DesktopQuotasView() {
                 : '')
             : ''
 
+        // 已配置但不可用 = 状态点标红 + 原因徽标（用户 11-07 的硬要求）。未配置的行
+        // 不念状态：新机器上十五行会一起写"未安装"，那是噪音不是信息。
+        const stateReason
+          = card.state === 'unavailable' ? subs.reason[card.reasonCode] ?? subs.reason.unknown : ''
+
         const click = conn[card.id] ?? 'idle'
         const error = click === 'error' ? errInfo[card.id] : undefined
         // A failed click keeps its detail on the control's tooltip (it is what the
         // user just pressed); the why-this-leg-is-dark line lives under the card.
-        const errorTitle = error ? `${dq.connectError(card.name)}${error.message ? `：${error.message}` : ''}` : undefined
+        const errorTitle = error ? `${subs.connectError(card.name)}${error.message ? `：${error.message}` : ''}` : undefined
 
         return {
           card,
           checked: routing !== 'off',
+          dot: cardDot(card, routing),
           control: cardControl(card, routing, usable),
           // The reason for a dark leg is body copy under the card (user 2026-11-04
           // ruling) — see `belowText`; the control tooltip only carries a click
           // failure, which an action (retry / turn off) can actually resolve.
-          belowText: reason || undefined,
+          belowText: reason || stateReason || undefined,
           detail: cardDetail(card, errorTitle, undefined, undefined),
           errorTitle,
           // A click that is still in flight is the only moment a control is disabled.
@@ -578,7 +634,7 @@ function DesktopQuotasView() {
             a.card.name.localeCompare(b.card.name)
         ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [desktopCards, conn, dq, errInfo, hubSelectable, quotaApps, quotaReason]
+    [desktopCards, conn, subs, errInfo, hubSelectable, quotaApps, quotaReason]
   )
 
   /** The one control this row is allowed to show, in the shape the state asks for. */
@@ -592,7 +648,7 @@ function DesktopQuotasView() {
       // back on is gated while the leg is dark (the dropdown cannot offer it).
       return (
         <Switch
-          aria-label={dq.useQuota}
+          aria-label={subs.useQuota}
           checked={checked}
           disabled={control === 'disabled' && !checked}
           onCheckedChange={value => (value ? handleTurnOn(card) : handleTurnOff(card))}
@@ -606,16 +662,19 @@ function DesktopQuotasView() {
     if (control === 'plus' || isBusy) {
       if (isBusy) {
         return (
-          <Button aria-label={dq.connecting} disabled size="icon-sm" type="button" variant="secondary">
+          <Button aria-label={subs.connecting} disabled size="icon-sm" type="button" variant="secondary">
             <Loader2 className="size-4 animate-spin" />
           </Button>
         )
       }
 
+      // `+` is the entry to first-run setup, never a sign-in shortcut: on a new machine
+      // the app is missing first, and a click that only knows how to log in has nowhere
+      // to go. The dialog reads the hub's `state` and picks the smallest working path.
       return (
         <Button
-          aria-label={dq.configure}
-          onClick={() => handleConnect(card.id)}
+          aria-label={subs.configure}
+          onClick={() => setSetupId(card.id)}
           size="icon-sm"
           title={errorTitle || undefined}
           type="button"
@@ -628,7 +687,7 @@ function DesktopQuotasView() {
 
     if (control === 'loader') {
       return (
-        <Button aria-label={dq.connecting} disabled size="icon-sm" type="button" variant="secondary">
+        <Button aria-label={subs.connecting} disabled size="icon-sm" type="button" variant="secondary">
           <Loader2 className="size-4 animate-spin" />
         </Button>
       )
@@ -637,11 +696,15 @@ function DesktopQuotasView() {
     return null
   }
 
+  // The row the dialog walks through, resolved from the fresh catalog on every render:
+  // a snapshot taken at click time would never notice the sign-in landing.
+  const setupCard = setupId ? rows.find(row => row.card.id === setupId)?.card ?? null : null
+
   return (
     <SettingsContent>
       {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名与那句说明在卡**上方**，
           卡内相邻两行之间一条虚线。OAuth 那一屏与 API 密钥那一屏不在此列（见各自注释）。 */}
-      <SettingsGroup description={dq.intro} title={dq.title}>
+      <SettingsGroup description={subs.intro} title={subs.title}>
 
       {authCatalog === null ? (
         // The screen does not guess what is on this machine, so while the shell has
@@ -655,6 +718,27 @@ function DesktopQuotasView() {
               title={<Skeleton className="h-4 w-28" />}
             />
           ))}
+        </div>
+      ) : rows.length === 0 ? (
+        // An answered-but-empty catalog is not "nothing to show": it means the hub is
+        // not answering, and the screen has to say so and offer the one action that
+        // can help (ask again). Before this, `[]` fell into the same grid as a
+        // populated catalog and rendered a blank panel with no words at all — the
+        // Subscriptions screen on a fresh install (user 2026-11-07).
+        <div className="flex flex-col items-start gap-2 rounded-lg border border-(--ui-stroke-secondary) p-4">
+          <p className="text-[length:var(--conversation-body-font-size)] font-medium">{subs.emptyTitle}</p>
+          <p className="text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] opacity-70">
+            {subs.emptyIntro}
+          </p>
+          {configPath ? (
+            <p className="font-mono text-[length:var(--conversation-caption-font-size)] break-all opacity-60">
+              {subs.expectedConfigPath(configPath)}
+            </p>
+          ) : null}
+          <Button onClick={retryAuthCatalog} size="sm" type="button" variant="secondary">
+            <RefreshCw className="size-3.5" />
+            {subs.retry}
+          </Button>
         </div>
       ) : (
         <div className="grid gap-2">
@@ -673,18 +757,22 @@ function DesktopQuotasView() {
                   </p>
                 ) : undefined
               }
-              description={row.card.intro}
+              description={introOf(row.card)}
               key={row.card.id}
               // Unified card template (2026-11-04): status dot + name + the one
               // switch on the right — same shape as the key cards.
               title={
                 <span className="flex min-w-0 items-center gap-2">
+                  {/* The dot is the whole status vocabulary: live (green) / idle
+                      (grey) / error (red, configured but dark). Colour comes from the
+                      state machine, not from the routing verdict, so a leg that is set
+                      up but unreachable reads red even when the user switched it off. */}
                   <span
                     className={cn(
                       'size-2 shrink-0 rounded-full',
-                      row.verdict.state === 'ok'
+                      row.dot === 'live'
                         ? 'bg-primary'
-                        : row.verdict.state === 'unusable'
+                        : row.dot === 'error'
                           ? 'bg-destructive'
                           : 'bg-(--ui-stroke-secondary)'
                     )}
@@ -697,11 +785,33 @@ function DesktopQuotasView() {
         </div>
       )}
       </SettingsGroup>
+
+      {/* First-run setup. Mounted only while a card is being walked through, and its
+          last act is always a re-read of the catalog — the switch appears because the
+          hub said so, never because the dialog wrote it. */}
+      {setupCard ? (
+        <SubscriptionSetupDialog
+          card={setupCard}
+          onChanged={() => {
+            requestQuotaCatalog()
+            readAuthCatalog()
+          }}
+          onClose={() => setSetupId(null)}
+          onLogin={handleConnect}
+          onOpenNetwork={onOpenNetwork}
+          open
+        />
+      ) : null}
     </SettingsContent>
   )
 }
 
-export function ProvidersSettings({ onClose, onViewChange, view }: ProvidersSettingsProps) {
+export function ProvidersSettings({
+  onClose,
+  onOpenSettingsView,
+  onViewChange,
+  view
+}: ProvidersSettingsProps) {
   const { t } = useI18n()
   const { rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
@@ -803,10 +913,10 @@ export function ProvidersSettings({ onClose, onViewChange, view }: ProvidersSett
   // providers there's nothing for the "Accounts" view to show, so fall to keys.
   const showApiKeys = view === 'keys' || !hasOauth
 
-  // Desktop Quotas is its own pillar — render it directly, independent of the
+  // Subscriptions is its own pillar — render it directly, independent of the
   // Account / API-key split below.
   if (view === 'desktop') {
-    return <DesktopQuotasView />
+    return <SubscriptionsView onOpenNetwork={() => onOpenSettingsView?.('network')} />
   }
 
   const keyGroups = buildProviderKeyGroups(vars)
@@ -896,6 +1006,11 @@ interface ProviderKeyGroup {
 
 interface ProvidersSettingsProps {
   onClose: () => void
+  /**
+   * Jump to a sibling settings view. Only the subscription setup dialog uses it, and
+   * only for one hop: a network failure is fixed in Proxy, not here.
+   */
+  onOpenSettingsView?: (view: SettingsView) => void
   onViewChange: (view: ProviderView) => void
   view: ProviderView
 }
