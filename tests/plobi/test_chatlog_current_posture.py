@@ -153,7 +153,10 @@ class TestFourDeadEndsAreFourSentences:
             repo_root=tmp_path,
         )
         assert state == sidecar.STATE_GO_MISSING
-        assert "Go" in why
+        # 这句是原样上屏给装完软件的人看的：不许点 Go / 构建这类开发名（他既不知道 Go 是什么，
+        # 也不该被指去自己编译），但也不能只说"坏了"——要给出下一步（重装 / 反馈）。
+        assert "Go" not in why and "构建" not in why, why
+        assert "重装" in why and "发给我们" in why, why
 
     def test_artifact_present_means_missing_go_is_not_the_story(self, tmp_path: Path) -> None:
         """有产物还怪 PATH 上没 go，那句"为什么采不到"就是假的。
