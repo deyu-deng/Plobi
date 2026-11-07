@@ -25,6 +25,7 @@ Installers are attached below.
 
 - **Separate version numbers** — The first line is the desktop version and the second is the backend version; the two no longer share one number.
 - **Backend ships with the installer** — Installing no longer downloads dependencies separately, and the shell and the backend end up on the same version.
+- **Toolchain ships with the installer** — git, bash and ripgrep come with the package, so the first launch no longer downloads them.
 - **One name for agents** — "Profile" is gone from the product; the left rail, the settings page and the command line all use Agent.
 - **Three permission levels** — Ask every time, auto-approve and full access, switched next to the input box.
 - **Status text carries a next step** — Not installed, not signed in, no path configured, file missing and service not listening each come with a matching instruction.
