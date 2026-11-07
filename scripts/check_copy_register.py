@@ -63,6 +63,35 @@ def staged_i18n_files() -> list[str]:
     return hits
 
 
+def _norm(data: bytes) -> str:
+    """按文本比较，忽略行尾差异（仓库里可能是 LF，编辑器可能写成 CRLF）。"""
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
+
+
+def staged_differs_from_disk(paths: list[str]) -> list[str]:
+    """暂存区那份与工作树那份**不一致**的 i18n 文件。
+
+    这道门的**触发**看暂存区（哪些 i18n 档被这次提交带上），它**判的却是工作树**
+    （vitest import 的是工作树里的文件）——两端不是同一份内容时，门判的那份不是要提交的那份。
+    于是「暂存一份干净文案、工作树留一份口语文案」就能把违规文案运上船。
+    这里把这种不一致本身判红：要么让两边一致（重新 ``git add`` 那一档，或把工作树改回暂存区那份），
+    要么就别提交。
+    """
+    out = []
+    for path in paths:
+        try:
+            staged = subprocess.run(
+                ["git", "show", f":{path}"], cwd=ROOT, capture_output=True, check=True
+            ).stdout
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+        disk_file = ROOT / path
+        disk = disk_file.read_bytes() if disk_file.is_file() else b""
+        if _norm(staged) != _norm(disk):
+            out.append(path)
+    return out
+
+
 def find_node() -> str | None:
     found = shutil.which("node")
     if found:
@@ -101,6 +130,17 @@ def main() -> int:
     print(f"文案语域门：这次改到 {len(touched)} 个 i18n 文件，跑一遍语域判据——")
     for path in touched:
         print(f"  · {path}")
+
+    mismatched = staged_differs_from_disk(touched)
+    if mismatched:
+        print(
+            "\n文案语域门红：暂存区与工作树不一致——这道门判的是**工作树**，提交上去的是**暂存区**，"
+            "两端不是同一份时，门没判到要提交的那份。\n"
+            "  · " + "\n  · ".join(mismatched) + "\n"
+            "  先让两边一致再提交：重新 `git add` 那一档（或者把工作树改回暂存区那份）。",
+            file=sys.stderr,
+        )
+        return 1
 
     env = dict(os.environ, VITE_CONFIG_NATIVE_IGNORE_WARNING="true", CI="1")
     proc = subprocess.run(
