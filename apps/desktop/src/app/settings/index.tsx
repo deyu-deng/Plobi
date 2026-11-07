@@ -10,6 +10,7 @@ import {
   Archive,
   Bell,
   Download,
+  Gauge,
   Globe,
   Info,
   KeyRound,
@@ -251,10 +252,12 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
           onSelect: () => openProviderView('keys')
         },
         {
+          // Gauge, not Globe: Globe already stands for the Network view, and the two
+          // siblings sat next to each other with the same icon (user 2026-11-07).
           active: activeView === 'providers' && providerView === 'desktop',
-          icon: Globe,
+          icon: Gauge,
           id: 'pview:desktop',
-          label: t.settings.nav.providerDesktopQuotas,
+          label: t.settings.nav.providerSubscriptions,
           onSelect: () => openProviderView('desktop')
         }
       ],
@@ -399,7 +402,12 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
               onMainModelChanged={onMainModelChanged}
             />
           ) : activeView === 'providers' ? (
-            <ProvidersSettings onClose={onClose} onViewChange={setProviderView} view={providerView} />
+            <ProvidersSettings
+            onClose={onClose}
+            onOpenSettingsView={setActiveView}
+            onViewChange={setProviderView}
+            view={providerView}
+          />
           ) : activeView === 'keys' ? (
             <KeysSettings view={keysView} />
           ) : activeView === 'notifications' ? (
