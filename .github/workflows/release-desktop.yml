@@ -64,7 +64,7 @@ jobs:
       # here points at a path.
       - name: Install the CGO compiler (mingw-w64 gcc)
         if: matrix.platform == 'windows'
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2
         with:
           msystem: MINGW64
           install: mingw-w64-x86_64-gcc
