@@ -55,6 +55,7 @@ def _spec(provider: EmailProvider) -> SourceSpec:
         },
         category="email",
         display_name=provider.display_name,
+        summary="这家邮箱的最近邮件",
         site=provider.site,
         # 默认**不点**：这一族今天一格账号都没填，而日常那一轮现在真的照开关挑信源
         # （10-24 那条第 9 条：`collecting_sources()` 从前只看这一格，用户翻的开关不算数）。

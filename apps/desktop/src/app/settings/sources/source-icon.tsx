@@ -17,7 +17,7 @@
  * 同理）。**品牌色底染 16%**，让字形在任何底色上都读得出来，又不压过那一行本身。
  */
 
-import { SiGooglecalendar, SiWechat } from '@icons-pack/react-simple-icons'
+import { SiGmail, SiGooglecalendar, SiWechat } from '@icons-pack/react-simple-icons'
 import type { ComponentType, SVGProps } from 'react'
 
 import { Globe, Mail } from '@/lib/icons'
@@ -39,6 +39,8 @@ const SOURCE_ICONS: Record<string, SourceIconSpec> = {
   // 教务就是一个要账密登录的 Web 系统 ⇒ 地球形。**不画"学校"**：那是一个具体学校的
   // 校徽，画在这儿等于替它认领了一个不属于它的身份（§2.1 那条平权：这一维是连接器形状）。
   timetable: { Icon: SiGooglecalendar, color: '#4285F4', kind: 'brand' },
+  // 邮箱五家里只有 Gmail 有现成字形；163／QQ／Outlook／imap 退信封那一格（`category=email`）。
+  email_gmail: { Icon: SiGmail, color: '#EA4335', kind: 'brand' },
   wechat: { Icon: SiWechat, color: '#07C160', kind: 'brand' },
   zju: { Icon: Globe, color: '#2563EB', kind: 'generic' }
 }

@@ -241,6 +241,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
         # 但一处真源要把"它从哪来"一起说清）。
         **cadence.cadence_env(source_id),
         "has_builder": spec.builder is not None,
+        # 配置卡第三格那句"这是什么"（声明给缺省值，语言目录优先；空串＝这一行不画）。
+        "summary": spec.summary,
         "requires_manual_setup": spec.capabilities.get("requires_manual_setup"),
         # 有这一格才画那一份"每个群聊/私聊采不采"的名单（声明，不按名字分支）。
         "conversation_scoped": bool(spec.conversation_scoped),

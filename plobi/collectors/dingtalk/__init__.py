@@ -78,6 +78,7 @@ SPEC = SourceSpec(
     # 读的是本机那个客户端落下的库 ⇒ 「软件」（10-27 收成一条轴：这条数据从哪来）。
     category="software",
     site="https://www.dingtalk.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项
+    summary="本机钉钉的消息与日程",
     # 名字仍然由界面语言目录给（四语各有写法）：这一条不是"一个网站"，那一格的兜底
     # 只对「网站」那一类开（`sources_api._enrich` 那一段写着为什么）。
     setup_fields=(),

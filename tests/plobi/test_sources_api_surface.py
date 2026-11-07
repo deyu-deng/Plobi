@@ -416,6 +416,18 @@ class TestPoolCountsReachTheScreen:
         assert row["pool_kinds"] == {"message": 3}
 
 
+class TestTheDeclaredIntro:
+    def test_the_source_declares_its_own_one_line_intro(self, client) -> None:
+        """配置卡第三格（用户 11-07 拍「加 summary 声明」）：声明给缺省值，第三方包没填就是空串。
+
+        空串是一个**读数**（这一行不画），不是缺字段——所以键恒在、值可空，两半都要钉住。
+        """
+        row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}
+
+        assert row["wechat"]["summary"] == "本机微信的会话与群聊"
+        assert "summary" in row["timetable"]
+
+
 class TestTheSourceNamesItself:
     """名字归一处（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。"""
 

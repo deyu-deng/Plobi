@@ -287,6 +287,19 @@ describe('what the row says', () => {
     }
   })
 
+  it('shows the intro the source itself declared, and nothing when it did not', async () => {
+    // 配置卡第三格（用户 11-07 拍「加 summary 声明」）：声明有就画一行，没声明整行不画——不许前端编。
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected', summary: '本机微信的会话与群聊' }),
+      row({ enabled: true, has_builder: true, source: 'zju', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('本机微信的会话与群聊')).toBeTruthy())
+    expect(screen.queryByText('学在浙大：作业与截止')).toBeNull()
+  })
+
   it('does not draw an off switch for a switch it could not read', async () => {
     getSources.mockResolvedValue(payload([row({ enabled: null, has_builder: null, source: 'wechat', status: 'disconnected' })]))
 

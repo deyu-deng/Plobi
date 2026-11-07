@@ -72,6 +72,8 @@ export interface SourceRow {
    * 由界面替网站起的类目词。
    */
   display_name?: string
+  /** 配置卡第三格那句"这是什么"（信源自己声明；空＝这一行不画）。 */
+  summary?: string
   /**
    * 这条在本机**成不成立**（只有声明了探针的那几条才有这一格）。
    *

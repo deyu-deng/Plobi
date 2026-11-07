@@ -47,6 +47,7 @@ SPEC = SourceSpec(
     cadence="every 1d",
     category="software",
     site="https://mubu.com",
+    summary="幕布大纲：登录后拉你的大纲",
     setup_fields=(),
     # 默认不点：这一条读的是他的个人笔记。装上客户端、屏幕上点一下开关才采。
     collecting=False,
