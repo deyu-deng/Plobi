@@ -1,4 +1,7 @@
+import fs from 'node:fs'
 import path from 'node:path'
+
+import { readWindowsUserEnvVar } from './windows-user-env'
 
 // Match the POSIX fallback surface used by the Python terminal environment.
 // macOS apps launched from Finder/Dock often inherit only /usr/bin:/bin:/usr/sbin:/sbin,
@@ -154,13 +157,66 @@ export function dedupeEnvKeys(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out
 }
 
+/**
+ * 脑与人读面住哪：env → 注册表 → 什么都不给。
+ *
+ * 2026-11-07 现核：从**开始菜单**启动的那个 app，它的进程环境是**登录那一刻**的快照；
+ * 之后用 `setx` 写进 HKCU 的 MIND_ROOT／SURFACE_ROOT，它一个字都看不见 ⇒ 后端（继承
+ * 这份环境）就按旧串去读脑 ⇒ **开机自启那条路读不到脑**。注册表那份是活的
+ * （`readWindowsUserEnvVar` 读的就是 HKCU\Environment）⇒ 这一格按 env → 注册表 的
+ * 次序解析，与 PLOBI_HOME 那边同一套口径（见 windows-user-env.ts 的注释与 #45471）。
+ *
+ * 继承来的那串可能已经不在了（长驻进程继承的是登录那一刻的快照）：那一份不在、
+ * 注册表那份还在 ⇒ 改读注册表那份。与 Python 侧 `paths.py::_surface_pointer()` 同一条
+ * 口径（"宁可不静默换家"）。
+ *
+ * 两格都读不到时**什么都不给**：让 Python 侧按它自己的默认走（脑在仓内兄弟目录、
+ * 人读面在 `<mind>/Surface`），不在这里另造一个默认。
+ */
+export function resolveBrainSurfacePointers({
+  currentEnv = process.env,
+  platform = process.platform,
+  readEnvVar = readWindowsUserEnvVar,
+  exists = (candidate: string) => {
+    try {
+      return fs.existsSync(candidate)
+    } catch {
+      return false
+    }
+  }
+}: {
+  currentEnv?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  readEnvVar?: typeof readWindowsUserEnvVar
+  exists?: (candidate: string) => boolean
+} = {}) {
+  const out: Record<string, string> = {}
+
+  for (const name of ['MIND_ROOT', 'SURFACE_ROOT']) {
+    const fromEnv = String(currentEnv?.[name] ?? '').trim()
+    const fromRegistry = String(readEnvVar(name, { platform, env: currentEnv }) ?? '').trim()
+    let value = fromEnv || fromRegistry
+
+    if (fromEnv && fromRegistry && fromRegistry !== fromEnv && !exists(fromEnv) && exists(fromRegistry)) {
+      value = fromRegistry
+    }
+
+    if (value) {
+      out[name] = value
+    }
+  }
+
+  return out
+}
+
 function buildDesktopBackendEnv({
   plobiHome,
   pythonPathEntries = [],
   venvRoot,
   currentEnv = process.env,
   platform = process.platform,
-  pathModule = pathModuleForPlatform(platform)
+  pathModule = pathModuleForPlatform(platform),
+  brainSurface = resolveBrainSurfacePointers({ currentEnv, platform })
 }: any = {}) {
   const delimiter = delimiterForPlatform(platform)
   // 先把继承来的环境修合法（大小写重复键），再往上叠我们自己的两格——
@@ -178,7 +234,10 @@ function buildDesktopBackendEnv({
       currentPath: currentPathValue(base, platform),
       platform,
       pathModule
-    })
+    }),
+    // 脑与人读面住哪：这两格由后端自己解析，桌面这一侧得把**活的**那一份交给它，
+    // 否则从开始菜单启动（继承登录时的旧快照）就找不到脑（见 resolveBrainSurfacePointers）。
+    ...brainSurface
   }
 }
 

@@ -2412,13 +2412,20 @@ function Set-MindRootEnv {
 
     $mindRoot = Join-Path $PlobiHomePath "mind"
     $existing = [Environment]::GetEnvironmentVariable("MIND_ROOT", $Scope)
-    if (-not $existing -or $existing -ne $mindRoot) {
+    # 2026-11-07：已经钉在别处的**不搬**。脑是它自己那个仓（有独立远端），住在哪是人的决定；
+    # 安装器每次启动都把它拖回 <家>\mind，等于替人搬家——而那份 <家>\mind 常常根本不存在
+    # （这台 11-07 现核：脑在 Plobi-Dev\mind，安装器却把 MIND_ROOT 钉成 <家>\mind ⇒ 脑读不到）。
+    # 口径与 Python 侧 paths.py::_surface_pointer() 同一条：宁可不静默换家。
+    if (-not $existing) {
         [Environment]::SetEnvironmentVariable("MIND_ROOT", $mindRoot, $Scope)
         Write-Success "Set MIND_ROOT=$mindRoot"
     } else {
         Write-Info "MIND_ROOT already configured"
+        if ($existing -ne $mindRoot) {
+            Write-Info "The brain is at $existing -- not moving it to $mindRoot (repointing it is the user's call)"
+        }
     }
-    $env:MIND_ROOT = $mindRoot
+    if ($existing) { $env:MIND_ROOT = $existing } else { $env:MIND_ROOT = $mindRoot }
 
     # Deliberately NOT created: an empty directory resolves to a path that is not a
     # git repo, which fails two layers away from the cause.  "Not configured yet" is
@@ -2435,17 +2442,29 @@ function Set-MindRootEnv {
     # Leaving SURFACE_ROOT unset is also not neutral: plobi/mind/paths.py refuses a
     # Surface/ write once the old in-brain surface is gone, so an installer that pinned
     # only the brain would hand over a machine with half the memory surface missing.
-    $surfaceRoot = Join-Path $PlobiHomePath "surface"
+    # 2026-11-03 起人读面**住在家目录本体**（不再有 `<家>\surface` 这一层）：这一格的值
+    # 就是家。旧形状（`<家>\surface`）把指针指到一处根本不存在的地方 ⇒ 人读面读不到
+    # （这台 11-07 现核：注册表里那一格指的就是那个不存在的旧形状）。
+    $surfaceRoot = $PlobiHomePath
     $existingSurface = [Environment]::GetEnvironmentVariable("SURFACE_ROOT", $Scope)
-    if (-not $existingSurface -or $existingSurface -ne $surfaceRoot) {
+    # 同 MIND_ROOT：已经钉在别处的**不搬**（人读面是用户自己的仓，住在哪是人的决定）。
+    if (-not $existingSurface) {
         [Environment]::SetEnvironmentVariable("SURFACE_ROOT", $surfaceRoot, $Scope)
         Write-Success "Set SURFACE_ROOT=$surfaceRoot"
     } else {
         Write-Info "SURFACE_ROOT already configured"
+        if ($existingSurface -ne $surfaceRoot) {
+            Write-Info "The human surface is at $existingSurface -- not moving it to $surfaceRoot (repointing it is the user's call)"
+        }
     }
-    $env:SURFACE_ROOT = $surfaceRoot
+    if ($existingSurface) { $env:SURFACE_ROOT = $existingSurface } else { $env:SURFACE_ROOT = $surfaceRoot }
 
-    if (-not (Test-Path -LiteralPath $surfaceRoot)) {
+    # 家在，但人读面还没搬进来（dossiers/ notes/ diary/ 三样都还没有）＝ 还没到。
+    $hasSurface = $false
+    foreach ($marker in @("dossiers", "notes", "diary")) {
+        if (Test-Path -LiteralPath (Join-Path $surfaceRoot $marker)) { $hasSurface = $true; break }
+    }
+    if (-not $hasSurface) {
         Write-Info "The human surface is not at $surfaceRoot yet -- it has no remote by design; restore it from bundles/keep (scripts/backup_repos.py writes those bundles)."
     }
 }
@@ -2478,9 +2497,19 @@ function Set-PathVariable {
     # Only needed on Windows where we install to %LOCALAPPDATA%\plobi instead
     # of the Unix default ~/.plobi
     $currentPlobiHome = [Environment]::GetEnvironmentVariable("PLOBI_HOME", "User")
-    if (-not $currentPlobiHome -or $currentPlobiHome -ne $PlobiHome) {
+    # 2026-11-07：已经钉着、且那一格**还在** ⇒ 不动它（它可能是开发态自己那把门牌）。
+    # 这一段以前是「与 $PlobiHome 一律改写成我的」⇒ 桌面端每次启动跑 bootstrap 时，
+    # 都把用户自己选的那一格拖回安装器的默认（这台：%LOCALAPPDATA%\plobi，C 盘）⇒
+    # 数据被搬回 C 盘、家分家、且违反 D 盘政策。
+    # 只有「没钉」或「钉的那个已经不在了」才重钉：家是装出来就在的，它没了＝真搬走了。
+    if (-not $currentPlobiHome -or -not (Test-Path -LiteralPath $currentPlobiHome)) {
         [Environment]::SetEnvironmentVariable("PLOBI_HOME", $PlobiHome, "User")
         Write-Success "Set PLOBI_HOME=$PlobiHome"
+    } else {
+        Write-Info "PLOBI_HOME already configured"
+        if ($currentPlobiHome -ne $PlobiHome) {
+            Write-Info "The home is already $currentPlobiHome -- not moving it to $PlobiHome (repointing it is the user's call)"
+        }
     }
     $env:PLOBI_HOME = $PlobiHome
 

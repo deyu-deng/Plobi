@@ -10,8 +10,66 @@ import {
   desktopCliSearchPath,
   normalizePlobiHomeRoot,
   pathEnvKey,
-  POSIX_SANE_PATH_ENTRIES
+  POSIX_SANE_PATH_ENTRIES,
+  resolveBrainSurfacePointers
 } from './backend-env'
+
+// 2026-11-07：从**开始菜单**启动的那个 app，它的进程环境是登录那一刻的快照；
+// 之后写进 HKCU 的 MIND_ROOT／SURFACE_ROOT 它看不见 ⇒ 后端就找不到脑。
+// 这一格按 env → 注册表 解析，并把活的那一份交给后端。
+test('脑与人读面：env 有就用 env，没有就读注册表那份', () => {
+  const fromEnv = resolveBrainSurfacePointers({
+    currentEnv: { MIND_ROOT: 'D:\\Data\\AppData\\Plobi-Dev\\mind' },
+    platform: 'win32',
+    readEnvVar: () => 'D:\\Data\\AppData\\Plobi-Dev\\mind'
+  })
+
+  assert.equal(fromEnv.MIND_ROOT, 'D:\\Data\\AppData\\Plobi-Dev\\mind')
+
+  const fromRegistry = resolveBrainSurfacePointers({
+    currentEnv: {},
+    platform: 'win32',
+    readEnvVar: (name: string) => (name === 'MIND_ROOT' ? 'D:\\Data\\AppData\\Plobi-Dev\\mind' : 'D:\\Data\\AppData\\Plobi-Dev')
+  })
+
+  assert.equal(fromRegistry.MIND_ROOT, 'D:\\Data\\AppData\\Plobi-Dev\\mind')
+  assert.equal(fromRegistry.SURFACE_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
+})
+
+test('脑与人读面：继承来的那串已经不在了，注册表那份还在 ⇒ 改读注册表那份', () => {
+  const pointers = resolveBrainSurfacePointers({
+    currentEnv: { MIND_ROOT: 'C:\\Users\\Turtlelet\\AppData\\Local\\Plobi\\mind' },
+    platform: 'win32',
+    readEnvVar: () => 'D:\\Data\\AppData\\Plobi-Dev\\mind',
+    exists: (candidate: string) => candidate.startsWith('D:\\')
+  })
+
+  assert.equal(pointers.MIND_ROOT, 'D:\\Data\\AppData\\Plobi-Dev\\mind')
+})
+
+test('脑与人读面：两格都读不到 ⇒ 什么都不给（让 Python 侧按它自己的默认走）', () => {
+  const pointers = resolveBrainSurfacePointers({
+    currentEnv: {},
+    platform: 'linux',
+    readEnvVar: () => null
+  })
+
+  assert.deepEqual(pointers, {})
+})
+
+test('后端那一份环境带着脑与人读面的指针', () => {
+  const env = buildDesktopBackendEnv({
+    plobiHome: 'D:\\Data\\AppData\\Plobi',
+    venvRoot: 'D:\\Data\\AppData\\Plobi\\plobi-agent\\venv',
+    platform: 'win32',
+    pathModule: path.win32,
+    currentEnv: {},
+    brainSurface: { MIND_ROOT: 'D:\\Data\\AppData\\Plobi-Dev\\mind', SURFACE_ROOT: 'D:\\Data\\AppData\\Plobi-Dev' }
+  })
+
+  assert.equal(env.MIND_ROOT, 'D:\\Data\\AppData\\Plobi-Dev\\mind')
+  assert.equal(env.SURFACE_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
+})
 
 test('desktop backend PATH adds Plobi-managed bins and missing POSIX sane entries', () => {
   const result = buildDesktopBackendPath({

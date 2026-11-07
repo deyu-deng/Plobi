@@ -65,7 +65,13 @@ def test_derivation_function_exists_and_uses_the_home_it_is_given(source: str):
 
 
 def test_pinned_by_the_same_mechanism_and_scope_as_plobi_home(source: str):
-    """Same API, same scope, same "don't rewrite if equal" guard as the PLOBI_HOME pin."""
+    """Same API, same scope — and it does NOT move a pointer that is already set.
+
+    2026-11-07：这一段以前是「与我的不一样就改写成我的」⇒ 桌面端每次启动跑 bootstrap
+    都把用户自己指的那一格拖回安装器的默认（这台：%LOCALAPPDATA%\\plobi，C 盘）。
+    脑住在哪是**人的决定**（它是自己那个仓，有独立远端），口径与 Python 侧
+    ``paths.py::_surface_pointer()`` 同一条：宁可不静默换家。
+    """
     body = _function_body(source, "Set-MindRootEnv")
     assert '[Environment]::SetEnvironmentVariable("MIND_ROOT", $mindRoot, $Scope)' in body
     assert '[Environment]::GetEnvironmentVariable("MIND_ROOT", $Scope)' in body
@@ -73,8 +79,29 @@ def test_pinned_by_the_same_mechanism_and_scope_as_plobi_home(source: str):
         "default scope must be User — a process-only value is exactly what does not "
         "survive into an autostart or scheduled-task process"
     )
-    assert re.search(r"if \(-not \$existing -or \$existing -ne \$mindRoot\)", body), (
-        "must be idempotent, mirroring the PLOBI_HOME guard it sits next to"
+    assert re.search(r"if \(-not \$existing\)\s*\{", body), (
+        "已经钉着的指针不许被改写：脑住在哪要人来定（口径同 paths.py::_surface_pointer()）"
+    )
+    assert "-or $existing -ne $mindRoot" not in body, (
+        "旧写法是「与我的不一样就改写成我的」⇒ 每次启动都替人搬家"
+    )
+
+
+def test_the_surface_pointer_is_the_home_itself(source: str):
+    """2026-11-03 起人读面住在家目录本体，不再有 <家>\\surface 这一层。
+
+    旧形状把指针指到一处根本不存在的地方 ⇒ 人读面读不到（这台 11-07 现核：
+    注册表里那一格指的就是那个不存在的旧形状）。
+    """
+    body = _function_body(source, "Set-MindRootEnv")
+    assert '$surfaceRoot = $PlobiHomePath' in body, (
+        "人读面的落点就是家本体（裁定 2026-11-03）"
+    )
+    assert 'Join-Path $PlobiHomePath "surface"' not in body, (
+        "旧形状 <家>\\surface 指到一处不存在的地方 ⇒ 人读面读不到"
+    )
+    assert re.search(r"if \(-not \$existingSurface\)\s*\{", body), (
+        "人读面的指针同样不许覆盖已经钉着的那一格"
     )
 
 
@@ -129,7 +156,12 @@ def _run_derivation(tmp_path: Path, preexisting: str | None = None) -> tuple[str
     home.mkdir(exist_ok=True)
     expected = str(home / "mind")
     q = chr(39)  # single quote, kept out of the f-string braces below
-    seed = f"$env:MIND_ROOT = {q}{preexisting}{q}; Write-Output 'SEEDED'\n" if preexisting else ""
+    # 探针里**显式**把那格置空（preexisting=None 的意思就是"没钉"）：这台机器的测试环境
+    # 本来就带着一个 MIND_ROOT（conftest 的假脑），不显式清掉就分不出"没钉"与"已钉"。
+    if preexisting:
+        seed = f"$env:MIND_ROOT = {q}{preexisting}{q}; Write-Output 'SEEDED'\n"
+    else:
+        seed = "$env:MIND_ROOT = ''; Write-Output 'SEEDED'\n"
     script = (
         "$ErrorActionPreference = 'Stop'\n"
         'function Write-Info { param([string]$Message) Write-Output "INFO:$Message" }\n'
@@ -141,7 +173,11 @@ def _run_derivation(tmp_path: Path, preexisting: str | None = None) -> tuple[str
         + 'Write-Output "RESULT:$env:MIND_ROOT"\n'
     )
     ps1 = tmp_path / "probe.ps1"
-    ps1.write_text(script, encoding="ascii")
+    # UTF-8 **with BOM**：Windows PowerShell 5.1 reads a BOM'd file as UTF-8, a BOM-less
+    # one as ANSI ⇒ the function body (which carries the script's own Chinese comments)
+    # would come back mangled.  The harness used to write ASCII and only passed because
+    # that one function happened to be English-only.
+    ps1.write_text(script, encoding="utf-8-sig")
     completed = subprocess.run(
         [_POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps1)],
         capture_output=True,
@@ -171,6 +207,21 @@ def test_powershell_is_idempotent_when_already_registered(tmp_path: Path):
     assert f"RESULT:{expected}" in out, out
     assert "INFO:MIND_ROOT already configured" in out, out
     assert "OK:Set MIND_ROOT=" not in out, out
+
+
+@pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
+def test_powershell_does_not_move_a_pointer_that_is_already_set(tmp_path: Path):
+    """已经钉在别处的指针**不许被改写**（脑住在哪是人的决定）。
+
+    2026-11-07 那台的真事：脑在 ``Plobi-Dev\\mind``，而安装器每次启动都把 MIND_ROOT
+    拖回 ``<家>\\mind``（那个目录根本不存在）⇒ 后端按 set-but-missing 读不到脑。
+    """
+    elsewhere = tmp_path / "elsewhere-brain"
+    elsewhere.mkdir()
+    out, _ = _run_derivation(tmp_path, preexisting=str(elsewhere))
+    assert f"RESULT:{elsewhere}" in out, out
+    assert "OK:Set MIND_ROOT=" not in out, out
+    assert "already configured" in out, out
 
 
 @pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
