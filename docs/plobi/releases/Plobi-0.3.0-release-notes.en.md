@@ -23,7 +23,7 @@ Installers are attached below.
 
 ### Improved
 
-- **Separate version numbers** — The first line is the desktop version and the second is the backend version; the two no longer share one number.
+- **One product version** — About shows a single version number; it used to list the desktop version and then the backend's underneath, which read like two products.
 - **Backend ships with the installer** — The backend's runtime source and its locked dependency wheels come with the package, so its dependencies install from the package; the shell and the backend end up on the same version.
 - **Toolchain ships with the installer** — git, bash and ripgrep come with the package, so the first launch no longer downloads them.
 - **One name for agents** — The interface says Agent and nothing else: "profile" is gone from the product, and the left rail, the settings page and the command line all use Agent.
