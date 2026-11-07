@@ -1,5 +1,6 @@
-import { type CSSProperties, useState } from 'react'
+import { useState } from 'react'
 
+import { PLOBI_WORDMARK } from '@/components/plobi-glyphs'
 import { capitalize, normalize } from '@/lib/text'
 
 import introCopyJsonl from './intro-copy.jsonl?raw'
@@ -166,16 +167,28 @@ export function Intro({ personality, seed }: IntroProps) {
       data-slot="aui_intro"
     >
       <div className="w-full min-w-0">
-        <p
-          aria-label={WORDMARK}
-          className="fit-text mx-auto mb-1 w-[calc(100%-1rem)] wordmark-gradient font-['Source Serif 4'] font-semibold leading-[0.9]"
-          style={{ '--fit-min': '2.75rem' } as CSSProperties}
-        >
-          <span>
-            <span>{WORDMARK}</span>
-          </span>
-          <span aria-hidden="true">{WORDMARK}</span>
-        </p>
+        <div className="mx-auto mb-1 w-[calc(100%-1rem)] text-(--theme-primary)">
+          <svg aria-label={WORDMARK} className="h-auto w-full" role="img" viewBox={PLOBI_WORDMARK.viewBox}>
+            <g
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth={PLOBI_WORDMARK.strokeWidth}
+              transform={PLOBI_WORDMARK.groupTransform}
+            >
+              {PLOBI_WORDMARK.shapes.map((shape, index) =>
+                shape.kind === 'line' ? (
+                  <line key={index} x1={shape.x1} x2={shape.x2} y1={shape.y1} y2={shape.y2} />
+                ) : (
+                  <circle cx={shape.cx} cy={shape.cy} key={index} r={shape.r} />
+                )
+              )}
+              <g transform={PLOBI_WORDMARK.tittle.transform}>
+                <path d={PLOBI_WORDMARK.tittle.path} fill="currentColor" fillRule="nonzero" stroke="none" />
+              </g>
+            </g>
+          </svg>
+        </div>
 
         <p className="m-0 text-center leading-normal tracking-tight">{copy.body}</p>
       </div>

@@ -1119,66 +1119,6 @@ text-* variant utilities. */ .btn-arc {
   line-height: 1.45;
 }
 
-.fit-text {
-  --fit-captured-length: initial;
-  --fit-support-sentinel: var(--fit-captured-length, 9999px);
-
-  display: flex;
-  container-type: inline-size;
-}
-
-.fit-text > [aria-hidden] {
-  visibility: hidden;
-}
-
-.fit-text > :not([aria-hidden]) {
-  flex-grow: 1;
-  container-type: inline-size;
-
-  --fit-captured-length: 100cqi;
-  --fit-available-space: var(--fit-captured-length);
-}
-
-.fit-text > :not([aria-hidden]) > * {
-  --fit-support-sentinel: inherit;
-  --fit-captured-length: 100cqi;
-  --fit-ratio: tan(atan2(var(--fit-available-space), var(--fit-available-space) - var(--fit-captured-length)));
-
-  display: block;
-  inline-size: var(--fit-available-space);
-  font-size: clamp(
-    var(--fit-min, 1em),
-    1em * var(--fit-ratio),
-    var(--fit-max, infinity * 1px) - var(--fit-support-sentinel)
-  );
-}
-
-@container (inline-size > 0) {
-  .fit-text > :not([aria-hidden]) > * {
-    white-space: nowrap;
-  }
-}
-
-/* Wordmark gradient — follows the active theme's primary color so it changes
-   when the user switches between Nous, Ember, Midnight, etc. The end stop is
-   a lightened tint of the same primary, giving a subtle gradient without
-   hardcoding any theme's hex. */
-.wordmark-gradient {
-  background-image: linear-gradient(
-    to right,
-    var(--theme-primary) 0%,
-    color-mix(in srgb, var(--theme-primary) 65%, white) 100%
-  );
-  background-clip: text;
-  color: transparent;
-}
-
-@property --fit-captured-length {
-  syntax: '<length>';
-  initial-value: 0px;
-  inherits: true;
-}
-
 [data-slot='composer-root'] {
   /* +10px width compensates the 5px side padding so the visible surface keeps
      its exact width/position — the inline padding is just transparent grab space

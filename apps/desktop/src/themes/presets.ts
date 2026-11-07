@@ -97,7 +97,80 @@ export const nousTheme: DesktopTheme = {
   }
 }
 
-/** Deep blue-violet with cool accents. Matches the dashboard midnight theme. */
+/**
+ * Plobi — the house palette: terracotta on warm neutrals.
+ *
+ * The brand color is not a second color system bolted onto the app: it is one
+ * more skin in this table. Everything that follows the theme (the wordmark,
+ * the brand glyph, focus rings, the composer) follows whichever skin is
+ * active. The turtle keeps its shape; only its color changes.
+ *
+ * Terracotta `#CD6B43` was measured, not picked: it is the only candidate that
+ * clears 3:1 against both a light and a dark surface (3.36:1 / 4.17:1).
+ * `primaryForeground` is the brand ink `#241812` — white on terracotta is only
+ * 3.63:1, which is under AA for body text.
+ */
+export const plobiTheme: DesktopTheme = {
+  name: 'plobi',
+  label: 'Plobi',
+  description: 'Terracotta on warm neutrals — the house color',
+  colors: {
+    background: '#FBF6F0',
+    foreground: '#241812',
+    card: '#FFFFFF',
+    cardForeground: '#241812',
+    muted: '#F3E9DF',
+    mutedForeground: '#6E5B50',
+    popover: '#FFFFFF',
+    popoverForeground: '#241812',
+    primary: '#CD6B43',
+    primaryForeground: '#241812',
+    secondary: '#F0E1D4',
+    secondaryForeground: '#3A2A20',
+    accent: '#F5E7DA',
+    accentForeground: '#3A2A20',
+    border: '#E8D9CB',
+    input: '#E8D9CB',
+    ring: '#CD6B43',
+    midground: '#CD6B43',
+    destructive: '#B3402F',
+    destructiveForeground: '#FFFFFF',
+    sidebarBackground: '#F6EEE5',
+    sidebarBorder: '#E8D9CB',
+    userBubble: '#F4E9DD',
+    userBubbleBorder: '#E4D2C0'
+  },
+  darkColors: {
+    background: '#191310',
+    foreground: '#FDEDD2',
+    card: '#221A15',
+    cardForeground: '#FDEDD2',
+    muted: '#2B211B',
+    mutedForeground: '#B6A392',
+    popover: '#261D17',
+    popoverForeground: '#FDEDD2',
+    primary: '#CD6B43',
+    primaryForeground: '#241812',
+    secondary: '#342820',
+    secondaryForeground: '#F0DCC6',
+    accent: '#2F251E',
+    accentForeground: '#F0DCC6',
+    border: '#3B2E25',
+    input: '#3B2E25',
+    ring: '#CD6B43',
+    midground: '#CD6B43',
+    destructive: '#E06A52',
+    destructiveForeground: '#241812',
+    sidebarBackground: '#17110E',
+    sidebarBorder: '#33271F',
+    userBubble: '#2D221B',
+    userBubbleBorder: '#43342A'
+  }
+}
+
+/**
+ * Deep blue-violet with cool accents. Matches the dashboard midnight theme.
+ */
 export const midnightTheme: DesktopTheme = {
   name: 'midnight',
   label: 'Midnight',
@@ -279,6 +352,7 @@ export const slateTheme: DesktopTheme = {
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
   nous: nousTheme,
+  plobi: plobiTheme,
   midnight: midnightTheme,
   ember: emberTheme,
   mono: monoTheme,

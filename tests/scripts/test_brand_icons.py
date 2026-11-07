@@ -11,6 +11,8 @@
      无渐变、每个 fill/stroke 只能是 currentColor/none。
   5. 主色对浅底与深底**都**达到 Fluent 要求的 3.0:1（对比度是算出来的，不是挑出来的）。
   6. 生成是确定性的：同一份图元跑两次，产物逐字节相同。
+  7. 供界面用的那份主源**只能是 currentColor** —— 界面里那两处品牌图形要随主题换色，
+     塞进十六进制色就再也换不了（WP-BRAND-THEME-FOLLOW · 裁定 213）。
 
 只用 stdlib（PNG 尺寸从 IHDR 读，不引 PIL）。
 """
@@ -152,10 +154,29 @@ def test_upstream_brand_assets_are_gone():
                 text = p.read_text(encoding="utf-8", errors="replace")
                 if any(b in text for b in banned):
                     raise AssertionError(f"{p.relative_to(ROOT)} 仍引用上游品牌资产")
-    # 内部品牌位必须吃生成出来的那张
+    # 内部品牌位必须吃生成出来的那份图元表（内联 SVG，currentColor 随主题换色）
     src = (ROOT / "apps/desktop/src/components/brand-mark.tsx").read_text(encoding="utf-8")
-    assert "plobi-mark.png" in src, "BrandMark 没吃 brand_icons.py 生成的那张"
-    assert (ROOT / "apps/desktop/public/plobi-mark.png").exists()
+    assert "plobi-glyphs" in src, "BrandMark 没吃 brand_icons.py 生成的那份图元表"
+    assert (ROOT / "apps/desktop/src/components/plobi-glyphs.ts").exists()
+    assert "bg-white" not in src, "BrandMark 不许再写死白底 —— 深色模式里那是一块白砖"
+
+
+def test_theme_aware_masters_carry_no_baked_color():
+    """界面里那两处品牌图形要随主题换色 ⇒ 供它们用的主源只能是 currentColor。
+
+    固定色那两份（`plobi-wordmark.svg` / `-dark.svg`）是**品牌常量**，不归这条管；
+    这条只盯**界面用的那一份**：它一旦被塞进十六进制色，界面就再也换不了色。
+    """
+    import re
+    mono = (ROOT / "brand/plobi-wordmark-mono.svg").read_text(encoding="utf-8")
+    assert "currentColor" in mono, "currentColor 那份字标里没有 currentColor"
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", mono), "currentColor 那份字标里混进了十六进制颜色"
+
+    glyphs = (ROOT / "apps/desktop/src/components/plobi-glyphs.ts").read_text(encoding="utf-8")
+    assert "PLOBI_MARK_PATH" in glyphs and "PLOBI_WORDMARK" in glyphs, "图元表缺内容"
+    m = re.search(r"export const PLOBI_MARK_PATH =\s*'([^']+)'", glyphs)
+    assert m, "图元表里没有 PLOBI_MARK_PATH"
+    assert m.group(1) in mono, "图元表里的龟与 brand/plobi-wordmark-mono.svg 不是同一张图"
 
 
 def test_generation_is_deterministic():
