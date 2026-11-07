@@ -356,7 +356,9 @@ function SourceRowView({
           )
         : undefined}
       /* 行上**不写状态句子**（用户 11-07 拍「形状说话，坏了才红点」）：正常态只看控件，
-         坏了在控件旁一颗红点、那句人话进 tooltip 与抽屉（裁定 45.4：码不上屏）。 */
+         坏了在控件旁一颗红点、那句人话进 tooltip 与抽屉（裁定 45.4：码不上屏）。
+         第三格是**这句"这是什么"**：信源自己声明的 summary（第三方包没填就整行不画，不许前端编）。 */
+      description={row.summary ? <span className="truncate">{row.summary}</span> : undefined}
       expanded={open}
       onActivate={onActivate}
       title={
