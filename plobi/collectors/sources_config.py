@@ -254,6 +254,21 @@ def field_configured(source_id: str, key: str) -> bool:
     return any(str(env.get(name) or "").strip() for name in _env_names(source_id, key))
 
 
+def setup_complete(source_id: str) -> bool:
+    """必填那几格都填过了没有——**屏上那颗加号与调度那一道闸问同一句**。
+
+    用户 11-05：「用户没有配置微信。就不采集。相关的采集腿也不要反复报错了。」
+    从前调度只问生效开关，于是首装机器上那些没配过的源每轮都被打一遍、每轮写一条
+    `build_failed`，屏上再画一行红——那是把"还没开始"说成"坏了"。判据与 `_enrich` 的
+    `needs_setup` 共用 :func:`field_configured`（它认配置层、新密钥键、历史 `.env` 键三处），
+    不许在这里另写一套"算不算配过"。
+    """
+    from plobi.collectors import registry
+
+    spec = registry.spec(source_id)
+    return all(field_configured(source_id, field.key) for field in spec.setup_fields if field.required)
+
+
 def secret_value(source_id: str, key: str) -> Optional[str]:
     """那一格密钥**现在的值**（`None` = 没设）。采集器运行时唯一的读口。
 

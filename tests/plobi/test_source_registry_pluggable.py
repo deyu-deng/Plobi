@@ -145,6 +145,10 @@ class TestTheSwitchIsWhatTheRoundReads:
         from plobi.collectors import sources_config
 
         assert registry.spec("zdbk").collecting is True, "代码默认是开着的——这一格不是判据"
+        # 11-05 起轮子还有第二道闸：没配齐的不进（用户：「没有配置就不采集」）。
+        # 这条钉的是"开关仍然是第一道闸"，所以先把必填格配齐，再翻开关看轮子跟不跟。
+        sources_config.set_secret("zdbk", "password", "a-password")
+        sources_config.set_setup_params("zdbk", {"username": "an-account"})
         sources_config.set_enabled("zdbk", False)
 
         assert "zdbk" not in registry.collecting_sources()

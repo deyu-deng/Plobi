@@ -370,3 +370,25 @@ export async function removeExternalPackage(packageName: string): Promise<string
 
   return body.name
 }
+
+/**
+ * 用户选一个文件进信息池（`WP-SOURCE-FIRST-RUN-IMPORT`）。**不是信源动词**：
+ * 没有开关、没有频率，路径来自系统选文件框。回 `{file, format, parsed, created, updated, unchanged}`。
+ */
+export async function importSourceFile(path: string): Promise<{
+  file: string
+  format: string
+  parsed: number
+  created: number
+  updated: number
+  unchanged: number
+}> {
+  return unwrapData(
+    await window.plobiDesktop.api({
+      path: '/api/collect/import',
+      method: 'POST',
+      body: { path }
+    }),
+    '/api/collect/import'
+  )
+}

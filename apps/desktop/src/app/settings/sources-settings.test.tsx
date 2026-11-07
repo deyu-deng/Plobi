@@ -17,6 +17,7 @@ const getExternalPackages = vi.fn()
 const installExternalPackage = vi.fn()
 const removeExternalPackage = vi.fn()
 const getActionStatus = vi.fn()
+const importSourceFile = vi.fn()
 const notify = vi.fn()
 const notifyError = vi.fn()
 
@@ -32,6 +33,7 @@ vi.mock('./sources/api', async () => {
     getConversations: (id: string) => getConversations(id),
     getExternalPackages: () => getExternalPackages(),
     getSources: () => getSources(),
+    importSourceFile: (path: string) => importSourceFile(path),
     installExternalPackage: (name: string) => installExternalPackage(name),
     removeExternalPackage: (name: string) => removeExternalPackage(name),
     saveSourceSetup: (id: string, params: Record<string, string>) => saveSourceSetup(id, params),
@@ -402,7 +404,7 @@ describe('what the row says', () => {
         enabled: false,
         enabled_origin: 'spec',
         source: 'timetable',
-        category: 'file',
+        category: 'site',
         status: 'disconnected',
         status_code: 'never_enabled',
       })
@@ -455,17 +457,18 @@ describe('what the row says', () => {
   })
 
   it('guides an unconfigured source into the form instead of flipping a dead switch', async () => {
-    // 「第一次点击就引导配置跳转到相应的界面」。一颗"拨上去什么也不会发生"的开关
-    // 是这一屏最容易骗人的形状：用户会以为已经在采了。
+    // 用户 11-05：「switch 初始状态都应该是一个 + 号。点击后会指引用户配置。」
+    // 所以没配过的那一行**根本没有开关**——是一颗加号；点它进引导并聚焦第一格。
     const ICS = { help: '', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
 
     getSources.mockResolvedValue(payload([
-      row({ category: 'file', enabled: false, has_builder: true, setup: {}, setup_fields: [ICS], source: 'timetable', status: 'disconnected' })
+      row({ category: 'site', enabled: false, has_builder: true, setup: {}, setup_fields: [ICS], source: 'timetable', status: 'disconnected' })
     ]))
 
     const { container } = render(<SourcesSettings />)
-    await waitFor(() => expect(switches(container).length).toBe(1))
-    fireEvent.click(switches(container)[0])
+    await waitFor(() => expect(screen.getByTestId('source-configure-timetable')).toBeTruthy())
+    expect(switches(container).length).toBe(0)
+    fireEvent.click(screen.getByTestId('source-configure-timetable'))
 
     expect(setSourceEnabled).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
@@ -626,7 +629,7 @@ describe('the drawer’s form', () => {
     picker.mockClear()
     ;(window as { plobiDesktop?: unknown }).plobiDesktop = { selectPaths: vi.fn() }
     await openDrawer(row({
-      category: 'file',
+      category: 'site',
       enabled: true,
       has_builder: true,
       setup_fields: [
@@ -649,7 +652,7 @@ describe('the drawer’s form', () => {
     // 没有桌面壳（测试环境、非桌面构建）⇒ 不许画一枚按了没反应的钮。
     delete (window as { plobiDesktop?: unknown }).plobiDesktop
     await openDrawer(row({
-      category: 'file',
+      category: 'site',
       enabled: true,
       has_builder: true,
       setup_fields: [
@@ -674,7 +677,7 @@ describe('the drawer’s form', () => {
   }
 
   it('holds the form only after the row is opened', async () => {
-    await openDrawer(row({ category: 'file', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
+    await openDrawer(row({ category: 'site', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
 
     expect(screen.getByTestId('setup-timetable')).toBeTruthy()
   })
@@ -689,7 +692,7 @@ describe('the drawer’s form', () => {
 
   it('draws only the fields the source itself declared, and falls back to its label', async () => {
     await openDrawer(row({
-      category: 'file',
+      category: 'site',
       enabled: true,
       has_builder: true,
       setup_fields: [{ ...ICS, key: 'third_party_thing', label: 'Their own field' }],
@@ -721,7 +724,7 @@ describe('the drawer’s form', () => {
   })
 
   it('will not save while a required field is empty', async () => {
-    await openDrawer(row({ category: 'file', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
+    await openDrawer(row({ category: 'site', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
 
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect(saveSourceSetup).not.toHaveBeenCalled()
@@ -730,7 +733,7 @@ describe('the drawer’s form', () => {
   it('sends only the filled fields, never an empty string', async () => {
     saveSourceSetup.mockResolvedValue(undefined)
     await openDrawer(row({
-      category: 'file',
+      category: 'site',
       enabled: true,
       has_builder: true,
       setup_fields: [ICS, { help: '', key: 'note', kind: 'text', label: 'Note', required: false }],
@@ -750,7 +753,7 @@ describe('the drawer’s form', () => {
     // 于是这一格钉的是两件事：**type=password**，且**这里永远没有它的旧值**
     // （后端只回"设过没有"，所以掩码框里不许出现一串星号假装是原值）。
     await openDrawer(row({
-      category: 'file',
+      category: 'site',
       enabled: true,
       has_builder: true,
       secrets: { password: true },
@@ -802,7 +805,7 @@ describe('the drawer’s form', () => {
     // 这条测试就是钉"它不许回来"，同时钉存出去的仍是 `cadence.py` 认的那一句。
     saveSourceSetup.mockResolvedValue(undefined)
     await openDrawer(row({
-      category: 'file',
+      category: 'site',
       enabled: true,
       has_builder: true,
       setup: { cadence: 'every 6h' },
@@ -986,8 +989,8 @@ describe('the categories fold', () => {
   })
 
   it('hangs the rows under the header, not beside it', async () => {
-    // 用户 10-26：「大类组头，和最顶层的信源，还是要区分一下。缩进一点」——
-    // 此前组头与行同宽同级，那一屏读起来是"三行大字 + 十个并列的行"，谁属于哪一组全靠猜。
+    // 用户 11-05：「我们的 UI 也没有和别的界面统一」⇒ 行住进 `.dl-card`（与 Model／Appearance
+    // 同源的那份卡壳），组抬头在卡外。10-26 那条「缩进＋左边界」被这一条取代。
     // 这一段先明说展开（默认规则是有报错才展开，这里要验的是展开之后的层级形状）。
     $fold.set({ software: 'open' })
     getSources.mockResolvedValue(payload([
@@ -999,11 +1002,31 @@ describe('the categories fold', () => {
     await waitFor(() => expect(screen.getByTestId('source-group-software-rows')).toBeTruthy())
     const rows = screen.getByTestId('source-group-software-rows')
 
-    // 行在这个容器里，容器**缩进一档并挂一条左边界**；组头不在里面（否则缩进就成了套娃）。
+    // 行在卡里，组头不在里面（否则抬头也成了卡中的一行）。
     expect(rows.textContent).toContain('WeChat')
-    expect(rows.className).toContain('ml-2')
-    expect(rows.className).toContain('border-l')
+    expect(rows.className).toContain('dl-card')
     expect(rows.contains(screen.getByTestId('source-group-software-toggle'))).toBe(false)
+  })
+
+  it('turns the Files group into an import button, not a source row', async () => {
+    // 用户 11-05：「本地文件这一个选项……毕竟没有采集频率。我觉得可以做成一个区分的导入按钮。」
+    // 所以 file 那一组里不再画 timetable 那颗开关/加号，画的是一颗导入按钮；点它走系统选文件框。
+    importSourceFile.mockResolvedValue({ created: 1, file: '课程.ics', format: '.ics', parsed: 1, unchanged: 0, updated: 0 })
+    $fold.set({ file: 'open' })
+    getSources.mockResolvedValue(payload([
+      row({ category: 'file', enabled: false, source: 'timetable', status: 'disconnected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-import-row')).toBeTruthy())
+    expect(screen.queryByTestId('source-configure-timetable')).toBeNull()
+    expect(screen.queryByRole('switch')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import files' }))
+
+    await waitFor(() => expect(importSourceFile).toHaveBeenCalledWith('D:/school/课程.ics'))
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'success' })))
   })
 
   it('keeps a group he folded folded, even when something inside it breaks', async () => {
@@ -1059,9 +1082,9 @@ describe('the categories fold', () => {
 
     await waitFor(() => expect(screen.getByTestId('source-group-email-toggle')).toBeTruthy())
     // 5 条全正常 ⇒ 只画一个数字。0 条报错不画成"· 0 条报错"（那是噪声不是信息）。
-    expect(screen.getByTestId('source-group-email-toggle').textContent).toBe('Mailboxes5')
+    expect(screen.getByTestId('source-group-email-toggle').textContent).toBe('Mailboxes · 5')
     expect(screen.getByTestId('source-group-site-toggle').textContent)
-      .toBe('Websites1 · 1 needing attention')
+      .toBe('Websites · 1 · 1 needing attention')
   })
 
   it('never folds the group that holds the install action', async () => {

@@ -28,14 +28,16 @@ import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { DeviceWatch, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Rss } from '@/lib/icons'
+import { selectDesktopPaths } from '@/lib/desktop-fs'
+import { Layers3, Plus } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
-import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { getSources, importSourceFile, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { $fold, decide, isOpen } from './sources/collapse'
 import { ConversationList } from './sources/conversation-list'
 import { ExternalSources } from './sources/external-sources'
+import { firstRunLabels, type FirstRunLabels } from './sources/first-run-labels'
 import { SetupFields } from './sources/setup-fields'
 import { parseCadence } from './sources/setup-fields'
 import { SourceAvatar } from './sources/source-icon'
@@ -44,22 +46,10 @@ import { groupByCategory, needsSetup, relativeTime, statusOf, statusReason, visi
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
-/** 分类 → 图标。**不用字母或序号代替图标** —— 旁边就是设置里其他分类的写法。
- *  10-27 分类收成一条轴（这条数据**从哪来**）之后，七个值一一对得上一个形状；
- *  「订阅」「设备」这两格今天还没有成员（空类整块不画 ⇒ 图标今天上不了屏），
- *  但"有类名没图标"是半件事，真接上那天就得回头补 —— 所以一起给（用户 10-25 拍的两格）。 */
-const CATEGORY_ICON: Record<string, typeof Globe> = {
-  custom: Package,
-  device: DeviceWatch,
-  email: Mail,
-  feed: Rss,
-  file: FolderOpen,
-  site: Globe,
-  software: MessageCircle
-}
-
 export function SourcesSettings() {
-  const labels = useI18n().t.settings.sources
+  const i18n = useI18n()
+  const labels = i18n.t.settings.sources
+  const fr = firstRunLabels(i18n.locale)
 
   const [payload, setPayload] = useState<null | SourcesPayload>(null)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -139,6 +129,38 @@ export function SourcesSettings() {
     }
   }
 
+  const onImport = async () => {
+    // 系统选文件框（用户自己点的那一下），扩展名闸门在框里就先挡一道；
+    // 后端还会再拒一次并说清支持哪几种——两道都不静默吞。
+    const paths = await selectDesktopPaths({
+      filters: [{ name: fr.importHint, extensions: ['ics', 'ical', 'csv', 'md', 'txt', 'opml'] }],
+      multiple: true,
+      title: fr.importFiles
+    })
+
+    if (paths.length === 0) {
+      return
+    }
+
+    setBusy('import')
+
+    try {
+      let landed = 0
+
+      for (const path of paths) {
+        const result = await importSourceFile(path)
+        landed += result.created + result.updated
+      }
+
+      await reload()
+      notify({ kind: 'success', message: fr.importDone.replace('{n}', String(landed)) })
+    } catch (err) {
+      notifyError(err, fr.importFailed)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   if (loadFailed || !payload || !Array.isArray(payload.sources) || !Array.isArray(payload.categories)) {
     // 双保险：api 层已经校验过形状（见 ./sources/api.ts），这里再挡一道——
     // 一个字段缺失曾经把整个应用崩进根 error boundary。
@@ -154,15 +176,24 @@ export function SourcesSettings() {
   const groups = visibleGroups(groupByCategory(payload.sources, payload.categories))
     // 筛过之后**每组重新数一遍**：组头那一格条数说的是"这一段现在画了几行"，
     // 不是"这一段一共有几行"——画一个筛掉却仍写原数的组头就是一句假话。
-    .map(group => ({ ...group, rows: group.rows.filter(row => keepsRow(row, tags)) }))
-    .filter(group => group.rows.length > 0 || group.category === 'custom')
+    // `file` 那一类不再画信源行（用户 11-05：它没有采集频率，该是一颗导入按钮），
+    // 但组要留着，否则那颗按钮没地方住。
+    .map(group => ({
+      ...group,
+      rows: group.category === 'file' ? [] : group.rows.filter(row => keepsRow(row, tags))
+    }))
+    .filter(group => group.rows.length > 0 || group.category === 'custom' || group.category === 'file')
 
   // 只画翻得成人话的形状：没进目录的 `kind` 是机器词，不许直接上屏（屏幕文案纪律）。
   const chips = tagOptions(payload.sources).filter(kind => labels.tags[kind as keyof Labels['tags']])
 
   return (
     <SettingsContent>
-      <SectionHeading icon={Layers3} meta={String(payload.sources.length)} title={labels.title} />
+      <SectionHeading
+        icon={Layers3}
+        meta={String(payload.sources.filter(row => row.category !== 'file').length)}
+        title={labels.title}
+      />
 
       {chips.length > 0
         ? (
@@ -191,56 +222,62 @@ export function SourcesSettings() {
         const errors = group.rows.filter(row => statusOf(row) === 'error').length
         const expanded = isOpen(fold, { category: group.category, errors })
 
+        const meta = errors > 0
+          ? `${group.rows.length} · ${labels.groups.errors.replace('{n}', String(errors))}`
+          : group.category === 'file' ? '' : String(group.rows.length)
+
         return (
-          <section className="mt-4" data-testid={`source-group-${group.category}`} key={group.category}>
+          <section className="mt-5 first:mt-0" data-testid={`source-group-${group.category}`} key={group.category}>
+            {/* 组抬头照 `SettingsGroup` 那份统一外壳（11-02 拍）：12px 常规体 tertiary，
+                不再是中黑体＋图标那一行。10-26 那条「缩进＋左边界」被用户 11-05 的统一令取代：
+                行住进 `.dl-card`（8px squircle＋发丝边＋行间虚线），组与组靠卡分开，不靠缩进猜。 */}
             <button
               aria-expanded={expanded}
               aria-label={expanded ? labels.groups.collapse : labels.groups.expand}
-              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center rounded-md px-1 text-left hover:bg-(--ui-bg-hover)"
+              className="flex min-h-11 w-full items-end justify-between gap-3 px-1 text-left"
               data-testid={`source-group-${group.category}-toggle`}
               onClick={() => { decide(group.category, !expanded) }}
               type="button"
             >
-              <span className="min-w-0 flex-1">
-                <SectionHeading
-                  icon={CATEGORY_ICON[group.category] ?? Layers3}
-                  // 0 条报错不画那半句（与"没定过的不画徽章"同一条判据：画上去是噪声不是信息）。
-                  meta={errors > 0 ? `${group.rows.length} · ${labels.groups.errors.replace('{n}', String(errors))}` : String(group.rows.length)}
-                  title={labels.categories[group.category as keyof Labels['categories']] ?? group.category}
-                />
+              <span className="min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)] font-normal leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
+                {labels.categories[group.category as keyof Labels['categories']] ?? group.category}
+                {meta ? ` · ${meta}` : ''}
               </span>
               <DisclosureCaret className="size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded} />
             </button>
 
             {expanded
               ? (
-                  <>
-                    {group.category === 'custom' ? <ExternalSources labels={labels} onChanged={reload} /> : null}
+                  <div className="dl-card mt-2 px-4" data-testid={`source-group-${group.category}-rows`}>
+                    <div className="flex flex-col">
+                      {group.category === 'custom' ? <ExternalSources labels={labels} onChanged={reload} /> : null}
 
-                    {/* 行**缩进一档并挂一条左边界**（用户 10-26：「大类组头，和最顶层的信源，
-                        还是要区分一下。缩进一点」）。此前组头与行同宽同级，那一屏读起来是
-                        十个并列的行加三行大字标题，"谁属于哪一组"全靠猜。
-                        抽屉里的会话名单分组用的就是这个形状——两处同一形状，不各造一套。 */}
-                    <div className="ml-2 space-y-1 border-l border-(--ui-border) pl-2" data-testid={`source-group-${group.category}-rows`}>
-                      {group.rows.map(row => (
-                        <SourceRowView
-                          busy={busy === row.source}
-                          guiding={guide === row.source}
-                          key={row.source}
-                          labels={labels}
-                          onActivate={() => {
-                            setOpen(open === row.source ? null : row.source)
-                            setGuide(null)
-                          }}
-                          onReload={reload}
-                          onToggle={onToggle}
-                          onTry={onTry}
-                          open={open === row.source}
-                          row={row}
-                        />
-                      ))}
+                      {group.category === 'file'
+                        ? <ImportFilesRow busy={busy === 'import'} fr={fr} onImport={() => { void onImport() }} />
+                        : group.rows.map(row => (
+                            <SourceRowView
+                              busy={busy === row.source}
+                              fr={fr}
+                              guiding={guide === row.source}
+                              key={row.source}
+                              labels={labels}
+                              onActivate={() => {
+                                setOpen(open === row.source ? null : row.source)
+                                setGuide(null)
+                              }}
+                              onConfigure={() => {
+                                setOpen(row.source)
+                                setGuide(row.source)
+                              }}
+                              onReload={reload}
+                              onToggle={onToggle}
+                              onTry={onTry}
+                              open={open === row.source}
+                              row={row}
+                            />
+                          ))}
                     </div>
-                  </>
+                  </div>
                 )
               : null}
           </section>
@@ -252,9 +289,11 @@ export function SourcesSettings() {
 
 function SourceRowView({
   busy,
+  fr,
   guiding,
   labels,
   onActivate,
+  onConfigure,
   onReload,
   onTry,
   onToggle,
@@ -262,9 +301,11 @@ function SourceRowView({
   row
 }: {
   busy: boolean
+  fr: FirstRunLabels
   guiding: boolean
   labels: Labels
   onActivate: () => void
+  onConfigure: () => void
   onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
   onToggle: (row: SourceRow, enabled: boolean) => Promise<void>
@@ -282,18 +323,36 @@ function SourceRowView({
     ?? row.display_name ?? labels.unknownSource
 
   const checked = row.enabled ?? false
+  const unconfigured = needsSetup(row)
 
   return (
     <ListRow
       action={
-        // 行上**只有这一颗**。旧版这里最多三颗文字按钮，用户的话是「不要有这么多按钮」。
-        <Switch
-          aria-label={`${displayName} — ${labels[STATUS_KEY[status]]}`}
-          checked={checked}
-          disabled={busy || row.enabled === null}
-          onCheckedChange={next => { void onToggle(row, next) }}
-          size="xs"
-        />
+        // 行上**只有这一颗**。首装没配过时它是一颗加号（用户 11-05：「switch 初始状态都应该是一个 + 号」），
+        // 点它进引导；配过之后才换回开关。旧版这里最多三颗文字按钮，用户的话是「不要有这么多按钮」。
+        unconfigured
+          ? (
+              <Button
+                aria-label={fr.configure.replace('{name}', displayName)}
+                className="size-6 rounded-full p-0"
+                data-testid={`source-configure-${row.source}`}
+                disabled={busy}
+                onClick={onConfigure}
+                size="icon"
+                variant="ghost"
+              >
+                <Plus className="size-3.5" />
+              </Button>
+            )
+          : (
+              <Switch
+                aria-label={`${displayName} — ${labels[STATUS_KEY[status]]}`}
+                checked={checked}
+                disabled={busy || row.enabled === null}
+                onCheckedChange={next => { void onToggle(row, next) }}
+                size="xs"
+              />
+            )
       }
       below={open
         ? (
@@ -310,7 +369,7 @@ function SourceRowView({
       description={
         <span className="flex flex-wrap items-center gap-2">
           <span aria-hidden="true" className={STATUS_DOT[status]} />
-          <span>{labels[STATUS_KEY[status]]}</span>
+          <span>{unconfigured ? fr.notConfigured : labels[STATUS_KEY[status]]}</span>
           {/* 只有出错态多这一行，且是**目录里那句人话**（码不上屏，裁定 45.4）。
               执行方逐字原话在抽屉里。正常态什么都不多写——用户 10-22：「不要有这么多东西」。 */
             status === 'error' ? <span className="text-destructive">{statusReason(row, labels)}</span> : null}
@@ -525,4 +584,34 @@ function sidecarOutcomeLabel(listening: boolean, wanted: boolean, labels: Labels
   }
 
   return listening ? labels.sidecarNotDown : labels.sidecarDown
+}
+
+/**
+ * Files 那一类不再是一条信源（用户 11-05：「毕竟没有采集频率……做成一个区分的导入按钮」）。
+ * 它是一次用户主动的动作：选文件 → 进池。没有开关、没有频率、不进每一轮。
+ */
+function ImportFilesRow({ busy, fr, onImport }: {
+  busy: boolean
+  fr: FirstRunLabels
+  onImport: () => void
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-3 py-3"
+      data-slot="settings-row"
+      data-testid="source-import-row"
+    >
+      <div className="min-w-0">
+        <p className="text-[length:var(--conversation-text-font-size)] text-(--ui-text-primary)">
+          {fr.importFiles}
+        </p>
+        <p className="mt-0.5 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+          {fr.importHint}
+        </p>
+      </div>
+      <Button disabled={busy} onClick={onImport} size="sm" variant="secondary">
+        {fr.importFiles}
+      </Button>
+    </div>
+  )
 }

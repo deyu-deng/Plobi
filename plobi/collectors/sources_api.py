@@ -218,8 +218,7 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
     # 「还缺必填吗」问的是 `sources_config.field_configured` 那一处（配置格 / 新密钥键 / 这条声明的
     # 历史键名回退，三处任一即算填过）：只看前者会把"早就在 `.env` 里配过账密"的人念成没配，
     # 于是一颗开关只把抽屉打开让他再填一遍——判据不许比真读口窄。
-    needs_setup = any(f["required"] and not sources_config.field_configured(source_id, f["key"])
-                      for f in fields)
+    needs_setup = not sources_config.setup_complete(source_id)
     pool_count, pool_kinds = _pool_counts(source_id)
     probe = _probe_of(spec)
     status, status_code = status_of(enabled=enabled, needs_setup=needs_setup,
@@ -527,3 +526,31 @@ async def decide_source_conversation(source_id: str, body: AdmissionRequest):
 
     return {"ok": True, "data": {"source": source_id, "id": body.id, "status": body.status,
                                  **_conversations_of(source_id)}}
+
+
+class ImportRequest(BaseModel):
+    path: str
+
+
+@router.post("/import", name="collect_import_file")
+async def import_file_route(body: ImportRequest):
+    """用户选一个文件进信息池（`WP-SOURCE-FIRST-RUN-IMPORT`）。**不是信源**：没有开关、没有频率。
+
+    路径来自桌面那颗系统选文件框（用户自己点的），这里仍按扩展名与大小拒收不认的东西；
+    解析与落库都在 `file_import` 那一档，预览与导入共用同一只手。
+    """
+    from plobi.collectors import file_import
+
+    try:
+        result = file_import.import_file(body.path)
+    except file_import.UnsupportedFormat as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except file_import.ImportTooLarge as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"读不到这个文件：{exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - 解析坏了也是读数，面上要看得见为什么没进
+        logger.warning("sources: import of %s failed: %s", body.path, exc)
+        raise HTTPException(status_code=400, detail=f"这个文件解析不了：{type(exc).__name__}: {exc}") from exc
+
+    return {"ok": True, "data": result}

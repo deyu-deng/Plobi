@@ -476,7 +476,16 @@ def collecting_sources() -> tuple[str, ...]:
             enabled = item.collecting
             unreadable.append(str(exc))
         if enabled:
-            selected.append(source_id)
+            # 第二道闸（用户 11-05）：没配齐的不进这一轮。首装机器上那些源从前每轮被打一遍、
+            # 每轮写一条 build_failed、屏上再画一行红——把"还没开始"说成"坏了"。
+            # 判据与屏上那颗加号共用 sources_config.setup_complete，不另写一套。
+            try:
+                ready = sources_config.setup_complete(source_id)
+            except sources_config.SourceConfigError as exc:
+                ready = True                      # 配置层读不到时照旧跑，但那句话要留在日志里
+                unreadable.append(str(exc))
+            if ready:
+                selected.append(source_id)
 
     if unreadable:
         logger.warning("registry: 配置层读不到，这一轮按代码默认值挑信源：%s", "; ".join(unreadable[:2]))
