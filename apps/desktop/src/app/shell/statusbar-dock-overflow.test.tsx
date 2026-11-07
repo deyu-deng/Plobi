@@ -41,9 +41,23 @@ const ITEMS: readonly StatusbarItem[] = [
   { detail: '00:12:34', id: 'agenda', label: '日程', variant: 'text' }
 ]
 
-function openOverflow() {
+/**
+ * 带面板的那一格（出口／网关）：面板自己带宽度（`w-auto` 跟着面板走，或 `w-72` 那种定宽）。
+ * 这一格进「⋯」之后，**那张卡片不许再压一个自己的宽度**——11-07 用户截图：出口那一屏
+ * 右边被裁掉一块（选中的那颗只剩一块蓝底、「System proxy」整颗不见了），就是这里
+ * 写死的 `w-56`（224px）把面板自己的 384px 裁了。
+ */
+const PANEL_ITEM: StatusbarItem = {
+  id: 'egress',
+  label: '出口',
+  menuClassName: 'w-auto',
+  menuContent: () => <div data-testid="panel">面板</div>,
+  variant: 'menu'
+}
+
+function openOverflow(items: readonly StatusbarItem[] = ITEMS) {
   // jsdom 量不到宽度 ⇒ 一枚都放不下，整批都进「⋯」，正好照出菜单里的样子。
-  render(<StatusbarControls dock inline items={ITEMS} />)
+  render(<StatusbarControls dock inline items={items} />)
   const trigger = screen.getByRole('button', { name: '更多图标' })
 
   // Radix 的触发键要先认下这一次按下（pointerdown/mousedown），才会在 click 上开。
@@ -54,6 +68,16 @@ function openOverflow() {
   fireEvent.click(trigger, { button: 0, detail: 1 })
 
   return screen.findByRole('menu')
+}
+
+/** 面板那一格点开：清单换成面板本身，菜单不关。 */
+async function openPanel() {
+  const menu = await openOverflow([...ITEMS, PANEL_ITEM])
+  const row = within(menu).getAllByRole('menuitem').find(item => /出口/.test(item.textContent ?? ''))
+
+  fireEvent.click(row as HTMLElement)
+
+  return screen.findByTestId('panel')
 }
 
 afterEach(() => {
@@ -89,5 +113,17 @@ describe('左栏「⋯」里的那些行', () => {
 
     expect(screen.getByText('定时任务')).toBeTruthy()
     expect(screen.getByText('待确认')).toBeTruthy()
+  })
+
+  it('带面板的那一格：卡片宽度跟着那一格自己的口径，不许再压一个 w-56', async () => {
+    // 11-07 用户截图（出口那一屏右边被裁）：面板自己 384px，卡片却写死 224px ⇒
+    // 多出来那一截被 `overflow-x-hidden` 裁掉——选中的那颗只剩一块蓝底，
+    // 右边那颗按钮整颗不见了。宽度只有一个来源：那一格说多少就是多少。
+    await openPanel()
+
+    const card = document.querySelector('[data-slot="dropdown-menu-content"]')
+    expect(card, '面板没在那张卡片里').not.toBeNull()
+    expect(card?.className).toContain('w-auto')
+    expect(card?.className).not.toMatch(/(^|\s)w-56(\s|$)/)
   })
 })

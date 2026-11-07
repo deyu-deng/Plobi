@@ -224,7 +224,12 @@ function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className={cn('w-56', panel && 'p-0')}
+        // 宽度只有一个来源：带面板的那一格，卡片跟着**那一格自己**的口径走（出口是
+        // `w-auto`——面板自己 384px；网关是 `w-72`）。这里再压一个 `w-56` 就是第二个来源：
+        // 面板多出来那一截被卡片自己的 `overflow-x-hidden` 裁掉——用户 11-07 截图正是
+        // 出口那一屏右边被裁（选中的那颗只剩一块蓝底，右边那颗按钮整颗不见了）。
+        // 清单那一头照旧 `w-56`（那是一张菜单，不是一块面板）。
+        className={cn(panel ? (panel.menuClassName ?? 'w-auto') : 'w-56', panel && 'p-0')}
         side="top"
         sideOffset={6}
       >
