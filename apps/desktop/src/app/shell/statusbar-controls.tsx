@@ -238,7 +238,7 @@ function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label
         ) : (
           items.map(item => (
             <DropdownMenuItem
-              className="gap-2 text-foreground focus:bg-accent [&_svg]:size-4"
+              className="items-start gap-2 py-1.5 text-foreground focus:bg-accent [&_svg]:size-4"
               key={item.id}
               onSelect={event => {
                 if (item.menuContent) {
@@ -266,12 +266,28 @@ function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label
               >
                 {item.icon}
               </span>
-              <span className="min-w-0 flex-1 truncate">
-                {typeof item.label === 'string' ? item.label : (item.title ?? item.id)}
+              {/*
+               * 两行：名字一行、读数一行（用户 11-07 20:5x 拍板）。
+               *
+               * 以前读数是 `shrink-0`（不许缩），名字是 `min-w-0 flex-1 truncate`
+               * （唯一准缩的那一格）⇒ 一句长读数（"needs setup · 3 sidecars not
+               * running"，36 个字）把整行吃光，名字被压成一个字母，屏幕上根本看不出
+               * 这一行是什么（用户截图里只剩一个"G"）。所以读数另起一行：名字永远
+               * 完整，读数自己省略、悬停给全文。
+               *
+               * 没有读数的行仍是**一行**——那几行（设置／Cron／日程／出口）不长高。
+               */}
+              <span className="grid min-w-0 flex-1 gap-0.5">
+                <span className="truncate">{typeof item.label === 'string' ? item.label : (item.title ?? item.id)}</span>
+                {item.detail ? (
+                  <span
+                    className="truncate text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)"
+                    title={typeof item.detail === 'string' ? item.detail : undefined}
+                  >
+                    {item.detail}
+                  </span>
+                ) : null}
               </span>
-              {item.detail ? (
-                <span className="shrink-0 text-muted-foreground/80">{item.detail}</span>
-              ) : null}
             </DropdownMenuItem>
           ))
         )}

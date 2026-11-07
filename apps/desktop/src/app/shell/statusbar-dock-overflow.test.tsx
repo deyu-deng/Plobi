@@ -108,6 +108,28 @@ describe('左栏「⋯」里的那些行', () => {
     expect(row?.textContent).toContain('00:12:34')
   })
 
+  it('读数不许把名字挤没：名字一行、读数一行（用户 11-07 20:5x 拍板）', async () => {
+    // 用户截图：网关那一行左边只剩一个"G"——读数 36 个字、卡片只有 224px，
+    // 而读数是 `shrink-0`、名字是唯一准缩的那一格 ⇒ 名字被吃成一个字母。
+    // 所以读数另起一行：名字永远完整，读数自己省略、悬停给全文。
+    const menu = await openOverflow()
+    const row = within(menu).getAllByRole('menuitem').find(item => /网关/.test(item.textContent ?? '')) as HTMLElement
+
+    const name = within(row).getByText('网关')
+    const detail = within(row).getByText('3 项')
+
+    // 两行：读数与名字同属那一列，不是横向并排的两格。
+    expect(detail.parentElement).toBe(name.parentElement)
+    expect(name.parentElement?.className).toContain('grid')
+
+    // 读数自己省略，全文进悬停。
+    expect(detail.className).toContain('truncate')
+    expect(detail.getAttribute('title')).toBe('3 项')
+
+    // 图标对齐第一行（两行时不能垂直居中到整行中间）。
+    expect(row.className).toContain('items-start')
+  })
+
   it('那张六枚的单子只管左栏底部，吸在窗口角上的经典状态栏照旧全给', () => {
     render(<StatusbarControls items={[...ITEMS, { id: 'cron', label: '定时任务', variant: 'action' }]} />)
 
