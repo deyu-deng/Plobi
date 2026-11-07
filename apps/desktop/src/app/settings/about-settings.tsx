@@ -97,7 +97,7 @@ export function AboutSettings() {
 
   if (release?.newer) {
     // The shell itself is behind: that is the one update the user actually
-    // asked for ("点一下就升级"). It comes before the agent-checkout state.
+    // asked for ("一键更新"). It comes before the agent-checkout state.
     statusLine = a.updateReadyVersion(release.latest ?? '')
     statusTone = 'available'
   } else if (release && !release.ok) {
