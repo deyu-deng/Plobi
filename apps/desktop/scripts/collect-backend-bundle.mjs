@@ -29,6 +29,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { looksRunnable } from './build-chatlog.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DESKTOP_ROOT = path.resolve(HERE, '..')
@@ -335,7 +336,12 @@ if (!chatlogBinName) {
     const magic = head.toString('latin1')
     // `go build -o` writes a Go archive (and exits 0) when the -o package is not
     // `main`; magic bytes are the only cheap way to tell that from a real binary.
-    ok = (targetPlatform === 'win32' ? magic.startsWith('MZ') : magic.startsWith('\x7fELF')) && size > 1048576
+    //
+    // The judgement lives in build-chatlog.mjs (looksRunnable) — one source of
+    // truth, and it knows all three executable formats (PE/ELF/Mach-O).  The old
+    // platform-branched check here knew only MZ and ELF, so a perfectly good
+    // **Mach-O** (the macOS build) was rejected as "not a runnable binary".
+    ok = looksRunnable(magic) && size > 1048576
     detail = `magic ${JSON.stringify(magic)}, ${(size / 1048576).toFixed(1)} MB`
   }
 
