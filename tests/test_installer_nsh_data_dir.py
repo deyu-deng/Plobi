@@ -82,6 +82,27 @@ def test_the_script_is_utf8_with_bom():
     )
 
 
+def test_the_default_is_the_previous_choice_when_there_is_one():
+    """重装时那一页的默认值 = 上一次选的那一格（注册表里那一格）。
+
+    静默更新（`/S`）时那一页**根本不跑** ⇒ 那一格只能从这里来；否则每次更新都会把用户
+    选的位置改回默认格（数据看着像丢了，运行时也搬到另一块盘）。
+    """
+    pre = _macro_text("preInit")
+
+    assert "ReadRegStr" in pre, "默认格必须先看注册表里那一次的选择"
+    assert '"Software\\Plobi"' in pre and '"DataDir"' in pre, pre
+
+
+def test_uninstall_keeps_the_recorded_directory():
+    """卸载只摘程序的门牌，不抹掉「数据目录在哪一格」——重装指回同一格，历史还在。"""
+    macro = _macro_text("customUnInstall")
+
+    assert 'DeleteRegValue HKCU "Software\\Plobi" "DataDir"' not in macro, (
+        "抹掉那一格 ⇒ 重装时又回到默认格，用户以为数据没了"
+    )
+
+
 def test_the_builder_actually_includes_this_file():
     """这一页进包靠 `package.json` 的 nsis.include——它必须指着**仓里这一份**。
 

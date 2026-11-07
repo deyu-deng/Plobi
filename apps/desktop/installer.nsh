@@ -16,9 +16,16 @@ Var PlobiDataPage
 Var PlobiDataDirField
 Var PlobiDataDirValue
 
-; 安装器一开跑就把默认格摆好；用户不动它就是一个干净的新装。
+; 默认格：上一次装过就沿用上次那一格，否则是 %LOCALAPPDATA%\Plobi。
+;
+; 这一格不只是页面上那个默认值——**静默更新（/S）时那一页根本不跑**，那一格只能从这里
+; 来；否则每次更新都会把用户选的位置改回默认格。
 !macro preInit
   StrCpy $PlobiDataDirValue "$LOCALAPPDATA\Plobi"
+  ReadRegStr $0 HKCU "Software\Plobi" "DataDir"
+  ${If} $0 != ""
+    StrCpy $PlobiDataDirValue $0
+  ${EndIf}
 !macroend
 
 !macro customPageAfterChangeDir
@@ -83,7 +90,6 @@ FunctionEnd
 !macroend
 
 !macro customUnInstall
-  ; 只摘门牌，不动数据。卸载后重装指回同一格，历史还在。
-  DeleteRegValue HKCU "Software\Plobi" "DataDir"
+  ; 只摘程序的门牌，不动数据，也不抹掉「数据目录在哪一格」——重装指回同一格，历史还在。
   DeleteRegKey /ifempty HKCU "Software\Plobi"
 !macroend
