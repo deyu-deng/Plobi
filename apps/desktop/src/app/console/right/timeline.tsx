@@ -53,6 +53,21 @@ function padHour(hour: number): string {
 }
 
 /**
+ * 此刻是当天第几分钟——**带小数**（秒也算进去）。
+ *
+ * 这根「现在」线要随时间连续爬：只算到分钟，落点就被量化成 0.73px 的台阶；
+ * 而更早的写法连台阶都没有——它在每次重渲染时读一次钟，然后就不再动了。
+ */
+function nowMinutesOfDay(date: Date): number {
+  return (
+    date.getHours() * 60 +
+    date.getMinutes() +
+    date.getSeconds() / 60 +
+    date.getMilliseconds() / 60000
+  )
+}
+
+/**
  * 抬头上那串「几号 · 星期几」。Apple 日历那一族的抬头不只有"今天"——光看
  * 「今天／明天」分不清这一轴是几号，跨零点尤其看不出来。跟着界面语言走，
  * 不自己写死四种语言的星期名。
@@ -91,12 +106,54 @@ function blockBorderClass(block: TimelineBlock): string {
   return 'border-emerald-600/40 bg-emerald-500/5'
 }
 
+/**
+ * 「现在」那一根线（裁定 40 的 accent 条 ＋ 前头那颗点）。
+ *
+ * - **自带秒针**：每秒把当下换算成带小数的分钟，位置也跟着换成小数像素——
+ *   于是它连续爬，而不是每分钟跳一格、或者干脆停在某次重渲染那一刻。
+ * - **点与线同心**：点与线是同一个 flex 行的两端，由 `items-center` 一次居中；
+ *   整行只搬一次（`-translate-y-1/2` 搬的是行自己）。早先那颗点自带
+ *   `-translate-y-1/2`，在已经居中的行里又多抬了半格，于是点永远比线高
+ *   3px（用户 11-07 截图：点与线的中心没对上）。
+ * - **压在整点线上**：位置与整点发丝线同一套「分钟 → 像素」映射，
+ *   所以整点时这根线正好落在那一小时的线上，不高不低。
+ */
+function NowLine({ day }: { day: TimelineDay }) {
+  const [nowMinutes, setNowMinutes] = useState(() => nowMinutesOfDay(new Date()))
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMinutes(nowMinutesOfDay(new Date())), 1000)
+
+    return () => window.clearInterval(id)
+  }, [])
+
+  const topPx = ((nowMinutes - day.spanStartMinutes) / 60) * HOUR_HEIGHT
+  const onAxis = nowMinutes >= day.spanStartMinutes && nowMinutes <= day.spanEndMinutes
+
+  if (!onAxis) {
+    return null
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-x-0 z-20 flex -translate-y-1/2 items-center"
+      data-testid="timeline-now"
+      // 小数像素：位置随秒数连续变，不被整像素台阶卡住。
+      style={{ top: Math.round(topPx * 100) / 100 }}
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-(--ui-accent) shadow-[0_0_0.375rem_color-mix(in_srgb,var(--ui-accent)_55%,transparent)]" />
+      <span className="block h-[2px] flex-1 bg-(--ui-accent)" />
+    </div>
+  )
+}
+
 function DayAxis({
   avoidBands,
   containerRef,
   day,
+  isToday,
   label,
-  nowMinutes,
   onSelectEvent,
   pendingLabel
 }: {
@@ -104,21 +161,15 @@ function DayAxis({
   /** Forwarded so the scroll-into-view effect can target a single axis. */
   containerRef?: (node: HTMLDivElement | null) => void
   day: TimelineDay
+  /** 今天这一轴才画「现在」那一根线（裁定 36.2）。 */
+  isToday?: boolean
   label: string
-  /** Local wall-clock minutes since midnight, only for the LOCAL today axis. */
-  nowMinutes?: number
   /** 点块＝在右栏换成这条日程的详情页（用户 10-31）。给的是整条事件，不是一个
    *  id：别的日子那根轴上的行不在共享 store 里，按 id 回头找会找不到。 */
   onSelectEvent?: (event: AgendaEvent) => void
   pendingLabel: string
 }) {
   const axisLeftFraction = LABEL_GUTTER_FRACTION
-  // Same minute → px mapping as the ticks and blocks (裁定 32.1's `pxOf`), so
-  // the "now" line lands exactly on the hour mark it belongs to.
-  const nowTopPx =
-    nowMinutes === undefined ? null : Math.round(((nowMinutes - day.spanStartMinutes) / 60) * HOUR_HEIGHT)
-  const showNow =
-    nowTopPx !== null && nowMinutes !== undefined && nowMinutes >= day.spanStartMinutes && nowMinutes <= day.spanEndMinutes
 
   return (
     <div
@@ -137,8 +188,11 @@ function DayAxis({
       </div>
       <div className="relative" style={{ height: day.totalHeightPx }}>
         {day.hours.map(hour => (
+          // 这一行的高度是 0：它只是个「整点」的锚。发丝线与刻度字都挂在它的原点上
+          // （`items-center` 一次居中），于是发丝线落在**整点那一刻**的像素上，
+          // 与日程块、"现在"那一根线同一套映射——整点时三者压成一条线。
           <div
-            className="pointer-events-none absolute inset-x-0 flex items-center gap-1.5"
+            className="pointer-events-none absolute inset-x-0 flex h-0 items-center gap-1.5"
             data-testid={`timeline-tick-${hour}`}
             key={hour}
             style={{ top: ((hour * 60 - day.spanStartMinutes) / 60) * HOUR_HEIGHT }}
@@ -150,21 +204,7 @@ function DayAxis({
           </div>
         ))}
 
-        {showNow && (
-          // 裁定 40: the "now" line MUST stand out from the hour grid. The
-          // old 1px secondary stroke was indistinguishable from the hour
-          // ticks once the rail scrolled past noon; we now ship it as an
-          // accent bar with a leading dot. Aria-hidden still — visual only.
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 z-20 flex items-center"
-            data-testid="timeline-now"
-            style={{ top: nowTopPx ?? 0 }}
-          >
-            <span className="-translate-y-1/2 inline-block size-1.5 rounded-full bg-(--ui-accent) shadow-[0_0_0.375rem_color-mix(in_srgb,var(--ui-accent)_55%,transparent)]" />
-            <span className="block h-[2px] flex-1 bg-(--ui-accent)" />
-          </div>
-        )}
+        {isToday ? <NowLine day={day} /> : null}
 
         {avoidBands.map((band, index) => (
           // Faint full-width bands behind blocks; no title, no interaction.
@@ -311,10 +351,6 @@ export function Timeline({
   const tomorrowDate = new Date()
   tomorrowDate.setDate(tomorrowDate.getDate() + 1)
   const tomorrowKey = localDateKey(tomorrowDate)
-  // Local wall clock, read once per render — the "now" line is a TODAY-only
-  // affordance (裁定 36.2), so tomorrow's axis never draws one.
-  const now = new Date()
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const todayAxisRef = useRef<HTMLDivElement | null>(null)
 
   // 裁定 40: scroll today into view when the rail first mounts (or when the
@@ -428,6 +464,7 @@ export function Timeline({
           todayAxisRef.current = node
         }}
         day={day}
+        isToday={selected === todayKey}
         label={
           selected === todayKey
             ? t.console.timeline.today
@@ -435,7 +472,6 @@ export function Timeline({
               ? t.console.timeline.tomorrow
               : selected
         }
-        nowMinutes={selected === todayKey ? nowMinutes : undefined}
         onSelectEvent={onSelectEvent}
         pendingLabel={t.console.timeline.pending}
       />

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgendaEvent } from '@/types/plobi'
@@ -87,18 +87,28 @@ describe('Timeline (day axis)', () => {
   })
 
   it('paints only the selected day, and the week strip switches which one', () => {
-    render(<Timeline events={[event('a', dateAt(0, 9)), event('b', dateAt(1, 14))]} />)
+    // 把钟钉在周三：周条只画一周，「明天」得落在同一周里才有那一格可点。
+    // 钉在周六时明天就是下周周日——周条上没有它，这条判据与产品行为无关，
+    // 却会随日期变红（日期一变就红的测试不算判据，Code/AGENTS.md §0.3）。
+    vi.useFakeTimers()
 
-    const tomorrow = dateAt(1, 14).slice(0, 10)
+    try {
+      vi.setSystemTime(new Date(2026, 8, 16, 10, 0, 0))
+      render(<Timeline events={[event('a', dateAt(0, 9)), event('b', dateAt(1, 14))]} />)
 
-    // 明天那条不再堆在同一屏里。
-    expect(screen.getByText('event-a')).toBeTruthy()
-    expect(screen.queryByText('event-b')).toBeNull()
+      const tomorrow = dateAt(1, 14).slice(0, 10)
 
-    fireEvent.click(screen.getByTestId(`timeline-day-cell-${tomorrow}`))
+      // 明天那条不再堆在同一屏里。
+      expect(screen.getByText('event-a')).toBeTruthy()
+      expect(screen.queryByText('event-b')).toBeNull()
 
-    expect(screen.getByText('event-b')).toBeTruthy()
-    expect(screen.queryByText('event-a')).toBeNull()
+      fireEvent.click(screen.getByTestId(`timeline-day-cell-${tomorrow}`))
+
+      expect(screen.getByText('event-b')).toBeTruthy()
+      expect(screen.queryByText('event-a')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('draws the whole-day 00:00–23:00 hour axis on each day', () => {
@@ -244,6 +254,10 @@ describe('Timeline (day axis)', () => {
       expect((todayTicks[0] as HTMLElement).getAttribute('style')).toBe(
         nowEl.getAttribute('style')
       )
+      // 整点那一行是**零高度的锚**：发丝线与刻度字都挂在它的原点上，
+      // 于是发丝线落在整点那一刻的像素上（早先它被排在刻度字那一格里，
+      // 整整低半行，「现在」线与它对不齐）。
+      expect((todayTicks[0] as HTMLElement).className).toContain('h-0')
       unmount()
 
       // 换到明天那一格之后，now 线不再出现——它只属于今天那一轴（裁定 36.2 / 39）。
@@ -299,6 +313,51 @@ describe('Timeline (day axis)', () => {
       render(<Timeline events={[event('b', dateAt(1, 14), { end_at: dateAt(1, 15) })]} />)
       // 10:00 → 零点轴起第 10 格 = 440px。
       expect(topPxOf('timeline-now')).toBe(440)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('点与线同心：点不再自带半格位移（用户 11-07 截图那颗点比线高）', () => {
+    render(<Timeline events={[event('a', dateAt(0, 9), { end_at: dateAt(0, 11) })]} />)
+
+    const nowEl = screen.getByTestId('timeline-now')
+    const dot = nowEl.querySelector('span:first-child') as HTMLElement
+    const bar = nowEl.querySelector('span:not(:first-child)') as HTMLElement
+
+    // 只搬一次：整行搬（`-translate-y-1/2` 搬的是行自己），点与线都由
+    // `items-center` 落在同一个心上。早先那颗点自带 `-translate-y-1/2`，
+    // 在已经居中的行里又多抬了 3px——点与线的中心于是永远错开。
+    expect(nowEl.className).toContain('items-center')
+    expect(nowEl.className).toContain('-translate-y-1/2')
+    // 两个元素各自都没有自己的位移：它们挂在同一个锚上。
+    expect(dot.className).not.toContain('-translate-y')
+    expect(bar.className).not.toContain('-translate-y')
+    expect(dot.getAttribute('style')).toBeNull()
+    expect(bar.getAttribute('style')).toBeNull()
+  })
+
+  it('「现在」线随钟点连续走位：算到秒，不等下一次重渲染', () => {
+    vi.useFakeTimers()
+
+    try {
+      vi.setSystemTime(new Date(2026, 8, 16, 10, 0, 0))
+      render(<Timeline events={[event('a', dateAt(0, 9), { end_at: dateAt(0, 11) })]} />)
+
+      expect(topPxOf('timeline-now')).toBe(440)
+
+      // 过 30 秒：位置跟着走 30/60 分钟 × 44px/小时（约 0.37px）——
+      // 不是等下一次重渲染才跳一格。
+      act(() => {
+        vi.advanceTimersByTime(30_000)
+      })
+      expect(topPxOf('timeline-now')).toBeCloseTo(440 + (30 / 60) * (44 / 60), 2)
+
+      // 再过一分钟：整整 1/60 小时。
+      act(() => {
+        vi.advanceTimersByTime(60_000)
+      })
+      expect(topPxOf('timeline-now')).toBeCloseTo(440 + (90 / 60) * (44 / 60), 2)
     } finally {
       vi.useRealTimers()
     }
