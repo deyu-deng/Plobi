@@ -35,7 +35,7 @@ from plobi_cli.profile_distribution import (
 
 
 # ---------------------------------------------------------------------------
-# Isolated profile env (matches tests/plobi_cli/test_profiles.py)
+# Isolated profile env (matches tests/plobi_cli/test_agent_identity.py)
 # ---------------------------------------------------------------------------
 
 

@@ -9,7 +9,7 @@
 另外两档钉的是排除名单本身（``auth.json``／``.env`` 仍在其中）：名单留着，哪天
 「导整份家」那条路要是回来，得继续用它。
 
-跑法：``bash scripts/run_tests.sh tests/plobi_cli/test_profile_export_credentials.py``
+跑法：``bash scripts/run_tests.sh tests/plobi_cli/test_agent_export_credentials.py``
 """
 
 import tarfile

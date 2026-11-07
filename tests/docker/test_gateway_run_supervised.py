@@ -36,7 +36,7 @@ def _svstat(container: str, slot: str = "gateway-default") -> str:
 
 
 def _svstat_wants_up(container: str, slot: str = "gateway-default") -> bool:
-    """See test_profile_gateway._svstat_wants_up for the format rules."""
+    """See test_agent_gateway._svstat_wants_up for the format rules."""
     state = _svstat(container, slot)
     if not state:
         return False
@@ -136,7 +136,7 @@ def test_gateway_run_redirects_to_supervised(
     )
 
     # s6's intent for the default-profile gateway slot should be up.
-    # Same accept-either rule as test_profile_gateway: the supervised
+    # Same accept-either rule as test_agent_gateway: the supervised
     # gateway may or may not be currently up depending on whether the
     # harness profile has a configured model, but the want-intent
     # contract holds either way.

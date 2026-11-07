@@ -1,7 +1,7 @@
 """Tests for the cross-profile soft guard wired into write_file / patch /
 skill_manage.
 
-The classifier is tested in tests/agent/test_file_safety_cross_profile.py.
+The classifier is tested in tests/agent/test_file_safety_cross_agent.py.
 This file tests that the tool surfaces:
 
   1. Refuse cross-profile writes by default and return the warning.

@@ -562,7 +562,7 @@ class AgentEntry:
         # deliberately avoids depending on plobi_cli at attribute time (see the
         # lazy imports below), and even a lazy import breaks under the test
         # harness, where ``plobi_cli`` does not resolve to the real module.
-        # tests/plobi_cli/test_profiles.py pins the two rules together.
+        # tests/plobi_cli/test_agent_identity.py pins the two rules together.
         # 数据角色（``l2_course``）不是分身：它**没有运行时可连**，所以对外也不该有一个
         # 看起来能连的 profile 名。以前这里一律回退到条目名，于是名册里那五门课各自
         # 冒充一格 profile ⇒ 桌面为它们起 `plobi -p <课名>`：ASCII 名退 1

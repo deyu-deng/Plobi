@@ -783,7 +783,7 @@ def test_profile_name_is_normalized_to_the_on_disk_id():
     否则桌面 ``plobi --profile Aura serve`` 会被 CLI 的 ``-p`` 预扫描（main.py 的
     ``_PROFILE_ID_RE``）判为非法而**不摘 token**，argparse 接着把 ``Aura`` 当成子命令
     → 退出码 2 → 分身后端永远起不来、界面一直停在「网关 检查中」。
-    与底座那个函数的等价性钉在 tests/plobi_cli/test_profiles.py（本层不 import plobi_cli）。
+    与底座那个函数的等价性钉在 tests/plobi_cli/test_agent_identity.py（本层不 import plobi_cli）。
     """
     assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
 

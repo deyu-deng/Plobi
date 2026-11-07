@@ -1,6 +1,6 @@
 """Regression tests for xAI OAuth refresh write-through to the global root.
 
-Companion to ``test_xai_oauth_profile_auth.py``. That file covers the READ
+Companion to ``test_xai_oauth_agent_auth.py``. That file covers the READ
 fallback (profile -> credential pool -> global root). These cover the WRITE
 side: when a profile that has no own ``providers.xai-oauth`` block refreshes
 the (rotating) grant it resolved from the root fallback, the rotated tokens

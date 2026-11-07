@@ -4,7 +4,7 @@ Specifically: _maybe_register_gateway_service,
 _maybe_unregister_gateway_service. The integration with
 create_profile and delete_profile is covered indirectly by the
 existing TestCreateProfile and TestDeleteProfile classes in
-tests/plobi_cli/test_profiles.py; here we only exercise the new
+tests/plobi_cli/test_agent_identity.py; here we only exercise the new
 helper surface that doesn't touch the filesystem.
 """
 from __future__ import annotations

@@ -433,7 +433,7 @@ def test_s6_manager_kind_and_supports_registration() -> None:
 # unprivileged plobi user from every lifecycle op. These tests run
 # against tmp_path and assert the produced layout — the live-container
 # verification (against real s6-svc / s6-svstat) lives in
-# tests/docker/test_s6_profile_gateway_integration.py.
+# tests/docker/test_s6_agent_gateway_integration.py.
 
 
 def _granted_mode(parent, requested: int) -> int:

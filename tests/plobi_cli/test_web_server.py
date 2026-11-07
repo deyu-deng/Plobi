@@ -4135,7 +4135,7 @@ class TestNewEndpoints:
         resp = self.client.post("/api/profiles", json={"name": "Has Spaces"})
 
         # 退役的是**入口**，不是校验：名字合法性照旧由 `profiles.validate_profile_name`
-        # 把着（`test_profiles.py` 那十几条直接调库函数在钉它）。这一口现在连名字都不看。
+        # 把着（`test_agent_identity.py` 那十几条直接调库函数在钉它）。这一口现在连名字都不看。
         assert resp.status_code in (404, 405), "旧 /api/profiles 入口整组下线（2c）：不留别名，也不留 410 门牌"
 
     def test_profiles_delete_default_forbidden(self):

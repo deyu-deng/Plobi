@@ -1189,7 +1189,7 @@ class TestExportImport:
     这里把它们钉死：退、而且**一个盘都不碰**。现在能用的导出是
     :func:`export_identity`（名册那一行 ＋ 它的身份文件），CLI 的
     ``plobi profile export`` 走的就是它；「凭据不许进包」那条判据在
-    ``tests/plobi_cli/test_profile_export_credentials.py``。
+    ``tests/plobi_cli/test_agent_export_credentials.py``。
     """
 
     def test_import_refuses_and_creates_no_home(self, profile_env, tmp_path):
