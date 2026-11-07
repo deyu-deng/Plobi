@@ -1044,6 +1044,57 @@ function Test-NodeVersionOk {
     return $false
 }
 
+# Unpack a Node.js zip into $PlobiHome\node and put it on PATH.
+#
+# Shared by the two ways Node can arrive: the copy that shipped inside the
+# installer, and the download fallback.  The bundled copy is what makes a
+# brand-new machine work with no network at all.
+function Install-ManagedNodeFromZip {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [string]$Source = "the installer"
+    )
+    $tmpDir = Join-Path $env:TEMP "plobi-node-unpack"
+    try {
+        if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+        Expand-Archive -Path $ZipPath -DestinationPath $tmpDir -Force
+
+        # The zip holds one top-level folder (node-vX.Y.Z-<os>-<arch>); that
+        # folder IS the node installation, so it becomes $PlobiHome\node.
+        $extractedDir = Get-ChildItem $tmpDir -Directory | Select-Object -First 1
+        if (-not $extractedDir) {
+            Write-Warn "the Node.js archive from $Source did not contain the expected folder"
+            return $false
+        }
+        if (Test-Path "$PlobiHome\node") { Remove-Item -Recurse -Force "$PlobiHome\node" }
+        # Move-Item does NOT create the destination's parent -- and the data
+        # dir may not exist yet on a machine where this is the first stage to
+        # touch it.
+        New-Item -ItemType Directory -Path $PlobiHome -Force | Out-Null
+        Move-Item $extractedDir.FullName "$PlobiHome\node"
+
+        # Session PATH so the rest of this run sees node/npm.
+        $env:Path = "$PlobiHome\node;$env:Path"
+
+        # Persist to User PATH so fresh shells (and future stages
+        # in cross-process driver mode) see it.  Matches the
+        # pattern Install-Git uses for PortableGit.
+        $nodeDir = "$PlobiHome\node"
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $userPathItems = if ($userPath) { $userPath -split ";" } else { @() }
+        if ($userPathItems -notcontains $nodeDir) {
+            $userPathItems += $nodeDir
+            [Environment]::SetEnvironmentVariable("Path", ($userPathItems -join ";"), "User")
+        }
+        return $true
+    } catch {
+        Write-Warn "Node.js could not be unpacked from ${Source}: $_"
+        return $false
+    } finally {
+        Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-Node {
     Write-Info "Checking Node.js (for browser tools)..."
 
@@ -1068,6 +1119,20 @@ function Test-Node {
         return $true
     }
 
+    # 包里那份 Node（装机器时带进来的）⇒ 不用下载、不用联网。
+    if ($ToolchainDir -and (Test-Path $ToolchainDir)) {
+        $nodeZip = Get-ChildItem -Path $ToolchainDir -Filter "node-v*-win-*.zip" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($nodeZip) {
+            if (Install-ManagedNodeFromZip -ZipPath $nodeZip.FullName -Source "the installer") {
+                $version = & "$PlobiHome\node\node.exe" --version
+                Write-Success "Node.js $version ready (from the installer, no download)"
+                $script:HasNode = $true
+                return $true
+            }
+        }
+    }
+
     Write-Info "Installing Plobi-managed Node.js $NodeVersion LTS..."
 
     # Try the portable-zip path FIRST -- no UAC, no admin, no winget MSI.
@@ -1089,39 +1154,16 @@ function Test-Node {
         if ($zipName) {
             $downloadUrl = "${indexUrl}${zipName}"
             $tmpZip = "$env:TEMP\$zipName"
-            $tmpDir = "$env:TEMP\plobi-node-extract"
 
             Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpZip -UseBasicParsing
-            if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
-            Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
-
-            $extractedDir = Get-ChildItem $tmpDir -Directory | Select-Object -First 1
-            if ($extractedDir) {
-                if (Test-Path "$PlobiHome\node") { Remove-Item -Recurse -Force "$PlobiHome\node" }
-                Move-Item $extractedDir.FullName "$PlobiHome\node"
-
-                # Session PATH so the rest of this run sees node/npm.
-                $env:Path = "$PlobiHome\node;$env:Path"
-
-                # Persist to User PATH so fresh shells (and future stages
-                # in cross-process driver mode) see it.  Matches the
-                # pattern Install-Git uses for PortableGit.
-                $nodeDir = "$PlobiHome\node"
-                $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-                $userPathItems = if ($userPath) { $userPath -split ";" } else { @() }
-                if ($userPathItems -notcontains $nodeDir) {
-                    $userPathItems += $nodeDir
-                    [Environment]::SetEnvironmentVariable("Path", ($userPathItems -join ";"), "User")
-                }
-
+            if (Install-ManagedNodeFromZip -ZipPath $tmpZip -Source "the download") {
                 $version = & "$PlobiHome\node\node.exe" --version
                 Write-Success "Node.js $version installed to $PlobiHome\node\ (portable, user-scoped)"
                 $script:HasNode = $true
-
                 Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
-                Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
                 return $true
             }
+            Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
         }
     } catch {
         Write-Warn "Portable Node.js download failed: $_"
@@ -1259,6 +1301,39 @@ function Install-SystemPackages {
         $script:HasFfmpeg = $true
     } else {
         $needFfmpeg = $true
+    }
+
+    # 包里那份 ffmpeg（装机器时带进来的）⇒ 不用 winget、不用下载、不用联网。
+    # 装机器上的样子和 ripgrep 一样：<数据目录>\bin\ffmpeg.exe。
+    if ($needFfmpeg -and $ToolchainDir -and (Test-Path $ToolchainDir)) {
+        $ffGz = Get-ChildItem -Path $ToolchainDir -Filter "ffmpeg-*.gz" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($ffGz) {
+            try {
+                $binDir = Join-Path $PlobiHome "bin"
+                New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+                $ffExe = Join-Path $binDir "ffmpeg.exe"
+                # 这是单个二进制压出来的 .gz，不是 tar —— 用 .NET 的 GZipStream 解。
+                $inStream = [System.IO.File]::OpenRead($ffGz.FullName)
+                try {
+                    $gzStream = New-Object System.IO.Compression.GZipStream($inStream, [System.IO.Compression.CompressionMode]::Decompress)
+                    try {
+                        $outStream = [System.IO.File]::Create($ffExe)
+                        try { $gzStream.CopyTo($outStream) } finally { $outStream.Dispose() }
+                    } finally { $gzStream.Dispose() }
+                } finally { $inStream.Dispose() }
+                if ((Test-Path $ffExe) -and ((Get-Item $ffExe).Length -gt 1MB)) {
+                    $env:Path = "$binDir;$env:Path"
+                    $script:HasFfmpeg = $true
+                    $needFfmpeg = $false
+                    Write-Success "ffmpeg ready (from the installer, no download)"
+                } else {
+                    Write-Warn "the bundled ffmpeg did not unpack into a usable binary"
+                }
+            } catch {
+                Write-Warn "the bundled ffmpeg could not be unpacked: $_"
+            }
+        }
     }
 
     if (-not $needRipgrep -and -not $needFfmpeg) { return }

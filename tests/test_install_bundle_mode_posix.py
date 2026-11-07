@@ -21,6 +21,7 @@ Asserted:
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -118,3 +119,127 @@ def test_the_bundle_mode_is_wired_where_it_must_be() -> None:
     # `dependencies` -- the two scripts do NOT share the name)
     assert re.search(r"^\s+python-deps\)", SOURCE, re.M)
     assert re.search(r"^\s+dependencies\)", SOURCE, re.M) is None
+
+
+# ── Node.js 与 ffmpeg：用户 11-07 拍「都进包」 ─────────────────────────────
+
+
+def _shell_fixture(script: str, tmp_path: Path) -> subprocess.CompletedProcess:
+    """Run a shell script built from install.sh's own functions."""
+    path = tmp_path / "probe.sh"
+    path.write_text(script, encoding="utf-8")
+    return subprocess.run(
+        [BASH, str(path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def _bash(script: str) -> None:
+    """Run a shell snippet.
+
+    Fixtures that must be EXECUTABLE are built here, not from Python: only a
+    shell can set the exec bit the shell itself looks at (`[ -x ... ]`).
+    """
+    proc = subprocess.run([BASH, "-c", script], capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_the_bundled_node_is_unpacked_instead_of_downloaded(tmp_path: Path) -> None:
+    """包里那份 Node 解到 $PLOBI_HOME/node（真跑 bash）。
+
+    用户 11-07：「开箱即用的体验多平台也要做」——mac/linux 那条腿也得
+    装完就有 Node，不能首启再下一份。
+
+    整场在 bash 里跑（真 POSIX 路径）：GNU tar 把 "C:/..." 当远端主机，
+    而装机机上永远是 POSIX 路径。
+    """
+    script = (
+        "set -uo pipefail\n"
+        "is_termux() { return 1; }\n"
+        "ROOT_FHS_LAYOUT=false\n"
+        "DISTRO=linux\n"
+        "OS=linux\n"
+        "FIX=$(mktemp -d)\n"
+        "mkdir -p \"$FIX/toolchain\" \"$FIX/stage/node-v22.23.4-linux-x64/bin\" \"$FIX/home\"\n"
+        "printf '#!/bin/sh\\necho v22.23.4\\n' > \"$FIX/stage/node-v22.23.4-linux-x64/bin/node\"\n"
+        "chmod +x \"$FIX/stage/node-v22.23.4-linux-x64/bin/node\"\n"
+        "tar czf \"$FIX/toolchain/node-v22.23.4-linux-x64.tar.gz\" "
+        "-C \"$FIX/stage\" node-v22.23.4-linux-x64\n"
+        'export PLOBI_HOME="$FIX/home"\n'
+        'export TOOLCHAIN_DIR="$FIX/toolchain"\n'
+        + _shell_function("get_command_link_dir")
+        + "\n"
+        + _shell_function("configure_managed_node_npm_prefix")
+        + "\n"
+        + _shell_function("install_node_from_archive")
+        + "\n"
+        'install_node_from_archive "$TOOLCHAIN_DIR/node-v22.23.4-linux-x64.tar.gz"\n'
+        'if [ -x "$PLOBI_HOME/node/bin/node" ]; then echo "NODE-EXECUTABLE"; else echo "NODE-MISSING"; fi\n'
+        'echo "REACHED-END"\n'
+    )
+    proc = _shell_fixture(script, tmp_path)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "REACHED-END" in proc.stdout, proc.stdout
+    assert "NODE-EXECUTABLE" in proc.stdout, (
+        f"包里那份 Node 没落到 $PLOBI_HOME/node：{proc.stdout}{proc.stderr}"
+    )
+
+
+def test_the_bundled_ffmpeg_is_unpacked_instead_of_installed(tmp_path: Path) -> None:
+    """包里那份 ffmpeg 解到 $PLOBI_HOME/bin/ffmpeg（真跑 bash），不去问包管理器。
+
+    装机器上的样子和 uv 一样：$PLOBI_HOME/bin —— 后端的 PATH 里就有这一格。
+    """
+    import gzip
+
+    toolchain = tmp_path / "toolchain"
+    toolchain.mkdir()
+    with gzip.open(toolchain / "ffmpeg-linux-x64.gz", "wb") as gz:
+        gz.write(b"\0" * (1024 * 1024 + 512))
+
+    # 一个假的 rg 放在 PATH 上 ⇒ need_ripgrep 也归零，于是这个函数在碰
+    # apt/brew 之前就返回（不联网、不装任何东西）。
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _bash(
+        "set -e\n"
+        f"printf '#!/bin/sh\\necho FAKE-RG 1.2.3\\n' > '{fake_bin.as_posix()}/rg'\n"
+        f"chmod +x '{fake_bin.as_posix()}/rg'\n"
+    )
+
+    home = tmp_path / "home"
+    home.mkdir()
+    # PATH 只留这两个目录：假的 rg 在前，gzip 在 /usr/bin。真 rg 与真 ffmpeg
+    # 装在 Windows PATH 上（WinGet / D:\Portables）——这里它们不在场，于是
+    # 「包里那份」那条分支才是被跑的那条。
+    script = (
+        "set -uo pipefail\n"
+        "log_info() { echo \"INFO:$1\"; }\n"
+        "log_success() { echo \"OK:$1\"; }\n"
+        "log_warn() { echo \"WARN:$1\"; }\n"
+        "is_termux() { return 1; }\n"
+        "ROOT_FHS_LAYOUT=false\n"
+        "DISTRO=linux\n"
+        "OS=linux\n"
+        f'export PATH="{fake_bin.as_posix()}:/usr/bin"\n'
+        f'PLOBI_HOME="{home.as_posix()}"\n'
+        f'TOOLCHAIN_DIR="{toolchain.as_posix()}"\n'
+        + _shell_function("install_system_packages")
+        + "\n"
+        "install_system_packages\n"
+        'echo "REACHED-END"\n'
+    )
+    proc = _shell_fixture(script, tmp_path)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "REACHED-END" in proc.stdout, proc.stdout
+    assert "apt" not in proc.stdout and "brew" not in proc.stdout, f"它去问包管理器了：{proc.stdout}"
+    assert "ffmpeg ready (from the installer, no download)" in proc.stdout, (
+        f"它没有去用包里那份 ffmpeg：{proc.stdout}{proc.stderr}"
+    )
+    ffmpeg = home / "bin" / "ffmpeg"
+    assert ffmpeg.is_file(), "包里那份 ffmpeg 没落到 $PLOBI_HOME/bin"
+    assert os.access(ffmpeg, os.X_OK), "ffmpeg 装上了却不可执行"

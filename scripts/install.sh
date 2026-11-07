@@ -886,6 +886,43 @@ node_satisfies_build() {
     return 1
 }
 
+# Unpack a Node.js tarball into $PLOBI_HOME/node and link it onto PATH.
+#
+# Shared by the two ways Node can arrive: the copy that shipped inside the
+# installer, and the download fallback.  The bundled copy is what makes a
+# brand-new machine work with no network at all.
+install_node_from_archive() {
+    local tarball="$1"
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    if tar xf "$tarball" -C "$tmp_dir" 2>/dev/null; then
+        local extracted_dir
+        extracted_dir=$(ls -d "$tmp_dir"/node-v* 2>/dev/null | head -1)
+        if [ -n "$extracted_dir" ] && [ -x "$extracted_dir/bin/node" ]; then
+            rm -rf "$PLOBI_HOME/node"
+            mkdir -p "$PLOBI_HOME"
+            mv "$extracted_dir" "$PLOBI_HOME/node"
+
+            # Symlink into the same bin dir the plobi command uses
+            # (get_command_link_dir): /usr/local/bin for root FHS installs,
+            # $PREFIX/bin on Termux, ~/.local/bin otherwise.
+            local node_link_dir
+            node_link_dir="$(get_command_link_dir)"
+            mkdir -p "$node_link_dir"
+            ln -sf "$PLOBI_HOME/node/bin/node" "$node_link_dir/node"
+            ln -sf "$PLOBI_HOME/node/bin/npm"  "$node_link_dir/npm"
+            ln -sf "$PLOBI_HOME/node/bin/npx"  "$node_link_dir/npx"
+
+            configure_managed_node_npm_prefix
+            export PATH="$PLOBI_HOME/node/bin:$PATH"
+            rm -rf "$tmp_dir"
+            return 0
+        fi
+    fi
+    rm -rf "$tmp_dir"
+    return 1
+}
+
 check_node() {
     log_info "Checking Node.js (for browser tools)..."
 
@@ -906,6 +943,17 @@ check_node() {
         log_success "Node.js $("$PLOBI_HOME/node/bin/node" --version) found (Plobi-managed)"
         HAS_NODE=true
         return 0
+    fi
+
+    # 包里那份 Node（装机器时带进来的）⇒ 不用下载、不用联网。
+    if [ -n "$TOOLCHAIN_DIR" ] && [ -d "$TOOLCHAIN_DIR" ]; then
+        local _bundled_node
+        _bundled_node=$(find "$TOOLCHAIN_DIR" -maxdepth 1 -name 'node-v*-*.tar.gz' 2>/dev/null | head -1)
+        if [ -n "$_bundled_node" ] && install_node_from_archive "$_bundled_node"; then
+            log_success "Node.js $("$PLOBI_HOME/node/bin/node" --version 2>/dev/null) ready (from the installer, no download)"
+            HAS_NODE=true
+            return 0
+        fi
     fi
 
     if command -v node &> /dev/null; then
@@ -1090,6 +1138,25 @@ install_system_packages() {
         HAS_FFMPEG=true
     else
         need_ffmpeg=true
+    fi
+
+    # 包里那份 ffmpeg（装机器时带进来的）⇒ 不用 brew、不用 apt、不用联网。
+    # 装机器上的样子和 uv 一样：$PLOBI_HOME/bin/ffmpeg（后端的 PATH 里就有这一格）。
+    if [ "$need_ffmpeg" = true ] && [ -n "$TOOLCHAIN_DIR" ] && [ -d "$TOOLCHAIN_DIR" ]; then
+        local _bundled_ffmpeg
+        _bundled_ffmpeg=$(find "$TOOLCHAIN_DIR" -maxdepth 1 -name 'ffmpeg-*.gz' 2>/dev/null | head -1)
+        if [ -n "$_bundled_ffmpeg" ]; then
+            mkdir -p "$PLOBI_HOME/bin"
+            if gzip -dc "$_bundled_ffmpeg" > "$PLOBI_HOME/bin/ffmpeg" 2>/dev/null && [ -s "$PLOBI_HOME/bin/ffmpeg" ]; then
+                chmod +x "$PLOBI_HOME/bin/ffmpeg"
+                export PATH="$PLOBI_HOME/bin:$PATH"
+                HAS_FFMPEG=true
+                need_ffmpeg=false
+                log_success "ffmpeg ready (from the installer, no download)"
+            else
+                log_warn "the bundled ffmpeg could not be unpacked"
+            fi
+        fi
     fi
 
     # Termux always needs the Android build toolchain for the tested pip path,

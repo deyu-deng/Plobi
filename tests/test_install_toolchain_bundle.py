@@ -13,6 +13,7 @@
   PortableGit 用完**不许删**（它属于安装包，不是临时下载物）。
 """
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -37,7 +38,9 @@ _STUBS = (
 
 
 def _function_text(name: str) -> str:
-    start = _SOURCE.index(f"function {name}")
+    # The trailing space matters: "function Test-Node " must not match
+    # "function Test-NodeVersionOk" -- both live in install.ps1.
+    start = _SOURCE.index(f"function {name} ")
     brace = _SOURCE.index("{", start)
     depth = 0
     for i in range(brace, len(_SOURCE)):
@@ -52,10 +55,31 @@ def _function_text(name: str) -> str:
 
 def _run_ps(body: str) -> subprocess.CompletedProcess:
     prelude = _STUBS + "".join(
-        _function_text(n) + "\n" for n in ("Get-WindowsArch", "Install-Git")
+        _function_text(n) + "\n"
+        for n in (
+            "Get-WindowsArch",
+            "Install-Git",
+            "Ensure-NodeExeOnPath",
+            "Test-NodeVersionOk",
+            "Install-ManagedNodeFromZip",
+            "Test-Node",
+            "Update-ProcessPathForPackages",
+            "Install-SystemPackages",
+        )
+    )
+    # The installer persists <data dir>\node to the USER PATH (that is how a
+    # fresh shell finds node).  A test must not leave that behind -- snapshot
+    # it, and put it back whatever happens.
+    guard = (
+        "$__savedUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')\n"
+        "try {\n"
+        + body
+        + "\n} finally {\n"
+        "  [Environment]::SetEnvironmentVariable('Path', $__savedUserPath, 'User')\n"
+        "}\n"
     )
     ps1 = Path(tempfile.mkdtemp(prefix="plobi-toolchain-ps-")) / "probe.ps1"
-    ps1.write_text(prelude + body, encoding="utf-8")
+    ps1.write_text(prelude + guard, encoding="utf-8")
 
     try:
         return subprocess.run(
@@ -183,3 +207,134 @@ def test_the_collector_covers_every_platform():
     assert "needsGit" in collector and "needsRg" in collector, (
         "各平台要不要带 git/ripgrep 没有分开"
     )
+
+
+# ── Node.js 与 ffmpeg：用户 11-07 拍「都进包」 ─────────────────────────────
+
+
+def _write_node_zip(toolchain: Path, staging: Path) -> Path:
+    """A Node.js zip shaped like the real one: one top folder holding node.exe.
+
+    The stub is a Windows system binary that ignores its argument and exits 0
+    -- all the installer asks of node.exe here is "answer --version".  (A copied
+    python.exe does NOT work: a venv's launcher needs its pyvenv.cfg beside it,
+    and a bare interpreter needs its DLL.)
+    """
+    import zipfile
+
+    stub = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "whoami.exe"
+    if not stub.is_file():  # pragma: no cover - a Windows machine always has it
+        pytest.skip(f"这台没有 {stub}，做不出能跑的 node.exe 替身")
+
+    inner = staging / "node-v99.0.0-win-x64"
+    inner.mkdir(parents=True)
+    shutil.copyfile(stub, inner / "node.exe")
+
+    zip_path = toolchain / "node-v99.0.0-win-x64.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.write(inner / "node.exe", "node-v99.0.0-win-x64/node.exe")
+    return zip_path
+
+
+def test_the_bundled_node_is_used_instead_of_downloading(tmp_path: Path):
+    """包里有 Node ⇒ 不下载（真跑：掐掉 PATH，让 node 不在场）。
+
+    用户 11-07：「Node 与 ffmpeg 也进包」——浏览器工具与 TTS 语音要的就是它，
+    让首启再下一份 Node，装完即用就成了空话。
+    """
+    toolchain = tmp_path / "toolchain"
+    toolchain.mkdir()
+    _write_node_zip(toolchain, tmp_path)
+
+    home = tmp_path / "home"
+    q = chr(39)
+    proc = _run_ps(
+        # 掐掉 PATH 上的 node ⇒ 快路径不成立，只能走包里那份
+        "$env:Path = 'C:\\Windows\\System32;C:\\Windows'\n"
+        f"$PlobiHome = {q}{home}{q}\n"
+        f"$ToolchainDir = {q}{toolchain}{q}\n"
+        "Test-Node\n"
+        'Write-Output "REACHED-END"\n'
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Downloading" not in proc.stdout, f"它去下载 Node 了：{proc.stdout}"
+    assert "ready (from the installer, no download)" in proc.stdout, (
+        f"它没有去用包里那份 Node：{proc.stdout}{proc.stderr}"
+    )
+    assert (home / "node" / "node.exe").is_file(), "包里那份 Node 没落到 <数据目录>\\node"
+    assert "REACHED-END" in proc.stdout, proc.stdout
+
+
+def test_the_bundled_ffmpeg_is_used_instead_of_a_package_manager(tmp_path: Path):
+    """包里有 ffmpeg ⇒ 不用 winget/choco/scoop（真跑）。
+
+    装机器上的样子和 ripgrep 一样：<数据目录>\\bin\\ffmpeg.exe——后端的 PATH 里
+    就有这一格，`shutil.which("ffmpeg")` 找得到。
+    """
+    import gzip
+    import zipfile
+
+    toolchain = tmp_path / "toolchain"
+    toolchain.mkdir()
+
+    # 一份能解开的 ripgrep：它让 needRipgrep 也归零，于是这个函数在碰
+    # 包管理器之前就返回（不联网、不装任何东西）。
+    rg_stage = tmp_path / "rg-stage" / "ripgrep-14.1.1"
+    rg_stage.mkdir(parents=True)
+    (rg_stage / "rg.exe").write_bytes(b"MZ stub")
+    with zipfile.ZipFile(toolchain / "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip", "w") as zf:
+        zf.write(rg_stage / "rg.exe", "ripgrep-14.1.1/rg.exe")
+
+    # 一份 ffmpeg：单个二进制压出来的 .gz（安装脚本按 >1MB 判它是真东西）。
+    with gzip.open(toolchain / "ffmpeg-win32-x64.gz", "wb") as gz:
+        gz.write(b"\0" * (1024 * 1024 + 512))
+
+    home = tmp_path / "home"
+    q = chr(39)
+    proc = _run_ps(
+        "$env:Path = 'C:\\Windows\\System32;C:\\Windows'\n"
+        f"$PlobiHome = {q}{home}{q}\n"
+        f"$ToolchainDir = {q}{toolchain}{q}\n"
+        "Install-SystemPackages\n"
+        'Write-Output "REACHED-END"\n'
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "winget" not in proc.stdout.lower(), f"它去问包管理器了：{proc.stdout}"
+    assert "ffmpeg ready (from the installer, no download)" in proc.stdout, (
+        f"它没有去用包里那份 ffmpeg：{proc.stdout}{proc.stderr}"
+    )
+    assert (home / "bin" / "ffmpeg.exe").is_file(), "包里那份 ffmpeg 没落到 <数据目录>\\bin"
+    assert "REACHED-END" in proc.stdout, proc.stdout
+
+
+def test_node_and_ffmpeg_travel_with_the_package():
+    """Node 与 ffmpeg 得跟着包走（三个平台都要），且版本钉死。
+
+    用户 11-07 拍板：「都进包。」
+    """
+    repo = _INSTALL_PS1.parents[1]
+    collector = (repo / "apps" / "desktop" / "scripts" / "collect-toolchain-bundle.mjs").read_text(
+        encoding="utf-8"
+    )
+    posix = (repo / "scripts" / "install.sh").read_text(encoding="utf-8")
+
+    # 收集脚本：三个平台都收 node 与 ffmpeg，且版本是钉死的。
+    assert "node-v${NODE.version}" in collector, "收集脚本没收 Node"
+    assert "ffmpeg-static" in collector, "收集脚本没收 ffmpeg"
+    assert "const NODE = {" in collector and "version:" in collector, "Node 版本没钉"
+    assert "const FFMPEG = {" in collector and "tag:" in collector, "ffmpeg 版本没钉"
+    assert "darwin-${macArch}" in collector, "macOS 的 Node 资产名不对"
+    assert "linux-${linuxArch}" in collector, "Linux 的 Node 资产名不对"
+
+    # Windows 那条腿：认包里那份 node 与 ffmpeg。
+    assert "node-v*-win-*.zip" in _SOURCE, "install.ps1 没认包里那份 Node"
+    assert "ffmpeg-*.gz" in _SOURCE, "install.ps1 没认包里那份 ffmpeg"
+    assert "ready (from the installer, no download)" in _SOURCE, "装机器时没说是包里那份"
+
+    # POSIX 那条腿：同一件事。
+    assert "install_node_from_archive" in posix, "install.sh 没有取包里那份 Node 的入口"
+    assert "node-v*-*.tar.gz" in posix, "install.sh 没认包里那份 Node"
+    assert "ffmpeg-*.gz" in posix, "install.sh 没认包里那份 ffmpeg"
+    assert 'gzip -dc "$_bundled_ffmpeg"' in posix, "install.sh 解包里那份 ffmpeg 的路子不对"

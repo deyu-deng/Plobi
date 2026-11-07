@@ -239,6 +239,31 @@ jobs:
           set -euo pipefail
           node apps/desktop/scripts/collect-toolchain-bundle.mjs
 
+      # The first launch must not download anything: the runtime, the package
+      # manager, the interpreter and the tools all travel inside the package.
+      # A missing piece is not "the installer will fetch it later" — it is the
+      # exact first-launch stall this bundle exists to remove, so the release
+      # fails here instead of on the user's machine.
+      - name: Verify the bundled toolchain (nothing may be missing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tc=apps/desktop/build/toolchain
+          missing=""
+          for want in node ffmpeg uv cpython; do
+            ls "$tc" | grep -q "^$want" || missing="$missing $want"
+          done
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            ls "$tc" | grep -q "^PortableGit" || missing="$missing PortableGit"
+            ls "$tc" | grep -q "^ripgrep" || missing="$missing ripgrep"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::the bundled toolchain is missing:$missing"
+            ls -la "$tc" || true
+            exit 1
+          fi
+          ls -la "$tc"
+
       - name: Build & package (${{ matrix.platform }})
         working-directory: apps/desktop
         shell: bash
