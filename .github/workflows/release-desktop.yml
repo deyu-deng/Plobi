@@ -151,6 +151,7 @@ jobs:
           mkdir -p "$dest"
           cp -f "$src" "$dest/${{ matrix.chatlog_binary }}"
           chmod +x "$dest/${{ matrix.chatlog_binary }}" || true
+          ls -l "$dest/${{ matrix.chatlog_binary }}"
 
       # The collector engine is a Go binary: CI downloads it into the runtime
       # tree, so the checkout has an untracked file by design.  The vendored
@@ -162,9 +163,9 @@ jobs:
       - name: Mark the downloaded collector engine as build output
         shell: bash
         run: |
+          mkdir -p .git/info
           echo "plobi/collectors/chatlog/vendor/chatlog/bin/" >> .git/info/exclude
-          git status --porcelain | head -5 || true
-          ls -l "$dest/${{ matrix.chatlog_binary }}"
+          git status --porcelain
 
 
 
