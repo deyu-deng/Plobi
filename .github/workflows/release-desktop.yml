@@ -58,9 +58,12 @@ jobs:
           go-version: "1.24.x"
 
       # CGO needs a C compiler.  The windows image does NOT ship mingw-w64
-      # (MSYS2's base packages have no gcc), so install it here; the build
-      # script finds it on its own (C:\msys64\mingw64\bin\gcc.exe).
+      # (MSYS2's base packages have no gcc), so install it there; macOS/Linux
+      # runners already have one.  The build script finds the compiler on its
+      # own (its candidate table has C:\msys64\mingw64\bin\gcc.exe), so nothing
+      # here points at a path.
       - name: Install the CGO compiler (mingw-w64 gcc)
+        if: matrix.platform == 'windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -72,19 +75,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # CGO needs a C compiler. macOS/Linux runners have one; Windows runners
-          # ship MSYS2 under C:\msys64 but its gcc is NOT on PATH, so point CC at
-          # it explicitly.
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            for c in /c/msys64/ucrt64/bin/gcc.exe /c/msys64/mingw64/bin/gcc.exe /c/msys64/usr/bin/gcc.exe; do
-              if [ -f "$c" ]; then export CC="$c"; break; fi
-            done
-            if [ -z "${CC:-}" ]; then
-              echo "::error::no mingw gcc found under C:\\msys64 -- CGO build cannot run"
-              exit 1
-            fi
-            echo "using CC=$CC"
-          fi
           node apps/desktop/scripts/build-chatlog.mjs --force
 
       - name: Smoke-test the binary
