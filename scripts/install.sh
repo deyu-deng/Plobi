@@ -1508,18 +1508,34 @@ install_deps() {
     # extras spec, NOT because they're equivalent in posture.
     # Bundled wheelhouse: the package ships the locked dependency wheels, so
     # the install needs NO PyPI resolve at all -- `--no-index` forbids the
-    # network, `--offline` forbids uv's own fetches, and `--locked` keeps the
-    # lockfile's SHA256 verification (the wheels in the wheelhouse ARE the
-    # locked ones, so the hashes still check out).
+    # network and `--require-hashes` keeps the lockfile's SHA256 verification
+    # (the wheels in the wheelhouse ARE the locked ones, so the hashes still
+    # check out).
+    #
+    # **Why `uv pip install -r requirements.txt` and NOT `uv sync --locked`:**
+    # `uv sync` installs from the URLs the LOCKFILE records (the local
+    # `--find-links` directory is only consulted when resolving something new)
+    # => offline it reaches for files.pythonhosted.org and dies; it also
+    # re-resolves EVERY split of the lock before installing anything, so a
+    # wheelhouse holding one split is never enough.  uv's own offline recipe --
+    # a requirements FILE plus --no-index --find-links --require-hashes --
+    # resolves for the target interpreter only and reads the wheels from disk.
+    # The project itself needs no install: the desktop runs
+    # `python -m plobi_cli.main` with the runtime tree on PYTHONPATH.
     if [ -n "$WHEELHOUSE" ] && [ -d "$WHEELHOUSE" ]; then
         log_info "Trying tier: bundled wheelhouse (offline) ..."
         export UV_PROJECT_ENVIRONMENT="$INSTALL_DIR/venv"
-        if uv sync --extra all --locked --no-index --find-links "$WHEELHOUSE" --offline; then
-            log_success "Main package installed from the bundled wheelhouse (offline, hash-verified)"
+        REQ_FILE="$INSTALL_DIR/requirements.txt"
+        if [ ! -f "$REQ_FILE" ]; then
+            log_warn "the bundled requirements.txt is missing ($REQ_FILE) -- cannot install offline"
+        elif uv pip install --no-index --find-links "$WHEELHOUSE" --require-hashes \
+             --python "$INSTALL_DIR/venv/bin/python" -r "$REQ_FILE"; then
+            log_success "Dependencies installed from the bundled wheelhouse (offline, hash-verified)"
             log_success "All dependencies installed"
             return 0
+        else
+            log_warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
         fi
-        log_warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
     fi
 
     if [ -f "uv.lock" ]; then

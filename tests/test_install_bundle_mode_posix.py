@@ -105,8 +105,13 @@ def test_the_bundle_mode_is_wired_where_it_must_be() -> None:
     # the offline wheelhouse tier sits in install_deps, before the PyPI tier
     deps_fn = _shell_function("install_deps")
     assert 'if [ -n "$WHEELHOUSE" ] && [ -d "$WHEELHOUSE" ]; then' in deps_fn
-    assert "uv sync --extra all --locked --no-index --find-links" in deps_fn
-    assert "--offline" in deps_fn
+    # 离线那一档走 **requirements 文件**（uv 官方那条配方），不走 lockfile：
+    # `uv sync` 按 lockfile 记的 URL 去取包、还要把每个支重解一遍 ⇒ 离线必挂
+    # （2026-11-07 实测：装机版因此 fallback 回 PyPI）。
+    assert "pip install --no-index --find-links" in deps_fn
+    assert "--require-hashes" in deps_fn
+    assert "-r \"$REQ_FILE\"" in deps_fn
+    assert "uv sync --extra all --locked --no-index" not in deps_fn
     assert deps_fn.index('if [ -n "$WHEELHOUSE" ]') < deps_fn.index('if [ -f "uv.lock" ]')
 
     # the POSIX dependency stage is named `python-deps` (install.ps1 calls it

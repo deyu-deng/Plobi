@@ -192,7 +192,8 @@ def test_the_dependencies_stage_asks_uv_for_an_offline_install() -> None:
 
     Asserted on the SOURCE (the call shape), not by running it: a real
     install of the whole wheelhouse takes minutes. The behaviour it buys is
-    verified for real by the first-boot on a fresh home.
+    verified for real by the CI step that installs the shipped wheelhouse
+    offline before the package is built.
     """
     source = INSTALL_PS1.read_text(encoding="utf-8")
 
@@ -208,3 +209,60 @@ def test_the_dependencies_stage_asks_uv_for_an_offline_install() -> None:
     bundle_at = source.index("if ($Wheelhouse -and (Test-Path $Wheelhouse))")
     pypi_at = source.index('Write-Info "Trying tier: hash-verified (uv.lock) ..."')
     assert bundle_at < pypi_at, "轮子仓那一档排在 PyPI 兜底之后了"
+
+
+def test_the_offline_tier_uses_the_requirements_file_not_the_lockfile() -> None:
+    """离线那一档必须走 **requirements 文件**，不能走 lockfile。
+
+    `uv sync` 按 lockfile 里记的 URL 去取包（`--find-links` 只在解析新需求时用）⇒ 离线
+    它去 files.pythonhosted.org 找；它还要把 lockfile 的**每一个支**重新解一遍才肯装 ⇒
+    只带一支轮子必然失败。两条都是 2026-11-07 实测出来的（装机版因此 fallback 回 PyPI，
+    「安装过程不再另行下载依赖」那句话当时并不成立）。
+    """
+    source = INSTALL_PS1.read_text(encoding="utf-8")
+
+    assert "pip install --no-index --find-links $Wheelhouse --require-hashes" in source, (
+        "离线那一档没有用 uv pip install 的官方配方"
+    )
+    assert "-r $reqFile" in source, "离线那一档没有读 requirements 文件"
+    assert "sync --extra all --locked --no-index" not in source, (
+        "离线那一档还在用 uv sync --locked —— 它按 lockfile 的 URL 去取包，离线必挂"
+    )
+
+
+def test_the_posix_leg_uses_the_same_offline_recipe() -> None:
+    """install.sh 那条腿必须与 Windows 那条同形（mac/linux 同样要能离线装）。"""
+    source = (REPO_ROOT / "scripts" / "install.sh").read_text(encoding="utf-8")
+
+    assert "pip install --no-index --find-links" in source, "install.sh 的离线那一档没跟上"
+    assert "--require-hashes" in source, "install.sh 的离线那一档不验哈希"
+    assert "sync --extra all --locked --no-index" not in source, (
+        "install.sh 的离线那一档还在用 uv sync --locked"
+    )
+
+
+def test_the_build_downloads_the_wheels_of_the_python_the_installer_pins() -> None:
+    """CI 必须下**装机版用的那个 Python**（3.11）的轮子。
+
+    装机器脚本钉的是 3.11（install.ps1::$PythonVersion、install.sh::$PYTHON_VERSION），
+    轮子仓里若只有 CI 自己那个 Python（3.12）的轮子 ⇒ 装机版离线装不上（2026-11-07
+    实测：包里 19 个 cp312 轮子、1 个 cp311）。
+    """
+    workflow = (REPO_ROOT / ".github" / "workflows" / "release-desktop.yml").read_text(encoding="utf-8")
+
+    assert "--python-version 3.11" in workflow, "CI 下的轮子不是装机版要的那一版"
+    # 而且要在装包之前先验一遍离线装得上（这一道门是这次事故的直接对策）。
+    assert "Verify the offline install" in workflow, "CI 没有离线安装自检"
+    assert "--no-index --find-links apps/desktop/build/wheelhouse" in workflow, (
+        "CI 的离线自检没有用本地轮子仓"
+    )
+
+
+def test_the_requirements_file_travels_with_the_backend() -> None:
+    """requirements.txt 必须跟源码树一起进包——离线那一档读的就是它。"""
+    script = (REPO_ROOT / "apps" / "desktop" / "scripts" / "collect-backend-bundle.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert "requirements.txt" in script, "收集脚本没有把 requirements.txt 带进包"
+

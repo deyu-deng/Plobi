@@ -1964,21 +1964,45 @@ function Install-Dependencies {
     if ($Wheelhouse -and (Test-Path $Wheelhouse)) {
         # Tier 0' (bundled): the package ships the locked dependency wheels, so
         # the install needs NO PyPI resolve at all -- `--no-index` forbids the
-        # network, `--offline` forbids uv's own fetches, and `--locked` keeps
-        # the lockfile's SHA256 verification (the wheels in the wheelhouse ARE
-        # the locked ones, so the hashes still check out).
+        # network, `--offline` forbids uv's own fetches, and `--require-hashes`
+        # keeps the lockfile's SHA256 verification (the wheels in the wheelhouse
+        # ARE the locked ones, so the hashes still check out).
+        #
+        # **Why `uv pip install -r requirements.txt` and NOT `uv sync --locked`:**
+        # `uv sync` installs from the URLs the LOCKFILE records (the local
+        # `--find-links` directory is only consulted when resolving something new)
+        # => offline it reaches for files.pythonhosted.org and dies (2026-11-07
+        # measured: "Failed to download google-api-python-client==2.194.0 ... not
+        # found in the cache: https://files.pythonhosted.org/...").  It also
+        # re-resolves EVERY split of the lock (3.11/3.12/3.13) before it will
+        # install anything, so a wheelhouse holding one split is never enough
+        # ("No solution found when resolving dependencies for split (markers:
+        # python_full_version == '3.13.*')").  uv's own offline recipe -- a
+        # requirements FILE plus --no-index --find-links --require-hashes --
+        # resolves for the target interpreter only and reads the wheels from disk.
+        #
+        # The project itself needs no install: the desktop runs
+        # `python -m plobi_cli.main` with the runtime tree on PYTHONPATH (see
+        # createPythonBackend in apps/desktop/electron/main.ts).
         Write-Info "Trying tier: bundled wheelhouse (offline) ..."
         $env:UV_PROJECT_ENVIRONMENT = "$InstallDir\venv"
-        Invoke-NativeWithRelaxedErrorAction { & $UvCmd sync --extra all --locked --no-index --find-links $Wheelhouse --offline }
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Main package installed from the bundled wheelhouse (offline, hash-verified)"
-            $script:InstalledTier = "bundled wheelhouse (offline)"
-            # Skip the rest of the tiered cascade -- we already have a
-            # complete, hash-verified install.
-            $skipPipFallback = $true
-        } else {
-            Write-Warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
+        $venvPythonExe = Join-Path $InstallDir "venv\Scripts\python.exe"
+        $reqFile = Join-Path $InstallDir "requirements.txt"
+        if (-not (Test-Path $reqFile)) {
+            Write-Warn "the bundled requirements.txt is missing ($reqFile) -- cannot install offline"
             $skipPipFallback = $false
+        } else {
+            Invoke-NativeWithRelaxedErrorAction { & $UvCmd pip install --no-index --find-links $Wheelhouse --require-hashes --python $venvPythonExe -r $reqFile }
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "Dependencies installed from the bundled wheelhouse (offline, hash-verified)"
+                $script:InstalledTier = "bundled wheelhouse (offline)"
+                # Skip the rest of the tiered cascade -- we already have a
+                # complete, hash-verified install.
+                $skipPipFallback = $true
+            } else {
+                Write-Warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
+                $skipPipFallback = $false
+            }
         }
     }
     elseif (Test-Path "uv.lock") {
