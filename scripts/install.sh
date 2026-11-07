@@ -52,6 +52,9 @@ PLOBI_HOME="${PLOBI_HOME:-$HOME/.plobi}"
 # script behaves exactly as before.
 BUNDLE_DIR="${PLOBI_BUNDLE_DIR:-}"
 WHEELHOUSE="${PLOBI_WHEELHOUSE:-}"
+# The toolchain that ships inside the package (uv, CPython).  Used before
+# anything is downloaded, so a brand-new machine needs no network for them.
+TOOLCHAIN_DIR="${PLOBI_TOOLCHAIN_DIR:-}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
 # explicit directory — if so we never override it.
@@ -125,6 +128,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --wheelhouse|-Wheelhouse)
             WHEELHOUSE="$2"
+            shift 2
+            ;;
+        --toolchain-dir|-ToolchainDir)
+            TOOLCHAIN_DIR="$2"
             shift 2
             ;;
         --commit|-Commit)
@@ -583,6 +590,36 @@ install_uv() {
     log_info "Installing managed uv into $PLOBI_HOME/bin ..."
     mkdir -p "$PLOBI_HOME/bin"
 
+    # The uv that shipped inside the package: use it first ⇒ no download.
+    if [ -n "$TOOLCHAIN_DIR" ] && [ -d "$TOOLCHAIN_DIR" ]; then
+        local _uv_tar
+        _uv_tar="$(ls "$TOOLCHAIN_DIR"/uv-*.tar.gz 2>/dev/null | head -n 1)"
+        if [ -n "$_uv_tar" ]; then
+            log_info "Using the uv that shipped with the installer ($(basename "$_uv_tar")) -- no download."
+            local _uv_stage
+            _uv_stage="$(mktemp -d 2>/dev/null || echo "/tmp/plobi-uv-$$")"
+            if tar -xzf "$_uv_tar" -C "$_uv_stage" 2>/dev/null; then
+                # The archive keeps its binaries under a versioned directory.
+                local _uv_bin
+                _uv_bin="$(find "$_uv_stage" -type f -name uv -perm -u+x 2>/dev/null | head -n 1)"
+                if [ -n "$_uv_bin" ]; then
+                    cp "$_uv_bin" "$_managed_uv"
+                    chmod +x "$_managed_uv"
+                    local _uvx_bin
+                    _uvx_bin="$(find "$_uv_stage" -type f -name uvx -perm -u+x 2>/dev/null | head -n 1)"
+                    [ -n "$_uvx_bin" ] && cp "$_uvx_bin" "$PLOBI_HOME/bin/uvx" && chmod +x "$PLOBI_HOME/bin/uvx"
+                fi
+            fi
+            rm -rf "$_uv_stage"
+            if [ -x "$_managed_uv" ]; then
+                UV_CMD="$_managed_uv"
+                UV_VERSION=$($UV_CMD --version 2>/dev/null)
+                log_success "Managed uv from the installer ($UV_VERSION)"
+                return 0
+            fi
+        fi
+    fi
+
     # Two-stage: download the installer, then run it.  Piping
     # `curl | sh` masks curl failures (sh exits 0 on empty stdin)
     # and conflates network errors with installer errors.
@@ -623,6 +660,34 @@ install_uv() {
     fi
 }
 
+# The CPython that ships inside the package (python-build-standalone,
+# install_only build), unpacked under $PLOBI_HOME/python.  A brand-new machine
+# has no Python at all, and `uv python install` would have to fetch one — so the
+# interpreter travels with the package and the venv is built on top of it.
+# Echoes the interpreter's path, or nothing when the package carries none.
+bundled_python_path() {
+    [ -n "$TOOLCHAIN_DIR" ] || return 0
+    [ -d "$TOOLCHAIN_DIR" ] || return 0
+
+    local _exe="$PLOBI_HOME/python/bin/python3"
+    [ -x "$_exe" ] && { echo "$_exe"; return 0; }
+
+    local _tar
+    _tar="$(ls "$TOOLCHAIN_DIR"/cpython-3.11*-install_only.tar.gz 2>/dev/null | head -n 1)"
+    [ -n "$_tar" ] || return 0
+
+    log_info "Unpacking the CPython that shipped with the installer ($(basename "$_tar")) ..."
+    rm -rf "$PLOBI_HOME/python"
+    mkdir -p "$PLOBI_HOME/python"
+    # --strip-components=1 drops the archive's top-level "python/" folder.
+    tar -xzf "$_tar" -C "$PLOBI_HOME/python" --strip-components=1 2>/dev/null || {
+        rm -rf "$PLOBI_HOME/python"
+        return 0
+    }
+    [ -x "$_exe" ] && echo "$_exe"
+    return 0
+}
+
 check_python() {
     if [ "$DISTRO" = "termux" ]; then
         log_info "Checking Termux Python..."
@@ -644,6 +709,16 @@ check_python() {
     fi
 
     log_info "Checking Python $PYTHON_VERSION..."
+
+    # The CPython that shipped inside the package: use it first ⇒ no download.
+    local _bundled_python
+    _bundled_python="$(bundled_python_path)"
+    if [ -n "$_bundled_python" ]; then
+        PYTHON_PATH="$_bundled_python"
+        PYTHON_FOUND_VERSION="$("$PYTHON_PATH" --version 2>/dev/null)"
+        log_success "Python from the installer: $PYTHON_FOUND_VERSION"
+        return 0
+    fi
 
     # Let uv handle Python — it can download and manage Python versions
     # First check if a suitable Python is already available
@@ -1376,8 +1451,19 @@ setup_venv() {
         rm -rf venv
     fi
 
-    # uv creates the venv and pins the Python version in one step
-    $UV_CMD venv venv --python "$PYTHON_VERSION"
+    # uv creates the venv and pins the Python version in one step.  The
+    # interpreter to build on: the CPython that shipped inside the package when
+    # there is one (first launch then needs no network for Python either),
+    # otherwise the version we resolved above.
+    local _python_for_venv="$PYTHON_VERSION"
+    local _bundled_python
+    _bundled_python="$(bundled_python_path)"
+    if [ -n "$_bundled_python" ]; then
+        _python_for_venv="$_bundled_python"
+        PYTHON_VERSION="3.11"
+        log_info "Building the virtualenv on the bundled CPython ($_bundled_python)"
+    fi
+    $UV_CMD venv venv --python "$_python_for_venv"
 
     # Neutralize any inherited UV_PYTHON (e.g. UV_PYTHON=3.14 left in the
     # user's shell env). uv honours UV_PYTHON over an existing venv for the

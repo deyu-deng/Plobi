@@ -668,12 +668,17 @@ function buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit = tr
   }
 
   // The bundled backend IS the version: install it from the package, with the
-  // locked wheels that ship beside it (offline, hash-verified).
+  // locked wheels that ship beside it (offline, hash-verified) — and the
+  // toolchain (uv, CPython) that ships beside those.
   if (bundle) {
     args.push('--bundle-dir', bundle.bundleDir)
 
     if (bundle.wheelhouse) {
       args.push('--wheelhouse', bundle.wheelhouse)
+    }
+
+    if (bundle.toolchain) {
+      args.push('--toolchain-dir', bundle.toolchain)
     }
   }
 

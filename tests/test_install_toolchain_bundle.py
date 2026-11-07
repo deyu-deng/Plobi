@@ -147,6 +147,39 @@ def test_the_python_runtime_travels_with_the_package():
     assert "cpython-3.11*-install_only.tar.gz" in source, "install.ps1 没有认包里那份 CPython"
     assert "Python from the installer" in source, "python 档没有先试包里那份"
     assert "--python $pythonForVenv" in source, "venv 没有建在包里那份 CPython 上"
-    assert "cpython-3.11.18+20261026-x86_64-pc-windows-msvc-install_only.tar.gz" in collector, (
+    assert "install_only" in collector and "python-build-standalone" in collector, (
         "收集脚本没有把 CPython 收进包里"
+    )
+
+
+def test_the_posix_leg_gets_the_same_treatment():
+    """mac/linux 那条腿（install.sh）也要开箱即用：uv 与 CPython 一并进包。
+
+    用户 11-07：「开箱即用的体验多平台也要做。」
+    """
+    posix = (_INSTALL_PS1.parents[1] / "scripts" / "install.sh").read_text(encoding="utf-8")
+    runner = (
+        _INSTALL_PS1.parents[1] / "apps" / "desktop" / "electron" / "bootstrap-runner.ts"
+    ).read_text(encoding="utf-8")
+
+    assert "--toolchain-dir|-ToolchainDir)" in posix, "install.sh 没有 --toolchain-dir 参数"
+    assert "TOOLCHAIN_DIR=" in posix, "install.sh 没有 TOOLCHAIN_DIR 变量"
+    assert "bundled_python_path()" in posix, "install.sh 没有取包里那份 CPython 的入口"
+    assert "Using the uv that shipped with the installer" in posix, "install.sh 没有用包里那份 uv"
+    assert "Python from the installer" in posix, "install.sh 没有用包里那份 CPython"
+    assert '_python_for_venv="$_bundled_python"' in posix, "install.sh 的 venv 没有建在包里那份 CPython 上"
+    assert "'--toolchain-dir', bundle.toolchain" in runner, "桌面壳没有把工具链目录传给 POSIX 那条腿"
+
+
+def test_the_collector_covers_every_platform():
+    """收集脚本按平台选资产：Windows 还要 PortableGit 与 ripgrep，mac/linux 自带 git。"""
+    collector = (
+        _INSTALL_PS1.parents[1] / "apps" / "desktop" / "scripts" / "collect-toolchain-bundle.mjs"
+    ).read_text(encoding="utf-8")
+
+    assert "process.platform !== 'win32'" not in collector, "收集脚本还只认 Windows"
+    assert "apple-darwin" in collector, "macOS 的资产没进收集脚本"
+    assert "unknown-linux-gnu" in collector, "Linux 的资产没进收集脚本"
+    assert "needsGit" in collector and "needsRg" in collector, (
+        "各平台要不要带 git/ripgrep 没有分开"
     )
