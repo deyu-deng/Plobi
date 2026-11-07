@@ -88,6 +88,7 @@ from plobi.delegation.tracker import (
     get_tracker,
 )
 from plobi.mind.project_declarations import (
+    PROJECTS_RELATIVE,
     DeclarationSyncError,
     sync_project_declarations,
 )
@@ -1074,11 +1075,20 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         # 脑仓的门禁 ``Mind/scripts/verifier.py`` 把「§1 声明 ≠ 磁盘」判成 BLOCKER，pre-commit
         # 就在跑它——只建目录不同步声明，用户在脑仓的下一次提交会被这个**我们**造的洞拦下。
         # 顺序固定在落册之前：同步不成 = 这次创建不成，树收回、名册一个字都不写。
-        try:
-            declarations = sync_project_declarations(dir_name=tree.dir_path.name)
-        except DeclarationSyncError as exc:
-            tree.rollback()
-            return _error(400, str(exc))
+        #
+        # ⚠️ 但只有 **projects 那一格**进这份声明：脑仓自己的 ``check_projects()`` 比的就是
+        # 「§1 那行列的 projects ↔ ``Surface/dossiers/projects`` 磁盘」，research/courses/… 的树
+        # 根本不在那个名单里。硬同步会拿「这个名字不在那 10 个项目里」当失败 ⇒ research 那一格
+        # 的 Agent 压根建不出来（用户 11-07 22:0x 现场：新建 SRTP 报「Surface/dossiers/projects/SRTP
+        # 不在 … 的盘上，声明对不了盘」，而 SRTP 一直在 ``Surface/dossiers/research/SRTP``）。
+        # 判据是**树落在哪一格**，不是品类：projects 的树照旧进声明（§1 与门禁那条纪律不动），
+        # research 的树不进，也不许让那份声明动一个字节。
+        if tree.relative.startswith(f"{PROJECTS_RELATIVE}/"):
+            try:
+                declarations = sync_project_declarations(dir_name=tree.dir_path.name)
+            except DeclarationSyncError as exc:
+                tree.rollback()
+                return _error(400, str(exc))
         proposed = _replace(proposed, mind_subtree=tree.relative)
 
     try:

@@ -165,8 +165,11 @@ def project_dir_names(root: Path) -> list[str]:
     """``<root>/Surface/dossiers/projects`` 下的目录名（排序）——声明与 INDEX 都对齐到它。"""
     base = real_target(PROJECTS_RELATIVE, root)
     if not base.is_dir():
+        # 说的是**真正找的那个目录**，不是脑仓根：人读面与脑仓是两个并列的根
+        # （``Surface/…`` 住在 ``SURFACE_ROOT``，脑住在 ``MIND_ROOT``），报脑仓根会让人
+        # 去错的地方找（用户 11-07 22:0x 现场就撞了这一句）。
         raise DeclarationSyncError(
-            f"{root} 里没有 {PROJECTS_RELATIVE}/，项目清单对不了盘"
+            f"{base} 不在盘上（{PROJECTS_RELATIVE}/ 找不到），项目清单对不了盘"
         )
     try:
         return sorted(child.name for child in base.iterdir() if child.is_dir())
@@ -362,8 +365,9 @@ def sync_project_declarations(
     names = project_dir_names(root)
     if name not in names:
         # 树建在了别的根上 / 目录被移走：现在对齐的是「这个根」的清单，不是我们这个项目。
+        # 说的是**真正找的那个目录**（人读面那一格），不是脑仓根——两个根并列，指错了就找错地方。
         raise DeclarationSyncError(
-            f"{PROJECTS_RELATIVE}/{name} 不在 {root} 的盘上，声明对不了盘"
+            f"{PROJECTS_RELATIVE}/{name} 不在 {real_target(PROJECTS_RELATIVE, root)} 的盘上，声明对不了盘"
         )
 
     snapshot: dict[str, bytes | None] = {}

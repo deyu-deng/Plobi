@@ -513,3 +513,43 @@ def test_a_root_without_the_brain_gates_still_creates_just_the_tree(
     # 没有声明可同步 ≠ 自己造一份：那正是脑仓门禁与磁盘长期不一致的来源。
     assert not (root / AGENTS_RELATIVE).exists()
     assert not (paths.real_target(INDEX_RELATIVE, root)).exists()
+
+
+# --------------------------------------------------------------------------- #
+# ⑤ 只有 projects 那一格进这份声明：research/courses 的树不拿它去对
+# --------------------------------------------------------------------------- #
+
+
+def test_a_research_agent_does_not_enter_the_projects_declaration(
+    client, make_brain, isolated_registry
+):
+    """research 那一格的树**不在**脑仓 §1 的项目声明里 ⇒ 不许拿那份声明去对。
+
+    用户 11-07 22:0x 现场：新建 SRTP 报「Surface/dossiers/projects/SRTP 不在 … 的盘上，
+    声明对不了盘」——而 SRTP 一直在 ``Surface/dossiers/research/SRTP``（plan.md 都在）。
+
+    根因：这份声明只认 **projects** 那一格（脑仓自己的 ``check_projects()`` 也只比那一格，
+    §1 那行列的就是 projects），却被对 research/courses 一视同仁地同步——于是拿
+    「这个名字不在那 10 个项目里」当失败，research 那一格的 Agent 压根建不出来。
+
+    判据是**树落在哪一格**，不是品类：projects 的树照旧进声明（§1 与门禁那条纪律不变），
+    research 的树不进、也不许让声明动一个字节。
+    """
+    root = make_brain(disk=["Aura"])
+    before = snapshot(root)
+
+    response = create(client, {"id": "srtp", "name": "SRTP", "category": "research"})
+
+    assert response.status_code == 200, response.json()
+
+    # 树落在 research 那一格。
+    research = paths.real_target("Surface/dossiers/research", root)
+    assert (research / "SRTP" / "plan.md").is_file()
+
+    # §1 那行、INDEX.md 与 projects 那一格：一个字节都没动（这份声明不管 research）。
+    assert snapshot(root) == before
+
+    # 名册那一行记的是**树上真实那一格**，不是品类默认的那一格。
+    entry = live_registry().get("srtp")
+    assert entry is not None and entry.mind_subtree == "Surface/dossiers/research/SRTP"
+
