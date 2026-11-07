@@ -117,4 +117,24 @@ describe('About panel: the desktop release line', () => {
     const checkButton = screen.getByText(en.settings.about.checkNow).closest('button')
     expect(checkButton?.disabled).toBe(false)
   })
+
+  it('shows ONE product version, not two', () => {
+    // 壳与后端一起发 ⇒ 一个产品一个版本号（用户 11-07：「就应该显示一个版本号」）。
+    $desktopVersion.set({ appVersion: '0.3.0', backendVersion: '0.3.0', electronVersion: '30.0.0', nodeVersion: '20.0.0', platform: 'win32', plobiRoot: 'C:\\Plobi' })
+
+    render(<AboutSettings />)
+
+    expect(screen.getByText(en.settings.about.version('0.3.0'))).toBeTruthy()
+    expect(screen.queryByText(en.shell.statusbar.backendVersion('0.3.0'))).toBeNull()
+  })
+
+  it('says so when the backend is genuinely a different version', () => {
+    // 两边真不一致时那是毛病，值得说出来。
+    $desktopVersion.set({ appVersion: '0.3.0', backendVersion: '0.1.0', electronVersion: '30.0.0', nodeVersion: '20.0.0', platform: 'win32', plobiRoot: 'C:\\Plobi' })
+
+    render(<AboutSettings />)
+
+    expect(screen.getByText(en.settings.about.version('0.3.0'))).toBeTruthy()
+    expect(screen.getByText(en.shell.statusbar.backendVersion('0.1.0'))).toBeTruthy()
+  })
 })

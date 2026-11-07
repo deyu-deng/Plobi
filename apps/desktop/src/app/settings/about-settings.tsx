@@ -140,12 +140,12 @@ export function AboutSettings() {
           <p className="mt-1 text-xs text-muted-foreground">
             {version?.appVersion ? a.version(version.appVersion) : a.versionUnavailable}
           </p>
-          {/* The agent (the Python side) has its OWN version -- it lives in the
-              home checkout, a separate git tree with its own release rhythm.
-              It gets its own line; the number above is the shell's. Before
-              this split the panel showed the agent's number under the shell's
-              label (a 0.3.2 install announced "Version 0.1.0"). */}
-          {version?.backendVersion ? (
+          {/* ONE product version.  The shell and the backend ship together, so
+              showing a second line ("Backend v0.3.0") made one product look
+              like two (user 11-07: 「就应该显示一个版本号」).  The backend's
+              number appears ONLY when it genuinely differs from the shell's —
+              that mismatch is a real defect worth saying out loud. */}
+          {version?.backendVersion && version.backendVersion !== version.appVersion ? (
             <p className="mt-0.5 text-xs text-muted-foreground">
               {t.shell.statusbar.backendVersion(version.backendVersion)}
             </p>
