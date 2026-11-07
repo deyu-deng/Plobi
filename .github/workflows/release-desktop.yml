@@ -124,12 +124,6 @@ jobs:
             chatlog_artifact: chatlog-linux
             chatlog_binary: chatlog
     runs-on: ${{ matrix.os }}
-    env:
-      # 微信采集引擎是 Go 产物（bin/ 被 gitignore ⇒ 干净 checkout 里没有）。构建它的那
-      # 档作业还没进仓（它的两处前提还没齐：脚本认不出 Mach-O 的 magic、Windows 镜像没有
-      # mingw gcc），而 collect-backend-bundle.mjs 里有一道「采集器缺失 ⇒ 致命失败」的
-      # 断言 ⇒ 不旁路就**任何发版都被拦**。旁路是带大声警告的，不是静默：包里没有采集
-      # 器（与此前每一版一致），等那一档连着脚本一起落进来就把旁路撤掉、断言收回。
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
