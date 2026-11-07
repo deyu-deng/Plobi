@@ -96,7 +96,16 @@ jobs:
           #    The requirements file travels with it: the offline install reads
           #    it (uv pip install -r), it is not a lockfile (uv sync would go
           #    to the recorded URLs instead of the local wheelhouse).
-          node apps/desktop/scripts/collect-backend-bundle.mjs
+          #
+          #    PLOBI_SKIP_CHATLOG_ASSERT=1: the WeChat collector engine is a Go
+          #    binary whose bin/ is gitignored, so a fresh checkout has none and
+          #    collect-backend-bundle.mjs refuses to pack without it.  The job
+          #    that builds it (build-chatlog.mjs + the CGO toolchain) is not in
+          #    the tree yet, so until it lands this gate would block every
+          #    release.  Bypassed with a loud warning, not silently: the
+          #    package ships without the collector, exactly as every release
+          #    so far has.
+          PLOBI_SKIP_CHATLOG_ASSERT=1 node apps/desktop/scripts/collect-backend-bundle.mjs
 
       # The install on the user's machine is OFFLINE (--no-index --find-links).
       # Prove it here, on the same wheels, before shipping a package whose first
