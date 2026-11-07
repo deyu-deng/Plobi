@@ -49,10 +49,7 @@ Function PlobiDataPageFunc
   Pop $0
   ${NSD_OnClick} $0 plobiDataBrowse
 
-  ${NSD_CreateLabel} 0 54u 100% 20u "默认位置：%LOCALAPPDATA%\Plobi"
-  Pop $0
-
-  ${NSD_CreateLabel} 0 70u 100% 20u "卸载时不会删除这个文件夹里的内容。"
+  ${NSD_CreateLabel} 0 54u 100% 20u "卸载时不会删除这个文件夹里的内容。"
   Pop $0
 
   nsDialogs::Show
