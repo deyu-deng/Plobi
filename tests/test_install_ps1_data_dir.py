@@ -69,6 +69,7 @@ def _run_ps(body: str, stdin: str | None = None) -> subprocess.CompletedProcess:
         "Resolve-DataDir",
         "Apply-DataDirChoice",
         "Set-DataDirChoice",
+        "Set-UvRuntimeDirs",
     ))
     ps1 = Path(tempfile.mkdtemp(prefix="plobi-ps-")) / "probe.ps1"
     ps1.write_text(prelude + body, encoding="utf-8")
@@ -373,3 +374,165 @@ def test_the_prompt_asks_once_and_a_typed_answer_is_what_lands(home: Path):
     assert Path(chosen).resolve() == typed.resolve(), f"打进去的路径要真成为落点，不能被默认值吃掉：{proc.stdout}"
     assert Path(install).resolve() == (typed / "plobi-agent").resolve(), proc.stdout
     assert "PLOBI_HOME" in proc.stdout, "钉进 HKCU 那句既有说明要在场，用户才知道自启读的是它"
+
+
+# ------------------------------------------- 用户自己选的那一格：原样兑现（2026-11-07）
+#
+# 用户 11-07 原话：「那是我们这台机器的规矩，不是产品的规矩……如果用户选择数据目录就在
+# C 盘，那就在 C 盘下载呗」「也不要警告。」
+#
+# ⇒ 用户自己选的那一格，盘规不否决它；**我们自己的**安装流仍按盘规行事。
+
+
+def _same_path(left: str, right: Path) -> bool:
+    return str(Path(left).resolve()).lower() == str(Path(right).resolve()).lower()
+
+
+def test_a_user_chosen_directory_is_not_vetoed_by_the_machine_policy(system_dir: Path):
+    """用户自己选的那一格 ⇒ 盘规不否决它。
+
+    两条判据必须**一起看**：没有那个开关时它被否，有那个开关时它放行（是开关翻的，
+    不是盘规恰好不在场）。
+    """
+    policy = system_dir / "directory-policy.md"
+    policy.write_text("# 测试造的盘规，只为让这一条判据在场\n", encoding="utf-8")
+    q = chr(39)
+
+    vetoed = _run_ps(
+        f"$r = Resolve-DataDir -Candidate {q}{system_dir}{q} -PolicyFile {q}{policy}{q}\n"
+        'Write-Output "OK:$($r.ok)"\nWrite-Output "REASON:$($r.reason)"\n'
+    )
+    assert vetoed.returncode == 0, vetoed.stdout + vetoed.stderr
+    assert "OK:False" in vetoed.stdout, "没有那个开关时，盘规该照旧否决这一格"
+    assert "系统盘" in vetoed.stdout, vetoed.stdout
+
+    allowed = _run_ps(
+        f"$r = Resolve-DataDir -Candidate {q}{system_dir}{q} -PolicyFile {q}{policy}{q} -AllowPolicyViolation\n"
+        'Write-Output "OK:$($r.ok)"\nWrite-Output "PATH:$($r.path)"\n'
+    )
+    assert allowed.returncode == 0, allowed.stdout + allowed.stderr
+    assert "OK:True" in allowed.stdout, (
+        "用户自己选的那一格不该被盘规否决：那是这台机器的规矩，不是产品的规矩\n"
+        + allowed.stdout
+    )
+    assert "系统盘" not in allowed.stdout, allowed.stdout
+    chosen = allowed.stdout.partition("PATH:")[2].splitlines()[0].strip()
+    assert _same_path(chosen, system_dir), allowed.stdout
+
+
+def test_the_non_interactive_branch_honours_the_users_choice(system_dir: Path):
+    """非交互那一支（**装机版走的就是它**）把「用户选过」传下去 ⇒ 不当场 exit 1。"""
+    q = chr(39)
+    proc = _run_ps(
+        f"$PlobiHome = {q}{system_dir}{q}\n"
+        "$NonInteractive = $true\n"
+        "$UserChoseDataDir = $true\n"
+        "$InstallDirWasGiven = $false\n"
+        "Set-DataDirChoice\n"
+        'Write-Output "REACHED:$PlobiHome"\n'
+    )
+
+    assert proc.returncode == 0, (
+        f"用户选过就不该被盘规挡下：rc={proc.returncode}\n{proc.stdout}{proc.stderr}"
+    )
+    assert "数据目录不合规" not in proc.stdout, proc.stdout
+    reached = proc.stdout.partition("REACHED:")[2].splitlines()[0].strip()
+    assert _same_path(reached, system_dir), proc.stdout
+
+
+def test_our_own_install_flow_still_obeys_the_machine_policy(system_dir: Path):
+    """**没有**用户选择时（我们自己的安装流）⇒ 盘规照旧生效。
+
+    用户 11-07：「那是我们这台机器的规矩」——它约束的是**我们**，不是别的用户。
+    """
+    found = next((f"{letter}:\\_POLICY\\directory-policy.md" for letter in string.ascii_uppercase
+                  if os.path.isfile(f"{letter}:\\_POLICY\\directory-policy.md")), None)
+    if not found:
+        pytest.skip("这台没有 _POLICY\\directory-policy.md，这条判据在此不构成——不拿跳过当通过")
+
+    q = chr(39)
+    proc = _run_ps(
+        f"$PlobiHome = {q}{system_dir}{q}\n"
+        "$NonInteractive = $true\n"
+        "$UserChoseDataDir = $false\n"
+        "$InstallDirWasGiven = $false\n"
+        "Set-DataDirChoice\n"
+        'Write-Output "UNREACHABLE"\n'
+    )
+
+    assert proc.returncode == 1, f"我们自己的流该照旧被盘规挡下：rc={proc.returncode}\n{proc.stdout}{proc.stderr}"
+    assert "系统盘" in proc.stdout, proc.stdout
+    assert "UNREACHABLE" not in proc.stdout, "exit 之后不许继续装"
+
+
+def test_the_source_passes_the_users_choice_down():
+    """源码形状：非交互那一支与交互那一支（手打的一格）都把「用户选过」传下去。"""
+    body = _function_body("Set-DataDirChoice")
+
+    assert "-AllowPolicyViolation:$UserChoseDataDir" in body, (
+        "非交互那一支必须把「用户选过」传下去，否则装机版照样被盘规挡下"
+    )
+    assert "-AllowPolicyViolation:$typed" in body, (
+        "交互那一支里用户手打的一格也必须原样兑现（回车用建议值时才按盘规检查）"
+    )
+    assert "[switch]$AllowPolicyViolation" in _function_text("Resolve-DataDir"), (
+        "Resolve-DataDir 要有一个「盘规不否决」的开关"
+    )
+
+
+def test_uv_runtime_dirs_follow_the_chosen_directory(home: Path):
+    """uv 托管的 Python 与它的缓存也落在**用户选的那一格**里。
+
+    uv 的默认落点在用户目录（Windows 上是 `%APPDATA%\\uv`）⇒ 用户把数据目录选到 D 盘，
+    运行时却还躺在 C 盘。装完的 Plobi 应当是完整的一格。
+    """
+    q = chr(39)
+    proc = _run_ps(
+        f"$PlobiHome = {q}{home}{q}\n"
+        "Remove-Item Env:UV_PYTHON_INSTALL_DIR -ErrorAction SilentlyContinue\n"
+        "Remove-Item Env:UV_CACHE_DIR -ErrorAction SilentlyContinue\n"
+        "Set-UvRuntimeDirs\n"
+        'Write-Output "PY:$env:UV_PYTHON_INSTALL_DIR"\n'
+        'Write-Output "CACHE:$env:UV_CACHE_DIR"\n'
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    py = proc.stdout.partition("PY:")[2].splitlines()[0].strip()
+    cache = proc.stdout.partition("CACHE:")[2].splitlines()[0].strip()
+
+    assert py, f"uv 的 Python 落点该定下来：{proc.stdout}"
+    assert cache, f"uv 的缓存落点该定下来：{proc.stdout}"
+    assert _same_path(py, home / "python"), proc.stdout
+    assert _same_path(cache, home / "uv-cache"), proc.stdout
+
+
+def test_an_explicit_uv_dir_is_left_alone(home: Path):
+    """用户自己 setx 过的 UV_* 目录**不动**——那是他的选择，比我们的默认值更近。"""
+    q = chr(39)
+    explicit = home.parent / "uv-mine"
+    proc = _run_ps(
+        f"$PlobiHome = {q}{home}{q}\n"
+        f"$env:UV_PYTHON_INSTALL_DIR = {q}{explicit}{q}\n"
+        f"$env:UV_CACHE_DIR = {q}{explicit}{q}\n"
+        "Set-UvRuntimeDirs\n"
+        'Write-Output "PY:$env:UV_PYTHON_INSTALL_DIR"\n'
+        'Write-Output "CACHE:$env:UV_CACHE_DIR"\n'
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    py = proc.stdout.partition("PY:")[2].splitlines()[0].strip()
+    cache = proc.stdout.partition("CACHE:")[2].splitlines()[0].strip()
+
+    assert _same_path(py, explicit), f"显式设过的落点不许被默认值覆盖：{proc.stdout}"
+    assert _same_path(cache, explicit), f"显式设过的落点不许被默认值覆盖：{proc.stdout}"
+
+
+def test_the_uv_dirs_are_moved_after_the_data_dir_is_chosen():
+    """搬运行时的时机：在落点定下来**之后**——那一格可能刚刚被改过。"""
+    dispatch = _SOURCE.index("# Where the run data goes")
+    region = _SOURCE[dispatch:]
+
+    assert region.index("Set-DataDirChoice") < region.index("Set-UvRuntimeDirs"), (
+        "先定落点，再把 uv 的运行时搬进那一格"
+    )
+

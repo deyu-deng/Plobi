@@ -1,43 +1,12 @@
-﻿; WP-DATA-ISOLATION — 安装时可选择「数据目录」。
+﻿; WP-DATA-ISOLATION — 安装时选「数据目录」。
 ;
-; 为什么需要这一页：装机版从今往后**不看** PLOBI_HOME（那是开发态的门牌），
-; 它只认这里写下的一格，其次才是自己的默认格 %LOCALAPPDATA%\Plobi。
-; 于是同一台机器上「稳定的装机版」与「天天改的开发态」各占一格，谁也污染不到谁。
+; 装机版只认这一格（HKCU\Software\Plobi\DataDir），其次才是 %LOCALAPPDATA%\Plobi。
+; 数据目录与安装目录是两件事：程序放 D 盘、数据放另一块盘的人很多。
 ;
-; 写下的东西只有一处：HKCU\Software\Plobi 的 DataDir
-; （主进程 apps/desktop/electron/main.ts 的 readInstallerRecordedDataDir 读它）。
-;
-; 用户把这一格指到一个空目录，就是一次完整体验新用户首次打开：后端 bootstrap
-; 会在 <数据目录> 下从零长出 plobi-agent，没有任何历史会话、名册行、记忆。
-;
-; ── 这一份 2026-11-06 从 `apps/desktop/build/installer.nsh` 挪到这里来 ──
-;
-; 为什么挪：`apps/desktop/build/` 整个目录是 **gitignore** 的（`.gitignore:76`）⇒ 这份脚本
-; 原来只活在某一台机器的本地，**CI 的干净 checkout 里根本没有它** ⇒ 「装的时候能自选数据
-; 目录」那一页进不了任何一个发布包（而 `package.json` 里指路它的那行若签上去，CI 构建
-; 会因为找不到 include 而直接断——两件事是同一根绳子）。
-;
-; electron-builder 的 `nsis.include` 按**工程目录**（`apps/desktop/`）解析
-; （`NsisTarget.js:600` 的 `packager.getResource(this.options.include, ...)`）⇒ 指到这一份。
-;
-; ── 形状（2026-11-06 23:1x 改正到第三次） ──
-;
-; 前两次编译各炸一次，两根绳子：
-;
-; ① **`customPageAfterChangeDir` 被插在顶层**（页面声明该在的位置，
-;    `assistedInstaller.nsh:42`），而 `!insertmacro MUI_HEADER_TEXT` 会展开成
-;    `SendMessage` ⇒ 顶层用它就炸（`command SendMessage not valid outside Section or
-;    Function`）。MUI2 官方自定义页的形状（Modern UI 2.1 Readme「Custom pages」）是
-;    `Page custom FunctionName` ＋ **正文与 `MUI_HEADER_TEXT` 都在那个 Function 里**
-;    ⇒ 顶层只留「一页的声明」，正文搬到下面的 `PlobiDataPageFunc`。
-;
-; ② **MUI2 的宏在这份脚本被 include 时还没定义**：electron-builder 生成的顺序是
-;    `scriptGenerator.build() + originalScript`（`NsisTarget.js:622`）——**用户脚本在前，
-;    模板（`installer.nsi`，里面有 `!include "MUI2.nsh"`）在后** ⇒ 编译期展开
-;    `MUI_HEADER_TEXT` 时它还不存在（`macro named "MUI_HEADER_TEXT" not found`）。
-;    ⇒ 这里**自己先 include 一次 MUI2.nsh**：它有 `!ifndef MUI_INCLUDED` 的 include-once
-;    保护，模板那次会被跳过；MUI2 需要的 `WinMessages`／`LogicLib`／`nsDialogs`／
-;    `Localization`／`Pages` 全都跟着进来（`MUI_LANGUAGE` 等宏也就位了）。
+; 三个形状上的坑（都踩过）：
+;   ① 自定义页的正文在 Function 里——顶层用 MUI_HEADER_TEXT 会展开成 SendMessage，非法。
+;   ② MUI2 自己先 include：electron-builder 把用户脚本排在模板前面，编译期宏还没定义。
+;   ③ 本文件带 UTF-8 BOM——NSIS 按 ACP 读，没 BOM 的中文会乱码。
 
 !include "MUI2.nsh"
 !include "nsDialogs.nsh"
@@ -52,16 +21,12 @@ Var PlobiDataDirValue
   StrCpy $PlobiDataDirValue "$LOCALAPPDATA\Plobi"
 !macroend
 
-; 紧跟在「选择安装目录」之后插一页（安装目录与数据目录是两件事：程序放 D 盘、
-; 数据放另一块盘的人很多，混在一页会让人以为改一个就改了另一个）。
 !macro customPageAfterChangeDir
   Page custom PlobiDataPageFunc
 !macroend
 
-; 这一页的正文。MUI2 官方自定义页的形状：页头文字与 nsDialogs 都在**函数里**
-; （顶层用 `MUI_HEADER_TEXT` 会炸：它展开成 SendMessage，而顶层不在 Section/Function 里）。
 Function PlobiDataPageFunc
-  !insertmacro MUI_HEADER_TEXT "选择数据目录" "Plobi 把会话、配置与记忆放在这里。"
+  !insertmacro MUI_HEADER_TEXT "选择数据目录" "Plobi 的会话、配置与记忆存放在这里。"
 
   nsDialogs::Create 1018
   Pop $PlobiDataPage
@@ -70,20 +35,24 @@ Function PlobiDataPageFunc
     Abort
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 26u "选择一个用来存放 Plobi 数据的文件夹（会话记录、Agent 名册、模型与技能配置、日志）。$\r$\n指向一个空文件夹即可体验全新用户的第一次启动流程；已有的数据目录请原样指回去。"
-  Pop $0
-
   ${NSD_CreateDirRequest} 0 32u 78% 14u "$PlobiDataDirValue"
   Pop $PlobiDataDirField
 
-  ${NSD_CreateBrowseButton} 80% 32u 20% 14u "浏览..."
+  ${NSD_CreateBrowseButton} 80% 32u 20% 14u "浏览…"
   Pop $0
   ${NSD_OnClick} $0 plobiDataBrowse
 
-  ${NSD_CreateLabel} 0 54u 100% 20u "默认：%LOCALAPPDATA%\Plobi（当前用户）。卸载时不会删除这个文件夹里的内容。"
+  ${NSD_CreateLabel} 0 54u 100% 20u "默认位置：%LOCALAPPDATA%\Plobi"
+  Pop $0
+
+  ${NSD_CreateLabel} 0 70u 100% 20u "卸载时不会删除这个文件夹里的内容。"
   Pop $0
 
   nsDialogs::Show
+
+  ; 值在这里读进 Var：customInstall 跑在安装 Section 里，那时页面早销毁了，
+  ; 再去读那个控件句柄只会读回空（落回默认格）。
+  ${NSD_GetText} $PlobiDataDirField $PlobiDataDirValue
 FunctionEnd
 
 Function plobiDataBrowse
@@ -96,12 +65,7 @@ Function plobiDataBrowse
 FunctionEnd
 
 ; 装的时候把那一格写进注册表（主进程 electron/main.ts 的 readInstallerRecordedDataDir 读它）。
-; 这一段跑在安装 Section 里 ⇒ 普通 NSIS 命令都用得上。
 !macro customInstall
-  ${If} $PlobiDataDirField != 0
-    ${NSD_GetText} $PlobiDataDirField $PlobiDataDirValue
-  ${EndIf}
-
   ${If} $PlobiDataDirValue == ""
     StrCpy $PlobiDataDirValue "$LOCALAPPDATA\Plobi"
   ${EndIf}

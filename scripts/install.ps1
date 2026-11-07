@@ -36,6 +36,8 @@ param(
     [switch]$ProtocolVersion,
     [switch]$NonInteractive,
     [switch]$Json,
+    # 这一格数据目录是用户自己选的 ⇒ 原样兑现，不按这台机器的盘规否决，也不警告。
+    [switch]$UserChoseDataDir,
 
     # --- Ensure mode (dep_ensure.py entry point) ---
     [string]$Ensure = "",
@@ -3659,7 +3661,9 @@ function Resolve-DataDir {
     #>
     param(
         [AllowEmptyString()][string]$Candidate,
-        [string]$PolicyFile = ""
+        [string]$PolicyFile = "",
+        # 用户自己选的那一格：机器的盘规不否决它。
+        [switch]$AllowPolicyViolation
     )
 
     $out = [pscustomobject]@{ ok = $false; path = ""; reason = "" }
@@ -3690,7 +3694,7 @@ function Resolve-DataDir {
             if (Test-Path -LiteralPath $cand) { $policyPath = $cand; break }
         }
     }
-    if ($policyPath -and (Test-Path -LiteralPath $policyPath) -and $env:SystemRoot) {
+    if (-not $AllowPolicyViolation -and $policyPath -and (Test-Path -LiteralPath $policyPath) -and $env:SystemRoot) {
         $systemDrive = ("$env:SystemRoot").Substring(0, 1)
         if ($expanded.Substring(0, 1) -ieq $systemDrive) {
             $out.reason = "系统盘：这台写着运行数据禁止残留系统盘（$policyPath），换到数据盘去"
@@ -3749,7 +3753,7 @@ function Set-DataDirChoice {
     $default = $PlobiHome
 
     if ($NonInteractive -or -not (Test-InstallConsoleUsable)) {
-        $r = Resolve-DataDir -Candidate $default
+        $r = Resolve-DataDir -Candidate $default -AllowPolicyViolation:$UserChoseDataDir
         if (-not $r.ok) {
             Write-Err "数据目录不合规：$($r.reason)（非交互模式不当没看见，也不替你换一个目录）"
             exit 1
@@ -3761,15 +3765,17 @@ function Set-DataDirChoice {
 
     while ($true) {
         Write-Host ""
-        Write-Info "Plobi 的运行数据（配置、数据库、缓存）写在一个目录里。这台的盘规可能不许它留在系统盘。"
+        Write-Info "Plobi 的运行数据（配置、数据库、缓存）写在一个目录里。手打路径就照你写的来。"
         Write-Host "  建议：$default"
         $answer = Read-Host "  数据目录（回车=建议值，输入路径=改到别处，q=退出）"
         if ($answer -match "^\s*(q|quit|exit)\s*$") {
             Write-Err "已取消：数据目录没定，后面每一步都没有落点"
             exit 1
         }
-        $candidate = if ([string]::IsNullOrWhiteSpace($answer)) { $default } else { $answer }
-        $r = Resolve-DataDir -Candidate $candidate
+        # 用户手打的一格 ⇒ 原样兑现；回车用建议值 ⇒ 建议值仍按盘规检查。
+        $typed = -not [string]::IsNullOrWhiteSpace($answer)
+        $candidate = if ($typed) { $answer } else { $default }
+        $r = Resolve-DataDir -Candidate $candidate -AllowPolicyViolation:$typed
         if ($r.ok) {
             Apply-DataDirChoice $r
             Write-Success "数据目录：$($r.path)"
@@ -3778,6 +3784,19 @@ function Set-DataDirChoice {
         }
         Write-Warn "这个目录不能用：$($r.reason)"
         Write-Host "  换一条路径，或回车回到建议值。"
+    }
+}
+
+function Set-UvRuntimeDirs {
+    # uv 托管的 Python 与它的缓存默认落在用户目录（Windows 上是 %APPDATA%\uv）——
+    # 用户把数据目录选到 D 盘，运行时却还躺在 C 盘。⇒ 默认搬进 $PlobiHome。
+    # 已经显式设过的（用户自己 setx 过的）不动：那是他的选择。
+    if (-not $PlobiHome) { return }
+    if (-not $env:UV_PYTHON_INSTALL_DIR) {
+        $env:UV_PYTHON_INSTALL_DIR = Join-Path $PlobiHome "python"
+    }
+    if (-not $env:UV_CACHE_DIR) {
+        $env:UV_CACHE_DIR = Join-Path $PlobiHome "uv-cache"
     }
 }
 
@@ -3840,6 +3859,9 @@ try {
     # first things that create directories under $PlobiHome.
     $script:InstallDirWasGiven = $PSBoundParameters.ContainsKey("InstallDir")
     Set-DataDirChoice
+
+    # 落点定下来之后，uv 的运行时与缓存也搬进那一格（必须在这一步之后——那一格可能刚被改过）。
+    Set-UvRuntimeDirs
 
     # Use PSBoundParameters rather than $Stage truthiness so that an
     # explicit `-Stage ""` from a misbehaving driver doesn't fall through

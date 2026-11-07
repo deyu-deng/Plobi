@@ -4024,9 +4024,6 @@ async function ensureRuntime(backend) {
       sourceRepoRoot: SOURCE_REPO_ROOT,
       plobiHome: PLOBI_HOME,
       // The installer page recorded a data directory => the user picked it.
-      // The installer honours that choice verbatim; a machine's own disk policy
-      // does not veto it (2026-11-07: the packaged app refused to start
-      // because the default lands on the system drive).
       userChoseDataDir: Boolean(readInstallerRecordedDataDir()),
       logRoot: path.join(PLOBI_HOME, 'logs'),
       abortSignal: bootstrapAbortController.signal,

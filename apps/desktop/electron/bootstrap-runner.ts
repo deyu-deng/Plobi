@@ -612,8 +612,17 @@ function spawnBash(scriptPath, args, { emit, stageName, abortSignal, plobiHome }
 // is fresh-install only: once a managed checkout already exists, bootstrap is
 // a repair/update path and must not let an old packaged app detach the checkout
 // back to the commit baked into that app.
-function buildPinArgs(installStamp, { pinCommit = true, bundle = null } = {}) {
+function buildPinArgs(
+  installStamp,
+  { pinCommit = true, bundle = null, userChoseDataDir = false } = {}
+) {
   const args = []
+
+  // The user picked the data directory on the installer's page: honour it
+  // verbatim — a machine's disk policy is that machine's business, not a veto.
+  if (userChoseDataDir) {
+    args.push('-UserChoseDataDir')
+  }
 
   if (pinCommit && installStamp && installStamp.commit) {
     args.push('-Commit', installStamp.commit)
@@ -668,13 +677,14 @@ async function fetchManifest({
   activeRoot,
   installStamp,
   pinCommit,
-  bundle = null
+  bundle = null,
+  userChoseDataDir = false
 }) {
   const isPosix = installerKind === 'posix'
 
   const args = isPosix
     ? ['--manifest', ...buildPosixPinArgs({ installStamp, activeRoot, plobiHome, pinCommit, bundle })]
-    : ['-Manifest', ...buildPinArgs(installStamp, { pinCommit, bundle })]
+    : ['-Manifest', ...buildPinArgs(installStamp, { pinCommit, bundle, userChoseDataDir })]
 
   const result = await (isPosix ? spawnBash : spawnPowerShell)(scriptPath, args, {
     emit,
@@ -741,7 +751,8 @@ async function runStage({
   abortSignal,
   installStamp,
   pinCommit,
-  bundle = null
+  bundle = null,
+  userChoseDataDir = false
 }) {
   const startedAt = Date.now()
   emit({ type: 'stage', name: stage.name, state: 'running' })
@@ -761,7 +772,7 @@ async function runStage({
         stage.name,
         '-NonInteractive',
         '-Json',
-        ...buildPinArgs(installStamp, { pinCommit, bundle })
+        ...buildPinArgs(installStamp, { pinCommit, bundle, userChoseDataDir })
       ]
 
   const result = await (isPosix ? spawnBash : spawnPowerShell)(scriptPath, args, {
@@ -851,7 +862,8 @@ async function runBootstrap(opts) {
     logRoot,
     onEvent,
     abortSignal,
-    writeMarker // callback to write the bootstrap-complete marker; main.ts provides
+    writeMarker, // callback to write the bootstrap-complete marker; main.ts provides
+    userChoseDataDir = false // the user picked the data directory at install time
   } = opts
 
   // Bail before spawning anything if the user already cancelled — otherwise an
@@ -937,7 +949,8 @@ async function runBootstrap(opts) {
       activeRoot,
       installStamp,
       pinCommit,
-      bundle
+      bundle,
+      userChoseDataDir
     })
 
     emit({
@@ -967,7 +980,8 @@ async function runBootstrap(opts) {
         abortSignal,
         installStamp,
         pinCommit,
-        bundle
+        bundle,
+        userChoseDataDir
       })
 
       if (ev.state === 'failed') {
