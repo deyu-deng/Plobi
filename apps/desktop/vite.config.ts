@@ -90,5 +90,13 @@ export default defineConfig({
     // them it reported "No test suite found" — a silently unrun file.
     include: ['src/**/*.test.{ts,tsx}'],
     setupFiles: ['./src/test/jsdom-globals.ts'],
+    // The default 5s is a render-speed assumption this suite outgrew. A single
+    // Settings case that mounts `providers-settings` / `model-settings` takes
+    // ~2.5s here (jsdom + the radix/tailwind module graph), so with ~30 files
+    // transforming in parallel the first case of an unlucky file crossed 5s and
+    // reported a timeout that no isolated run could reproduce. Assertions still
+    // fail on their own merits — this only stops load from being mistaken for a
+    // broken component.
+    testTimeout: 20000,
   }
 })

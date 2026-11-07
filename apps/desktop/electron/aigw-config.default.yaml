@@ -1,0 +1,99 @@
+# Plobi 出厂默认「桌面额度」网关配置
+#
+# 这是打包进应用的**模板**：全新安装的机器上没有 quota_hub/config.yaml 时，
+# electron/main.ts 的 ensureProductAigw() 会把本文件复制到
+# <PLOBI_HOME>/plobi-agent/quota_hub/config.yaml，然后照常拉起 sidecar。
+#
+# 因此这个文件只含「任何机器都成立」的东西：
+# - 回环地址与本地钥匙（必须与主进程 productQuotaApiKey() 的兜底
+#   `sk-local-dev-key` 一致，否则桌面自己都连不上自己起的网关）；
+# - providers 的**结构**（哪条腿存在、怎么连），不含任何模型抄本；
+# - 上游凭据一律不写：每条腿的凭据都来自那台机器上该软件自己的本机存储
+#   （Antigravity 的 Credential Manager、CodeBuddy 的桌面记录、Gemini 的
+#   oauth_creds.json、kiro/cline 自己的凭据文件）。没有凭据时卡片显示「未登录」，
+#   由用户点 + 走该软件自己的登录 —— 这里绝不写死任何账号。
+#
+# 改这里等于改全世界的默认值，请与 Code/quota_hub/config.yaml 的结构保持同构。
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  # 本地回环钥匙，不是上游密钥。换掉它必须同时改主进程的兜底值。
+  api_key: sk-local-dev-key
+
+logging:
+  level: INFO
+
+# 曾照 Cursor 那份认系统代理，死代理会拖垮所有上游；直连更可靠。
+trust_env: false
+
+vault:
+  # spawn-CLI / 本机凭据路线不落任何 token，没有需要加密落盘的东西。
+  enabled: false
+
+scheduler:
+  max_retries: 2
+  global_concurrency: 4
+  per_account_concurrency: 1
+  sticky_ttl: 1800
+  strategy: least_fail
+
+routing:
+  # 不设通配规则：认不出的模型名应当报错，而不是被悄悄改写成别的东西。
+  rules: []
+
+providers:
+  # 桌面订阅（agy / Google）。凭据来自桌面应用自己维护的本机存储，
+  # 这里不写 refresh_token；没有凭据时卡片会请用户跑一次 agy 登录。
+  antigravity:
+    enabled: true
+    host: https://daily-cloudcode-pa.googleapis.com
+    api_version: v1internal
+    accounts:
+      - { id: desktop-store }
+
+  # Gemini CLI 路线：读 ~/.gemini/oauth_creds.json 的 Google OAuth。
+  # 只给这条腿留代理位：留空 = 直连；它挂了只坏这一条腿。
+  gemini_api:
+    enabled: true
+    proxy: ""
+
+  # OpenCode Zen：读本机 OAuth，打它自己的 OpenAI 兼容口，模型名取它自报清单。
+  opencode_api:
+    enabled: true
+
+  # Kiro：走它自己的流式 API；不写 models —— 名单由这条腿现读，
+  # 抄一份清单只会在厂商改模型时变成一堆点了必失败的名字。
+  kiro_cli:
+    enabled: true
+    transport: api
+    timeout: 300
+    accounts: [{ id: kiro-default }]
+
+  # Cline：OpenAI 兼容口，凭据在就是纯 HTTP 腿；没有凭据时卡片请用户跑 cline auth。
+  cline_cli:
+    enabled: true
+    timeout: 300
+    accounts: [{ id: cline-default }]
+
+  # Qoder：设备码 PKCE 自登录 + COSY 签名 SSE。
+  qoder:
+    enabled: true
+    display_name: Qoder
+    model_prefix: qoder
+    timeout: 300
+    stream_idle_seconds: 90
+
+  # CodeBuddy 订阅的 HTTP 口（OpenAI 形状、带工具），凭据只在运行时从桌面记录中读。
+  # models 不写：由这条腿自报目录。
+  workbuddy:
+    enabled: true
+    base_url: https://www.workbuddy.cn
+    dialect: openai
+    chat_path: /v2/chat/completions
+    token_source: codebuddy_desktop_store
+    header_templates:
+      - { name: "X-Agent-Intent", value: "craft" }
+      - { name: "X-Auth-Refresh-Source", value: "plugin" }
+    accounts:
+      - { id: desktop }

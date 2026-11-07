@@ -3819,7 +3819,33 @@ function resolvePlobiBackend(backendArgs) {
     }
   }
 
-  // 2. Development source -- when running `npm run dev` from a checkout, the
+  // 2. Packaged: the backend that ships inside the app, at <resources>/backend
+  //    (`extraResources`: `build/backend` → `resources/backend`, gathered by
+  //    scripts/collect-backend-bundle.mjs). An installed copy must run the code
+  //    that shipped with it -- before this rung, a packaged app skipped straight
+  //    to the bootstrap clone in PLOBI_HOME and ran whatever stale copy happened
+  //    to sit at D:\Data\AppData\plobi\plobi-agent, so source fixes never reached
+  //    the running app. Only used when the bundle can actually produce a backend
+  //    (root looks like a checkout and an interpreter resolves); otherwise we log
+  //    and keep falling through, because a broken bundle must not be worse than
+  //    the clone it would replace.
+  if (IS_PACKAGED) {
+    const packagedRoot = path.join(process.resourcesPath, 'backend')
+
+    if (isPlobiSourceRoot(packagedRoot)) {
+      const backend = createPythonBackend(packagedRoot, `Plobi bundled at ${packagedRoot}`, backendArgs)
+
+      if (backend) {
+        return backend
+      }
+
+      rememberLog(`[backend] packaged backend at ${packagedRoot} has no usable interpreter; falling through`)
+    } else {
+      rememberLog(`[backend] packaged backend not usable at ${packagedRoot}; falling through`)
+    }
+  }
+
+  // 3. Development source -- when running `npm run dev` from a checkout, the
   //    cloned repo at SOURCE_REPO_ROOT takes precedence over ACTIVE and any
   //    installed `plobi` on PATH so local Python edits are actually exercised.
   //    (In dev with no checkout, SOURCE_REPO_ROOT won't pass isPlobiSourceRoot.)
@@ -3831,7 +3857,7 @@ function resolvePlobiBackend(backendArgs) {
     }
   }
 
-  // 3. Bootstrap-complete ACTIVE_PLOBI_ROOT -- the canonical install at
+  // 4. Bootstrap-complete ACTIVE_PLOBI_ROOT -- the canonical install at
   //    %LOCALAPPDATA%\plobi\plobi-agent (Windows) or ~/.plobi/plobi-agent.
   //    The bootstrap marker means install.ps1 stages finished and the user
   //    completed initial configuration; we trust the install and go straight
@@ -3848,7 +3874,7 @@ function resolvePlobiBackend(backendArgs) {
     }
   }
 
-  // 4. Existing `plobi` on PATH -- installed via install.ps1 / install.sh from
+  // 5. Existing `plobi` on PATH -- installed via install.ps1 / install.sh from
   //    a previous tool-only setup, or pip-installed system-wide. Use it but
   //    do NOT write a bootstrap marker; the user did this themselves and we
   //    don't want to take ownership of an install we didn't perform.
@@ -3926,7 +3952,7 @@ function resolvePlobiBackend(backendArgs) {
     }
   }
 
-  // 5. Last-ditch: pip-installed plobi_cli module via system Python.
+  // 6. Last-ditch: pip-installed plobi_cli module via system Python.
   //    Same rationale as #4 -- the user installed this; we use it but don't
   //    take ownership.
   const python = findSystemPython()
@@ -3955,7 +3981,7 @@ function resolvePlobiBackend(backendArgs) {
     rememberLog(`Ignoring system Python ${python}: plobi_cli is not importable; falling through to bootstrap.`)
   }
 
-  // 6. Nothing usable yet -- signal the bootstrap runner that we need to
+  // 7. Nothing usable yet -- signal the bootstrap runner that we need to
   //    clone+install. Phase 1D's bootstrap-runner consumes this sentinel
   //    and drives install.ps1 stages with a progress UI. Until 1D lands,
   //    callers see the sentinel and surface it as a user-facing error
@@ -9468,8 +9494,20 @@ function productQuotaApiKey(): string {
 function reportAigwKeyReconciliation() {
   let check
   try {
-    const cfgPath = path.join(resolveAigwDir(), 'config.yaml')
-    check = reconcileGatewayKey(fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null)
+    const aigwDir = resolveAigwDir()
+    // One source, one answer. Ask `productAigwConfigPath` -- the same function the
+    // gateway itself is spawned against -- instead of re-deriving `<hub>/config.yaml`
+    // here. The two agree while the bundle carries its own config; they part company
+    // exactly when it does not. In that case the seed writes to
+    // `PLOBI_HOME/plobi-agent/quota_hub/config.yaml`, the gateway starts on *that*
+    // file and serves fine, while a local `<hub>/config.yaml` rule would keep
+    // reporting `NOT CHECKED` about a config nobody is using -- a red the user
+    // cannot act on, which is the one thing this check must never produce.
+    const cfgPath = aigwDir ? productAigwConfigPath(aigwDir) : null
+    check = reconcileGatewayKey(cfgPath && fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null)
+    if (!aigwDir) {
+      check = { ...check, summary: `${check.summary}; no quota_hub checkout in this build` }
+    }
   } catch (error) {
     // Anything the read itself throws is "we could not look", never "consistent".
     check = reconcileGatewayKey(null)
@@ -9791,6 +9829,92 @@ function stopQuotaAppsPolling(): void {
   quotaAppsPollTimer = null
 }
 
+/**
+ * The default gateway config this app ships (`extraResources`: electron/aigw-config.default.yaml
+ * → `resources/aigw-config.default.yaml`), in the order worth trying.
+ */
+function defaultAigwConfigCandidates(): string[] {
+  return [
+    // Packaged: electron-builder copies it to the resources root.
+    path.join(process.resourcesPath, 'aigw-config.default.yaml'),
+    // Dev: dist/electron-main.mjs -> ../electron/aigw-config.default.yaml, and the
+    // source tree itself when the app path is the desktop package.
+    path.resolve(__dirname, '..', 'electron', 'aigw-config.default.yaml'),
+    path.join(app.getAppPath(), 'electron', 'aigw-config.default.yaml')
+  ]
+}
+
+/**
+ * Which config file the product hub should run with.
+ *
+ * An existing `config.yaml` inside the hub checkout always wins -- that is the
+ * developer's file, or the one a previous run left behind. When it is missing:
+ *
+ * - hub in the repo (dev): write next to the code, where a checkout would have it;
+ * - hub inside a packaged app: `resources/quota_hub` is install-directory content.
+ *   On a Program Files layout it is not writable by the user at all, and on every
+ *   layout an upgrade replaces it. So the config goes to
+ *   `<PLOBI_HOME>/plobi-agent/quota_hub/config.yaml` -- the same place the
+ *   bootstrap clone keeps it -- and the code keeps running from the bundle.
+ */
+function productAigwConfigPath(hubDir: string): string {
+  const inHub = path.join(hubDir, 'config.yaml')
+
+  if (fs.existsSync(inHub)) {
+    return inHub
+  }
+
+  const packaged = IS_PACKAGED && path.resolve(hubDir).toLowerCase().startsWith(path.resolve(process.resourcesPath).toLowerCase())
+
+  return packaged ? path.join(PLOBI_HOME, 'plobi-agent', 'quota_hub', 'config.yaml') : inHub
+}
+
+/**
+ * Write the shipped default config when the hub checkout has none, and say so.
+ *
+ * A fresh install has no `config.yaml` — before this, the only copy was a
+ * developer's file in the repo, so on a user's machine the gateway simply could
+ * not start and the whole Desktop Quotas pillar stayed blank with nothing the
+ * user could do. Writing the default here is not a workaround: the config is not
+ * user data (every leg reads its credentials from that machine's own app store),
+ * so the file we write is the same one a checkout would have had.
+ *
+ * Never overwrites: a config that exists is somebody's choice, possibly edited.
+ */
+function seedDefaultAigwConfig(configPath: string): boolean {
+  const candidates = defaultAigwConfigCandidates()
+  const template = candidates.find(candidate => {
+    try {
+      return fs.existsSync(candidate)
+    } catch {
+      return false
+    }
+  })
+
+  if (!template) {
+    rememberLog(`[sidecar] no default aigw config template found (looked in ${candidates.join(', ')})`)
+
+    return false
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+
+    if (fs.existsSync(configPath)) {
+      return true
+    }
+
+    fs.copyFileSync(template, configPath)
+    rememberLog(`[sidecar] wrote default aigw config ${configPath} from ${template}`)
+
+    return true
+  } catch (error) {
+    rememberLog(`[sidecar] could not write default aigw config at ${configPath}: ${(error as Error).message}`)
+
+    return false
+  }
+}
+
 async function ensureProductAigw(): Promise<void> {
   if (
     (await probeLocalHttp('http://127.0.0.1:8000/healthz')) ||
@@ -9804,12 +9928,27 @@ async function ensureProductAigw(): Promise<void> {
     return
   }
 
-  const aigwDir = resolveAigwDir()
-  const configPath = path.join(aigwDir, 'config.yaml')
+  const hubDir = resolveAigwDir()
 
-  if (!fs.existsSync(configPath)) {
-    reportDeferredSubsystem('aigw', 'deferred', `no gateway config at ${configPath}`)
-    rememberLog(`[sidecar] product aigw config missing at ${configPath}`)
+  // No hub anywhere: this build cannot start Desktop Quotas, and pretending it is
+  // merely "deferred" would leave the user staring at an empty list. Report it.
+  if (!hubDir) {
+    reportDeferredSubsystem(
+      'aigw',
+      'red',
+      '找不到内置额度网关（resources/quota_hub 缺失），请重新安装 Plobi'
+    )
+    rememberLog('[sidecar] product aigw: no quota_hub checkout found in this build')
+
+    return
+  }
+
+  const configPath = productAigwConfigPath(hubDir)
+
+  if (!fs.existsSync(configPath) && !seedDefaultAigwConfig(configPath)) {
+    reportDeferredSubsystem('aigw', 'red', `缺少额度网关配置且无法生成默认配置：${configPath}`)
+    rememberLog(`[sidecar] product aigw config missing at ${configPath} and no template could be written`)
+
     return
   }
 
@@ -9820,7 +9959,9 @@ async function ensureProductAigw(): Promise<void> {
   const result = await startAigwGateway('product', configPath, {}, {
     port: PRODUCT_QUOTA_PORT,
     apiKey,
-    timeoutMs: 60000
+    timeoutMs: 60000,
+    // Run the code from the bundle even when the config lives in PLOBI_HOME.
+    hubDir
   })
 
   if (result.ok) {
@@ -9913,23 +10054,53 @@ function isAigwDir(dir: string): boolean {
   }
 }
 
-function resolveAigwDir(): string {
+/**
+ * Where the quota-hub checkout lives, or `null` when this build cannot find one.
+ *
+ * The rungs, top first:
+ *  1. `PLOBI_QUOTA_HUB_DIR` / `PLOBI_AIGW_DIR` — explicit override, wins everywhere
+ *     (packaged builds, non-standard layouts, tests).
+ *  2. Packaged: `<resources>/quota_hub` — the bundle this app ships
+ *     (`extraResources`: `build/quota_hub` → `resources/quota_hub`, gathered by
+ *     scripts/collect-backend-bundle.mjs). An installed copy must find the hub
+ *     *inside itself*: before this rung existed, a fresh install had no
+ *     `resources/quota_hub` at all, fell through to a developer path that does
+ *     not exist on a user's machine, reported `deferred`, and left the whole
+ *     Desktop Quotas screen empty — the bug this fixes.
+ *  3. Dev layout: apps/desktop -> apps -> repo root -> quota_hub.
+ *  4. Walk up from the app path looking for a repo-root `quota_hub/` sibling. This
+ *     covers running win-unpacked from inside the source tree, where the repo's
+ *     checkout carries a working .venv while a bootstrap clone may not.
+ *  5. Bootstrap-installed clone (`PLOBI_HOME/plobi-agent/quota_hub`).
+ *
+ * Returns `null` — never a made-up path — when nothing matched. The old final rung
+ * handed back `devPath` unconditionally, so "config missing" and "we looked in a
+ * directory that cannot exist here" were the same message, and nothing upstream
+ * could tell them apart. Callers must now say what they do without a hub.
+ */
+function resolveAigwDir(): string | null {
   // 1) Explicit override (for packaged builds or non-standard layouts).
   const explicitDir = process.env.PLOBI_QUOTA_HUB_DIR || process.env.PLOBI_AIGW_DIR
   if (explicitDir) {
     return explicitDir
   }
 
-  // 2) Dev layout: apps/desktop -> apps -> repo root -> aigw
+  // 2) Packaged: the hub we ship next to the app's other resources.
+  if (IS_PACKAGED) {
+    const packagedDir = path.join(process.resourcesPath, 'quota_hub')
+    if (isAigwDir(packagedDir)) {
+      return packagedDir
+    }
+    rememberLog(`[sidecar] packaged quota_hub not usable at ${packagedDir} — falling through`)
+  }
+
+  // 3) Dev layout: apps/desktop -> apps -> repo root -> quota_hub
   const devPath = path.resolve(app.getAppPath(), '..', '..', 'quota_hub')
   if (isAigwDir(devPath)) {
     return devPath
   }
 
-  // 3) Walk up from the app path looking for a repo-root `aigw/` sibling. This
-  //    handles running win-unpacked from inside the source tree (release/
-  //    win-unpacked/resources/app.asar -> ... -> repo root -> aigw), where the
-  //    repo's aigw carries a working .venv while the bootstrap clone may not.
+  // 4) Walk up from the app path looking for a repo-root `quota_hub/` sibling.
   let cursor = app.getAppPath()
   for (let i = 0; i < 8; i++) {
     const parent = path.dirname(cursor)
@@ -9941,9 +10112,9 @@ function resolveAigwDir(): string {
     cursor = parent
   }
 
-  // 4) Bootstrap-installed backend clone (PLOBI_HOME/plobi-agent/aigw).
-  //    After first-launch bootstrap the full Plobi repo (including aigw/) is
-  //    cloned into PLOBI_HOME, so a packaged desktop can find it there.
+  // 5) Bootstrap-installed backend clone (PLOBI_HOME/plobi-agent/quota_hub).
+  //    After first-launch bootstrap the full Plobi repo is cloned into PLOBI_HOME,
+  //    so a packaged desktop can find a hub there too.
   const plobiHome = process.env.PLOBI_HOME?.trim()
   if (plobiHome) {
     const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'quota_hub')
@@ -9952,9 +10123,7 @@ function resolveAigwDir(): string {
     }
   }
 
-  // 5) Fall back to the dev layout even if it doesn't exist — the caller
-  //    will surface a clear "config not found" error.
-  return devPath
+  return null
 }
 
 /**
@@ -10174,7 +10343,7 @@ async function startAigwGateway(
   appId: string,
   configPath: string,
   extraEnv: Record<string, string>,
-  opts: { port: number; apiKey: string; timeoutMs?: number } = { port: 8019, apiKey: 'sk-local-antigravity', timeoutMs: 60000 }
+  opts: { port: number; apiKey: string; timeoutMs?: number; hubDir?: string } = { port: 8019, apiKey: 'sk-local-antigravity', timeoutMs: 60000 }
 ): Promise<{ ok: boolean; baseUrl?: string; pid?: number | null; error?: string }> {
   if (!fs.existsSync(configPath)) {
     return { ok: false, error: `Local quota hub config not found at ${configPath}` }
@@ -10198,7 +10367,12 @@ async function startAigwGateway(
     }
   }
 
-  const aigwDir = path.dirname(configPath)
+  // The code directory and the config file are not the same thing once the hub
+  // ships inside the app: the checkout in `resources/quota_hub` is read-only in a
+  // Program Files layout and is replaced on every upgrade, while the config has
+  // to survive both. `hubDir` is where `python -m quota_hub` must run; `configPath`
+  // is whatever file the caller decided the user's settings live in.
+  const aigwDir = opts.hubDir ?? path.dirname(configPath)
   // R-051: a gateway we cannot even import must fail *now*, with the reason, rather
   // than spawning an interpreter that dies on the first import and burns the whole
   // health-poll timeout. The reason string is what the deferred ledger shows.
@@ -10296,6 +10470,39 @@ function aigwApiKeyFor(appId: string): string {
   return `sk-local-${appId}`
 }
 
+/**
+ * The gateway config path, with the user's home directory collapsed to `~`.
+ *
+ * Only used to explain an empty Desktop Quotas screen ("this is the file the hub
+ * needs"), so it is a diagnostic, not a filesystem API: no home directory, no
+ * user name, and nothing outside the hub checkout is ever revealed.
+ */
+function redactHomeInPath(target: string): string {
+  const home = app.getPath('home')
+
+  if (!home) {
+    return target
+  }
+
+  return target.toLowerCase().startsWith(home.toLowerCase()) ? `~${target.slice(home.length)}` : target
+}
+
+ipcMain.handle('plobi-gateway:config-path', async () => {
+  try {
+    const hubDir = resolveAigwDir()
+
+    if (!hubDir) {
+      return { configPath: null, hubFound: false }
+    }
+
+    return { configPath: redactHomeInPath(productAigwConfigPath(hubDir)), hubFound: true }
+  } catch (error) {
+    rememberLog(`[sidecar] plobi-gateway:config-path failed: ${(error as Error).message}`)
+
+    return { configPath: null, hubFound: false }
+  }
+})
+
 ipcMain.handle('plobi-gateway:status', async (_event, appId: string = 'antigravity') => {
   const child = getAigwChild(appId)
   const running = child !== null && !child.killed
@@ -10319,6 +10526,11 @@ ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravit
   }
 
   const aigwDir = resolveAigwDir()
+
+  if (!aigwDir) {
+    return { ok: false, error: 'Local quota hub is missing from this build (resources/quota_hub)' }
+  }
+
   const configPath = resolveAigwConfig(aigwDir, appId)
 
   if (!fs.existsSync(configPath)) {
@@ -10399,6 +10611,18 @@ async function fetchAuthCatalog(): Promise<
     reason: string
     login_reason: string
     aggregate: boolean
+    // ── First-run guidance (2026-11-07) ──────────────────────────────────────
+    // The hub answers for EVERY adapted app, installed or not, so the card can
+    // offer a `+` that actually leads somewhere. `state` is the one field the
+    // control shape reads; `reason_code` is a code the renderer translates.
+    state: 'ready' | 'signed_out' | 'not_installed' | 'not_enabled' | 'unavailable'
+    reason_code: string
+    app_kind: 'api' | 'cli' | 'desktop-app'
+    login_method: string
+    download: null | string
+    install_kind: null | string
+    install_command: null | string
+    intro_key: string
     login?: { state?: string; detail?: string; url?: string } | null
   }>
 > {
@@ -10428,6 +10652,22 @@ async function fetchAuthCatalog(): Promise<
       reason: String(row.reason ?? ''),
       login_reason: String(row.login_reason ?? ''),
       aggregate: Boolean(row.aggregate),
+      // A hub from before this field existed answers nothing here; falling back to
+      // the credential verdict keeps an old hub readable instead of throwing.
+      state: (row.state
+        ? String(row.state)
+        : row.live
+          ? 'ready'
+          : row.installed === false
+            ? 'not_installed'
+            : 'signed_out') as 'ready' | 'signed_out' | 'not_installed' | 'not_enabled' | 'unavailable',
+      reason_code: String(row.reason_code ?? (row.live ? 'ok' : 'credential_missing')),
+      app_kind: (String(row.app_kind ?? 'app') as 'api' | 'cli' | 'desktop-app'),
+      login_method: String(row.login_method ?? 'unknown'),
+      download: (row.download ?? null) as null | string,
+      install_kind: (row.install_kind ?? null) as null | string,
+      install_command: (row.install_command ?? null) as null | string,
+      intro_key: String(row.intro_key ?? row.id ?? ''),
       login: (row.login ?? null) as { state?: string; detail?: string; url?: string } | null
     }))
 
@@ -10450,6 +10690,63 @@ async function fetchAuthCatalog(): Promise<
   }
 }
 
+/**
+ * Install one CLI leg through the hub.
+ *
+ * The renderer never carries a command: it names a leg, and the hub looks up the
+ * install command in its own `ADAPTED_APPS` manifest. That is the whole reason this
+ * hop exists — a renderer-supplied command string would be a remote shell.
+ * Desktop apps are deliberately not handled here (their installers cannot be driven
+ * headlessly); the card offers the official download page instead.
+ */
+async function installViaHub(appId: string): Promise<{
+  code?: string
+  detail?: string
+  download?: null | string
+  exitCode?: number | null
+  installed?: boolean
+  ok: boolean
+  tail?: string
+}> {
+  const base = PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')
+
+  try {
+    const res = await fetch(`${base}/plobi/install/${encodeURIComponent(appId)}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
+      signal: AbortSignal.timeout(11 * 60 * 1000)
+    })
+
+    if (!res.ok) {
+      return { ok: false, code: `HTTP_${res.status}`, detail: `本地额度服务拒绝了这次安装请求（HTTP ${res.status}）` }
+    }
+
+    const body = (await res.json()) as {
+      code?: string
+      detail?: string
+      download?: null | string
+      exit_code?: number | null
+      installed?: boolean
+      ok?: boolean
+      tail?: string
+    }
+
+    return {
+      ok: Boolean(body.ok),
+      installed: Boolean(body.installed),
+      code: body.code,
+      detail: body.detail,
+      download: body.download ?? null,
+      tail: body.tail,
+      exitCode: body.exit_code ?? null
+    }
+  } catch (error) {
+    return { ok: false, code: 'HUB_UNREACHABLE', detail: (error as Error).message }
+  }
+}
+
+ipcMain.handle('plobi-gateway:install', async (_event, appId: string) => installViaHub(appId))
+
 ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   const aigwDir = resolveAigwDir()
 
@@ -10457,6 +10754,10 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
     return authWorkbuddy()
   }
   if (appId === 'cursor') {
+    if (!aigwDir) {
+      return { ok: false, error: 'Local quota hub is missing from this build (resources/quota_hub)' }
+    }
+
     return authCursor(aigwDir)
   }
   // Antigravity used to have a branch of its own here: it started a *second* gateway

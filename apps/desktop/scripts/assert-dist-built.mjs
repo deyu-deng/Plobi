@@ -13,9 +13,76 @@
 // inherits it. It fails loud and early instead of shipping a broken bundle.
 // See issues #39484 (renderer blank page) and #41327 / #39472 (dashboard 404).
 
-import { existsSync, statSync, readdirSync } from "fs"
+import { existsSync, statSync, readdirSync, openSync, readSync, closeSync } from "fs"
 import { join, resolve } from "path"
 import { isMain } from "./utils.mjs"
+
+/**
+ * Binaries that MUST be inside `build/backend` for the packaged app to work.
+ *
+ * They are build artefacts of projects vendored as source with `bin/`
+ * gitignored, so a fresh checkout (and every CI runner) has none of them:
+ * nothing breaks the build, the feature just silently cannot run on the user's
+ * machine. The renderer check below has the same job for `dist/`.
+ */
+export function requiredBackendBinaries(platform = process.platform) {
+  const chatlog = platform === "win32" ? "chatlog.exe" : "chatlog"
+  return [
+    {
+      rel: join("plobi", "collectors", "chatlog", "vendor", "chatlog", "bin", chatlog),
+      label: "WeChat message collector engine (vendored chatlog)",
+      build: "npm run build:chatlog",
+      why: "without it the WeChat collector can never start, and the packaged app shows it as unavailable",
+    },
+  ]
+}
+
+function readMagic(file) {
+  try {
+    const fd = openSync(file, "r")
+    const head = Buffer.alloc(4)
+    readSync(fd, head, 0, 4, 0)
+    closeSync(fd)
+    return head.toString("latin1")
+  } catch {
+    return ""
+  }
+}
+
+// Pure check of the backend bundle — same contract as checkDistBuilt: returns
+// { ok: true } or { ok: false, error, problems: [...] }.
+export function checkBackendBinaries(backendDir, platform = process.platform) {
+  const problems = []
+
+  for (const item of requiredBackendBinaries(platform)) {
+    const full = join(backendDir, item.rel)
+    if (!existsSync(full)) {
+      problems.push({ ...item, full, reason: "missing" })
+      continue
+    }
+    const size = statSync(full).size
+    // `go build -o` writes a Go archive and exits 0 when the target package is
+    // not `main`; the magic bytes are what separates that from a real binary.
+    const magic = readMagic(full)
+    const wanted = platform === "win32" ? "MZ" : "\x7fELF"
+    if (!magic.startsWith(wanted) || size <= 1048576) {
+      problems.push({
+        ...item,
+        full,
+        reason: `not a runnable binary (magic ${JSON.stringify(magic)}, ${(size / 1048576).toFixed(1)} MB)`,
+      })
+    }
+  }
+
+  if (problems.length) {
+    return {
+      ok: false,
+      problems,
+      error: `backend binaries missing from ${backendDir}: ${problems.map(p => `${p.rel} (${p.reason})`).join("; ")}`,
+    }
+  }
+  return { ok: true, problems: [] }
+}
 
 // Pure check — returns { ok: true } or { ok: false, error: "..." }.
 // Kept side-effect-free so it can be unit tested without spawning a process.
@@ -62,10 +129,39 @@ function main() {
   }
 
   console.log("✓ assert-dist-built: dist/index.html + assets present")
+
+  // Same idea for the backend bundle: these are compiled artefacts that a
+  // checkout never contains, so their absence is invisible at build time and
+  // only shows up as a dead feature for the person who installed the app.
+  const backendDir = join(desktopRoot, "build", "backend")
+  const backend = checkBackendBinaries(backendDir)
+
+  if (!backend.ok) {
+    const skip = process.env.PLOBI_SKIP_CHATLOG_ASSERT === "1"
+    const lines = [
+      "",
+      `${skip ? "!" : "✗"} assert-dist-built: the backend bundle is missing required binaries.`,
+      ...backend.problems.map(p => `    - ${p.rel}\n      what: ${p.label}\n      why:  ${p.why}\n      fix:  ${p.build}`),
+      "",
+      "  These are build artefacts of vendored projects (their bin/ is gitignored),",
+      "  so a fresh checkout has none of them; they must be built before packaging.",
+    ]
+    if (skip) {
+      console.warn(lines.join("\n"))
+      console.warn("  PLOBI_SKIP_CHATLOG_ASSERT=1 is set -- continuing anyway (the package WILL be degraded).\n")
+    } else {
+      console.error(lines.join("\n"))
+      console.error("  Emergency only (ships a knowingly broken package):")
+      console.error("    PLOBI_SKIP_CHATLOG_ASSERT=1 npm run dist\n")
+      process.exit(1)
+    }
+  } else {
+    console.log("✓ assert-dist-built: backend binary manifest present")
+  }
 }
 
 if (isMain(import.meta.url)) {
   main()
 }
 
-export default { checkDistBuilt }
+export default { checkDistBuilt, checkBackendBinaries, requiredBackendBinaries }
