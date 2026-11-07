@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { StatusbarControls, type StatusbarItem } from '@/app/shell/statusbar-controls'
+import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import {
@@ -461,9 +462,19 @@ export function ChatSidebar({
                 )}
 
                 {secretaryAgents.length === 0 ? (
-                  <div className="px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-                    {secretaryAgentsLoading ? c.agentsLoading : c.agentsEmptyDesc}
-                  </div>
+                  secretaryAgentsLoading ? (
+                    <div className="px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
+                      {c.agentsLoading}
+                    </div>
+                  ) : (
+                    // 空态：一枚淡淡的产品标记，别的什么都不说（用户 11-07 13:2x：「这句话也太不
+                    // 产品化了…要不就用我们设计的 Plobi 样式的图标。淡淡的在空态背景里。」）。
+                    // 产品不替用户预设角色，所以这里也只留一个记号；侧栏顶部那行「新建智能体」
+                    // 一直在，加角色的入口没少。
+                    <div className="flex justify-center px-2 py-6">
+                      <BrandMark className="size-12 bg-transparent opacity-30" />
+                    </div>
+                  )
                 ) : (
                   agentCategoryGroups.map(group => (
                     <AgentCategoryGroup
