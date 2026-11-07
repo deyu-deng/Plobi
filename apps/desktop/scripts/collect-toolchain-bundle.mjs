@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+/**
+ * Collect the WINDOWS toolchain into the desktop package: PortableGit (git + bash)
+ * and ripgrep.
+ *
+ * Why this exists (2026-11-07, user verdict): "为什么我们的软件下载起来这么复杂，
+ * 和别人的一点都不一样" —— everybody else's installer ships the runtime; ours made
+ * the FIRST LAUNCH download it. The backend already travels inside the package
+ * (runtime source + locked wheels, see collect-backend-bundle.mjs); the toolchain
+ * did not, so a fresh machine still reached out to github.com mid-launch, and a
+ * machine whose only Git lives on D:\ looked "uninstallable".
+ *
+ * With these two files in the package:
+ *   - the first launch needs NO download for git/bash/rg  ⇒ works offline;
+ *   - the agent's terminal tool has a bash of its own, on the chosen data drive.
+ *
+ * Only Windows needs this: macOS and Linux ship git and bash in the base system.
+ * On those platforms this script writes nothing (and says so).
+ *
+ * Usage: node scripts/collect-toolchain-bundle.mjs [--out <dir>]
+ *   --out defaults to <desktop>/build/toolchain
+ */
+
+import fs from 'node:fs'
+import path from 'node:path'
+import https from 'node:https'
+import { fileURLToPath } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const DESKTOP_ROOT = path.resolve(HERE, '..')
+
+const args = process.argv.slice(2)
+const outIdx = args.indexOf('--out')
+const OUT_DIR =
+  outIdx >= 0 && args[outIdx + 1]
+    ? path.resolve(args[outIdx + 1])
+    : path.join(DESKTOP_ROOT, 'build', 'toolchain')
+
+/**
+ * Pinned versions — they MUST match the ones install.ps1 downloads when the
+ * package has no toolchain (a dev-machine install, or a non-Windows leg).
+ */
+const PORTABLE_GIT = {
+  tag: 'v2.54.0.windows.1',
+  version: '2.54.0',
+  asset: 'PortableGit-2.54.0-64-bit.7z.exe'
+}
+
+const RIPGREP = {
+  version: '14.1.1',
+  asset: 'ripgrep-14.1.1-x86_64-pc-windows-msvc.zip'
+}
+
+function say(msg) {
+  console.log(`[collect-toolchain-bundle] ${msg}`)
+}
+
+function download(url, dest) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'plobi-desktop-build' } }, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume()
+        resolve(download(res.headers.location, dest))
+        return
+      }
+      if (res.statusCode !== 200) {
+        res.resume()
+        reject(new Error(`HTTP ${res.statusCode} for ${url}`))
+        return
+      }
+      const tmp = `${dest}.part`
+      const out = fs.createWriteStream(tmp)
+      res.pipe(out)
+      out.on('finish', () => {
+        out.close()
+        fs.renameSync(tmp, dest)
+        resolve()
+      })
+      out.on('error', reject)
+    })
+    req.on('error', reject)
+  })
+}
+
+function sizeMB(file) {
+  return (fs.statSync(file).size / 1048576).toFixed(1)
+}
+
+if (process.platform !== 'win32') {
+  say(`${process.platform}: the base system already ships git and bash — nothing to collect`)
+  fs.mkdirSync(OUT_DIR, { recursive: true })
+  process.exit(0)
+}
+
+fs.rmSync(OUT_DIR, { recursive: true, force: true })
+fs.mkdirSync(OUT_DIR, { recursive: true })
+
+const gitUrl = `https://github.com/git-for-windows/git/releases/download/${PORTABLE_GIT.tag}/${PORTABLE_GIT.asset}`
+const rgUrl = `https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP.version}/${RIPGREP.asset}`
+
+const targets = [
+  { url: gitUrl, file: path.join(OUT_DIR, PORTABLE_GIT.asset) },
+  { url: rgUrl, file: path.join(OUT_DIR, RIPGREP.asset) }
+]
+
+for (const target of targets) {
+  if (fs.existsSync(target.file) && fs.statSync(target.file).size > 1024 * 1024) {
+    say(`already here: ${path.basename(target.file)} (${sizeMB(target.file)} MB)`)
+    continue
+  }
+  say(`downloading ${path.basename(target.file)} ...`)
+  try {
+    await download(target.url, target.file)
+  } catch (err) {
+    // A missing toolchain is not a broken build: the installer still downloads
+    // it on first launch. Say it loudly and let the build continue.
+    say(`WARNING: could not fetch ${path.basename(target.file)} (${err.message}) — the first launch will download it instead`)
+    continue
+  }
+  say(`  ${path.basename(target.file)}  ${sizeMB(target.file)} MB`)
+}
+
+const entries = fs.readdirSync(OUT_DIR)
+say(`wrote ${OUT_DIR} (${entries.length} files)`)

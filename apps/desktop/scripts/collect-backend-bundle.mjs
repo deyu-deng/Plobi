@@ -150,6 +150,13 @@ fs.mkdirSync(OUT_DIR, { recursive: true })
 const WHEELHOUSE_DIR = path.join(DESKTOP_ROOT, 'build', 'wheelhouse')
 fs.mkdirSync(WHEELHOUSE_DIR, { recursive: true })
 
+// The toolchain bundle (PortableGit + ripgrep, Windows only) lands beside it.
+// The folder must exist even when nothing was collected (mac/linux, or a local
+// build that skips the collection step) -- electron-builder's extraResources
+// fails on a missing source directory.
+const TOOLCHAIN_DIR = path.join(DESKTOP_ROOT, 'build', 'toolchain')
+fs.mkdirSync(TOOLCHAIN_DIR, { recursive: true })
+
 const missing = []
 let copied = 0
 

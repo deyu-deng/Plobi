@@ -29,7 +29,7 @@ Var PlobiDataDirValue
 !macroend
 
 !macro customPageAfterChangeDir
-  Page custom PlobiDataPageFunc
+  Page custom PlobiDataPageFunc PlobiDataPageLeave
 !macroend
 
 Function PlobiDataPageFunc
@@ -53,9 +53,15 @@ Function PlobiDataPageFunc
   Pop $0
 
   nsDialogs::Show
+FunctionEnd
 
-  ; 值在这里读进 Var：customInstall 跑在安装 Section 里，那时页面早销毁了，
-  ; 再去读那个控件句柄只会读回空（落回默认格）。
+; 值在这里读，不在上面的页面函数里读。
+;
+; 为什么（2026-11-07 实测）：nsDialogs 的控件**只在 `nsDialogs::Show` 之前活着**——
+; Show 返回时对话框连同控件已经销毁 ⇒ 那时再去读句柄只会读回空（用户明明选了 D 盘，
+; 记下来的却是默认格）。官方形状是 `Page custom 创建函数 离开函数`：离开回调在用户
+; 点「下一步」时跑，控件那时还在。
+Function PlobiDataPageLeave
   ${NSD_GetText} $PlobiDataDirField $PlobiDataDirValue
 FunctionEnd
 

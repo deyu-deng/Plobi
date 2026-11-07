@@ -39,6 +39,9 @@ param(
     # 这一格数据目录是用户自己选的 ⇒ 原样兑现，不按这台机器的盘规否决，也不警告。
     [switch]$UserChoseDataDir,
 
+    # 装机器时随包带进来的工具链（Windows：PortableGit + ripgrep）。有它就不用下载。
+    [string]$ToolchainDir = "",
+
     # --- Ensure mode (dep_ensure.py entry point) ---
     [string]$Ensure = "",
     [switch]$PostInstall,
@@ -763,10 +766,10 @@ function Install-Git {
         return $true
     }
 
-    # Download PortableGit into $PlobiHome\git.  Always works as long as
+    # PortableGit into $PlobiHome\git.  Always works as long as
     # we can reach github.com -- no admin, no winget, no reliance on the
     # user's possibly-broken system Git install.
-    Write-Info "Git not found -- downloading PortableGit to $PlobiHome\git\ ..."
+    Write-Info "Git not found -- setting up PortableGit under $PlobiHome\git\ ..."
     Write-Info "(no admin rights required; isolated from any system Git install)"
 
     try {
@@ -812,8 +815,23 @@ function Install-Git {
         $tmpFile = "$env:TEMP\$assetName"
         $gitDir = "$PlobiHome\git"
 
-        Write-Info "Downloading $assetName (Git for Windows $gitVerTag)..."
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpFile -UseBasicParsing
+        # 包里那份 PortableGit（装机器时带进来的）⇒ 首启零下载。
+        # 只在 x64 上用它：包里那份是 x64 的，arm64 与 32 位仍走下载。
+        $bundled = $null
+        if ($ToolchainDir -and $arch -eq "x64" -and (Test-Path $ToolchainDir)) {
+            $bundled = Get-ChildItem -Path $ToolchainDir -Filter "PortableGit-*-64-bit.7z.exe" -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+        }
+
+        $tmpIsOurs = $true
+        if ($bundled) {
+            Write-Info "Using the PortableGit that shipped with the installer ($($bundled.Name)) ..."
+            $tmpFile = $bundled.FullName
+            $tmpIsOurs = $false
+        } else {
+            Write-Info "Downloading $assetName (Git for Windows $gitVerTag)..."
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpFile -UseBasicParsing
+        }
 
         if (Test-Path $gitDir) {
             Write-Info "Removing previous Git install at $gitDir ..."
@@ -835,7 +853,9 @@ function Install-Git {
                 throw "PortableGit extraction failed (exit code $($extractProc.ExitCode))"
             }
         }
-        Remove-Item -Force $tmpFile -ErrorAction SilentlyContinue
+        if ($tmpIsOurs) {
+            Remove-Item -Force $tmpFile -ErrorAction SilentlyContinue
+        }
 
         # PortableGit layout: cmd\git.exe + bin\bash.exe + usr\bin\ (coreutils)
         # MinGit layout:      cmd\git.exe + usr\bin\bash.exe (if present)
@@ -1132,6 +1152,32 @@ function Install-SystemPackages {
         $script:HasRipgrep = $true
     } else {
         $needRipgrep = $true
+    }
+
+    # 包里那份 ripgrep（装机器时带进来的）⇒ 不用 winget、不用下载、不用联网。
+    if ($needRipgrep -and $ToolchainDir -and (Test-Path $ToolchainDir)) {
+        $rgZip = Get-ChildItem -Path $ToolchainDir -Filter "ripgrep-*.zip" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($rgZip) {
+            try {
+                $rgDir = Join-Path $PlobiHome "tools\ripgrep"
+                if (Test-Path $rgDir) { Remove-Item -Recurse -Force $rgDir }
+                Expand-Archive -Path $rgZip.FullName -DestinationPath $rgDir -Force
+                $rgExe = Get-ChildItem -Path $rgDir -Recurse -Filter "rg.exe" -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+                if ($rgExe) {
+                    $binDir = Join-Path $PlobiHome "bin"
+                    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+                    Copy-Item $rgExe.FullName (Join-Path $binDir "rg.exe") -Force
+                    $env:Path = "$binDir;$env:Path"
+                    $script:HasRipgrep = $true
+                    $needRipgrep = $false
+                    Write-Success "ripgrep ready (from the installer, no download)"
+                }
+            } catch {
+                Write-Warn "the bundled ripgrep could not be unpacked: $_"
+            }
+        }
     }
 
     Write-Info "Checking ffmpeg (TTS voice messages)..."

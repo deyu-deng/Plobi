@@ -131,7 +131,7 @@ function hasExistingGitCheckout(activeRoot) {
  * Dev builds and packages built before this shipped have neither, so the git
  * path stays and nothing else changes.
  */
-export function resolveBundledBackend(resourcesPath?: string): { bundleDir: string; wheelhouse: string | null } | null {
+export function resolveBundledBackend(resourcesPath?: string): { bundleDir: string; wheelhouse: string | null; toolchain: string | null } | null {
   const root = resourcesPath || (process as any).resourcesPath
 
   if (!root) {
@@ -140,12 +140,19 @@ export function resolveBundledBackend(resourcesPath?: string): { bundleDir: stri
 
   const bundleDir = path.join(root, 'backend')
   const wheelhouse = path.join(root, 'wheelhouse')
+  const toolchain = path.join(root, 'toolchain')
 
   if (!fs.existsSync(path.join(bundleDir, 'scripts', 'install.ps1'))) {
     return null
   }
 
-  return { bundleDir, wheelhouse: fs.existsSync(wheelhouse) ? wheelhouse : null }
+  return {
+    bundleDir,
+    wheelhouse: fs.existsSync(wheelhouse) ? wheelhouse : null,
+    // PortableGit + ripgrep travel in the package (Windows only) so the first
+    // launch needs no download for git/bash/rg.
+    toolchain: fs.existsSync(toolchain) ? toolchain : null
+  }
 }
 
 function cachedScriptPath(plobiHome, commit) {
@@ -639,6 +646,10 @@ function buildPinArgs(
 
     if (bundle.wheelhouse) {
       args.push('-Wheelhouse', bundle.wheelhouse)
+    }
+
+    if (bundle.toolchain) {
+      args.push('-ToolchainDir', bundle.toolchain)
     }
   }
 

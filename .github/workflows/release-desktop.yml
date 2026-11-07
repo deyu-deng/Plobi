@@ -86,6 +86,17 @@ jobs:
           #    backend reads by repo-relative path -- skills/, locales/, ...).
           node apps/desktop/scripts/collect-backend-bundle.mjs
 
+      # The toolchain travels in the package too (Windows only): PortableGit
+      # (git + bash) and ripgrep.  Without it the FIRST LAUNCH had to download
+      # them -- which is why our install felt nothing like everyone else's.
+      # macOS and Linux ship git and bash in the base system; the script says so
+      # and writes nothing.
+      - name: Collect the toolchain (PortableGit + ripgrep)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node apps/desktop/scripts/collect-toolchain-bundle.mjs
+
       - name: Build & package (${{ matrix.platform }})
         working-directory: apps/desktop
         shell: bash

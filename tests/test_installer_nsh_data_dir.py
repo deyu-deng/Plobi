@@ -1,9 +1,11 @@
 """装机器那一页「选择数据目录」：用户填的那一格**必须被记下来**。
 
 2026-11-07 实测：安装时填好了，安装完主程序却读到默认格 ⇒ 数据与 uv 托管的 Python 全落
-C 盘。根因是 `customInstall` 跑在安装 Section 里，页面早销毁了，那个控件句柄读回来是空。
+C 盘。根因是 nsDialogs 的控件**只在 `nsDialogs::Show` 之前活着**：Show 返回时对话框连同
+控件已经销毁 ⇒ 在它之后读句柄只会读回空。
 
-契约：页还活着的时候把值读进 Var；`customInstall` 只用那个 Var。
+契约：读值放在**离开回调**里（`Page custom 创建函数 离开函数`）；`customInstall` 只用那个
+Var，不再碰控件句柄。
 
 **这档不编译 NSIS**（要真 MUI2 ＋ makensis，由本地与 CI 的构建验）——它盯形状。
 """
@@ -31,15 +33,31 @@ def _macro_text(name: str) -> str:
     return _SOURCE[start:end]
 
 
-def test_the_page_reads_the_typed_value_into_a_var_while_the_page_is_alive():
-    """值必须在页面还活着的时候读进 Var（`nsDialogs::Show` 之后、`FunctionEnd` 之前）。"""
-    body = _function_text("PlobiDataPageFunc")
+def test_the_value_is_read_in_the_leave_callback_not_after_show():
+    """值必须在**离开回调**里读，不是在 `Show` 之后读。
 
-    show = body.index("nsDialogs::Show")
-    read = body.index("${NSD_GetText} $PlobiDataDirField $PlobiDataDirValue")
+    nsDialogs 的控件只在 `nsDialogs::Show` 之前活着：Show 返回时对话框连同控件已经
+    销毁 ⇒ 那时再去读句柄只会读回空（用户明明选了 D 盘，记下来的却是默认格）。
+    官方形状是 `Page custom 创建函数 离开函数`。
+    """
+    page = _function_text("PlobiDataPageFunc")
+    leave = _function_text("PlobiDataPageLeave")
 
-    assert show < read, "读值必须在 Show 之后（Show 返回时页面才刚要销毁，句柄还活着）"
-    assert "FunctionEnd" not in body[:read], "读值必须在页面函数里"
+    assert "${NSD_GetText} $PlobiDataDirField $PlobiDataDirValue" not in page, (
+        "Show 之后控件已经销毁，那一读只能读回空"
+    )
+    assert "${NSD_GetText} $PlobiDataDirField $PlobiDataDirValue" in leave, (
+        "读值必须在离开回调里（用户点「下一步」时控件还在）"
+    )
+
+
+def test_the_page_declares_the_leave_callback():
+    """那一页的声明必须带上离开回调，否则读值没有落脚点。"""
+    macro = _macro_text("customPageAfterChangeDir")
+
+    assert "Page custom PlobiDataPageFunc PlobiDataPageLeave" in macro, (
+        "自定义页的形状：Page custom 创建函数 离开函数"
+    )
 
 
 def test_the_install_macro_uses_the_var_not_the_dead_control_handle():

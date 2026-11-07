@@ -558,14 +558,19 @@ def _find_bash() -> str:
     #
     # Layouts (both checked so upgrades between MinGit and PortableGit
     # installs work transparently):
-    #   PortableGit: %LOCALAPPDATA%\plobi\git\bin\bash.exe   (primary)
-    #   MinGit:      %LOCALAPPDATA%\plobi\git\usr\bin\bash.exe (legacy/32-bit fallback)
+    #   PortableGit: <data dir>\git\bin\bash.exe   (primary)
+    #   MinGit:      <data dir>\git\usr\bin\bash.exe (legacy/32-bit fallback)
+    #
+    # The data dir is PLOBI_HOME for the packaged app (the user may have picked
+    # any drive), and %LOCALAPPDATA%\plobi for the dev tree.
     _local_appdata = os.environ.get("LOCALAPPDATA", "")
-    _plobi_portable_git = os.path.join(_local_appdata, "plobi", "git") if _local_appdata else ""
-    if _plobi_portable_git:
+    _data_dir = os.environ.get("PLOBI_HOME", "") or os.path.join(_local_appdata, "plobi")
+    for _root in (os.path.join(_data_dir, "git"), os.path.join(_local_appdata, "plobi", "git")):
+        if not _root:
+            continue
         for candidate in (
-            os.path.join(_plobi_portable_git, "bin", "bash.exe"),        # PortableGit (primary)
-            os.path.join(_plobi_portable_git, "usr", "bin", "bash.exe"), # MinGit fallback
+            os.path.join(_root, "bin", "bash.exe"),        # PortableGit (primary)
+            os.path.join(_root, "usr", "bin", "bash.exe"), # MinGit fallback
         ):
             if os.path.isfile(candidate):
                 return candidate

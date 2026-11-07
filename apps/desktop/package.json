@@ -219,6 +219,10 @@
       {
         "from": "build/wheelhouse",
         "to": "wheelhouse"
+      },
+      {
+        "from": "build/toolchain",
+        "to": "toolchain"
       }
     ],
     "asar": true,

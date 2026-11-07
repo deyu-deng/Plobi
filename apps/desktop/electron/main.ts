@@ -2008,23 +2008,36 @@ function findGitBash() {
     return findOnPath('bash')
   }
 
-  // install.ps1 drops PortableGit at %LOCALAPPDATA%\plobi\git\... — checked
-  // first so users who installed via install.ps1 are detected before we
-  // start probing system-wide locations.
-  const localAppData = process.env.LOCALAPPDATA || ''
+  // 这个查找必须与后端那份一致（tools/environments/local.py::_find_bash）——
+  // 两边宽严不一就会出现「后端能跑、桌面说没装 Git」这种红框（2026-11-07 实测）。
   const candidates = []
 
-  if (localAppData) {
-    candidates.push(path.join(localAppData, 'plobi', 'git', 'bin', 'bash.exe'))
-    candidates.push(path.join(localAppData, 'plobi', 'git', 'usr', 'bin', 'bash.exe'))
+  // ① install.ps1 钉的那一格（User 环境变量）：它已经把系统 Git 的根算过了。
+  const pinned = String(process.env.PLOBI_GIT_BASH_PATH || '').trim()
+  if (pinned) {
+    candidates.push(pinned)
   }
 
-  // Standard Git for Windows install locations.
+  // ② 我们自己的便携 Git：装机器时解到**数据目录**下面（不在 %LOCALAPPDATA%\plobi）。
+  if (PLOBI_HOME) {
+    candidates.push(path.join(PLOBI_HOME, 'git', 'bin', 'bash.exe'))
+    candidates.push(path.join(PLOBI_HOME, 'git', 'usr', 'bin', 'bash.exe'))
+  }
+
+  // ③ Git for Windows 的标准位置。
+  const localAppData = process.env.LOCALAPPDATA || ''
   candidates.push(path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'))
   candidates.push(path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Git', 'bin', 'bash.exe'))
-
   if (localAppData) {
     candidates.push(path.join(localAppData, 'Programs', 'Git', 'bin', 'bash.exe'))
+  }
+
+  // ④ PATH 上的 git.exe ⇒ 它的根就是 Git 的根（覆盖 D:\Software\Git 这类自定义根）。
+  const gitExe = findOnPath('git')
+  if (gitExe) {
+    const gitRoot = path.dirname(path.dirname(gitExe))
+    candidates.push(path.join(gitRoot, 'bin', 'bash.exe'))
+    candidates.push(path.join(gitRoot, 'usr', 'bin', 'bash.exe'))
   }
 
   for (const candidate of candidates) {
@@ -2033,9 +2046,7 @@ function findGitBash() {
     }
   }
 
-  // Last resort — bash on PATH (covers WSL bash, MSYS2, custom installs).
-  // On WSL hosts findOnPath itself filters out Windows-binary paths via
-  // isWindowsBinaryPathInWsl, so we won't hand back a wsl.exe shim either.
+  // ⑤ 最后 — PATH 上的 bash（WSL / MSYS2 / 自装的那份）。
   return findOnPath('bash')
 }
 
@@ -4095,10 +4106,10 @@ async function ensureRuntime(backend) {
 
   // On Windows, preflight Git Bash. Plobi' terminal tool calls bash.exe
   // directly (tools/environments/local.py); without it the agent can't run
-  // terminal commands. install.ps1's Stage-Git puts PortableGit at
-  // %LOCALAPPDATA%\plobi\git\, which findGitBash() picks up, so for any
-  // user who completed the bootstrap this is a no-op. For users who got
-  // here via an external `plobi` on PATH, this check still helps.
+  // terminal commands. install.ps1's Stage-Git puts PortableGit under the data
+  // directory, which findGitBash() picks up, so for any user who completed the
+  // bootstrap this is a no-op. For users who got here via an external `plobi`
+  // on PATH, this check still helps.
   if (IS_WINDOWS && !findGitBash()) {
     throw new Error(
       'Git for Windows is required for Plobi on Windows (provides Git Bash, ' +
@@ -7373,6 +7384,9 @@ async function startPlobi() {
       // can't reliably do that, so we set it inline for every spawn.
       PLOBI_HOME,
       ...backend.env,
+      // 数据目录下的 bin 里是 uv 与我们自带的 ripgrep —— 它是这次启动刚装出来的，
+      // 进程自己的 PATH 里还没有 ⇒ 显式加上，Agent 的工具就能直接用 rg。
+      PATH: pathWithPlobiManagedNode(path.join(PLOBI_HOME, 'bin'), String(backend.env?.PATH || '')),
       TERMINAL_CWD: plobiCwd,
       PLOBI_DASHBOARD_SESSION_TOKEN: token,
       // Marks this dashboard backend as desktop-spawned so it runs the cron
