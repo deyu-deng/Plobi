@@ -67,6 +67,7 @@ SPEC = SourceSpec(
     # （这一档同时还有一个 `timetable.ics_url`，那是同一份数据的另一种接法，
     #   登记成一条还是两条属 spec-layer §10 未决，不在下面混着记）。
     category="file",
+    summary="本地 .ics 课表文件",
     # 首次配置只有一格，就是注册表注记写的那句"用户指定目录里放一个 .ics"。
     # 这一格由本包**自己**声明——加一条新信源不用改 `apps/desktop/**`
     # （spec §8 有一条验收就是这个）。
