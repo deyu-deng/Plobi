@@ -93,4 +93,28 @@ describe('About panel: the desktop release line', () => {
     // The diagnostic line names what actually happened.
     expect(screen.getByText(/rate-limited/)).toBeTruthy()
   })
+
+  it('a packaged install (no agent checkout) is a normal state, not an error', () => {
+    // 装机版的后端是**从包里装的**（没有 .git）⇒「不是 git 检出」是正常状态。
+    // 那一格该说壳那边：查过了就是「已是最新」，而且「立即检查」必须能按
+    // （壳那侧的检查与 git 无关）。
+    $updateStatus.set({
+      supported: false,
+      reason: 'not-a-git-checkout',
+      message: "C:\\Users\\tester\\Plobi\\plobi-agent isn't a git checkout — desktop self-update only runs against a source install.",
+      behind: 0,
+      updateAvailable: false
+    })
+    $desktopRelease.set(release({ newer: false, latest: '0.3.0' }))
+
+    render(<AboutSettings />)
+
+    expect(screen.getByText(en.settings.about.onLatest)).toBeTruthy()
+    expect(screen.queryByText(/git checkout/)).toBeNull()
+    // 屏上不许出现开发态那对「Branch · Commit」。
+    expect(screen.queryByText(/Branch/)).toBeNull()
+
+    const checkButton = screen.getByText(en.settings.about.checkNow).closest('button')
+    expect(checkButton?.disabled).toBe(false)
+  })
 })

@@ -76,6 +76,10 @@ export function AboutSettings() {
   const supported = status?.supported !== false
   const applying = apply.applying || apply.stage === 'restart'
 
+  // 装机版的后端是**从包里装的**（没有 .git）⇒「不是 git 检出」是正常状态，不是错误：
+  // 壳那边的更新（查 release → 下载 → 装）根本不靠 git，那一条才是装机版要的。
+  const agentCheckoutMissing = !supported && status?.reason === 'not-a-git-checkout'
+
   const handleCheck = async () => {
     setJustChecked(false)
     setReleaseError('')
@@ -105,7 +109,8 @@ export function AboutSettings() {
     // 「已是最新」：那是在替一个没跑成的查法背书，说的是我们没看见，不是没有。
     statusLine = a.cantReach
     statusTone = 'error'
-  } else if (!supported) {
+  } else if (!supported && !agentCheckoutMissing) {
+    // 别的「不支持」（真出了岔子）⇒ 照旧报错。
     statusLine = status?.message ?? a.cantUpdate
     statusTone = 'error'
   } else if (status?.error) {
@@ -117,6 +122,9 @@ export function AboutSettings() {
   } else if (behind > 0) {
     statusLine = a.updateReady(behind)
     statusTone = 'available'
+  } else if (agentCheckoutMissing) {
+    // 装机版：这一格说壳那边——查过了才算「已是最新」。
+    statusLine = release?.ok ? a.onLatest : a.tapCheck
   } else if (status) {
     statusLine = a.onLatest
   } else {
@@ -188,7 +196,7 @@ export function AboutSettings() {
                 </p>
               ) : null}
               <p className="mt-1 text-xs text-muted-foreground">
-                {a.lastChecked(relativeTime(status?.fetchedAt, a))}
+                {a.lastChecked(relativeTime(status?.fetchedAt ?? release?.checkedAt, a))}
                 {justChecked && !checking ? a.justNowSuffix : ''}
               </p>
             </div>
@@ -196,7 +204,7 @@ export function AboutSettings() {
 
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <Button
-              disabled={checking || applying || !supported}
+              disabled={checking || applying}
               onClick={() => void handleCheck()}
               size="sm"
               variant="textStrong"
@@ -246,7 +254,13 @@ export function AboutSettings() {
 
         <ListRow
           description={a.automaticUpdatesDesc}
-          hint={a.branchCommit(status?.branch ?? 'unknown', status?.currentSha?.slice(0, 7) ?? 'unknown')}
+          // 装机版没有检出 ⇒ 「Branch · Commit」那一对是开发态的东西，不许在屏上显示成
+          // 「main · unknown」。
+          hint={
+            agentCheckoutMissing
+              ? undefined
+              : a.branchCommit(status?.branch ?? 'unknown', status?.currentSha?.slice(0, 7) ?? 'unknown')
+          }
           title={a.automaticUpdates}
         />
 
