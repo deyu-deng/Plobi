@@ -21,98 +21,19 @@ permissions:
   contents: read
 
 jobs:
-  # The WeChat collector engine (vendored chatlog, a Go program) is NOT in the
-  # repo: vendor/chatlog/.gitignore ignores bin/, so a CI checkout has no binary
-  # at all. It used to be assumed present -- and it never was on a runner, so
-  # every released installer shipped without it and the collector was dead on
-  # arrival for the user. Compile it here, once per OS, and hand the binaries to
-  # the packaging job; the packaging job's hard gate then fails if this step was
-  # skipped or the artefact didn't land.
-  chatlog:
-    name: Build chatlog (${{ matrix.platform }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            artifact: chatlog-windows
-            binary: chatlog.exe
-          - os: macos-latest
-            platform: macos
-            artifact: chatlog-macos
-            binary: chatlog
-          - os: ubuntu-latest
-            platform: linux
-            artifact: chatlog-linux
-            binary: chatlog
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Setup Go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00  # v6.0.0
-        with:
-          # vendor/chatlog/go.mod says `go 1.24.0`.
-          go-version: "1.24.x"
-
-      # The binary is CGO (WCDB links a C library), so no CGO_ENABLED=0 shortcut.
-      # Build script: plobi/collectors/chatlog/vendor/chatlog -> bin/chatlog[.exe]
-      - name: Build the collector engine
-        shell: bash
-        run: |
-          set -euo pipefail
-          # CGO needs a C compiler. macOS/Linux runners have one; Windows runners
-          # ship MSYS2 under C:\msys64 but its gcc is NOT on PATH, so point CC at
-          # it explicitly.
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            for c in /c/msys64/ucrt64/bin/gcc.exe /c/msys64/mingw64/bin/gcc.exe; do
-              if [ -f "$c" ]; then export CC="$c"; break; fi
-            done
-            if [ -z "${CC:-}" ]; then
-              echo "::error::no mingw gcc found under C:\\msys64 -- CGO build cannot run"
-              exit 1
-            fi
-            echo "using CC=$CC"
-          fi
-          node apps/desktop/scripts/build-chatlog.mjs --force
-
-      - name: Smoke-test the binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          bin="plobi/collectors/chatlog/vendor/chatlog/bin/${{ matrix.binary }}"
-          ls -l "$bin"
-          "./$bin" version
-
-      - name: Upload the collector engine
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: ${{ matrix.artifact }}
-          path: plobi/collectors/chatlog/vendor/chatlog/bin/${{ matrix.binary }}
-          if-no-files-found: error
-          retention-days: 7
 
   build:
     name: Build ${{ matrix.platform }}
-    needs: chatlog
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             platform: win
-            chatlog_artifact: chatlog-windows
-            chatlog_binary: chatlog.exe
           - os: macos-latest
             platform: mac
-            chatlog_artifact: chatlog-macos
-            chatlog_binary: chatlog
           - os: ubuntu-latest
             platform: linux
-            chatlog_artifact: chatlog-linux
-            chatlog_binary: chatlog
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -127,31 +48,6 @@ jobs:
       # 安装整个 workspace（含 apps/desktop 及其依赖 @plobi/shared）
       - name: Install dependencies
         run: npm ci
-
-      # Must land BEFORE collect-backend-bundle.mjs below: that script copies the
-      # source tree into build/backend and then asserts the binary is in the
-      # copy. Copies of a checkout never contain it (bin/ is gitignored), which
-      # is exactly the bug this workflow now prevents.
-      - name: Download the collector engine
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: ${{ matrix.chatlog_artifact }}
-          path: apps/desktop/build/chatlog-bin
-
-      - name: Install the collector engine into the runtime tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          src="apps/desktop/build/chatlog-bin/${{ matrix.chatlog_binary }}"
-          dest="plobi/collectors/chatlog/vendor/chatlog/bin"
-          if [ ! -f "$src" ]; then
-            echo "::error::collector engine artefact missing at $src"
-            exit 1
-          fi
-          mkdir -p "$dest"
-          cp -f "$src" "$dest/${{ matrix.chatlog_binary }}"
-          chmod +x "$dest/${{ matrix.chatlog_binary }}" || true
-          ls -l "$dest/${{ matrix.chatlog_binary }}"
 
       # The backend travels INSIDE the installer (WP-BACKEND-IN-BUNDLE): the
       # runtime source tree plus a wheelhouse of the LOCKED dependency wheels.
@@ -221,7 +117,10 @@ jobs:
             --require-hashes --python "$PY" \
             -r apps/desktop/build/requirements.txt
 
-          "$PY" -c "import plobi_cli, sys; print('offline install OK:', sys.version.split()[0])"
+          # 装机版跑的是 `python -m plobi_cli.main`，源码树在 PYTHONPATH 上（项目本体
+          # 不进 venv）⇒ 探针也得带上那一格，否则 import 必然失败。
+          PYTHONPATH="$PWD/apps/desktop/build/backend" \
+            "$PY" -c "import plobi_cli, dotenv, openai, rich, prompt_toolkit, sys; print('offline install OK:', sys.version.split()[0])"
 
       # The toolchain travels in the package too (Windows only): PortableGit
       # (git + bash) and ripgrep.  Without it the FIRST LAUNCH had to download

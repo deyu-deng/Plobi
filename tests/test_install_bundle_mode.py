@@ -266,3 +266,29 @@ def test_the_requirements_file_travels_with_the_backend() -> None:
 
     assert "requirements.txt" in script, "收集脚本没有把 requirements.txt 带进包"
 
+
+def test_the_bundle_tier_skips_the_console_script_repair() -> None:
+    """bundle 那一档**不装项目本体** ⇒ venv 里没有 console 脚本是正常的。
+
+    那个「console 入口缺失就去重装」的检查在 bundle 档里只会去**联网**重装（离线时白等
+    一场，还可能把整档拖死）⇒ bundle 档必须跳过它。
+    """
+    source = INSTALL_PS1.read_text(encoding="utf-8")
+
+    assert '$script:InstalledTier -ne "bundled wheelhouse (offline)"' in source, (
+        "bundle 档没有跳过 console 脚本检查"
+    )
+
+
+def test_the_ci_probe_imports_the_project_the_way_the_app_does() -> None:
+    """CI 那道离线自检的探针要带 PYTHONPATH 指向源码树。
+
+    装机版跑的是 `python -m plobi_cli.main`（源码树在 PYTHONPATH 上，项目本体不进
+    venv）⇒ 探针若不带 PYTHONPATH，`import plobi_cli` 必然失败 ⇒ 一道**永远红**的
+    自检比没有自检更坏。
+    """
+    workflow = (REPO_ROOT / ".github" / "workflows" / "release-desktop.yml").read_text(encoding="utf-8")
+
+    assert "PYTHONPATH=" in workflow, "CI 的离线自检探针没有带 PYTHONPATH"
+    assert "import plobi_cli" in workflow, "CI 的离线自检没有验项目本身可导入"
+

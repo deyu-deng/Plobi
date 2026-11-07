@@ -2146,11 +2146,15 @@ except Exception:
         Write-Success "Baseline imports verified in venv"
     }
 
-    if (-not $NoVenv) {
+    if (-not $NoVenv -and $script:InstalledTier -ne "bundled wheelhouse (offline)") {
         # uv on Windows can register plobi.exe in dist-info/RECORD but fail to
         # materialise the .exe (file lock during self-update, distlib edge case).
         # Catch it here so a fresh install/update does not finish with a broken
         # `plobi` command while plobi-agent.exe / plobi-acp.exe exist
+        #
+        # **装机版那一档（bundle）跳过**：那一档只装**依赖**，项目本体不进 venv
+        # （桌面端跑 `python -m plobi_cli.main`，源码树在 PYTHONPATH 上）⇒ 没有
+        # console 脚本是**正常**的；跑这个检查只会去联网重装（离线时白等一场）。
         $scriptsDir = Join-Path $InstallDir "venv\Scripts"
         $pythonExe = Join-Path $scriptsDir "python.exe"
         if ((Test-Path $scriptsDir) -and (Test-Path $pythonExe)) {
