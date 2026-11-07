@@ -116,3 +116,37 @@ def test_the_bundled_portable_git_is_never_deleted():
 
     assert "if ($tmpIsOurs)" in body, "临时文件只许删自己下载的那份"
     assert "Remove-Item -Force $tmpFile" in body
+
+
+def test_uv_travels_with_the_package():
+    """uv 也得进包：不然首启第一件事就是去 astral.sh 下载它。
+
+    一台全新电脑上首启要下的东西越少，越接近「装完即用」。
+    """
+    body = _function_text("Install-Uv")
+    collector = (_INSTALL_PS1.parents[1] / "apps" / "desktop" / "scripts" / "collect-toolchain-bundle.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert "uv-*-windows-*.zip" in body, "install.ps1 没有认包里那份 uv"
+    assert "Using the uv that shipped with the installer" in body, "包里那份 uv 没用上"
+    assert "uv-x86_64-pc-windows-msvc.zip" in collector, "收集脚本没有把 uv 收进包里"
+
+
+def test_the_python_runtime_travels_with_the_package():
+    """CPython 也得进包：`uv python install` 在全新电脑上就是一次下载。
+
+    装机器脚本把包里那份解到 <数据目录>\\python，venv 直接建在它上面。
+    """
+    source = _SOURCE
+    collector = (_INSTALL_PS1.parents[1] / "apps" / "desktop" / "scripts" / "collect-toolchain-bundle.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function Get-BundledPythonExe" in source, "没有取包里那份 CPython 的入口"
+    assert "cpython-3.11*-install_only.tar.gz" in source, "install.ps1 没有认包里那份 CPython"
+    assert "Python from the installer" in source, "python 档没有先试包里那份"
+    assert "--python $pythonForVenv" in source, "venv 没有建在包里那份 CPython 上"
+    assert "cpython-3.11.18+20261026-x86_64-pc-windows-msvc-install_only.tar.gz" in collector, (
+        "收集脚本没有把 CPython 收进包里"
+    )

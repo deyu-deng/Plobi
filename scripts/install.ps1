@@ -462,6 +462,46 @@ function Get-PowerShellHostExe {
     return "powershell"
 }
 
+function Get-BundledPythonExe {
+    <#
+       .SYNOPSIS
+       The CPython that ships inside the package (python-build-standalone,
+       install_only build), unpacked under <data dir>\python.
+
+       .DESCRIPTION
+       A brand-new machine has no Python at all, and `uv python install` would
+       have to fetch one on first launch.  The interpreter therefore travels with
+       the package: the install unpacks it here and the virtualenv is built on
+       top of it, so the first launch needs no network for Python either.
+
+       Returns the interpreter's path, or $null when the package carries none
+       (a dev-machine install, or a non-Windows leg).
+    #>
+    if (-not $ToolchainDir -or -not (Test-Path $ToolchainDir)) { return $null }
+
+    $archive = Get-ChildItem -Path $ToolchainDir -Filter "cpython-3.11*-install_only.tar.gz" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $archive) { return $null }
+
+    $pythonRoot = Join-Path $PlobiHome "python"
+    $exe = Join-Path $pythonRoot "python.exe"
+    if (Test-Path $exe) { return $exe }
+
+    Write-Info "Unpacking the CPython that shipped with the installer ($($archive.Name)) ..."
+    if (Test-Path $pythonRoot) {
+        Remove-Item -Recurse -Force $pythonRoot -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Path $pythonRoot -Force | Out-Null
+    # tar ships with Windows 10+; --strip-components=1 drops the archive's
+    # top-level "python/" folder so python.exe lands directly in $pythonRoot.
+    & tar.exe -xf $archive.FullName -C $pythonRoot --strip-components=1
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) {
+        Write-Warn "could not unpack the bundled CPython -- falling back to uv's download"
+        return $null
+    }
+    return $exe
+}
+
 function Install-Uv {
     # Plobi owns its own uv at $PlobiHome\bin\uv.exe.  Always install there —
     # no PATH probing, no conda guards, no multi-location resolution chains.
@@ -478,6 +518,31 @@ function Install-Uv {
 
     Write-Info "Installing managed uv into $PlobiHome\bin ..."
     New-Item -ItemType Directory -Path (Join-Path $PlobiHome "bin") -Force | Out-Null
+
+    # 包里那份 uv（装机器时随包带进来的）：先用它 ⇒ 首启零下载。
+    if ($ToolchainDir -and (Test-Path $ToolchainDir)) {
+        $uvZip = Get-ChildItem -Path $ToolchainDir -Filter "uv-*-windows-*.zip" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($uvZip) {
+            Write-Info "Using the uv that shipped with the installer ($($uvZip.Name)) -- no download."
+            $binDir = Join-Path $PlobiHome "bin"
+            $tmpUv = Join-Path $env:TEMP "plobi-uv-bundle.zip"
+            try {
+                Copy-Item $uvZip.FullName $tmpUv -Force
+                Expand-Archive -Path $tmpUv -DestinationPath $binDir -Force
+            } catch {
+                Write-Warn "could not unpack the bundled uv: $_"
+            } finally {
+                Remove-Item -Force $tmpUv -ErrorAction SilentlyContinue
+            }
+            if (Test-Path $managedUv) {
+                $script:UvCmd = $managedUv
+                $version = & $managedUv --version
+                Write-Success "Managed uv from the installer ($version)"
+                return $true
+            }
+        }
+    }
 
     # UV_INSTALL_DIR tells the astral installer to place the binary
     # directly into $PlobiHome\bin instead of ~/.local/bin.
@@ -616,7 +681,15 @@ function Resolve-AvailablePythonVersion {
 
 function Test-Python {
     Write-Info "Checking Python $PythonVersion..."
-    
+
+    # 包里那份 CPython（装机器时随包带进来的）：先用它 ⇒ 首启零下载。
+    $bundledPython = Get-BundledPythonExe
+    if ($bundledPython) {
+        $ver = & $bundledPython --version 2>$null
+        Write-Success "Python from the installer: $ver"
+        return $true
+    }
+
     # Let uv find or install Python
     try {
         $pythonPath = & $UvCmd python find $PythonVersion 2>$null
@@ -1886,7 +1959,20 @@ function Install-Venv {
     # normal progress such as "Using CPython ..." on stderr; under Windows
     # PowerShell 5.1 with EAP=Stop that stderr is a NativeCommandError unless
     # we temporarily relax EAP and trust $LASTEXITCODE for real failures.
-    Invoke-NativeWithRelaxedErrorAction { & $UvCmd venv venv --python $PythonVersion }
+    #
+    # The interpreter to build on: the CPython that shipped inside the package
+    # when there is one (first launch then needs no network for Python either),
+    # otherwise the version we resolved above.
+    $pythonForVenv = $PythonVersion
+    $bundledPython = Get-BundledPythonExe
+    if ($bundledPython) {
+        $pythonForVenv = $bundledPython
+        # The bundled interpreter IS the pinned version (3.11) -- undo any
+        # system-Python fallback the block above may have applied.
+        $script:PythonVersion = "3.11"
+        Write-Info "Building the virtualenv on the bundled CPython ($bundledPython)"
+    }
+    Invoke-NativeWithRelaxedErrorAction { & $UvCmd venv venv --python $pythonForVenv }
     # Relaxing EAP above means a *genuine* uv-venv failure (exit != 0) no longer
     # aborts on its own. Capture $LASTEXITCODE immediately and fail fast, so the
     # `venv` stage can't falsely report success (and Invoke-Stage can't emit

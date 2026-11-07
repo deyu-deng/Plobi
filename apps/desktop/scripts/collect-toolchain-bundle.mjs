@@ -51,6 +51,28 @@ const RIPGREP = {
   asset: 'ripgrep-14.1.1-x86_64-pc-windows-msvc.zip'
 }
 
+/**
+ * uv — the package manager that installs the backend's dependencies and creates
+ * its virtualenv.  install.ps1 otherwise pulls it from astral.sh on first launch
+ * (a fresh machine would still need the network just for this).
+ */
+const UV = {
+  tag: '0.13.1',
+  asset: 'uv-x86_64-pc-windows-msvc.zip'
+}
+
+/**
+ * CPython 3.11 — the interpreter the backend's virtualenv is built on.  Same
+ * reason as uv: `uv python install` would fetch it on first launch.  This is the
+ * python-build-standalone "install_only" archive (the same build uv itself
+ * would pick), unpacked into <data dir>\python by install.ps1.
+ */
+const CPYTHON = {
+  tag: '20261026',
+  version: '3.11.18',
+  asset: 'cpython-3.11.18+20261026-x86_64-pc-windows-msvc-install_only.tar.gz'
+}
+
 function say(msg) {
   console.log(`[collect-toolchain-bundle] ${msg}`)
 }
@@ -97,10 +119,14 @@ fs.mkdirSync(OUT_DIR, { recursive: true })
 
 const gitUrl = `https://github.com/git-for-windows/git/releases/download/${PORTABLE_GIT.tag}/${PORTABLE_GIT.asset}`
 const rgUrl = `https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP.version}/${RIPGREP.asset}`
+const uvUrl = `https://github.com/astral-sh/uv/releases/download/${UV.tag}/${UV.asset}`
+const cpythonUrl = `https://github.com/astral-sh/python-build-standalone/releases/download/${CPYTHON.tag}/${CPYTHON.asset}`
 
 const targets = [
   { url: gitUrl, file: path.join(OUT_DIR, PORTABLE_GIT.asset) },
-  { url: rgUrl, file: path.join(OUT_DIR, RIPGREP.asset) }
+  { url: rgUrl, file: path.join(OUT_DIR, RIPGREP.asset) },
+  { url: uvUrl, file: path.join(OUT_DIR, UV.asset) },
+  { url: cpythonUrl, file: path.join(OUT_DIR, CPYTHON.asset) }
 ]
 
 for (const target of targets) {
