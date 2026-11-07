@@ -24,8 +24,8 @@ Installers are attached below.
 ### Improved
 
 - **One product version** — About shows a single version number; it used to list the desktop version and then the backend's underneath, which read like two products.
-- **Backend ships with the installer** — The backend's runtime source and its locked dependency wheels come with the package, so its dependencies install from the package; the shell and the backend end up on the same version.
-- **Toolchain ships with the installer** — git, bash and ripgrep come with the package, so the first launch no longer downloads them.
+- **Backend ships with the installer** — The backend's runtime source and its locked dependency wheels come with the package, so its dependencies install offline from the package on all three platforms; the shell and the backend end up on the same version.
+- **Runtime ships with the installer** — On Windows, git, bash and ripgrep come with the package; macOS and Linux already carry git and bash, and the package adds the Python runtime and uv. Each platform's runtime arrives with the package.
 - **One name for agents** — The interface says Agent and nothing else: "profile" is gone from the product, and the left rail, the settings page and the command line all use Agent.
 - **A fresh install has one agent** — The previous version added an agenda secretary on its own; a fresh install now has the chief secretary only. Roles are created by the user, or by the chief secretary when the user asks for one.
 - **No preset scheduled jobs** — The previous version scheduled a nightly plan for 20:00 on its own; this version presets none, and scheduled jobs are set by the user.
