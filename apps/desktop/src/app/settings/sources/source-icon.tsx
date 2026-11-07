@@ -67,7 +67,14 @@ export function SourceAvatar({
   // 壳归 `EntityAvatar`（11-07 统一令：信源与订阅共用同一颗图标语法）；这张品牌表仍归信源自己。
   const spec = SOURCE_ICONS[sourceId]
   const Icon = spec?.Icon
-  const Generic = !spec ? (category === 'website' ? Globe : category === 'email' ? Mail : null) : null
+
+  // 11-07 修一处旧字符：类目轴改名之后这里仍是 `website`，而现役值是 `site`——于是本科教务
+  // （`zdbk`，site 类）一直退成首字母 Z 而不是地球。"有类名没图标"是那半件事的漏网。
+  const Generic = !spec
+    ? (category === 'site' || category === 'website'
+        ? Globe
+        : category === 'email' ? Mail : null)
+    : null
 
   return (
     <EntityAvatar
