@@ -37,6 +37,7 @@ import urllib.parse
 import webbrowser
 
 from . import login_ledger
+from .registry import ADAPTED_APPS, detect_installed, spec_for
 
 # A login URL, as CLIs actually print it — and *only* a login URL. Measured 2026-10-28:
 # a CLI whose argv we guessed wrong prints its own usage text, and that text contains a
@@ -537,71 +538,156 @@ def login_plan_for(registry, app_id: str) -> dict:
     return {"kind": "none", "name": key, "reason": "hub 没有这一条腿"}
 
 
-def auth_catalog(registry) -> list[dict]:
-    """Every leg the desktop may offer a 连接 button for, with its live verdict."""
-    rows: list[dict] = []
-    seen: set[str] = set()
+def _reason_code(reason: str) -> str:
+    """把凭据判据的理由压成一个码 —— 前端拿码查表，不把机器词念给用户听。"""
+    text = (reason or "").strip().lower()
 
-    for name, prov in (registry.providers.items() if registry else {}):
-        # The card list IS the scan result (user ruling 2026-10-27). A product that is
-        # not on this machine gets no card: Plobi does not download apps or CLIs, so a
-        # row saying "not found here" would only be an invitation to go install one by
-        # hand — which is the experience the ruling removes.
-        probe = getattr(prov, "present", None)
-        if callable(probe) and not probe():
-            continue
+    if not text or text == "ok" or text in {"live", "ready"}:
+        return "ok"
+    if "expired" in text or "过期" in text:
+        return "credential_expired"
+    if "proxy" in text or "egress" in text:
+        return "proxy_not_configured"
+    for needle in ("network", "timeout", "timed out", "unreachable", "connect", "dns", "offline", "网络"):
+        if needle in text:
+            return "network_unreachable"
+    if "login" in text or "sign" in text or "登录" in text:
+        return "credential_missing"
+    if re.fullmatch(r"[a-z0-9_.:-]+", text):
+        return text
+
+    return "unavailable"
+
+
+def _catalog_row(app_id: str, spec: dict, prov, registry) -> dict:
+    """一条腿在设置页的那一行：装没装、登没登、现在能不能用，一次说清。"""
+    name = spec.get("name") or app_id
+    installed = detect_installed(spec)
+    login_method = spec.get("login") or "unknown"
+    live = False
+    signed = False
+    signed_reason = ""
+    reason = ""
+    kind = "none"
+    login_reason = ""
+
+    if prov is not None:
         plan = prov.login_plan()
-        plan.setdefault("name", getattr(prov, "display_name", "") or name)
+        kind = plan.get("kind", "none")
+        name = plan.get("name") or getattr(prov, "display_name", "") or name
         live, reason = registry.credential_health(prov)
         signed_probe = getattr(prov, "signed_in", None)
         signed, signed_reason = signed_probe() if callable(signed_probe) else (live, reason)
-        kind = plan.get("kind", "none")
-        rows.append(
-            {
-                "id": name,
-                "name": plan.get("name") or name,
-                "kind": kind,
-                "live": bool(live),
-                # The card's shape (`+` vs switch) reads THIS, never `live`: `live` also
-                # answers reachability, and a dead node must not offer him a login he
-                # already did. The reason for the difference stays on the tooltip.
-                "signed_in": bool(signed),
-                "signed_in_reason": signed_reason,
-                "installed": True,
-                "reason": reason,
-                # The plan's own words when there is no click to offer. `reason` above
-                # is the credential verdict ("ok", "credential_expired") — printing
-                # that under a card would put a machine token on screen (measured
-                # 2026-10-26: Codex/Claude/OpenCode cards read "ok").
-                "login_reason": str(plan.get("reason") or "") if kind in {"none", "local_session"} else "",
-                "aggregate": True,
-            }
-        )
+        if kind in {"none", "local_session"}:
+            login_reason = str(plan.get("reason") or "")
+        # 「装了」也包括「凭据已经在机器上」：桌面类应用的判据是本地会话，
+        # 会话在就说明它装过并登过，即使安装目录不在我们列的几个根下。
+        present_probe = getattr(prov, "present", None)
+        if callable(present_probe):
+            try:
+                installed = installed or bool(present_probe())
+            except Exception:  # noqa: BLE001 - 探测炸了不代表没装
+                pass
+
+    if not installed:
+        state = "not_installed"
+        reason_code = "install_missing"
+    elif prov is None:
+        # 适配器写好了、这台机器上也装了，但本次没有预启用：点 + 时按需启用。
+        state = "not_enabled"
+        reason_code = "not_enabled_in_config"
+    elif signed and live:
+        state = "ready"
+        reason_code = "ok"
+    elif not signed:
+        state = "signed_out"
+        reason_code = "credential_missing"
+    else:
+        state = "unavailable"
+        reason_code = _reason_code(reason or signed_reason)
+
+    install = spec.get("install") or {}
+
+    return {
+        "id": app_id,
+        "name": name,
+        "kind": kind,
+        "live": bool(live),
+        # 卡片的形状（+ 还是开关）读 signed_in，不读 live：live 还答「现在通不通」，
+        # 一个掉线的节点不该给他一个「重新登录」。
+        "signed_in": bool(signed),
+        "signed_in_reason": signed_reason,
+        # 2026-11-07 之前这里恒为 True；现在是实测。
+        "installed": bool(installed),
+        "reason": reason,
+        "login_reason": login_reason,
+        "aggregate": True,
+        # ── 首次配置引导（新增）─────────────────────────────────────────────
+        # state 是那一个控件该长什么样的判据：ready → 开关；signed_out /
+        # not_installed / not_enabled → 加号；unavailable → 开关 + 红点 + 理由徽标。
+        "state": state,
+        "reason_code": reason_code,
+        "app_kind": spec.get("kind") or "app",
+        "login_method": login_method,
+        "download": spec.get("download"),
+        "install_kind": install.get("kind"),
+        "install_command": install.get("command"),
+        "intro_key": spec.get("intro_key") or app_id,
+    }
+
+
+def auth_catalog(registry) -> list[dict]:
+    """Every leg the desktop may offer a click-to-connect control for.
+
+    2026-11-07 (user): 卡片全集不再是「本机扫描结果」——那是全新机器上一片空白的
+    原因。清单真源是 `ADAPTED_APPS`：所有已写适配器的应用都出条目，装没装、登没登
+    分开说，好让设置页给每个还没开通的应用一个 + 号，点进去就是首次配置。
+    """
+    rows: list[dict] = []
+    seen: set[str] = set()
+
+    for app_id, spec in ADAPTED_APPS.items():
+        prov = registry.providers.get(app_id) if registry else None
+        rows.append(_catalog_row(app_id, spec, prov, registry))
+        seen.add(app_id)
+
+    # 没有登记在 ADAPTED_APPS 里的腿（mock、以及将来新写适配器但忘了登记的应用）
+    # 沿用旧口径：只报 present() 为真的，免得把半成品端上桌。
+    for name, prov in (registry.providers.items() if registry else {}):
+        if name in seen:
+            continue
+        probe = getattr(prov, "present", None)
+        if callable(probe) and not probe():
+            continue
+        spec = spec_for(name)
+        rows.append(_catalog_row(name, spec, prov, registry))
         seen.add(name)
 
     for name, plan in LOGIN_ONLY_TARGETS.items():
         if name in seen:
             continue
         installed = _resolve_binary(plan.get("binary", "")) is not None
-        if not installed:
-            # Scan semantics: the CLI is not here, so there is no card to pick.
-            continue
         rows.append(
             {
                 "id": name,
                 "name": plan.get("name", name),
                 "kind": "cli_login",
-                # `live` is a SIGN-IN verdict and nothing else. Having the binary on
-                # PATH is `installed`, not "already signed in" — conflating the two
-                # made the settings card read "已连接" and hide its button for a CLI
-                # nobody had logged into (measured 2026-10-26: Gemini/Qwen both said
-                # 已连接 with no way to sign in). For login-only legs we have no
-                # credential probe, so the honest answer is "not signed in yet".
+                # `live` 只是登录判决；二进制在 PATH 上算 installed，不等于登过。
                 "live": False,
+                "signed_in": False,
+                "signed_in_reason": "",
                 "installed": installed,
                 "reason": "已装，还没登录过" if installed else "这台机器上还没装它的 CLI",
                 "login_reason": "",
                 "aggregate": False,
+                "state": "signed_out" if installed else "not_installed",
+                "reason_code": "credential_missing" if installed else "install_missing",
+                "app_kind": "cli",
+                "login_method": "cli-auth",
+                "download": None,
+                "install_kind": None,
+                "install_command": None,
+                "intro_key": name,
             }
         )
 

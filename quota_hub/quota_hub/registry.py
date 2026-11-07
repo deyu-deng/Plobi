@@ -19,7 +19,10 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
+import os
+import shutil
 import time
+from pathlib import Path
 
 import httpx
 
@@ -117,6 +120,215 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 }
 
 
+# ── adapted apps: one list, one truth (2026-11-07) ──────────────────────────
+# 设置页「订阅额度」那一屏要列出**所有已写适配器**的应用，而不是只列出 config.yaml
+# 恰好启用的那几条腿。在此之前卡片全集 = present() 为真的腿 ∩ config 启用的腿，
+# 于是全新机器上屏幕是空的：没装的应用连一行都不给，用户不知道可以装什么，更不知道
+# 点哪里装（用户 11-07：「首次配置所有开关显示 + 号，点 + 引导首次配置」）。
+#
+# 所以这里建一张 ADAPTED_APPS —— 唯一真源。每项写清：id、显示名、类型、安装判据、
+# 登录方式、官方下载地址、（仅当包名确定时）自动安装命令。config.yaml 从此只表示
+# 「这条腿本次是否预启用」，不再决定它是否出现在屏幕上：未预启用的腿由
+# `Registry.enable_leg()` 在用户点 + 的那一刻按需装上。
+#
+# 判据：
+#   {"probe": "cli",        "binary": "claude"}   查 PATH（CLI 类）
+#   {"probe": "desktop",    "paths": ["Cursor"]}  查 %LOCALAPPDATA%\Programs\<p> 等（桌面类）
+#   {"probe": "credential"}                       只看本地凭据（纯 API 类）
+#   {"probe": "none"}                             装不装都能登（浏览器 OAuth 类）
+#
+# `install.command` 只在包名确定时填写：写不准的命令比没有命令更坏，没有就退到
+# 「打开官方页面」，绝不猜一个装不上的包名。
+ADAPTED_APPS: dict[str, dict] = {
+    "antigravity": {
+        "name": "Antigravity",
+        "kind": "desktop-app",
+        "login": "oauth",
+        "probe": {"probe": "none"},
+        "download": "https://antigravity.google/",
+        "intro_key": "antigravity",
+    },
+    "antigravity_cli": {
+        "name": "Antigravity CLI",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "agy"},
+        "download": "https://antigravity.google/",
+        "intro_key": "antigravity_cli",
+    },
+    "claude_code_cli": {
+        "name": "Claude Code",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "claude"},
+        "install": {"kind": "npm", "command": "npm install -g @anthropic-ai/claude-code"},
+        "download": "https://claude.com/product/claude-code",
+        "intro_key": "claude_code_cli",
+    },
+    "codex_cli": {
+        "name": "Codex CLI",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "codex"},
+        "install": {"kind": "npm", "command": "npm install -g @openai/codex"},
+        "download": "https://developers.openai.com/codex/",
+        "intro_key": "codex_cli",
+    },
+    "gemini_api": {
+        "name": "Gemini CLI",
+        "kind": "cli",
+        "login": "oauth",
+        "probe": {"probe": "cli", "binary": "gemini"},
+        "install": {"kind": "npm", "command": "npm install -g @google/gemini-cli"},
+        "download": "https://github.com/google-gemini/gemini-cli",
+        "intro_key": "gemini_api",
+    },
+    "opencode_cli": {
+        "name": "OpenCode",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "opencode"},
+        "install": {"kind": "npm", "command": "npm install -g opencode-ai"},
+        "download": "https://opencode.ai/",
+        "intro_key": "opencode_cli",
+    },
+    "opencode_api": {
+        "name": "OpenCode Zen",
+        "kind": "api",
+        "login": "apikey",
+        "probe": {"probe": "credential"},
+        "download": "https://opencode.ai/auth",
+        "intro_key": "opencode_api",
+    },
+    "cline_cli": {
+        "name": "Cline",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "cline"},
+        "install": {"kind": "npm", "command": "npm install -g cline"},
+        "download": "https://cline.bot/",
+        "intro_key": "cline_cli",
+    },
+    "kiro_cli": {
+        "name": "Kiro CLI",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "kiro-cli"},
+        "download": "https://kiro.dev/",
+        "intro_key": "kiro_cli",
+    },
+    "cursor": {
+        "name": "Cursor",
+        "kind": "desktop-app",
+        "login": "local-session",
+        "probe": {"probe": "desktop", "paths": ["Cursor", "cursor"]},
+        "download": "https://cursor.com/download",
+        "intro_key": "cursor",
+    },
+    "qoder": {
+        "name": "Qoder",
+        "kind": "desktop-app",
+        "login": "oauth",
+        "probe": {"probe": "desktop", "paths": ["Qoder", "qoder"]},
+        "download": "https://qoder.com/",
+        "intro_key": "qoder",
+    },
+    "workbuddy": {
+        "name": "CodeBuddy",
+        "kind": "desktop-app",
+        "login": "local-session",
+        "probe": {"probe": "desktop", "paths": ["CodeBuddy", "CodeBuddy CN", "WorkBuddy"]},
+        "download": "https://www.codebuddy.ai/",
+        "intro_key": "workbuddy",
+    },
+    "workbuddy_cli": {
+        "name": "CodeBuddy CLI",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "workbuddy"},
+        "download": "https://www.codebuddy.ai/",
+        "intro_key": "workbuddy_cli",
+    },
+    "marvis_cli": {
+        "name": "Marvis CLI",
+        "kind": "cli",
+        "login": "cli-auth",
+        "probe": {"probe": "cli", "binary": "openmarvis"},
+        "download": None,
+        "intro_key": "marvis_cli",
+    },
+    "marvis_gui": {
+        "name": "Marvis",
+        "kind": "desktop-app",
+        "login": "local-session",
+        "probe": {"probe": "desktop", "paths": ["Marvis", "Tencent Marvis"]},
+        "download": "https://marvis.qq.com/",
+        "intro_key": "marvis_gui",
+    },
+}
+
+#: 桌面应用的安装根：用户目录优先，其次机器级目录；macOS 的 /Applications 一并算上。
+_DESKTOP_INSTALL_ROOTS = (
+    ("LOCALAPPDATA", "Programs"),
+    ("LOCALAPPDATA", ""),
+    ("PROGRAMFILES", ""),
+    ("PROGRAMFILES(X86)", ""),
+    ("PROGRAMW6432", ""),
+    ("APPDATA", ""),
+)
+
+
+def desktop_install_roots() -> list[Path]:
+    roots: list[Path] = []
+    for env, sub in _DESKTOP_INSTALL_ROOTS:
+        base = os.environ.get(env)
+        if not base:
+            continue
+        roots.append(Path(base) / sub if sub else Path(base))
+    roots.append(Path("/Applications"))
+    return roots
+
+
+def detect_installed(spec: dict) -> bool:
+    """测这台机器上到底装没装 —— 真值，不再恒为 True。"""
+    probe = spec.get("probe") or {}
+    kind = probe.get("probe")
+
+    if kind in (None, "none"):
+        return True
+    if kind == "cli":
+        return bool(shutil.which(str(probe.get("binary") or "")))
+    if kind == "desktop":
+        for name in probe.get("paths") or []:
+            for root in desktop_install_roots():
+                if (root / name).exists():
+                    return True
+
+        return False
+    if kind == "credential":
+        # 纯 API 类没有「装」这回事；判据交给凭据探测，这里只报「可以登」。
+        return True
+
+    return True
+
+
+def spec_for(app_id: str) -> dict:
+    """一条腿的清单项；没登记的应用退化为最小形状（保持旧行为可用）。"""
+    spec = ADAPTED_APPS.get(app_id)
+    if spec is not None:
+        return {"id": app_id, **spec}
+
+    return {
+        "id": app_id,
+        "name": app_id,
+        "kind": "app",
+        "login": "unknown",
+        "probe": {"probe": "none"},
+        "download": None,
+        "intro_key": app_id,
+    }
+
+
 def _matches(pattern: str, model: str) -> bool:
     if not pattern:
         return False
@@ -155,6 +367,39 @@ class Registry:
             for m in prov.served_models:
                 self.model_to_provider[m] = name
         return self
+
+    async def enable_leg(self, name: str) -> Provider | None:
+        """按需装上一条腿 —— 只在用户点了 + 的那一刻发生。
+
+        config.yaml 里的 providers 段从 2026-11-07 起只是一份「预启用」清单；
+        清单真源是 ADAPTED_APPS。用户要用的腿如果没被预启用，这里现场建起来，
+        免得「屏幕上有这张卡、点下去却说自己没启用」这种死路。已建好的直接复用。
+        """
+        existing = self.providers.get(name)
+        if existing is not None:
+            return existing
+
+        cls = PROVIDER_CLASSES.get(name)
+        if cls is None:
+            return None
+
+        pcfg = dict(self.config.get("providers", {}).get(name) or {})
+        pcfg.setdefault("enabled", True)
+
+        if str(pcfg.get("transport") or "").lower() == "acp":
+            prov: Provider = AcpProvider({**pcfg, "leg": name}, self.http)
+        else:
+            prov = cls(pcfg, self.http)
+
+        await prov.discover_accounts()
+        self.providers[name] = prov
+
+        for m in prov.served_models:
+            self.model_to_provider[m] = name
+
+        logger.info("enabled leg on demand: %s", name)
+
+        return prov
 
     async def ensure_models_refreshed(self) -> None:
         """Refresh every provider's model catalog from upstream, retrying until no leg is

@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from . import __version__
 from .config import load
 from . import authflow
+from . import registry as registry_mod
 from .providers.base import UpstreamError
 from .providers.apps.antigravity.network import probe_network
 from .registry import Registry
@@ -525,6 +526,11 @@ async def _recheck_after_login(app_id: str) -> None:
 async def plobi_auth_start(app_id: str, authorization: str = Header(None)):
     _auth(authorization)
     reg = STATE.get("reg")
+    # 2026-11-07（用户）：屏幕上的 + 号对每一条已适配的腿都成立，包括 config.yaml
+    # 没有预启用的那些。所以点下去的第一件事是按需把这条腿装进 registry ——
+    # 否则「有卡片、点不动」就是死路。
+    if reg is not None and app_id not in reg.providers:
+        await reg.enable_leg(app_id)
     plan = authflow.login_plan_for(reg, app_id)
     plan["on_success"] = lambda: _recheck_after_login(app_id)
     session = await authflow.MANAGER.start(app_id, plan, settle=2.0)
@@ -549,6 +555,61 @@ async def plobi_auth_status(app_id: str, authorization: str = Header(None)):
         "live": bool(live),
         "reason": reason,
         "login": session.as_dict() if session else None,
+    }
+
+
+@app.post("/plobi/install/{app_id}")
+async def plobi_install(app_id: str, authorization: str = Header(None)):
+    """装一条 CLI 腿 —— 命令只来自清单，调用方不能自己带命令进来。
+
+    2026-11-07（用户）：首次配置里「未安装的 CLI 类给出自动安装动作」。可执行的东西
+    必须只有一个来源：`ADAPTED_APPS[*].install.command`。请求体不参与，前端点的是
+    「装这一条」，不是「跑这一句」——否则这就是一个万能命令执行口。
+    """
+    _auth(authorization)
+    spec = registry_mod.spec_for(app_id)
+    install = spec.get("install") or {}
+    command = install.get("command")
+
+    if not command:
+        return {
+            "ok": False,
+            "code": "NO_COMMAND",
+            "detail": "这条腿没有可自动执行的安装命令，请用官方安装包",
+            "download": spec.get("download"),
+        }
+
+    logger.info("installing leg %s via %s", app_id, install.get("kind"))
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            str(command),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        raw, _ = await asyncio.wait_for(proc.communicate(), timeout=600)
+    except asyncio.TimeoutError:
+        return {"ok": False, "code": "TIMEOUT", "detail": "安装超时（10 分钟）"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "code": "SPAWN_FAILED", "detail": f"{type(exc).__name__}: {exc}"}
+
+    output = (raw or b"").decode("utf-8", "replace")
+    installed = registry_mod.detect_installed(spec)
+
+    reg = STATE.get("reg")
+    if installed and reg is not None:
+        prov = await reg.enable_leg(app_id)
+        if prov is not None:
+            with contextlib.suppress(Exception):
+                await prov.discover_accounts()
+
+    return {
+        "ok": bool(installed),
+        "code": "INSTALLED" if installed else "STILL_MISSING",
+        "installed": bool(installed),
+        # 只回最后一段日志：装没装成由 installed 说话，日志是给人排查用的。
+        "tail": output[-2000:],
+        "exit_code": proc.returncode,
     }
 
 
