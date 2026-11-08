@@ -133,3 +133,23 @@ def test_the_builder_actually_includes_this_file():
 
     assert include == "installer.nsh", f"nsis.include 指着别处了：{include!r}"
     assert _NSH.is_file(), "被指的那一份必须在仓里（build/ 整个是 gitignore 的）"
+
+
+def test_the_installer_registers_the_app_user_model_id():
+    """点通知是 Windows **按 AUMID 唤起可执行文件** ⇒ 这一格得登记。
+
+    2026-11-08 用户截图实锤：点通知弹出来的是 Electron 的默认窗口（开发态那个
+    不带 app 路径的 electron.exe）。装机器上 AUMID 只在开始菜单快捷方式里、
+    注册表里没有 ⇒ 系统没有硬目标。electron-builder 的卸载器本来就按这个键清理，
+    我们此前却从来没登记过。
+    """
+    config = json.loads(_PACKAGE_JSON.read_text(encoding="utf-8"))
+    app_id = config.get("build", {}).get("appId")
+    assert app_id, "package.json 的 build.appId 没了（AUMID 要与它一致）"
+
+    key = f'"Software\\Classes\\AppUserModelId\\{app_id}"'
+    install = _macro_text("customInstall")
+    uninstall = _macro_text("customUnInstall")
+
+    assert key in install, f"安装时没登记 AUMID（{key}）：系统没有硬目标可唤起"
+    assert key in uninstall, "卸载时要把那一格摘掉"

@@ -177,6 +177,7 @@ import {
 import { registerGenOffice } from './genoffice'
 import { nativeOverlayWidth as computeNativeOverlayWidth, macTitleBarOverlayHeight } from './titlebar-overlay-width'
 import { appIconPaths } from './app-icon-paths'
+import { resolveAppUserModelId, resolveNotificationActivation } from './app-identity'
 import { resolveBehindCount, shouldCountCommits } from './update-count'
 import { readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
 import {
@@ -876,8 +877,19 @@ app.setName(APP_NAME)
 // keep this string in sync with package.json `build.appId`. macOS/Linux don't
 // need this, so gate it on Windows. (Fixes: desktop approval/turn notifications
 // never firing on Windows.)
-if (IS_WINDOWS) {
-  app.setAppUserModelId('com.plobi.desktop')
+//
+// 只在**装机态**占这个身份（2026-11-08 用户截图实锤）：点通知时 Windows 按 AUMID
+// 唤起「登记在这个 AUMID 上的可执行文件」。开发态跑的是 dev 树的 electron.exe
+// （不是产品 exe），它若也占着 com.plobi.desktop，系统唤起的就是**不带 app 路径**
+// 的 electron.exe ⇒ 弹出 Electron 那页默认窗口（标题栏与任务栏图标都是它的）。
+// 判据见 app-identity.ts（用 process.defaultApp，不用会被烤成 true 的 app.isPackaged）。
+const aumid = resolveAppUserModelId({
+  isWindows: IS_WINDOWS,
+  isDefaultApp: Boolean(process.defaultApp),
+  productAumid: 'com.plobi.desktop'
+})
+if (aumid) {
+  app.setAppUserModelId(aumid)
 }
 
 // Seed the native About panel with the live Plobi version. This is refreshed
@@ -11485,9 +11497,17 @@ ipcMain.handle('plobi:notify', (_event, payload) => {
   })
 
   notification.on('click', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
+    // 点通知 = 把应用叫回来。窗口还在（可见或收在托盘里）就把它叫到前面；
+    // 已经没了（正在退出）就重开一扇——点了通知却什么都没发生，比不做更糟。
+    if (resolveNotificationActivation(Boolean(mainWindow && !mainWindow.isDestroyed())) === 'reopen') {
+      createWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show()
+        mainWindow.focus()
+      }
       return
     }
+
     focusWindow(mainWindow)
 
     if (payload?.sessionId) {

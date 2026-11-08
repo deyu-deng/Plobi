@@ -90,9 +90,16 @@ FunctionEnd
 
   CreateDirectory "$PlobiDataDirValue"
   WriteRegStr HKCU "Software\Plobi" "DataDir" "$PlobiDataDirValue"
+
+  ; 通知的「点一下」是 Windows 按 AUMID 唤起「登记在这个 AUMID 上的可执行文件」。
+  ; 这一格得登记（electron-builder 的卸载器本来就按这个键清理，我们此前却没登记
+  ; ⇒ 系统只能靠开始菜单快捷方式去猜，点通知可能唤起别的东西）。
+  ; 与 package.json 的 build.appId 一致。
+  WriteRegStr HKCU "Software\Classes\AppUserModelId\com.plobi.desktop" "" "Plobi"
 !macroend
 
 !macro customUnInstall
   ; 只摘程序的门牌，不动数据，也不抹掉「数据目录在哪一格」——重装指回同一格，历史还在。
   DeleteRegKey /ifempty HKCU "Software\Plobi"
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\com.plobi.desktop"
 !macroend
