@@ -152,6 +152,10 @@ async def _quota_refresh_loop(reg, interval: float) -> None:
                     ", ".join(network.get("failed") or []), network.get("advice", ""),
                 )
         try:
+            # A leg whose store was locked or mid-renewal at boot has no seat, and only a
+            # later local read can give it one (installed 0.3.0, 2026-11-08: Kiro read fine
+            # a minute after boot while the hub still had zero seats). Cheap, local, retry.
+            await reg.ensure_accounts_discovered()
             # A leg whose catalog never came back (node down at boot) has no model to
             # offer, and only an upstream answer can fix that. The picker re-asks when it
             # polls; this catches the case where nobody opens it.
