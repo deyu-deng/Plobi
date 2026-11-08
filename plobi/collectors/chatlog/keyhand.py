@@ -4,6 +4,10 @@
 把本地库的解密密钥找出来。这一档不发明新机制，只是把那条子命令接到产品里，并把结果写进
 同一处真源（引擎自己那一档 handoff 配置），从此屏幕上不再要求他复制一串十六进制。
 
+**这一条现在只管老版本微信**：微信 4.0.3.36 起不再长时间把密钥留在内存里，上游那条
+`chatlog key` 在新版微信上取不到（上游 FAQ #197）。新版那条走 :mod:`.keyscan`
+（我们自己那条只读扫描），由 :func:`plobi.collectors.chatlog._prepare` 先试它、这一条兜底。
+
 四条硬规矩，缺一条就不该上线：
 
 1. **值永不出门**：不进 stdout、不进日志、不进异常文本，也不进本函数的返回值——
@@ -176,7 +180,7 @@ def fetch(env: Optional[Mapping[str, str]] = None, *,
             return False, ("本机同时在跑好几个微信，这一次没法替你定该取哪一份。"
                            "请先只留一个微信窗口，再点一次开关。")
         reason = _quoteable_line(text)
-        return False, ("这次没从微信里取到密钥（它要正在登录着的微信）。"
+        return False, ("这次没从微信里取到密钥。"
                        + (f"它自己那句：{reason}" if reason else ""))
 
     try:

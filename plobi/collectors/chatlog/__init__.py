@@ -75,10 +75,30 @@ PROBE_CODES = ("build_missing", "go_missing", "key_missing", "not_listening", "r
 
 
 def _prepare() -> tuple[bool, str]:
-    """拉起服务之前的那次准备：替他试一次取密钥。失败也只是"少一件事做成"，不是故障。"""
-    from . import keyhand
+    """拉起服务之前的那次准备：替他试一次取密钥。
 
-    return keyhand.fetch()
+    **两条路，按新版优先**：
+
+    1. **我们自己的**（:mod:`.keyscan`）——只读扫本机微信进程。实测微信 4.1.15 上
+       取得到（4.9s），上游那条在新版微信上取不到（微信 4.0.3.36 起不再长时间把
+       密钥留在内存里）。
+    2. **上游那条**（:mod:`.keyhand`，``chatlog key``）——老版本微信上取得到。
+
+    失败也只是"少一件事做成"，不是故障；两路都不成时，说的是**微信那一侧的真实原因**
+    （没跑／没读库／版本变了），不是"你哪里没配好"。
+    """
+    from . import keyhand, keyscan
+
+    ok, note = keyscan.fetch()
+    if ok:
+        return True, note
+
+    ok, upstream_note = keyhand.fetch()
+    if ok:
+        return True, upstream_note
+    # 两路都不成：说我们那条的（它知道微信在哪、库在不在、版本多少），
+    # 上游那句只在上游说了什么新东西时才补上去。
+    return False, note or upstream_note
 
 
 def _probe() -> dict:
