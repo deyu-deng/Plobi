@@ -83,6 +83,23 @@ class CloudCodeClient:
         #: calls without one — measured 2026-11-02).
         self._last_thought_signature: str | None = None
 
+    @staticmethod
+    def _extract_thought_signature(obj: dict) -> str:
+        """The `thought_signature` the upstream put on the functionCall part.
+
+        Same source as `_extract_gemini_function_call` — the signature rides on the
+        *part* that carries the call, not inside the call itself, so the two have to
+        walk the same parts. Returned as a string because the upstream sends it
+        base64 (a bare JSON value, never a dict).
+        """
+        try:
+            for p in obj["candidates"][0]["content"]["parts"]:
+                if "functionCall" in p:
+                    return str(p.get("thought_signature") or "")
+        except (KeyError, IndexError, TypeError):
+            return ""
+        return ""
+
     # --- endpoints --------------------------------------------------------
     def url(self, stream: bool) -> str:
         if stream:
