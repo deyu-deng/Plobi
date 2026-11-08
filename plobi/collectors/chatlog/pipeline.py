@@ -32,6 +32,7 @@ from .client import pool_columns as client_pool_columns
 from .config import CollectorConfig
 from .confirm import Candidate, Confirmer, ConfirmContext, HeuristicConfirmer
 from .media import MAX_MEDIA_BYTES, MAX_MEDIA_PER_ROUND, stage_media
+from .retry import MediaRetryTracker
 from .state import SeenStore, TalkerStore
 
 logger = logging.getLogger(__name__)
