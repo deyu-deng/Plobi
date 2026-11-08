@@ -18,8 +18,11 @@ into ``["[object Object]"]`` on the first touch — reproduced on this box
 
 from __future__ import annotations
 
+import copy
+import ipaddress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from agent.egress import rules as egress
 
@@ -53,6 +56,150 @@ _FLAG_REGIONS: dict[str, str] = {
     "🇮🇳": "印度", "🇹🇷": "土耳其", "🇳🇱": "荷兰", "🇦🇷": "阿根廷",
     "🇲🇴": "澳门",
 }
+
+
+#: The engine's own mixed port.  mihomo's classic port, and the address the
+#: front door points at — a table that arrives without one gets this, so the
+#: front door (http://127.0.0.1:7890) has a listener to knock on.
+DEFAULT_MIXED_PORT = 7890
+
+#: Resolvers seeded for a pool whose nodes are addressed by name.  Without them
+#: the engine starts, passes ``mihomo -t``, and answers 502 — it cannot
+#: resolve the very upstreams it must dial (see agent/egress/mihomo_config.py).
+#: These are the resolvers this project's own tables already name.
+DEFAULT_NAMESERVERS: tuple[str, ...] = ("223.5.5.5", "119.29.29.29")
+
+
+def _node_is_addressed_by_name(nodes: Any) -> bool:
+    """True when some node is addressed by a name rather than by an address."""
+    if not isinstance(nodes, dict):
+        return False
+    for entry in nodes.values():
+        if not isinstance(entry, dict):
+            continue
+        server = str(entry.get("server", "") or "").strip()
+        if not server:
+            continue
+        try:
+            ipaddress.ip_address(server)
+        except ValueError:
+            return True
+    return False
+
+
+def _points_at_own_listener(url: str, port: int) -> bool:
+    """True when this URL is the engine's own listener on this machine.
+
+    The front door lives there: clients walk in through it, and the engine
+    must never be told to forward traffic into its own accept queue.
+    """
+    try:
+        parsed = urlparse(str(url or ""))
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+        return False
+    try:
+        return (parsed.port or 0) == port
+    except ValueError:
+        return False
+
+
+def _catch_all_exit(block: dict[str, Any], mixed_port: int, prefer_exit: str = "") -> str | None:
+    """The exit a table with no rules of its own should point at.
+
+    A group first (the pane's 默认 is a region group), then a node, then a
+    URL proxy — never the front door: that is where traffic comes IN.  An
+    explicitly named exit (``catch_all``) wins over all of them: the user
+    said which one carries foreign traffic.
+    """
+    if prefer_exit:
+        for bucket in ("nodes", "groups", "proxies"):
+            entries = block.get(bucket)
+            if isinstance(entries, dict) and prefer_exit in entries:
+                return prefer_exit
+    groups = block.get("groups")
+    if isinstance(groups, dict) and groups:
+        return next(iter(groups))
+    nodes = block.get("nodes")
+    if isinstance(nodes, dict) and nodes:
+        return next(iter(nodes))
+    proxies = block.get("proxies")
+    if isinstance(proxies, dict):
+        for name, entry in proxies.items():
+            url = ""
+            if isinstance(entry, dict):
+                url = str(entry.get("url", "") or "")
+            if url and _points_at_own_listener(url, mixed_port):
+                continue
+            return str(name)
+    return None
+
+
+def seed_engine_defaults(network_block: Any, prefer_exit: str = "") -> tuple[Any, list[str]]:
+    """Complete a table that arrived halfway, and say exactly what was filled in.
+
+    Measured end to end — a clean install, a pasted subscription, a saved
+    table — the engine refused to start over three details the user has no way
+    to know: an empty ``rules`` (nothing to enforce), a missing
+    ``engine.mixed_port`` (no front door for the system proxy), and
+    domain-addressed nodes without ``engine.dns`` (it cannot resolve what it
+    must dial).  "Import succeeded" plus "the engine never came up" is the
+    most expensive shape of that bug, so the table gets completed on the way in.
+
+    Only what is MISSING is filled.  A table somebody already completed comes
+    back untouched, and every filled-in thing is reported — a silent rewrite
+    of somebody's own file is what this codebase has been burned by.
+    """
+    if not isinstance(network_block, dict) or not network_block:
+        return network_block, []
+
+    nodes = network_block.get("nodes")
+    groups = network_block.get("groups")
+    proxies = network_block.get("proxies")
+    has_pool = bool(nodes) or bool(groups)
+    if not has_pool and not proxies:
+        # Nothing to route: no exit to name, no upstream to resolve.
+        return network_block, []
+
+    seeded = copy.deepcopy(network_block)
+    notes: list[str] = []
+
+    engine_raw = seeded.get("engine")
+    engine = dict(engine_raw) if isinstance(engine_raw, dict) else {}
+
+    # The port is seeded FIRST: the front-door guard reads engine.mixed_port to
+    # know which address is ours, and the catch-all below must be able to
+    # recognise it and leave it alone.
+    if not engine.get("mixed_port"):
+        engine["mixed_port"] = DEFAULT_MIXED_PORT
+        notes.append(
+            f"engine.mixed_port 缺失，已补上 {DEFAULT_MIXED_PORT}（系统代理要一个入口）"
+        )
+
+    if has_pool and not engine.get("dns") and _node_is_addressed_by_name(nodes):
+        engine["dns"] = {
+            "enable": True,
+            "nameserver": list(DEFAULT_NAMESERVERS),
+            "default_nameserver": list(DEFAULT_NAMESERVERS),
+        }
+        notes.append(
+            "engine.dns 缺失，已补上公共解析器（节点按名字寻址，没有它引擎起得来、请求全 502）"
+        )
+
+    if engine:
+        seeded["engine"] = engine
+
+    if not seeded.get("rules"):
+        exit_name = _catch_all_exit(
+            seeded, int(engine.get("mixed_port") or DEFAULT_MIXED_PORT), prefer_exit
+        )
+        if exit_name:
+            seeded["rules"] = [{"match": "*", "via": f"proxy:{exit_name}"}]
+            notes.append(f"rules 为空，已补一条出口规则（走 proxy:{exit_name}）")
+
+    return seeded, notes
 
 
 def wipe_check(network_block: Any) -> tuple[bool, int, int]:
@@ -630,6 +777,33 @@ def import_subscription(
 
     block["nodes"] = nodes
     block["groups"] = groups
+    if rules:
+        block["rules"] = rules
+
+    # The table that comes out of a subscription is often halfway: the engine
+    # needs a port, a resolver and something to route.  Fill what is missing
+    # and say what was filled in — "import succeeded" plus "the engine never
+    # came up" is the most expensive shape of that bug.
+    block, seed_notes = seed_engine_defaults(block, prefer_exit=catch_all)
+    answer["notes"].extend(seed_notes)
+    rules = list(block.get("rules") or [])
+
+    if catch_all:
+        if not rules:
+            answer["notes"].append(f"表里还没有规则，也没有可指的出口 —— {catch_all} 建好了，但没人指它")
+        elif str(rules[-1].get("via", "")) != f"proxy:{catch_all}":
+            last = dict(rules[-1])
+            last["via"] = f"proxy:{catch_all}"
+            rules[-1] = last
+            answer["notes"].append(f"兜底规则改成了 proxy:{catch_all}")
+    elif rules and str(rules[-1].get("via", "")).startswith("proxy:"):
+        target = str(rules[-1].get("via"))[len("proxy:"):]
+        if target in _own_listener_names(block):
+            answer["notes"].append(
+                f"兜底规则还指着 proxy:{target}——那是引擎自己的前门（引擎不能把流量交给它自己的"
+                f"接收入口），要让它带流量就把兜底指到 {pool_name}"
+            )
+
     if rules:
         block["rules"] = rules
     network["egress"] = block

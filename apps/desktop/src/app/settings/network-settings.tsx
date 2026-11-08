@@ -12,6 +12,7 @@ import type {
 } from '@/types/plobi'
 
 import { ListRow, SettingsContent, SettingsGroup } from './primitives'
+import { NetworkStatusHeader } from './network-status-header'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
 
@@ -419,6 +420,10 @@ export function NetworkSettings() {
       {!loaded ? (
         <p className="mb-2 text-sm text-(--ui-text-danger)">{copy.notLoaded}</p>
       ) : null}
+
+      {/* 「这套出口现在到底成没成」：读数来自与面板、托盘、CLI 同一份快照
+          （裁定 94），所以这一屏不可能长出自己的第二套说法。 */}
+      <NetworkStatusHeader ruleMatches={rules.map((rule) => rule.match)} status={status} />
 
       {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名在卡**上方**，卡内相邻两行之间一条虚线。
           那句 intro 讲的是机制，按 10-27 的文案纪律仍只在悬停里，不上屏。 */}
