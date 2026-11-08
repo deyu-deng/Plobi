@@ -242,6 +242,10 @@ class ExternalAgentSpec:
     #: 没有阶梯的那一家（agy）：只有一个开关，配置为真 ⇒ 给这一串旗标。
     skip_flag: tuple[str, ...] = ()
     skip_permissions_env: str = ""
+    #: 这一家**官方那条登录命令**（空 = 没有能一键拉起的登录流程）。
+    #: 只登记那种「跑起来自己开浏览器、人点一下同意就行」的；**需要终端交互的不登记**
+    #: （kilo 的 `auth login` 要人挑 provider：后台起一个没有 TTY 的交互进程只会卡死）。
+    login_argv: tuple[str, ...] = ()
     #: 把环境交给子进程之前要洗掉的变量（Qoder 见 :data:`QODER_SDK_ENV`）。
     scrub_env: tuple[str, ...] = ()
     #: 「exit 0 但没落盘 ⇒ 它其实没干活」这条判据**适用于哪几家**。
@@ -340,6 +344,9 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         # `--allow-all-tools` 是它自己那枚放开开关（`--allow-all`／`--yolo` 连路径与 URL 一起开，更宽）。
         # `--silent` 只输出回答正文——默认文本里混着统计，回包要干净。
         skip_flag=("--allow-all-tools",), skip_permissions_env=COPILOT_ALLOW_ALL_ENV,
+        # `copilot login` 是浏览器 OAuth（`--web-flow`；远程环境才用 `--device-code`）⇒
+        # 它是**这一族里唯一能一键拉起登录**的一家（授权那一下仍然要主人自己做）。
+        login_argv=("login", "--web-flow"),
         # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
         artifact_required=False,
         argv_template=("{flags}", "--silent", "{extra}", "-p", "{task}"),

@@ -171,3 +171,43 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
 def forget_rows_cache() -> None:
     """开关改了：下一次取数别再拿缓存里的旧 `enabled` 糊弄人（探针不动，只丢结果）。"""
     _CACHE.clear()
+
+
+def start_login(agent: str) -> dict[str, Any]:
+    """把这一家**官方那条登录命令**拉起来（用户 11-08 19:4x：「点 + 看看会不会自动拉起登录流程」）。
+
+    这一层只做三件事，如实分三种结果：
+
+    * ``started=True`` —— 命令拉起来了。**登录本身仍要本人做**（copilot 那条是浏览器 OAuth，
+      人点一下同意才算登录；本进程不代点、不代填）。
+    * ``started=False`` + 一句人话 —— 这一家**没有能一键拉起的登录流程**（要终端交互的
+      比如 kilo 的 ``auth login`` 要人挑 provider），或本机压根没装它。**不假装拉起了。**
+    * 命令只来自名册那张表（``login_argv``），**不许把用户输入拼进命令行**。
+    """
+    spec = channel.agent_spec(agent)
+    if spec is None:
+        return {"started": False, "reason": "名册里没有这一家。"}
+    if not spec.login_argv:
+        return {"started": False, "reason": "这一家没有能一键拉起的登录流程：去它自己的应用里登录。"}
+    binary = channel.resolve_command(agent)
+    if not binary:
+        return {"started": False, "reason": f"本机没有 {agent}：先装上再登录。"}
+
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    argv = channel.spawn_argv([binary, *spec.login_argv])
+    log_dir = Path(tempfile.gettempdir()) / "plobi-offload-login"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{agent}.log"
+        with open(log_path, "w", encoding="utf-8") as handle:
+            subprocess.Popen(  # noqa: S603 — argv 是名册那张表里的固定值
+                argv, stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
+                cwd=tempfile.gettempdir(), env=dict(os.environ),
+            )
+    except OSError as exc:
+        return {"started": False, "reason": f"起不来：{exc}"}
+    return {"started": True, "command": " ".join(argv[1:]), "log": str(log_path)}

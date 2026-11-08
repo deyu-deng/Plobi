@@ -23,6 +23,49 @@ from agent import external_offload as channel      # noqa: E402
 from plobi.delegation import offload_surface       # noqa: E402
 
 
+# ── 点「+」拉起登录（11-08，WP-OFFLOAD-LOGIN-LAUNCH）─────────────────────────
+
+def test_start_login_launches_the_vendors_own_login_command(monkeypatch):
+    """copilot 的 `login --web-flow` 是浏览器 OAuth ⇒ 能一键拉起。
+
+    拉起**不等于**登录完：授权那一下要主人自己在浏览器里点同意。
+    """
+    import subprocess
+
+    started: dict[str, list[str]] = {}
+
+    def fake_popen(argv, **_kw):
+        started["argv"] = list(argv)
+        return object()
+
+    monkeypatch.setattr(channel, "resolve_command", lambda agent="copilot": "D:/bin/copilot.cmd")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    result = offload_surface.start_login("copilot")
+
+    assert result["started"] is True
+    assert "login" in result["command"]
+    assert started["argv"][-2:] == ["login", "--web-flow"]
+
+
+def test_start_login_says_so_when_there_is_no_one_click_login(monkeypatch):
+    """kilo 的 `auth login` 要人挑 provider（终端交互）⇒ 拉不起来，如实说，不假装。"""
+    monkeypatch.setattr(channel, "resolve_command", lambda agent="kilo": "D:/bin/kilo.cmd")
+
+    result = offload_surface.start_login("kilo")
+
+    assert result["started"] is False
+    assert result["reason"], "拉不起来要给一句人话"
+
+
+def test_start_login_for_an_unknown_agent_is_not_a_crash():
+    """名册里没有的一家 ⇒ 一句人话，不抛异常。"""
+    result = offload_surface.start_login("不存在的家")
+
+    assert result["started"] is False
+    assert result["reason"]
+
+
 class _Done:
     def __init__(self, stdout: str = "", returncode: int = 0):
         self.stdout = stdout

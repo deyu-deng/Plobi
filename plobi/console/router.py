@@ -1677,6 +1677,30 @@ async def set_offload_agent_enabled_route(agent_name: str, request: Request):
     }
 
 
+@router.post("/offload/agents/{agent_name}/login", name="start_offload_agent_login")
+async def start_offload_agent_login_route(agent_name: str):
+    """POST /api/offload/agents/:name/login — 设置 → 外包 那一行点「+」时**拉起这一家的登录**。
+
+    用户 11-08 19:4x：「点击对应卡片旁边的 + 号，看看会不会自动拉起登录流程」。
+
+    这一层**只把官方那条登录命令拉起来**；授权那一下始终是**本人做**（copilot 那条是浏览器
+    OAuth，要人点同意）。拉不起来的（要终端交互的那几家）如实回一句人话，**不假装拉起了**。
+    """
+    from plobi.delegation.offload_surface import start_login
+
+    name = agent_name.strip().lower()
+    try:
+        result = await run_in_threadpool(start_login, name)
+    except Exception as exc:  # noqa: BLE001 - 起不来就如实说，不把栈甩给屏幕
+        return JSONResponse(status_code=500, content={"ok": False, "error": f"起不来：{exc}"})
+    if not result.get("started"):
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": str(result.get("reason") or "这一家没有能一键拉起的登录流程")},
+        )
+    return {"ok": True, "data": result}
+
+
 # --------------------------------------------------------------------------- #
 # 外包那一轮回到它自己的软件里（WP-L2-OUTSOURCE-ENTRY 入口面③第三级）
 # --------------------------------------------------------------------------- #

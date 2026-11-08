@@ -15,13 +15,15 @@ import type * as OffloadApi from './offload/api'
 import type { OffloadPayload } from './offload/api'
 
 const getOffloadAgents = vi.fn()
+const startOffloadLogin = vi.fn()
 
 vi.mock('./offload/api', async () => {
   const actual = await vi.importActual<typeof OffloadApi>('./offload/api')
 
   return {
     ...actual,
-    getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh)
+    getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh),
+    startOffloadLogin: (name: string) => startOffloadLogin(name)
   }
 })
 
@@ -128,6 +130,7 @@ const payload: OffloadPayload = {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.useRealTimers()
 })
 
 describe('settings → offload', () => {
@@ -182,6 +185,36 @@ describe('settings → offload', () => {
     await waitFor(() => expect(getOffloadAgents).toHaveBeenCalled())
 
     fireEvent.click(screen.getByText('Read again'))
+    await waitFor(() => expect(getOffloadAgents).toHaveBeenCalledWith(true))
+  })
+
+  // 用户 11-08 19:4x：「点击对应卡片旁边的 + 号，看看会不会自动拉起登录流程」。
+  it('点「+」会拉起这一家的登录；拉不起来也不假装', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    startOffloadLogin.mockResolvedValue({ started: false, reason: '这一家没有能一键拉起的登录流程' })
+
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
+
+    fireEvent.click(screen.getAllByLabelText(/Not set up yet/)[0])
+
+    await waitFor(() => expect(startOffloadLogin).toHaveBeenCalledWith('qoder'))
+    // 拉不起来时**屏上不新增句子**：仍是那一句引导。
+    expect(screen.getByText(/sign in inside its own app/)).toBeTruthy()
+  })
+
+  it('拉起成功后过几秒重探一次登录态（授权那一下要主人自己做）', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    getOffloadAgents.mockResolvedValue(payload)
+    startOffloadLogin.mockResolvedValue({ started: true, command: 'copilot login --web-flow' })
+
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
+
+    fireEvent.click(screen.getAllByLabelText(/Not set up yet/)[0])
+    await waitFor(() => expect(startOffloadLogin).toHaveBeenCalledWith('qoder'))
+
+    vi.advanceTimersByTime(4000)
     await waitFor(() => expect(getOffloadAgents).toHaveBeenCalledWith(true))
   })
 })

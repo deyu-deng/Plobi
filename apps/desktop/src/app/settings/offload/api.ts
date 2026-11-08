@@ -98,3 +98,33 @@ export async function setOffloadAgentEnabled(name: string, enabled: boolean): Pr
     body: { enabled }
   })
 }
+
+export interface OffloadLoginLaunch {
+  /** `true` = 官方那条登录命令已经拉起来了；**授权那一下仍然要主人自己做**。 */
+  started: boolean
+  /** 拉不起来时的**一句人话**（这一家没有一键流程／本机没装它）。 */
+  reason?: string
+  /** 拉起来的那条命令（人话形态，给日志与 tooltip 看）。 */
+  command?: string
+}
+
+/** 点「+」时**拉起这一家官方那条登录命令**（用户 11-08 19:4x：「看看会不会自动拉起登录流程」）。
+ *
+ * 拉不起来的照实回一句人话（`started: false`）——**屏上不假装拉起了**。
+ */
+export async function startOffloadLogin(name: string): Promise<OffloadLoginLaunch> {
+  const response: unknown = await window.plobiDesktop.api({
+    path: `/api/offload/agents/${encodeURIComponent(name)}/login`,
+    method: 'POST'
+  })
+
+  const record = (response && typeof response === 'object' && 'data' in response ? response.data : response) as
+    | Partial<OffloadLoginLaunch>
+    | null
+
+  if (!record || typeof record.started !== 'boolean') {
+    throw new Error('后端回的形状不是登录结果')
+  }
+
+  return { started: record.started, reason: record.reason, command: record.command }
+}

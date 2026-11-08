@@ -22,7 +22,7 @@ import { useI18n } from '@/i18n'
 import { Plus, RefreshCw } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
-import { getOffloadAgents, type OffloadAgent, type OffloadPayload, setOffloadAgentEnabled } from './offload/api'
+import { getOffloadAgents, startOffloadLogin, type OffloadAgent, type OffloadPayload, setOffloadAgentEnabled } from './offload/api'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 
 const CAPTION =
@@ -67,6 +67,26 @@ export function OffloadSettings() {
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * 点「+」时**拉起这一家官方那条登录命令**（用户 11-08 19:4x：「点 + 看看会不会自动拉起登录流程」）。
+   *
+   * 拉起来了：过几秒重探一次登录态（授权那一下要本人点同意，所以不立刻刷）。
+   * 拉不起来：照旧展开那句引导，**屏上不新增句子、不假装拉起了**。
+   */
+  const launchLogin = useCallback(
+    async (agent: OffloadAgent) => {
+      try {
+        const result = await startOffloadLogin(agent.name)
+        if (result.started) {
+          window.setTimeout(() => void load(true), 4000)
+        }
+      } catch {
+        // 拉不起来不是错误状态：那一句引导已经写着「去它自己的应用里登录」。
+      }
+    },
+    [load]
+  )
 
   /** 这一格的开关：先就地翻面（点了立刻有反应），落盘失败再翻回去并把原因写在屏上。 */
   const toggle = async (agent: OffloadAgent, next: boolean) => {
@@ -172,7 +192,10 @@ export function OffloadSettings() {
                   <Button
                     aria-expanded={guide === agent.name}
                     aria-label={`${s.setup} · ${agent.name}`}
-                    onClick={() => setGuide(current => (current === agent.name ? '' : agent.name))}
+                    onClick={() => {
+                      setGuide(current => (current === agent.name ? '' : agent.name))
+                      void launchLogin(agent)
+                    }}
                     size="icon-sm"
                     type="button"
                     variant="secondary"
