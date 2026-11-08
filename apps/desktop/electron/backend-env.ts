@@ -209,6 +209,39 @@ export function resolveBrainSurfacePointers({
   return out
 }
 
+/**
+ * 由**数据根**派生"脑"与"人读面"的两格指针。
+ *
+ * 2026-11-08 起这两格不再从 env / 注册表捡：那两处是**上一次安装**钉的门牌，
+ * 装机版与开发态共用同一格 ⇒ 谁后装谁把对方带偏（这台现核：开发态
+ * `Plobi-Dev\mind` 与装机版 `Plobi\mind` 抢同一格 MIND_ROOT）。
+ * 数据根（`PLOBI_HOME`，见 data-root.ts）才是唯一的上游——脑在家里的 `mind/`，
+ * 人读面就住在家本体（2026-11-03 起不再有 `<家>\surface` 这一层）。
+ *
+ * `plobiHome` 为空 ⇒ 返空对象，由调用方退回 `resolveBrainSurfacePointers()`
+ * 的旧口径（不在这里另造默认，见那个函数末尾的说明）。
+ */
+function deriveBrainSurfacePointers({
+  plobiHome,
+  platform = process.platform,
+  pathModule = pathModuleForPlatform(platform)
+}: {
+  plobiHome?: string | null
+  platform?: NodeJS.Platform
+  pathModule?: any
+} = {}) {
+  const home = String(plobiHome ?? '').trim()
+
+  if (!home) {
+    return {}
+  }
+
+  return {
+    MIND_ROOT: pathModule.join(home, 'mind'),
+    SURFACE_ROOT: home
+  }
+}
+
 function buildDesktopBackendEnv({
   plobiHome,
   pythonPathEntries = [],
@@ -216,7 +249,11 @@ function buildDesktopBackendEnv({
   currentEnv = process.env,
   platform = process.platform,
   pathModule = pathModuleForPlatform(platform),
-  brainSurface = resolveBrainSurfacePointers({ currentEnv, platform })
+  brainSurface,
+  // 仅测试注入：旧口径那道兜底会读本机注册表，开发机上残留的 `MIND_ROOT` 会
+  // 让"没给数据根"的用例读到真实值而假红。生产路径不传，仍走 readWindowsUserEnvVar。
+  readEnvVar,
+  exists
 }: any = {}) {
   const delimiter = delimiterForPlatform(platform)
   // 先把继承来的环境修合法（大小写重复键），再往上叠我们自己的两格——
@@ -225,6 +262,14 @@ function buildDesktopBackendEnv({
   const base = dedupeEnvKeys(currentEnv || {})
   const currentPythonPath = base.PYTHONPATH || ''
   const key = pathEnvKey(base, platform)
+  const home = String(plobiHome ?? '').trim()
+  // 数据根说了算：三格一律由它派生，绝不再从继承来的 env / 注册表捡——
+  // 那两个都是"上一次安装"钉的门牌，装机版与开发态会互相带偏。
+  // 调用方没给 `plobiHome`（老调用点 / 单测）时才退回旧口径。
+  const pointers = home
+    ? deriveBrainSurfacePointers({ plobiHome: home, platform, pathModule })
+    : resolveBrainSurfacePointers({ currentEnv, platform, ...(readEnvVar ? { readEnvVar } : {}), ...(exists ? { exists } : {}) })
+  const brainSurfaceValues = brainSurface ?? pointers
 
   return {
     PYTHONPATH: appendUniquePathEntries([...pythonPathEntries, currentPythonPath], { delimiter }),
@@ -235,9 +280,12 @@ function buildDesktopBackendEnv({
       platform,
       pathModule
     }),
-    // 脑与人读面住哪：这两格由后端自己解析，桌面这一侧得把**活的**那一份交给它，
-    // 否则从开始菜单启动（继承登录时的旧快照）就找不到脑（见 resolveBrainSurfacePointers）。
-    ...brainSurface
+    // 后端（Python 侧）不从继承来的环境里"猜"家：`get_plobi_home()` 的第二档就是
+    // `PLOBI_HOME` env，这里显式写成数据根，装机版读装机版的格、开发态读开发态的格。
+    // 展开顺序：这三格写在最后 ⇒ 覆盖 `currentEnv` 里同名的脏值（大小写不同也算，
+    // Windows 环境块不区分大小写，后写的那一格赢）。
+    ...(home ? { PLOBI_HOME: home } : {}),
+    ...brainSurfaceValues
   }
 }
 
@@ -246,6 +294,7 @@ export {
   buildDesktopBackendEnv,
   buildDesktopBackendPath,
   delimiterForPlatform,
+  deriveBrainSurfacePointers,
   desktopCliSearchPath,
   normalizePlobiHomeRoot,
   pathEnvKey,

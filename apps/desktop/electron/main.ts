@@ -430,6 +430,9 @@ const DATA_ROOT = resolveDataRoot({
   // Only the dev branch is allowed to see PLOBI_HOME — handed over as '' when
   // packaged so a stale `setx` cannot reach in even by accident.
   homeEnv: IS_PACKAGED ? '' : process.env.PLOBI_HOME || readWindowsUserEnvVar('PLOBI_HOME') || '',
+  // 开发态专用门牌（2026-11-08 WP-DATA-ISOLATION）：只认进程 env，不查注册表——
+  // 它的全部意义就是"开发者这次启动亲手给的那一格"。装机版一律不给。
+  devHomeEnv: IS_PACKAGED ? '' : process.env.PLOBI_DEV_HOME || '',
   installRecordedDir: readInstallerRecordedDataDir(),
   localAppData: process.env.LOCALAPPDATA || '',
   home: app.getPath('home')
@@ -7411,7 +7414,11 @@ async function startPlobi() {
     // 真正需要双写的 worker 在 Python 侧：plobi_cli/kanban_db.py 里同处写
     // `-p <派生 slug>` 与 `PLOBI_AGENT_ID=<名册 name>`。
     const backendEnv: NodeJS.ProcessEnv = {
-      ...process.env,
+      // dedupeEnvKeys：继承来的 `plobi_home` / `mind_root` 这类**另一种拼写**会在
+      // Node 里与我们要注入的 PLOBI_HOME / MIND_ROOT 并存（Node 的 env 对象区分大小写，
+      // Windows 的环境块不区分）⇒ 子进程到底读到哪一行取决于块内顺序。
+      // 先按"后写覆盖"收敛成一种拼写，下面 backend.env 里那三格才真的说了算。
+      ...dedupeEnvKeys(process.env),
       // Explicitly pin PLOBI_HOME for the child so Python's get_plobi_home()
       // resolves to the SAME location our resolvePlobiHome() picked. Without
       // this pin, Python falls back to ~/.plobi on every platform — fine on

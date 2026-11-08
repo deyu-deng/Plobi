@@ -13,6 +13,7 @@ import {
   POSIX_SANE_PATH_ENTRIES,
   resolveBrainSurfacePointers
 } from './backend-env'
+import { resolveDataRoot } from './data-root'
 
 // 2026-11-07：从**开始菜单**启动的那个 app，它的进程环境是登录那一刻的快照；
 // 之后写进 HKCU 的 MIND_ROOT／SURFACE_ROOT 它看不见 ⇒ 后端就找不到脑。
@@ -57,7 +58,7 @@ test('脑与人读面：两格都读不到 ⇒ 什么都不给（让 Python 侧�
   assert.deepEqual(pointers, {})
 })
 
-test('后端那一份环境带着脑与人读面的指针', () => {
+test('显式传入的 brainSurface 仍然优先（老调用点兼容口）', () => {
   const env = buildDesktopBackendEnv({
     plobiHome: 'D:\\Data\\AppData\\Plobi',
     venvRoot: 'D:\\Data\\AppData\\Plobi\\plobi-agent\\venv',
@@ -259,4 +260,111 @@ test('buildDesktopBackendEnv still adds PYTHONPATH and PATH when the inherited e
 
   assert.ok(result.PYTHONPATH.includes('/home/test/.plobi/plobi-agent'), 'PYTHONPATH still computed')
   assert.ok(result.PATH.includes('/home/test/.plobi/plobi-agent/venv/bin'), 'PATH still extended')
+})
+
+// ─── 双身份隔离（2026-11-08）────────────────────────────────────────────────
+//
+// 这台机器上装了两份 Plobi：开发态（`npm run dev`，家 = `D:\Data\AppData\Plobi-Dev`）
+// 与装机版（家在安装时选、记在 `HKCU\Software\Plobi\DataDir`，现为
+// `D:\Data\AppData\Plobi`）。过去安装器把 `PLOBI_HOME`／`MIND_ROOT`／`SURFACE_ROOT`
+// 三格写进 `HKCU\Environment`，于是两份身份共用同一块门牌：谁后装，谁就把
+// 对方带偏。
+//
+// 现在的契约：**数据根是唯一上游**，三格一律由它派生，继承来的 env 与注册表
+// 都不再是来源。下面两条把两种身份各钉一遍，任何一条失守都等于隔离被拆。
+
+const WIN_PACKAGED_HOME = 'D:\\Data\\AppData\\Plobi'
+const WIN_DEV_HOME = 'D:\\Data\\AppData\\Plobi-Dev'
+
+function backendEnvFor(plobiHome: string, currentEnv: NodeJS.ProcessEnv = {}) {
+  return buildDesktopBackendEnv({
+    plobiHome,
+    venvRoot: `${plobiHome}\\plobi-agent\\venv`,
+    pythonPathEntries: [`${plobiHome}\\plobi-agent`],
+    currentEnv,
+    platform: 'win32',
+    pathModule: path.win32
+  })
+}
+
+test('双身份：装机版后端三格由 installRecordedDir 派生，不再读继承来的 PLOBI_HOME', () => {
+  const dataRoot = resolveDataRoot({
+    isPackaged: true,
+    installRecordedDir: WIN_PACKAGED_HOME,
+    // 脏环境：开发态把 PLOBI_HOME 钉在这台机器上时，装机版会原样继承到它。
+    homeEnv: WIN_DEV_HOME,
+    localAppData: 'C:\\Users\\tester\\AppData\\Local',
+    home: 'C:\\Users\\tester'
+  })
+
+  assert.equal(dataRoot.root, WIN_PACKAGED_HOME)
+  assert.equal(dataRoot.source, 'install-record')
+
+  const env = backendEnvFor(dataRoot.root)
+  assert.equal(env.PLOBI_HOME, WIN_PACKAGED_HOME)
+  assert.equal(env.MIND_ROOT, `${WIN_PACKAGED_HOME}\\mind`)
+  assert.equal(env.SURFACE_ROOT, WIN_PACKAGED_HOME)
+})
+
+test('双身份：开发态后端三格由 PLOBI_HOME 环境值派生，绝不落到装机版目录', () => {
+  const dataRoot = resolveDataRoot({
+    isPackaged: false,
+    // 注册表里还留着装机版那一格，开发态不许读它。
+    installRecordedDir: WIN_PACKAGED_HOME,
+    homeEnv: WIN_DEV_HOME,
+    localAppData: 'C:\\Users\\tester\\AppData\\Local',
+    home: 'C:\\Users\\tester'
+  })
+
+  assert.equal(dataRoot.root, WIN_DEV_HOME)
+  assert.equal(dataRoot.source, 'home-env')
+
+  const env = backendEnvFor(dataRoot.root)
+  assert.equal(env.PLOBI_HOME, WIN_DEV_HOME)
+  assert.equal(env.MIND_ROOT, `${WIN_DEV_HOME}\\mind`)
+  assert.equal(env.SURFACE_ROOT, WIN_DEV_HOME)
+})
+
+test('双身份：继承来的脏 MIND_ROOT／SURFACE_ROOT 一律作废（脑与家必须同源）', () => {
+  const dirty = {
+    PLOBI_HOME: WIN_PACKAGED_HOME,
+    MIND_ROOT: `${WIN_PACKAGED_HOME}\\mind`,
+    SURFACE_ROOT: `${WIN_PACKAGED_HOME}\\surface`
+  }
+
+  // 开发态拿到的是登录快照，里面三格全指着装机版 —— 这正是被污染的样子。
+  const env = backendEnvFor(WIN_DEV_HOME, dirty)
+
+  assert.equal(env.PLOBI_HOME, WIN_DEV_HOME)
+  assert.equal(env.MIND_ROOT, `${WIN_DEV_HOME}\\mind`)
+  assert.equal(env.SURFACE_ROOT, WIN_DEV_HOME)
+  for (const value of [env.PLOBI_HOME, env.MIND_ROOT, env.SURFACE_ROOT]) {
+    assert.equal(String(value).includes('\\Plobi\\'), false, `泄漏了装机版路径：${value}`)
+  }
+})
+
+test('双身份：继承来的键换了大小写拼写，也只留我们注入的那一格', () => {
+  const env = backendEnvFor(WIN_DEV_HOME, { plobi_home: WIN_PACKAGED_HOME, mind_root: `${WIN_PACKAGED_HOME}\\mind` })
+
+  const spellings = Object.keys(env).filter(key => key.toLowerCase() === 'plobi_home')
+  assert.deepEqual(spellings, ['PLOBI_HOME'])
+  assert.equal(env.PLOBI_HOME, WIN_DEV_HOME)
+  assert.equal(env.MIND_ROOT, `${WIN_DEV_HOME}\\mind`)
+})
+
+test('没给数据根时退回 resolveBrainSurfacePointers 的旧口径（不造默认）', () => {
+  const env = buildDesktopBackendEnv({
+    plobiHome: '',
+    pythonPathEntries: [],
+    // 两格都由 currentEnv 给足；注册表读取一并钉空，免得开发机上残留的
+    // MIND_ROOT（现为 Plobi-Dev 派生）把它顶掉，让断言随本机环境飘。
+    currentEnv: { MIND_ROOT: `${WIN_PACKAGED_HOME}\\mind`, SURFACE_ROOT: WIN_PACKAGED_HOME },
+    readEnvVar: () => '',
+    platform: 'win32',
+    pathModule: path.win32
+  })
+
+  assert.equal(env.PLOBI_HOME, undefined, '没有数据根就不写 PLOBI_HOME')
+  assert.equal(env.MIND_ROOT, `${WIN_PACKAGED_HOME}\\mind`)
+  assert.equal(env.SURFACE_ROOT, WIN_PACKAGED_HOME)
 })

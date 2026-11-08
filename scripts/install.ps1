@@ -2405,27 +2405,32 @@ function Set-MindRootEnv {
     # resolving to the (long removed) in-repo sibling directory.  Pin it here, by
     # the same mechanism and in the same scope as PLOBI_HOME, derived from whichever
     # home actually won.
+    #
+    # 2026-11-08 WP-DATA-ISOLATION：这里**只设本次安装进程的 $env**，不再写
+    # HKCU\Environment。那两个用户级格子是"两份身份共用的门牌"：装机版把自己
+    # 钉进 MIND_ROOT=<装机家>\mind，开发态（<开发家>=Plobi-Dev）下一次登录就继承
+    # 那一串 ⇒ 脑读到别人的家里去（这台 11-08 现核：开发态 MIND_ROOT 指向
+    # D:\Data\AppData\Plobi\mind，而脑在 Plobi-Dev\mind）。数据归属只由两处事实
+    # 决定：安装记录 HKCU\Software\Plobi\DataDir（装机版）与 PLOBI_HOME env
+    # （开发态）；桌面 spawn 后端时按数据根派生这两格，见
+    # apps/desktop/electron/backend-env.ts::deriveBrainSurfacePointers()。
     param(
-        [Parameter(Mandatory=$true)][string]$PlobiHomePath,
-        [string]$Scope = "User"
+        [Parameter(Mandatory=$true)][string]$PlobiHomePath
     )
 
     $mindRoot = Join-Path $PlobiHomePath "mind"
-    $existing = [Environment]::GetEnvironmentVariable("MIND_ROOT", $Scope)
-    # 2026-11-07：已经钉在别处的**不搬**。脑是它自己那个仓（有独立远端），住在哪是人的决定；
-    # 安装器每次启动都把它拖回 <家>\mind，等于替人搬家——而那份 <家>\mind 常常根本不存在
-    # （这台 11-07 现核：脑在 Plobi-Dev\mind，安装器却把 MIND_ROOT 钉成 <家>\mind ⇒ 脑读不到）。
+    # 已经钉着的**不搬**：脑是它自己那个仓（有独立远端），住在哪是人的决定；
+    # 安装器每次启动都把它拖回 <家>\mind，等于替人搬家。
     # 口径与 Python 侧 paths.py::_surface_pointer() 同一条：宁可不静默换家。
-    if (-not $existing) {
-        [Environment]::SetEnvironmentVariable("MIND_ROOT", $mindRoot, $Scope)
-        Write-Success "Set MIND_ROOT=$mindRoot"
-    } else {
-        Write-Info "MIND_ROOT already configured"
-        if ($existing -ne $mindRoot) {
-            Write-Info "The brain is at $existing -- not moving it to $mindRoot (repointing it is the user's call)"
+    if ($env:MIND_ROOT) {
+        Write-Info "MIND_ROOT (this process only, already inherited): $env:MIND_ROOT"
+        if ($env:MIND_ROOT -ne $mindRoot) {
+            Write-Info "The brain pointer in this process is $env:MIND_ROOT -- not moving it to $mindRoot (repointing it is the user's call)"
         }
+    } else {
+        $env:MIND_ROOT = $mindRoot
+        Write-Info "MIND_ROOT (this process only, user env untouched): $mindRoot"
     }
-    if ($existing) { $env:MIND_ROOT = $existing } else { $env:MIND_ROOT = $mindRoot }
 
     # Deliberately NOT created: an empty directory resolves to a path that is not a
     # git repo, which fails two layers away from the cause.  "Not configured yet" is
@@ -2434,30 +2439,24 @@ function Set-MindRootEnv {
         Write-Info "The brain is not at $mindRoot yet -- restore it there from its own git repository."
     }
 
-    # The second root, same rules: derived from the home that won, pinned by the same
-    # mechanism and scope, never created here.  Since the 2026-10-14 split the
-    # human-facing surface is its own repo and -- by that same ruling -- it has NO
-    # remote, so saying "restore it from its own git repository" here would be a lie:
-    # the only thing it can come back from is a bundle in bundles/keep.
-    # Leaving SURFACE_ROOT unset is also not neutral: plobi/mind/paths.py refuses a
-    # Surface/ write once the old in-brain surface is gone, so an installer that pinned
-    # only the brain would hand over a machine with half the memory surface missing.
+    # The second root, same rules: derived from the home that won, never created here.
+    # Since the 2026-10-14 split the human-facing surface is its own repo and -- by
+    # that same ruling -- it has NO remote, so saying "restore it from its own git
+    # repository" here would be a lie: the only thing it can come back from is a
+    # bundle in bundles/keep.
     # 2026-11-03 起人读面**住在家目录本体**（不再有 `<家>\surface` 这一层）：这一格的值
-    # 就是家。旧形状（`<家>\surface`）把指针指到一处根本不存在的地方 ⇒ 人读面读不到
-    # （这台 11-07 现核：注册表里那一格指的就是那个不存在的旧形状）。
+    # 就是家。旧形状（`<家>\surface`）把指针指到一处根本不存在的地方 ⇒ 人读面读不到。
+    # 2026-11-08：同样只设进程内 $env，不写用户级（理由见函数开头）。
     $surfaceRoot = $PlobiHomePath
-    $existingSurface = [Environment]::GetEnvironmentVariable("SURFACE_ROOT", $Scope)
-    # 同 MIND_ROOT：已经钉在别处的**不搬**（人读面是用户自己的仓，住在哪是人的决定）。
-    if (-not $existingSurface) {
-        [Environment]::SetEnvironmentVariable("SURFACE_ROOT", $surfaceRoot, $Scope)
-        Write-Success "Set SURFACE_ROOT=$surfaceRoot"
-    } else {
-        Write-Info "SURFACE_ROOT already configured"
-        if ($existingSurface -ne $surfaceRoot) {
-            Write-Info "The human surface is at $existingSurface -- not moving it to $surfaceRoot (repointing it is the user's call)"
+    if ($env:SURFACE_ROOT) {
+        Write-Info "SURFACE_ROOT (this process only, already inherited): $env:SURFACE_ROOT"
+        if ($env:SURFACE_ROOT -ne $surfaceRoot) {
+            Write-Info "The human surface pointer in this process is $env:SURFACE_ROOT -- not moving it to $surfaceRoot (repointing it is the user's call)"
         }
+    } else {
+        $env:SURFACE_ROOT = $surfaceRoot
+        Write-Info "SURFACE_ROOT (this process only, user env untouched): $surfaceRoot"
     }
-    if ($existingSurface) { $env:SURFACE_ROOT = $existingSurface } else { $env:SURFACE_ROOT = $surfaceRoot }
 
     # 家在，但人读面还没搬进来（dossiers/ notes/ diary/ 三样都还没有）＝ 还没到。
     $hasSurface = $false
@@ -2466,6 +2465,81 @@ function Set-MindRootEnv {
     }
     if (-not $hasSurface) {
         Write-Info "The human surface is not at $surfaceRoot yet -- it has no remote by design; restore it from bundles/keep (scripts/backup_repos.py writes those bundles)."
+    }
+}
+
+# ── 旧版共用门牌清理（WP-DATA-ISOLATION 收尾）────────────────────────────────
+# 旧安装器（<= 2026-11-07）曾把 PLOBI_HOME / MIND_ROOT / SURFACE_ROOT 直接写进
+# HKCU\Environment。那一格是两份身份共用的门牌：装机版一写，开发态下次登录就
+# 继承到装机版的家。新版已经不写了（Set-PathVariable / Set-MindRootEnv 只设本次
+# 进程的 $env），但**已经装过的机器**里还留着旧值，装新版本时顺手收回。
+#
+# 收回的边界只有一条：只删"本次安装记录的数据根本身，或它的 mind / surface 子
+# 目录"——这种值只可能是旧安装器自己写的。指向别处（例如同机开发者手设的
+# D:\Data\AppData\Plobi-Dev）一律不动：那是人的配置，不是安装器的垃圾。
+# 不碰 HKCU\Software\Plobi\DataDir；三个变量都不存在时静默跳过；重复执行无变化。
+
+function Get-LegacyEnvVerdict {
+    <#
+       Pure decision: (value of one variable, installed data root) -> "absent" /
+       "remove" / "keep".  No registry access in here on purpose, so the boundary
+       can be tested without touching this machine's HKCU\Environment.
+    #>
+    param(
+        [AllowEmptyString()][AllowNull()][string]$Value,
+        [AllowEmptyString()][AllowNull()][string]$DataRoot
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "absent" }
+    if ([string]::IsNullOrWhiteSpace($DataRoot)) { return "keep" }
+
+    $norm = {
+        param([string]$p)
+        if ([string]::IsNullOrWhiteSpace($p)) { return "" }
+        try { $p = [Environment]::ExpandEnvironmentVariables($p) } catch { }
+        # 正/反斜杠先归一：注册表里出现的值偶尔是 setx 前人手打的正斜杠形态，
+        # 不归一就会漏清（那一条旧值会继续污染另一份身份）。
+        return $p.Trim().Replace('/', '\').TrimEnd('\')
+    }
+    $v = & $norm $Value
+    $root = & $norm $DataRoot
+    if (-not $v -or -not $root) { return "keep" }
+
+    # 历史形状只有这三种：家本体、<家>\mind、<家>\surface（2026-11-03 前人读面在
+    # <家>\surface；之后住在家本体）。只认确切等值，不做前缀通配——宁可漏清，
+    # 也不误删用户自己钉在数据根更深一层的路径。
+    foreach ($owned in @($root, (Join-Path $root "mind"), (Join-Path $root "surface"))) {
+        $c = & $norm $owned
+        if ($c -and [string]::Equals($v, $c, [StringComparison]::OrdinalIgnoreCase)) { return "remove" }
+    }
+    return "keep"
+}
+
+# 注册表访问经这一层间接，专项测试可以换成内存实现，从而不写这台机器的真实用户环境。
+if (-not $script:LegacyEnvStore) {
+    $script:LegacyEnvStore = @{
+        GetUser = { param($n) [Environment]::GetEnvironmentVariable($n, "User") }
+        SetUser = { param($n, $v) [Environment]::SetEnvironmentVariable($n, $v, "User") }
+    }
+}
+
+function Remove-LegacySharedEnvVars {
+    param([AllowEmptyString()][string]$DataRoot)
+
+    $store = $script:LegacyEnvStore
+    $removedNames = @()
+    foreach ($name in @("PLOBI_HOME", "MIND_ROOT", "SURFACE_ROOT")) {
+        $val = $null
+        try { $val = & $store.GetUser $name } catch { continue }
+        if ((Get-LegacyEnvVerdict -Value $val -DataRoot $DataRoot) -ne "remove") { continue }
+        try {
+            & $store.SetUser $name $null
+            $removedNames += $name
+        } catch {
+            Write-Info "旧变量 $name 清不掉（$($_.Exception.Message)），原样留着。"
+        }
+    }
+    if ($removedNames.Count -gt 0) {
+        Write-Info ("已清掉旧版安装器留下的用户级变量：" + ($removedNames -join ", ") + "（它们的值指向本次安装自己的数据根；安装记录 HKCU\Software\Plobi\DataDir 未改动）")
     }
 }
 
@@ -2493,27 +2567,17 @@ function Set-PathVariable {
         Write-Info "PATH already configured"
     }
     
-    # Set PLOBI_HOME so the Python code finds config/data in the right place.
-    # Only needed on Windows where we install to %LOCALAPPDATA%\plobi instead
-    # of the Unix default ~/.plobi
-    $currentPlobiHome = [Environment]::GetEnvironmentVariable("PLOBI_HOME", "User")
-    # 2026-11-07：已经钉着、且那一格**还在** ⇒ 不动它（它可能是开发态自己那把门牌）。
-    # 这一段以前是「与 $PlobiHome 一律改写成我的」⇒ 桌面端每次启动跑 bootstrap 时，
-    # 都把用户自己选的那一格拖回安装器的默认（这台：%LOCALAPPDATA%\plobi，C 盘）⇒
-    # 数据被搬回 C 盘、家分家、且违反 D 盘政策。
-    # 只有「没钉」或「钉的那个已经不在了」才重钉：家是装出来就在的，它没了＝真搬走了。
-    if (-not $currentPlobiHome -or -not (Test-Path -LiteralPath $currentPlobiHome)) {
-        [Environment]::SetEnvironmentVariable("PLOBI_HOME", $PlobiHome, "User")
-        Write-Success "Set PLOBI_HOME=$PlobiHome"
-    } else {
-        Write-Info "PLOBI_HOME already configured"
-        if ($currentPlobiHome -ne $PlobiHome) {
-            Write-Info "The home is already $currentPlobiHome -- not moving it to $PlobiHome (repointing it is the user's call)"
-        }
-    }
+    # 2026-11-08 WP-DATA-ISOLATION：**不再往 HKCU\Environment 写 PLOBI_HOME**。
+    # 这一格是两份身份共用的门牌：安装器一写，开发态（另一个家 Plobi-Dev）
+    # 下次登录就继承到装机版的家，两边抢同一格数据。归属只由两处事实决定：
+    #   · 装机版 —— 安装记录 HKCU\Software\Plobi\DataDir（installer.nsh 写，
+    #               desktop 的 data-root.ts 读它，不看 PLOBI_HOME）
+    #   · 开发态 —— PLOBI_HOME env（`npm run dev` 自己设，或 shell 里 setx 的）
+    # 这里只设本次安装进程的 $env，供后面的 stage 用。
     $env:PLOBI_HOME = $PlobiHome
+    Write-Info "PLOBI_HOME (this process only, user env untouched): $PlobiHome"
 
-    # Same registration mechanism for the brain's location, derived from that home.
+    # Same process-scoped registration for the brain's location, derived from that home.
     Set-MindRootEnv -PlobiHomePath $PlobiHome
     
     # Update current session
@@ -3904,6 +3968,51 @@ function Test-InstallConsoleUsable {
     } catch { return $false }
 }
 
+function Get-RecordedDataDir {
+    <#
+      安装器把用户选的数据目录记在 HKCU\Software\Plobi\DataDir（installer.nsh 写、桌面
+      electron/main.ts::readInstallerRecordedDataDir() 读、Python 侧
+      plobi_constants.py::_install_recorded_data_dir() 读）。这是**唯一**的安装记录，
+      2026-11-08 起不再往 HKCU\Environment 写 PLOBI_HOME/MIND_ROOT/SURFACE_ROOT。
+      读不到 ⇒ ""（老机器 / 非 Windows / 键不存在）。
+    #>
+    try {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Plobi")
+        if (-not $key) { return "" }
+        try { $value = $key.GetValue("DataDir", "") } finally { $key.Close() }
+    } catch {
+        return ""
+    }
+    return ("$value").Trim().Trim([char]34).Trim([char]39)
+}
+
+function Set-RecordedDataDir {
+    <#
+      只在**用户亲手打了路径**时调用：把这一格落成安装记录（幂等——值一样就不写）。
+      非交互运行（桌面 bootstrap / 更新 / dev）走过这里会污染装机版的记录，
+      所以那条路上一个字节都不写。
+    #>
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    $clean = ("$Path").Trim()
+    if (-not $clean) { return $false }
+    if ((Get-RecordedDataDir) -eq $clean) { return $true }
+    try {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Plobi")
+        if (-not $key) { return $false }
+        try {
+            $key.SetValue("DataDir", $clean, [Microsoft.Win32.RegistryValueKind]::String)
+        } finally {
+            $key.Close()
+        }
+        Write-Info "Install record written: HKCU\Software\Plobi\DataDir = $clean"
+        return $true
+    } catch {
+        Write-Warn "Could not record the data directory in HKCU\Software\Plobi: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Apply-DataDirChoice {
     param($Resolved)
 
@@ -4014,6 +4123,25 @@ function Resolve-DataDir {
 function Set-DataDirChoice {
     # Called once, before anything creates a directory.  Non-interactive does NOT mean
     # silent: the spot is still validated, still printed, still handed to the same pin.
+    #
+    # 2026-11-08 WP-DATA-ISOLATION：**安装记录优先**。"点更新"跑的是同一个脚本，
+    # 那一次运行只能沿用用户当初选的那一格——不重问、不改写、不迁移、不清理。
+    # 只有记录不存在（真·首装）才走下面"建议值/询问"那条老路。
+    $recorded = Get-RecordedDataDir
+    if ($recorded) {
+        $r = Resolve-DataDir -Candidate $recorded -AllowPolicyViolation
+        if ($r.ok) {
+            Apply-DataDirChoice $r
+            Write-Info "数据目录（沿用安装记录 HKCU\Software\Plobi\DataDir，不改写不迁移）：$($r.path)"
+            return
+        }
+        # 记录在、但那一格现在不可用（盘没挂上 / 权限掉了）：**绝不替你换一个目录**。
+        # 换家＝数据分家，比一次安装失败贵得多。
+        Write-Err "安装记录里的数据目录不可用：$($r.reason)"
+        Write-Err "不会替你换一个目录（换家就是数据分家）。把那一格恢复后重跑，或在安装向导里重选。"
+        exit 1
+    }
+
     $default = $PlobiHome
 
     if ($NonInteractive -or -not (Test-InstallConsoleUsable)) {
@@ -4042,8 +4170,10 @@ function Set-DataDirChoice {
         $r = Resolve-DataDir -Candidate $candidate -AllowPolicyViolation:$typed
         if ($r.ok) {
             Apply-DataDirChoice $r
+            # 用户亲手打的路径 ⇒ 落成安装记录（后续"更新"只认这一格；环境变量已经不写了）。
+            if ($typed) { Set-RecordedDataDir -Path $r.path | Out-Null }
             Write-Success "数据目录：$($r.path)"
-            Write-Info "同一个值由既有那处写进用户环境变量（PLOBI_HOME）——不钉住，自启与计划任务起的进程读不到它。"
+            Write-Info "这一格只记在 HKCU\Software\Plobi\DataDir —— 不再往用户环境变量写 PLOBI_HOME（那是两份身份共用的门牌，会互相抢）。"
             return
         }
         Write-Warn "这个目录不能用：$($r.reason)"
@@ -4123,6 +4253,10 @@ try {
     # first things that create directories under $PlobiHome.
     $script:InstallDirWasGiven = $PSBoundParameters.ContainsKey("InstallDir")
     Set-DataDirChoice
+
+    # 数据根已定（安装记录 / 用户选的那一格都写完了）⇒ 顺手收回旧版安装器写进
+    # HKCU\Environment 的三条门牌。只收指向这一个数据根的，指向别处的不动。
+    Remove-LegacySharedEnvVars -DataRoot $PlobiHome
 
     # 落点定下来之后，uv 的运行时与缓存也搬进那一格（必须在这一步之后——那一格可能刚被改过）。
     Set-UvRuntimeDirs

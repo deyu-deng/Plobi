@@ -82,6 +82,36 @@ def _pinned_home_from_registry() -> Optional[str]:
     return text or None
 
 
+def _install_recorded_data_dir() -> Optional[str]:
+    """Windows: the data directory the **installer** recorded for this machine.
+
+    ``install.ps1`` / ``installer.nsh`` 只往 ``HKCU\\Software\\Plobi`` 的
+    ``DataDir`` 一格写"用户装的时候选的那个数据目录"，装机版桌面
+    （``electron/main.ts::readInstallerRecordedDataDir()``）也读这一格。
+    2026-11-08 起安装器**不再**往 ``HKCU\\Environment`` 写
+    ``PLOBI_HOME`` / ``MIND_ROOT`` / ``SURFACE_ROOT``——那三个是两份身份共用
+    的门牌，谁后装谁把对方带偏。于是命令行 ``plobi``（Path 里指向装机版
+    ``bin``）在没有 ``PLOBI_HOME`` env 的干净 shell 里，得靠这一格找到家。
+
+    读的是"安装记录"，不是"上一个进程钉的 env"：两者冲突时以记录为准
+    （见 :func:`get_plobi_home` 的阶梯）。非 Windows / 读不到 ⇒ ``None``。
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Plobi") as key:
+            value, _ = winreg.QueryValueEx(key, "DataDir")
+    except (OSError, FileNotFoundError):
+        return None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    # 安装器可能存的是 `%LOCALAPPDATA%\Plobi` 这种带引用的形态。
+    return os.path.expandvars(text) or None
+
+
 def get_plobi_home() -> Path:
     """Return the Plobi home directory (default: platform-native path).
 
@@ -106,8 +136,15 @@ def get_plobi_home() -> Path:
     if val:
         return Path(val)
 
+    # 安装器记下的那一格（`HKCU\Software\Plobi\DataDir`）：干净的 shell 里
+    # 没有 env 时，这是"用户装在哪"的唯一事实来源。
+    recorded = _install_recorded_data_dir()
+    if recorded:
+        return Path(recorded)
+
     # `setx` 之前起的长驻进程 env 里没有它 ⇒ 读注册表那份钉的（见
     # :func:`_pinned_home_from_registry`）。桌面 spawn 子进程时也是这么兜的。
+    # 2026-11-08 起安装器不再写这一格，此档只为兼容老机器上的残留值。
     pinned = _pinned_home_from_registry()
     if pinned:
         return Path(pinned)
@@ -181,6 +218,11 @@ def get_default_plobi_root() -> Path:
     """
     native_home = _get_platform_default_plobi_home()
     env_home = os.environ.get("PLOBI_HOME", "").strip()
+    if not env_home:
+        # 安装器记下的那一格（`HKCU\Software\Plobi\DataDir`）优先于"上一任门牌"：
+        # 2026-11-08 起安装器不再写 `HKCU\Environment\PLOBI_HOME`，装机版的真实
+        # 数据根只在这一格。与 :func:`get_plobi_home` 同一阶梯，两个入口不许分家。
+        env_home = _install_recorded_data_dir() or ""
     if not env_home:
         # env 没继承到（`setx` 之前起的长驻进程）⇒ 读注册表那份钉的。
         # 少了这一步，`profiles/<name>` 会被解析到 C 盘的 native home 下，

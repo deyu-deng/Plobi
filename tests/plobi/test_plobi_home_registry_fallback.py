@@ -76,3 +76,36 @@ def test_a_profile_shaped_pin_resolves_to_its_root(no_env_home, monkeypatch, tmp
     monkeypatch.setattr(plobi_constants, "_pinned_home_from_registry", lambda: str(home))
 
     assert plobi_constants.get_default_plobi_root() == root
+
+
+# ── 2026-11-08：装机器只记录 DataDir，不再写 HKCU\Environment ──────────────
+#
+# WP-DATA-ISOLATION：安装器把 `PLOBI_HOME` / `MIND_ROOT` / `SURFACE_ROOT` 写进
+# `HKCU\Environment` 是"两份身份共用一块门牌"的污染源（装机版与开发态谁后装谁
+# 把对方带偏）。从这一天起安装记录只剩一格 `HKCU\Software\Plobi\DataDir`，于是
+# 干净 shell 里的命令行 `plobi`（Path 指向装机版 bin）必须靠这一格找到家。
+
+
+def test_installer_recorded_data_dir_wins_over_the_old_env_pin(no_env_home, monkeypatch):
+    """安装记录排在"老环境变量残留"之前：记录是本次安装的事实，残留是上一次的门牌。"""
+    monkeypatch.setattr(plobi_constants, "_pinned_home_from_registry", lambda: r"D:\Old\Plobi")
+    monkeypatch.setattr(plobi_constants, "_install_recorded_data_dir", lambda: r"D:\Data\AppData\Plobi")
+
+    assert plobi_constants.get_plobi_home() == Path(r"D:\Data\AppData\Plobi")
+    assert plobi_constants.get_default_plobi_root() == Path(r"D:\Data\AppData\Plobi")
+
+
+def test_explicit_env_still_wins_over_the_installer_record(monkeypatch):
+    """显式 PLOBI_HOME 压顶：桌面 spawn 子进程时写的就是这一格（开发态靠它读 Plobi-Dev）。"""
+    monkeypatch.setenv("PLOBI_HOME", r"D:\Data\AppData\Plobi-Dev")
+    monkeypatch.setattr(plobi_constants, "_install_recorded_data_dir", lambda: r"D:\Data\AppData\Plobi")
+
+    assert plobi_constants.get_plobi_home() == Path(r"D:\Data\AppData\Plobi-Dev")
+
+
+def test_no_env_no_record_no_registry_returns_native(no_env_home, monkeypatch):
+    """三档都没有 ⇒ 逐位回到平台默认（这条保证新档不会偷偷改掉默认行为）。"""
+    monkeypatch.setattr(plobi_constants, "_install_recorded_data_dir", lambda: None)
+    monkeypatch.setattr(plobi_constants, "_pinned_home_from_registry", lambda: None)
+
+    assert plobi_constants.get_plobi_home() == plobi_constants._get_platform_default_plobi_home()
