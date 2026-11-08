@@ -30,6 +30,7 @@ import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setAgentScope } from '../store/agent-scope'
 import type { ComposerAttachment } from '../store/composer'
 import {
+  $dossierPanelPinned,
   $dossierPanelVisible,
   $fileBrowserOpen,
   $panesFlipped,
@@ -204,6 +205,14 @@ const SkillsView = lazy(async () => ({ default: (await import('./skills')).Skill
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
 const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryView }))
 
+// ── 档案卡的两种形态（用户 11-08 22:3x 给的 Qoder 实物截图）─────────────────
+// 「任务监控」在 Qoder 里默认是**浮在对话右上角的一张圆角卡片**（对话不被挤窄），
+// 抬头右上角那枚**图钉**把它钉成对话右侧的一列。两套尺寸只有这里一处。
+const DOSSIER_FLOATING =
+  'absolute right-4 top-4 z-30 w-[19rem] max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] rounded-xl border border-(--ui-stroke-tertiary) shadow-xl shadow-black/5'
+
+const DOSSIER_PINNED = 'w-[22rem] max-w-[45%] shrink-0 border-l border-(--ui-stroke-tertiary)'
+
 // ── 文件页签按工作区记住 ──────────────────────────────────────────────────
 // 用户 10-31：在 A 这个 Agent 里开着页签，切去 B 说句话再回来，页签全没了。
 // 页签本来就属于 Agent 的文件夹，切走时该收起来而不是丢掉——所以按 cwd 分格存，
@@ -370,10 +379,11 @@ export function DesktopController() {
   const secretaryShellOpen = level !== null
   const activeAgentId = level && level !== 'l1' ? level.l2 : ''
 
-  // 档案卡（对话卡右侧那条长卡）的显隐与它跟着谁走：跟着**对话作用域**的那个
+  // 档案卡（对话右上那张浮层）的显隐与它跟着谁走：跟着**对话作用域**的那个
   // Agent（L1 是总秘书，前端给的是作用域哨兵 `'l1'`，后端翻译成名册里那一行）。
   const dossierVisible = useStore($dossierPanelVisible)
-  const dossierAgentId = chatScope.kind === 'agent' ? chatScope.id : 'l1'
+  const dossierPinned = useStore($dossierPanelPinned)
+  const dossierAgentId = chatScope?.kind === 'agent' ? chatScope.id : 'l1'
 
   // 终端页签按 Agent 分家（10-31）：把当前路由的 Agent 身份写进 store。
   // 归属键只认这个值，不认会话 id —— 一个 Agent 一张嘴、一套页签；同一个
@@ -2257,18 +2267,22 @@ export function DesktopController() {
   // 互换后：右栏内容进主区，对话进右侧窄卡。两张卡都带落点，拖另一张过来就换回。
   // 「只隐藏对话」（10-31）：工作面独占主区，对话不渲染，侧边栏照旧。
   //
-  // 档案卡＝**对话卡右侧那条长卡**（用户 11-08 21:1x：Qoder 的「任务监控」是 Fixed
-  // 形态——钉在对话右侧一条长卡，不是浮在屏上的小弹窗）。显隐口径在 store 里：
-  // 对话卡全屏展开时默认显示，工作区在显示时默认收起，点对话抬头那枚图标才展开。
+  // 档案卡＝**浮在对话右上角的那张卡**（用户 11-08 22:3x 给的 Qoder 实物截图：
+  // 「任务监控」默认是浮在对话上的一张圆角卡片，对话不被挤窄；抬头右上角那枚图钉
+  // 把它钉成对话右侧的一列）。显隐口径在 store 里：对话卡全屏展开时默认显示，
+  // 工作区在显示时默认收起，点对话抬头那枚图标才展开。
   const chatCard = (
     <div
-      className="flex h-full min-h-0 flex-row"
+      className={cn(
+        'relative flex h-full min-h-0',
+        dossierVisible && dossierPinned ? 'flex-row' : 'flex-col'
+      )}
       data-shell-card-drop={chatDrop.over ? '' : undefined}
       {...chatDrop.dropProps}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatRoutes}</div>
       {dossierVisible ? (
-        <DossierPanel agentId={dossierAgentId} className="w-[22rem] max-w-[45%]" />
+        <DossierPanel agentId={dossierAgentId} className={dossierPinned ? DOSSIER_PINNED : DOSSIER_FLOATING} />
       ) : null}
     </div>
   )

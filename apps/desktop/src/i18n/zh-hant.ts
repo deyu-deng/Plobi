@@ -1317,7 +1317,10 @@ export const zhHant = defineLocale({
     dossierToday: '今天',
     dossierDoneByUser: '你',
     dossierDoneByAgent: 'Agent',
-    dossierCollapse: '收起'
+    dossierPin: '固定',
+    dossierUnpin: '取消固定',
+    dossierUpdatedAt: (date: string) => `更新於 ${date}`,
+    dossierUpdatedAtUnknown: '還沒有更新記錄'
   },
 
   starmap: {

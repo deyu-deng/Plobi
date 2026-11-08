@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const fetchVaultAgent = vi.hoisted(() => vi.fn())
 const fetchDossierTasks = vi.hoisted(() => vi.fn())
 const setDossierTaskDone = vi.hoisted(() => vi.fn())
+const toggleDossierPanelPin = vi.hoisted(() => vi.fn())
 
 vi.mock('@/app/surface/api', () => ({
   fetchVaultAgent: (...args: unknown[]) => fetchVaultAgent(...args)
@@ -21,7 +22,17 @@ vi.mock('@/app/chat/right-rail/notes-list', () => ({
   AgentNotesList: () => <div data-testid="agent-notes" />
 }))
 
-vi.mock('@/store/layout', () => ({ setDossierPanelMode: vi.fn() }))
+// 图钉那一档是真的 nanostore atom（组件用 useStore 读它），
+// 其余两个动作这里只记调用次数。
+vi.mock('@/store/layout', async () => {
+  const { atom } = await import('nanostores')
+
+  return {
+    $dossierPanelPinned: atom(false),
+    setDossierPanelMode: vi.fn(),
+    toggleDossierPanelPin: (...args: unknown[]) => toggleDossierPanelPin(...args)
+  }
+})
 
 vi.mock('@/i18n', () => ({
   useI18n: () => ({
@@ -34,12 +45,16 @@ vi.mock('@/i18n', () => ({
         dossierDoneByAgent: 'Agent',
         dossierDoneByUser: '你',
         dossierNotesSection: '相关笔记',
+        dossierPin: '固定',
         dossierPlanEmpty: '这个 Agent 还没有写计划。',
         dossierPlanSection: '计划',
         dossierProgressSection: '进度',
         dossierTasksEmptyDesc: '这份档案还没有按天列的任务。',
         dossierTasksLoadFailed: '清单读不出来',
         dossierToday: '今天',
+        dossierUnpin: '取消固定',
+        dossierUpdatedAt: (date: string) => `更新于 ${date}`,
+        dossierUpdatedAtUnknown: '还没有更新记录',
         milestones: (done: number, total: number) => `${done}/${total} 个里程碑`,
         noAgentSelected: '先选一个 Agent',
         statuses: { active: '进行中' }
@@ -72,7 +87,7 @@ function agent(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function days(items: Record<string, unknown[]> = {}) {
+function days(items: Record<string, Record<string, unknown>[]> = {}) {
   return {
     days: Object.entries(items).map(([date, list]) => ({
       date,
@@ -105,7 +120,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('档案卡（对话卡右侧那条长卡）', () => {
+describe('档案卡（浮在对话右上角那张卡）', () => {
   it('三段同时在屏上——不是三个抽屉', async () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
@@ -116,7 +131,35 @@ describe('档案卡（对话卡右侧那条长卡）', () => {
     expect(screen.getByText('进度')).toBeTruthy()
     expect(screen.getByText('相关笔记')).toBeTruthy()
     // 计划正文不用点开就看得见（抽屉形态要点一下）。
-    expect(screen.getByText(/上架应用/)).toBeTruthy()
+    expect(screen.getAllByText(/上架应用/).length).toBeGreaterThan(0)
+  })
+
+  it('顶部是回顾块：「更新于 某天」＋ 一段摘要（照 Qoder 那张卡）', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    expect(await screen.findByText('更新于 2026-11-08')).toBeTruthy()
+    // 摘要＝计划的第一段正文，不是整篇计划。
+    const summary = screen.getByTestId('dossier-summary')
+
+    expect(summary.textContent).toContain('上架应用')
+  })
+
+  it('图钉在「固定／取消固定」之间切', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    const pin = await screen.findByTestId('dossier-pin')
+
+    expect(pin.getAttribute('aria-label')).toBe('固定')
+
+    fireEvent.click(pin)
+
+    expect(toggleDossierPanelPin).toHaveBeenCalled()
   })
 
   it('按日期切换：点另一颗日期就只显示那一天的任务', async () => {

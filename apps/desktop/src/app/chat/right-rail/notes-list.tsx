@@ -17,6 +17,10 @@ type State =
 const NOTE_ROW =
   'flex w-full min-w-0 items-baseline gap-1.5 rounded px-2 py-1 text-left text-[0.75rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
 
+// 档案卡那一份（`variant="item"`）：图标 ＋ 标题 ＋ 箭头，一行一条。
+const NOTE_ROW_ITEM =
+  'flex w-full min-w-0 items-center gap-2 rounded px-1.5 py-1 text-left text-[0.72rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)/60 hover:text-foreground'
+
 // The empty state is a stack of cards, not a line of grey text: today the real
 // brain has 79 notes and none of them carry a `belongs:` tag, so "empty" is the
 // first screen every user sees, and it has to say what to do about it.
@@ -30,6 +34,12 @@ export const RAIL_CARD_BODY = 'pt-0.5 text-[0.6875rem] leading-relaxed text-(--u
 
 export interface AgentNotesListProps {
   agentId: string
+  /**
+   * `rail`（默认）＝右栏那一份的样子：标题 ＋ 字数。
+   * `item`＝**档案卡**那一份（Qoder 那种条目行）：左边一枚图标，右边一枚箭头。
+   * 两种形状共用同一份数据与同一个点开动作，只是排版不同。
+   */
+  variant?: 'rail' | 'item'
 }
 
 /**
@@ -58,7 +68,7 @@ async function openNote(note: AgentNote): Promise<void> {
  * is a different statement than an empty box, and an unreachable brain is shown as
  * an error rather than as emptiness.
  */
-export function AgentNotesList({ agentId }: AgentNotesListProps) {
+export function AgentNotesList({ agentId, variant = 'rail' }: AgentNotesListProps) {
   const { t } = useI18n()
   const [state, setState] = useState<State>({ kind: 'loading' })
 
@@ -149,14 +159,21 @@ export function AgentNotesList({ agentId }: AgentNotesListProps) {
       {view.notes.map(note => (
         <li key={note.path}>
           <button
-            className={NOTE_ROW}
+            className={variant === 'item' ? NOTE_ROW_ITEM : NOTE_ROW}
             data-testid={`agent-note-${note.path}`}
             onClick={() => void openNote(note)}
             title={note.path}
             type="button"
           >
+            {variant === 'item' && (
+              <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="note" size="0.8125rem" />
+            )}
             <span className="min-w-0 flex-1 truncate">{note.title}</span>
-            <span className="shrink-0 tabular-nums text-(--ui-text-tertiary)">{note.chars}</span>
+            {variant === 'item' ? (
+              <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.8125rem" />
+            ) : (
+              <span className="shrink-0 tabular-nums text-(--ui-text-tertiary)">{note.chars}</span>
+            )}
           </button>
         </li>
       ))}

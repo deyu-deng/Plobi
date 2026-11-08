@@ -1411,7 +1411,10 @@ export const en: Translations = {
     dossierToday: 'Today',
     dossierDoneByUser: 'You',
     dossierDoneByAgent: 'Agent',
-    dossierCollapse: 'Collapse'
+    dossierPin: 'Pin',
+    dossierUnpin: 'Unpin',
+    dossierUpdatedAt: (date: string) => `Updated ${date}`,
+    dossierUpdatedAtUnknown: 'Not updated yet'
   },
   starmap: {
     title: 'Memory Graph',

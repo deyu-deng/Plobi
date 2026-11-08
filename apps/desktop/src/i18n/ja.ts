@@ -1346,7 +1346,10 @@ export const ja = defineLocale({
     dossierToday: '今日',
     dossierDoneByUser: 'あなた',
     dossierDoneByAgent: 'エージェント',
-    dossierCollapse: '閉じる'
+    dossierPin: '固定',
+    dossierUnpin: '固定を解除',
+    dossierUpdatedAt: (date: string) => `更新 ${date}`,
+    dossierUpdatedAtUnknown: '更新履歴はまだありません'
   },
 
   starmap: {

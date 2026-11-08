@@ -1237,8 +1237,14 @@ export interface Translations {
     /** 勾完之后标出是谁标的。 */
     dossierDoneByUser: string
     dossierDoneByAgent: string
-    /** 档案卡抬头右上角那个收起。 */
-    dossierCollapse: string
+    /** 图钉：把浮在对话上的那张卡钉成对话右侧的一列。 */
+    dossierPin: string
+    /** 图钉再按一次：取消固定，回到浮在对话上的那张卡。 */
+    dossierUnpin: string
+    /** 回顾块那行「更新于 某天」。 */
+    dossierUpdatedAt: (date: string) => string
+    /** 还没有更新记录时，回顾块那行说什么。 */
+    dossierUpdatedAtUnknown: string
   }
   starmap: {
     title: string

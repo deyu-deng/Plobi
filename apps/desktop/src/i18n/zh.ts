@@ -1588,7 +1588,10 @@ export const zh: Translations = {
     dossierToday: '今天',
     dossierDoneByUser: '你',
     dossierDoneByAgent: 'Agent',
-    dossierCollapse: '收起'
+    dossierPin: '固定',
+    dossierUnpin: '取消固定',
+    dossierUpdatedAt: (date: string) => `更新于 ${date}`,
+    dossierUpdatedAtUnknown: '还没有更新记录'
   },
   starmap: {
     title: '记忆图谱',
