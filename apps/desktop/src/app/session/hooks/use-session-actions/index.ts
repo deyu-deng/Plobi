@@ -45,6 +45,7 @@ import {
   setYoloActive,
   workspaceCwdForNewSession
 } from '@/store/session'
+import { getModelPreset } from '@/store/model-presets'
 import { broadcastSessionsChanged } from '@/store/session-sync'
 import { isWatchWindow } from '@/store/windows'
 import type { SessionCreateResponse, SessionResumeResponse, UsageStats } from '@/types/plobi'
@@ -177,6 +178,9 @@ export function useSessionActions({
         const uiProvider = $currentProvider.get().trim()
         const uiEffort = $currentReasoningEffort.get().trim()
         const uiFast = $currentFastMode.get()
+        // A window remembered for this model rides along, exactly like effort (user
+        // 2026-11-08: the popover may adjust it, and a new chat must not forget it).
+        const uiContext = uiModel ? getModelPreset(uiProvider, uiModel).context : undefined
 
         const created = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,
@@ -185,6 +189,7 @@ export function useSessionActions({
           ...(newChatProfile ? { profile: newChatProfile } : {}),
           ...(uiModel ? { model: uiModel, ...(uiProvider ? { provider: uiProvider } : {}) } : {}),
           ...(uiEffort ? { reasoning_effort: uiEffort } : {}),
+          ...(uiContext ? { context_length: uiContext } : {}),
           ...(uiFast ? { fast: true } : {})
         })
 

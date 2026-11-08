@@ -13,6 +13,8 @@ const STORAGE_KEY = 'plobi.desktop.model-presets'
 export interface ModelPreset {
   effort?: string
   fast?: boolean
+  /** The window this model should run at, when its vendor sells a menu of them. */
+  context?: number
 }
 
 type RequestGateway = <T>(method: string, params?: Record<string, unknown>) => Promise<T>

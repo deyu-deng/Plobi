@@ -8985,3 +8985,66 @@ def test_wait_agent_timeout_says_so_when_the_build_thread_never_started():
     """线程压根没起 ≠ 卡住：这两种情况必须说不同的话，否则下一次还是猜。"""
     err = server._wait_agent({"agent_ready": threading.Event(), "session_id": "s2"}, "rid-2", timeout=0.1)
     assert "根本没起" in err["error"]["message"], err["error"]["message"]
+
+
+def test_config_set_context_on_a_session_updates_the_live_agents_window(monkeypatch):
+    """The model popover's window dial (user 2026-11-08): a session picks its own window
+    and the running agent must follow immediately — the number on screen and the number
+    the loop compresses at are one truth."""
+    from agent import model_metadata
+
+    seen: dict = {}
+
+    class _Comp:
+        context_length = 0
+
+        def update_model(self, **kw):
+            seen.update(kw)
+
+    agent = types.SimpleNamespace(
+        api_key="k",
+        api_mode="chat_completions",
+        base_url="http://127.0.0.1:8000/v1",
+        context_compressor=_Comp(),
+        model="qoder/qwen3.8-max",
+        provider="aigw",
+        _cached_system_prompt="stale",
+        _config_context_length=None,
+    )
+    monkeypatch.setattr(
+        model_metadata, "get_model_context_length", lambda *a, **kw: 400000, raising=False
+    )
+
+    server._sessions["sid"] = _session(agent)
+    try:
+        resp = server.handle_request(
+            {
+                "id": "1",
+                "method": "config.set",
+                "params": {"session_id": "sid", "key": "context", "value": "400000"},
+            }
+        )
+
+        assert resp["result"]["value"] == "400000"
+        assert resp["result"]["scope"] == "session"
+        assert server._sessions["sid"]["context_length_override"] == 400000
+        assert seen["context_length"] == 400000
+        assert agent._config_context_length == 400000
+        assert agent._cached_system_prompt is None, "the prompt is rebuilt with the new window"
+    finally:
+        server._sessions.clear()
+
+
+def test_config_set_context_clears_with_auto(tmp_path, monkeypatch):
+    import yaml
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump({"model": {"context_length": 400000}}))
+    monkeypatch.setattr(server, "_plobi_home", tmp_path)
+
+    resp = server.handle_request(
+        {"id": "1", "method": "config.set", "params": {"key": "context", "value": "auto"}}
+    )
+
+    assert resp["result"]["scope"] == "global"
+    assert "context_length" not in (yaml.safe_load(cfg_path.read_text())["model"])

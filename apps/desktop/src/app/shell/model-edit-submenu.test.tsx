@@ -182,3 +182,71 @@ describe('ModelEditSubmenu effort ladder per model', () => {
     expect(requestGateway).toHaveBeenCalledWith('config.set', expect.objectContaining({ value: 'xhigh' }))
   })
 })
+
+// 用户 2026-11-08 第 4 条：厂商给了上下文档位的模型，悬浮框里要真能调。目录里 `tuning.context`
+// 就是那几个值（Qoder 200K/400K/1M），这里钉住"只有可调且多于一档时才画、点了把数字报上去"。
+describe('ModelEditSubmenu window menu', () => {
+  it('offers exactly the windows the model sells and reports the pick', () => {
+    const onContext = vi.fn()
+
+    render(
+      <DropdownMenu open>
+        <DropdownMenuContent>
+          <DropdownMenuSub open>
+            <DropdownMenuSubTrigger>edit</DropdownMenuSubTrigger>
+            <ModelEditSubmenu
+              context={{ adjustable: true, choices: [200000, 400000, 1000000], default: 200000 }}
+              contextValue={200000}
+              effort="medium"
+              fastControl={{ kind: 'none' }}
+              isActive
+              model="qoder/qwen3.8-max"
+              onContext={onContext}
+              onSelectModel={vi.fn()}
+              provider="hub-row"
+              reasoning
+              requestGateway={vi.fn().mockResolvedValue({}) as never}
+            />
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+
+    const labels = within(document.body)
+      .getAllByRole('menuitemradio')
+      .map(node => node.textContent)
+
+    expect(labels).toEqual(expect.arrayContaining(['200K', '400K', '1M']))
+
+    fireEvent.click(within(document.body).getByRole('menuitemradio', { name: '400K' }))
+
+    expect(onContext).toHaveBeenCalledWith(400000)
+  })
+
+  it('draws nothing when the model does not sell a menu', () => {
+    render(
+      <DropdownMenu open>
+        <DropdownMenuContent>
+          <DropdownMenuSub open>
+            <DropdownMenuSubTrigger>edit</DropdownMenuSubTrigger>
+            <ModelEditSubmenu
+              context={{ max: 200000 }}
+              effort="medium"
+              fastControl={{ kind: 'none' }}
+              isActive
+              model="qoder/auto"
+              onContext={vi.fn()}
+              onSelectModel={vi.fn()}
+              provider="hub-row"
+              reasoning
+              requestGateway={vi.fn().mockResolvedValue({}) as never}
+            />
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+
+    // Only the five effort levels — no token numbers dressed up as choices.
+    expect(within(document.body).queryByRole('menuitemradio', { name: '400K' })).toBeNull()
+  })
+})

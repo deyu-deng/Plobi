@@ -27,7 +27,7 @@ import {
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
 import { quotaProviders, requestQuotaCatalog } from '@/store/desktop-quotas'
-import { $modelPresets, applyModelPreset, modelPresetKey } from '@/store/model-presets'
+import { $modelPresets, applyModelPreset, modelPresetKey, setModelPreset } from '@/store/model-presets'
 import {
   $visibleModels,
   collapseModelFamilies,
@@ -337,6 +337,18 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                       {isCurrent ? <Codicon className="ml-auto text-foreground" name="check" size="0.75rem" /> : null}
                     </DropdownMenuSubTrigger>
                     <ModelEditSubmenu
+                      context={tuning.context}
+                      contextValue={preset.context}
+                      onContext={tokens => {
+                        setModelPreset(group.provider.slug, family.id, { context: tokens })
+                        if (isCurrent && activeSessionId) {
+                          void requestGateway('config.set', {
+                            key: 'context',
+                            session_id: activeSessionId,
+                            value: String(tokens)
+                          })
+                        }
+                      }}
                       defaultEffort={tuning.default_effort}
                       efforts={tuning.efforts}
                       effort={effEffort}

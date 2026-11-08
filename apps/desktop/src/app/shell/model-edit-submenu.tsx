@@ -109,7 +109,25 @@ export function resolveFastControl(
   return { kind: 'none' }
 }
 
+/** 200000 → "200K", 1000000 → "1M". A value, not a sentence: no copy needed. */
+export function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${Number((tokens / 1_000_000).toFixed(1))}M`
+  }
+
+  if (tokens >= 1000) {
+    return `${Math.round(tokens / 1000)}K`
+  }
+
+  return String(tokens)
+}
+
 interface ModelEditSubmenuProps {
+  /** The windows this model sells (`tuning.context`), when it sells more than one. */
+  context?: { adjustable?: boolean; choices?: number[]; default?: number; max?: number }
+  /** The window chosen for this model, if any. */
+  contextValue?: number
+  onContext?: (tokens: number) => void
   /** The vendor's own default level for this model, when it names one. */
   defaultEffort?: string
   /** The levels this model really sells, when the catalog names them. */
@@ -142,12 +160,17 @@ export function ModelEditSubmenu({
   onSelectModel,
   provider,
   reasoning,
-  requestGateway
+  requestGateway,
+  context,
+  contextValue,
+  onContext
 }: ModelEditSubmenuProps) {
   const { t } = useI18n()
   const copy = t.shell.modelOptions
   const activeSessionId = useStore($activeSessionId)
 
+  const contextChoices = (context?.adjustable ? context.choices ?? [] : [])
+    .filter(choice => Number.isFinite(choice) && choice > 0)
   const choices = effortChoices(efforts)
   const fallbackEffort = levelForModel(defaultEffort, choices)
   const effortValue = normalizeEffort(effort, choices, fallbackEffort)
@@ -252,6 +275,26 @@ export function ModelEditSubmenu({
               {copy.fast}
               <Switch checked={fastOn} className="ml-auto" onCheckedChange={toggleFast} size="xs" />
             </DropdownMenuItem>
+          ) : null}
+          {reasoning && contextChoices.length > 1 ? (
+            <>
+              <DropdownMenuSeparator className="mx-0" />
+              <DropdownMenuRadioGroup
+                onValueChange={value => onContext?.(Number(value))}
+                value={String(contextValue ?? context?.default ?? '')}
+              >
+                {contextChoices.map(choice => (
+                  <DropdownMenuRadioItem
+                    className={dropdownMenuRow}
+                    key={choice}
+                    onSelect={event => event.preventDefault()}
+                    value={String(choice)}
+                  >
+                    {formatTokens(choice)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </>
           ) : null}
           {reasoning ? (
             <>
