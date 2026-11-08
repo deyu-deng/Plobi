@@ -331,8 +331,16 @@ def test_the_login_evidence_table_points_at_the_real_paths():
     """agy 的 OAuth 不在 `~/.agy/`：它落在 `~/.gemini/antigravity-cli/antigravity-oauth-token`。
 
     旧表指的那两个路径这台没有 ⇒ agy 恒判「未登录」——一个已装好、已登录、能跑的目标被白扔。
+
+    **11-08 21:5x 升级**：光有文件 ≠ 登上了（agy 的 OAuth 过期 ⇒ 真跑回
+    `Authentication required`）⇒ 这一条要**带那一个过期字段**，
+    于是落点写成 `json-expiry:<路径>#token.expiry`。
     """
-    assert ot._LOGIN_EVIDENCE["agy"] == ("~/.gemini/antigravity-cli/antigravity-oauth-token",)
+    agy = ot._LOGIN_EVIDENCE["agy"]
+    assert len(agy) == 1
+    assert agy[0].startswith("json-expiry:"), "要带那一个过期字段"
+    assert "antigravity-oauth-token" in agy[0], "落点仍是那个真实路径"
+    assert agy[0].endswith("#token.expiry")
     assert "gemini" in ot._LOGIN_EVIDENCE
     assert "cline" in ot._LOGIN_EVIDENCE
 

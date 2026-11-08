@@ -71,7 +71,7 @@ def test_unknown_mode_refuses_before_anything_is_spawned(workdir, monkeypatch):
     calls: list = []
     monkeypatch.setenv(offload.PERMISSION_MODE_ENV, "bypass-permissions")  # typo: dashes
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
     )
     result = offload.run_task("say hi", cwd=workdir)
@@ -106,7 +106,7 @@ def test_run_reports_who_where_flags_and_usage(workdir, monkeypatch):
         return _Completed(stdout=json.dumps({"result": "ok", "usage": {"input_tokens": 12}}))
 
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
 
     result = offload.run_task("write a file", cwd=workdir)
 
@@ -122,7 +122,7 @@ def test_run_reports_who_where_flags_and_usage(workdir, monkeypatch):
 def test_unpriceable_cost_is_none_and_never_zero(workdir, monkeypatch):
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: _Completed(stdout=json.dumps({"result": "hi", "usage": {"input_tokens": 5}})),
     )
     result = offload.run_task("say hi", cwd=workdir)
@@ -132,7 +132,7 @@ def test_unpriceable_cost_is_none_and_never_zero(workdir, monkeypatch):
 
 def test_no_usage_reported_is_its_own_status(workdir, monkeypatch):
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
-    monkeypatch.setattr(offload.subprocess, "run", lambda *a, **k: _Completed(stdout="plain text"))
+    monkeypatch.setattr(offload, "_run_child", lambda *a, **k: _Completed(stdout="plain text"))
     result = offload.run_task("say hi", cwd=workdir)
     assert result.cost is None and result.cost_status == "no_usage_reported"
     assert result.text == "plain text"
@@ -146,7 +146,7 @@ def test_credits_are_carried_out_of_the_top_level_envelope(workdir, monkeypatch)
         "total_cost_usd": 0, "total_credits": 3.775, "usage": {"input_tokens": 0},
     }
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
-    monkeypatch.setattr(offload.subprocess, "run", lambda *a, **k: _Completed(stdout=json.dumps(envelope)))
+    monkeypatch.setattr(offload, "_run_child", lambda *a, **k: _Completed(stdout=json.dumps(envelope)))
 
     result = offload.run_task("say hi", cwd=workdir, agent="qoder")
 
@@ -172,7 +172,7 @@ def test_run_task_refuses_repo_without_spawning(workdir, monkeypatch):
     repo = workdir / "Docs"
     repo.mkdir()
     calls = []
-    monkeypatch.setattr(offload.subprocess, "run", lambda *a, **k: calls.append(a) or _Completed())
+    monkeypatch.setattr(offload, "_run_child", lambda *a, **k: calls.append(a) or _Completed())
     result = offload.run_task("anything", cwd=repo)
     assert result.ok is False and calls == []
     assert result.cost_status == "not_started"
@@ -207,7 +207,7 @@ def test_offload_argv_carries_no_plobi_side_bypass(workdir, monkeypatch):
         return _Completed(stdout=json.dumps({"result": "x"}))
 
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
     offload.run_task("do it", cwd=workdir)
 
     blob = " ".join(captured["argv"])
@@ -222,7 +222,7 @@ def test_timeout_is_reported_not_swallowed(workdir, monkeypatch):
     def explode(*a, **k):
         raise subprocess.TimeoutExpired(cmd=["codebuddy"], timeout=1)
 
-    monkeypatch.setattr(offload.subprocess, "run", explode)
+    monkeypatch.setattr(offload, "_run_child", explode)
     result = offload.run_task("slow task", cwd=workdir, timeout=1)
     assert result.ok is False and "did not finish" in result.error
 
@@ -323,7 +323,7 @@ def test_run_task_carries_the_handle_out_on_the_result(workdir, monkeypatch):
         (Path(kwargs["cwd"]) / "made.txt").write_text("x", encoding="utf-8")
         return _Completed(stdout=stdout)
 
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
     result = offload.run_task("do it", cwd=workdir)
     assert result.ok is True
     assert result.external_session == _CB_ID
@@ -360,7 +360,7 @@ def test_envelope_is_kept_for_audit_without_counting_as_a_product(workdir, monke
         (Path(kwargs["cwd"]) / "made.txt").write_text("x", encoding="utf-8")
         return _Completed(stdout=json.dumps({"result": "ok"}))
 
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
     result = offload.run_task("go", cwd=workdir)
     names = [Path(a["path"]).name for a in result.artifacts]
     assert names == ["made.txt"]
@@ -379,7 +379,7 @@ def test_proxy_comes_from_the_knob_and_reaches_the_child(workdir, monkeypatch):
     monkeypatch.setenv(offload.PROXY_ENV, "http://proxy.invalid:8118")
     monkeypatch.setattr(offload, "egress_is_reachable", lambda url, timeout=3.0: (True, ""))
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
     result = offload.run_task("go", cwd=workdir)
 
     assert seen["env"]["HTTPS_PROXY"] == "http://proxy.invalid:8118"
@@ -417,7 +417,7 @@ def test_egress_table_owns_the_child_network_keys(workdir, monkeypatch):
         return _Completed(stdout=json.dumps({"result": "ok"}))
 
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
     result = offload.run_task("go", cwd=workdir)
 
     assert seen["env"]["HTTPS_PROXY"] == "http://proxy.invalid:8118"
@@ -442,7 +442,7 @@ def test_knob_outranks_the_table(workdir, monkeypatch):
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda argv, **kw: seen.update(env=kw["env"]) or _Completed(stdout=json.dumps({"result": "ok"})),
     )
     result = offload.run_task("go", cwd=workdir)
@@ -474,7 +474,7 @@ def test_unreadable_config_refuses_before_spawning(workdir, monkeypatch):
     monkeypatch.delenv(offload.PROXY_ENV, raising=False)
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
     )
     result = offload.run_task("go", cwd=workdir)
@@ -522,7 +522,7 @@ def test_unreadable_table_refuses_instead_of_running_unrouted(workdir, monkeypat
         offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy"
     )
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
     )
     result = offload.run_task("go", cwd=workdir)
@@ -588,7 +588,7 @@ def test_unreachable_network_is_named_and_never_a_silent_success(workdir, monkey
     monkeypatch.delenv("HTTP_PROXY", raising=False)
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/agy")
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: _Completed(
             returncode=1,
             stderr='error: Eligibility check failed: Get "https://www.googleapis.com/'
@@ -608,7 +608,7 @@ def test_exit_zero_with_no_artifact_is_not_reported_as_success(workdir, monkeypa
     tokens having written nothing, because its tools were disabled in print mode."""
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: _Completed(stdout=json.dumps({"result": "I couldn't complete it"})),
     )
     result = offload.run_task("go", cwd=workdir)
@@ -635,7 +635,7 @@ def test_dead_egress_is_named_before_anything_is_spent(workdir, monkeypatch):
     monkeypatch.setenv(offload.PROXY_ENV, "http://127.0.0.1:1")
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(
-        offload.subprocess, "run",
+        offload, "_run_child",
         lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
     )
     result = offload.run_task("go", cwd=workdir)
@@ -684,7 +684,7 @@ def _capture_run(seen, workdir):
 def test_the_reply_handle_is_a_file_named_by_this_runs_job(workdir, monkeypatch):
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     offload.run_task("把课表采完", cwd=workdir, agent="qoder", reply_to="Sindri")
 
@@ -704,7 +704,7 @@ def test_reply_written_by_the_external_agent_is_collected_once(workdir, monkeypa
         return _Completed(stdout=json.dumps({"result": "done", "usage": {}}))
 
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
 
     result = offload.run_task("读 note.txt 回暗号", cwd=workdir, agent="qoder", reply_to="Sindri")
 
@@ -716,7 +716,7 @@ def test_reply_written_by_the_external_agent_is_collected_once(workdir, monkeypa
 def test_a_run_that_filed_nothing_says_not_filed_not_a_failure(workdir, monkeypatch):
     """它没回话是一种**读数**，不许和"我们读坏了"混成一句，也不许因此把成功的活判失败。"""
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run({}, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run({}, workdir))
 
     result = offload.run_task("干活", cwd=workdir, agent="qoder")
 
@@ -740,7 +740,7 @@ def test_a_batch_shim_gets_the_task_as_a_file_because_cmd_eats_newlines(workdir,
         return _Completed(stdout=json.dumps({"result": "ok", "usage": {}}))
 
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "C:/bin/qodercli.cmd")
-    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    monkeypatch.setattr(offload, "_run_child", fake_run)
 
     offload.run_task("第一行要求\n第二行要求", cwd=workdir, agent="qoder", reply_to="Sindri")
 
@@ -774,7 +774,7 @@ def test_a_read_only_qoder_run_is_not_judged_by_missing_artifacts(workdir, monke
     10-22 真跑踩过：Qoder 读了文件、答对了内容，只因为没写文件就被判成"没干活"。
     """
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run({}, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run({}, workdir))
 
     result = offload.run_task("只读，别改文件", cwd=workdir, agent="qoder")
     assert result.ok is True, "只读活没有产出是正常形状"
@@ -816,7 +816,7 @@ def test_qoder_child_does_not_inherit_the_sdk_entrypoint(workdir, monkeypatch):
     for key in offload.QODER_SDK_ENV:
         monkeypatch.setenv(key, "set-by-the-desktop")
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     offload.run_task("看一眼 README 回一句", cwd=workdir, agent="qoder")
 
@@ -830,7 +830,7 @@ def test_other_families_still_inherit_the_environment(workdir, monkeypatch):
     seen = {}
     monkeypatch.setenv(offload.QODER_SDK_ENV[0], "keep-me")
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     offload.run_task("干活", cwd=workdir)
 
@@ -871,7 +871,7 @@ def test_kiro_offload_runs_its_own_non_interactive_shape(workdir, monkeypatch):
     """
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="kiro": "/usr/bin/kiro-cli")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     result = offload.run_task("干活", cwd=workdir, agent="kiro")
 
@@ -890,7 +890,7 @@ def test_qwen_offload_uses_its_positional_prompt_and_json_envelope(workdir, monk
     """qwen 的提示词是位置参数（`-p` 官方标了 deprecated）⇒ 末位放任务；`-o json` 出机器读的回包。"""
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qwen": "/usr/bin/qwen")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     offload.run_task("干活", cwd=workdir, agent="qwen")
 
@@ -927,7 +927,7 @@ def test_copilot_offload_runs_its_own_non_interactive_shape(workdir, monkeypatch
     """
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="copilot": "/usr/bin/copilot")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     result = offload.run_task("干活", cwd=workdir, agent="copilot")
 
@@ -949,7 +949,7 @@ def test_kilo_offload_puts_its_flags_before_the_positional_prompt(workdir, monke
     """
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="kilo": "/usr/bin/kilo")
-    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+    monkeypatch.setattr(offload, "_run_child", _capture_run(seen, workdir))
 
     offload.run_task("干活", cwd=workdir, agent="kilo")
 

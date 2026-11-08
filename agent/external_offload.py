@@ -27,6 +27,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -284,7 +285,14 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         # 现核：`-p/--prompt` 才是非交互；不加它就是交互 CLI（会把子进程挂住）。
         skip_flag=("-y",), skip_permissions_env=GEMINI_YOLO_ENV,
         artifact_required=False,
-        argv_template=("-p", "{task}", "{flags}", "{extra}"),
+        # `--skip-trust`（现核 11-08 21:5x：它自己的 `--help` 写明
+        # 「Trust the current workspace for this session」）——**只有 gemini 有这枚旗标**：
+        # 不加它，它在非受信目录里会回
+        # `Approval mode overridden to "default" because the current folder is not trusted`，
+        # 于是我们写的放开档位被它自己按回去（11-08 真跑实测）。
+        # ⚠ `-p` 后面**只能跟提示词本身**：gemini 回 `Cannot use both a positional prompt
+        # and the --prompt (-p) flag together` ⇒ 提示词不许再当位置参数补一遍。
+        argv_template=("-p", "{task}", "--skip-trust", "{flags}", "{extra}"),
     ),
     AGENT_OPENCODE: ExternalAgentSpec(
         AGENT_OPENCODE, "opencode", OPENCODE_COMMAND_ENV, OPENCODE_EXTRA_ARGS_ENV,
@@ -376,6 +384,54 @@ def scrub_child_env(agent: str, env: dict[str, str]) -> dict[str, str]:
     return env
 
 
+#: npm 垫片里那段 `node_modules` 相对路径（`%dp0%` 是垫片所在目录）。
+_SHIM_ENTRY_RE = re.compile(r'"%dp0%\\([^"]+)"\s*%\*', re.IGNORECASE)
+
+
+def resolve_node_entry(shim_path: str) -> Optional[tuple[str, str]]:
+    """一个 npm 垫片（`.cmd`/`.bat`）背后真正的 Node 入口。认不出来就 ``None``。
+
+    **为什么要有这一格**：npm 生成的垫片最后一行形状是固定的——
+
+        "%_prog%" "%dp0%\\node_modules\\...\\<entry>" %*
+
+    `cmd /c` 展开 `%*` 时**会剥掉长提示词外面那层引号** ⇒ 厂商收到的提示词被拆成一串散词
+    （11-08 21:5x 实测：cline 回 `Unknown command or unquoted prompt`）。绕开的办法是
+    **不经 cmd.exe**：读垫片、把 `%dp0` 换成垫片所在目录，得到真实入口脚本，
+    再直接起 `node.exe <entry>`。
+
+    **这不是按家硬编码**：解析的是垫片自己的内容，谁的垫片长什么样就怎么走。
+    11-08 21:5x 本机实测五家全部解析成功（cline／gemini／qodercli／copilot／kilo）。
+
+    认不出来（不是 npm 垫片／入口不在盘上／找不到 node）⇒ 返回 ``None``，
+    调用方**照旧走 `cmd /c`**（不许因为绕行失败就不派活）。
+    """
+    if not shim_path:
+        return None
+    lowered = shim_path.lower()
+    if not lowered.endswith((".cmd", ".bat")):
+        return None
+    try:
+        with open(shim_path, encoding="utf-8", errors="replace") as handle:
+            body = handle.read()
+    except OSError:
+        return None
+    match = _SHIM_ENTRY_RE.search(body)
+    if not match:
+        return None
+    base = os.path.dirname(os.path.abspath(shim_path))
+    script = os.path.join(base, match.group(1).replace("\\", os.sep))
+    if not os.path.isfile(script):
+        return None
+    # 垫片自己的规矩：同目录有 node.exe 就用它，否则用 PATH 上的那个。
+    node = os.path.join(base, "node.exe")
+    if not os.path.isfile(node):
+        node = shutil.which("node.exe") or shutil.which("node") or ""
+    if not node:
+        return None
+    return node, script
+
+
 def spawn_argv(argv: tuple[str, ...] | list[str]) -> list[str]:
     """argv as the OS can actually start it.
 
@@ -383,13 +439,107 @@ def spawn_argv(argv: tuple[str, ...] | list[str]) -> list[str]:
     fails there with "not a valid Win32 application". Wrap those in `cmd /c` — measured
     2026-10-28 while moving these CLIs into the offload column, where their only
     installed form *is* the shim.
+
+    **但 `cmd /c` 会剥掉长提示词的引号**（11-08 21:5x 实测：cline 回
+    `Unknown command or unquoted prompt`）⇒ 垫片**能解析出真实 Node 入口时**，
+    直接起 `node.exe <entry>`，中间不经过 cmd.exe；解析不出来才回退到 `cmd /c`。
     """
     parts = list(argv)
     if not parts:
         return parts
     if os.name == "nt" and parts[0].lower().endswith((".cmd", ".bat")):
+        entry = resolve_node_entry(parts[0])
+        if entry is not None:
+            node, script = entry
+            return [node, script, *parts[1:]]
         return [os.environ.get("COMSPEC") or "cmd.exe", "/c", *parts]
     return parts
+
+
+#: 子进程**自己成组**（POSIX）——不跟父进程同组，超时时才杀得干净。
+def _child_session_kwargs() -> dict[str, Any]:
+    if os.name == "nt":
+        # Windows 没有组；靠 `taskkill /T` 按进程树杀（见 :func:`_kill_descendants`）。
+        return {}
+    return {"start_new_session": True}
+
+
+def _kill_descendants(proc: Any) -> str:
+    """杀掉一个子进程的**整棵树**。回一句人能读的读数。
+
+    - Windows：`taskkill /T /F /PID <pid>`（`/T`＝连它的子孙一起杀）；
+    - POSIX：先 `os.killpg`（我们自己给它开的那个组），再 `os.killpg` 里的直接孩子。
+
+    **杀不掉就照实说**：11-08 21:2x 实测 qoder 报 180s 超时、实际跑了 499s——
+    那正是「只杀了外壳、没杀孙进程」的样子。
+    """
+    if proc is None:
+        return ""
+    pid = getattr(proc, "pid", None)
+    if not pid:
+        return ""
+    if os.name == "nt":
+        try:
+            finished = subprocess.run(  # noqa: S603 — 固定命令，没有用户输入
+                ["taskkill", "/T", "/F", "/PID", str(pid)],
+                capture_output=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return f"进程树没杀掉：{exc}"
+        body = ((finished.stdout or b"") + (finished.stderr or b"")).decode(
+            "utf-8", "replace").strip()
+        if finished.returncode == 0:
+            return "进程树已杀掉"
+        return f"进程树没杀掉：{body[:120] or f'exit={finished.returncode}'}"
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except (OSError, ProcessLookupError) as exc:
+        return f"进程树没杀掉：{exc}"
+    return "进程树已杀掉"
+
+
+def _run_child(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """**起进程那一格（seam）**：跑一个子进程；超时时**连它的整棵树**一起杀。
+
+    为什么不用 `subprocess.run(timeout=…)`：它超时只杀直接那个孩子，
+    孙进程攥着管道继续跑（11-08 21:2x 实测 qoder 报 180s、实际跑 499s）。
+
+    签名与 `subprocess.run` 兼容 ⇒ 测试可以替换这一格（既有测试的 fake 逻辑不用改）。
+
+    超时抛的是 `subprocess.TimeoutExpired`（与原来同一个异常类型），
+    带上 `process` 与 `tree_note` 两个属性，好让调用方能如实读出「杀掉了没有」。
+    """
+    cwd = kwargs.pop("cwd", None)
+    env = kwargs.pop("env", None)
+    timeout = kwargs.pop("timeout", None)
+    child_kwargs = _child_session_kwargs()
+    if os.name == "nt":
+        child_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    proc = subprocess.Popen(  # noqa: S603 — argv is built above from config
+        argv, cwd=cwd, env=env, **kwargs, **child_kwargs,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # **先杀整棵树，再回收**：反过来做的话，`proc.kill()` 已经把直接那个孩子杀了，
+        # 之后的 `taskkill /T /F /PID` 只会回 "The process ... not found."——
+        # 读数说「没杀掉」，可其实该杀的已经杀掉了（11-08 21:5x 实测：qoder 45.8s 返回，
+        # 修前是 499s）。
+        note = _kill_descendants(proc)
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        try:
+            stdout, stderr = proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
+        expired = subprocess.TimeoutExpired(cmd=argv, timeout=timeout,
+                                           output=stdout, stderr=stderr)
+        setattr(expired, "process", proc)
+        setattr(expired, "tree_note", note)
+        raise expired from None
+    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
 
 def build_argv(agent: str, binary: str, task: str, flags: tuple[str, ...],
@@ -657,14 +807,45 @@ def task_file_for(workdir: Path, job: str) -> Optional[Path]:
 
 
 def needs_task_file(binary: str, prompt: str) -> bool:
-    """批处理壳吃不下换行；直连的可执行文件（`.exe`）照旧内联。"""
-    return ("\n" in prompt or "\r" in prompt) and binary.lower().endswith((".cmd", ".bat"))
+    """这段提示词要不要**写成文件**、命令行上只留一句 ASCII 指令？
+
+    两个理由（11-08 21:5x 实测）：
+
+    1. **批处理壳吃不下换行**（`.cmd` 会把带换行的任务书截到第一行）；
+    2. **Windows 命令行按 ASCII 空白切词**：Python 的 `subprocess.list2cmdline`
+       只在参数含 **ASCII 空格/制表符**时才加引号 ⇒ 一段纯中文提示词
+       （中文用全角冒号与逗号，**没有 ASCII 空白**）**一个引号都不加**
+       ⇒ 整段提示词被切成多个 argv 元素 ⇒ cline 把第一段当命令名，
+       自己回 `Unknown command or unquoted prompt`。
+
+    ⇒ 判据：**提示词里没有 ASCII 空白**（或含换行）**且**这一家是批处理壳
+    ⇒ 走文件。（含 ASCII 空白的提示词，argv 不会被切开，原样内联即可。）
+    """
+    if not binary.lower().endswith((".cmd", ".bat")):
+        return False
+    if "\n" in prompt or "\r" in prompt:
+        return True
+    # 没有 ASCII 空白 ⇒ 命令行上它会被切开 ⇒ 走文件。
+    return not any(ch in prompt for ch in " \t")
 
 
 def task_file_prompt(path: Path) -> str:
+    """任务书正文在文件里，命令行上只留**这一句 ASCII 指令**。
+
+    **为什么必须是 ASCII 且含空格**（11-08 21:5x 实测）：Python 的
+    `subprocess.list2cmdline` **只按 ASCII 空白**决定要不要给参数加引号——
+    一段纯中文里没有 ASCII 空白（中文用全角冒号与逗号）⇒ 一个引号都不加
+    ⇒ 整段提示词在 Windows 命令行上被切成多个 argv 元素 ⇒ cline 把第一段
+    当**命令名**，自己回 `Unknown command or unquoted prompt`。
+    实测对照：ASCII 提示词（含 ASCII 空格）**收下并开跑**；中文提示词末尾
+    补一个 ASCII 空格也收下；正文进文件、命令行只留 ASCII 指令 ⇒ **exit=0 且写出了产物**。
+
+    这一句是**给厂商看的话**，不是给用户看的文案（不进任何界面）。
+    """
     return (
-        "这一趟的任务书在下面这个文件里，它是**唯一的任务来源**："
-        f"{str(path).replace(chr(92), '/')}。先读它，再照它执行；不要凭猜。"
+        "Read the task file at "
+        f"{str(path).replace(chr(92), '/')} and follow it exactly. "
+        "It is the only source of the task."
     )
 
 
@@ -1029,12 +1210,17 @@ def run_task(
 
     started = time.time()
     try:
-        completed = subprocess.run(  # noqa: S603 — argv is built above from config
+        completed = _run_child(
             spawn_argv(argv), cwd=str(workdir), env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             errors="replace", timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
+        # 进程树**杀掉了没有**是这一趟的读数：杀不掉就照实说，不假装已经收干净。
+        # 读数由起进程那一格给出（它知道杀掉了没有）；没有就退回自己杀一次。
+        tree_note = str(getattr(expired, "tree_note", "") or "")
+        if not tree_note:
+            tree_note = _kill_descendants(getattr(expired, "process", None))
         # 超时的一趟**照样可能已经写了回执**（它干完但没退出，或它先回话再卡住）。
         # 这一支以前直接构造一个不带身份的 `OffloadResult`，于是台账里那一行的
         # `job`/`reply` 全空——10-22 实测到的一行 1157s 的记录就是这样丢的身份。
@@ -1043,7 +1229,8 @@ def run_task(
             agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
             exit_code=None, duration_s=time.time() - started, argv=argv, usage={},
             cost=None, cost_status="unknown", artifacts=(), text="", ok=False,
-            error=f"external agent did not finish within {timeout:.0f}s",
+            error=f"external agent did not finish within {timeout:.0f}s"
+                   + (f"（{tree_note}）" if tree_note else ""),
             job=job, reply=late_reply, reply_status=late_status or "not_filed",
             reply_to=reply_to,
         )

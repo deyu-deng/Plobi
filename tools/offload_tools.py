@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 import os
 import subprocess
 from pathlib import Path
@@ -71,8 +72,24 @@ TOOLSET = "offload"
 _LOGIN_EVIDENCE: dict[str, tuple[str, ...]] = {
     "codebuddy": ("~/.codebuddy/local_storage",),
     "qoder": ("~/.qoder/.auth",),
-    "agy": ("~/.gemini/antigravity-cli/antigravity-oauth-token",),
-    "gemini": ("~/.gemini/oauth_creds.json",),
+    # 11-08 21:5x 实测：**光有文件 ≠ 登上了**。
+    # - agy 的令牌结构是 `{token: {access_token, refresh_token, expiry, ...}, auth_method, id_token}`，
+    #   `token.expiry` = 2026-11-05T17:59:05Z（**已过期**）⇒ 真跑回 `Authentication required`。
+    #   ⇒ 这一条要**读那一个过期字段**：过期就是没登录。
+    "agy": ("json-expiry:~/.gemini/antigravity-cli/antigravity-oauth-token#token.expiry",),
+    # gemini：`~/.gemini/oauth_creds.json` **是另一个产品（Antigravity）的凭据**，
+    #   Gemini CLI 自己不认它（11-08 真跑回 `Please set an Auth method in your ...settings.json
+    #   or specify one of the following environment variables ...: GEMINI_API_KEY,
+    #   GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA`）⇒ 留着它就是那一句假话。
+    #   Gemini CLI 自己的落点是 `~/.gemini/settings.json` 的 `auth.selectedType`
+    #   （官方：`oauth-personal`）或那三个环境变量之一。
+    "gemini": (
+        "json-field:~/.gemini/settings.json#auth.selectedType=oauth-personal",
+        "json-field:~/.gemini/settings.json#auth.selectedType=gemini-api-key",
+        "env:GEMINI_API_KEY",
+        "env:GOOGLE_GENAI_USE_VERTEXAI",
+        "env:GOOGLE_GENAI_USE_GCA",
+    ),
     "cline": ("~/.cline/data/settings/providers.json",),
     "qwen": ("~/.qwen/oauth_creds.json",),
     # 11-08：copilot 的登录痕迹**不在文件里**——OAuth token 进**系统凭据库**（Windows 凭据管理器），
@@ -109,8 +126,61 @@ def _windows_credential_hits(needle: str) -> Optional[bool]:
     return needle.lower() in flat
 
 
+def _credential_expiry(path: Path, field: str) -> Optional[bool]:
+    """读凭据文件里**那一个**过期字段。过期 ⇒ False；没过期 ⇒ True；判不了 ⇒ None。
+
+    **只读那一个字段**：不读、不返回、不打印任何 token 值（那不是我们的东西）。
+
+    字段两种形状都认（11-08 21:5x 本机两家的真实形状）：
+    - ISO 串（agy：`token.expiry` = `2026-11-05T17:59:05.000000Z`）；
+    - 毫秒时间戳（gemini 的 `expiry_date` = `1793901545000`）。
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    value = _dig_field(payload, field)
+    if value is None:
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            # 毫秒时间戳（gemini）；秒级的话乘 1000。
+            millis = float(value) * (1000.0 if float(value) < 1e11 else 1.0)
+            expires = datetime.fromtimestamp(millis / 1000.0, tz=timezone.utc)
+        else:
+            text = str(value).strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            expires = datetime.fromisoformat(text)
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+    now = datetime.now(timezone.utc)
+    return expires > now
+
+
+def _dig_field(payload: Any, field: str) -> Any:
+    """按 `a.b` 形状取字段；取不到就 None（不是 False）。"""
+    current = payload
+    for part in field.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
 def _probe_logged_in(agent_name: str) -> Optional[bool]:
-    """这一家登录没有？**三态**：True / False（真没登录）/ None（探不到，不判成不能）。"""
+    """这一家登录没有？**三态**：True / False（真没登录）/ None（探不到，不判成不能）。
+
+    **证据按可信度排队**（11-08 21:5x）：
+    1. **厂商亲口说的** ⇒ 走**上一趟真跑的台账**（`offload_surface._login_evidence` 那一格）；
+       **本函数不跑探针**——清单层文件头第 1 条明令「首屏不跑探针」
+       （`qodercli --list-models` 实测能把取数拖过两分钟），`agent_roster()` 是它的上游。
+    2. **本地强证据**（登录后才会落盘的凭据，且**没过期**）；
+    3. 别的 ⇒ 探不到（None），不判成不能。
+    """
     hints = _LOGIN_EVIDENCE.get(agent_name)
     if hints is None:
         # 没登记落点 ⇒ 我们没核到，不替它下结论。
@@ -128,6 +198,44 @@ def _probe_logged_in(agent_name: str) -> Optional[bool]:
             if hit is None:
                 continue  # 这台机器判不了它 ⇒ 不拿这一条下结论。
             if hit:
+                return True
+            decided_no = True
+            continue
+        if raw.startswith("json-expiry:"):
+            # 「凭据文件 + 那一个过期字段」：文件在但**过期** ⇒ 真没登录（11-08 21:5x 实测：
+            # agy 的 `token.expiry` 已过期 ⇒ 真跑回 `Authentication required`；
+            # 光看文件在不在会把它判成「能用」——**屏上的假话**）。
+            body, _, field = raw[len("json-expiry:"):].partition("#")
+            candidate = Path(os.path.expanduser(body))
+            try:
+                if not candidate.is_file():
+                    decided_no = True
+                    continue
+                expired = _credential_expiry(candidate, field)
+            except OSError:
+                continue
+            if expired is None:
+                continue  # 判不了过期 ⇒ 不拿这一条下结论
+            if not expired:
+                return False  # **已过期** ⇒ 没登录（`_credential_expiry` 的 True 是「没过期」）
+            return True
+        if raw.startswith("json-field:"):
+            # 「配置里那一格」：等于期望值就是登上了（gemini 的 `auth.selectedType`）。
+            body, _, want = raw[len("json-field:"):].partition("#")
+            key, _, expected = want.partition("=")
+            candidate = Path(os.path.expanduser(body))
+            try:
+                if not candidate.is_file():
+                    decided_no = True
+                    continue
+                with open(candidate, encoding="utf-8", errors="replace") as handle:
+                    payload = json.load(handle)
+            except (OSError, ValueError):
+                continue
+            got = _dig_field(payload, key)
+            if got is None:
+                continue
+            if str(got).strip() == expected.strip():
                 return True
             decided_no = True
             continue
