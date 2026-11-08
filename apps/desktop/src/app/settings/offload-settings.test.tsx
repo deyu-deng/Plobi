@@ -217,4 +217,40 @@ describe('settings → offload', () => {
     vi.advanceTimersByTime(4000)
     await waitFor(() => expect(getOffloadAgents).toHaveBeenCalledWith(true))
   })
+
+  // 用户 11-08 19:5x：「这个卡片和 Provider 里面的卡片没有共用同一个样式」。
+  // 诊断：卡壳本来就是同一件（`SettingsGroup` → `.dl-card`），差的是**行**——
+  // Providers 那些行第一格是一枚品牌方块（`EntityAvatar` 那一族），外包这一屏
+  // 第一格却是一颗状态点，行下还挂着几行正文（没装／自己关着／今天几轮）。
+  // 落地按卡片语法 §1 与 11-07 统一令：第一格给品牌方块，状态由控件的形状说话，
+  // 机器细节与用量收进悬停。
+  it('每行第一格是品牌方块，跟 Providers 那一屏同一件', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
+
+    const avatars = [...document.querySelectorAll('[data-testid^="offload-vendor-avatar-"]')]
+
+    expect(avatars.length).toBe(payload.agents.length)
+    // 方块壳归 `EntityAvatar`（32px 的方块：品牌字形或首字母）。
+    expect(avatars[0].querySelector('span[aria-hidden="true"]')).toBeTruthy()
+  })
+
+  it('状态由控件的形状说话：卡面上不写状态句，机器细节与用量进悬停', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
+
+    // 「没装」「自己关掉的」「今天几轮」都不再占卡面（行上不写状态句子）。
+    expect(screen.queryByText('not installed on this machine')).toBeNull()
+    expect(screen.queryByText(/This switch is off/)).toBeNull()
+    expect(screen.queryByText(/today 1/)).toBeNull()
+
+    // 但它们一句都没丢：都在悬停里（后端给的原因仍是原话，不许改写）。
+    const tips = [...document.querySelectorAll('[title]')].map(node => node.getAttribute('title') || '')
+
+    expect(tips.some(tip => tip.includes('today 1 · — · 2026-10-22 15:11'))).toBe(true)
+    expect(tips.some(tip => tip.includes(payload.agents[0].why_not))).toBe(true)
+    expect(tips.some(tip => tip.includes('not installed on this machine'))).toBe(true)
+  })
 })

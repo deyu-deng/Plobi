@@ -7,29 +7,30 @@
  * （那边自己调 `/api/external-sessions/sources`），这一屏只管「允不允许把活交给它」。
  *
  * 这一屏的形状（卡片系统统一模板，与三类 provider 卡同形）：
- * - 左边一颗状态点 + 名字 + 一句 i18n 简介（这家软件能外包什么类型的活、适配到哪一步）；
+ * - 左边**一枚品牌方块**（品牌字形或首字母，与 Providers 那一屏同一颗 `EntityAvatar`）
+ *   ＋ 名字 ＋ 一句 i18n 简介（这家软件能外包什么类型的活、适配到哪一步）；
  * - 右边只有两态：**没配好**给加号（点开是下载/登录的引导），**配好了**才是开关；
+ * - 状态由控件的形状说话（`+`＝没配好，开关＝配好了），**坏了才在控件旁一颗红点**
+ *   ——11-07 统一令第 2 条；从前标题前那颗状态点与右侧控件说的是同一件事，撤掉；
  * - 能不能用仍由后端一处判据给（`availability()`），这里不自己判第二遍；
- * - 机器细节（二进制、版本、权限档、会话号、后端给的原因）收进悬停提示，卡面只留人话。
+ * - 机器细节（二进制、版本、权限档、会话号、后端给的原因、今天几轮花了多少）收进悬停提示，
+ *   卡面只留人话。
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
 import { vendorLabelFor } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Plus, RefreshCw } from '@/lib/icons'
-import { cn } from '@/lib/utils'
 
-import { getOffloadAgents, startOffloadLogin, type OffloadAgent, type OffloadPayload, setOffloadAgentEnabled } from './offload/api'
+import { ConnectionControl } from './connection-control'
+import { OffloadVendorAvatar } from './offload-vendor-avatar'
+import { getOffloadAgents, type OffloadAgent, type OffloadPayload, setOffloadAgentEnabled, startOffloadLogin } from './offload/api'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 
 const CAPTION =
   'mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)'
-
-const REASON =
-  'mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-danger)'
 
 /** UTC ISO → 到分钟，不做时区换算（说真话：后端给什么写什么）。 */
 function shortTime(iso: string): string {
@@ -129,7 +130,8 @@ export function OffloadSettings() {
     return s.loginUnknown
   }
 
-  // 机器细节（二进制、版本、旗标、会话号、后端给的原因）进悬停提示：屏上只留「这是什么 + 现在能不能用」。
+  // 机器细节（二进制、版本、旗标、会话号、后端给的原因、今天几轮花了多少）进悬停提示：
+  // 屏上只留「这是什么」——状态由控件的形状说话，坏了才在控件旁一颗红点。
   const agentTip = (agent: OffloadAgent): string =>
     [
       agent.installed ? `${agent.binary}${agent.version ? ` · ${agent.version}` : ''}` : s.notInstalled,
@@ -137,7 +139,16 @@ export function OffloadSettings() {
       loginText(agent),
       agent.why_not,
       agent.resume_supported ? s.resumeYes : s.resumeNo,
-      agent.last_round?.external_session ? `${s.sessionId} ${agent.last_round.external_session}` : ''
+      agent.last_round?.external_session ? `${s.sessionId} ${agent.last_round.external_session}` : '',
+      // 用量的读数搬进悬停：它不是「这是什么」，留在卡面上只会把这一行撑高，
+      // 与 Providers 那些行不是一套形状（卡片语法 §1：一行只有一行正文）。
+      agent.today.rounds > 0 || agent.today.last_ts
+        ? `${s.today} ${agent.today.rounds} · ${money(agent.today.total_usd)}${
+            agent.today.last_ts ? ` · ${shortTime(agent.today.last_ts)}` : ''
+          }`
+        : '',
+      // 自己关掉的那一格不是坏了，是关着——开关的形状已经说了，这句进悬停。
+      agent.installed && agent.logged_in.value !== false && !agent.enabled ? s.switchOff : ''
     ]
       .filter(Boolean)
       .join('\n')
@@ -178,15 +189,25 @@ export function OffloadSettings() {
                 ? ''
                 : agent.why_not
 
+          // 「坏了」＝开着却服务不了这一回合：控件不变（开关仍然可点），旁边多一颗红点，
+          // 原因进悬停（11-07 统一令：形状说话，坏了才红点）。
+          const broken = configured && agent.enabled && !agent.can_use
+
           return (
             <ListRow
               action={
                 configured ? (
-                  <Switch
-                    aria-label={`${s.allowSwitch} · ${agent.name}`}
+                  /* 右侧那**一颗**控件（`ConnectionControl`，与 Providers/Sources 同一件）：
+                     配好了是开关；坏了不换控件，旁边一颗红点。 */
+                  <ConnectionControl
+                    busy={pending === agent.name}
                     checked={agent.enabled}
-                    disabled={pending === agent.name}
-                    onCheckedChange={next => void toggle(agent, next)}
+                    configureLabel={s.setup}
+                    error={broken}
+                    errorTitle={reason}
+                    mode="toggle"
+                    onToggle={next => void toggle(agent, next)}
+                    toggleLabel={`${s.allowSwitch} · ${agent.name}`}
                   />
                 ) : (
                   <Button
@@ -197,6 +218,7 @@ export function OffloadSettings() {
                       void launchLogin(agent)
                     }}
                     size="icon-sm"
+                    title={reason}
                     type="button"
                     variant="secondary"
                   >
@@ -205,45 +227,20 @@ export function OffloadSettings() {
                 )
               }
               below={
-                <>
-                  {reason ? (
-                    <p className={REASON} role="note">
-                      {reason}
-                    </p>
-                  ) : null}
-                  {configured && !agent.enabled ? (
-                    <p className={CAPTION} role="note">
-                      {s.switchOff}
-                    </p>
-                  ) : null}
-                  {agent.today.rounds > 0 || agent.today.last_ts ? (
-                    <p className={CAPTION}>
-                      {s.today} {agent.today.rounds} · {money(agent.today.total_usd)}
-                      {agent.today.last_ts ? ` · ${shortTime(agent.today.last_ts)}` : ''}
-                    </p>
-                  ) : null}
-                  {guide === agent.name ? (
-                    <p className={CAPTION} role="note">
-                      {agent.installed ? s.loginGuide : s.installGuide}
-                    </p>
-                  ) : null}
-                </>
+                /* 只留「点开加号之后的那句引导」——那是这颗控件的内容，不是状态句。
+                   机器细节、原因与用量都在悬停里（`agentTip`）。 */
+                guide === agent.name ? (
+                  <p className={CAPTION} role="note">
+                    {agent.installed ? s.loginGuide : s.installGuide}
+                  </p>
+                ) : null
               }
               description={s.intro[agent.name] ?? s.introFallback}
+              icon={<OffloadVendorAvatar name={agent.name} />}
               key={agent.name}
               title={
-                <span className="flex min-w-0 items-center gap-2" title={agentTip(agent)}>
-                  <span
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      !configured || !agent.enabled
-                        ? 'bg-(--ui-stroke-secondary)'
-                        : agent.can_use
-                          ? 'bg-primary'
-                          : 'bg-destructive'
-                    )}
-                  />
-                  <span className="truncate">{vendorLabelFor(agent.name)}</span>
+                <span className="block truncate" title={agentTip(agent)}>
+                  {vendorLabelFor(agent.name)}
                 </span>
               }
             />
