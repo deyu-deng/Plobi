@@ -117,7 +117,16 @@ export function markConnected(app: {
     // transient frame from blanking the picker.
     id: app.id,
     name: app.name ?? previous?.name ?? DESKTOP_QUOTA_NAMES[app.id] ?? app.id,
-    connected: true,
+    // The user's 2026-11-08 invariant: a switch that is ON must mean this software can
+    // actually serve a turn right now. So `connected` is not "signed in over there" any
+    // more — it is "this frame gave it at least one pickable model". Never configured, or
+    // configured but refused (expired lease, spent allowance, no tool-capable leg) ⇒
+    // false ⇒ the card shows the plus, not an open switch. A frame the hub did not answer
+    // (`answered === false`) is not a verdict: carry the last truth forward instead of
+    // reporting an outage as "you never configured this".
+    connected: app.answered === false
+      ? (previous?.connected ?? false)
+      : (app.models ?? previous?.models ?? []).length > 0,
     // An explicit connect is the user changing their mind about a Disconnect, so
     // the opt-out goes with it. A frame that arrives on its own does NOT come
     // through here — see `applyDiscoveredQuotaApps`.
@@ -553,7 +562,10 @@ export function hubAppOfModel(model: string): ConnectedDesktopApp | null {
 
   const app = $connectedDesktopApps.get()[appId]
 
-  return app?.connected && !app.optedOut ? app : null
+  // Not gated on `connected`: since 2026-11-08 that flag means "usable right now", and a
+  // configured-but-refused leg must still be explainable ("gone: credential_expired"),
+  // not mistaken for somebody else's model. Routability is `isQuotaAppSlug`'s job.
+  return app && !app.optedOut ? app : null
 }
 
 /**

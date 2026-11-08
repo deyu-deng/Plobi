@@ -193,10 +193,16 @@ describe('ChatSurface — 切换时的加载态与空态（WP-AGENT-RAIL-LIVE �
     renderSurface(<ChatSurface scope={agentScope('agenda')} />)
 
     const empty = screen.getByTestId('chat-surface-empty')
-    // 名字在这里（locale 无关）；提示那句跟着当前语言走（测试环境是 en），
-    // 所以只钉「除了名字之外还有一段提示」，不把它钉成某一种译文。
-    expect(empty.textContent).toContain('日程秘书')
-    expect(empty.querySelectorAll('p').length).toBe(2)
+    // 空态上头是**品牌几何字标**（随主题色），底下是一句提示（用户 11-08：「空态现在就是
+    // 一个 Plobi 的纯文字…能不能也换成随着主题色变化的 wordmark」）。Agent 的名字不在这儿
+    // ——它写在面板抬头上；那一行活文字撞上产品名时，看着像一行没排版的品牌字样。
+    const wordmark = empty.querySelector('svg[role="img"]')
+    expect(wordmark?.getAttribute('aria-label')).toBe('Plobi')
+    expect(wordmark?.getAttribute('class')).toContain('text-(--theme-primary)')
+    // 提示那句跟着当前语言走（测试环境是 en），所以只钉「除字标之外还有一段提示」，
+    // 不把它钉成某一种译文。
+    expect(empty.querySelectorAll('p').length).toBe(1)
+    expect(empty.textContent).not.toContain('日程秘书')
   })
 
   it('有消息时不显示空态', async () => {

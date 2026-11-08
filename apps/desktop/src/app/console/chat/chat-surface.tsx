@@ -37,6 +37,7 @@ import { $consoleAgents } from '@/app/console/store/agents'
 import { secretaryShellLabel } from '@/app/desktop-controller-utils'
 import { Thread } from '@/components/assistant-ui/thread'
 import type { ThreadSpeaker } from '@/components/assistant-ui/thread/types'
+import { PlobiWordmark } from '@/components/brand-mark'
 import { useI18n } from '@/i18n'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { cn } from '@/lib/utils'
@@ -143,15 +144,12 @@ export function ChatSurface({
 
   // 空态：一个还没有对话的 Agent 不该是一片纯白（用户原话「什么东西都没有了」）。
   // 只在**既没内容、也不在忙、也不在进入中**时显示——加载态由遮罩负责，两者不叠。
-  const agentName =
-    scope.kind === 'agent'
-      ? (agents.find(agent => agent.id === scope.id)?.name || scope.id || '').trim()
-      : ''
 
   // 每条回答的署名（用户 11-03：「消息要加在气泡上面旁边或者侧边加上 Agent 的名字和
   // 头像」）。名字与卡片抬头、窗口标题同一份推导（裁定 16 的 `secretaryShellLabel`），
   // 字形与颜色取名册那一行——与左栏那一列同一份身份，这里再造一套就会两处漂。
   const rosterRow = scope.kind === 'agent' ? agents.find(agent => agent.id === scope.id) : undefined
+
   const assistantSpeaker: ThreadSpeaker = {
     color: rosterRow?.color,
     icon: rosterRow?.icon,
@@ -178,9 +176,11 @@ export function ChatSurface({
               className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center"
               data-testid="chat-surface-empty"
             >
-              {agentName ? (
-                <p className="text-sm font-medium text-foreground">{agentName}</p>
-              ) : null}
+              {/* 空态：品牌几何字标（随主题色），底下是一句提示。
+                  原来这里写的是 Agent 的名字——那个名字撞上产品名时，活文字看着像
+                  一行没排版的品牌字样（用户 11-08：「空态现在就是一个 Plobi 的纯文字」）。
+                  名字本来就在面板抬头写着，这里不重复。 */}
+              <PlobiWordmark className="w-48" />
               <p className="text-xs text-(--ui-text-tertiary)">{t.console.chatEmptyHint}</p>
             </div>
           )}

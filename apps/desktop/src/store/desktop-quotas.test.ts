@@ -230,8 +230,11 @@ describe('hub verdict frames', () => {
     applyDiscoveredQuotaApps([frame('antigravity', { models: [], blocked: { 'gemini-3.8': 'credential_expired' } })])
 
     expect($connectedDesktopApps.get().antigravity?.blocked).toEqual({ 'gemini-3.8': 'credential_expired' })
-    // connected still, so Settings can show the software and say why it is idle
-    expect($connectedDesktopApps.get().antigravity?.connected).toBe(true)
+    // The record stays so Settings can name the software and say why it is idle — but
+    // since the 2026-11-08 invariant an idle leg is NOT "connected": the card shows the
+    // plus/red dot, and the reason rides in `blocked`, not in a lit switch.
+    expect($connectedDesktopApps.get().antigravity?.connected).toBe(false)
+    expect(quotaSelectionVerdict('antigravity/gemini-3.8')).toEqual({ state: 'gone', reason: 'credential_expired' })
   })
 
   it('reads a non-hub model id as not ours to police', () => {
@@ -490,5 +493,49 @@ describe('quota store hygiene', () => {
     expect(rows).toHaveLength(2)
     expect(rows.map(row => row.ui_key)).toEqual(['aigw::workbuddy', 'aigw::workbuddy_api'])
     expect(new Set(rows.map(row => row.ui_key)).size).toBe(2)
+  })
+})
+
+// The user's 2026-11-08 invariant: an open switch must mean the software can serve a
+// turn right now. A fresh install with nothing configured is a plus, never a pre-lit
+// switch; a configured-but-refused leg is not "on" either; and an unreachable hub is
+// not a verdict at all.
+describe('connected means usable-now, not signed-once', () => {
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('a fresh install with an empty answered frame stays unconnected (plus, not switch)', () => {
+    applyDiscoveredQuotaApps([frame('antigravity', { models: [] })])
+
+    expect($connectedDesktopApps.get().antigravity.connected).toBe(false)
+    expect(isQuotaAppSlug('antigravity')).toBe(false)
+  })
+
+  it('an answered frame with pickable models connects it', () => {
+    applyDiscoveredQuotaApps([frame('antigravity', { models: ['claude-opus-5-5'] })])
+
+    expect($connectedDesktopApps.get().antigravity.connected).toBe(true)
+  })
+
+  it('a leg that loses its last pickable model goes back to unconnected', () => {
+    applyDiscoveredQuotaApps([frame('kiro_cli', { models: ['deepseek-3.2'] })])
+    applyDiscoveredQuotaApps([frame('kiro_cli', { models: [], blocked: { 'deepseek-3.2': 'credential_expired' } })])
+
+    expect($connectedDesktopApps.get().kiro_cli.connected).toBe(false)
+  })
+
+  it('an unanswered frame carries the last truth instead of blanking it', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    applyDiscoveredQuotaApps([frame('workbuddy', { answered: false, models: [] })])
+
+    expect($connectedDesktopApps.get().workbuddy.connected).toBe(true)
+  })
+
+  it('turning a never-configured leg on is a request, not a lit switch', () => {
+    markConnected({ answered: false, id: 'qoder' })
+
+    expect($connectedDesktopApps.get().qoder.connected).toBe(false)
+    expect($connectedDesktopApps.get().qoder.optedOut).toBe(false)
   })
 })

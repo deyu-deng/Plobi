@@ -449,9 +449,9 @@ export function ChatSidebar({
             {middleView === 'outsourced' && l2Id ? (
               <AgentOffloadPanel agentId={l2Id} />
             ) : (
-              <SidebarMenu className="gap-px">
+              <div className="flex min-h-full flex-col">
                 {secretaryAgentsError && (
-                  <div className="mb-1 flex items-start gap-2 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
+                  <div className="mb-1 flex shrink-0 items-start gap-2 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
                     <span className="min-w-0 flex-1" title={secretaryAgentsError}>
                       {c.agentsLoadFailed}
                     </span>
@@ -463,7 +463,7 @@ export function ChatSidebar({
 
                 {secretaryAgents.length === 0 ? (
                   secretaryAgentsLoading ? (
-                    <div className="px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
+                    <div className="shrink-0 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
                       {c.agentsLoading}
                     </div>
                   ) : (
@@ -471,32 +471,37 @@ export function ChatSidebar({
                     // 产品化了…要不就用我们设计的 Plobi 样式的图标。淡淡的在空态背景里。」）。
                     // 产品不替用户预设角色，所以这里也只留一个记号；侧栏顶部那行「新建智能体」
                     // 一直在，加角色的入口没少。
-                    <div className="flex justify-center px-2 py-6">
+                    // 位置：在中段这块可用空间里**上下居中**（用户 11-08：「它在侧边栏出现的
+                    // 位置上下没有居中」）——原来它贴着「Agents」那几行、下面空一大片，看着像
+                    // 悬在半空。图形一个字没改（用户：「没要你改小乌龟的形状」），只是落位。
+                    <div className="flex flex-1 items-center justify-center px-2 py-6">
                       <BrandMark className="size-12 bg-transparent opacity-30" />
                     </div>
                   )
                 ) : (
-                  agentCategoryGroups.map(group => (
-                    <AgentCategoryGroup
-                      activeAgentId={l2Id}
-                      activeSessionId={activeSidebarSessionId}
-                      agents={group.agents}
-                      category={group.category}
-                      hideSessions
-                      icon={<Codicon name={categoryIcon(group.category)} size="0.875rem" />}
-                      key={group.category}
-                      label={c.agentCategories[group.category] ?? group.category}
-                      onArchiveSession={onArchiveSession}
-                      onDeleteSession={onDeleteSession}
-                      onNavigateAgent={id => navigate(agentRoute(id))}
-                      onResumeSession={onResumeSession}
-                      onTogglePin={session => pinSession(sessionPinId(session))}
-                      sessionsByProfile={sessionsByAgentProfile}
-                      workingSessionIdSet={workingSessionIdSet}
-                    />
-                  ))
+                  <SidebarMenu className="shrink-0 gap-px">
+                    {agentCategoryGroups.map(group => (
+                      <AgentCategoryGroup
+                        activeAgentId={l2Id}
+                        activeSessionId={activeSidebarSessionId}
+                        agents={group.agents}
+                        category={group.category}
+                        hideSessions
+                        icon={<Codicon name={categoryIcon(group.category)} size="0.875rem" />}
+                        key={group.category}
+                        label={c.agentCategories[group.category] ?? group.category}
+                        onArchiveSession={onArchiveSession}
+                        onDeleteSession={onDeleteSession}
+                        onNavigateAgent={id => navigate(agentRoute(id))}
+                        onResumeSession={onResumeSession}
+                        onTogglePin={session => pinSession(sessionPinId(session))}
+                        sessionsByProfile={sessionsByAgentProfile}
+                        workingSessionIdSet={workingSessionIdSet}
+                      />
+                    ))}
+                  </SidebarMenu>
                 )}
-              </SidebarMenu>
+              </div>
             )}
           </div>
 
