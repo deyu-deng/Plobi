@@ -122,3 +122,23 @@ def test_the_engine_port_is_seeded_before_the_catch_all_is_chosen():
 
     assert seeded["engine"]["mixed_port"] == DEFAULT_MIXED_PORT
     assert seeded["rules"][0]["via"] != "proxy:前门"
+
+
+def test_a_table_that_already_points_traffic_at_the_engine_gets_the_permission():
+    """设置页整块保存那一趟不带 ``engine.enabled``——界面里没这个字段。
+
+    于是表里已经写着 ``system_proxy.enabled: true``，授权位还是模板默认 false，而
+    snapshot() 先读授权位：开关亮了、引擎没起。只有表确实把流量交给引擎时才补，
+    没表态的表保持关闭。
+    """
+    seeded, notes = seed_engine_defaults(
+        {"nodes": {"东京-01": dict(NODE)}, "system_proxy": {"enabled": True}}
+    )
+
+    assert seeded["engine"]["enabled"] is True
+    assert any("engine.enabled" in note for note in notes)
+
+    quiet, quiet_notes = seed_engine_defaults({"nodes": {"东京-01": dict(NODE)}})
+
+    assert quiet["engine"].get("enabled") is not True, "没人碰过的表不该被悄悄打开"
+    assert not any("engine.enabled" in note for note in quiet_notes)

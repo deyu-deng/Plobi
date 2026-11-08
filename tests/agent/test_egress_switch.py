@@ -191,3 +191,43 @@ def test_the_status_snapshot_hands_over_the_switch_and_the_block(monkeypatch):
     assert snap["tun"]["requested"] is False, "no OS probes without a request"
     assert snap["tun"]["block"]["name"] == tun.DEFAULT_NAME
     assert snap["tun"]["block"]["stack"] == tun.DEFAULT_STACK
+
+
+def test_the_switch_is_also_the_permission_the_engine_checks_first():
+    """开关就是那次「允许本机多一个路由权威」的选择，engine.enabled 得跟着走。
+
+    分家时的实测形状：底栏开关亮着、托盘报「未启用」、引擎从没起来。
+    engine.py 的 snapshot() 第一道闸读的就是 engine.enabled，而它只在模板里有默认
+    false，没有任何界面能把它写成 true——所以这个开关当时点什么都没用。
+    """
+    on = switch.set_transport(_egress(), "system", tun_block={})
+    assert on["engine"]["enabled"] is True
+
+    tun_on = switch.set_transport(_egress(), "tun", tun_block=tun.default_block())
+    assert tun_on["engine"]["enabled"] is True
+
+    off = switch.set_transport(on, "off", tun_block={})
+    assert off["engine"]["enabled"] is False, "关掉开关就是把授权一起收回"
+
+
+#: 升级上来的旧表与设置页写出的表都没有 ``engine.enabled`` 这一格。
+_ENGINE_BEFORE_THE_PERMISSION = {"mixed_port": 7895, "dns": {"default-nameserver": ["223.5.5.5"]}}
+
+
+def test_an_absent_permission_key_follows_the_carrier_the_table_already_chose():
+    """缺键不等于说不：表里已经写着把流量交给引擎，就是那次授权。
+
+    读成 ``get("enabled", False)`` 就分不开「用户说了不」和「没人写过这一格」，
+    于是升级上来的表全是后者——开关亮着、托盘说未启用、引擎一次都没起过。
+    """
+    table = _table(engine=dict(_ENGINE_BEFORE_THE_PERMISSION), system_proxy={"enabled": True})
+    assert table.engine_enabled is True
+
+    quiet = _table(engine=dict(_ENGINE_BEFORE_THE_PERMISSION), system_proxy={"enabled": False})
+    assert quiet.engine_enabled is False, "没表态、也没有承载 ⇒ 就是关着"
+
+    refused = _table(
+        engine={**_ENGINE_BEFORE_THE_PERMISSION, "enabled": False},
+        system_proxy={"enabled": True},
+    )
+    assert refused.engine_enabled is False, "显式写下的 false 是有人真的说了不"

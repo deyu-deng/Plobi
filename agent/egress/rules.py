@@ -638,7 +638,7 @@ def parse_table(raw: Any) -> Table:
         mirrors=mirrors,
         nodes=nodes,
         groups=groups,
-        engine_enabled=bool(engine_raw.get("enabled", False)),
+        engine_enabled=_engine_enabled(engine_raw, sysp_raw, tun),
         engine_binary=str(engine_raw.get("binary", "") or "").strip(),
         engine_mixed_port=mixed_port,
         engine_include=_parse_include(engine_raw),
@@ -646,6 +646,27 @@ def parse_table(raw: Any) -> Table:
         system_proxy_enabled=bool(sysp_raw.get("enabled", False)),
         engine_tun=tun,
     )
+
+
+def _engine_enabled(engine_raw: dict, sysp_raw: dict, tun: dict) -> bool:
+    """Is this machine allowed to grow another routing authority?
+
+    ``engine.enabled`` is exactly that permission, and it used to be read as
+    ``get("enabled", False)`` — which cannot tell "the user said no" apart from "nobody ever
+    wrote this key".  Both a table written before any switch wrote it, and a table saved by
+    the settings page (that page has no such field), land in the second case: the switch
+    reads 已开启 off ``system_proxy``/``tun`` while ``engine.snapshot()`` refuses to start
+    anything over ``engine.enabled is false``.  That is the measured shape of "the switch is
+    on, the tray says 未启用, the engine never came up".
+
+    So an **absent** key falls back to what the table already declares it wants — traffic
+    handed to the engine (system proxy or TUN) *is* the ask.  An **explicit** ``false`` is
+    still a no: that one was written by somebody who meant it.
+    """
+    declared = engine_raw.get("enabled")
+    if declared is not None:
+        return bool(declared)
+    return bool(sysp_raw.get("enabled")) or bool(tun.get("enabled"))
 
 
 #: Stacks mihomo can actually run on Windows — the names are the engine's own spelling.

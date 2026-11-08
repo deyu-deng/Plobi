@@ -108,6 +108,10 @@ def set_transport(block: dict[str, Any] | None, transport: str, *, tun_block: di
     else:
         engine["tun"] = {**carried, "enabled": False}
     out["system_proxy"] = {"enabled": transport == "system"}
+    # 开关本身就是「允许这台机器上多一个路由权威」的那次选择。engine.enabled 必须随
+    # transport 一起走：它是 snapshot() 的第一道闸（agent/egress/engine.py），不跟着写
+    # 就会出现「开关亮着、托盘报未启用、引擎从没起来」——两个状态各说各话。
+    engine["enabled"] = transport != "off"
     return out
 
 

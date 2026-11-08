@@ -78,6 +78,27 @@ export function cleanStaleAppOutDir(appOutDir) {
   return true
 }
 
+/**
+ * 路由引擎源目录：`PLOBI_EGRESS_SRC` 优先，其次仓内 `.egress-src/ship`。
+ *
+ * 裁定 134 让这几个二进制不进 git，于是「不写进代码」很容易被读成「构建时也不用带」——
+ * 结果 before-pack 只传了 destDir，stage 拿到的 srcDir 永远是空串，包里只剩 MISSING.txt。
+ * 这里给出显式回退；真找不到时返回空串，让 stage 照实报 missing，不假装带上了。
+ */
+function resolveEgressSrc(projectDir) {
+  const repoRoot = path.resolve(projectDir, '..', '..')
+  const candidates = [
+    process.env.PLOBI_EGRESS_SRC,
+    path.join(repoRoot, '.egress-src', 'ship'),
+    path.join(repoRoot, '.egress-src'),
+    path.join(projectDir, '.egress-src', 'ship')
+  ]
+  for (const dir of candidates) {
+    if (dir && existsSync(dir)) return dir
+  }
+  return ''
+}
+
 export default async function beforePack(context) {
   const appOutDir = context && context.appOutDir
 
@@ -87,10 +108,13 @@ export default async function beforePack(context) {
   try {
     const projectDir = (context && (context.appDir || context.projectDir)) ||
       (context && context.packager && context.packager.projectDir) || process.cwd()
-    const plan = await stageEgressAssets({ destDir: path.join(projectDir, 'build', 'egress') })
+    const srcDir = resolveEgressSrc(projectDir)
+    const plan = await stageEgressAssets({ srcDir, destDir: path.join(projectDir, 'build', 'egress') })
 
     if (!plan.missing.length) {
       console.log(`[before-pack] 随包带上路由引擎：${plan.copy.map((item) => item.name).join('、')}`)
+    } else {
+      console.warn(`[before-pack] 随包仍缺路由引擎：${plan.missing.join('、')}（源：${srcDir || '未找到'}）`)
     }
   } catch (err) {
     console.warn(`[before-pack] egress asset staging did not run (${err.message}); the app will report the engine as not shipped`)

@@ -137,6 +137,16 @@ def _catch_all_exit(block: dict[str, Any], mixed_port: int, prefer_exit: str = "
     return None
 
 
+def _transport_declared_on(network_block: dict[str, Any]) -> bool:
+    """这张表是不是已经把流量交给引擎了（系统代理接管，或 TUN 档）。"""
+    system_proxy = network_block.get("system_proxy")
+    if isinstance(system_proxy, dict) and system_proxy.get("enabled") is True:
+        return True
+    engine = network_block.get("engine")
+    tun = engine.get("tun") if isinstance(engine, dict) else None
+    return isinstance(tun, dict) and tun.get("enabled") is True
+
+
 def seed_engine_defaults(network_block: Any, prefer_exit: str = "") -> tuple[Any, list[str]]:
     """Complete a table that arrived halfway, and say exactly what was filled in.
 
@@ -186,6 +196,16 @@ def seed_engine_defaults(network_block: Any, prefer_exit: str = "") -> tuple[Any
         }
         notes.append(
             "engine.dns 缺失，已补上公共解析器（节点按名字寻址，没有它引擎起得来、请求全 502）"
+        )
+
+    # 设置页整块保存那一趟永远不带 engine.enabled：界面里没这个字段，于是表里
+    # 已经把系统代理指过来了，引擎授权位却还是默认的 false。snapshot() 先读授权位，
+    # 结果就是「开关亮着、引擎从没起过」。只有在这张表确实已经把流量交给引擎时才补，
+    # 没人碰过的表保持关闭（那是它自己的选择）。
+    if engine.get("enabled") is not True and _transport_declared_on(seeded):
+        engine["enabled"] = True
+        notes.append(
+            "engine.enabled 未声明，已开启（表里已把流量交给引擎，不开启等于开关点了没反应）"
         )
 
     if engine:
