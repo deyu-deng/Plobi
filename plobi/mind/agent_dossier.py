@@ -254,6 +254,34 @@ def load_entries(roster_path: Path | None = None) -> tuple[Path, list[Any]]:
     return target, entries
 
 
+# 桌面那边的 Agent 作用域哨兵：``'l1'`` = 总秘书。
+#
+# 它**不是名册里的 id**——名册里 L1 那一行的 name 是 ``secretary``（role
+# ``l1_secretary``）。档案跟着 Agent 走 ⇒ 收到作用域的那一格，得先把它翻译成
+# 名册那一行，否则档案卡去要 ``/api/surface/agents/l1`` ⇒ 404
+# 「agent 'l1' is not registered」（2026-11-08 现场）。
+L1_SCOPE = "l1"
+
+
+def resolve_dossier_id(name: str, roster_path: Path | None = None) -> str:
+    """作用域 → 名册 id。认得出就翻译；认不出原样还回去（后面照旧 404）。
+
+    翻译走**名册**（唯一真源）：用户给秘书改名字，映射跟着走，不另立一张对照表。
+    名册里没有 L1 那一行时原样还回去——那时候该 404 就 404，不许瞎猜一个。
+    """
+    from plobi.agents.registry import L1_SECRETARY_ROLE
+
+    text = (name or "").strip()
+    if text.casefold() != L1_SCOPE:
+        return text
+    _, entries = load_entries(roster_path)
+    for entry in entries:
+        role = str(getattr(entry, "role", "") or "").strip().casefold()
+        if role == L1_SECRETARY_ROLE.casefold():
+            return entry.name
+    return text
+
+
 def build_index(roster_path: Path | None = None) -> dict[str, Any]:
     target, entries = load_entries(roster_path)
     agents = []

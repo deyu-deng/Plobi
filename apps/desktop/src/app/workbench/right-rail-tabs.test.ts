@@ -49,22 +49,32 @@ describe('右栏页签：资料页签没了，换成笔记', () => {
 })
 
 describe('档案入口：对话界面右上角那一枚图标', () => {
-  it('对话界面挂了档案卡片，不是进度面板', () => {
-    const src = read('chat/index.tsx')
-    expect(src).toContain('AgentDossierCard')
+  it('入口挂在**真正在用的那一面**的抬头上', () => {
+    // console 这一面用的是 `ChatSurface`，它上面那张抬头是 `ChatTopBar`
+    // （`desktop-views.tsx` 里紧挨着渲染）。旧的 `chat/index.tsx` 那一套壳已经不在
+    // 路上了（11-05 撤了纯对话路由），入口挂在那儿就一次都没在用户眼前出现过
+    // （用户 11-08 16:4x：「对了档案的图标怎么还没有出现呀」）。
+    const topBar = read('shell/chat-top-bar.tsx')
+    expect(topBar).toContain('AgentDossierCard')
+    // 旧壳里不留第二份入口——两份形状迟早会漂。
+    expect(read('chat/index.tsx')).not.toContain('AgentDossierCard')
   })
 
-  it('档案入口认的是 Agent 作用域（$agentScope），不是会话 id', () => {
-    const src = read('chat/index.tsx')
-    // 档案跟着 Agent 走：Plobi 没有「会话」这个概念，一个 Agent 就是一张嘴，
-    // 同一个 Agent 的多轮对话共用同一份档案 ⇒ 键必须是 Agent id。
-    expect(src).toContain('$agentScope')
-    expect(src).toMatch(/AgentDossierCard agentId=\{agentScope\}/)
+  it('档案跟着 Agent 走，不跟着会话走', () => {
+    const src = read('shell/chat-top-bar.tsx')
+    // Plobi 没有「会话」这个概念，一个 Agent 就是一张嘴，同一个 Agent 的多轮对话
+    // 共用同一份档案 ⇒ 键必须是 Agent id。L1 那一格给哨兵 `'l1'`（总秘书），
+    // 后端把它翻译成名册里 `role=l1_secretary` 那一行（名册是唯一真源）。
+    expect(src).toMatch(/scope\.kind === 'agent' \? scope\.id : 'l1'/)
+    expect(src).toMatch(/AgentDossierCard agentId=\{dossierAgentId\}/)
   })
 
-  it('L1（秘书）下不出那个入口 —— 秘书没有自己的档案', () => {
-    const src = read('chat/index.tsx')
-    expect(src).toMatch(/agentScope\s*!==\s*'l1'/)
+  it('入口在每个作用域都出现 —— 不许按作用域把它藏起来', () => {
+    const src = read('shell/chat-top-bar.tsx')
+    // L1 那一屏也是主界面本体，它同样有一格档案；秘书没有档案 ≠ 秘书这一屏
+    // 不许有入口。
+    expect(src).not.toMatch(/scope\.kind === 'agent' &&/)
+    expect(src).not.toMatch(/scope\.kind !== 'l1'/)
   })
 
   it('档案卡片的钩子不在提前 return 之后（React 规则）', () => {

@@ -75,6 +75,63 @@ def test_roster_failure_is_503(monkeypatch, tmp_path):
     assert "root gone" in json.loads(response.body)["error"]
 
 
+# ── 作用域哨兵 → 名册那一行（WP-VAULT-TAKEOVER 11-08 续）─────────────────────
+
+
+@pytest.fixture()
+def l1_scope_live(monkeypatch, tmp_path):
+    """名册里有 L1 那一行（``role=l1_secretary``）时的档案读面。"""
+    mind = tmp_path / "mind"
+    surface = tmp_path / "surface"
+    mind.mkdir(parents=True)
+    surface.mkdir(parents=True)
+    roster = textwrap.dedent(
+        """
+        version: 1
+        agents:
+          secretary:
+            role: l1_secretary
+            display_name: 总秘书
+        """
+    ).lstrip()
+    (tmp_path / "projects.yaml").write_text(roster, encoding="utf-8")
+    monkeypatch.setenv("MIND_ROOT", str(mind))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
+    return tmp_path
+
+
+def test_l1_scope_resolves_to_the_roster_row(l1_scope_live):
+    """``'l1'`` 是作用域哨兵，**不是**名册 id：档案读面要把它翻译成 L1 那一行。
+
+    不翻译的话档案卡去要 ``/api/surface/agents/l1`` ⇒ 404「agent 'l1' is not
+    registered」——那正是用户 11-08 16:4x 问「档案的图标怎么还没有出现」的另一半。
+    """
+    response = asyncio.run(surface_api.get_surface_agent("l1"))
+    body = response if isinstance(response, dict) else json.loads(response.body)
+    assert body["ok"] is True
+    assert body["data"]["id"] == "secretary"
+    assert body["data"]["displayName"] == "总秘书"
+
+
+def test_l1_scope_without_a_roster_row_is_404(l1_scope_live, tmp_path):
+    """名册里没有 L1 那一行 ⇒ 照旧 404，不许瞎猜一个 id 出来。"""
+    (tmp_path / "projects.yaml").write_text(
+        "version: 1\nagents:\n  Aura:\n    role: l2_project\n", encoding="utf-8"
+    )
+    response = asyncio.run(surface_api.get_surface_agent("l1"))
+    assert response.status_code == 404
+    assert json.loads(response.body)["ok"] is False
+
+
+def test_a_roster_row_name_still_works_as_before(l1_scope_live):
+    """翻译只认哨兵：名册里的 name 原样能用，不被改写。"""
+    response = asyncio.run(surface_api.get_surface_agent("secretary"))
+    body = response if isinstance(response, dict) else json.loads(response.body)
+    assert body["ok"] is True
+    assert body["data"]["id"] == "secretary"
+
+
 # ── 笔记栏：人在 Plobi 里编辑后整篇存回（WP-NOTES-WORKBENCH）─────────────────
 
 

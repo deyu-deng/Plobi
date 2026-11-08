@@ -116,7 +116,12 @@ async def get_surface_agent(name: str):
     DB 里存的是 plan/progress 的**正文**；文档元数据（文件名、时间、摘要）仍以文件系统为准，
     两条腿拼出来的形状与纯文件系统腿一致。
     """
-    from plobi.mind.agent_dossier import read_agent as fs_read_agent
+    from plobi.mind.agent_dossier import read_agent as fs_read_agent, resolve_dossier_id
+
+    # **作用域哨兵先翻译成名册 id**（桌面那边 L1 的哨兵是 ``'l1'``，名册里 L1
+    # 那一行的 name 是 ``secretary``）：两条腿都用同一个 id，否则档案卡去要
+    # ``/api/surface/agents/l1`` ⇒ 404「agent 'l1' is not registered」。
+    name = resolve_dossier_id(name)
 
     # 1. 先试数据库
     try:
