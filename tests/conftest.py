@@ -391,6 +391,23 @@ def _hermetic_environment(tmp_path, monkeypatch):
     except Exception:  # pragma: no cover - the import must never break the suite
         pass
 
+    # 3f. …and the **registry / installer-record** copies of the home pin, same reason.
+    #     `plobi_constants.get_plobi_home()` 的阶梯有两档读本机注册表：
+    #       · `HKCU\Environment\PLOBI_HOME`（老安装器的残留值，`_pinned_home_from_registry`）
+    #       · `HKCU\Software\Plobi\DataDir`（2026-11-08 起安装器唯一记录"用户选的数据目录"，
+    #         `_install_recorded_data_dir`）
+    #     两档都排在平台默认之前。若在本机真实注册表上保持活着，"PLOBI_HOME 未设 ⇒ 应回平台
+    #     默认"的用例全部会被这台机器的真实安装记录带偏（本机实测：`C:\...\LocalAppData\plobi`
+    #     会被解析成 `D:\Data\AppData\Plobi`）。⇒ 测试里把两档都钉成 None；要测这两档的用例
+    #     在自己体内 monkeypatch（见 tests/plobi/test_plobi_home_registry_fallback.py）。
+    try:
+        import plobi_constants as _plobi_constants
+
+        monkeypatch.setattr(_plobi_constants, "_install_recorded_data_dir", lambda: None)
+        monkeypatch.setattr(_plobi_constants, "_pinned_home_from_registry", lambda: None)
+    except Exception:  # pragma: no cover - the import must never break the suite
+        pass
+
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with
     #    C.UTF-8 locale; local dev often doesn't. Pin everything.
     monkeypatch.setenv("TZ", "UTC")

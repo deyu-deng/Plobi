@@ -31,6 +31,8 @@ from plobi_cli.agent_identity import resolve_profile_env
 def no_env_home(monkeypatch):
     """把 env 那一项摘掉，只留注册表那一条路。"""
     monkeypatch.delenv("PLOBI_HOME", raising=False)
+    # 开发态门牌也要摘：这机器上它是有值的，不摘会让"env 没有"的用例假失败。
+    monkeypatch.delenv("PLOBI_DEV_HOME", raising=False)
     # 上下文覆盖是第三优先级，摘掉它才测得到"env 没有"这条真路径。
     monkeypatch.setattr(plobi_constants, "_PLOBI_HOME_OVERRIDE", ContextVar("test_home_override", default=plobi_constants._UNSET))
 
@@ -109,3 +111,48 @@ def test_no_env_no_record_no_registry_returns_native(no_env_home, monkeypatch):
     monkeypatch.setattr(plobi_constants, "_pinned_home_from_registry", lambda: None)
 
     assert plobi_constants.get_plobi_home() == plobi_constants._get_platform_default_plobi_home()
+
+
+# ── 2026-11-08：开发态改用独立门牌 PLOBI_DEV_HOME ───────────────────────────
+#
+# 两份身份共用一个 PLOBI_HOME 名字是污染根源。开发态改认 PLOBI_DEV_HOME 之后，
+# 下面三条是它的全部约束：成对的身份优先级、以及"装机版门牌串进开发态变量"的自愈。
+
+
+def test_dev_home_wins_over_the_installer_record(no_env_home, monkeypatch):
+    """没人钉 PLOBI_HOME 时（手敲 plobi 的命令行），PLOBI_DEV_HOME 顶在安装记录之前。
+
+    这正是要修的那条：删掉用户级 PLOBI_HOME 后，命令行若退到 DataDir
+    就会读写装机版数据目录，两份数据搅在一起。
+    """
+    monkeypatch.setenv("PLOBI_DEV_HOME", r"D:\Data\AppData\Plobi-Dev")
+    monkeypatch.setattr(plobi_constants, "_install_recorded_data_dir", lambda: r"D:\Data\AppData\Plobi")
+
+    assert plobi_constants.get_plobi_home() == Path(r"D:\Data\AppData\Plobi-Dev")
+    assert plobi_constants.get_default_plobi_root() == Path(r"D:\Data\AppData\Plobi-Dev")
+
+
+def test_pinned_plobi_home_beats_dev_home(no_env_home, monkeypatch):
+    """隔离硬约束：装机版后端被父进程钉了 PLOBI_HOME 时，用户级 PLOBI_DEV_HOME 不许插队。
+
+    装机版桌面 spawn 后端会把 PLOBI_HOME 写进子进程 env，而子进程照样继承用户级
+    PLOBI_DEV_HOME。这条钉住"装机版永远读不到开发态目录"。
+    """
+    monkeypatch.setenv("PLOBI_HOME", r"D:\Data\AppData\Plobi")
+    monkeypatch.setenv("PLOBI_DEV_HOME", r"D:\Data\AppData\Plobi-Dev")
+    monkeypatch.setattr(plobi_constants, "_install_recorded_data_dir", lambda: r"D:\Data\AppData\Plobi")
+
+    assert plobi_constants.get_plobi_home() == Path(r"D:\Data\AppData\Plobi")
+
+
+def test_dev_home_equal_to_installer_record_is_ignored(no_env_home, monkeypatch):
+    """自愈：PLOBI_DEV_HOME 被写成了装机版目录（同址）⇒ 判污染忽略，退到安装记录。
+
+    与 `electron/data-root.ts` 2.1 的判定同一条规则：同一个值出现在两个身份的
+    门牌上时，说明有人写串了，宁可走安装记录也不要把开发态拽进装机版数据目录。
+    """
+    monkeypatch.setenv("PLOBI_DEV_HOME", r"D:\Data\AppData\Plobi")
+    monkeypatch.setattr(plobi_constants, "_install_recorded_data_dir", lambda: r"D:\Data\AppData\Plobi")
+    monkeypatch.setattr(plobi_constants, "_pinned_home_from_registry", lambda: None)
+
+    assert plobi_constants.get_plobi_home() == Path(r"D:\Data\AppData\Plobi")

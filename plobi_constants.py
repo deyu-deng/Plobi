@@ -112,6 +112,42 @@ def _install_recorded_data_dir() -> Optional[str]:
     return os.path.expandvars(text) or None
 
 
+def _dev_home_from_env() -> Optional[str]:
+    """Windows 开发机：``PLOBI_DEV_HOME`` 是**开发态专用**家门牌。
+
+    2026-11-08 起两份身份分家：装机版只认 ``HKCU\\Software\\Plobi\\DataDir``，
+    开发态认 ``PLOBI_DEV_HOME``。旧做法是让开发态借用 ``PLOBI_HOME``（同一个
+    名字装机版也在用），谁后写谁把对方带偏——见 :func:`_install_recorded_data_dir`
+    的注释。开发态改用独立变量名后，这条污染链就断了。
+
+    这个档位**必须排在** :func:`get_plobi_home` 的 ``PLOBI_HOME`` 之后：装机版
+    桌面起后端时会显式把解析好的 ``PLOBI_HOME`` 钉进子进程 env
+    （``electron/main.ts`` 的 ``dedupeEnvKeys(...) + PLOBI_HOME``），因此装机版
+    后端在第 2 档就命中、根本走不到这里。能走到这一档的只有"没人钉"的场景：
+    命令行 ``plobi``、更新器、计划任务。
+
+    污染自愈：值与 ``DataDir``（安装器记录）同址时判为装机版门牌串到了开发态
+    变量，直接忽略——与 ``electron/data-root.ts`` 2.1 的判定逐位一致。
+    """
+    raw = os.environ.get("PLOBI_DEV_HOME", "").strip()
+    if not raw:
+        return None
+    text = os.path.expandvars(raw)
+    if not text:
+        return None
+    recorded = _install_recorded_data_dir()
+    if recorded:
+        try:
+            same = os.path.normcase(os.path.abspath(text)) == os.path.normcase(
+                os.path.abspath(recorded)
+            )
+        except (OSError, ValueError):
+            same = False
+        if same:
+            return None
+    return text
+
+
 def get_plobi_home() -> Path:
     """Return the Plobi home directory (default: platform-native path).
 
@@ -135,6 +171,14 @@ def get_plobi_home() -> Path:
     val = os.environ.get("PLOBI_HOME", "").strip()
     if val:
         return Path(val)
+
+    # 开发态专用门牌（2026-11-08）。顺序是硬约束，不能提到 PLOBI_HOME 前面：
+    # 装机版桌面起后端时会把解析好的 PLOBI_HOME 钉进子进程 env，装机版永远在
+    # 上一档返回；能走到这里的只有"没人钉"的场景（手敲 plobi 的命令行、更新器、
+    # 计划任务），这里认 PLOBI_DEV_HOME 才不会落进装机版 DataDir。
+    dev = _dev_home_from_env()
+    if dev:
+        return Path(dev)
 
     # 安装器记下的那一格（`HKCU\Software\Plobi\DataDir`）：干净的 shell 里
     # 没有 env 时，这是"用户装在哪"的唯一事实来源。
@@ -218,6 +262,10 @@ def get_default_plobi_root() -> Path:
     """
     native_home = _get_platform_default_plobi_home()
     env_home = os.environ.get("PLOBI_HOME", "").strip()
+    if not env_home:
+        # 开发态门牌（2026-11-08）：与 :func:`get_plobi_home` 同一阶梯。PLOBI_HOME
+        # 只有"被人钉住"时才有值，装机版后端因此永远走不到这一行。
+        env_home = _dev_home_from_env() or ""
     if not env_home:
         # 安装器记下的那一格（`HKCU\Software\Plobi\DataDir`）优先于"上一任门牌"：
         # 2026-11-08 起安装器不再写 `HKCU\Environment\PLOBI_HOME`，装机版的真实
