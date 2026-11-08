@@ -311,7 +311,7 @@ def ensure_root(explicit: Path | str | None = None) -> Optional[Path]:
             created.append("AGENTS.md")
         # 人读面已经存在才补它的子目录——指针指着一个还没建出来的库时不动手，
         # 免得替用户在他自己的 Obsidian 库旁边造格子。
-        surface = _surface_pointer()
+        surface = _surface_root(target)
         if surface is not None and surface.is_dir():
             for rel in surface_skeleton():
                 path = surface / rel
@@ -333,9 +333,11 @@ def ensure_root(explicit: Path | str | None = None) -> Optional[Path]:
 class Roots:
     """The two roots a logical ``Surface/…`` or ``Mind/…`` path has to be read against.
 
-    ``surface`` is ``None`` while the human surface still lives inside the brain at
-    ``<mind>/Surface`` (the pre-2026-10-14 layout). Callers must not branch on it —
-    go through :func:`real_target`, which answers the same question once.
+    ``surface`` is the **data home** — the human surface lives in it as
+    ``notes/``／``diary/``／``dossiers/``, the brain in ``mind/`` (用户 11-08 16:4x
+    拍的口径：一个数据目录，不需要环境变量也能跑）——除非 ``SURFACE_ROOT`` 那根
+    指针把它指到别处。它是 ``None`` 只在**数据家本身都算不出来**的时候；调用方
+    不许拿它分叉——走 :func:`real_target`，那一只口答同一件事。
     """
 
     mind: Path
@@ -379,7 +381,7 @@ def _pinned_surface_root() -> Optional[str]:
 
 
 def _surface_pointer() -> Optional[Path]:
-    """人读面现在物理上住在哪：先看继承来的 env，再看注册表那份钉的。
+    """人读面**钉**在哪儿：先看继承来的 env，再看注册表那份钉的。
 
     env 与注册表不一致时，**只有「env 指的那个目录已经不在了」才改读注册表**：
 
@@ -389,7 +391,7 @@ def _surface_pointer() -> Optional[Path]:
     - env 指的目录不在、注册表也没钉或也一样 ⇒ 仍用 env。这条保住「指针先钉、
       表面后建」那条设计（新装时表面还没建出来，指针照样算数），也保住「不静默换家」。
 
-    返回 ``None`` = 压根没钉 ⇒ 人读面按老布局落在 ``<MIND_ROOT>/Surface``。
+    返回 ``None`` = **压根没钉**（落哪儿由 :func:`_surface_root` 答）。
     """
     env = os.environ.get(SURFACE_ROOT_ENV, "").strip()
     pinned = _pinned_surface_root()
@@ -409,6 +411,37 @@ def _surface_pointer() -> Optional[Path]:
     return candidate
 
 
+def _surface_root(mind: Path | str | None = None) -> Optional[Path]:
+    """人读面**落在哪儿**：钉住的地方 ⇒ 钉住的地方；没钉 ⇒ 脑旁边的老布局（若还在）
+    ⇒ **数据家本体**。
+
+    2026-11-08（用户 11-08 16:4x 拍的口径）：「**这个是我决定的。数据目录不是就一个就行了吗？
+    而且不需要环境变量也可以运行呀。mind和日记还有笔记和档案都是用户的不过是用户指定数据目录下的
+    不同文件夹而已。**」⇒ 没钉指针时，人读面就是**数据家本体**（``<家>/notes``／``<家>/diary``／
+    ``<家>/dossiers``），脑在 ``<家>/mind``——**一个家，不靠环境变量**。
+
+    为什么还留着「老布局」那一档：有的机器（这台**装机态**那一份）人读面**已经**在
+    ``<脑>/Surface`` 里（数据家的 ``notes``／``diary`` 是指着它的 junction）——那就
+    **不静默换家**：它在那儿就还认它。换家＝把用户自己的笔记挪到别处去，那是另一件事。
+
+    开发态那一份的脑仓里**没有** ``Surface``（现核：``D:\\Data\\AppData\\Plobi-Dev\\mind``
+    下面是 ``wiki``／``persona``／``raw``／…）⇒ 它落到数据家本体，与用户说的那个形状一致。
+    """
+    pinned = _surface_pointer()
+    if pinned is not None:
+        return pinned
+
+    brain = Path(mind) if mind is not None else resolve_root()
+    if brain is not None:
+        legacy = brain / SURFACE_LOGICAL
+        try:
+            if legacy.is_dir():
+                return legacy
+        except OSError:
+            pass
+    return _data_home()
+
+
 def resolve_roots(explicit_mind: Path | str | None = None) -> Optional[Roots]:
     mind = resolve_root(explicit_mind)
     if mind is None:
@@ -419,7 +452,7 @@ def resolve_roots(explicit_mind: Path | str | None = None) -> Optional[Roots]:
     # exception is a pointer whose directory is *gone* while the registry pin is
     # alive — that is a stale inherited value, not a fresh setup; see
     # :func:`_surface_pointer`.)
-    return Roots(mind=mind, surface=_surface_pointer())
+    return Roots(mind=mind, surface=_surface_root(mind))
 
 
 def real_target(relative: str, root: Union[Path, Roots, None] = None) -> Path:
@@ -483,7 +516,7 @@ def _roots_or(root: Union[Path, Roots, None]) -> Roots:
     if root is not None:
         # 同一份解析，别在这里另读一遍 env（那条 raw 读法不认识注册表那份钉，
         # 也不认识「继承来的旧值」——两处口径一散，就是「同一个家两种进程两个地方」）。
-        return Roots(mind=Path(root), surface=_surface_pointer())
+        return Roots(mind=Path(root), surface=_surface_root(Path(root)))
     roots = resolve_roots()
     if roots is None:
         raise MindUnavailable("MIND_ROOT is not set and no Mind surface was found")

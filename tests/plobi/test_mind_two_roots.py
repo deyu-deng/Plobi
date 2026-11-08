@@ -68,9 +68,18 @@ def no_machine_registry_pin(monkeypatch):
 # --- the resolver itself -----------------------------------------------------
 
 
-def test_unpinned_pointer_keeps_the_legacy_layout(mind, monkeypatch):
+def test_unpinned_pointer_falls_back_to_the_data_home(mind, tmp_path, monkeypatch):
+    """没有指针 ⇒ 人读面是**数据家本体**（用户 11-08 16:4x 拍的口径）。
+
+    以前这里回 ``None`` ⇒ 落回老布局 ``<mind>/Surface``——那个目录盘上**不存在**
+    （人读面 11-03 起就没有 ``vault/`` 那一层了）⇒ 笔记页与日记页一起报「读不到」，
+    迁移脚本也扫不到东西。环境变量是**曾经的门牌**，不是运行的前提。
+    """
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
-    assert real_target(SURFACE_LOGICAL, mind) == mind / "Surface" / "notes"
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    assert real_target(SURFACE_LOGICAL, mind) == home / "notes"
 
 
 def test_pinned_pointer_moves_the_human_surface_out(mind, sibling_vault, monkeypatch):
@@ -159,16 +168,26 @@ def test_base_for_does_not_touch_the_disk(mind, sibling_vault):
 # --- the writer's guard ------------------------------------------------------
 
 
-def test_writer_refuses_to_recreate_the_old_surface(mind, monkeypatch):
-    """No ``SURFACE_ROOT`` and no ``<mind>/Surface`` means the surface moved; creating
-    the directory here would leave a second, unbacked-up copy of the user's notes
-    inside the AI repo."""
+def test_writer_never_recreates_the_old_surface_inside_the_brain(mind, tmp_path, monkeypatch):
+    """没有指针时写侧落在**数据家**，不在脑仓里造一个 ``<mind>/Surface``。
+
+    那会把用户自己的笔记复制进 AI 仓：第二份、没有备份、还会在屏上读成「有两处」。
+    """
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
-    with pytest.raises(UnsafeMindPath, match="SURFACE_ROOT"):
-        safe_target(mind, "Surface/notes/new.md", creating=True)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    target = safe_target(mind, "Surface/notes/new.md", creating=True)
+    assert target == home / "notes" / "new.md"
+    assert not (mind / "Surface").exists()
 
 
-def test_writer_still_writes_the_legacy_layout_it_was_given(mind, monkeypatch):
+def test_the_legacy_layout_is_still_written_when_it_is_there(mind, tmp_path, monkeypatch):
+    """老布局**还在** ⇒ 照旧认它（**不静默换家**）。
+
+    装机态那一份的人读面就住在脑仓旁边的 ``Surface/`` 里（数据家的 ``notes``／``diary``
+    是指着它的 junction）——换家＝把用户自己的笔记挪到别处去，那是另一件事。
+    """
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     (mind / "Surface" / "notes").mkdir(parents=True)
     assert safe_target(mind, "Surface/notes/new.md", creating=True) == (
