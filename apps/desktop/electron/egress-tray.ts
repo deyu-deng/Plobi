@@ -50,7 +50,7 @@ export type EgressTrayStrings = {
 
 export const EGRESS_STRINGS: Record<'zh' | 'en', EgressTrayStrings> = {
   zh: {
-    group: '代理（VPN）',
+    group: '代理',
     tone: { ok: '出口正常', bad: '出口异常', off: '未启用', unknown: '状态未知' },
     noAnswer: '暂时无法获取出口状态',
     remote: '后端在另一台机器上：这里的出口状态说的不是本机',
@@ -69,7 +69,7 @@ export const EGRESS_STRINGS: Record<'zh' | 'en', EgressTrayStrings> = {
     mirrors: (n: number) => `镜像 ${n} 项（按工具配置）`
   },
   en: {
-    group: 'Proxy (VPN)',
+    group: 'Proxy',
     tone: { ok: 'egress ok', bad: 'egress broken', off: 'not enabled', unknown: 'state unknown' },
     noAnswer: 'egress status is temporarily unavailable',
     remote: 'the backend runs on another machine: this box\'s egress is not what it reports',

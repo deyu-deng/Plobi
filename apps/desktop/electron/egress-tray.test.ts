@@ -182,7 +182,7 @@ test('空规则表说「一条都没有」，不拿 undefined 当兜底出口', 
 test('tooltip 只到「分组 · 档位」，短到 Windows 不截；远端模式不给本机打点', () => {
   const indicator = readEgressIndicator(snapshot(), zh)
 
-  assert.equal(egressTooltip(zh, indicator), '代理（VPN） · 出口正常')
+  assert.equal(egressTooltip(zh, indicator), '代理 · 出口正常')
   assert.ok(egressTooltip(zh, indicator).length < 63, 'Windows clips long tooltips')
 
   const english = readEgressIndicator(snapshot(), en)
@@ -190,7 +190,7 @@ test('tooltip 只到「分组 · 档位」，短到 Windows 不截；远端模�
   assert.equal(english.tone, 'ok')
   assert.ok(english.summary.startsWith('egress ok · '))
   assert.ok(labels(english).includes('membership 2 node(s) / 1 group(s)'))
-  assert.equal(egressTooltip(en, english), 'Proxy (VPN) · egress ok')
+  assert.equal(egressTooltip(en, english), 'Proxy · egress ok')
 
   const remote = remoteEgressIndicator(zh)
 
