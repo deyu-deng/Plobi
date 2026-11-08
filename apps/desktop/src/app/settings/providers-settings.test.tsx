@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -347,6 +347,45 @@ describe('Subscriptions cards are the hub catalog', () => {
 
     expect(await screen.findByText('Gemini CLI')).toBeTruthy()
     expect(await screen.findByRole('button', { name: 'Set up' })).toBeTruthy()
+  })
+
+  it('gives a dark leg a way back instead of a dead end', async () => {
+    // 用户 11-08 20:1x：「报错了也一定能通过操作修复」。一条配过、凭据过期的腿
+    // 保持开关（用户 10-28 的判据：坏了不换控件），但它不能是死路 —— 那个重登的
+    // 抽屉本来只有 `+` 能开，而 `+` 只给没配过的腿。
+    shell([
+      authRow('cline_cli', {
+        kind: 'cli_login',
+        live: false,
+        name: 'Cline',
+        reason: 'credential_expired',
+        signed_in: true
+      })
+    ])
+    frame('cline_cli', { blocked: { 'deepseek-3.2': 'credential_expired' }, models: [] })
+
+    await renderSubscriptions()
+
+    expect(await screen.findByText('Cline')).toBeTruthy()
+    const repair = await screen.findByRole('button', { name: 'Sign in' })
+
+    fireEvent.click(repair)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Set up Cline')).toBeTruthy()
+  })
+
+  it('does not offer a sign-in for a leg whose credential lives in another app', async () => {
+    // CodeBuddy's credential is CodeBuddy's own session (kind `local_session`), so
+    // Plobi has no sign-in to run: the reason line says where to go, and the row
+    // must not grow a button that could only fail.
+    shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+    frame('workbuddy', { blocked: { hy3: 'credential_expired' }, models: [] })
+
+    await renderSubscriptions()
+
+    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull()
   })
 
   it('shows no software names while the shell has not answered', async () => {

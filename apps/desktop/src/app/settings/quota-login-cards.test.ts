@@ -103,6 +103,21 @@ describe('buildLoginCards', () => {
   it('drops a row with no id so no anonymous card can render', () => {
     expect(buildLoginCards([row({ id: '' })])).toEqual([])
   })
+
+  it('says whether Plobi can run the sign-in itself', () => {
+    // The repair entry for a dark leg needs to know this: a browser flow and a CLI's
+    // own login command we can drive; a credential that lives in another app's
+    // session we cannot — the reason line says where to go instead of pretending.
+    const [oauth] = buildLoginCards([row({ id: 'antigravity', kind: 'oauth' })])
+    const [cli] = buildLoginCards([row({ id: 'cline_cli', kind: 'cli_login' })])
+    const [local] = buildLoginCards([row({ id: 'workbuddy', kind: 'local_session' })])
+    const [none] = buildLoginCards([row({ id: 'codex_cli', kind: 'none' })])
+
+    expect(oauth.canLogin).toBe(true)
+    expect(cli.canLogin).toBe(true)
+    expect(local.canLogin).toBe(false)
+    expect(none.canLogin).toBe(false)
+  })
 })
 
 /**

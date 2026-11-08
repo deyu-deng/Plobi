@@ -55,6 +55,13 @@ export interface LoginCard {
   aggregate: boolean
   /** A click can start a sign-in, and what it will do is open the browser. */
   connectable: boolean
+  /**
+   * Plobi can run this leg's sign-in itself — a browser flow (`oauth`) or the CLI's
+   * own login command (`cli_login`). A leg whose credential lives in another app's
+   * session (`local_session`) cannot be driven from here: the reason line says
+   * where to go instead of pretending a click would fix it.
+   */
+  canLogin: boolean
   /** The hub says the leg is signed in. */
   connected: boolean
   /** Why there is no click / why the switch is off — tooltip only, never body copy. */
@@ -256,6 +263,7 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
 
       return {
         aggregate: row.aggregate,
+        canLogin: wired,
         connected: signedIn,
         // A `+` is only worth drawing when pressing it can actually start something:
         // a sign-in, or (for an uninstalled CLI) the install step that precedes it.

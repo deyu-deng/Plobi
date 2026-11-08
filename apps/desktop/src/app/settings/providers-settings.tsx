@@ -12,11 +12,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { SearchField } from '@/components/ui/search-field'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { ChevronRight, Loader2, Plus, RefreshCw, Terminal, Trash2 } from '@/lib/icons'
+import { ChevronRight, RefreshCw, Terminal } from '@/lib/icons'
 import { normalize } from '@/lib/text'
-import { cn } from '@/lib/utils'
 import { disconnectOAuthProvider, getGlobalModelOptions, listOAuthProviders } from '@/plobi'
 import {
   $connectedDesktopApps,
@@ -30,13 +28,13 @@ import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
+import { ConfigCard } from './config-card'
+import { ConnectionControl } from './connection-control'
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
-import { ConfigCard } from './config-card'
-import { ConnectionControl } from './connection-control'
-import { QuotaAppIcon } from './quota-app-icon'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
+import { QuotaAppIcon } from './quota-app-icon'
 import {
   buildLoginCards,
   cardControl,
@@ -46,7 +44,7 @@ import {
   type LoginCard,
   type RoutingVerdict
 } from './quota-login-cards'
-import { SubscriptionSetupDialog } from './subscription-setup'
+import { setupPhase, SubscriptionSetupDialog } from './subscription-setup'
 import type { SettingsView } from './types'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
@@ -632,6 +630,11 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
         // control, reason in its tooltip. A leg the user turned off is their own choice,
         // not a fault, so no dot.
         const broken = isConfigured(card.state) && routing !== 'off' && !usable
+        // 「报错了也一定能通过操作修复」（用户 11-08 20:1x）：一条配过、此刻却不能
+        // 服务的腿（凭据过期／节点不通）不能是死路 —— 那个能重登的抽屉本来只有
+        // `+` 能开，而 `+` 只给没配过的腿。复用现成的抽屉与现成的文案，不新增
+        // 一句屏幕文案；腿自己的凭据在别的应用里（local_session）时不假装能点。
+        const canRepair = broken && card.canLogin && setupPhase(card) === 'login'
         const reasonText = [reason, stateReason].filter(Boolean).join(' · ')
         const mode: 'configure' | 'toggle' | 'pending' | 'none' =
           click === 'connecting' || control === 'loader'
@@ -645,6 +648,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
         return {
           card,
           broken,
+          canRepair,
           // Checked only when this software can actually serve a turn right now — the
           // user's 2026-11-08 invariant, and the reason `connected` changed meaning.
           checked: usable && routing !== 'off',
@@ -733,6 +737,30 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
             // same shell as the Sources screen — icon, name, one line, one control.
             <ConfigCard
               avatar={<QuotaAppIcon id={row.card.id} name={row.card.name} />}
+              below={
+                row.belowText || row.canRepair ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {row.belowText ? (
+                      <p
+                        className="text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-destructive"
+                        role="note"
+                      >
+                        {row.belowText}
+                      </p>
+                    ) : null}
+                    {row.canRepair ? (
+                      <Button
+                        onClick={() => setSetupId(row.card.id)}
+                        size="inline"
+                        type="button"
+                        variant="textStrong"
+                      >
+                        {subs.setup.loginAction}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : undefined
+              }
               busy={row.isBusy}
               checked={row.checked}
               configureLabel={subs.configure.replace('{name}', row.card.name)}
@@ -748,16 +776,6 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
               onToggle={next => (next ? handleTurnOn(row.card) : handleTurnOff(row.card))}
               testId={`quota-card-${row.card.id}`}
               toggleLabel={subs.useQuota}
-              below={
-                row.belowText ? (
-                  <p
-                    className="text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-destructive"
-                    role="note"
-                  >
-                    {row.belowText}
-                  </p>
-                ) : undefined
-              }
             />
           ))}
         </div>
