@@ -1117,6 +1117,61 @@ describe('the categories fold', () => {
     expect(screen.getByTestId('source-group-custom-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByTestId('external-sources')).toBeTruthy()
   })
+
+  it('gives the folded header a card of its own — the collapsed state is not a bare line', async () => {
+    // 用户 11-08：「Sources 这个界面卡片展开的时候挺好看的。但是收起的时候有点奇怪。」
+    // 根因是**两态两套壳**：展开时是「头在卡外＋行在卡里」，收起时下面那张卡没了，
+    // 头自己又没有壳 ⇒ 那一行只剩一段裸文字。收起时头住进一张**只有头的卡**。
+    $fold.set({ software: 'collapsed' })
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-software-toggle')).toBeTruthy())
+    const toggle = screen.getByTestId('source-group-software-toggle')
+    const card = toggle.closest('.dl-card')
+
+    expect(card).toBeTruthy()
+    expect(card?.contains(toggle)).toBe(true)
+    // 收起时那张装行的卡不存在（行根本不画），头上这一张只装头。
+    expect(screen.queryByTestId('source-group-software-rows')).toBeNull()
+    // hover 面用仓里那支 `row-hover`（进面即亮、离面 100ms 退）。
+    // 不用 `--ui-bg-hover`：那个令牌全仓没有定义，抄它等于抄一颗空的面。
+    expect(toggle.className).toContain('row-hover')
+  })
+
+  it('leaves the expanded header where it was — outside the card, above the rows', async () => {
+    $fold.set({ software: 'open' })
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-software-rows')).toBeTruthy())
+    const toggle = screen.getByTestId('source-group-software-toggle')
+
+    // 展开态一个字不动：头在卡外，行住进下面那张卡。
+    expect(toggle.closest('.dl-card')).toBeNull()
+    expect(screen.getByTestId('source-group-software-rows').className).toContain('dl-card')
+  })
+
+  it('says what the Files group is, even while it is folded', async () => {
+    // 用户 11-08 挑的那条：收起时 Files 那一格空着，像漏渲染。
+    // 但它**没有条数**可写——file 那一组不画信源行（它是一颗导入按钮），写「0」是假话。
+    // 所以写它是什么（现成四语，不动 i18n 五档）。
+    $fold.set({})
+    getSources.mockResolvedValue(payload([
+      row({ category: 'file', enabled: false, source: 'timetable', status: 'disconnected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-file-toggle')).toBeTruthy())
+    expect(screen.getByTestId('source-group-file-toggle').textContent).toBe('Files · Import files')
+  })
 })
 
 describe('the shape chips filter that row list', () => {

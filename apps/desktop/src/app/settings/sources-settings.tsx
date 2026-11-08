@@ -19,6 +19,9 @@
  * 5. **大类可以折叠**（用户 10-25：「不同大类的信源也可以折叠起来」）：每段的头按得动，
  *    收起时那一段的行**根本不画**（不是 `display:none`），头那格仍留「条数 · N 条报错」——
  *    折起来还能扫出哪一段有问题，这才是折叠的价值。三态与落点见 `./sources/collapse.ts`。
+ *    **收起时那颗头自己住进一张只有头的卡**（用户 11-08：「收起的时候有点奇怪」）：展开时是
+ *    「头在卡外＋行在卡里」，收起时没了下面那张卡，头上又没有壳，那一行就成了一段裸文字，
+ *    和展开态两套壳。按同一张 `.dl-card` 补上，头还在卡里，hover 面照 `ListRow` 那件。
  */
 
 import { useStore } from '@nanostores/react'
@@ -224,27 +227,42 @@ export function SourcesSettings() {
 
         const meta = errors > 0
           ? `${group.rows.length} · ${labels.groups.errors.replace('{n}', String(errors))}`
-          : group.category === 'file' ? '' : String(group.rows.length)
+          // `file` 那一类不画信源行（它是一颗导入按钮），所以**没有条数**可写——
+          // 写「0」是一句假话。写它是什么（现成四语），别让收起时那一格空着像漏渲染。
+          : group.category === 'file' ? fr.importFiles : String(group.rows.length)
+
+        // 组头那件东西**两种状态两套壳**（用户 11-08）：
+        //   展开：头在卡外、行在卡里（11-05 那条统一令的落点）——一个字不动。
+        //   收起：下面那张卡没了，头就自己住进一张**只有头的卡**，否则收起态只剩一段裸文字。
+        // 形状照 `ListRow` 那件抄（`-mx-1`＋`w-[calc(100%+0.5rem)]`＋`rounded-md`），
+        // hover 面用仓里那支 `row-hover`（`--ui-row-hover-background`，进面即亮、离面 100ms 退）：
+        // **`--ui-bg-hover` 那个令牌全仓没有定义**（`ListRow` 自己那份 hover 面因此一直是死的），
+        // 抄它等于抄一颗空的面。
+        const header = (
+          <button
+            aria-expanded={expanded}
+            aria-label={expanded ? labels.groups.collapse : labels.groups.expand}
+            className={expanded
+              ? 'flex min-h-11 w-full items-end justify-between gap-3 px-1 text-left'
+              : '-mx-1 flex min-h-11 w-[calc(100%+0.5rem)] items-center justify-between gap-3 rounded-md px-1 text-left row-hover'}
+            data-testid={`source-group-${group.category}-toggle`}
+            onClick={() => { decide(group.category, !expanded) }}
+            type="button"
+          >
+            <span className="min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)] font-normal leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
+              {labels.categories[group.category as keyof Labels['categories']] ?? group.category}
+              {meta ? ` · ${meta}` : ''}
+            </span>
+            <DisclosureCaret className="size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded} />
+          </button>
+        )
 
         return (
           <section className="mt-5 first:mt-0" data-testid={`source-group-${group.category}`} key={group.category}>
             {/* 组抬头照 `SettingsGroup` 那份统一外壳（11-02 拍）：12px 常规体 tertiary，
                 不再是中黑体＋图标那一行。10-26 那条「缩进＋左边界」被用户 11-05 的统一令取代：
                 行住进 `.dl-card`（8px squircle＋发丝边＋行间虚线），组与组靠卡分开，不靠缩进猜。 */}
-            <button
-              aria-expanded={expanded}
-              aria-label={expanded ? labels.groups.collapse : labels.groups.expand}
-              className="flex min-h-11 w-full items-end justify-between gap-3 px-1 text-left"
-              data-testid={`source-group-${group.category}-toggle`}
-              onClick={() => { decide(group.category, !expanded) }}
-              type="button"
-            >
-              <span className="min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)] font-normal leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
-                {labels.categories[group.category as keyof Labels['categories']] ?? group.category}
-                {meta ? ` · ${meta}` : ''}
-              </span>
-              <DisclosureCaret className="size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded} />
-            </button>
+            {expanded ? header : <div className="dl-card px-4">{header}</div>}
 
             {expanded
               ? (
