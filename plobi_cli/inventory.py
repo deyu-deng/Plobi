@@ -295,6 +295,65 @@ def build_models_payload(
     }
 
 
+#: Plobi 侧上下文预算档（用户 11-08 20:4x 拍板：厂商卖菜单就用厂商的；厂商只有一档
+#: 或没写，就按那个模型自己的上限给几档）。These are the rungs; a model's own upper
+#: bound is always the top one, because that is the window the turn runs at today.
+_BUDGET_RUNGS: tuple[int, ...] = (32768, 65536, 131072, 262144, 524288, 1048576)
+
+
+def _budget_ladder(ceiling: int | None) -> dict[str, Any] | None:
+    """The Plobi-side budget menu for one model: a few rungs under its own ceiling.
+
+    ``None`` means "nothing to choose": a ceiling that leaves a single rung has no
+    menu, and a rung **above** the model's real window would be a promise the turn
+    cannot keep.
+    """
+    if not isinstance(ceiling, int) or isinstance(ceiling, bool) or ceiling <= 0:
+        return None
+    rungs = sorted({rung for rung in _BUDGET_RUNGS if rung <= ceiling} | {ceiling})
+    if len(rungs) < 2:
+        return None
+    return {"adjustable": True, "choices": rungs, "default": ceiling, "max": ceiling}
+
+
+def _context_menu(published: Any, model: str, meta: Any) -> dict[str, Any] | None:
+    """The window menu this model gets — the vendor's own if it sells one, else Plobi's.
+
+    A vendor that sells a **menu** of windows for one model (Qoder: 200K / 400K / 1M)
+    wrote the truth, and it goes through untouched. A vendor that writes a single
+    window — or writes none at all — leaves the user with no dial at all, which is
+    why「调上下文」was missing on the subscription legs (measured 2026-11-08: Zen
+    writes one window per model; CodeBuddy's CLI advertises model names only, with
+    no window anywhere in its list).
+
+    There, Plobi offers the budget it can actually honour: a few rungs under that
+    model's own ceiling, with the ceiling itself as the top rung — so a model nobody
+    answered for still runs at exactly the window it runs at today.
+    """
+    if isinstance(published, dict) and len(published.get("choices") or []) > 1:
+        return published
+
+    ceiling: int | None = None
+    for candidate in (
+        published.get("max") if isinstance(published, dict) else None,
+        getattr(meta, "context_window", None) if meta is not None else None,
+    ):
+        if isinstance(candidate, int) and not isinstance(candidate, bool) and candidate > 0:
+            ceiling = candidate
+            break
+
+    if ceiling is None:
+        # Plobi's own table, then its blanket fallback — the same window the runtime
+        # ends up with when nobody published one. No network here: this runs for every
+        # model on every open of the model menu, and the full probe chain costs ~1.5 s
+        # per model (measured 2026-11-08 on this machine).
+        from agent.model_metadata import local_context_length
+
+        ceiling = local_context_length(model)
+
+    return _budget_ladder(ceiling)
+
+
 def _apply_capabilities(rows: list[dict]) -> None:
     """Attach a ``{model: {fast, reasoning, …}}`` map to each provider row.
 
@@ -336,6 +395,7 @@ def _apply_capabilities(rows: list[dict]) -> None:
 
         for model in row.get("models") or []:
             reasoning = True
+            meta = None
             if get_model_capabilities is not None and slug:
                 try:
                     meta = get_model_capabilities(slug, model)
@@ -343,6 +403,7 @@ def _apply_capabilities(rows: list[dict]) -> None:
                         reasoning = bool(meta.supports_reasoning)
                 except Exception:
                     reasoning = True
+                    meta = None
 
             caps[model] = {
                 "fast": bool(model_supports_fast_mode(model)),
@@ -356,6 +417,12 @@ def _apply_capabilities(rows: list[dict]) -> None:
                 # A model that names its levels is a model that takes them; a leg that
                 # lists none keeps the honest default above.
                 caps[model]["reasoning"] = bool(knobs["efforts"])
+
+            # 窗口菜单：厂商有菜单就用厂商的；没有就按这个模型自己的上限给 Plobi 侧
+            # 的几档（用户 11-08 20:4x 拍板：「调上下文」不能只支持 effort）。
+            menu = _context_menu(caps[model].get("context"), model, meta)
+            if menu is not None:
+                caps[model]["context"] = menu
 
         row["capabilities"] = caps
 

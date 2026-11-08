@@ -135,16 +135,86 @@ def test_the_picker_row_carries_the_levels_and_the_window(monkeypatch):
     caps = rows[0]["capabilities"]
     assert caps["antigravity/claude-opus-5-5"]["efforts"] == ["low", "medium", "high"], caps
     assert caps["antigravity/claude-opus-5-5"]["default_effort"] == "medium", caps
-    assert caps["antigravity/claude-opus-5-5"]["context"] == {"max": 1000000}, caps
+    # The leg wrote one window, not a menu — so Plobi offers the budget it can honour
+    # (用户 11-08 20:4x 拍板「Plobi 侧预算档」): a few rungs under that model's own
+    # ceiling, with the ceiling itself as the top rung (so nothing changes until the
+    # user picks a smaller one).
+    assert caps["antigravity/claude-opus-5-5"]["context"] == {
+        "adjustable": True,
+        "choices": [32768, 65536, 131072, 262144, 524288, 1000000],
+        "default": 1000000,
+        "max": 1000000,
+    }, caps
     # One level is not a menu, but it is still what the model runs at.
     assert caps["antigravity/gpt-oss-120b-medium"]["efforts"] == ["medium"], caps
     # Kiro published limits, not levels: the generic `reasoning` answer stands.
     assert "efforts" not in caps["kiro_cli/deepseek-3.2"], caps
-    assert caps["kiro_cli/deepseek-3.2"]["context"] == {"max": 164000}, caps
-    # A model the hub said nothing about keeps the pre-existing shape.
+    assert caps["kiro_cli/deepseek-3.2"]["context"] == {
+        "adjustable": True,
+        "choices": [32768, 65536, 131072, 164000],
+        "default": 164000,
+        "max": 164000,
+    }, caps
+    # A model the hub said nothing about keeps the pre-existing shape for the levels,
+    # and gets a budget from Plobi's own table (glm ⇒ 202752) rather than from nobody.
     assert caps["workbuddy/glm-5.3"].get("efforts") is None, caps
-    # Another provider's rows are untouched by the hub's answers.
+    assert caps["workbuddy/glm-5.3"]["context"] == {
+        "adjustable": True,
+        "choices": [32768, 65536, 131072, 202752],
+        "default": 202752,
+        "max": 202752,
+    }, caps
+    # Another provider's rows are untouched by the hub's answers — but they still get
+    # a window menu of their own (this model is in nobody's catalog, so the ceiling is
+    # Plobi's blanket fallback).
     assert "efforts" not in rows[1]["capabilities"]["anthropic/claude-opus-4.8"]
+    assert rows[1]["capabilities"]["anthropic/claude-opus-4.8"]["context"]["adjustable"] is True
+
+
+def test_a_vendor_menu_goes_through_untouched(monkeypatch):
+    """Qoder sells 200K / 400K / 1M for one model: that is the truth, not a budget."""
+    from plobi_cli import inventory
+
+    _patch_catalog(monkeypatch, {
+        "qoder/qwen3.8-max": {
+            "context": {"adjustable": True, "choices": [200000, 400000, 1000000],
+                        "default": 200000, "max": 1000000},
+        },
+    })
+    rows = [{"slug": "aigw", "name": "订阅额度", "models": ["qoder/qwen3.8-max"]}]
+
+    inventory._apply_capabilities(rows)
+
+    assert rows[0]["capabilities"]["qoder/qwen3.8-max"]["context"] == {
+        "adjustable": True, "choices": [200000, 400000, 1000000],
+        "default": 200000, "max": 1000000,
+    }
+
+
+def test_a_ceiling_with_one_rung_left_has_no_menu(monkeypatch):
+    """A model whose own window leaves a single rung has nothing to choose — and a
+    rung above its real window would be a promise the turn cannot keep."""
+    from plobi_cli import inventory
+
+    _patch_catalog(monkeypatch, {"tiny/tiny-1": {"context": {"max": 16384}}})
+    rows = [{"slug": "aigw", "name": "订阅额度", "models": ["tiny/tiny-1"]}]
+
+    inventory._apply_capabilities(rows)
+
+    context = rows[0]["capabilities"]["tiny/tiny-1"].get("context")
+    assert context is None or len(context.get("choices") or []) < 2, context
+
+
+def test_the_budget_ceiling_is_asked_without_the_network():
+    """The ladder is built on every open of the model menu, for every model — so the
+    ceiling comes from the local table (no probe chain: ~1.5 s per model otherwise)."""
+    from agent.model_metadata import local_context_length
+
+    assert local_context_length("workbuddy/glm-5.3") == 202752
+    assert local_context_length("workbuddy/hy3") == 262144
+    # Nobody told us about this one: the blanket fallback, which is the same window
+    # the runtime ends up with.
+    assert local_context_length("workbuddy/hy4-preview") == 256000
 
 
 def test_the_published_window_is_what_plobi_budgets_the_conversation_against(monkeypatch):

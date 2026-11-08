@@ -2016,6 +2016,36 @@ def _resolve_nous_context_length(
     return None, ""
 
 
+def local_context_length(model: str) -> int:
+    """The window Plobi assumes for a model, from its own table — **no network**.
+
+    Steps 8 and 9 of :func:`get_model_context_length`, split out because the two
+    callers want different things from the same question:
+
+    * the runtime wants the *best* number it can get, so it walks the probe chain
+      first and only lands here when nobody told us anything better;
+    * the picker's budget ladder (用户 11-08 20:4x 拍板「Plobi 侧预算档」) has to
+      answer for **every** model on **every** open of the model menu, and that
+      chain costs ~1.5 s per model (measured 2026-11-08 on this machine) — a
+      model-options build would take half a minute.
+
+    So this answers the local half only, and it is the same half the runtime ends
+    with: the hardcoded table (fuzzy match, longest key first), then the blanket
+    fallback. Only check ``default_model in model`` (the key is a substring of the
+    input). The reverse (``model in default_model``) causes shorter names like
+    "claude-sonnet-4" to incorrectly match "claude-sonnet-4-6" and return 1M.
+    """
+    model_lower = (model or "").lower()
+    for default_model, length in sorted(
+        DEFAULT_CONTEXT_LENGTHS.items(), key=lambda x: len(x[0]), reverse=True
+    ):
+        if default_model in model_lower:
+            return length
+
+    # Default fallback — 256K
+    return DEFAULT_FALLBACK_CONTEXT
+
+
 def get_model_context_length(
     model: str,
     base_url: str = "",
@@ -2430,19 +2460,9 @@ def get_model_context_length(
                 _maybe_cache_local_context_length(model, base_url, local_ctx)
             return local_ctx
 
-    # 8. Hardcoded defaults (fuzzy match — longest key first for specificity)
-    # Only check `default_model in model` (is the key a substring of the input).
-    # The reverse (`model in default_model`) causes shorter names like
-    # "claude-sonnet-4" to incorrectly match "claude-sonnet-4-6" and return 1M.
-    model_lower = model.lower()
-    for default_model, length in sorted(
-        DEFAULT_CONTEXT_LENGTHS.items(), key=lambda x: len(x[0]), reverse=True
-    ):
-        if default_model in model_lower:
-            return length
-
-    # 9. Default fallback — 256K
-    return DEFAULT_FALLBACK_CONTEXT
+    # 8/9. The local table, then the blanket fallback — one implementation, shared
+    # with the picker's budget ladder (`local_context_length` below).
+    return local_context_length(model)
 
 
 async def get_model_context_length_async(
