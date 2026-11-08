@@ -1331,6 +1331,14 @@ export const ja = defineLocale({
     skillArchivedMessage: 'plobi curator restore で復元できます。'
   },
 
+  surface: {
+    agentLoadFailed: 'ドシエを読み込めませんでした',
+    emptyAgent: 'ドシエはまだありません',
+    noAgentSelected: '先にエージェントを選んでください',
+    agentDossier: 'ドシエ',
+    notesSection: 'ノート'
+  },
+
   starmap: {
     title: 'メモリグラフ',
     subtitle: (nodes, clusters) => `${clusters} カテゴリの ${nodes} スキル`,
@@ -3384,6 +3392,7 @@ export const ja = defineLocale({
     tabs: {
       agenda: '予定',
       files: 'ワークスペースのファイル',
+      notes: 'ノート',
       review: 'レビュー',
       browser: 'ブラウザ',
       terminal: 'ターミナル'

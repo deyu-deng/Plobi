@@ -1302,6 +1302,14 @@ export const zhHant = defineLocale({
     skillArchivedMessage: '可透過 plobi curator restore 還原。'
   },
 
+  surface: {
+    agentLoadFailed: '檔案載入失敗',
+    emptyAgent: '暫無檔案',
+    noAgentSelected: '先選一個 Agent',
+    agentDossier: '檔案',
+    notesSection: '筆記'
+  },
+
   starmap: {
     title: '記憶圖譜',
     subtitle: (nodes, clusters) => `${clusters} 個類別中的 ${nodes} 個技能`,
@@ -3285,6 +3293,7 @@ export const zhHant = defineLocale({
     tabs: {
       agenda: '行程',
       files: '工作區檔案',
+      notes: '筆記',
       review: '審閱',
       browser: '瀏覽器',
       terminal: '終端機'

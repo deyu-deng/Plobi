@@ -1215,6 +1215,13 @@ export interface Translations {
     categories: Record<string, string>
     docs: Record<string, string>
     statuses: Record<string, string>
+    agentLoadFailed: string
+    emptyAgent: string
+    noAgentSelected: string
+    /** 档案入口（对话界面右上角那一枚图标）的名字。 */
+    agentDossier: string
+    /** 档案卡片里那一段折叠的标题：属于这个 Agent 的笔记。 */
+    notesSection: string
   }
   starmap: {
     title: string
@@ -3033,7 +3040,8 @@ export interface Translations {
       agenda: string
       diary: string
       files: string
-      progress: string
+      /** 右栏那个页签现在装的是**笔记**（档案改成了对话界面右上角的图标入口）。 */
+      notes: string
       review: string
       browser: string
       terminal: string
@@ -3042,7 +3050,7 @@ export interface Translations {
       agenda: string
       diary: string
       files: string
-      progress: string
+      notes: string
       review: string
       browser: string
       terminal: string

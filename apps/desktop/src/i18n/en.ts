@@ -1396,7 +1396,12 @@ export const en: Translations = {
       requirements: 'Requirements',
       syllabus: 'Teaching plan'
     },
-    statuses: { active: 'Active', paused: 'Paused', done: 'Done', archived: 'Archived' }
+    statuses: { active: 'Active', paused: 'Paused', done: 'Done', archived: 'Archived' },
+    agentLoadFailed: 'Failed to load dossier',
+    emptyAgent: 'No dossier yet',
+    noAgentSelected: 'Pick an agent first',
+    agentDossier: 'Dossier',
+    notesSection: 'Notes'
   },
   starmap: {
     title: 'Memory Graph',
@@ -3513,7 +3518,7 @@ export const en: Translations = {
       agenda: 'Agenda',
       diary: 'Diary',
       files: 'Workspace files',
-      progress: 'Dossier',
+      notes: 'Notes',
       review: 'Review',
       browser: 'Browser',
       terminal: 'Terminal'
@@ -3522,7 +3527,7 @@ export const en: Translations = {
       agenda: "Today's timeline and quick add",
       diary: "Write today's entry",
       files: "Browse this agent's folder",
-      progress: "This agent's dossier: plan, progress and research",
+      notes: "This agent's notes",
       review: 'Review changes in this workspace',
       browser: 'Open a page in the built-in browser',
       terminal: 'Open a terminal in this folder'

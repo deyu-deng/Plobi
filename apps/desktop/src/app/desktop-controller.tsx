@@ -148,7 +148,7 @@ import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
 import { requestGenOfficeClose } from './workbench/genoffice-sessions'
 import { DiaryCaptureOverlay } from './diary/capture-overlay'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
-import { AgentProgressPane } from './chat/right-rail/agent-progress-pane'
+import { AgentNotesList } from './chat/right-rail/notes-list'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -430,11 +430,11 @@ export function DesktopController() {
       id: 'terminal',
       title: t.workbench.tabs.terminal
     },
-    progress: {
-      description: t.workbench.actions.progress,
-      icon: 'graph',
-      id: 'progress',
-      title: t.workbench.tabs.progress
+    notes: {
+      description: t.workbench.actions.notes,
+      icon: 'notebook',
+      id: 'notes',
+      title: t.workbench.tabs.notes
     }
   }
   const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser, workbenchTabDefs.terminal]
@@ -444,7 +444,7 @@ export function DesktopController() {
     workbenchTabDefs.review,
     workbenchTabDefs.browser,
     workbenchTabDefs.terminal,
-    workbenchTabDefs.progress
+    workbenchTabDefs.notes
   ]
   const isL1Workbench = level === 'l1'
 
@@ -825,7 +825,7 @@ export function DesktopController() {
       id === 'browser' ||
       id === 'agenda' ||
       id === 'terminal' ||
-      id === 'progress'
+      id === 'notes'
         ? workbenchTabDefs[id]
         : openFiles[id]?.def
     )
@@ -2065,13 +2065,13 @@ export function DesktopController() {
           tab =>
             !l2Tabs.includes(tab.id) &&
             (tab.id !== 'review' || Boolean(agentCwd.trim())) &&
-            (tab.id !== 'progress' || Boolean(activeAgentId))
+            (tab.id !== 'notes' || Boolean(activeAgentId))
         )}
         contents={{
           agenda: agendaTabContent,
           browser: <BrowserTabPanel labels={t.workbench.browser} />,
           files: workbenchFilesContent,
-          progress: activeAgentId ? <AgentProgressPane agentId={activeAgentId} /> : null,
+          notes: activeAgentId ? <AgentNotesList agentId={activeAgentId} /> : null,
           review: workbenchReviewContent,
           terminal: isL1Workbench ? null : <TerminalPaneChrome />,
           ...fileTabContents

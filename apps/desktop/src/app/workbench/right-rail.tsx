@@ -9,7 +9,7 @@ export type RightRailTab =
   | 'agenda'
   | 'browser'
   | 'files'
-  | 'progress'
+  | 'notes'
   | 'review'
   | 'terminal'
 export type RightRailTabId = RightRailTab | `file:${string}`

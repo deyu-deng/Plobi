@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Body, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
@@ -36,37 +38,225 @@ def _unavailable(what: str, exc: Exception) -> JSONResponse:
 
 @router.get("/surface/agents")
 async def list_surface_agents():
-    from plobi.mind.agent_dossier import build_index
+    """优先从数据库查询 agent_dossiers 表；没有则降级到文件系统扫描。
 
+    **两条腿返回的形状必须一致**（前端 `AgentDossierCard` / `AgentProgressPane` 只认一种）。
+    DB 腿给的是**元数据索引**（里程碑数、工作路径、更新时间）；正文档列表（docs）
+    那部分 DB 里没有 ⇒ 走文件系统腿补齐，**不让 DB 那一半变成一个更瘦的形状**。
+    """
+    from plobi.mind.agent_dossier import build_index as fs_build_index
+
+    # 1. 先试数据库
     try:
-        data = await run_in_threadpool(build_index)
+        from .vault import list_dossiers
+
+        dossiers = list_dossiers()
+        if dossiers:
+            from plobi.agents.registry import AgentRegistry
+            registry = AgentRegistry.load()
+
+            # 文件系统腿的底稿（docs 那一组只有它有）——DB 腿在上面补里程碑与路径
+            fs_index = await run_in_threadpool(fs_build_index)
+            fs_agents = {a.get("id"): a for a in (fs_index.get("agents") or [])}
+
+            agents_data = []
+            for dossier in dossiers:
+                entry = registry.get(dossier.agent_id)
+                if not entry:
+                    continue
+                base = dict(fs_agents.get(dossier.agent_id) or {})
+                if not base:
+                    continue
+                base["milestones"] = {
+                    "total": dossier.milestones_total,
+                    "done": dossier.milestones_done,
+                }
+                if dossier.work_path:
+                    base["workPath"] = dossier.work_path
+                if dossier.updated:
+                    base["updated"] = dossier.updated
+                agents_data.append(base)
+
+            if agents_data:
+                return {"ok": True, "data": {"agents": agents_data}}
+    except Exception as e:
+        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
+
+    # 2. 降级：直接读文件系统
+    try:
+        data = await run_in_threadpool(fs_build_index)
+        return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("surface dossier", exc)
-    return {"ok": True, "data": data}
 
 
 @router.get("/surface/agents/{name}")
 async def get_surface_agent(name: str):
-    from plobi.mind.agent_dossier import read_agent
+    """优先从数据库查询 agent_dossiers 表；没有则降级到文件系统扫描。
 
+    DB 里存的是 plan/progress 的**正文**；文档元数据（文件名、时间、摘要）仍以文件系统为准，
+    两条腿拼出来的形状与纯文件系统腿一致。
+    """
+    from plobi.mind.agent_dossier import read_agent as fs_read_agent
+
+    # 1. 先试数据库
     try:
-        data = await run_in_threadpool(read_agent, name)
+        from .vault import get_dossier
+
+        dossier = get_dossier(name)
+        if dossier:
+            from plobi.agents.registry import AgentRegistry
+            registry = AgentRegistry.load()
+
+            # `AgentRegistry` 只有 `get(name)`，**没有 `get_agent`**（旧代码调它 ⇒ AttributeError
+            # ⇒ 每次都落回文件系统，DB 白建）
+            entry = registry.get(name)
+            if not entry:
+                return _error(404, f"agent {name!r} is not registered")
+
+            # 文件系统腿做底稿：docs 那一组（key/filename/chars/updated）只有它有
+            base = await run_in_threadpool(fs_read_agent, name)
+            if not base:
+                return _error(404, f"agent {name!r} is not registered")
+
+            # 用 DB 里的正文替换同名文档的 text
+            by_key = {d.get("key"): d for d in (base.get("docs") or [])}
+            for key, content in (("plan", dossier.plan_content), ("progress", dossier.progress_content)):
+                if not content:
+                    continue
+                doc = by_key.get(key)
+                if doc is None:
+                    doc = {
+                        "key": key,
+                        "label": "计划" if key == "plan" else "进展",
+                        "filename": "plan.md" if key == "plan" else "progress.md",
+                        "exists": True,
+                        "chars": len(content),
+                        "updated": dossier.updated,
+                    }
+                    by_key[key] = doc
+                    base.setdefault("docs", []).append(doc)
+                doc["text"] = content[:131072]  # MAX_DOC_BYTES = 128KB
+                doc["exists"] = True
+
+            base["milestones"] = {
+                "total": dossier.milestones_total,
+                "done": dossier.milestones_done,
+            }
+            if dossier.work_path:
+                base["workPath"] = dossier.work_path
+            if dossier.updated:
+                base["updated"] = dossier.updated
+
+            return {"ok": True, "data": base}
+    except Exception as e:
+        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
+
+    # 2. 降级：直接读文件系统
+    try:
+        data = await run_in_threadpool(fs_read_agent, name)
+        if data is None:
+            return _error(404, f"agent {name!r} is not registered")
+        return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("surface dossier", exc)
-    if data is None:
-        return _error(404, f"agent {name!r} is not registered")
-    return {"ok": True, "data": data}
 
 
 @router.get("/surface/notes")
 async def list_surface_notes():
-    from plobi.mind.notes_library import build_library
+    """优先从数据库查询 vault_notes 表；没有则降级到文件系统扫描。
 
+    DB 腿给的是**每篇笔记的元数据**；``topics``／``totals`` 这两格是清单级的聚合，
+    由文件系统腿算（它本来就要扫一遍目录）⇒ 两条腿的形状一致。
+    """
+    from plobi.mind.notes_library import build_library as fs_build_library
+
+    # 1. 先试数据库
     try:
-        data = await run_in_threadpool(build_library)
+        from .vault import list_notes
+
+        notes = list_notes()
+        if notes:
+            # 聚合格（topics／totals）仍以文件系统腿为准
+            base = await run_in_threadpool(fs_build_library)
+            topics = base.get("topics") or []
+            totals = dict(base.get("totals") or {})
+
+            return {
+                "ok": True,
+                "data": {
+                    "root": base.get("root") or get_vault_root(),
+                    "notes": [
+                        {
+                            "path": n.path,
+                            "title": n.title,
+                            "topic": n.topic,
+                            "tags": n.tags,
+                            "belongs": n.belongs,
+                            "updated": n.updated,
+                            "chars": n.chars,
+                            "excerpt": n.excerpt
+                        }
+                        for n in notes
+                    ],
+                    "topics": topics,
+                    "tags": list(set(t for n in notes for t in n.tags)),
+                    "totals": {
+                        "scanned": totals.get("scanned", len(notes)),
+                        "listed": len(notes),
+                        "skipped": totals.get("skipped", 0),
+                        "hidden": totals.get("hidden", 0),
+                    }
+                }
+            }
+    except Exception as e:
+        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
+
+    # 2. 降级：直接读文件系统
+    try:
+        data = await run_in_threadpool(fs_build_library)
+        return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("notes library", exc)
-    return {"ok": True, "data": data}
+
+
+def get_vault_root() -> str:
+    """Get the vault notes root path."""
+    try:
+        from plobi.mind.paths import real_target
+        return str(real_target("Surface/notes"))
+    except Exception:
+        return "/unknown"
+
+
+@router.get("/surface/notes/search")
+async def search_surface_notes(q: str = Query(..., min_length=1)):
+    """Search notes by title/excerpt."""
+    try:
+        from .vault import search_notes
+        
+        notes = await run_in_threadpool(search_notes, q, limit=50)
+        return {
+            "ok": True,
+            "data": {
+                "query": q,
+                "count": len(notes),
+                "notes": [
+                    {
+                        "path": n.path,
+                        "title": n.title,
+                        "topic": n.topic,
+                        "tags": n.tags,
+                        "updated": n.updated,
+                        "chars": n.chars,
+                        "excerpt": n.excerpt
+                    }
+                    for n in notes
+                ]
+            }
+        }
+    except Exception as exc:
+        return _error(503, f"search unavailable: {exc}")
 
 
 @router.get("/surface/notes/content")
@@ -117,26 +307,77 @@ async def put_surface_note(
 
 @router.get("/surface/diary")
 async def list_surface_diary():
-    from plobi.mind.diary import list_entries
+    """优先从数据库查询 user_diary 表；没有则降级到文件系统扫描。
 
+    形状与文件系统腿一致：``{root, entries[], today}``。
+    （旧版本这里返回的是「日期 → {date, exists, updated}」的字典，
+    与 ``diary.list_entries()`` 的形状对不上 ⇒ 前端按前者的形状写的代码读不到。）
+    """
+    from plobi.mind.diary import list_entries as fs_list_entries
+
+    # 1. 先试数据库
     try:
-        data = await run_in_threadpool(list_entries)
+        from .vault import list_diaries
+
+        entries = await run_in_threadpool(list_diaries)
+        if entries:
+            base = await run_in_threadpool(fs_list_entries)
+            rows = []
+            for entry in entries:
+                day = entry.date
+                try:
+                    weekday = datetime.strptime(day, "%Y-%m-%d").strftime("%A")
+                except ValueError:
+                    weekday = ""
+                rows.append({
+                    "date": day,
+                    "weekday": weekday,
+                    "filename": f"{day}-{weekday}.md" if weekday else "",
+                    "chars": len(entry.content or ""),
+                    "updated": (entry.updated or "")[:10],
+                })
+            rows.sort(key=lambda row: row["date"], reverse=True)
+            return {"ok": True, "data": {"root": base.get("root", ""), "entries": rows,
+                                         "today": base.get("today", "")}}
+    except Exception as e:
+        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
+
+    # 2. 降级：直接读文件系统
+    try:
+        data = await run_in_threadpool(fs_list_entries)
+        return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("diary", exc)
-    return {"ok": True, "data": data}
 
 
 @router.get("/surface/diary/{day}")
 async def get_surface_diary_entry(day: str):
-    from plobi.mind.diary import read_entry
+    """优先从数据库查询 user_diary 表；没有则降级到文件系统扫描。"""
+    from plobi.mind.diary import read_entry as fs_read_entry
 
+    # 1. 先试数据库
     try:
-        data = await run_in_threadpool(read_entry, day)
-    except ValueError as exc:
-        return _error(400, str(exc))
+        from .vault import get_diary
+
+        entry = await run_in_threadpool(get_diary, day)
+        if entry and entry.content:
+            # 形状与 ``diary.read_entry()`` 一致（date／weekday／filename／exists／text／updated）
+            base = await run_in_threadpool(fs_read_entry, day)
+            base = dict(base or {})
+            base["text"] = entry.content
+            base["exists"] = True
+            if entry.updated:
+                base["updated"] = entry.updated[:10]
+            return {"ok": True, "data": base}
+    except Exception as e:
+        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
+
+    # 2. 降级：直接读文件系统
+    try:
+        data = await run_in_threadpool(fs_read_entry, day)
+        return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("diary", exc)
-    return {"ok": True, "data": data}
 
 
 @router.put("/surface/diary/{day}")

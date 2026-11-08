@@ -1573,7 +1573,12 @@ export const zh: Translations = {
       requirements: '课程要求',
       syllabus: '教学计划'
     },
-    statuses: { active: '进行中', paused: '暂停', done: '结束', archived: '已归档' }
+    statuses: { active: '进行中', paused: '暂停', done: '结束', archived: '已归档' },
+    agentLoadFailed: '档案加载失败',
+    emptyAgent: '暂无档案',
+    noAgentSelected: '先选一个 Agent',
+    agentDossier: '档案',
+    notesSection: '笔记'
   },
   starmap: {
     title: '记忆图谱',
@@ -3650,7 +3655,7 @@ export const zh: Translations = {
       agenda: '日程',
       diary: '日记',
       files: '工作区文件',
-      progress: '资料',
+      notes: '笔记',
       review: '审阅',
       browser: '浏览器',
       terminal: '终端'
@@ -3659,7 +3664,7 @@ export const zh: Translations = {
       agenda: '今天的日程时间轴',
       diary: '写今天这一篇',
       files: '浏览当前 Agent 的目录',
-      progress: '这个 Agent 的工作资料：计划、进展与归档',
+      notes: '这个 Agent 的笔记',
       review: '查看当前工作区的改动',
       browser: '在内置浏览器打开网页',
       terminal: '在当前目录打开终端'

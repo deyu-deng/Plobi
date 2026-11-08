@@ -2,7 +2,7 @@ import { type AppendMessage, AssistantRuntimeProvider, type ThreadMessage } from
 import { useStore } from '@nanostores/react'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
-import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { prefersReducedMotion, threadSwapAnimation } from '@/app/chat/thread-swap'
@@ -13,12 +13,14 @@ import { PromptOverlays } from '@/components/prompt-overlays'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { ErrorState } from '@/components/ui/error-state'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { useI18n } from '@/i18n'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { createToolMergeCache, quickModelOptions, sessionTitle, toBranchableMessageRepository } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { cn } from '@/lib/utils'
 import { getGlobalModelOptions, type PlobiGateway } from '@/plobi'
+import { $agentScope } from '@/store/agent-scope'
 import type { ComposerAttachment } from '@/store/composer'
 import { $pinnedSessionIds } from '@/store/layout'
 import { $petActive } from '@/store/pet'
@@ -58,6 +60,7 @@ import { droppedFileInlineRefs, type SessionDragPayload, sessionInlineRef } from
 import type { ChatBarState } from './composer/types'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
+import { AgentDossierCard } from './right-rail/agent-dossier-card'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { SessionChatContext } from './session-context'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
@@ -100,6 +103,9 @@ interface ChatHeaderProps {
   onDeleteSelectedSession: () => void
   onToggleSelectedPin: () => void
   selectedSessionId: null | string
+  onOpenAgentDossier: () => void
+  /** 档案入口那一枚按钮——浮层锚在它旁边。 */
+  dossierButtonRef: React.RefObject<HTMLButtonElement | null>
 }
 
 function ChatHeader({
@@ -107,10 +113,17 @@ function ChatHeader({
   isRoutedSessionView,
   onDeleteSelectedSession,
   onToggleSelectedPin,
-  selectedSessionId
+  selectedSessionId,
+  onOpenAgentDossier,
+  dossierButtonRef
 }: ChatHeaderProps) {
   const sessions = useStore($sessions)
   const pinnedSessionIds = useStore($pinnedSessionIds)
+  const { t } = useI18n()
+  // 当前这一屏的 Agent 作用域（`'l1'` 或 L2 名册行的 id）。
+  // **档案跟着 Agent 走，不跟着会话走**——Plobi 没有「会话」这个概念，一个 Agent
+  // 就是一张嘴；同一个 Agent 的多轮对话共用同一份档案。
+  const agentScope = useStore($agentScope)
 
   const activeStoredSession =
     sessions.find(session => session.id === selectedSessionId || session._lineage_root_id === selectedSessionId) || null
@@ -161,6 +174,21 @@ function ChatHeader({
           </Button>
         </SessionActionsMenu>
       </div>
+      
+      {/* 档案入口：对话界面右上角那一枚矢量图标（用户 11-07 拍板的新形态）。
+          **只在 L2 Agent 下出现**——`l1` 是秘书，没有自己的档案。 */}
+      {!isSecondaryWindow() && agentScope !== 'l1' && (
+        <button
+          aria-label={t.surface.agentDossier}
+          className="group pointer-events-auto grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground outline-none focus-visible:bg-(--ui-control-active-background) [-webkit-app-region:no-drag]"
+          onClick={onOpenAgentDossier}
+          ref={dossierButtonRef}
+          title={t.surface.agentDossier}
+          type="button"
+        >
+          <Codicon name="symbol-color" size="0.875rem" />
+        </button>
+      )}
     </header>
   )
 }
@@ -286,6 +314,24 @@ export function ChatView({
   const resumeExhaustedSessionId = useStore($resumeExhaustedSessionId)
   const routedSessionId = routeSessionId(location.pathname)
   const isRoutedSessionView = Boolean(routedSessionId)
+  // 当前这一屏的 Agent 作用域（`'l1'` 或 L2 名册行的 id）——档案跟着它走
+  const agentScope = useStore($agentScope)
+
+  // 档案入口那一枚按钮的 ref——浮层要锚在它旁边（不是屏幕左上角）。
+  const dossierButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  const dossierAnchorRef = useMemo(
+    () => ({
+      current: {
+        getBoundingClientRect: () =>
+          dossierButtonRef.current?.getBoundingClientRect() ?? new DOMRect(0, 0, 0, 0)
+      }
+    }),
+    []
+  )
+
+  // Agent dossier panel state
+  const [openDossier, setOpenDossier] = useState(false)
 
   // The URL points at a session the store hasn't loaded yet (sidebar / cmd-K /
   // direct nav). Derived in render so the swap reads instantly: the same frame
@@ -436,8 +482,10 @@ export function ChatView({
       <Backdrop />
       <ChatHeader
         activeSessionId={activeSessionId}
+        dossierButtonRef={dossierButtonRef}
         isRoutedSessionView={isRoutedSessionView}
         onDeleteSelectedSession={onDeleteSelectedSession}
+        onOpenAgentDossier={() => setOpenDossier(true)}
         onToggleSelectedPin={onToggleSelectedPin}
         selectedSessionId={selectedSessionId}
       />
@@ -502,6 +550,22 @@ export function ChatView({
           <ChatDropOverlay kind={dragKind} />
           <ChatSwapOverlay profile={gatewaySwapTarget} />
         </div>
+        
+        {/* 档案：对话界面右上角那一枚图标点出来的浮层（用户 11-07 拍板的新形态） */}
+        {openDossier && agentScope !== 'l1' && (
+          <Popover onOpenChange={setOpenDossier} open={openDossier}>
+            <PopoverAnchor virtualRef={dossierAnchorRef} />
+            <PopoverContent
+              align="end"
+              className="w-96 p-0"
+              side="bottom"
+              sideOffset={8}
+            >
+              <AgentDossierCard agentId={agentScope} />
+            </PopoverContent>
+          </Popover>
+        )}
+        
         {/* Composer renders OUTSIDE the contain:[layout paint] wrapper above:
             that wrapper is a containing block for — and clips — position:fixed
             descendants, so the popped-out (fixed) composer would anchor to the
