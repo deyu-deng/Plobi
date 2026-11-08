@@ -450,7 +450,9 @@ export function ChatSidebar({
               <AgentOffloadPanel agentId={l2Id} />
             ) : (
               <div className="flex min-h-full flex-col">
-                {secretaryAgentsError && (
+                {secretaryAgentsError ? (
+                  // 错误行与空态**二选一**（0.3.0 的原意）：错误行上头一排，空态那枚标记
+                  // 就被顶到这一栏中点之下去了——而基准是那一栏的中点，不许被顶偏。
                   <div className="mb-1 flex shrink-0 items-start gap-2 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
                     <span className="min-w-0 flex-1" title={secretaryAgentsError}>
                       {c.agentsLoadFailed}
@@ -459,9 +461,7 @@ export function ChatSidebar({
                       {t.common.retry}
                     </Button>
                   </div>
-                )}
-
-                {secretaryAgents.length === 0 ? (
+                ) : secretaryAgents.length === 0 ? (
                   secretaryAgentsLoading ? (
                     <div className="shrink-0 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
                       {c.agentsLoading}
@@ -471,9 +471,9 @@ export function ChatSidebar({
                     // 产品化了…要不就用我们设计的 Plobi 样式的图标。淡淡的在空态背景里。」）。
                     // 产品不替用户预设角色，所以这里也只留一个记号；侧栏顶部那行「新建智能体」
                     // 一直在，加角色的入口没少。
-                    // 位置：在中段这块可用空间里**上下居中**（用户 11-08：「它在侧边栏出现的
-                    // 位置上下没有居中」）——原来它贴着「Agents」那几行、下面空一大片，看着像
-                    // 悬在半空。图形一个字没改（用户：「没要你改小乌龟的形状」），只是落位。
+                    // 位置：**以中间那一栏（Agents 栏）的中点为基准**（用户 11-08 12:3x：
+                    // 「以中间Agent栏的中间为基准」）——原来它贴着「Agents」那几行、下面空一大
+                    // 片，看着像悬在半空。图形一个字没改（用户：「没要你改小乌龟的形状」），只是落位。
                     <div className="flex flex-1 items-center justify-center px-2 py-6">
                       <BrandMark className="size-12 bg-transparent opacity-30" />
                     </div>

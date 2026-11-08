@@ -30,6 +30,29 @@ describe('侧栏空态标记的落位', () => {
     expect(wrapper?.[1]).toContain('justify-center')
   })
 
+  it('基准是中间那一栏（Agents 栏）的中点，不是它下面那片空白', async () => {
+    const source = await readFile(SIDEBAR, 'utf8')
+
+    // 中间那一栏：只有它滚（导航那几行钉在顶上），Agents 名单与空态都在它里面。
+    const columnAt = source.indexOf('<div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">')
+    expect(columnAt, '找不到中间那一栏').toBeGreaterThan(-1)
+
+    // 占满那一栏的那一层（`min-h-full`）必须**直接开在那一栏里面**——中间不隔任何
+    // `</div>`，否则它占满的就不是那一栏，标记的「中点」会偏。
+    const stretchAt = source.indexOf('<div className="flex min-h-full flex-col">')
+    expect(stretchAt, '找不到占满中段的那一层').toBeGreaterThan(columnAt)
+    expect(source.slice(columnAt, stretchAt), '占满的那一层不是中间那一栏的直接子节点').not.toContain('</div>')
+  })
+
+  it('错误行与空态互斥（否则标记会被挤到那一栏中点之下）', async () => {
+    const source = await readFile(SIDEBAR, 'utf8')
+
+    // 0.3.0 的原意是「错误行」与「空态」二选一（`?:` 链）；错误行如果与空态并排，
+    // 上头那行提示就把标记的落位顶偏了——而基准是那一栏的中点，不许被顶偏。
+    expect(source, '错误行又与空态并排了').not.toContain('{secretaryAgentsError && (')
+    expect(source, '错误行不在那条三元链上').toContain('secretaryAgentsError ? (')
+  })
+
   it('空态不再直接塞在 SidebarMenu(<ul>) 里面', async () => {
     const source = await readFile(SIDEBAR, 'utf8')
 
