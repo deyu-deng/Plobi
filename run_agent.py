@@ -131,6 +131,17 @@ if _loaded_env_paths:
 else:
     logger.info("No .env file found. Using system environment variables.")
 
+# 脑在第一次启动时还不存在（装机版装完即用就是这一种：家有、脑没有），这里补建最小结构
+# 再往下走。不建的话 ``resolve_root`` 答 ``None``，笔记页与日记页会一起报
+# 「MIND_ROOT 未设置或无 Mind surface」。放在 .env 加载之后，因为 ``MIND_ROOT`` 可能就写在
+# 那份 .env 里；延迟 import 是因为要等环境变量落定，模块顶部那个时点还太早。
+from plobi.mind.paths import ensure_root as _ensure_mind_root
+
+try:
+    _ensure_mind_root()
+except Exception as _mind_init_exc:  # 建脑失败不该挡住整个后端起来
+    logger.warning("[mind] initialisation skipped: %s", _mind_init_exc)
+
 
 # Import our tool system
 from model_tools import (

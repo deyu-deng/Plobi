@@ -15,12 +15,15 @@ Three rules from the North Star contract:
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
+
+logger = logging.getLogger(__name__)
 
 # Logical prefixes, stable across both layouts. ``Mind/`` names the brain's own
 # subtree even after the flatten, because the string is what ledgers, prompts and
@@ -147,7 +150,35 @@ def resolve_root(explicit: Path | str | None = None) -> Path | None:
     if (legacy / "AGENTS.md").is_file():
         return legacy
 
+    # 数据根自带的那一份脑。装机版的家是 ``D:\Data\AppData\Plobi``，它的脑就在
+    # ``<家>\mind``——这一档原先没有，所以「家认得、脑找不到」时整条解析落到 ``None``，
+    # 笔记页与日记页一起报「MIND_ROOT 未设置或无 Mind surface」（2026-11-08 现场）。
+    # 只认**已经存在**的那一份：不猜路径、也不在这里建（建脑是 :func:`ensure_root` 的事，
+    # 而它需要写盘，解析函数不该有副作用）。
+    home = _data_home()
+    if home is not None:
+        candidate = home / "mind"
+        if candidate.is_dir():
+            return candidate
+
     return None
+
+
+def _data_home() -> Optional[Path]:
+    """数据根（``PLOBI_HOME``）——脑在它下面的 ``mind/`` 那一格。
+
+    唯一权威是 :func:`plobi_constants.get_plobi_home`（装机版认安装记录
+    ``HKCU\\Software\\Plobi\\DataDir``、开发态认 ``PLOBI_DEV_HOME``），这里只是借用，
+    不另立一套判定——两处判定一旦分叉，就会出现「进程写一个家、工具读另一个家」。
+    延迟 import：``plobi_constants`` 在 import 期不碰本模块，但反过来会成环。
+    """
+    try:
+        from plobi_constants import get_plobi_home
+
+        value = str(get_plobi_home() or "").strip()
+    except Exception:  # pragma: no cover - 家都算不出来时按「没配」处理
+        return None
+    return Path(value) if value else None
 
 
 def require_root(explicit: Path | str | None = None) -> Path:
@@ -155,6 +186,147 @@ def require_root(explicit: Path | str | None = None) -> Path:
     if root is None:
         raise MindUnavailable("MIND_ROOT is not set and no Mind surface was found")
     return root
+
+
+# --- 首次启动自建最小脑 ---------------------------------------------------------
+#
+# 2026-11-08 现场：装机版 0.3.0 的家是 ``D:\Data\AppData\Plobi``，那个家下面从来没有
+# ``mind``。``resolve_root`` 答 ``None`` ⇒ ``MindProvider`` 拿到一个临时目录占位 ⇒ 笔记页
+# 与日记页同时报「MIND_ROOT 未设置或无 Mind surface」。装完就用的人面对两台空白页，
+# 而这不是配置错，是**新家没有脑**，却没有任何一处代码负责把它建出来。
+#
+# 所以动手的只有两件事：解析多认一档「数据根自带的脑」（见 :func:`resolve_root`，只认
+# 已存在的），以及 :func:`ensure_root` 把那一档建出来——幂等、只补缺、绝不覆盖。
+
+MINIMAL_AGENTS_MD = """# Mind — 本机自己的脑
+
+这份脑由 Plobi 首次启动时自动建出来（`plobi.mind.paths.ensure_root`）。初始为空：没有画像、
+没有档案、没有 wiki 页面，这些都是用起来之后才长出来的东西。**它不声明任何东西**——
+§1 的项目清单声明行留空，等真的有了项目再补。
+
+## 目录
+
+| 位置 | 装什么 | 谁写 |
+|---|---|---|
+| `wiki/daily` | 当日日程摘要与打勾回复（纯事实，不带评价语气） | Plobi |
+| `wiki/memory` | Plobi 记忆工具镜像进来的条目 | Plobi |
+| `wiki/concepts` `wiki/entities` `wiki/sources` `wiki/comparisons` | 知识页（受词表闸约束） | Plobi |
+| `persona` | 用户画像详版 `profile.md` | Plobi |
+| `dossiers` | 各 Agent 的档案 | Plobi |
+| `Surface/notes` | 学科笔记 | 人 |
+| `Surface/diary` | 日记 `YYYY-MM-DD-Weekday.md` | 人 |
+
+人读面若被 `SURFACE_ROOT` 指到别处，`Surface/…` 就落在那边，不在这里。
+
+## 规矩
+
+- 写者边界看 `Code/plobi/mind/paths.py` 的 `SAFE_PREFIXES`，那张表是唯一真源。
+- 人写的 `Surface/notes`、`Surface/diary` 里不放 AI 元注释。
+"""
+
+
+def _mind_relative(prefix: str) -> str:
+    """逻辑前缀 → 相对脑根的真实前缀（摊平之后 ``Mind/wiki/x`` 就是 ``wiki/x``）。"""
+    head, _, rest = prefix.partition("/")
+    if head != MIND_LOGICAL:
+        return prefix
+    return rest if BRAIN_IS_FLATTENED else prefix
+
+
+def brain_skeleton() -> tuple[str, ...]:
+    """最小脑要有的目录（相对脑根）。
+
+    从 :data:`SAFE_PREFIXES` 派生，不另立一张会漂的表——写者允许写哪里，就先备好哪里。
+    """
+    out: list[str] = []
+    for prefix in SAFE_PREFIXES:
+        rel = _mind_relative(prefix)
+        if rel.startswith(f"{SURFACE_LOGICAL}/"):
+            continue  # 人读面不归脑根，见 surface_skeleton()
+        if rel and rel not in out:
+            out.append(rel)
+    return tuple(out)
+
+
+def surface_skeleton() -> tuple[str, ...]:
+    """人读面要有的目录（相对人读面根）。"""
+    out: list[str] = []
+    for prefix in SAFE_PREFIXES:
+        head, _, rest = prefix.partition("/")
+        if head != SURFACE_LOGICAL or not rest:
+            continue
+        # 只备到第一层：``Surface/dossiers/projects`` 只要 ``dossiers`` 存在，项目目录按需长。
+        first = rest.partition("/")[0]
+        if first and first not in out:
+            out.append(first)
+    return tuple(out)
+
+
+def _intended_root(explicit: Path | str | None = None) -> Optional[Path]:
+    """脑**应该**落在哪——不管它现在存不存在。
+
+    :func:`resolve_root` 判的是「这个脑够不够格被读」，这里答的是「该往哪儿建」。
+    两者共用同一架梯子的顺序（显式 → ``MIND_ROOT`` → 仓内 ``mind/`` → 旧 ``Mind/`` →
+    数据根 ``<PLOBI_HOME>/mind``）；改梯子时两边一起看。
+    """
+    if explicit:
+        return Path(explicit)
+    env = os.environ.get("MIND_ROOT", "").strip()
+    if env:
+        return Path(env)
+    for base in (
+        Path(__file__).resolve().parents[2] / "mind",
+        Path(__file__).resolve().parents[3] / "Mind",
+    ):
+        if (base / "AGENTS.md").is_file():
+            return base
+    home = _data_home()
+    return (home / "mind") if home is not None else None
+
+
+def ensure_root(explicit: Path | str | None = None) -> Optional[Path]:
+    """把脑建出来并返回它，已经存在就只补缺。幂等，绝不覆盖既有文件。
+
+    建的是**结构**，不是内容：目录 ＋ 一份最小 ``AGENTS.md``（只要还没有那份文件）。
+    ``AGENTS.md`` 是脑自己的契约文件，人写的，所以这里只在它缺席时补一份最朴素的，
+    已经有任何一版就一个字节都不动。
+
+    返回建完之后的脑根；家都算不出来（既无指针也无数据根）时返回 ``None``。
+    """
+    target = resolve_root(explicit) or _intended_root(explicit)
+    if target is None:
+        return None
+
+    created: list[str] = []
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        for rel in brain_skeleton():
+            path = target / rel
+            if not path.is_dir():
+                path.mkdir(parents=True, exist_ok=True)
+                created.append(rel)
+        agents = target / "AGENTS.md"
+        if not agents.is_file():
+            agents.write_text(MINIMAL_AGENTS_MD, encoding="utf-8")
+            created.append("AGENTS.md")
+        # 人读面已经存在才补它的子目录——指针指着一个还没建出来的库时不动手，
+        # 免得替用户在他自己的 Obsidian 库旁边造格子。
+        surface = _surface_pointer()
+        if surface is not None and surface.is_dir():
+            for rel in surface_skeleton():
+                path = surface / rel
+                if not path.is_dir():
+                    path.mkdir(parents=True, exist_ok=True)
+                    created.append(f"<surface>/{rel}")
+    except OSError as exc:
+        logger.warning("[mind] could not initialise brain at %s: %s", target, exc)
+        return resolve_root(explicit)
+
+    if created:
+        logger.info(
+            "[mind] initialised brain at %s (created: %s)", target, ", ".join(created)
+        )
+    return target
 
 
 @dataclass(frozen=True)
