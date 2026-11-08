@@ -9,7 +9,7 @@ import type { EnvVarInfo } from '@/types/plobi'
 
 import { ConnectionControl } from './connection-control'
 import { CONTROL_TEXT } from './constants'
-import { EntityAvatar } from './entity-avatar'
+import { ProviderBrand } from './provider-brand'
 import { prettyName, withoutKey } from './helpers'
 import { ListRow } from './primitives'
 import type { EnvRowProps } from './types'
@@ -364,12 +364,7 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
       }
       expanded={expandable ? expanded : undefined}
       onActivate={expandable ? onToggle : undefined}
-      icon={(
-        <EntityAvatar
-          monogram={group.name.trim().slice(0, 1).toUpperCase()}
-          testId={`key-card-${group.name}-icon`}
-        />
-      )}
+      icon={<ProviderBrand envKey={group.primary[0]} name={group.name} />}
       title={group.name}
     />
   )

@@ -34,6 +34,7 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ConfigCard } from './config-card'
+import { QuotaAppIcon } from './quota-app-icon'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import {
   buildLoginCards,
@@ -738,6 +739,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
             // One card grammar for all three provider pillars (user 2026-11-08): the
             // same shell as the Sources screen — icon, name, one line, one control.
             <ConfigCard
+              avatar={<QuotaAppIcon id={row.card.id} name={row.card.name} />}
               busy={row.isBusy}
               checked={row.checked}
               configureLabel={subs.configure.replace('{name}', row.card.name)}

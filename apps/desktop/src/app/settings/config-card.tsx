@@ -26,6 +26,8 @@ export interface ConfigCardProps {
   description?: ReactNode
   /** 第一格图标的退路：名字首字母。 */
   monogram: string
+  /** 交给调用方自己画第一格（订阅那屏有自己的品牌表：`QuotaAppIcon`）。 */
+  avatar?: ReactNode
   /** 品牌字形（来自各屏自己的品牌表）。没有就落 monogram。 */
   glyph?: ReactNode
   /** 品牌色：给了就 16% 底染。 */
@@ -62,6 +64,7 @@ export interface ConfigCardProps {
 }
 
 export function ConfigCard({
+  avatar,
   below,
   busy = false,
   checked = false,
@@ -103,7 +106,7 @@ export function ConfigCard({
       below={below}
       expanded={expanded}
       hint={hint}
-      icon={(
+      icon={avatar ?? (
         <EntityAvatar
           color={color}
           glyph={glyph}
