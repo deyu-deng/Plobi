@@ -5,6 +5,7 @@ import { fetchVaultAgent } from '@/app/surface/api'
 import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { Badge } from '@/components/ui/badge'
 import { Codicon } from '@/components/ui/codicon'
+import { ErrorCard } from '@/components/ui/error-state'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
@@ -54,17 +55,17 @@ export function AgentDossierCard({ agentId }: AgentDossierCardProps) {
   }
 
   if (page.isError) {
+    // **原始错误不许铺在正文里**（屏幕文案纪律：机器词不上屏）。house 的形状是
+    // `ErrorCard`：标题一句人话，原始详情**默认收起**、可复制，另给一个重试动作。
+    const detail = page.error instanceof Error ? page.error.message : String(page.error)
+
     return (
       <div className="p-4">
-        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-          <Codicon className="mt-0.5 shrink-0 text-red-400" name="warning" size="0.875rem" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[0.7rem] font-medium text-red-400">{v.agentLoadFailed}</p>
-            <p className="mt-0.5 text-[0.62rem] leading-relaxed text-red-400/70">
-              {(page.error instanceof Error ? page.error.message : undefined) ?? String(page.error)}
-            </p>
-          </div>
-        </div>
+        <ErrorCard
+          action={{ label: t.common.retry, onClick: () => void page.refetch() }}
+          detail={detail}
+          title={v.agentLoadFailed}
+        />
       </div>
     )
   }
