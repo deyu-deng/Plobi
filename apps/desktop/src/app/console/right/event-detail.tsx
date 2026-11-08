@@ -48,7 +48,7 @@ export function RailEventDetail({
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1">
         <button
           aria-label={t.common.back}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-secondary) hover:bg-(--ui-surface-2) hover:text-foreground"
+          className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground"
           data-testid="rail-event-back"
           onClick={onBack}
           title={t.common.back}

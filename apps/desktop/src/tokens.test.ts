@@ -51,17 +51,19 @@ const TEXT_EXT = new Set(['.ts', '.tsx', '.css', '.html'])
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.vite'])
 
 /**
- * 已知欠账（下一刀收，落法见 `Docs/tasks/dead-border-tokens-task.md` 的「下一刀」一节）：
- * · `--ui-surface-2`（12 处）＝ 日历／议程那些小按钮的 hover 面 → `--ui-control-hover-background`
+ * 已知欠账（下一刀收，落法见 `Docs/tasks/dead-hover-face-task.md` 的「下一刀」一节）：
+ * · `--ui-surface-secondary`（1 处）＝ 外部来源那一个清单的底色空 → 按角色判
  * · `--ui-text-danger`（8 处）＝ 危险色那几处不显红 → `text-destructive`
+ *   （其中出口面板与外包屏那 6 处在别的在派线认领下，要等它们交割）
  * · `--ui-accent-foreground`／`--ui-text-on-accent`（4 处）＝ 强调色底上的字读不清 → `text-white`
- * · `--ui-surface`／`--ui-surface-secondary`（2 处）＝ 一处日历格底色、一处下拉底色空 → 按角色判
+ *   （日历那几处带 `, white` 的 fallback，屏上看得出来的不算死）
  * · `--ui-background`（2 处）＝ 侧栏那枚头像的 ring 偏移底色空 → `ring-offset-background`
  *   （那一档在派线认领着，本刀不碰）
+ *
+ * `--ui-surface-2` 与 `--ui-surface` 已随 `WP-DEAD-HOVER-FACE` 还完（hover 面与底色那 13 处），
+ * 不再是欠账 ⇒ 下一把刀再写错这两支，那扇门当场红。
  */
 const KNOWN_DEBT = new Set([
-  '--ui-surface',
-  '--ui-surface-2',
   '--ui-surface-secondary',
   '--ui-text-danger',
   '--ui-accent-foreground',

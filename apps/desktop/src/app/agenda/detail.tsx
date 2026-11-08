@@ -206,7 +206,7 @@ export function AgendaDetail({
           <PanelSectionLabel>{a.attachmentsLabel}</PanelSectionLabel>
           <button
             aria-label={a.addAttachment}
-            className="flex size-6 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-foreground disabled:opacity-50"
+            className="flex size-6 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-50"
             disabled={attachmentsBusy}
             onClick={onAddAttachment}
             title={a.addAttachment}
@@ -243,7 +243,7 @@ export function AgendaDetail({
                 </span>
                 <button
                   aria-label={a.removeAttachment}
-                  className="flex size-5 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-destructive disabled:opacity-50"
+                  className="flex size-5 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-destructive disabled:opacity-50"
                   disabled={attachmentsBusy}
                   onClick={() => onRemoveAttachment(attachment)}
                   title={a.removeAttachment}
@@ -441,7 +441,7 @@ export function AgendaEditorDialog({
             <div className="flex items-center justify-between gap-2">
               <span className="text-[0.72rem] text-(--ui-text-secondary)">{a.detailsLabel}</span>
               <button
-                className="flex items-center gap-1 rounded px-1 py-0.5 text-[0.66rem] text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-foreground"
+                className="flex items-center gap-1 rounded px-1 py-0.5 text-[0.66rem] text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground"
                 onClick={() => setDetails(rows => [...rows, { done: false, id: newDetailId(), text: '' }])}
                 type="button"
               >
@@ -469,7 +469,7 @@ export function AgendaEditorDialog({
                 ) : null}
                 <button
                   aria-label={t.common.delete}
-                  className="flex size-6 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-destructive"
+                  className="flex size-6 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-destructive"
                   onClick={() => setDetails(rows => rows.filter((_, position) => position !== index))}
                   type="button"
                 >

@@ -6,6 +6,7 @@ import type { Translations } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { AgendaEvent } from '@/types/plobi'
 
+import { NowLine, nowMinutesOfDay } from '../../console/right/now-line'
 import {
   emptyDay,
   HOUR_HEIGHT,
@@ -13,8 +14,6 @@ import {
   layoutDay,
   type TimelineBlock
 } from '../../console/right/timeline-layout'
-
-import { NowLine, nowMinutesOfDay } from '../../console/right/now-line'
 
 import {
   CALENDAR_MODES,
@@ -123,7 +122,7 @@ function ToolbarButton({
   return (
     <button
       aria-label={label}
-      className="flex size-7 items-center justify-center rounded-md text-(--ui-text-secondary) transition-colors hover:bg-(--ui-surface-2) hover:text-foreground"
+      className="flex size-7 items-center justify-center rounded-md text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
       onClick={onClick}
       title={label}
       type="button"
@@ -150,7 +149,7 @@ function YearView({
     <div className="grid grid-cols-2 gap-3 px-2 pb-4 min-[42rem]:grid-cols-3 min-[58rem]:grid-cols-4">
       {yearMonths(anchor).map(monthKey => (
         <section
-          className="rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-surface)/40 p-2"
+          className="rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) p-2"
           data-testid={`year-month-${monthKey.slice(0, 7)}`}
           key={monthKey}
         >
@@ -166,7 +165,7 @@ function YearView({
                 <button
                   aria-label={key}
                   className={cn(
-                    'relative flex h-6 flex-col items-center justify-center rounded text-[0.62rem] tabular-nums transition-colors hover:bg-(--ui-surface-2)',
+                    'relative flex h-6 flex-col items-center justify-center rounded text-[0.62rem] tabular-nums transition-colors hover:bg-(--ui-control-hover-background)',
                     outside ? 'text-(--ui-text-tertiary)/45' : 'text-(--ui-text-secondary)',
                     key === today && 'bg-(--ui-accent)/10 font-semibold text-(--ui-accent)'
                   )}
@@ -230,8 +229,8 @@ function MonthView({
           return (
             <div
               className={cn(
-                'flex min-h-[4.6rem] cursor-pointer flex-col gap-0.5 border-b border-r border-(--ui-stroke-tertiary)/70 p-1 transition-colors last:border-r-0 hover:bg-(--ui-surface-2)/60',
-                outside && 'bg-(--ui-surface-2)/30 text-(--ui-text-tertiary)/50'
+                'flex min-h-[4.6rem] cursor-pointer flex-col gap-0.5 border-b border-r border-(--ui-stroke-tertiary)/70 p-1 transition-colors last:border-r-0 hover:bg-(--ui-row-hover-background)',
+                outside && 'bg-(--ui-bg-quaternary) text-(--ui-text-tertiary)/50'
               )}
               data-testid={`month-day-${key}`}
               key={key}
@@ -397,7 +396,7 @@ function TimeAxis({
         {columns.map(key => (
           <button
             className={cn(
-              'border-l border-(--ui-stroke-tertiary)/70 px-1 py-1.5 text-center transition-colors hover:bg-(--ui-surface-2)',
+              'border-l border-(--ui-stroke-tertiary)/70 px-1 py-1.5 text-center transition-colors hover:bg-(--ui-control-hover-background)',
               key === anchor && mode === 'day' && 'bg-(--ui-accent)/5'
             )}
             key={key}
@@ -506,7 +505,7 @@ function MiniWeekRow({
         return (
           <button
             className={cn(
-              'flex flex-col items-center gap-0.5 rounded-md py-1 transition-colors hover:bg-(--ui-surface-2)',
+              'flex flex-col items-center gap-0.5 rounded-md py-1 transition-colors hover:bg-(--ui-control-hover-background)',
               key === anchor && 'bg-(--ui-accent)/10'
             )}
             data-testid={`mini-week-${key}`}
@@ -601,7 +600,7 @@ export function AgendaCalendar({
                 'rounded px-1.5 py-0.5 text-[0.66rem] transition-colors',
                 value === mode
                   ? 'bg-(--ui-accent) text-(--ui-accent-foreground, white)'
-                  : 'text-(--ui-text-secondary) hover:bg-(--ui-surface-2)'
+                  : 'text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)'
               )}
               key={value}
               onClick={() => onModeChange(value)}
