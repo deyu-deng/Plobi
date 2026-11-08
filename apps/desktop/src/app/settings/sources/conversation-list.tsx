@@ -235,7 +235,7 @@ export function ConversationList({ labels, source }: { labels: Labels, source: s
             <button
               aria-expanded={open}
               aria-label={`${kindLabel(group.kind, labels)} — ${open ? labels.groups.collapse : labels.groups.expand}`}
-              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 text-left hover:bg-(--ui-bg-hover)"
+              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 text-left row-hover"
               data-testid={`conversations-${source}-group-${group.kind}-toggle`}
               onClick={() => { decideRoster(rosterFold, source, group.kind, !open) }}
               type="button"
@@ -255,7 +255,7 @@ export function ConversationList({ labels, source }: { labels: Labels, source: s
 
             {open
               ? (
-                  <ul className="ml-2 space-y-0.5 border-l border-(--ui-border) py-0.5 pl-2" data-testid={`conversations-${source}-rows-${group.kind}`}>
+                  <ul className="ml-2 space-y-0.5 border-l border-(--ui-stroke-tertiary) py-0.5 pl-2" data-testid={`conversations-${source}-rows-${group.kind}`}>
                     {group.rows.map(row => (
                       <li className="flex items-center gap-2" data-testid={`conversation-row-${row.id}`} key={row.id}>
                         {/* 查不到名字的那一行拿会话号上屏，但**念成号**：灰字 + 一句"没查到名字"。

@@ -191,7 +191,7 @@ export function ListRow({
       {onActivate ? (
         <button
           aria-expanded={expanded ?? false}
-          className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1 rounded-md px-1 text-left hover:bg-(--ui-bg-hover)"
+          className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1 rounded-md px-1 text-left row-hover"
           onClick={onActivate}
           type="button"
         >

@@ -67,7 +67,7 @@ export function MemoryWriteTool({ args, result }: MemoryWriteProps) {
 
   if (outcome) {
     return (
-      <div className="my-2 border-l-2 border-(--ui-border) pl-3 text-[0.75rem] text-(--ui-text-tertiary)">
+      <div className="my-2 border-l-2 border-(--ui-stroke-tertiary) pl-3 text-[0.75rem] text-(--ui-text-tertiary)">
         {outcome === 'confirmed' ? c.cardConfirmed : outcome === 'dismissed' ? c.cardDismissed : c.cardFailed}
       </div>
     )

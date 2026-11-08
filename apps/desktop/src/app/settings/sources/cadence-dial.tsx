@@ -167,7 +167,7 @@ export function CadenceDial({ labels, onChange, value }: {
         aria-valuemin={0}
         aria-valuenow={position}
         aria-valuetext={sentence}
-        className="relative size-[92px] shrink-0 cursor-grab touch-none outline-none focus-visible:ring-2 focus-visible:ring-(--ui-border-focus)"
+        className="relative size-[92px] shrink-0 cursor-grab touch-none outline-none focus-visible:ring-2 focus-visible:ring-(--ui-accent)"
         onKeyDown={onKeyDown}
         onPointerDown={onPointerDown}
         ref={node => {
@@ -178,7 +178,7 @@ export function CadenceDial({ labels, onChange, value }: {
       >
         <svg className="size-full" viewBox="0 0 100 100">
           <circle
-            className="fill-(--ui-bg-secondary) stroke-(--ui-border)"
+            className="fill-(--ui-bg-secondary) stroke-(--ui-stroke-tertiary)"
             cx="50"
             cy="50"
             fill="none"
@@ -205,7 +205,7 @@ export function CadenceDial({ labels, onChange, value }: {
           </label>
           <input
             aria-label={labels.cadenceNumber}
-            className="w-16 rounded-md border border-(--ui-border) bg-transparent px-1.5 py-0.5 text-[length:var(--conversation-caption-font-size)]"
+            className="w-16 rounded-md border border-(--ui-stroke-secondary) bg-transparent px-1.5 py-0.5 text-[length:var(--conversation-caption-font-size)]"
             id={`${id}-n`}
             min={1}
             onChange={event => {
@@ -221,7 +221,7 @@ export function CadenceDial({ labels, onChange, value }: {
           </label>
           <select
             aria-label={labels.cadenceUnit}
-            className="rounded-md border border-(--ui-border) bg-transparent px-1 py-0.5 text-[length:var(--conversation-caption-font-size)]"
+            className="rounded-md border border-(--ui-stroke-secondary) bg-transparent px-1 py-0.5 text-[length:var(--conversation-caption-font-size)]"
             id={`${id}-unit`}
             onChange={event => {
               onChange(`every ${shown.n}${event.target.value}`)

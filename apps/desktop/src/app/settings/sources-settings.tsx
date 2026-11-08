@@ -211,8 +211,8 @@ export function SourcesSettings() {
                   aria-pressed={tags.includes(kind)}
                   className={`rounded-full border px-2 py-0.5 text-[length:var(--conversation-caption-font-size)] ${
                     tags.includes(kind)
-                      ? 'border-(--ui-border-strong) bg-(--ui-bg-hover) text-(--ui-text-primary)'
-                      : 'border-(--ui-border) text-(--ui-text-tertiary)'}`}
+                      ? 'border-(--ui-stroke-primary) bg-(--ui-control-active-background) text-(--ui-text-primary)'
+                      : 'border-(--ui-stroke-tertiary) text-(--ui-text-tertiary)'}`}
                   data-testid={`source-tag-${kind}`}
                   key={kind}
                   onClick={() => { $tags.set(toggleTag(tags, kind)) }}
@@ -243,7 +243,7 @@ export function SourcesSettings() {
         //   收起：下面那张卡没了，头就自己住进一张**只有头的卡**，否则收起态只剩一段裸文字。
         // 形状照 `ListRow` 那件抄（`-mx-1`＋`w-[calc(100%+0.5rem)]`＋`rounded-md`），
         // hover 面用仓里那支 `row-hover`（`--ui-row-hover-background`，进面即亮、离面 100ms 退）：
-        // **`--ui-bg-hover` 那个令牌全仓没有定义**（`ListRow` 自己那份 hover 面因此一直是死的），
+        // 那颗空令牌 `--ui-bg-hover` 已随 `WP-DEAD-BORDER-TOKENS` 从全仓清掉，
         // 抄它等于抄一颗空的面。
         const header = (
           <button
@@ -517,7 +517,7 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
           有那颗「检查一下」。缺了这一格，这颗加号点进去是一片空白。 */}
       {guide
         ? (
-            <div className="rounded-lg border border-(--ui-border-tertiary) p-3" data-testid={`source-guide-${row.source}`}>
+            <div className="rounded-lg border border-(--ui-stroke-tertiary) p-3" data-testid={`source-guide-${row.source}`}>
               <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary)">
                 {gl.titles[row.source] ?? guide.title ?? gl.fallbackTitle}
               </p>
@@ -582,7 +582,7 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
           日程板那座首启审查弹窗不在这里，它讲的是"要不要开始采"，不是"每扇采不采"。 */}
       {row.conversation_scoped
         ? (
-            <div className="border-t border-(--ui-border-tertiary) pt-3" data-testid={`source-talkers-${row.source}`}>
+            <div className="border-t border-(--ui-stroke-tertiary) pt-3" data-testid={`source-talkers-${row.source}`}>
               <ConversationList labels={labels} source={row.source} />
             </div>
           )

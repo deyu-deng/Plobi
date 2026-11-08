@@ -8,8 +8,8 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { createAgendaEvent } from '@/plobi'
 import { useI18n } from '@/i18n'
+import { createAgendaEvent } from '@/plobi'
 import { upsertAgendaEvent } from '@/store/agenda'
 
 function localDatetimeValue(date: Date): string {
@@ -49,12 +49,12 @@ export function AddEventForm({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t border-(--ui-border) px-2 py-2">
+    <div className="flex flex-col gap-2 border-t border-(--ui-stroke-tertiary) px-2 py-2">
       <label className="flex flex-col gap-0.5 text-[0.62rem] text-(--ui-text-tertiary)">
         {c.addTitle}
         <input
           autoFocus
-          className="rounded-md border border-(--ui-border) bg-(--ui-bg-elevated) px-2 py-1 text-[0.78rem] text-foreground outline-none focus:border-(--ui-accent)"
+          className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-2 py-1 text-[0.78rem] text-foreground outline-none focus:border-(--ui-accent)"
           onChange={event => setTitle(event.target.value)}
           placeholder={c.addTitlePlaceholder}
           value={title}
@@ -63,7 +63,7 @@ export function AddEventForm({ onClose }: { onClose: () => void }) {
       <label className="flex flex-col gap-0.5 text-[0.62rem] text-(--ui-text-tertiary)">
         {c.addStart}
         <input
-          className="rounded-md border border-(--ui-border) bg-(--ui-bg-elevated) px-2 py-1 text-[0.78rem] text-foreground outline-none focus:border-(--ui-accent)"
+          className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-2 py-1 text-[0.78rem] text-foreground outline-none focus:border-(--ui-accent)"
           onChange={event => setStart(event.target.value)}
           type="datetime-local"
           value={start}
