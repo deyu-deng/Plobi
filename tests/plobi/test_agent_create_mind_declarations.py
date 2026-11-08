@@ -553,3 +553,64 @@ def test_a_research_agent_does_not_enter_the_projects_declaration(
     entry = live_registry().get("srtp")
     assert entry is not None and entry.mind_subtree == "Surface/dossiers/research/SRTP"
 
+
+# --------------------------------------------------------------------------- #
+# 每一类都能建出来吗（用户 11-08 11:5x：「其他类型的 Agent 能不能顺利建出来呢？」）
+# --------------------------------------------------------------------------- #
+
+
+def test_every_creatable_category_can_be_created(
+    client, make_brain, isolated_registry, tmp_path
+):
+    """五个品类逐类真打一次 POST /api/agents。
+
+    - ``projects``／``research``：要在 Mind 里立项（``MIND_PROJECT_CATEGORIES``）——
+      research 那一类**不进**项目声明（上一条用例），projects 进。
+    - ``courses``：要绑一个课程文件夹（弹窗那一档要文件夹才能提交），但**不在** Mind 里立项
+      （裁定 121 二那一格：课程条目是日程侧的数据）。
+    - ``butler``：家务，不绑目录、不立项。
+    - ``events``：**建不了是设计如此**——它要日程里一个已确认的事项当来源
+      （``create-agent.ts::isCreateAgentCategoryBlocked``），弹窗那一档是关着的。
+
+    判据：能建的那四类都 200，且 Mind 树只出现在 projects／research 两类里。
+    """
+    root = make_brain(disk=["Aura"])
+    course_folder = tmp_path / "course-folder"
+
+    for category in ("projects", "research", "courses", "butler"):
+        payload = {"id": f"probe-{category}", "name": f"Probe {category}", "category": category}
+        if category == "courses":
+            payload["projectPaths"] = [str(course_folder)]
+
+        response = create(client, payload)
+
+        assert response.status_code == 200, (category, response.json())
+
+    projects = live_registry().get("probe-projects")
+    research = live_registry().get("probe-research")
+    courses = live_registry().get("probe-courses")
+    butler = live_registry().get("probe-butler")
+
+    # Mind 树只给那两类。
+    assert projects is not None and projects.mind_subtree.startswith(f"{PROJECTS_RELATIVE}/")
+    assert research is not None and research.mind_subtree.startswith("Surface/dossiers/research/")
+    assert courses is not None and courses.mind_subtree == ""
+    assert butler is not None and butler.mind_subtree == ""
+
+    # courses 那一格把文件夹绑上了（弹窗要求），butler 不绑。
+    assert courses is not None and courses.project_path.endswith("course-folder")
+    assert butler is not None and butler.project_path == ""
+
+
+def test_events_agents_are_refused_without_a_confirmed_agenda_event(
+    client, make_brain, isolated_registry
+):
+    """events 那一类建不了是**设计如此**，不是坏了：它要日程里一个已确认的事项当来源。"""
+    make_brain(disk=["Aura"])
+
+    response = create(client, {"id": "probe-events", "name": "Probe events", "category": "events"})
+
+    assert response.status_code == 400, response.json()
+    assert "sourceEventId" in response.json()["error"]
+    assert live_registry().get("probe-events") is None
+
