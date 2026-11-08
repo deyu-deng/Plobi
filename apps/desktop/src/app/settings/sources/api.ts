@@ -85,6 +85,21 @@ export interface SourceRow {
   /** 密钥那一格**设过没有**。值永不出现在这条读数里（那是"星号"那一格的牙齿）。 */
   secrets?: Record<string, boolean>
   /**
+   * 这一条**还缺必填吗**——**后端算的那一格**（`sources_api` 里 `setup_ready` 的反面）。
+   *
+   * 前端从前自己算一遍（只看 `setup_fields` 里 required 的那几格），于是微信／钉钉／幕布
+   * 那三条**一个必填格都没有**的被恒判成「配好了」——加号就变成了开关（用户 11-08 现场：
+   * 用户明明什么都没有配置，钉钉、幕布和微信左边就从加号变成开关了）。
+   *
+   * 缺位是**读数**：后端是旧版、没给这一格 ⇒ 退回本地那套算法（见 `./verbs`）。
+   */
+  needs_setup?: boolean
+  /**
+   * 首次配置要用户**人肉做**的那一步（装软件 / 登录）——**由这一条自己声明**。
+   * 缺位＝这一条没有这一步（邮箱／教务那一族，填表就是全部）。
+   */
+  setup_guide?: null | { action: string, detail: string, title: string, url: string }
+  /**
    * 这一条**按会话准入**吗（微信那种一条信源里有很多群与人的形状）。
    *
    * 由后端从声明给（`SourceSpec.conversation_scoped`），面不许按信源名字自己决定画不画。
@@ -260,6 +275,27 @@ export async function saveSourceSetup(sourceId: string, params: Record<string, s
     method: 'POST',
     body: { params }
   })
+}
+
+/**
+ * 把这一条**产品能代做的那一步**做掉（微信那枚数据密钥），然后由面重读读数。
+ *
+ * 为什么需要它：用户 11-08「如果用户点击配置了就引导用户登录或者下载软件」——用户装好
+ * 客户端、登录完之后，得**有一个办法让产品重新看一眼**；微信那一枚密钥是产品自己取的
+ * （`SourceSpec.sidecar_prepare`，裁定 203 口径 2「数据密钥不由他抄」）。
+ *
+ * **不翻开关**：翻开关是另一件事（`setSourceEnabled`）。这一格只做准备。
+ */
+export async function prepareSource(sourceId: string): Promise<{ detail: string, ok: boolean }> {
+  const data = unwrapData<Record<string, unknown>>(
+    await window.plobiDesktop.api({
+      path: `/api/collect/sources/${encodeURIComponent(sourceId)}/prepare`,
+      method: 'POST'
+    }),
+    `/api/collect/sources/${sourceId}/prepare`
+  )
+
+  return { detail: String(data?.detail ?? ''), ok: data?.ok === true }
 }
 
 /** 外面装的那些第三方信源包。现读，不是记一份账。 */

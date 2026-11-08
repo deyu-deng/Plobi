@@ -156,6 +156,20 @@ def _probe_of(spec) -> Optional[dict]:
             "detail": str(raw.get("detail") or "")}
 
 
+def _guide_of(spec) -> Optional[dict[str, Any]]:
+    """这一条**首次配置要人肉做的那一步**（装软件 / 登录）——**声明照原样给**。
+
+    界面先查语言目录、查不到才回声明里的英文缺省值——与 `setup_fields` 同一套路，
+    所以第三方包零改动就能出现在界面上（只是没翻译）。缺位是**读数**：这一条没有这一步
+    ⇒ 抽屉里一个字都不多画。
+    """
+    guide = getattr(spec, "setup_guide", None)
+    if guide is None:
+        return None
+
+    return {"action": guide.action, "detail": guide.detail, "title": guide.title, "url": guide.url}
+
+
 def _pool_counts(source_id: str) -> tuple[int, dict[str, int]]:
     """这一条在**信息池**里几条、按 `kind` 怎么分。
 
@@ -215,10 +229,16 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
     # 密钥那一档：值**永不出门**，只回"设过没有"。界面上那格因此是写入口，不是读数口。
     configured = sources_config.secret_configured(source_id)
     params = sources_config.setup_params(source_id)
-    # 「还缺必填吗」问的是 `sources_config.field_configured` 那一处（配置格 / 新密钥键 / 这条声明的
-    # 历史键名回退，三处任一即算填过）：只看前者会把"早就在 `.env` 里配过账密"的人念成没配，
-    # 于是一颗开关只把抽屉打开让他再填一遍——判据不许比真读口窄。
-    needs_setup = not sources_config.setup_complete(source_id)
+    # 「还缺必填吗」问的是 `sources_config.setup_ready` 那一处（必填格齐了没有 **且** 用户人肉
+    # 那一步做完了没有）：只看必填格会把"早就在 `.env` 里配过账密"的人念成没配，于是一颗开关
+    # 只把抽屉打开让他再填一遍——判据不许比真读口窄；只看必填格更会漏掉微信／钉钉／幕布那三条
+    # **一个必填格都没有**的（它们要的是装客户端并登录），于是"没配过"被画成开关而不是加号
+    # （用户 11-08 现场：用户明明什么都没有配置，钉钉、幕布和微信左边就从加号变成开关了）。
+    # 配置层读不到时落 True：宁可说"还没配"，也不把"读不到"说成"配好了"。
+    try:
+        needs_setup = not sources_config.setup_ready(source_id)
+    except sources_config.SourceConfigError:
+        needs_setup = True
     pool_count, pool_kinds = _pool_counts(source_id)
     probe = _probe_of(spec)
     status, status_code = status_of(enabled=enabled, needs_setup=needs_setup,
@@ -248,6 +268,12 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
         "conversation_scoped": bool(spec.conversation_scoped),
         "setup": None if enabled is None else {k: v for k, v in params.items() if k not in configured},
         "secrets": configured,
+        # 「这一条还缺必填吗」——**后端算的那一格，前端不再自己算一遍**（11-08 改）。
+        # 前端从前只按 `setup_fields` 里的 required 项自己判，于是微信／钉钉／幕布那三条
+        # （一个必填格都没有）恒判成"配好了"，加号就变成了开关。
+        "needs_setup": needs_setup,
+        # 首次配置要人肉做的那一步（装软件 / 登录）。缺位是**读数**：这一条没有这一步。
+        "setup_guide": _guide_of(spec),
         # 三态那一格（用户 10-22：「一个信源就一个开关按钮，就三种形态」）。**由这一层算**，
         # 前端不再留第二套词表；`status_detail` 只在出错态给，且逐字来自上一轮（不转述）。
         "status": status,
@@ -464,6 +490,37 @@ async def set_source_setup(source_id: str, body: SetupRequest):
         status = 400 if ("密钥" in str(exc) or "没声明" in str(exc) or "还缺" in str(exc)) else 503
         raise HTTPException(status_code=status, detail=str(exc)) from exc
     return {"ok": True, "data": {"source": source_id, "setup": saved}}
+
+
+@router.post("/sources/{source_id}/prepare", name="collect_source_prepare")
+async def prepare_source(source_id: str):
+    """把这一条**产品能代做的那一步**做掉，然后由面重读读数。
+
+    为什么要有这一格：用户 11-08 原话「**如果用户点击配置了就引导用户登录或者下载软件**」。
+    点那颗加号进抽屉之后，用户做完了人肉那一步（装好客户端、登录），得**有一个办法让产品
+    重新看一眼**——否则屏上那颗加号永远变不成开关（微信这一条尤其：数据密钥是产品在
+    点开关那一刻自己取的，`SourceSpec.sidecar_prepare`，裁定 203 口径 2「数据密钥不由他抄」）。
+
+    **不翻开关**：翻开关是另一件事（`/enabled` 那一格）。这一格只做"准备"，做完由面重读——
+    配好了，那颗加号自己变成开关。
+
+    这一条没有产品能代做的那一步时，如实说"得你自己在客户端里做"，不编一句。
+    """
+    _require_registered(source_id)
+
+    prepare = getattr(registry.spec(source_id), "sidecar_prepare", None)
+    if prepare is None:
+        return {"ok": True, "data": {
+            "detail": "这一步得在本机那个客户端里做。", "ok": False, "source": source_id}}
+
+    try:
+        ok, note = prepare()
+    except Exception as exc:  # noqa: BLE001 - 这一步失败不许把那次点击炸掉
+        logger.warning("collect/sources: prepare failed for %s: %s", source_id, exc)
+        return {"ok": True, "data": {
+            "detail": "准备那一步没做成。", "ok": False, "source": source_id}}
+
+    return {"ok": True, "data": {"detail": str(note or ""), "ok": bool(ok), "source": source_id}}
 
 
 class AdmissionRequest(BaseModel):

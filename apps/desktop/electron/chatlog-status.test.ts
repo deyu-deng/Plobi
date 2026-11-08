@@ -103,7 +103,13 @@ test('判据 2 的对照 — the rendered line is the server sentence, byte for 
     const sentence = `chatlog 采不到：${notes[state]}`
     const row = chatlogLedgerRow({ state, note: sentence, binary: null })
 
-    assert.equal(row.level, 'red', `${state} must be shown as a fault, not postponed`)
+    // 11-08 改判那一半：**前置缺失是「还没开始」，不是「坏了」**——台账自己那条规则 2
+    // （`deferred-sidecars.ts` 头部）：「这台机器上压根没有可启动的东西」落 deferred，
+    // 「试过了起不来」才落 red。只有 `not_listening`（前置齐了而服务没在听）是后者。
+    // 用户 11-08：「用户明明什么都没有配置……甚至微信还一直在报错」——那块红牌就是这么来的。
+    const level = state === 'not_listening' ? 'red' : 'deferred'
+
+    assert.equal(row.level, level, `${state} must be shown as ${level}`)
     assert.equal(row.body, sentence, `${state}: 桌面改写了服务端那句话`)
 
     // 服务端把那个字面改掉，桌面这行必须跟着变（同一个引用，没有副本可滞后）。
@@ -113,11 +119,22 @@ test('判据 2 的对照 — the rendered line is the server sentence, byte for 
   }
 })
 
-test('判据 1 — a known state that arrives without its sentence goes red, never invents one', () => {
-  const row = chatlogLedgerRow({ state: 'key_missing', note: null, binary: null })
+test('判据 1 — a known state that arrives without its sentence never invents one', () => {
+  // 「试过了起不来」那一档（`not_listening`）没有句子 ⇒ 红，但**不许替它编一句**。
+  const row = chatlogLedgerRow({ state: 'not_listening', note: null, binary: null })
 
   assert.equal(row.level, 'red')
   assert.ok(!row.body.includes('Go'), '不许替它猜一句别的原因')
+})
+
+test('11-08 — 前置缺失是「还没开始」，不弹红牌', () => {
+  // 全新装机、什么都没配的机器上，这三档是**还没开始**（用户 11-05：「用户没有配置微信。
+  // 就不采集。相关的采集腿也不要反复报错了」），不是故障 ⇒ 落 deferred，不进红牌那一档。
+  for (const state of ['build_missing', 'go_missing', 'key_missing']) {
+    const row = chatlogLedgerRow({ state, note: `chatlog 采不到：${state}`, binary: null })
+
+    assert.equal(row.level, 'deferred', `${state} 不是故障，不该弹红牌`)
+  }
 })
 
 test('spawn uses only the binary the server named, and never while it claims ready', () => {

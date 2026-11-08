@@ -171,6 +171,37 @@ class SetupField:
             )
 
 
+@dataclass(frozen=True)
+class SetupGuide:
+    """首次配置要用户**人肉做**的那一步（装软件 / 登录 / 扫码）——**由这一条自己声明**。
+
+    形状照 :class:`SetupField`：**声明给缺省值，语言目录优先**。``title`` 与 ``action``
+    是**英文缺省值**，界面先查语言目录、查不到才回它们——所以第三方包零改动就能出现在
+    界面上（只是没翻译）；我们自己那几条四语齐全。
+
+    为什么要有这一格：微信／钉钉／幕布这三条**没有可填的格子**——``setup_fields`` 是空的
+    （用户 10-27：「我找不到 token 呀。我没这么厉害」），它们的"配置"是**装好一个客户端
+    并登录**，而这件事**不在表单层**。没有这一格，那颗加号点进去是一片空白：
+    用户 11-08 的原话正是「**如果用户点击配置了就引导用户登录或者下载软件**」。
+
+    ``url`` 只能填 http(s)：这一格要交给系统浏览器去开，别的协议不接。
+    """
+
+    title: str
+    #: 按钮上写什么（英文缺省值；语言目录优先）。
+    action: str = ""
+    #: 去哪一步（下载页 / 登录页）。空串＝这一步在**本机**做，界面不给外链。
+    url: str = ""
+    #: 一句指路（可选）。空串＝不画那一行。
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.title.strip():
+            raise ValueError("SetupGuide 的 title 不能是空串")
+        if self.url and not self.url.startswith(("http://", "https://")):
+            raise ValueError(f"SetupGuide 的 url 只能是 http(s)：{self.url!r}")
+
+
 class UnknownCadence(ValueError):
     """这一句频率写得不合法。**拦在声明那一刻**，不等每天那一轮静默不打。"""
 
@@ -279,6 +310,21 @@ class SourceSpec:
     #: 默认空元组**不是**"可以随便省略"——空是一个合法读数，意思是"首次配置不需要用户
     #: 填任何非密钥的东西"（微信要的是扫码与密钥，两样都不在这一层，所以它就该是空的）。
     setup_fields: tuple[SetupField, ...] = ()
+    #: 这一条**算不算配好了**（用户人肉那一步做完了没有）。
+    #:
+    #: 为什么要有这一格：:func:`plobi.collectors.sources_config.setup_complete` 只管
+    #: "必填那几格齐了没有"，而微信／钉钉／幕布**没有可填的格子**（`setup_fields` 里只有
+    #: `cadence`，而它不 required）⇒ 对这三条它算出来是 `all([])`＝**恒真**。后果有两处，
+    #: 都正是用户 11-08 报的：**屏上把"没配过"画成开关而不是加号**，以及采集侧那道闸
+    #: （用户 11-05：「用户没有配置微信。就不采集。相关的采集腿也不要反复报错了」）
+    #: 对这三条**形同虚设**，于是微信每轮被打、每轮写一条 `build_failed`。
+    #:
+    #: 缺位是一个**读数**：这一条没有"人肉那一步"（邮箱／教务那一族），按必填格齐了算。
+    setup_ready: Optional[Callable[[], bool]] = field(default=None, kw_only=True)
+    #: 首次配置要用户人肉做的那一步**长什么样**（装什么、去哪做）。见 :class:`SetupGuide`。
+    #:
+    #: 缺位是**读数**：这一条没有这一步 ⇒ 抽屉里不画引导块（界面一个字都不多画）。
+    setup_guide: Optional[SetupGuide] = field(default=None, kw_only=True)
     #: 这一条在**本机有自己的常驻服务**时，那个服务的端口（`None`＝没有要开关的进程）。
     #:
     #: 用户 10-23 对着那一屏说：「**微信那个按钮形同虚设。我打开还是关闭都是显示未连接。
@@ -483,9 +529,13 @@ def collecting_sources() -> tuple[str, ...]:
         if enabled:
             # 第二道闸（用户 11-05）：没配齐的不进这一轮。首装机器上那些源从前每轮被打一遍、
             # 每轮写一条 build_failed、屏上再画一行红——把"还没开始"说成"坏了"。
-            # 判据与屏上那颗加号共用 sources_config.setup_complete，不另写一套。
+            # 判据与屏上那颗加号共用 sources_config.setup_ready，不另写一套。
+            #
+            # 为什么是 `setup_ready` 而不是 `setup_complete`（11-08 改）：后者只问"必填格齐了没"，
+            # 而微信／钉钉／幕布**没有必填格**（它们要的是装好客户端并登录）⇒ 对这三条它恒真
+            # ⇒ 那道闸对它们形同虚设，微信每轮照打、每轮一条 build_failed、屏上一块红牌。
             try:
-                ready = sources_config.setup_complete(source_id)
+                ready = sources_config.setup_ready(source_id)
             except sources_config.SourceConfigError as exc:
                 ready = True                      # 配置层读不到时照旧跑，但那句话要留在日志里
                 unreadable.append(str(exc))

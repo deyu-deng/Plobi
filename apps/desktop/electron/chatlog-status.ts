@@ -24,6 +24,26 @@ export type LedgerLevel = 'ready' | 'deferred' | 'red'
 
 const DEAD_STATES = new Set<string>(COLLECTOR_STATES.filter(item => item !== 'ready'))
 
+/**
+ * 哪些状态是「**本机压根起不来**」——按台账自己那条规则 2（`deferred-sidecars.ts` 头部
+ * 引的那句）：「这台机器上压根没有可启动的东西」（没有产物、没有密钥）落 `deferred`，
+ * 「**试过了起不来**」才落 `red`。
+ *
+ * 11-08 改：从前这四档一律 `red`，于是**全新装机、什么都没配**的机器上弹一块
+ * 「Service fault · 微信消息采集」——用户 11-08 的原话是「用户明明什么都没有配置……
+ * 甚至微信还一直在报错」。那不是故障，那是**还没开始**：用户 11-05 早就说过
+ * 「用户没有配置微信。就不采集。相关的采集腿也不要反复报错了」。
+ */
+const NOT_STARTED_STATES = new Set<string>(['build_missing', 'go_missing', 'key_missing'])
+
+/**
+ * 试过了起不来 —— **真故障**，红。
+ *
+ * `not_listening` 是唯一这一档：它的前置三步都齐了（产物在、密钥在），只是服务没在听。
+ * 前三步缺任何一样都是「还没开始」，不是「坏了」。
+ */
+const ATTEMPTED_STATES = new Set<string>(['not_listening'])
+
 /** 拿不到答案时不许猜成 ready，也不许编一句"大概是没装"——那正是本刀要删的东西。 */
 export const NO_ANSWER: CollectorAnswer = {
   state: 'no_answer',
@@ -78,13 +98,23 @@ export function chatlogLedgerRow(answer: CollectorAnswer): { level: LedgerLevel;
     return { level: 'ready', body: '微信消息采集服务已就绪' }
   }
 
-  if (DEAD_STATES.has(answer.state)) {
+  if (ATTEMPTED_STATES.has(answer.state)) {
     if (!answer.note) {
       // 状态认得、句子没送到——这是接线坏了，宁可可红也不替它编一句。
       return { level: 'red', body: `collector state "${answer.state}" arrived without its sentence` }
     }
 
     return { level: 'red', body: answer.note }
+  }
+
+  if (NOT_STARTED_STATES.has(answer.state)) {
+    if (!answer.note) {
+      return { level: 'deferred', body: `collector state "${answer.state}" arrived without its sentence` }
+    }
+
+    // **逐字用服务端那句**（判据 2 的对照测试就钉这个）：这一档说的是「还差哪一步」，
+    // 不是「出了什么故障」，所以它归 deferred 那档，不弹红牌。
+    return { level: 'deferred', body: answer.note }
   }
 
   return { level: 'deferred', body: '暂时无法获取微信采集服务状态' }

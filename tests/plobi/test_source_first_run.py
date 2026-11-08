@@ -47,9 +47,22 @@ def test_the_switch_is_still_the_first_gate() -> None:
     assert "email_qq" not in registry.collecting_sources(), "配齐了但关着，照样不打"
 
 
-def test_a_source_that_needs_no_setup_is_not_blocked_by_the_new_gate() -> None:
-    # wechat 的必填格是空的（密钥走它自己那条读口），新闸不该把这种源挡在外面。
+def test_a_source_with_no_setup_fields_still_waits_for_its_own_step() -> None:
+    # 微信**没有可填的格子**（密钥走它自己那条读口），但它的人肉那一步是"装 ChatLog、
+    # 登录微信、导出密钥"——数据密钥不在，就等于这一步没做。
+    # 11-08 用户现场：全新装机的微信明明什么都没配，却每轮被打、每轮报一条错，
+    # 屏上还画成一颗开关而不是加号。
     sources_config.set_enabled("wechat", True)
 
-    assert sources_config.setup_complete("wechat") is True
+    assert sources_config.setup_complete("wechat") is True, "它没有必填格，这一格按定义恒真"
+    assert sources_config.setup_ready("wechat") is False, "但那一步没做，就是没配好"
+    assert "wechat" not in registry.collecting_sources(), "没配好就不该被打，也就不会每轮报一条错"
+
+
+def test_a_source_with_no_setup_fields_joins_the_round_once_its_own_step_is_done(monkeypatch) -> None:
+    # 数据密钥到手 = 微信那一步做完了（那枚密钥是产品自己取的，裁定 203 口径 2）。
+    monkeypatch.setenv("CHATLOG_DATA_KEY", "k" * 64)
+    sources_config.set_enabled("wechat", True)
+
+    assert sources_config.setup_ready("wechat") is True
     assert "wechat" in registry.collecting_sources()

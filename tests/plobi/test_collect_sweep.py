@@ -161,12 +161,20 @@ class TestRealRegistry:
         assert getattr(collector, "transport", None) is not None
         assert getattr(collector, "config", None) is not None
 
-    def test_wechat_is_switched_on_with_a_builder_now(self):
+    def test_wechat_has_a_builder_and_starts_switched_off(self):
         """10-16 补的那格：`wechat` 以前只有开关没有构造入口 ⇒ 每轮报 `no_builder`，
-        而真原因（没产物 / 没配置 / 没密钥 / 没在听）全被这一句挡在下面问不到。"""
+        而真原因（没产物 / 没配置 / 没密钥 / 没在听）全被这一句挡在下面问不到。
+
+        11-08 改判那一半：**默认关**。用户 11-05 原话「用户没有配置微信。就不采集。
+        相关的采集腿也不要反复报错了」——从前这一条走 dataclass 的默认 `collecting=True`，
+        于是全新装机上没人配过它也照样每轮被打、每轮写一条 `build_failed`、屏上再画一块
+        红牌（用户 11-08 现场：「用户明明什么都没有配置……甚至微信还一直在报错」）。
+        构造入口那一半**不变**：它仍要有 `builder`，不然真原因又被 `no_builder` 挡着问不到。
+        """
         spec = registry.spec("wechat")
 
-        assert spec.collecting is True and callable(spec.builder)
+        assert spec.collecting is False, "默认关：没配好就不采（11-05 / 11-08）"
+        assert callable(spec.builder), "但构造入口要在——不然真原因又问不到"
 
     def test_the_wechat_builder_hands_the_executor_a_usable_collector(self):
         """构造本身零网络（探活发生在 `collect()` 里，那之前不花一次调用）。"""

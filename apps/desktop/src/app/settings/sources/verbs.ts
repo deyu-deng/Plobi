@@ -42,6 +42,16 @@ export function switchOn(row: SourceRow): null | boolean {
  * 密钥那一格看 `secrets`（值永不出现在读数里，所以"填没填"只能问后端那一格设过没有）。
  */
 export function needsSetup(row: SourceRow): boolean {
+  // **后端算的那一格说了算**（11-08 改）：屏上「加号还是开关」与调度那一道闸问的是同一件事，
+  // 答出来的答案不许分叉。前端从前自己算一遍（只看 `setup_fields` 里 required 的那几格），
+  // 于是微信／钉钉／幕布那三条——**一个必填格都没有**——被恒判成「配好了」，
+  // 加号就变成了开关（用户 11-08 现场：用户明明什么都没有配置，钉钉、幕布和微信左边
+  // 就从加号变成开关了）。
+  if (typeof row.needs_setup === 'boolean') {
+    return row.needs_setup
+  }
+
+  // 后端是旧版、没给这一格 ⇒ 退回本地那套算法（**缺位是读数**，不许因此把形状画错）。
   if (row.setup_fields.length === 0) {
     return false
   }

@@ -14,7 +14,7 @@ r"""幕布那条的**声明**（`specs/source-layer.md` §3.1：加一个平台�
 
 from __future__ import annotations
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupGuide, SourceSpec, register
 
 from . import localdb
 
@@ -25,6 +25,25 @@ def _build():
     from .collector import MubuCollector
 
     return MubuCollector.build()
+
+
+def _configured() -> bool:
+    """幕布这一条**算不算配好了**——客户端装了、并且在这台机器上登录过没有。
+
+    判据是**借不借得到那枚登录态**：借得到 ⇒ 用户在这个客户端里登录过 ⇒ 这一条开得了跑。
+
+    与 :func:`.localdb.probe` 的分工：探针答的是「**今天有没有一个登录好的客户端可借**」，
+    这一格答的是「**用户人肉那一步做完了没有**」。两者今天读的是同一件事，但**问的不是
+    同一句**：探针要连盘读不到都答得上来，这一格只回答"配没配"。
+    """
+    from . import localdb
+
+    try:
+        localdb.read_token()
+    except localdb.LocalStoreUnavailable:
+        return False
+
+    return True
 
 
 SPEC = SourceSpec(
@@ -54,6 +73,18 @@ SPEC = SourceSpec(
     builder=_build,
     # 这一条在本机成不成立由探针回答（它只报"有没有一个登录好的客户端可借"，不报"采得到"）。
     probe=localdb.probe,
+    # 「配好了没有」与「今天能不能借到登录态」是**两件事**：这一格判**用户人肉那一步**
+    # （装客户端、登录），探针把盘读不到也说成一条读数。
+    setup_ready=_configured,
+    # 点那颗加号之后抽屉里给的那张卡：去装幕布客户端。装不装得起来是用户的事，
+    # **产品不代他装**——装完登录一次，Plobi 就借它那份登录态（用户 10-27：「我找不到 token 呀。
+    # 我没这么厉害」：让用户去抠 token 是不成的，让他登录客户端才是成的）。
+    setup_guide=SetupGuide(
+        title="Mubu desktop app",
+        action="Download Mubu",
+        url="https://mubu.com/",
+        detail="Install it and sign in, then check again.",
+    ),
 )
 
 register(SPEC, replace=True)

@@ -12,7 +12,7 @@
 不是目录长得像不像（见 `registry.py` 发现器那一段）。
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupGuide, SourceSpec, register
 
 from . import localdb
 
@@ -50,6 +50,20 @@ def _build():
     from .collector import DingTalkCollector
 
     return DingTalkCollector.build()
+
+
+def _configured() -> bool:
+    """钉钉这一条**算不算配好了**——客户端装了、并且在这台机器上登录过没有。
+
+    判据是**有没有一份已登录的资料目录**：有 ⇒ 客户端装过并登录过 ⇒ 本机库里才有东西可采。
+
+    与 :func:`.localdb.probe` 的分工：探针答的是「**今天哪条路走得通**」（丙路／组织侧），
+    这一格答的是「**用户人肉那一步做完了没有**」。混成一句就会把「客户端装好了、只是这条
+    路今天走不通」说成「你还没配置」。
+    """
+    from . import store
+
+    return bool(store.profiles(store.data_roots()))
 
 
 SPEC = SourceSpec(
@@ -97,6 +111,17 @@ SPEC = SourceSpec(
     # 这一条在本机成不成立、今天哪条路走得通，由探针回答（它只报"库在不在位"，
     # 不报"采得到"）。理由与那颗假故障写在 :mod:`.localdb` 的模块头。
     probe=localdb.probe,
+    # 「配好了没有」与「今天哪条路走得通」是**两件事**：这一格判**用户人肉那一步**
+    # （装客户端、登录），探针判**这条路今天走不走得通**。
+    setup_ready=_configured,
+    # 点那颗加号之后抽屉里给的那张卡：去装钉钉客户端。装不装得起来是用户的事，
+    # **产品不代他装**——装完登录一次，Plobi 就能借本机那份库。
+    setup_guide=SetupGuide(
+        title="DingTalk desktop app",
+        action="Download DingTalk",
+        url="https://www.dingtalk.com/",
+        detail="Install it and sign in, then check again.",
+    ),
 )
 
 register(SPEC, replace=True)

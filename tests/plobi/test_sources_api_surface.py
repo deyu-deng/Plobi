@@ -523,3 +523,66 @@ class TestTheProbeReplacesAFalseFault:
 
         assert result["ready"] is False
         assert result["code"] == "probe_failed"
+
+
+class TestTheUnconfiguredShape:
+    """「没配过」那一格（11-08）。
+
+    用户 11-08 原话：「用户明明什么都没有配置。钉钉、幕布和微信左边就从加号变成开关了。
+    甚至微信还一直在报错。」根因：**「配好了没有」这一格对那三条根本不存在**——它们的
+    `setup_fields` 里只有不 required 的 `cadence`，于是 `setup_complete` 算出来是
+    `all([])`＝**恒真**：屏上画成开关，采集侧那道闸（11-05 加的）也形同虚设。
+
+    这一组钉的是新口径的三个落点：**判据在后端且下发到屏上**、**那一步随声明下来**、
+    **产品能代做的那一步有个动作**。
+    """
+
+    def test_the_verdict_travels_to_the_screen_from_one_place(self, client, monkeypatch) -> None:
+        """判据住在后端并**下发**——前端从前自己算一遍（只看 required 的那几格），
+        于是那三条被恒判成「配好了」，加号就变成了开关。"""
+        monkeypatch.delenv("CHATLOG_DATA_KEY", raising=False)
+        rows = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}
+
+        assert rows["wechat"]["needs_setup"] is True, "没配好就要说没配好"
+
+    def test_a_source_with_nothing_to_configure_is_not_blocked(self, client) -> None:
+        """没声明 `setup_ready` 的源按必填格判（邮箱那一族：配齐了就不是「没配过」）。"""
+        sources_config.set_secret("email_qq", "password", "an-app-token")
+        sources_config.set_setup_params("email_qq", {"address": "me@example.test"})
+
+        rows = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}
+
+        assert rows["email_qq"]["needs_setup"] is False
+
+    def test_the_step_the_user_must_do_travels_to_the_screen(self, client) -> None:
+        """「装软件／登录」那一步随声明下来（`SourceSpec.setup_guide`）——
+        用户 11-08：「如果用户点击配置了就引导用户登录或者下载软件」。"""
+        rows = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}
+
+        for sid in ("dingtalk", "mubu", "wechat"):
+            guide = rows[sid]["setup_guide"]
+
+            assert guide is not None, f"{sid} 没有可填的格子，它那一步就靠这一格说"
+            assert guide["title"]
+            assert guide["action"]
+            assert guide["url"].startswith("http")
+
+    def test_prepare_runs_the_step_the_product_can_do_itself(self, client) -> None:
+        """微信那枚数据密钥是产品自己取的（裁定 203 口径 2）：这一格把它跑掉。"""
+        spec = registry.spec("wechat")
+        registry._SPECS["wechat"] = replace(spec, sidecar_prepare=lambda: (True, "密钥到手了"))
+
+        try:
+            body = client.post("/api/collect/sources/wechat/prepare").json()["data"]
+        finally:
+            registry._SPECS["wechat"] = spec
+
+        assert body["ok"] is True
+        assert body["detail"] == "密钥到手了"
+
+    def test_a_source_with_nothing_to_prepare_says_so(self, client) -> None:
+        """没有产品能代做的那一步时，如实说「得他自己做」，不编一句。"""
+        body = client.post("/api/collect/sources/mubu/prepare").json()["data"]
+
+        assert body["ok"] is False
+        assert body["detail"], "得说清楚这一步得他自己在客户端里做"

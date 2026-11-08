@@ -18,6 +18,7 @@ const installExternalPackage = vi.fn()
 const removeExternalPackage = vi.fn()
 const getActionStatus = vi.fn()
 const importSourceFile = vi.fn()
+const prepareSource = vi.fn()
 const notify = vi.fn()
 const notifyError = vi.fn()
 
@@ -35,6 +36,7 @@ vi.mock('./sources/api', async () => {
     getSources: () => getSources(),
     importSourceFile: (path: string) => importSourceFile(path),
     installExternalPackage: (name: string) => installExternalPackage(name),
+    prepareSource: (id: string) => prepareSource(id),
     removeExternalPackage: (name: string) => removeExternalPackage(name),
     saveSourceSetup: (id: string, params: Record<string, string>) => saveSourceSetup(id, params),
     setConversationStatus: (id: string, talker: string, status: string) => setConversationStatus(id, talker, status),
@@ -492,6 +494,86 @@ describe('what the row says', () => {
     expect(setSourceEnabled).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
     expect(document.activeElement).toBe(screen.getByLabelText('Path to the .ics file'))
+  })
+
+  it('draws the plus for a source the backend says is not configured yet', async () => {
+    // 11-08：微信／钉钉／幕布那三条**一个必填格都没有**，从前这一层只按 required 项
+    // 自己判（`setup_fields` 空 ⇒ 恒判成「配好了」），于是加号变成了开关——
+    // 用户 11-08 现场：「用户明明什么都没有配置。钉钉、幕布和微信左边就从加号变成开关了」。
+    // 现在判据在后端（`needs_setup`），这一层只画它给的那一格。
+    getSources.mockResolvedValue(payload([
+      row({
+        category: 'software',
+        enabled: false,
+        has_builder: true,
+        needs_setup: true,
+        setup: {},
+        setup_fields: [],
+        source: 'wechat',
+        status: 'disconnected'
+      })
+    ]))
+
+    const { container } = render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-configure-wechat')).toBeTruthy())
+    expect(switches(container).length).toBe(0)
+  })
+
+  it('draws the switch once the backend says it is configured', async () => {
+    getSources.mockResolvedValue(payload([
+      row({
+        category: 'software',
+        enabled: true,
+        has_builder: true,
+        needs_setup: false,
+        setup: {},
+        setup_fields: [],
+        source: 'wechat',
+        status: 'connected'
+      })
+    ]))
+
+    const { container } = render(<SourcesSettings />)
+
+    await waitFor(() => expect(switches(container).length).toBe(1))
+    expect(screen.queryByTestId('source-configure-wechat')).toBeNull()
+  })
+
+  it('shows the step the user has to take, and a way to tell the product it is done', async () => {
+    // 用户 11-08：「如果用户点击配置了就引导用户登录或者下载软件」——
+    // 点那颗加号进抽屉之后，那里得有**可做的一步**，不是一片空白。
+    getSources.mockResolvedValue(payload([
+      row({
+        category: 'software',
+        enabled: false,
+        has_builder: true,
+        needs_setup: true,
+        setup: {},
+        setup_fields: [],
+        setup_guide: {
+          action: 'Download ChatLog',
+          detail: 'Install it and sign in to WeChat, then check again.',
+          title: 'WeChat message collector',
+          url: 'https://example.test/chatlog'
+        },
+        source: 'wechat',
+        status: 'disconnected'
+      })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-configure-wechat')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('source-configure-wechat'))
+
+    await waitFor(() => expect(screen.getByTestId('source-guide-wechat')).toBeTruthy())
+    expect(screen.getByText('WeChat message collector')).toBeTruthy()
+    expect(screen.getByText('Download ChatLog')).toBeTruthy()
+
+    prepareSource.mockResolvedValue({ detail: '密钥到手了', ok: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+
+    await waitFor(() => expect(prepareSource).toHaveBeenCalledWith('wechat'))
   })
 
   it('syncs from inside the drawer, by the executor’s own words', async () => {

@@ -378,3 +378,63 @@ class TestNoSourceNameBranchInTheCommonLayer:
 
         for source_id in ("wechat", "zju", "timetable", "dingtalk"):
             assert source_id not in text, f"sources_api.py 里写着 {source_id}"
+
+
+class TestSetupReady:
+    """「配好了没有」这一格（11-08 新开的一层）。
+
+    `setup_complete` 只问"必填格齐了没有"；微信／钉钉／幕布**没有必填格**，于是它对那三条
+    恒真（用户 11-08：「用户明明什么都没有配置。钉钉、幕布和微信左边就从加号变成开关了。
+    甚至微信还一直在报错」）。`setup_ready` 多看一层「用户人肉那一步做完了没有」。
+    """
+
+    def test_a_source_without_that_step_falls_back_to_the_required_fields(self) -> None:
+        """没声明 `setup_ready` 的源（邮箱／教务那一族）按必填格判——不因为多一层而变严。"""
+        assert sources_config.setup_ready("email_qq") is sources_config.setup_complete("email_qq")
+
+    def test_the_step_may_be_declared_per_source(self) -> None:
+        """声明了那一格 ⇒ 它说了算（不按信源名字分支：判据是**声明**，不是名字）。"""
+        spec = registry.SourceSpec("readyprobe",
+                                   capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
+                                   category="software", setup_ready=lambda: False)
+        registry.register(spec, replace=True)
+
+        try:
+            assert sources_config.setup_complete("readyprobe") is True, "它没有必填格"
+            assert sources_config.setup_ready("readyprobe") is False, "但那一步没做"
+        finally:
+            registry.unregister("readyprobe")
+
+    def test_a_step_that_cannot_read_the_disk_counts_as_not_done(self) -> None:
+        """判据读不到盘 ⇒ 那一步没做成（宁可不采，不把「读不到」说成「配好了」）。"""
+        def broken() -> bool:
+            raise OSError("盘读不到")
+
+        spec = registry.SourceSpec("diskprobe",
+                                   capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
+                                   category="software", setup_ready=broken)
+        registry.register(spec, replace=True)
+
+        try:
+            assert sources_config.setup_ready("diskprobe") is False
+        finally:
+            registry.unregister("diskprobe")
+
+    def test_a_broken_judgement_is_not_swallowed(self) -> None:
+        """**只接 OSError**：接 Exception 会把编程错误（少传一个参数那种）也变成
+        「静默未配好」——那正是查不出来的形状（11-08 当场撞见：微信那一格把
+        `data_key_present(env)` 当无参调用，TypeError 被吞成「没配好」，
+        已经配好的人被说成没配）。"""
+        def broken() -> bool:
+            raise TypeError("少传了一个参数")
+
+        spec = registry.SourceSpec("typeprobe",
+                                   capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
+                                   category="software", setup_ready=broken)
+        registry.register(spec, replace=True)
+
+        try:
+            with pytest.raises(TypeError):
+                sources_config.setup_ready("typeprobe")
+        finally:
+            registry.unregister("typeprobe")

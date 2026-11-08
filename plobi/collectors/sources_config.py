@@ -262,11 +262,60 @@ def setup_complete(source_id: str) -> bool:
     `build_failed`，屏上再画一行红——那是把"还没开始"说成"坏了"。判据与 `_enrich` 的
     `needs_setup` 共用 :func:`field_configured`（它认配置层、新密钥键、历史 `.env` 键三处），
     不许在这里另写一套"算不算配过"。
+
+    ⚠️ **它答不了"这一条能不能开跑"**（11-08 补记）：微信／钉钉／幕布**没有必填格**
+    （它们的 `setup_fields` 里只有不 required 的 `cadence`）⇒ 这里对它们算出来是
+    `all([])`＝**恒真**。拿这一句当闸门，屏上就把「没配过」画成开关而不是加号，采集侧
+    那一道闸也形同虚设（用户 11-08：「用户明明什么都没有配置。钉钉、幕布和微信左边就从加号
+    变成开关了。甚至微信还一直在报错」）。**「能不能开跑」问 :func:`setup_ready`**，
+    那一句多看一层「用户人肉那一步做完了没有」。
     """
     from plobi.collectors import registry
 
     spec = registry.spec(source_id)
     return all(field_configured(source_id, field.key) for field in spec.setup_fields if field.required)
+
+
+def setup_ready(source_id: str) -> bool:
+    """这一条**能不能开跑**——**屏上那颗加号、调度那一道闸、状态那一格问同一句**。
+
+    两层，缺一不可：
+
+    ① :func:`setup_complete`——必填格齐了没有（邮箱／教务那一族就是全部）。
+    ② 这一条**自己声明**的那一步（`SourceSpec.setup_ready`）——微信／钉钉／幕布要的
+       不是填表，是**装好客户端并登录**（用户 11-08：「如果用户点击配置了就引导用户
+       登录或者下载软件」）。缺位是一个**读数**：这一条没有那一步 ⇒ 只看①。
+
+    为什么判据住在这一层而不是各信源各自算：**一处判据一处真源**。屏上（加号还是开关）、
+    调度（这一轮打哪几条）、状态（三态里落哪一档）问的都是同一件事，答出来的答案不许分叉。
+
+    ⚠️ **为什么不能只问 ①**（11-08 现场）：微信／钉钉／幕布**没有必填格**（它们的
+    `setup_fields` 里只有不 required 的 `cadence`）⇒ `setup_complete` 对它们算出来是
+    `all([])`＝**恒真**。拿它当闸门，屏上就把「没配过」画成开关而不是加号，采集侧那道闸
+    也形同虚设——微信每轮照打、每轮写一条 `build_failed`，于是「一直报错」。
+    用户 11-05 那句「用户没有配置微信。就不采集。相关的采集腿也不要反复报错了」正是这一格。
+
+    判据自己抛了（读不到盘 / 读不到配置）＝**那一步没做成** ⇒ 落 `False`：
+    宁可不采，也不把「读不到」说成「配好了」。
+    """
+    if not setup_complete(source_id):
+        return False
+
+    from plobi.collectors import registry
+
+    judge = registry.spec(source_id).setup_ready
+    if judge is None:
+        return True
+
+    try:
+        return bool(judge())
+    except OSError as exc:
+        # 判据自己读不到盘 ＝ 那一步还没做成。**只接 OSError**：接 Exception 会把编程错误
+        # （少传一个参数那种）也变成"静默未配好"——那正是查不出来的形状（11-08 当场撞见：
+        # 微信那一格把 `data_key_present(env)` 当无参调用，TypeError 被这里吞成"没配好"，
+        # 于是已经配好的人被说成没配）。
+        logger.debug("sources: setup_ready 判据读不到盘 %s：%s", source_id, type(exc).__name__)
+        return False
 
 
 def secret_value(source_id: str, key: str) -> Optional[str]:

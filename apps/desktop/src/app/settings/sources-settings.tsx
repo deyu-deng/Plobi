@@ -34,12 +34,12 @@ import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { selectDesktopPaths } from '@/lib/desktop-fs'
-import { iconSize, Layers3 } from '@/lib/icons'
+import { ExternalLink, iconSize, Layers3 } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
 import { ConnectionControl } from './connection-control'
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
-import { getSources, importSourceFile, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { getSources, importSourceFile, prepareSource, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { categoryIcon } from './sources/category-icons'
 import { $fold, decide, isOpen } from './sources/collapse'
 import { ConversationList } from './sources/conversation-list'
@@ -47,6 +47,7 @@ import { ExternalSources } from './sources/external-sources'
 import { firstRunLabels, type FirstRunLabels } from './sources/first-run-labels'
 import { SetupFields } from './sources/setup-fields'
 import { parseCadence } from './sources/setup-fields'
+import { setupGuideLabels } from './sources/setup-guide-labels'
 import { SourceAvatar } from './sources/source-icon'
 import { $tags, keepsRow, tagOptions, toggleTag } from './sources/tags'
 import { groupByCategory, needsSetup, relativeTime, statusOf, statusReason, visibleGroups } from './sources/verbs'
@@ -423,7 +424,29 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
   onTry: (row: SourceRow) => Promise<void>
   row: SourceRow
 }) {
+  const i18n = useI18n()
+  const gl = setupGuideLabels(i18n.locale)
+  // 取成局部常量：属性访问在 JSX 回调里会丢窄化（`row.setup_guide` 可能 undefined），
+  // 局部 `const` 才有那个窄化。
+  const guide = row.setup_guide ?? null
+  const guideDetail = guide ? (gl.details[row.source] ?? guide.detail) : ''
   const kinds = Object.entries(row.pool_kinds ?? {}).sort((a, b) => b[1] - a[1])
+
+  // 「检查一下」：把这一条**产品能代做的那一步**做掉（微信那枚数据密钥），然后重读读数。
+  // 用户 11-08：「如果用户点击配置了就引导用户登录或者下载软件」——他做完那一步之后，
+  // 得有一个办法让产品重新看一眼；否则那颗加号永远变不成开关。
+  const onCheck = async () => {
+    try {
+      const result = await prepareSource(row.source)
+      await onReload()
+      notify({
+        kind: result.ok ? 'success' : 'error',
+        message: result.detail || (result.ok ? gl.checkDone : gl.checkFailed)
+      })
+    } catch (err) {
+      notifyError(err, gl.checkFailed)
+    }
+  }
 
   return (
     <div className="mt-2 space-y-3 rounded-lg bg-(--ui-bg-secondary) p-3" data-testid={`source-drawer-${row.source}`}>
@@ -483,6 +506,57 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
               {' — '}
               {row.probe.detail}
             </p>
+          )
+        : null}
+
+      {/* 首次配置要用户**人肉做**的那一步（装软件 / 登录）——**由这一条自己声明**
+          （`SourceSpec.setup_guide`），面不许按信源名字分支。
+          用户 11-08：「如果用户点击配置了就引导用户登录或者下载软件」——点那颗加号进抽屉
+          之后，这里就是那一步的指路：装什么、去哪装、装完怎么告诉产品。
+          **产品不代他装**（装软件是用户的事），但产品能代他做的那一步（微信那枚密钥）
+          有那颗「检查一下」。缺了这一格，这颗加号点进去是一片空白。 */}
+      {guide
+        ? (
+            <div className="rounded-lg border border-(--ui-border-tertiary) p-3" data-testid={`source-guide-${row.source}`}>
+              <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary)">
+                {gl.titles[row.source] ?? guide.title ?? gl.fallbackTitle}
+              </p>
+              {guideDetail
+                ? (
+                    <p className="mt-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+                      {guideDetail}
+                    </p>
+                  )
+                : null}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {guide.url
+                  ? (
+                      <Button asChild size="sm" variant="secondary">
+                        <a
+                          href={guide.url}
+                          onClick={event => {
+                            event.preventDefault()
+                            void window.plobiDesktop?.openExternal?.(guide.url)
+                          }}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <ExternalLink className="size-3" />
+                          {gl.actions[row.source] ?? guide.action}
+                        </a>
+                      </Button>
+                    )
+                  : null}
+                <Button
+                  disabled={busy}
+                  onClick={() => { void onCheck() }}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {gl.recheck}
+                </Button>
+              </div>
+            </div>
           )
         : null}
 

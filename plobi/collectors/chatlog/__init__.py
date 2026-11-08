@@ -11,7 +11,7 @@ this package may send more than the matched snippet off-device
 (docs/adr/0010-collection-whitelist-privacy-boundary.md).
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupGuide, SourceSpec, register
 
 from .client import ChatlogUnavailable, ChatMessage
 from .config import CollectorConfig
@@ -97,6 +97,25 @@ def _probe() -> dict:
     return {"ready": state == local.STATE_READY, "code": state, "detail": note}
 
 
+def _configured() -> bool:
+    """微信这一条**算不算配好了**——用户人肉那一步（装 ChatLog、登录微信、导出密钥）做完了没有。
+
+    判据是**数据密钥在不在**：密钥是那一步的产物，它在 ⇒ 用户已经在微信里登录过、
+    工具跑过一次 ⇒ 这一条开得了跑。
+
+    为什么不看"服务在不在听"：那是**运行**状态（`probe` 那一格在管它）。密钥在而服务没起
+    ＝ 他配好了、只是服务还没起来——那是另一句话，不该把他拉回"你还没配置"。
+
+    密钥在两处：**环境变量**与**ChatLog 自己那份配置**（`chatlog.json`）——真源是后者，
+    手工登进来的值落在那里（`sidecar.data_key_present` 的文档串写着这件事）。
+    """
+    import os
+
+    from . import sidecar
+
+    return sidecar.data_key_present(os.environ)
+
+
 SPEC = SourceSpec(
     "wechat",
     capabilities={
@@ -129,6 +148,24 @@ SPEC = SourceSpec(
     # 数据密钥**不由他抄**：点开开关那一刻产品自己用 vendored 产物那一条 `key` 子命令取一次
     # （裁定 203 口径 2）。取没取到只回一句话，值永不出门；这一步抛了什么也不许把那次点击炸掉。
     sidecar_prepare=_prepare,
+
+    # **默认关**（11-08 改）：用户 11-05 原话「用户没有配置微信。就不采集。相关的采集腿也
+    # 不要反复报错了」。从前这一条走 dataclass 的默认 `collecting=True` ⇒ 全新装机上没人
+    # 配过它，它照样每轮被打、每轮写一条 `build_failed`、屏上再画一块红牌——把「还没开始」
+    # 说成「坏了」。与钉钉／幕布同一口径（那两条早就是 `collecting=False`）。
+    collecting=False,
+    # 「配好了没有」与「今天采不采得到」是**两件事**：这一格判**用户人肉那一步**
+    # （装 ChatLog、登录微信、密钥到手），探针判**服务在不在听**。混成一句就会把
+    # 「配好了、只是服务没起」说成「你还没配置」。
+    setup_ready=_configured,
+    # 点那颗加号之后抽屉里给的那张卡：去装 ChatLog。装不装得起来是用户的事，
+    # **产品不代他装**；但产品能代他取密钥（`sidecar_prepare`），所以最后一步是「检查一下」。
+    setup_guide=SetupGuide(
+        title="WeChat message collector",
+        action="Download ChatLog",
+        url="https://github.com/sjzar/chatlog/releases",
+        detail="Install it and sign in to WeChat, then check again.",
+    ),
 
     builder=_build,
 )
