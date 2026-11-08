@@ -34,6 +34,7 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ConfigCard } from './config-card'
+import { ConnectionControl } from './connection-control'
 import { QuotaAppIcon } from './quota-app-icon'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import {
@@ -271,36 +272,28 @@ function ConnectedProviderRow({
 
   return (
     <ListRow
-      action={
-        <div className="flex items-center gap-1">
-          <Trail className="size-4 text-muted-foreground" />
-          {canDisconnect && (
-            <Button
-              aria-label={`${t.common.remove} ${title}`}
-              disabled={disconnecting}
-              onClick={() => onDisconnect(provider)}
-              size="icon-xs"
-              title={`${t.common.remove} ${title}`}
-              type="button"
-              variant="ghost"
-            >
-              {disconnecting ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
-            </Button>
-          )}
-          {terminalDisconnect && (
-            <Button
-              aria-label={`${copy.disconnect} ${title}`}
-              onClick={() => onTerminalDisconnect(provider)}
-              size="icon-xs"
-              title={copy.disconnectInTerminal}
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 className="size-3" />
-            </Button>
-          )}
-        </div>
-      }
+      // One control, same grammar as the other two tabs (user 2026-11-08): signed in =
+      // switch (off = disconnect through the existing confirmed path); a provider Plobi
+      // cannot clear gets no control — the hint under the row says where to remove it.
+      action={(
+        <ConnectionControl
+          busy={disconnecting}
+          checked
+          configureLabel={copy.subscriptions.configure}
+          mode={showHint ? 'none' : 'toggle'}
+          onToggle={(next: boolean) => {
+            if (next) {
+              return
+            }
+            if (canDisconnect) {
+              onDisconnect(provider)
+            } else if (terminalDisconnect) {
+              onTerminalDisconnect(provider)
+            }
+          }}
+          toggleLabel={`${copy.disconnect} ${title}`}
+        />
+      )}
       description={
         <>
           {t.onboarding.flowSubtitles[provider.flow]}

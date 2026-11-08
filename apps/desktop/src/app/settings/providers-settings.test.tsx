@@ -93,8 +93,10 @@ describe('ProvidersSettings', () => {
   it('disconnects a connected provider account and refreshes the accounts list', async () => {
     await renderProvidersSettings()
 
-    const remove = await screen.findByRole('button', { name: 'Remove Nous Portal' })
-    fireEvent.click(remove)
+    // One control per account row (user 2026-11-08): signed in = a switch, off = the
+    // existing confirmed disconnect path — not a second trash glyph beside a chevron.
+    const toggle = await screen.findByRole('switch', { name: 'Disconnect Nous Portal' })
+    fireEvent.click(toggle)
 
     await waitFor(() => expect(disconnectOAuthProvider).toHaveBeenCalledWith('nous'))
     expect(listOAuthProviders).toHaveBeenCalledTimes(2)
@@ -125,7 +127,7 @@ describe('ProvidersSettings', () => {
     await renderProvidersSettings()
 
     expect(await screen.findByText('Qwen Code')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Remove Qwen Code' })).toBeNull()
+    expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.getByText(/managed by its own CLI/)).toBeTruthy()
   })
 

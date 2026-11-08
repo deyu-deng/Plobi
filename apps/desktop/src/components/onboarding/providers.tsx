@@ -1,4 +1,5 @@
 import { ListRow, ProviderStatusBadge } from '@/app/settings/primitives'
+import { ConnectionControl } from '@/app/settings/connection-control'
 import { ProviderBrand } from '@/app/settings/provider-brand'
 import { useI18n } from '@/i18n'
 import { ChevronRight, Terminal } from '@/lib/icons'
@@ -95,7 +96,15 @@ export function ProviderRow({
 
   return (
     <ListRow
-      action={<Trail className="size-4 shrink-0 text-muted-foreground" />}
+      action={(
+        <ConnectionControl
+          configureLabel={t.settings.providers.subscriptions.configure}
+          configureTestId={`provider-configure-${provider.id}`}
+          mode="configure"
+          onConfigure={() => onSelect(provider)}
+          toggleLabel={t.settings.providers.subscriptions.configure}
+        />
+      )}
       description={t.onboarding.flowSubtitles[provider.flow]}
       // The first cell is the provider's own mark (user 2026-11-08「图标记得找啊」):
       // same table the Settings tabs use, so a provider looks identical in both places.
