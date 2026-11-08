@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from agent import external_offload as channel
 from plobi.delegation.offload import ExternalAgent, availability, total_usd
@@ -63,21 +63,38 @@ def _rows_by_agent() -> dict[str, list[dict[str, Any]]]:
     return grouped
 
 
-def _login_evidence(last: dict[str, Any]) -> dict[str, Any]:
-    """从**已经发生的那一趟**读登录态。没有证据就 `None`，不猜。"""
+def _login_evidence(last: dict[str, Any], local: Optional[bool] = None) -> dict[str, Any]:
+    """登录态：**上一趟厂商亲口说的**优先，其次**本地强证据**（登录后才会落盘的那种）。
+
+    11-08 21:2x 现读：这一格原来**只读「上一趟真跑的证据」** ⇒ 刚装上、还没派过活的那几家
+    （Copilot CLI、Kilo Code CLI）永远是「配置好了」⇒ 主人看见一个开关，以为能用，
+    一点上去才撞「它没登录」——**屏上写了假话**（而点「+」拉起登录的入口压根不出现）。
+
+    三条证据按可信度排队：
+
+    1. **上一趟厂商自己说的话**（「Not logged in · Please run /login」）——它亲口说的，最可靠；
+    2. **本地强证据**：登录后才会落盘的那个文件（oauth token / creds json）、凭据库条目、
+       登录用的环境变量 ⇒ 能判 True／False；
+    3. 别的（目录里有过痕迹、压根没证据）⇒ **探不到（None）**，不判成不能。
+    """
+    if last:
+        haystack = " ".join(
+            str(last.get(key) or "") for key in ("answer_excerpt", "reply", "failure")
+        ).lower()
+        if any(marker in haystack for marker in _ABSENT_MARKERS):
+            return {
+                "value": False,
+                "source": "last-run",
+                "detail": "上一趟它自己说没登录（原文留在那一行的 answer_excerpt 里）——登录要本人做一次。",
+            }
+        if str(last.get("reply") or "").strip() or str(last.get("answer_excerpt") or "").strip():
+            return {"value": True, "source": "last-run", "detail": ""}
+    if local is True:
+        return {"value": True, "source": "local", "detail": "本地就能读到它的登录痕迹"}
+    if local is False:
+        return {"value": False, "source": "local", "detail": "本地读到它没登录"}
     if not last:
-        return {"value": None, "source": "unknown", "detail": "还没派过活，没有可读的证据"}
-    haystack = " ".join(
-        str(last.get(key) or "") for key in ("answer_excerpt", "reply", "failure")
-    ).lower()
-    if any(marker in haystack for marker in _ABSENT_MARKERS):
-        return {
-            "value": False,
-            "source": "last-run",
-            "detail": "上一趟它自己说没登录（原文留在那一行的 answer_excerpt 里）——登录要本人做一次。",
-        }
-    if str(last.get("reply") or "").strip() or str(last.get("answer_excerpt") or "").strip():
-        return {"value": True, "source": "last-run", "detail": ""}
+        return {"value": None, "source": "unknown", "detail": "还没派过活，也没有本地证据"}
     return {"value": None, "source": "last-run", "detail": "上一趟没带回话，判不出登录态"}
 
 
@@ -101,7 +118,9 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
         spec = channel.agent_spec(name)
         mine = grouped.get(name, [])
         last = mine[0] if mine else {}
-        login = _login_evidence(last)
+        # 本地证据（探针/凭据痕迹）优先；`base.logged_in` 就是 `availability()` 用的那一份，
+        # 两处口径不许分家（裁定 94）。
+        login = _login_evidence(last, getattr(base, "logged_in", None))
 
         capabilities = base.capabilities if base is not None else {}
         decision = ExternalAgent(

@@ -134,13 +134,16 @@ def _probe_logged_in(agent_name: str) -> Optional[bool]:
         candidate = Path(os.path.expanduser(raw))
         try:
             if candidate.is_dir():
-                if any(candidate.iterdir()):
-                    return True
-            elif candidate.is_file():
+                # **目录非空 ≠ 登上了**：10-22 实测 qoder／codebuddy 的凭据目录里有东西，
+                # 同一刻 Qoder CLI 自己回的却是「Not logged in · Please run /login」。
+                # 所以这一条只当「有过痕迹」，**不判 True 也不判 False** ⇒ 探不到（None）。
+                continue
+            if candidate.is_file():
+                # 文件型落点是「登了才有」的凭证文件（oauth token / creds json）⇒ 能判。
                 return True
         except OSError:
             continue
-        # 落点知道在哪、那儿却没有 ⇒ 这一条上确实没有痕迹。
+        # 知道落点在哪、那儿却没有 ⇒ 这一条上确实没有痕迹。
         decided_no = True
     return False if decided_no else None
 

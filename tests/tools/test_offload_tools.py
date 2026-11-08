@@ -381,6 +381,28 @@ def test_login_evidence_reads_the_windows_credential_store(monkeypatch):
     assert ot._probe_logged_in("credonly") is False
 
 
+def test_a_non_empty_credentials_folder_is_not_logged_in():
+    """目录里有过痕迹 ≠ 登上了（10-22 实测：qoder／codebuddy 的目录里有东西，
+    同一刻 Qoder CLI 自己回的却是「Not logged in · Please run /login」）。
+
+    所以「目录非空」只当**有过痕迹**，既不判 True 也不判 False ⇒ 探不到（None）。
+    """
+    import tempfile
+    from pathlib import Path
+
+    folder = Path(tempfile.mkdtemp()) / "local_storage"
+    folder.mkdir()
+    (folder / "something.json").write_text("{}", encoding="utf-8")
+
+    monkey = {"codebuddy": (str(folder),)}
+    original = ot._LOGIN_EVIDENCE
+    ot._LOGIN_EVIDENCE = {**original, **monkey}
+    try:
+        assert ot._probe_logged_in("codebuddy") is None
+    finally:
+        ot._LOGIN_EVIDENCE = original
+
+
 def test_copilot_is_judged_by_credential_and_token_while_kilo_is_judged_by_its_auth_file():
     """copilot 的登录痕迹**不在文件里**（凭据库 + 三个环境变量）⇒ 登记那四条。
 

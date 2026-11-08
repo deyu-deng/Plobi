@@ -66,6 +66,25 @@ def test_start_login_for_an_unknown_agent_is_not_a_crash():
     assert result["reason"]
 
 
+def test_the_login_evidence_is_ranked_not_guessed():
+    """登录态按可信度排队：**厂商亲口说的 > 本地强证据 > 探不到**。
+
+    11-08 21:2x 现读：这一格原来只读「上一趟真跑的证据」⇒ 刚装好的 Copilot CLI／Kilo Code
+    永远显示「配置好了」——主人看见一个开关，却根本用不了（屏上假话），而且点不到那个
+    「+」去登录。
+    """
+    # 本地探不到、也没派过活 ⇒ 探不到（不许读成不能）。
+    assert offload_surface._login_evidence({}, None)["value"] is None
+    # 本地强证据说没登录 ⇒ 就是没登录。
+    assert offload_surface._login_evidence({}, False)["value"] is False
+    assert offload_surface._login_evidence({}, False)["source"] == "local"
+    # 上一趟厂商亲口说的，最可靠：它说没登录，就算本地有痕迹也是没登录。
+    assert offload_surface._login_evidence({"answer_excerpt": "Not logged in"}, True)["value"] is False
+    assert offload_surface._login_evidence({"answer_excerpt": "Not logged in"}, True)["source"] == "last-run"
+    # 它带回过话 ⇒ 登着。
+    assert offload_surface._login_evidence({"answer_excerpt": "done"}, None)["value"] is True
+
+
 class _Done:
     def __init__(self, stdout: str = "", returncode: int = 0):
         self.stdout = stdout
