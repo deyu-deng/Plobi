@@ -73,3 +73,56 @@ test('a bundle without the engine says so in the package instead of failing the 
     fs.rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('a second pass with no source does not un-ship what the first pass already put there', async () => {
+  const root = tempRoot('twice')
+  try {
+    const src = path.join(root, 'src')
+    for (const file of EGRESS_ASSETS) {
+      fs.mkdirSync(path.join(src, file.subdir), { recursive: true })
+      fs.writeFileSync(path.join(src, file.subdir, file.name), `${file.name}-payload`, 'utf8')
+    }
+    const dest = path.join(root, 'build', 'egress')
+
+    const first = await stageEgressAssets({ srcDir: src, destDir: dest, log: () => {} })
+
+    assert.deepEqual(first.missing, [])
+    assert.equal(fs.existsSync(path.join(dest, 'MISSING.txt')), false, 'a complete pass leaves no marker')
+
+    // electron-builder 在多 target / 多 arch 下会把 before-pack 调上不止一次，其中一次可能
+    // 拿不到源。这一趟的 missing 是四件全缺，但目录里其实四件齐着 —— 不能因此写一张
+    // 「这版没带」的纸，把上一次的成果在纸面上注销掉（11-08 那个包就是这么被误读的）。
+    const second = await stageEgressAssets({ srcDir: '', destDir: dest, log: () => {} })
+
+    assert.equal(second.missing.length, EGRESS_ASSETS.length, 'the pass reports what it could not find')
+    assert.equal(fs.existsSync(path.join(dest, 'MISSING.txt')), false, 'the marker describes the directory, not the pass')
+
+    for (const file of EGRESS_ASSETS) {
+      assert.equal(fs.existsSync(path.join(dest, file.subdir, file.name)), true, `${file.name} survived`)
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a directory that really is short gets a marker naming only what is absent', async () => {
+  const root = tempRoot('partial')
+  try {
+    const src = path.join(root, 'src')
+    const [kept, ...dropped] = EGRESS_ASSETS
+    fs.mkdirSync(path.join(src, kept.subdir), { recursive: true })
+    fs.writeFileSync(path.join(src, kept.subdir, kept.name), 'only-one', 'utf8')
+    const dest = path.join(root, 'build', 'egress')
+
+    await stageEgressAssets({ srcDir: src, destDir: dest, log: () => {} })
+
+    const marker = fs.readFileSync(path.join(dest, 'MISSING.txt'), 'utf8')
+
+    assert.doesNotMatch(marker, new RegExp(`missing: ${kept.name}$`, 'm'), 'the file that made it is not on the list')
+    for (const file of dropped) {
+      assert.match(marker, new RegExp(`missing: ${file.name}$`, 'm'), `${file.name} has to be named`)
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})

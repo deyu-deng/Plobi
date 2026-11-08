@@ -94,8 +94,8 @@ function digest(file) {
   return hash.digest('hex')
 }
 
-export default async function stageEgressAssets({ srcDir = process.env.PLOBI_EGRESS_SRC || '', destDir, log = console.log } = {}) {
-  const plan = planStaging({ srcDir, destDir })
+export default async function stageEgressAssets({ srcDir = process.env.PLOBI_EGRESS_SRC || '', destDir, files = EGRESS_ASSETS, log = console.log } = {}) {
+  const plan = planStaging({ srcDir, destDir, files })
 
   for (const item of plan.copy) {
     fs.mkdirSync(path.dirname(item.to), { recursive: true })
@@ -107,7 +107,16 @@ export default async function stageEgressAssets({ srcDir = process.env.PLOBI_EGR
 
   fs.rmSync(marker, { force: true })
 
-  if (plan.missing.length) {
+  // 这张纸描述的必须是**目录的最终状态**，不是这一次调用的结果。before-pack 在多 target /
+  // 多 arch 打包里会被调不止一次：某一次拿不到源，plan.missing 就是四件全缺，于是上一次已经
+  // 投放好的 mihomo.exe 旁边被塞进一张「四件全缺」的 MISSING.txt —— 包里东西是全的，纸却说
+  // 没有，谁看包谁被误导（11-08 那个包就是这样，实测路径 resources/egress）。
+  // 按 destDir 现况重算缺什么，缺才写，齐了就只留下四件。
+  const absent = files
+    .filter((file) => !fs.existsSync(path.join(destDir, file.subdir, file.name)))
+    .map((file) => file.name)
+
+  if (absent.length) {
     fs.mkdirSync(destDir, { recursive: true })
     fs.writeFileSync(
       marker,
@@ -117,12 +126,12 @@ export default async function stageEgressAssets({ srcDir = process.env.PLOBI_EGR
         `$PLOBI_HOME/egress/ (see Docs: 随包分发 / 裁定 134 — they are deliberately not in git).`,
         'Build-side fix: set PLOBI_EGRESS_SRC to a directory containing them and re-pack.',
         '',
-        ...plan.missing.map((name) => `missing: ${name}`),
+        ...absent.map((name) => `missing: ${name}`),
         ''
       ].join('\n'),
       'utf8'
     )
-    log(`[egress-assets] 这版没带：${plan.missing.join('、')}（已在包内留 MISSING.txt，运行期会照实报）`)
+    log(`[egress-assets] 这版没带：${absent.join('、')}（已在包内留 MISSING.txt，运行期会照实报）`)
   }
 
   return plan
