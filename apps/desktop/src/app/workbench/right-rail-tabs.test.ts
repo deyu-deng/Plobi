@@ -62,17 +62,27 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     expect(read('chat/index.tsx')).not.toContain('toggleDossierPanel')
   })
 
-  it('档案卡不再是浮在屏上的小弹窗（Qoder 的 Fixed 形态：对话卡右侧一条长卡）', () => {
-    // 用户 11-08 21:1x：「你的就像一个小弹窗，并没有完全逆向Qoder的形态」。
-    // Qoder 的「任务监控」有两种形态——Floating（小窗）与 Fixed（钉在对话右侧一条
-    // 长卡）；用户要的是 Fixed ⇒ 抬头那枚图标只开合长卡，不弹 Popover。
+  it('档案卡是浮在对话上的那张卡（Qoder 实物截图：Floating ＋ 图钉，不是 Popover 小弹窗）', () => {
+    // 用户 11-08 22:3x 给了 Qoder「任务监控」的**实物截图**：那张卡默认**浮在对话
+    // 右上角**（圆角 ＋ 投影，对话不被挤窄），抬头右上角一枚**图钉**把它钉成对话
+    // 右侧的一列。之前那版照 asar 词条做成了停靠列——形状不对。
     const topBar = read('shell/chat-top-bar.tsx')
     expect(topBar).not.toContain('Popover')
 
     const controller = read('desktop-controller.tsx')
     expect(controller).toContain('<DossierPanel')
-    // 长卡住在**对话卡这一行**里（chat 主体 ＋ 右边一条），不是浮在上面。
-    expect(controller).toMatch(/className="flex h-full min-h-0 flex-row"/)
+    // 浮层那一套尺寸：绝对定位 ＋ 圆角 ＋ 投影。
+    expect(controller).toMatch(/DOSSIER_FLOATING\s*=\s*\n\s*'absolute[^']*rounded-xl/)
+    // 钉住那一套：对话右侧的一列（带左边线，不带圆角）。
+    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*border-l/)
+    // 对话容器要 relative，浮层才贴得住它的右上角。
+    expect(controller).toContain("'relative flex h-full min-h-0'")
+  })
+
+  it('图钉那一档：浮层与固定由 store 里的一枚图钉切', () => {
+    const layout = readFileSync(join(SRC, 'store', 'layout.ts'), 'utf8')
+    expect(layout).toContain('$dossierPanelPinned')
+    expect(layout).toContain('toggleDossierPanelPin')
   })
 
   it('显隐口径：对话卡全屏时默认显示，工作区在显示时默认收起，点图标才展开', () => {
@@ -90,7 +100,7 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     // Plobi 没有「会话」这个概念，一个 Agent 就是一张嘴，一个 Agent 的多轮对话
     // 共用同一份档案 ⇒ 键必须是 Agent id。L1 那一格给哨兵 `'l1'`（总秘书），
     // 后端把它翻译成名册里 `role=l1_secretary` 那一行（名册是唯一真源）。
-    expect(src).toMatch(/chatScope\.kind === 'agent' \? chatScope\.id : 'l1'/)
+    expect(src).toMatch(/chatScope\??\.kind === 'agent' \? chatScope\.id : 'l1'/)
   })
 
   it('入口在每个作用域都出现 —— 不许按作用域把它藏起来', () => {
