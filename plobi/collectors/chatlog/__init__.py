@@ -96,8 +96,10 @@ def _prepare() -> tuple[bool, str]:
     ok, upstream_note = keyhand.fetch()
     if ok:
         return True, upstream_note
-    # 两路都不成：说我们那条的（它知道微信在哪、库在不在、版本多少），
-    # 上游那句只在上游说了什么新东西时才补上去。
+    # 两路都不成：3.x 的钥匙归上游那条管 ⇒ 屏幕上说上游那句真话；4.x 归我们这条管 ⇒ 说我们那句。
+    # （我们那句在 3.x 上是「由另一条路取」——两路都败之后它就成了空话，不能拿它当结论。）
+    if keyscan.routed_away():
+        return False, upstream_note or note
     return False, note or upstream_note
 
 

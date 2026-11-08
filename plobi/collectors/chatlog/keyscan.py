@@ -512,6 +512,24 @@ def _file_version(exe_path: str) -> str:
 # 对外：取一次
 # --------------------------------------------------------------------------- #
 
+def routed_away() -> str:
+    """本机这版微信是不是**不归这条路取**（3.x）——是就回版本号，不是就回空串。
+
+    为什么要有它：3.x 的密钥由上游那条（``chatlog key``）取。两条路都失败时，
+    屏幕上该说的是**上游那句真话**（那一版微信上游管用），不是我们那句
+    「由另一条路取」——那句话在两路都败之后就成了空话。
+    """
+    found = _wechat_process()
+    if not found:
+        return ""
+    _pid, exe = found
+    version = _file_version(exe) if exe else ""
+    major = int(version.split(".")[0]) if version and version.split(".")[0].isdigit() else 0
+    if major and major < 4:
+        return version
+    return ""
+
+
 def extract(db_path: str = "") -> tuple[Optional[bytes], str, dict]:
     """取一次密钥。回 ``(密钥, 那一句人话, 额外读数)``。
 
@@ -528,7 +546,15 @@ def extract(db_path: str = "") -> tuple[Optional[bytes], str, dict]:
     found = _wechat_process()
     if not found:
         return None, "本机没在跑微信——先把微信打开并登录，它开着才取得到。", {}
-    pid, _exe = found
+    pid, exe = found
+
+    # **版本分流**：这一条只服务微信 4.x（库布局是 `db_storage`，密钥是 SQLCipher 4 那一套）。
+    # 3.x 走的是另一条路（上游 `chatlog key` 那一发），我们这条路对它是**注定对不上**的——
+    # 不先分流，它会拿「微信没在读本机的聊天库」这种话去回敬一个其实好好在跑微信的 3.x 用户。
+    version = _file_version(exe) if exe else ""
+    major = int(version.split(".")[0]) if version and version.split(".")[0].isdigit() else 0
+    if major and major < 4:
+        return None, "这一版微信（%s）的密钥由另一条路取。" % version, {}
 
     if db_path:
         chosen = db_path
@@ -570,7 +596,6 @@ def extract(db_path: str = "") -> tuple[Optional[bytes], str, dict]:
                 }
                 return mixed, "已经替你取到密钥。", extra
 
-    version = wechat_version()
     suffix = ("（你这台微信是 %s）" % version) if version else ""
     return None, ("这一版微信的密钥没取到%s：微信把密钥换了存放方式，"
                   "产品这边暂时跟不上（这是微信侧的改动，不是你哪里没配好）。" % suffix), {}

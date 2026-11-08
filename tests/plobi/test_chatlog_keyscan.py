@@ -226,6 +226,66 @@ class TestPrepareTriesOursFirst:
 
         monkeypatch.setattr(keyscan, "fetch", lambda *a, **k: (False, "我们那条说真话"))
         monkeypatch.setattr(keyhand, "fetch", lambda *a, **k: (False, "上游那句"))
+        monkeypatch.setattr(keyscan, "routed_away", lambda: "")
+        ok, note = chatlog._prepare()
+        assert ok is False
+        assert note == "我们那条说真话"
+
+
+class TestVersionRouting:
+    """这条路只服务微信 4.x；3.x 走另一条，不许拿「没在读库」那种话去回敬它。"""
+
+    @pytest.mark.skipif(os.name != "nt", reason="只读扫描是 Windows 那一条")
+    def test_old_wechat_goes_to_the_other_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(keyscan, "_wechat_process", lambda: (1234, r"C:\x\WeChat.exe"))
+        monkeypatch.setattr(keyscan, "_file_version", lambda path: "3.9.12.51")
+        key, note, _extra = keyscan.extract()
+        assert key is None
+        assert "另一条路" in note
+        assert "3.9.12.51" in note
+
+    @pytest.mark.skipif(os.name != "nt", reason="只读扫描是 Windows 那一条")
+    def test_four_x_is_not_routed_away(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(keyscan, "_wechat_process", lambda: (1234, r"C:\x\Weixin.exe"))
+        monkeypatch.setattr(keyscan, "_file_version", lambda path: "4.1.15.56")
+        monkeypatch.setattr(keyscan, "_open_databases", lambda pid: [])
+        key, note, _extra = keyscan.extract()
+        assert key is None
+        assert "另一条路" not in note
+        assert "没在读本机的聊天库" in note
+
+    @pytest.mark.skipif(os.name != "nt", reason="只读扫描是 Windows 那一条")
+    def test_routed_away_names_the_old_version(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(keyscan, "_wechat_process", lambda: (1234, r"C:\x\WeChat.exe"))
+        monkeypatch.setattr(keyscan, "_file_version", lambda path: "3.9.12.51")
+        assert keyscan.routed_away() == "3.9.12.51"
+
+    @pytest.mark.skipif(os.name != "nt", reason="只读扫描是 Windows 那一条")
+    def test_routed_away_is_empty_on_four_x(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(keyscan, "_wechat_process", lambda: (1234, r"C:\x\Weixin.exe"))
+        monkeypatch.setattr(keyscan, "_file_version", lambda path: "4.1.15.56")
+        assert keyscan.routed_away() == ""
+
+
+class TestPrepareWhenBothRoutesFail:
+    """两路都不成时，屏幕上那句话得是**那一版微信真正管用的那条路**的真话。"""
+
+    def test_old_wechat_says_the_upstream_reason(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from plobi.collectors import chatlog
+
+        monkeypatch.setattr(keyscan, "fetch", lambda *a, **k: (False, "这一版微信（3.9.12.51）的密钥由另一条路取。"))
+        monkeypatch.setattr(keyhand, "fetch", lambda *a, **k: (False, "上游那句：它没找到密钥"))
+        monkeypatch.setattr(keyscan, "routed_away", lambda: "3.9.12.51")
+        ok, note = chatlog._prepare()
+        assert ok is False
+        assert note == "上游那句：它没找到密钥"
+
+    def test_four_x_says_our_reason(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from plobi.collectors import chatlog
+
+        monkeypatch.setattr(keyscan, "fetch", lambda *a, **k: (False, "我们那条说真话"))
+        monkeypatch.setattr(keyhand, "fetch", lambda *a, **k: (False, "上游那句"))
+        monkeypatch.setattr(keyscan, "routed_away", lambda: "")
         ok, note = chatlog._prepare()
         assert ok is False
         assert note == "我们那条说真话"
