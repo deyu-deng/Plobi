@@ -84,6 +84,40 @@ const payload: OffloadPayload = {
       resume_supported: true,
       today: { rounds: 0, total_usd: null, cost_status: 'unknown', last_ts: '' },
       last_round: null
+    },
+    {
+      name: 'kiro',
+      installed: true,
+      binary: 'C:/Users/Turtlelet/AppData/Local/Kiro-Cli/kiro-cli.exe',
+      version: '2.35.1',
+      logged_in: { value: null, source: 'unknown', detail: '还没派过活' },
+      login_hint: false,
+      permission_flag: '--trust-all-tools',
+      permission_modes: [],
+      capabilities: { writes: true },
+      can_use: true,
+      enabled: true,
+      why_not: '',
+      resume_supported: false,
+      today: { rounds: 0, total_usd: null, cost_status: 'unknown', last_ts: '' },
+      last_round: null
+    },
+    {
+      name: 'qwen',
+      installed: true,
+      binary: 'D:/Runtimes/Languages/Node/qwen.cmd',
+      version: '0.26.0',
+      logged_in: { value: null, source: 'unknown', detail: '还没派过活' },
+      login_hint: false,
+      permission_flag: '--approval-mode yolo',
+      permission_modes: [],
+      capabilities: { writes: true },
+      can_use: true,
+      enabled: true,
+      why_not: '',
+      resume_supported: false,
+      today: { rounds: 0, total_usd: null, cost_status: 'unknown', last_ts: '' },
+      last_round: null
     }
   ],
   probed_at: '2026-10-23T00:30:00+00:00',
@@ -100,14 +134,29 @@ describe('settings → offload', () => {
   it('renders one row per vendor; the backend’s reason is kept verbatim in the hover tip', async () => {
     getOffloadAgents.mockResolvedValue(payload)
     render(<OffloadSettings />)
-    await waitFor(() => expect(screen.getByText('qoder')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
 
-    expect(screen.getByText('codebuddy')).toBeTruthy()
-    expect(screen.getAllByText('agy').length).toBeGreaterThan(0)
+    expect(screen.getByText('CodeBuddy')).toBeTruthy()
+    expect(screen.getAllByText('Antigravity').length).toBeGreaterThan(0)
     const tips = [...document.querySelectorAll('[title]')].map(node => node.getAttribute('title') || '')
     expect(tips.some(tip => tip.includes(payload.agents[0].why_not))).toBe(true)
     expect(tips.some(tip => tip.includes(payload.agents[2].why_not))).toBe(true)
     expect(getOffloadAgents).toHaveBeenCalledWith(false)
+  })
+
+  // 用户 10-30：「agy 能不能用别人的官方首字母大写名称，不要用命令行简写」。
+  it('屏幕上写品牌名，不写内部 id', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Antigravity')).toBeTruthy())
+
+    // 新接的两家也照这个口径（11-08）。
+    expect(screen.getByText('Kiro')).toBeTruthy()
+    expect(screen.getByText('Qwen Code')).toBeTruthy()
+
+    // 内部 id 只留在 tooltip 与台账里，不上屏。
+    expect(screen.queryByText('qwen')).toBeNull()
+    expect(screen.queryByText('kiro')).toBeNull()
   })
 
   it('没配好的右边是加号，点开是登录引导', async () => {
@@ -115,7 +164,7 @@ describe('settings → offload', () => {
 
     render(<OffloadSettings />)
 
-    await waitFor(() => expect(screen.getByText('qoder')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
 
     // 没配好（qoder 未登录、agy 未安装）右边是加号，不是开关
     const setupButtons = screen.getAllByLabelText(/Not set up yet/)

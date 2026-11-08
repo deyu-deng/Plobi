@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { vendorLabelFor } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
@@ -219,7 +220,7 @@ export function OffloadSettings() {
                           : 'bg-destructive'
                     )}
                   />
-                  <span className="truncate">{agent.name}</span>
+                  <span className="truncate">{vendorLabelFor(agent.name)}</span>
                 </span>
               }
             />

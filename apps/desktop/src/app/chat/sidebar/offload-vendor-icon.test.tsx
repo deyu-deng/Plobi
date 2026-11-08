@@ -9,7 +9,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { OffloadVendorIcon } from './offload-vendor-icon'
+import { OffloadVendorIcon, vendorLabelFor } from './offload-vendor-icon'
 
 afterEach(cleanup)
 
@@ -41,5 +41,20 @@ describe('offload vendor icon', () => {
 
     // 颜色只走主题令牌（class）。写死一个十六进制色＝替那个品牌认领一个它自己没用的身份。
     expect(screen.getByTestId('offload-vendor-fallback-qoder').getAttribute('style')).toBe(null)
+  })
+
+  // 用户 10-30：「agy 能不能用别人的官方首字母大写名称，不要用命令行简写」。
+  it('屏幕上写品牌名，不写命令行简写', () => {
+    expect(vendorLabelFor('agy')).toBe('Antigravity')
+    expect(vendorLabelFor('qwen')).toBe('Qwen Code')
+    expect(vendorLabelFor('kiro')).toBe('Kiro')
+    expect(vendorLabelFor('gemini')).toBe('Gemini CLI')
+    expect(vendorLabelFor('claude')).toBe('Claude Code')
+  })
+
+  it('没登记的一家回落成原样的 id，不许变空白', () => {
+    // 空白＝让用户以为那一格坏了；原样的 id 至少还认得出是哪家。
+    expect(vendorLabelFor('somefuturetool')).toBe('somefuturetool')
+    expect(vendorLabelFor('')).toBe('')
   })
 })

@@ -5,6 +5,8 @@
  * 归属由后端按名册登记的项目目录解析，这里**不传路径**，只传 Agent 名与会话号。
  */
 
+import { vendorLabelFor } from './offload-vendor-icon'
+
 export type ExternalSession = {
   archived?: boolean
   id: string
@@ -149,15 +151,8 @@ export function groupByVendor(sessions: readonly ExternalSession[]): VendorGroup
 }
 
 export function vendorLabel(vendor: string): string {
-  const known: Record<string, string> = {
-    agy: 'agy',
-    codebuddy: 'CodeBuddy',
-    cursor: 'Cursor',
-    marvis: 'Marvis',
-    qoder: 'Qoder'
-  }
-
-  return known[vendor] ?? vendor
+  // 品牌名那张表只有一份（在 `offload-vendor-icon.tsx`）——两块屏不许各叫一套。
+  return vendorLabelFor(vendor)
 }
 
 export function patchExternalSession(
