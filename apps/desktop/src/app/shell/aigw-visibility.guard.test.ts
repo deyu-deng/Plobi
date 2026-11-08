@@ -140,6 +140,10 @@ const ALLOWED_LITERALS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /^aigw-key$/, reason: 'machine-read sidecar ledger id of the key-reconcile row (KEY_RECONCILE_ROW_ID)' },
   { pattern: /^import aigw\.cli$/, reason: 'Python module name used by the interpreter liveness probe' },
   { pattern: /^aigw-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' },
+  {
+    pattern: /^aigw-config\.default\.yaml$/,
+    reason: 'filename of the default gateway config on disk (electron-builder ships it into resources/)'
+  },
   { pattern: /^\.\/aigw-key-reconcile$/, reason: 'TypeScript module path the main process imports (filename on disk)' },
   { pattern: /^AIGW_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' },
   { pattern: /^PLOBI_AIGW_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' }
