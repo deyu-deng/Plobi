@@ -185,15 +185,43 @@ class TestTheDefaultRoundDoesNotDialThem:
         assert not ({p.source_id for p in PROVIDERS} & selected)
 
     def test_flipping_the_switch_on_screen_puts_it_in_the_next_round(self) -> None:
+        """翻开关 + **配齐必填那两格** ⇒ 才进下一轮。
+
+        11-07 那一笔（`ea3bdeec`，`WP-SOURCE-FIRST-RUN-IMPORT`）给 `collecting_sources()`
+        加了第二道闸：**没配齐的不进这一轮**（用户 11-05 原话「用户没有配置微信。就不采集」）。
+        这条断言本来是 10-24（`bc52bc1b`）写的，那时只有"生效开关"一道闸，所以它只翻开关就断言。
+        闸加上了，这条断言没同批改 ⇒ 11-07 之后它一直红（本刀 `WP-SOURCE-ACCOUNT-RECON` 认领并修掉）。
+        **它要守的判据没变**：用户翻开关真的算数——但"算数"的前提是这一条已经配好了。
+        """
         from plobi.collectors import sources_config
 
         sources_config.set_enabled("email_qq", True)
+        # 一次给全：非密钥那格（`address`）落 `sources.yaml`，密钥那格（`password`）
+        # 由这个口自己转交 `set_secret` 写进 `.env`（`sources.yaml` 一个字都不收密钥）。
+        sources_config.set_setup_params("email_qq", {"address": "me@qq.com", "password": SECRET})
 
         assert "email_qq" in registry.collecting_sources()
 
         sources_config.set_enabled("email_qq", False)
 
         assert "email_qq" not in registry.collecting_sources()
+
+    def test_the_switch_alone_is_not_enough_until_it_is_configured(self) -> None:
+        """只翻开关、没配齐必填 ⇒ **不进**这一轮（11-07 那道闸，判据本身在这里）。
+
+        这一条与上面那条是同一件事的两面：闸太松 ⇒ 首装机器上每轮白打一遍、
+        每轮写一条 `build_failed`、屏上再画一行红（把"还没开始"说成"坏了"）；
+        闸太紧 ⇒ 用户配好了却采不到。**两边都要有断言**，不然改一头就偏了。
+        """
+        from plobi.collectors import sources_config
+
+        sources_config.set_enabled("email_qq", True)
+
+        assert "email_qq" not in registry.collecting_sources()
+
+        sources_config.set_setup_params("email_qq", {"address": "me@qq.com", "password": SECRET})
+
+        assert "email_qq" in registry.collecting_sources()
 
 
 class TestAPullIsJustMail:
