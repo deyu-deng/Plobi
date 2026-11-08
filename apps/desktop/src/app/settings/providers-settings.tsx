@@ -932,7 +932,12 @@ export function ProvidersSettings({
               value={keyQuery}
             />
             {orderedGroups.length > 0 ? (
-              <div className="grid gap-2">
+              /* 一组一张卡（用户 11-08：「API key 那一页还是没有和其他页的一样变成卡片」）：
+                 这一页原来是一堆**裸行**浮在页底上，与模型／外观／通知那些页各挂各的卡
+                 长得完全不是一回事。改走 `SettingsGroup` 那件：行住进同一张 `.dl-card`，
+                 行与行之间**不画线**（11-07 统一令：卡内相邻两行不画线，靠上下呼吸分组）。
+                 卡片不带抬头——这一屏的组名就是侧栏那一条「API 密钥」，再写一遍是重复。 */
+              <SettingsGroup>
                 {orderedGroups.map(group => (
                   <ProviderKeyRows
                     expanded={openProvider === group.name}
@@ -943,7 +948,7 @@ export function ProvidersSettings({
                     rowProps={rowProps}
                   />
                 ))}
-              </div>
+              </SettingsGroup>
             ) : (
               <div className="grid min-h-24 place-items-center px-4 py-6 text-center text-[length:var(--conversation-caption-font-size)] text-muted-foreground">
                 {t.settings.providers.noKeysMatch}

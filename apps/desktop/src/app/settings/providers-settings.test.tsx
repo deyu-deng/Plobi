@@ -620,4 +620,25 @@ describe('providers screen: shape is the truth (2026-11-08)', () => {
     await waitFor(() => expect(screen.queryByText('Antigravity')).toBeNull())
     expect(screen.getByText('CodeBuddy')).toBeTruthy()
   })
+
+  it('the keys tab puts its rows in one card, like the other settings pages', async () => {
+    // 用户 11-08：「API key 那一页还是没有和其他页的一样变成卡片。」
+    // 这一页原来是一堆**裸行**浮在页底上（根本没有卡）；模型／外观／通知那些页都是
+    // 「一组一张卡」。改走 `SettingsGroup` 那件：行住进同一张 `.dl-card`。
+    getEnvVars.mockResolvedValue({
+      ACME_API_KEY: keyVar({ provider: 'acme', provider_label: 'Acme' }),
+      ZEBRA_API_KEY: keyVar({ provider: 'zebra', provider_label: 'Zebra' })
+    })
+    listOAuthProviders.mockResolvedValue({ providers: [] })
+
+    const { ProvidersSettings } = await import('./providers-settings')
+    render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="keys" />)
+
+    await screen.findByText('Acme')
+    const card = screen.getByText('Acme').closest('.dl-card')
+
+    expect(card).toBeTruthy()
+    // 两行在**同一张**卡里（不是各自一张小卡）。
+    expect(card?.contains(screen.getByText('Zebra'))).toBe(true)
+  })
 })
