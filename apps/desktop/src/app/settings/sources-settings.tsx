@@ -22,6 +22,9 @@
  *    **收起时那颗头自己住进一张只有头的卡**（用户 11-08：「收起的时候有点奇怪」）：展开时是
  *    「头在卡外＋行在卡里」，收起时没了下面那张卡，头上又没有壳，那一行就成了一段裸文字，
  *    和展开态两套壳。按同一张 `.dl-card` 补上，头还在卡里，hover 面照 `ListRow` 那件。
+ * 6. **每一大类有一颗矢量图标**（用户 11-08：「还是好丑……你知道我喜欢矢量图标来代替信息的」）：
+ *    图标 + 名字 + 计数，与设置侧栏那一列同一族（`sources/category-icons.ts`）。图标只说
+ *    「这是哪一类」，**名字仍然在**——屏上要能读懂，不靠记忆认图形。
  */
 
 import { useStore } from '@nanostores/react'
@@ -31,12 +34,13 @@ import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { selectDesktopPaths } from '@/lib/desktop-fs'
-import { Layers3 } from '@/lib/icons'
+import { iconSize, Layers3 } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
 import { ConnectionControl } from './connection-control'
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, importSourceFile, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { categoryIcon } from './sources/category-icons'
 import { $fold, decide, isOpen } from './sources/collapse'
 import { ConversationList } from './sources/conversation-list'
 import { ExternalSources } from './sources/external-sources'
@@ -224,6 +228,8 @@ export function SourcesSettings() {
         // 异常只数后端三态里那一格（判据在 `sources_api.status_of`，这里不建第二条）。
         const errors = group.rows.filter(row => statusOf(row) === 'error').length
         const expanded = isOpen(fold, { category: group.category, errors })
+        // 那一大类的那颗图标（闭集七类，多出来的类别不画——见 `sources/category-icons.ts`）。
+        const CategoryIcon = categoryIcon(group.category)
 
         const meta = errors > 0
           ? `${group.rows.length} · ${labels.groups.errors.replace('{n}', String(errors))}`
@@ -249,9 +255,15 @@ export function SourcesSettings() {
             onClick={() => { decide(group.category, !expanded) }}
             type="button"
           >
-            <span className="min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)] font-normal leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
-              {labels.categories[group.category as keyof Labels['categories']] ?? group.category}
-              {meta ? ` · ${meta}` : ''}
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              {/* 大类那一颗矢量图标（用户 11-08：「我喜欢矢量图标来代替信息的」）：
+                  图标只说"这是哪一类"，**名字仍然在**——屏上要能读懂，不靠记忆认图形。
+                  形状与设置侧栏那一列同一族（`@/lib/icons` ＋ `iconSize.sm`）。 */}
+              {CategoryIcon ? <CategoryIcon className={`${iconSize.sm} shrink-0 text-(--ui-text-tertiary)`} /> : null}
+              <span className="min-w-0 truncate text-[length:var(--conversation-caption-font-size)] font-normal leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
+                {labels.categories[group.category as keyof Labels['categories']] ?? group.category}
+                {meta ? ` · ${meta}` : ''}
+              </span>
             </span>
             <DisclosureCaret className="size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded} />
           </button>

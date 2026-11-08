@@ -1174,6 +1174,39 @@ describe('the categories fold', () => {
   })
 })
 
+describe('the category headers carry a vector icon', () => {
+  beforeEach(() => {
+    $fold.set({})
+  })
+
+  it('gives every category an icon, and keeps the name beside it', async () => {
+    // 用户 11-08：「还是好丑……你知道我喜欢矢量图标来代替信息的。」
+    // 形状＝**图标 ＋ 名字 ＋ 计数**，与设置侧栏那一列同一族（`sources/category-icons.ts`）。
+    // 图标是**加**上去的：名字仍然在——屏上要能读懂，不靠记忆认图形（所以不是「只留图标」）。
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' }),
+      row({ category: 'email', source: 'email_qq' }),
+      row({ category: 'file', enabled: false, source: 'timetable', status: 'disconnected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-software-toggle')).toBeTruthy())
+
+    const software = screen.getByTestId('source-group-software-toggle')
+    expect(software.querySelector('svg')).toBeTruthy()
+    expect(software.textContent).toBe('Software · 1')
+
+    const email = screen.getByTestId('source-group-email-toggle')
+    expect(email.querySelector('svg')).toBeTruthy()
+    expect(email.textContent).toBe('Mailboxes · 1')
+
+    const file = screen.getByTestId('source-group-file-toggle')
+    expect(file.querySelector('svg')).toBeTruthy()
+    expect(file.textContent).toBe('Files · Import files')
+  })
+})
+
 describe('the shape chips filter that row list', () => {
   // 用户 10-27：「我偏向 1，然后用户可用标签筛选。挺好的」——轴只剩一条（从哪来），
   // "是什么形状"降成标签，而标签的真源**只有池里那条 `kind`**。
