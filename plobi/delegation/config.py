@@ -17,6 +17,10 @@ DEFAULTS: dict[str, Any] = {
     # Process-wide ceiling on concurrently running L3 children, across every L2
     # and every delegate_task call. Core's max_concurrent_children is per call.
     "global_max_children": 6,
+    # 人优先：并发上限之外永远留这枚槽给人（DeepSeek Super-agent 的 human slot）。
+    # 自动派工只看 cap - human_reserved_slots；只有 for_human=True 才动用保留槽。
+    # 设 0 = 旧行为逐位不变；直接构造 DelegationGuard 的调用方默认也是 0。
+    "human_reserved_slots": 1,
     # Bounded wait before an over-cap request degrades to a block message.
     "queue_timeout_seconds": 30.0,
     # A slot is reclaimed if its child never reports stop (crash / wedge).

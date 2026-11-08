@@ -71,8 +71,10 @@ class DelegationGuard:
         queue_timeout: float = 30.0,
         lease_ttl: float = 900.0,
         clock=time.monotonic,
+        human_reserved: int = 0,
     ) -> None:
         self._cap = max(1, int(cap))
+        self._human_reserved = self._clamp_reserved(human_reserved)
         self._queue_timeout = max(0.0, float(queue_timeout))
         self._lease_ttl = max(1.0, float(lease_ttl))
         self._clock = clock
@@ -86,6 +88,18 @@ class DelegationGuard:
     @property
     def cap(self) -> int:
         return self._cap
+
+    @property
+    def human_reserved(self) -> int:
+        """Slots kept out of reach of automatic delegation."""
+        return self._human_reserved
+
+    @property
+    def automatic_cap(self) -> int:
+        return max(1, self._cap - self._human_reserved)
+
+    def _clamp_reserved(self, value: int) -> int:
+        return max(0, min(int(value or 0), self._cap - 1))
 
     @property
     def active(self) -> int:
@@ -104,6 +118,8 @@ class DelegationGuard:
         with self._cv:
             return {
                 "cap": self._cap,
+                "human_reserved": self._human_reserved,
+                "automatic_cap": self.automatic_cap,
                 "active": self._active_locked(),
                 "available": max(0, self._cap - self._active_locked()),
                 "leases": len(self._leases),
@@ -114,6 +130,7 @@ class DelegationGuard:
     def set_cap(self, cap: int) -> None:
         with self._cv:
             self._cap = max(1, int(cap))
+            self._human_reserved = self._clamp_reserved(self._human_reserved)
             self._cv.notify_all()
 
     # -- admission -----------------------------------------------------
@@ -126,14 +143,19 @@ class DelegationGuard:
         turn_id: str = "",
         label: str = "",
         timeout: Optional[float] = None,
+        for_human: bool = False,
     ) -> Admission:
         """Take up to ``requested`` slots, waiting at most ``timeout`` seconds.
 
         ``requested`` is clamped to the cap rather than refused — asking for
         more children than the cap is legal, you just cannot hold more slots
-        than exist.
+        than exist.  ``for_human=True`` is the only way to use the slots kept
+        by ``human_reserved``; every automatic delegation sees the smaller
+        ``automatic_cap`` (DeepSeek Super-agent: never queue a person behind
+        background work).
         """
-        want = max(1, min(int(requested or 1), self._cap))
+        effective_cap = self._cap if for_human else self.automatic_cap
+        want = max(1, min(int(requested or 1), effective_cap))
         limit = self._queue_timeout if timeout is None else max(0.0, float(timeout))
         start = self._clock()
         deadline = start + limit
@@ -147,7 +169,7 @@ class DelegationGuard:
                     now = self._clock()
                     waited = now - start
                     self._expire_locked()
-                    if self._can_grant_locked(ticket, want):
+                    if self._can_grant_locked(ticket, want, effective_cap):
                         lease = Lease(
                             id=uuid.uuid4().hex[:12],
                             session_id=session_id,
@@ -159,31 +181,33 @@ class DelegationGuard:
                         self._leases[lease.id] = lease
                         return Admission(
                             True, "granted", want, waited,
-                            self._active_locked(), self._cap, lease.id,
+                            self._active_locked(), effective_cap, lease.id,
                         )
                     remaining = deadline - now
                     if remaining <= 0:
                         return Admission(
                             False, "concurrency-cap", 0, waited,
-                            self._active_locked(), self._cap, None,
+                            self._active_locked(), effective_cap, None,
                         )
                     self._cv.wait(min(remaining, _WAIT_SLICE))
             finally:
                 self._waiters.pop(ticket, None)
 
-    def _can_grant_locked(self, ticket: int, want: int) -> bool:
+    def _can_grant_locked(self, ticket: int, want: int, cap: Optional[int] = None) -> bool:
         """FIFO with no head-of-line blocking.
 
         A waiter may proceed when it fits AND no earlier waiter also fits — so
         a request for 6 slots never strands a later request for 1 behind it.
+        ``cap`` is the caller's effective ceiling (smaller for automatic work).
         """
+        limit = self._cap if cap is None else cap
         active = self._active_locked()
-        if active + want > self._cap:
+        if active + want > limit:
             return False
         for other in self._waiters.values():
             if other.ticket == ticket:
                 return True
-            if active + other.want <= self._cap:
+            if active + other.want <= limit:
                 return False
         return True
 
@@ -270,6 +294,7 @@ def get_guard() -> DelegationGuard:
                     cap=cfg["global_max_children"],
                     queue_timeout=cfg["queue_timeout_seconds"],
                     lease_ttl=cfg["lease_ttl_seconds"],
+                    human_reserved=cfg.get("human_reserved_slots", 0),
                 )
     return _DEFAULT_GUARD
 

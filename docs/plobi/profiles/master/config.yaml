@@ -24,8 +24,10 @@ delegation:
   provider: ""   # e.g. deepseek
   model: ""      # e.g. deepseek-chat
 
-# L1 must NOT burn free-tier GUI quotas itself. GUI-only closed-source apps
-# are L3 executors driven over Pico HID (priority queue, ADR-0011).
+# L1 must NOT burn free-tier GUI quotas itself. Closed-source AI software that
+# cannot be exposed as an API belongs to the offload (L3) column: it is a full
+# agent with its own tools/session (ruling 205), not a model provider here.
+# Pico HID / computer_use are just input channels into that software.
 
 # Memory brain: Mind holds knowledge + profile (set MIND_ROOT; the surface lives
 # outside this repo). Runtime state (agenda / DDL) lives in SQLite, not Mind

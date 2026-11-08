@@ -17,12 +17,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional, Protocol
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CAP_Writes",
@@ -159,6 +162,9 @@ class OffloadResult:
     #: 就是"活干了、话说了、回执文件没写"——把这种形状读成"它没回话"，
     #: 界面上那一格除了失败没有别的东西可显示。
     answer: str = ""
+    #: 派工授权票（WP-L3-TICKET-MANDATE）。空串 = 通道派活时没带票，
+    #: ``RoundLedger.append`` 会替它补一条追溯型票，不让这一轮没有授权记录。
+    ticket_id: str = ""
 
     @property
     def ok(self) -> bool:
@@ -262,9 +268,21 @@ class RoundLedger:
 
         return get_plobi_home() / "plobi" / "delegation" / self.FILENAME
 
-    def append(self, result: OffloadResult, *, brief: str) -> dict[str, Any]:
+    def append(self, result: OffloadResult, *, brief: str, ticket_id: str = "") -> dict[str, Any]:
+        # 授权层（WP-L3-TICKET-MANDATE）：显式票优先；没带就为这一轮补一条追溯型票。
+        # 记账失败不许连累流水本身——"只追加"那本账比授权记录更老、更不能被拖垮。
+        tid = str(ticket_id or "").strip()
+        if not tid:
+            try:
+                from plobi.delegation.tickets import TicketLedger
+
+                tid = TicketLedger().record_offload(result, brief=brief)
+            except Exception:
+                logger.warning("plobi: offload ticket not recorded", exc_info=True)
+                tid = ""
         row: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "ticket_id": tid,
             "agent": result.agent,
             "cwd": result.cwd,
             "permission_flag": result.permission_flag,

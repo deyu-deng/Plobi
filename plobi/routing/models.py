@@ -9,7 +9,12 @@ into something the code can enforce:
   model is doing clerical work).
 - **L2** runs cheap models or aggregated quota and does the per-message
   classification, extraction and tool loops.
-- **L3** spends no tokens at all — it drives GUIs.
+- **L3** is *not* a role in this table. Temporary experts and offloaded
+  external AI software are full agents with their own models, tool loops and
+  the ability to spawn ordinary sub-agents (11-04 ruling; see
+  ``plobi/delegation/expert_roles.py`` and ``agent/external_offload.py``).
+  Their models are chosen per expert role / per external software, never here.
+  Pico HID / ``computer_use`` are input channels, not a definition of L3.
 
 Config: ``$PLOBI_HOME/plobi/models.json`` (ids only; API keys stay in env,
 per AGENTS.md).
@@ -41,13 +46,15 @@ L2_COURSE = "l2_course"
 
 KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PLANNER, L2_PROJECT, L2_COURSE)
 
-# Surfaces whose quota cannot be converted into an API key. They belong to L3
-# workers; wiring one to L1 would make the secretary depend on GUI automation.
+# Surfaces whose quota cannot be converted into an API key. They belong to the
+# offload (L3) column as external AI software, not to L1/L2 model routes;
+# wiring one to L1 would make the secretary depend on GUI automation.
 GUI_ONLY_SURFACES = ("marvis", "cursor", "antigravity-gui", "workbuddy", "gui")
 
 # ``aigw`` is the local OpenAI-compatible gateway (WorkBuddy quota etc.).
-# L2 generation goes through aigw model ids like ``workbuddy/deepseek-chat``
-# (MVP §8.2 L3a). Direct ``deepseek`` API routes are retired (balance exhausted).
+# L2 generation goes through aigw model ids like ``workbuddy/deepseek-chat``.
+# The local quota gateway is a model/provider route for L2 generation — it is
+# not an L3 agent (ruling 205). Direct ``deepseek`` API routes are retired.
 DEFAULT_ROUTES: dict[str, dict[str, str]] = {
     L1_SECRETARY: {"provider": "moonshot", "model": "kimi-k3"},
     L2_AGENDA: {"provider": "aigw", "model": "workbuddy/deepseek-chat"},
@@ -121,7 +128,8 @@ class ModelRoute:
         provider = (self.provider or "").lower().strip()
         model = (self.model or "").lower().strip()
         # aigw exposes desktop-quota model ids (e.g. workbuddy/*) as an OpenAI-
-        # compatible API. That is L3a for generation — not a HID/GUI surface.
+        # compatible API. That is a model route for L2 generation — not a
+        # HID/GUI surface and not an L3 agent.
         if provider == "aigw":
             return False
         blob = f"{provider} {model}"
@@ -213,7 +221,7 @@ class ModelRouter:
         if l1.is_gui_surface:
             problems.append(
                 f"l1_secretary points at a GUI-only surface ({l1.qualified}); "
-                "those belong to L3 workers"
+                "those belong to the offload (L3) column"
             )
 
         for role, route in self.routes.items():

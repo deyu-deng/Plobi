@@ -42,7 +42,7 @@ def test_l1_may_not_point_at_a_gui_only_surface(tmp_path):
 
 
 def test_aigw_workbuddy_model_is_not_a_gui_surface(tmp_path):
-    """MVP §8.2 L3a: L2 via aigw workbuddy/* is API quota, not HID."""
+    """L2 via aigw workbuddy/* is an API model route, not HID or an L3 agent."""
     route = ModelRoute(
         role=L2_AGENDA, provider="aigw", model="workbuddy/deepseek-chat"
     )
