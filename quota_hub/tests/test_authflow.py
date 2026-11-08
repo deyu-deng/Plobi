@@ -570,11 +570,13 @@ def test_two_clicks_do_not_start_two_logins(tmp_path, monkeypatch):
     assert first is second
 
 
-def test_the_catalog_is_the_scan_result_not_a_wish_list(monkeypatch):
-    """Absent products get no card (user ruling 2026-10-27: 只扫描已有的产品，不代下载).
+def test_the_catalog_lists_every_leg_and_says_whether_it_is_installed(monkeypatch):
+    """The card list is the catalogue of adapted legs, not what this machine happens to
+    have (user ruling 2026-11-07: a brand-new machine showed a blank settings page).
 
-    A row that says "not installed here" is an invitation to go install something by
-    hand, which is exactly the experience this ruling removes.
+    The 2026-10-27 ruling ("only scan what is installed, never offer to download it") is
+    superseded: every adapted leg gets a card, and *whether it is installed* is a separate
+    field on that card — so the button can be a "+" that opens first-time configuration.
     """
     from quota_hub.providers.apps.codex.cli import CodexCliProvider
 
@@ -585,15 +587,19 @@ def test_the_catalog_is_the_scan_result_not_a_wish_list(monkeypatch):
             return True, "ok"
 
     monkeypatch.setattr(CodexCliProvider, "_binary_present", lambda self: False)
-    ids = {row["id"] for row in authflow.auth_catalog(_Reg())}
-    assert "codex_cli" not in ids
+    rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
+    assert "codex_cli" in rows, "an adapted leg gets a card even when it is not installed here"
+    assert rows["codex_cli"]["installed"] is False
+    assert rows["codex_cli"]["state"] == "not_installed"
 
     monkeypatch.setattr(CodexCliProvider, "_binary_present", lambda self: True)
-    ids = {row["id"] for row in authflow.auth_catalog(_Reg())}
-    assert "codex_cli" in ids
+    rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
+    assert rows["codex_cli"]["installed"] is True
 
 
-def test_a_login_only_target_without_its_cli_is_omitted(monkeypatch):
+def test_a_login_only_target_without_its_cli_is_still_listed_as_not_installed(monkeypatch):
+    """Same supersession, for the legs that are only a login command: the card is there,
+    and the card says this machine has no such CLI yet."""
     monkeypatch.setattr(authflow, "_resolve_binary", lambda name: None)
     monkeypatch.setattr(
         authflow,
@@ -601,7 +607,10 @@ def test_a_login_only_target_without_its_cli_is_omitted(monkeypatch):
         {"ghost-cli": {"name": "Ghost", "binary": "ghost", "argv": ["login"], "tty": True}},
     )
 
-    assert authflow.auth_catalog(None) == []
+    rows = {row["id"]: row for row in authflow.auth_catalog(None)}
+    assert "ghost-cli" in rows
+    assert rows["ghost-cli"]["installed"] is False
+    assert rows["ghost-cli"]["state"] == "not_installed"
 
 
 def test_an_installed_target_is_listed_as_not_signed_in(monkeypatch):

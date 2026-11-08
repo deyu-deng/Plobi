@@ -82,6 +82,10 @@ def test_envelope(p: AntigravityProvider) -> None:
             {
                 "role": "assistant",
                 "content": "Hi! How can I help?",
+                # Code Assist refuses an unsigned functionCall (measured 2026-11-02),
+                # so a real assistant turn carries the signature of the thought turn
+                # before it. Without one the leg drops the call on purpose.
+                "thought_signature": "sig-from-the-preceding-thought-turn",
                 "tool_calls": [
                     {
                         "id": "c1",
