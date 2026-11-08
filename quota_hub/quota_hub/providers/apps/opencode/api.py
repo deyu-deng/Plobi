@@ -411,8 +411,8 @@ class OpencodeApiProvider(Provider):
           the ones above zero are billed per token and are **not** part of what the
           subscription covers. Offering them in the picker promised a model the user
           cannot use — the user's own rule (11-08 20:1x): 「我配置不了就不应该出现在
-          这个模型框里面」. Of the 42 rows this account's Zen wrote on 11-08, 12 are
-          free and 30 are billed.
+          这个模型框里面」. Of the 42 rows this account's Zen wrote on 11-08, 11 are
+          free and 31 are billed.
 
         A row that says nothing about its price is **not** a refusal: "the leg did not
         say" must never read as "not covered" — the same rule the ``tuning`` hook

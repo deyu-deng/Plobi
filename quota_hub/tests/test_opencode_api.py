@@ -409,7 +409,7 @@ def _zen_row(model_id: str, *, price=None, context=None, output=None) -> dict:
 def test_the_membership_lane_serves_only_what_the_subscription_covers(tmp_path, monkeypatch):
     """A Zen membership is the free pool; the billed models are not part of it.
 
-    Measured 2026-11-08 against the vendor's own list: of 42 rows, 12 are free and 30
+    Measured 2026-11-08 against the vendor's own list: of 42 rows, 11 are free and 31
     are billed per token. Serving all 42 promised a model the user cannot use — the
     user's own rule (11-08 20:1x): 「我配置不了就不应该出现在这个模型框里面」.
     """
