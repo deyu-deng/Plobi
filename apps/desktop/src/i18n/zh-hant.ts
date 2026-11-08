@@ -1307,7 +1307,17 @@ export const zhHant = defineLocale({
     emptyAgent: '暫無檔案',
     noAgentSelected: '先選一個 Agent',
     agentDossier: '檔案',
-    notesSection: '筆記'
+    notesSection: '筆記',
+    dossierPlanSection: '計劃',
+    dossierProgressSection: '進度',
+    dossierNotesSection: '相關筆記',
+    dossierPlanEmpty: '這個 Agent 還沒有寫計劃。',
+    dossierTasksEmptyDesc: '這份檔案還沒有按天列的任務。',
+    dossierTasksLoadFailed: '清單讀不出來',
+    dossierToday: '今天',
+    dossierDoneByUser: '你',
+    dossierDoneByAgent: 'Agent',
+    dossierCollapse: '收起'
   },
 
   starmap: {

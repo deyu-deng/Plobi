@@ -1578,7 +1578,17 @@ export const zh: Translations = {
     emptyAgent: '暂无档案',
     noAgentSelected: '先选一个 Agent',
     agentDossier: '档案',
-    notesSection: '笔记'
+    notesSection: '笔记',
+    dossierPlanSection: '计划',
+    dossierProgressSection: '进度',
+    dossierNotesSection: '相关笔记',
+    dossierPlanEmpty: '这个 Agent 还没有写计划。',
+    dossierTasksEmptyDesc: '这份档案还没有按天列的任务。',
+    dossierTasksLoadFailed: '清单读不出来',
+    dossierToday: '今天',
+    dossierDoneByUser: '你',
+    dossierDoneByAgent: 'Agent',
+    dossierCollapse: '收起'
   },
   starmap: {
     title: '记忆图谱',

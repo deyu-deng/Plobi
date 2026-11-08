@@ -1336,7 +1336,17 @@ export const ja = defineLocale({
     emptyAgent: 'ドシエはまだありません',
     noAgentSelected: '先にエージェントを選んでください',
     agentDossier: 'ドシエ',
-    notesSection: 'ノート'
+    notesSection: 'ノート',
+    dossierPlanSection: '計画',
+    dossierProgressSection: '進捗',
+    dossierNotesSection: '関連ノート',
+    dossierPlanEmpty: 'このエージェントにはまだ計画がありません。',
+    dossierTasksEmptyDesc: 'このドシエには日ごとのタスクがまだありません。',
+    dossierTasksLoadFailed: 'リストを読み込めません',
+    dossierToday: '今日',
+    dossierDoneByUser: 'あなた',
+    dossierDoneByAgent: 'エージェント',
+    dossierCollapse: '閉じる'
   },
 
   starmap: {

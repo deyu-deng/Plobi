@@ -4,6 +4,8 @@
 
 * ``GET /api/surface/agents`` —— 24 张卡（名册身份 + 标准档案元数据，不带正文）
 * ``GET /api/surface/agents/{name}`` —— 一页（标准档案正文）
+* ``GET /api/surface/agents/{name}/tasks`` —— 那一页的每日任务清单（``tasks.json``）
+* ``POST /api/surface/agents/{name}/tasks/toggle`` —— 人勾选／取消勾选（改同一份 ``tasks.json``）
 * ``GET /api/surface/notes`` —— 知识库：全部笔记的元数据
 * ``GET /api/surface/notes/content?path=`` —— 一篇笔记的正文
 * ``PUT /api/surface/notes/content?path=`` —— 人在笔记栏里整篇存回（``create=true`` 时新建）
@@ -184,6 +186,97 @@ async def get_surface_agent(name: str):
         return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("surface dossier", exc)
+
+
+@router.get("/surface/agents/{name}/tasks")
+async def get_surface_agent_tasks(name: str):
+    """那一页的每日任务清单（档案目录下的 ``tasks.json``，与 plan/progress 同目录）。
+
+    屏上的进度就是这份文件：人勾选 ⇒ ``POST …/toggle`` 改它；Agent 用
+    ``surface_write`` 改**同一个**文件 ⇒ 两边共用一处真源。
+
+    坏文件不许糊成空表：JSON 坏了 ⇒ ``data.error`` 有值（前端显示「读不到」），
+    文件不在 ⇒ ``data.exists`` 为 False（前端显示「还没有清单」）。
+    """
+    from plobi.mind.agent_dossier import resolve_dossier_id
+    from plobi.mind.dossier_tasks import (
+        AgentNotRegistered,
+        DossierRootUnavailable,
+        find_home,
+        read_tasks,
+        tasks_path,
+    )
+
+    # **作用域哨兵先翻译成名册 id**（桌面那边 L1 的哨兵是 ``'l1'``，名册里 L1
+    # 那一行的 name 是 ``secretary``）：档案跟着 Agent 走，不翻译就去查 ``'l1'``
+    # ⇒ 404「agent 'l1' is not registered」。
+    name = resolve_dossier_id(name)
+
+    try:
+        home = await run_in_threadpool(find_home, name)
+    except AgentNotRegistered as exc:
+        return _error(404, str(exc))
+    except DossierRootUnavailable as exc:
+        return _unavailable("surface dossier tasks", exc)
+
+    if home is None:
+        # 这一格压根没绑档案目录 ⇒ 没有清单可读（**不是**读不到）。
+        return {"ok": True, "data": {"exists": False, "error": None, "days": []}}
+
+    data = await run_in_threadpool(read_tasks, tasks_path(home))
+    return {"ok": True, "data": data.to_dict()}
+
+
+@router.post("/surface/agents/{name}/tasks/toggle")
+async def toggle_surface_agent_task(name: str, body: dict):
+    """人勾选／取消勾选一条任务；改的是同一份 ``tasks.json``（Agent 写的那份）。
+
+    ``done`` 是**目标状态**，不是翻转——前端少传一次请求不会把状态带偏。
+    """
+    from plobi.mind.agent_dossier import resolve_dossier_id
+    from plobi.mind.dossier_tasks import (
+        AgentNotRegistered,
+        DossierRootUnavailable,
+        TaskNotFound,
+        TasksFileBroken,
+        TasksFileMissing,
+        find_home,
+        tasks_path,
+        toggle_task,
+    )
+
+    name = resolve_dossier_id(name)
+
+    payload = body if isinstance(body, dict) else {}
+    day = str(payload.get("date") or "").strip()
+    item_id = str(payload.get("id") or "").strip()
+    done = payload.get("done")
+    if not day or not item_id:
+        return _error(400, 'body must be {"date": "...", "id": "...", "done": true|false}')
+    if not isinstance(done, bool):
+        return _error(400, '"done" must be true or false (it is the target state, not a toggle)')
+
+    try:
+        home = await run_in_threadpool(find_home, name)
+    except AgentNotRegistered as exc:
+        return _error(404, str(exc))
+    except DossierRootUnavailable as exc:
+        return _unavailable("surface dossier tasks", exc)
+
+    if home is None:
+        return _error(404, f"agent {name!r} has no dossier to hold tasks")
+
+    try:
+        data = await run_in_threadpool(toggle_task, tasks_path(home), day, item_id, done)
+    except TasksFileMissing as exc:
+        return _error(404, str(exc))
+    except TaskNotFound as exc:
+        return _error(404, str(exc))
+    except TasksFileBroken as exc:
+        return _error(409, str(exc))
+    except Exception as exc:
+        return _unavailable("surface dossier tasks", exc)
+    return {"ok": True, "data": data.to_dict()}
 
 
 @router.get("/surface/notes")

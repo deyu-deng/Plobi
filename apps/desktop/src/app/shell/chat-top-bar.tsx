@@ -1,13 +1,11 @@
 import { useStore } from '@nanostores/react'
-import { useState } from 'react'
 
-import { AgentDossierCard } from '@/app/chat/right-rail/agent-dossier-card'
 import { $consoleAgents } from '@/app/console/store/agents'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { $dossierPanelVisible, toggleDossierPanel } from '@/store/layout'
 
 import type { ChatScope } from '../console/chat/scope'
 import { secretaryShellLabel } from '../desktop-controller-utils'
@@ -33,14 +31,17 @@ export function ChatTopBar({
 }) {
   const { t } = useI18n()
   const agents = useStore($consoleAgents)
+  const dossierVisible = useStore($dossierPanelVisible)
   const level = scope.kind === 'agent' ? { l2: scope.id } : 'l1'
   const name = secretaryShellLabel(level, t.console.chiefSecretary, agents)
 
   // 档案跟着 **Agent** 走，不跟着会话走：Plobi 没有「会话」这个概念，一个 Agent 就是
-  // 一张嘴，同一个 Agent 的多轮对话共用同一份档案。L1 是总秘书——前端给的是作用域
-  // 哨兵 `'l1'`，后端把它翻译成名册里 `role=l1_secretary` 那一行（名册是唯一真源）。
-  const dossierAgentId = scope.kind === 'agent' ? scope.id : 'l1'
-  const [dossierOpen, setDossierOpen] = useState(false)
+  // 一张嘴，同一个 Agent 的多轮对话共用同一份档案。
+  //
+  // 这一枚图标现在**不再弹小窗**（用户 11-08 21:1x：「你的就像一个小弹窗，并没有完全
+  // 逆向Qoder的形态」）：它开合的是**对话卡右侧那条长卡**（Qoder 的 Fixed 形态）。
+  // 显隐口径：对话卡全屏展开时默认显示，工作区在显示时默认收起，点它才展开。
+  // 档案卡本体在 `app/dossier/dossier-panel.tsx`，由控制器挂在对话卡右侧。
 
   return (
     <div className="flex h-(--card-header-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]">
@@ -53,28 +54,18 @@ export function ChatTopBar({
         <span className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground">{name}</span>
       </div>
       <div className="ml-auto flex shrink-0 items-center">
-        {/* 档案入口：对话界面右上角那一枚矢量图标（用户 11-07 拍板的新形态）——
-            点它出档案卡片。**之前那枚挂在 `chat/index.tsx` 的 `ChatHeader` 上**，
-            那一套壳已经不在路上了（console 用的是 `ChatSurface` 这一面），
-            所以它一次都没在用户眼前出现过（用户 11-08 16:4x 问「档案的图标怎么
-            还没有出现呀」）。这一处是真正在用的那一面。 */}
-        <Popover onOpenChange={setDossierOpen} open={dossierOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              aria-label={t.surface.agentDossier}
-              className={TOP_BAR_BUTTON}
-              size="icon-xs"
-              title={t.surface.agentDossier}
-              type="button"
-              variant="ghost"
-            >
-              <Codicon name="book" size="0.85rem" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-96 p-0" side="bottom" sideOffset={8}>
-            <AgentDossierCard agentId={dossierAgentId} />
-          </PopoverContent>
-        </Popover>
+        <Button
+          aria-label={t.surface.agentDossier}
+          aria-pressed={dossierVisible}
+          className={TOP_BAR_BUTTON}
+          onClick={() => toggleDossierPanel()}
+          size="icon-xs"
+          title={t.surface.agentDossier}
+          type="button"
+          variant="ghost"
+        >
+          <Codicon name="book" size="0.85rem" />
+        </Button>
         <CardEdgeControlButtons controls={edgeControls ?? {}} />
       </div>
     </div>

@@ -1222,6 +1222,23 @@ export interface Translations {
     agentDossier: string
     /** 档案卡片里那一段折叠的标题：属于这个 Agent 的笔记。 */
     notesSection: string
+    /** 档案卡（对话卡右侧那条长卡）的三段标题。 */
+    dossierPlanSection: string
+    dossierProgressSection: string
+    dossierNotesSection: string
+    /** 计划那一段空着的时候说什么。 */
+    dossierPlanEmpty: string
+    /** 按日清单空着的时候说什么（不是「读不到」，是「还没列」）。 */
+    dossierTasksEmptyDesc: string
+    /** 按日清单读不出来的时候说什么。 */
+    dossierTasksLoadFailed: string
+    /** 日期切换里「今天」那一颗。 */
+    dossierToday: string
+    /** 勾完之后标出是谁标的。 */
+    dossierDoneByUser: string
+    dossierDoneByAgent: string
+    /** 档案卡抬头右上角那个收起。 */
+    dossierCollapse: string
   }
   starmap: {
     title: string

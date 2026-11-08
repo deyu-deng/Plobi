@@ -1401,7 +1401,17 @@ export const en: Translations = {
     emptyAgent: 'No dossier yet',
     noAgentSelected: 'Pick an agent first',
     agentDossier: 'Dossier',
-    notesSection: 'Notes'
+    notesSection: 'Notes',
+    dossierPlanSection: 'Plan',
+    dossierProgressSection: 'Progress',
+    dossierNotesSection: 'Related notes',
+    dossierPlanEmpty: 'This agent has no plan yet.',
+    dossierTasksEmptyDesc: 'This dossier has no day-by-day list yet.',
+    dossierTasksLoadFailed: 'Cannot read the list',
+    dossierToday: 'Today',
+    dossierDoneByUser: 'You',
+    dossierDoneByAgent: 'Agent',
+    dossierCollapse: 'Collapse'
   },
   starmap: {
     title: 'Memory Graph',

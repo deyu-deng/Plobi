@@ -306,6 +306,31 @@ export function setCardFocus(next: CardFocus): void {
   $cardFocus.set(next)
 }
 
+// 档案卡（对话卡右侧那条长卡）的显隐口径（用户 11-08 21:1x）：
+// 「对话卡片全屏展开的时候，档案卡片默认显示……如果我们显示工作区卡片的时候档案是默认关闭的。
+// 点击才展开。」
+// 三档而不是一个布尔：默认那档要**跟着对话卡全屏与否走**，用户点过之后才固定。
+export type DossierPanelMode = 'auto' | 'open' | 'closed'
+
+export const $dossierPanelMode = atom<DossierPanelMode>('auto')
+
+/** 档案卡此刻该不该露脸：`auto` 跟着对话卡全屏（Qoder 的默认形态），`open`/`closed` 是用户点过的结果。 */
+export const $dossierPanelVisible = computed([$dossierPanelMode, $cardFocus], ([mode, focus]) => {
+  if (mode === 'open') return true
+  if (mode === 'closed') return false
+
+  return focus === 'chat'
+})
+
+export function setDossierPanelMode(mode: DossierPanelMode): void {
+  $dossierPanelMode.set(mode)
+}
+
+/** 对话抬头那枚档案图标：现在开着就关掉，没开就打开。 */
+export function toggleDossierPanel(): void {
+  $dossierPanelMode.set($dossierPanelVisible.get() ? 'closed' : 'open')
+}
+
 export function toggleCardFocus(which: 'chat' | 'workbench'): void {
   $cardFocus.set($cardFocus.get() === which ? null : which)
 }

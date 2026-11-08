@@ -5,6 +5,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 
 import { beginEntering, endEntering, enterFailure } from '@/app/chat/agent-enter'
 import { $agentEnter, settleAgentEnter } from '@/app/chat/agent-enter-store'
+import { DossierPanel } from '@/app/dossier/dossier-panel'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -29,6 +30,7 @@ import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setAgentScope } from '../store/agent-scope'
 import type { ComposerAttachment } from '../store/composer'
 import {
+  $dossierPanelVisible,
   $fileBrowserOpen,
   $panesFlipped,
   $rightRailView,
@@ -367,6 +369,11 @@ export function DesktopController() {
   // markdown tab stole the full main column (flash / stuck preview bug).
   const secretaryShellOpen = level !== null
   const activeAgentId = level && level !== 'l1' ? level.l2 : ''
+
+  // 档案卡（对话卡右侧那条长卡）的显隐与它跟着谁走：跟着**对话作用域**的那个
+  // Agent（L1 是总秘书，前端给的是作用域哨兵 `'l1'`，后端翻译成名册里那一行）。
+  const dossierVisible = useStore($dossierPanelVisible)
+  const dossierAgentId = chatScope.kind === 'agent' ? chatScope.id : 'l1'
 
   // 终端页签按 Agent 分家（10-31）：把当前路由的 Agent 身份写进 store。
   // 归属键只认这个值，不认会话 id —— 一个 Agent 一张嘴、一套页签；同一个
@@ -2249,13 +2256,20 @@ export function DesktopController() {
 
   // 互换后：右栏内容进主区，对话进右侧窄卡。两张卡都带落点，拖另一张过来就换回。
   // 「只隐藏对话」（10-31）：工作面独占主区，对话不渲染，侧边栏照旧。
+  //
+  // 档案卡＝**对话卡右侧那条长卡**（用户 11-08 21:1x：Qoder 的「任务监控」是 Fixed
+  // 形态——钉在对话右侧一条长卡，不是浮在屏上的小弹窗）。显隐口径在 store 里：
+  // 对话卡全屏展开时默认显示，工作区在显示时默认收起，点对话抬头那枚图标才展开。
   const chatCard = (
     <div
-      className="flex h-full min-h-0 flex-col"
+      className="flex h-full min-h-0 flex-row"
       data-shell-card-drop={chatDrop.over ? '' : undefined}
       {...chatDrop.dropProps}
     >
-      {chatRoutes}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatRoutes}</div>
+      {dossierVisible ? (
+        <DossierPanel agentId={dossierAgentId} className="w-[22rem] max-w-[45%]" />
+      ) : null}
     </div>
   )
 

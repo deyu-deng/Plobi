@@ -25,10 +25,12 @@ function read(relative: string): string {
 describe('右栏页签：资料页签没了，换成笔记', () => {
   it('RightRailTab 里没有 progress，有 notes', () => {
     const src = read('workbench/right-rail.tsx')
+
     const block = src.slice(
       src.indexOf('export type RightRailTab ='),
       src.indexOf('export type RightRailTabId')
     )
+
     expect(block).toContain("'notes'")
     expect(block).not.toContain("'progress'")
   })
@@ -55,18 +57,40 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     // 路上了（11-05 撤了纯对话路由），入口挂在那儿就一次都没在用户眼前出现过
     // （用户 11-08 16:4x：「对了档案的图标怎么还没有出现呀」）。
     const topBar = read('shell/chat-top-bar.tsx')
-    expect(topBar).toContain('AgentDossierCard')
+    expect(topBar).toContain('toggleDossierPanel')
     // 旧壳里不留第二份入口——两份形状迟早会漂。
-    expect(read('chat/index.tsx')).not.toContain('AgentDossierCard')
+    expect(read('chat/index.tsx')).not.toContain('toggleDossierPanel')
+  })
+
+  it('档案卡不再是浮在屏上的小弹窗（Qoder 的 Fixed 形态：对话卡右侧一条长卡）', () => {
+    // 用户 11-08 21:1x：「你的就像一个小弹窗，并没有完全逆向Qoder的形态」。
+    // Qoder 的「任务监控」有两种形态——Floating（小窗）与 Fixed（钉在对话右侧一条
+    // 长卡）；用户要的是 Fixed ⇒ 抬头那枚图标只开合长卡，不弹 Popover。
+    const topBar = read('shell/chat-top-bar.tsx')
+    expect(topBar).not.toContain('Popover')
+
+    const controller = read('desktop-controller.tsx')
+    expect(controller).toContain('<DossierPanel')
+    // 长卡住在**对话卡这一行**里（chat 主体 ＋ 右边一条），不是浮在上面。
+    expect(controller).toMatch(/className="flex h-full min-h-0 flex-row"/)
+  })
+
+  it('显隐口径：对话卡全屏时默认显示，工作区在显示时默认收起，点图标才展开', () => {
+    const layout = readFileSync(join(SRC, 'store', 'layout.ts'), 'utf8')
+    expect(layout).toContain('$dossierPanelVisible')
+    // `auto` 那一档跟着对话卡全屏与否走（Qoder 的默认形态）。
+    expect(layout).toMatch(/focus === 'chat'/)
+    // 用户点过之后才固定（open / closed 两档）。
+    expect(layout).toMatch(/mode === 'open'/)
+    expect(layout).toMatch(/mode === 'closed'/)
   })
 
   it('档案跟着 Agent 走，不跟着会话走', () => {
-    const src = read('shell/chat-top-bar.tsx')
-    // Plobi 没有「会话」这个概念，一个 Agent 就是一张嘴，同一个 Agent 的多轮对话
+    const src = read('desktop-controller.tsx')
+    // Plobi 没有「会话」这个概念，一个 Agent 就是一张嘴，一个 Agent 的多轮对话
     // 共用同一份档案 ⇒ 键必须是 Agent id。L1 那一格给哨兵 `'l1'`（总秘书），
     // 后端把它翻译成名册里 `role=l1_secretary` 那一行（名册是唯一真源）。
-    expect(src).toMatch(/scope\.kind === 'agent' \? scope\.id : 'l1'/)
-    expect(src).toMatch(/AgentDossierCard agentId=\{dossierAgentId\}/)
+    expect(src).toMatch(/chatScope\.kind === 'agent' \? chatScope\.id : 'l1'/)
   })
 
   it('入口在每个作用域都出现 —— 不许按作用域把它藏起来', () => {
@@ -77,8 +101,8 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     expect(src).not.toMatch(/scope\.kind !== 'l1'/)
   })
 
-  it('档案卡片的钩子不在提前 return 之后（React 规则）', () => {
-    const src = read('chat/right-rail/agent-dossier-card.tsx')
+  it('档案卡的钩子不在提前 return 之后（React 规则）', () => {
+    const src = read('dossier/dossier-panel.tsx')
     const hookAt = src.indexOf('useQuery(')
     const earlyReturnAt = src.indexOf('if (!agentId)')
     expect(hookAt).toBeGreaterThan(-1)
