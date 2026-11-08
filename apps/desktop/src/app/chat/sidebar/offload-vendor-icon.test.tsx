@@ -50,6 +50,9 @@ describe('offload vendor icon', () => {
     expect(vendorLabelFor('kiro')).toBe('Kiro')
     expect(vendorLabelFor('gemini')).toBe('Gemini CLI')
     expect(vendorLabelFor('claude')).toBe('Claude Code')
+    // 11-08 新接的两家：命令行程序名分别是 `copilot` 与 `kilo`，屏上写品牌名。
+    expect(vendorLabelFor('copilot')).toBe('GitHub Copilot CLI')
+    expect(vendorLabelFor('kilo')).toBe('Kilo Code')
   })
 
   it('没登记的一家回落成原样的 id，不许变空白', () => {

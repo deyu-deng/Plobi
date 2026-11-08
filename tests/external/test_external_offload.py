@@ -21,6 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from agent import external_offload as offload  # noqa: E402
+from tools import offload_tools as tools_offload  # noqa: E402
 
 
 class _Completed:
@@ -911,4 +912,90 @@ def test_the_two_new_agents_are_advertised_through_the_same_table():
     names = {agent.name for agent in agent_roster()}
 
     assert {"kiro", "qwen"} <= names
-    assert len(offload.EXTERNAL_AGENTS) == 10
+    assert len(offload.EXTERNAL_AGENTS) == 12
+
+
+# ── 名册再加两家（11-08）：Copilot CLI 与 Kilo Code CLI ──────────────────────
+
+def test_copilot_offload_runs_its_own_non_interactive_shape(workdir, monkeypatch):
+    """argv 来自 Copilot CLI 1.0.107 自己的 `--help`。
+
+    - `-p/--prompt` 是**一次性非交互**（跑完就退）；它的值必须紧跟其后 ⇒ `-p` 排末位。
+    - `--allow-all-tools` 是它自己那枚放开开关（非交互模式不能问，没放开的工具请求会被直接拒掉）。
+    - `--silent` 让回包只留回答正文（默认文本里混着统计）。
+    这一家报不出价格 ⇒ 金额保持 `None`（R-073），不编一个 0。
+    """
+    seen = {}
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="copilot": "/usr/bin/copilot")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    result = offload.run_task("干活", cwd=workdir, agent="copilot")
+
+    argv = seen["argv"]
+    assert argv[0] == "/usr/bin/copilot"
+    assert "--allow-all-tools" in argv
+    assert "--silent" in argv
+    assert argv[-2] == "-p", "-p 的值必须紧跟其后 ⇒ 它只能在末位"
+    assert argv[-1].startswith("干活")
+    assert result.cost is None
+
+
+def test_kilo_offload_puts_its_flags_before_the_positional_prompt(workdir, monkeypatch):
+    """argv 来自 Kilo Code CLI 7.8.27 自己的 `--help`。
+
+    `kilo run [message..]` 的提示词是**变长位置参数** ⇒ 选项排在它后面会被吞进提示词本身
+    （这一族已经吃过一次亏）。放开那一枚是 `--auto`；**不是 `--yolo`**——本版 help 里没有那枚
+    （官方仓有那个 issue，未落地 ⇒ 以本机 help 为准）。
+    """
+    seen = {}
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="kilo": "/usr/bin/kilo")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    offload.run_task("干活", cwd=workdir, agent="kilo")
+
+    argv = seen["argv"]
+    assert argv[0] == "/usr/bin/kilo"
+    assert argv[1] == "run"
+    assert "--auto" in argv
+    assert "--yolo" not in argv, "本版 kilo 没有那一枚，别把别家的旗标抄过来"
+    assert argv.index("--auto") < len(argv) - 1, "选项必须排在提示词前面"
+    assert argv[-1].startswith("干活")
+
+
+def test_the_permissive_switch_of_each_new_agent_can_be_turned_off(monkeypatch):
+    """放开档从 config 来（裁定 99 一：可回收到保守档），不许硬编码在代码里。"""
+    monkeypatch.setenv(offload.COPILOT_ALLOW_ALL_ENV, "0")
+    monkeypatch.setenv(offload.KILO_AUTO_ENV, "0")
+
+    assert offload.permission_flags("copilot") == ()
+    assert offload.permission_flags("kilo") == ()
+
+    monkeypatch.setenv(offload.COPILOT_ALLOW_ALL_ENV, "1")
+    monkeypatch.setenv(offload.KILO_AUTO_ENV, "1")
+
+    assert offload.permission_flags("copilot") == ("--allow-all-tools",)
+    assert offload.permission_flags("kilo") == ("--auto",)
+
+
+def test_the_two_new_cli_agents_resolve_to_their_portable_install():
+    """11-08 实装在便携目录、不在 PATH ⇒ 走 `PORTABLES_FALLBACK`（`.cmd` 垫片）。"""
+    assert offload.PORTABLES_FALLBACK["copilot"].endswith("copilot.cmd")
+    assert offload.PORTABLES_FALLBACK["kilo"].endswith("kilo.cmd")
+
+    found = offload.resolve_command("copilot")
+    if found:
+        assert found.lower().endswith("copilot.cmd")
+    found_kilo = offload.resolve_command("kilo")
+    if found_kilo:
+        assert found_kilo.lower().endswith("kilo.cmd")
+
+
+def test_kilo_probe_asks_for_auth_not_for_models():
+    """kilo 的探针是 `auth list`，**不是** `models`。
+
+    真跑打脸过一次：`kilo models` 不需要登录就能列出一堆模型（拿它当探针会把「没登录」
+    判成「能用」），而真派活时 `kilo run --auto` 回的是 `PAID_MODEL_AUTH_REQUIRED`／
+    「You need to sign in to use this model.」——连 `kilo/~…` 那一层也要账号。
+    """
+    assert offload.LOGIN_PROBE_ARGV["kilo"] == ("auth", "list")
+    assert "0 credentials" in offload._LOGIN_ABSENT_MARKERS, "厂商那句「一个凭据都没有」要认"

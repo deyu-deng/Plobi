@@ -92,6 +92,25 @@ KIRO_TRUST_ENV = "PLOBI_OFFLOAD_KIRO_TRUST_ALL_TOOLS"
 QWEN_COMMAND_ENV = "PLOBI_OFFLOAD_QWEN_COMMAND"
 QWEN_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_QWEN_EXTRA_ARGS"
 QWEN_YOLO_ENV = "PLOBI_OFFLOAD_QWEN_YOLO"
+#: 11-08 18:0x 实装并现核这两家（版本号是装完当场 `--version` 读到的）：
+#: **Copilot CLI 1.0.107**（`@github/copilot`）与 **Kilo Code CLI 7.8.27**（`@kilocode/cli`，MIT）。
+#: - copilot：`copilot -p <text>` 是一次性非交互（跑完就退）；放开工具是 `--allow-all-tools`
+#:   （它自己那枚；非交互模式**不能问**，没放开的工具请求会被直接拒掉）；
+#:   `--silent` 让回包只留回答正文（默认文本里混着统计）。登录走 `copilot login`（浏览器 OAuth），
+#:   token 进**系统凭据库** ⇒ 它没有「不烧额度又能报登录态」的子命令，登录态只能靠本地证据判
+#:   （见 `tools/offload_tools.py` 的 `env:`／`cred:` 两类证据）。
+#: - kilo：`kilo run <message>` 的提示词是**变长位置参数** ⇒ 选项必须排在它前面；
+#:   放开那一枚是 `--auto`（auto-approve permissions that are not explicitly denied）——
+#:   **不是 `--yolo`**：官方仓有那个 issue，7.8.27 的 `kilo run --help` 里没有 ⇒ 以本机 help 为准。
+#:   它还有**免费模型层**（`kilo models` 能列出 `kilo/~…`）⇒ 不该被判成「没登录」。
+AGENT_COPILOT = "copilot"
+AGENT_KILO = "kilo"
+COPILOT_COMMAND_ENV = "PLOBI_OFFLOAD_COPILOT_COMMAND"
+COPILOT_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_COPILOT_EXTRA_ARGS"
+COPILOT_ALLOW_ALL_ENV = "PLOBI_OFFLOAD_COPILOT_ALLOW_ALL"
+KILO_COMMAND_ENV = "PLOBI_OFFLOAD_KILO_COMMAND"
+KILO_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_KILO_EXTRA_ARGS"
+KILO_AUTO_ENV = "PLOBI_OFFLOAD_KILO_AUTO"
 CODEX_COMMAND_ENV = "PLOBI_OFFLOAD_CODEX_COMMAND"
 CODEX_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CODEX_EXTRA_ARGS"
 #: `codex exec --help`：`--full-auto` = 自动批准所有权限请求（沙箱内写文件 OK）。
@@ -112,7 +131,14 @@ OPENCODE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_OPENCODE_EXTRA_ARGS"
 OPENCODE_AUTO_ENV = "PLOBI_OFFLOAD_OPENCODE_AUTO"
 #: 这台机器上它住在便携目录、不在 PATH（`D:\_POLICY` 的 Portables 约定）；
 #: 别处没有这两个文件时 is_file() 为假，等价于没装。
-PORTABLES_FALLBACK = {"opencode": "D:/Portables/cli/opencode/opencode.exe"}
+PORTABLES_FALLBACK = {
+    "opencode": "D:/Portables/cli/opencode/opencode.exe",
+    # 11-08 18:0x 装的两个 npm 包：装在便携目录、不在 PATH
+    # （`npm install -g --prefix D:\Portables\cli\<name>`）。它们是 `.cmd` 垫片，
+    # Windows 起进程时 `spawn_argv` 会包成 `cmd /c`（否则 CreateProcess 认不得）。
+    "copilot": "D:/Portables/cli/copilot/copilot.cmd",
+    "kilo": "D:/Portables/cli/kilo/kilo.cmd",
+}
 
 #: Qoder CLI 那一家的结构性事实。命令名是 `qodercli`（`qoder` 那个垫片会先经过
 #: `~/.qoder/entry/qoder-dispatcher.ps1` 再回到 `qodercli`，两条都认，但表里只写一个真名）。
@@ -308,6 +334,25 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         artifact_required=False,
         argv_template=("-o", "json", "{flags}", "{extra}", "{task}"),
     ),
+    AGENT_COPILOT: ExternalAgentSpec(
+        AGENT_COPILOT, "copilot", COPILOT_COMMAND_ENV, COPILOT_EXTRA_ARGS_ENV,
+        # `copilot -p <text>`：`-p` 的值必须**紧跟其后** ⇒ `-p` 只能排在末位。
+        # `--allow-all-tools` 是它自己那枚放开开关（`--allow-all`／`--yolo` 连路径与 URL 一起开，更宽）。
+        # `--silent` 只输出回答正文——默认文本里混着统计，回包要干净。
+        skip_flag=("--allow-all-tools",), skip_permissions_env=COPILOT_ALLOW_ALL_ENV,
+        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
+        artifact_required=False,
+        argv_template=("{flags}", "--silent", "{extra}", "-p", "{task}"),
+    ),
+    AGENT_KILO: ExternalAgentSpec(
+        AGENT_KILO, "kilo", KILO_COMMAND_ENV, KILO_EXTRA_ARGS_ENV,
+        # `kilo run [message..]`：提示词是**变长位置参数** ⇒ 选项全排它前面
+        # （排在后面会被吞进提示词本身，这一族已经吃过一次亏）。
+        # 放开那一枚是 `--auto`；**不是 `--yolo`**（7.8.27 的 help 里没有那枚）。
+        skip_flag=("--auto",), skip_permissions_env=KILO_AUTO_ENV,
+        artifact_required=False,
+        argv_template=("run", "{flags}", "{extra}", "{task}"),
+    ),
 }
 
 
@@ -377,6 +422,11 @@ LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = {
     AGENT_QODER: ("--list-models",),
     AGENT_CODEBUDDY: ("doctor",),
     AGENT_AGY: ("models",),
+    # 11-08：kilo 的探针是 `auth list`——**不是** `models`（列模型不需要登录，
+    # 拿它当探针会把「没登录」判成「能用」：真跑 `kilo run --auto` 报的是
+    # `PAID_MODEL_AUTH_REQUIRED`／「You need to sign in to use this model.」，
+    # 连 `kilo/~…` 那一层也要账号）。
+    AGENT_KILO: ("auth", "list"),
 }
 
 LOGIN_PROBE_TIMEOUT_S = 45.0
@@ -385,6 +435,9 @@ LOGIN_PROBE_TIMEOUT_S = 45.0
 _LOGIN_ABSENT_MARKERS = (
     "not logged in", "please run /login", "please log in", "login required",
     "not authenticated", "no api key", "sign in to",
+    # 11-08：kilo 的 `kilo auth list` 在一个凭据都没有时打的是「— 0 credentials」，
+    # 不是厂商那句「not logged in」⇒ 不认这句就会把它判成「能用」（真跑会 PAID_MODEL_AUTH_REQUIRED）。
+    "0 credentials",
 )
 
 #: "测法不对"的标记：带着会话的 SDK 变量直接敲，子进程会回这个而不是"没登录"。

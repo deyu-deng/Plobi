@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -74,7 +75,38 @@ _LOGIN_EVIDENCE: dict[str, tuple[str, ...]] = {
     "gemini": ("~/.gemini/oauth_creds.json",),
     "cline": ("~/.cline/data/settings/providers.json",),
     "qwen": ("~/.qwen/oauth_creds.json",),
+    # 11-08：copilot 的登录痕迹**不在文件里**——OAuth token 进**系统凭据库**（Windows 凭据管理器），
+    # PAT 走三个环境变量（官方 `copilot login --help` 写明这三条途径与优先级）。
+    # 它没有「不烧额度又能报登录态」的子命令（`sessions`／`mcp`／`skill`／`instruction` 都不报），
+    # 所以登录态只能靠本地证据判：三条环境变量与凭据库都没有 ⇒ **没登录**（这一格不许假装能用）。
+    "copilot": ("env:COPILOT_GITHUB_TOKEN", "env:GH_TOKEN", "env:GITHUB_TOKEN", "cred:copilot"),
+    # 11-08 18:0x 实跑打脸过一次：**kilo 的「免费层」也要账号**
+    # （`kilo run --auto --model kilo/~anthropic/claude-haiku-latest` ⇒ `PAID_MODEL_AUTH_REQUIRED`，
+    #  提示词原文是「You need to sign in to use this model.」）⇒ 它没有「不登录也能用」的档，
+    #  登录痕迹就落在 `kilo auth list` 自己打印的那个文件上（`~\.local\share\kilo\auth.json`）。
+    "kilo": ("~/.local/share/kilo/auth.json",),
 }
+
+
+def _windows_credential_hits(needle: str) -> Optional[bool]:
+    """Windows 凭据管理器里有含这段字的条目吗？**判不了就返回 None**。
+
+    `cmdkey /list` 的输出编码跟着系统代码页走（中文机器上是 GBK），也可能被管道转成
+    UTF-16 ⇒ 两种形状都试，命中才算数；命令起不来、或这台不是 Windows ⇒ ``None``
+    （**不拿它下「没登录」的结论**——那会把一个已登录的目标冤枉掉）。
+    """
+    if os.name != "nt":
+        return None
+    try:
+        finished = subprocess.run(  # noqa: S603 — 固定命令，没有用户输入
+            ["cmdkey", "/list"], capture_output=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if finished.returncode != 0:
+        return None
+    body = (finished.stdout or b"") + (finished.stderr or b"")
+    flat = body.decode("utf-8", "replace").replace("\x00", "").lower()
+    return needle.lower() in flat
 
 
 def _probe_logged_in(agent_name: str) -> Optional[bool]:
@@ -83,7 +115,22 @@ def _probe_logged_in(agent_name: str) -> Optional[bool]:
     if hints is None:
         # 没登记落点 ⇒ 我们没核到，不替它下结论。
         return None
+    decided_no = False
     for raw in hints:
+        if raw.startswith("env:"):
+            # 环境变量这一条途径：有值就是登上了；没有就是没走这条途径。
+            if os.environ.get(raw[4:], "").strip():
+                return True
+            decided_no = True
+            continue
+        if raw.startswith("cred:"):
+            hit = _windows_credential_hits(raw[5:])
+            if hit is None:
+                continue  # 这台机器判不了它 ⇒ 不拿这一条下结论。
+            if hit:
+                return True
+            decided_no = True
+            continue
         candidate = Path(os.path.expanduser(raw))
         try:
             if candidate.is_dir():
@@ -93,7 +140,9 @@ def _probe_logged_in(agent_name: str) -> Optional[bool]:
                 return True
         except OSError:
             continue
-    return False
+        # 落点知道在哪、那儿却没有 ⇒ 这一条上确实没有痕迹。
+        decided_no = True
+    return False if decided_no else None
 
 
 def agent_roster() -> List[ExternalAgent]:

@@ -346,3 +346,49 @@ def test_the_vendors_we_cannot_tell_are_none_not_false():
     for name in ("opencode", "kiro"):
         assert name not in ot._LOGIN_EVIDENCE
         assert ot._probe_logged_in(name) is None
+
+
+# ── 登录证据的两类新前缀：环境变量与系统凭据库（11-08）───────────────────────
+
+def test_login_evidence_reads_environment_variables(monkeypatch):
+    """`env:<变量名>`：官方 `copilot login --help` 写明这三条是它的登录途径之一。
+
+    有值就是登上了；没有就是没走这条途径（这一条可判 ⇒ 判 False，不判 None）。
+    """
+    monkeypatch.setattr(ot, "_LOGIN_EVIDENCE", {"envonly": ("env:PLOBI_TEST_TOKEN",)})
+
+    monkeypatch.delenv("PLOBI_TEST_TOKEN", raising=False)
+    assert ot._probe_logged_in("envonly") is False
+
+    monkeypatch.setenv("PLOBI_TEST_TOKEN", "x")
+    assert ot._probe_logged_in("envonly") is True
+
+
+def test_login_evidence_reads_the_windows_credential_store(monkeypatch):
+    """`cred:<子串>`：OAuth token 落在系统凭据库里（这台是 Windows 凭据管理器）。
+
+    **判不了就判 None**：把「这台判不了」说成「它没登录」，是把一个已登录的目标冤枉掉。
+    """
+    monkeypatch.setattr(ot, "_LOGIN_EVIDENCE", {"credonly": ("cred:copilot",)})
+
+    monkeypatch.setattr(ot, "_windows_credential_hits", lambda needle: None)
+    assert ot._probe_logged_in("credonly") is None
+
+    monkeypatch.setattr(ot, "_windows_credential_hits", lambda needle: True)
+    assert ot._probe_logged_in("credonly") is True
+
+    monkeypatch.setattr(ot, "_windows_credential_hits", lambda needle: False)
+    assert ot._probe_logged_in("credonly") is False
+
+
+def test_copilot_is_judged_by_credential_and_token_while_kilo_is_judged_by_its_auth_file():
+    """copilot 的登录痕迹**不在文件里**（凭据库 + 三个环境变量）⇒ 登记那四条。
+
+    kilo 的痕迹在 `kilo auth list` 自己打印的那个文件上（`~/.local/share/kilo/auth.json`）。
+    ⚠️ 11-08 真跑改过一次判：原先按「它有免费模型层」判成探不到（None），真派活时它回的是
+    `PAID_MODEL_AUTH_REQUIRED`——**连免费层也要账号** ⇒ 它是「真没登录」，该判 False。
+    """
+    assert ot._LOGIN_EVIDENCE["copilot"] == (
+        "env:COPILOT_GITHUB_TOKEN", "env:GH_TOKEN", "env:GITHUB_TOKEN", "cred:copilot",
+    )
+    assert ot._LOGIN_EVIDENCE["kilo"] == ("~/.local/share/kilo/auth.json",)
