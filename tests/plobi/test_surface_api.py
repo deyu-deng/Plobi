@@ -178,3 +178,51 @@ def test_http_roundtrip_binds_body_and_query(notes_live):
     stale = client.put(url, json={"text": "不该覆盖", "base": original})
     assert stale.status_code == 409
     assert client.get(url).json()["data"]["text"] == "改过的正文"
+
+
+# ── 人读面读不到时：回 503，不回「一个都没有」（WP-VAULT-TAKEOVER）────────────
+
+
+@pytest.fixture()
+def surface_gone(monkeypatch, tmp_path):
+    """人读面指针指着一个**盘上不存在**的目录（指针没钉／陈旧的旧布局）。"""
+    mind = tmp_path / "mind"
+    mind.mkdir()
+    monkeypatch.setenv("MIND_ROOT", str(mind))
+    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "surface-gone"))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
+    return tmp_path
+
+
+def test_notes_root_gone_is_503_not_an_empty_list(surface_gone):
+    """读不到 ≠ 一个都没有：指针断了要说读不到，不能回一个空表。"""
+    response = asyncio.run(surface_api.list_surface_notes())
+    assert response.status_code == 503
+    body = json.loads(response.body)
+    assert body["ok"] is False
+    assert "notes root does not exist" in body["error"]
+
+
+def test_diary_root_gone_is_503_not_an_empty_list(surface_gone):
+    """同上：日记这一腿也不能拿「0 篇」当答案——DB 里那几行只是索引的残影。"""
+    response = asyncio.run(surface_api.list_surface_diary())
+    assert response.status_code == 503
+    body = json.loads(response.body)
+    assert body["ok"] is False
+    assert "diary root does not exist" in body["error"]
+
+
+def test_root_gone_is_503_even_when_the_db_still_has_rows(surface_gone, monkeypatch, tmp_path):
+    """DB 里有行、人读面读不到 ⇒ 仍然 503：索引指着读不到的源，它给的行数可能是陈的。"""
+    from plobi.mind import vault
+
+    monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "vault.db"))
+    vault.connect()
+    vault.upsert_note(vault.VaultNote(
+        path="Surface/notes/数学/微积分.md", title="微积分", topic="数学",
+        tags=[], belongs=[], updated="2026-11-08T00:00:00", chars=10, excerpt="",
+    ))
+
+    response = asyncio.run(surface_api.list_surface_notes())
+    assert response.status_code == 503
+    assert "notes root does not exist" in json.loads(response.body)["error"]

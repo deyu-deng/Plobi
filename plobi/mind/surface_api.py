@@ -19,11 +19,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Body, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -34,6 +38,21 @@ def _error(status: int, message: str) -> JSONResponse:
 
 def _unavailable(what: str, exc: Exception) -> JSONResponse:
     return _error(503, f"{what} unavailable: {exc}")
+
+
+def _root_gone(what: str, root: str) -> JSONResponse | None:
+    """人读面根不在盘上 ⇒ 回 503，**不回空表**（模块头那句：空表会被读成「一个都没有」）。
+
+    为什么两条腿都要查：DB 只是人读面的**索引**——索引指着一个**读不到**的源，
+    那它给出的行数既可能是陈的、也可能只是索引自己的残影；屏上分不出这两者。
+    宁可直接说「读不到」，也别让一个空表或者一行陈账被读成「你只有这些」。
+
+    （指针没钉时 ``real_target`` 会落到一个盘上不存在的旧布局目录——
+    那不是「没有笔记」，是「找不到笔记在哪儿」。）
+    """
+    if root and not Path(root).exists():
+        return _unavailable(what, FileNotFoundError(f"{what} root does not exist: {root}"))
+    return None
 
 
 @router.get("/surface/agents")
@@ -179,6 +198,9 @@ async def list_surface_notes():
         if notes:
             # 聚合格（topics／totals）仍以文件系统腿为准
             base = await run_in_threadpool(fs_build_library)
+            gone = _root_gone("notes", str(base.get("root") or ""))
+            if gone is not None:
+                return gone
             topics = base.get("topics") or []
             totals = dict(base.get("totals") or {})
 
@@ -215,6 +237,9 @@ async def list_surface_notes():
     # 2. 降级：直接读文件系统
     try:
         data = await run_in_threadpool(fs_build_library)
+        gone = _root_gone("notes", str(data.get("root") or ""))
+        if gone is not None:
+            return gone
         return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("notes library", exc)
@@ -322,6 +347,9 @@ async def list_surface_diary():
         entries = await run_in_threadpool(list_diaries)
         if entries:
             base = await run_in_threadpool(fs_list_entries)
+            gone = _root_gone("diary", str(base.get("root") or ""))
+            if gone is not None:
+                return gone
             rows = []
             for entry in entries:
                 day = entry.date
@@ -345,6 +373,9 @@ async def list_surface_diary():
     # 2. 降级：直接读文件系统
     try:
         data = await run_in_threadpool(fs_list_entries)
+        gone = _root_gone("diary", str(data.get("root") or ""))
+        if gone is not None:
+            return gone
         return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("diary", exc)
