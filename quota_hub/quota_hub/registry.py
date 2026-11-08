@@ -108,6 +108,8 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     # （`gateway.qoder.com.cn/algo/...`，设备码 PKCE 自登录 + COSY 签名 SSE）。
     # 回退到 ACP 只要把 `transport: acp` 加回 config —— 上面那行分支优先于这张表。
     "qoder": QoderProvider,
+    # 用户 11-08：CN 与国际是两套账号 ⇒ 两张卡。同一个类，region 决定主机与凭据文件。
+    "qoder_intl": QoderProvider,
     "marvis_cli": MarvisCliProvider,
     "marvis_gui": MarvisGuiProvider,
     "workbuddy_api": WorkbuddyApiProvider,
@@ -361,7 +363,9 @@ class Registry:
             if str(pcfg.get("transport") or "").lower() == "acp":
                 prov = AcpProvider({**pcfg, "leg": name}, self.http)
             else:
-                prov = PROVIDER_CLASSES[name](pcfg, self.http)
+                # `leg` is the card id. A class that publishes model ids needs it to
+                # namespace them by card (the desktop joins on card id + model).
+                prov = PROVIDER_CLASSES[name]({**pcfg, "leg": name}, self.http)
             await prov.discover_accounts()
             self.providers[name] = prov
             for m in prov.served_models:
