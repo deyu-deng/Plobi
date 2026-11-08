@@ -111,12 +111,21 @@ def _slug(display_name: str, key: str) -> str:
 class QoderProvider(Provider):
     name = "qoder"
     display_name = "Qoder"
-    model_prefix = "qoder"
+    #: No fixed prefix: the card id IS the namespace (a second leg for the international
+    #: account ships as `qoder_intl`, and its ids must start with its own card id).
+    model_prefix = ""
     _SEED_MODELS: tuple[str, ...] = ()
 
     def __init__(self, config: dict, http: httpx.AsyncClient) -> None:
         super().__init__(config, http)
-        self.base = str(config.get("base_url") or DEFAULT_BASE).rstrip("/")
+        # Two account systems, two cards (user 2026-11-08). Region decides the hosts AND
+        # the credential file, so the CN and international logins never share a token.
+        self.region = str(config.get("region") or "cn").strip().lower()
+        # The registry hands every leg its card id; the published namespace is that id
+        # unless the operator named one (the CN card keeps `qoder`).
+        self.name = str(config.get("leg") or config.get("name") or self.name)
+        self.model_prefix = str(config.get("model_prefix") or self.name)
+        self.base = str(config.get("base_url") or oauth.hosts(self.region)["gateway"]).rstrip("/")
         self.idle_timeout = float(config.get("stream_idle_seconds") or DEFAULT_IDLE_TIMEOUT)
         self.served_models: tuple[str, ...] = tuple(f"{self.model_prefix}/{m}" for m in config.get("models", ()))
         #: keyed by the vendor's own model key (`fast`, `kmodel`, ...), filled by refresh_models
@@ -134,27 +143,27 @@ class QoderProvider(Provider):
         return True
 
     def signed_in(self) -> tuple[bool, str]:
-        return oauth.signed_in()
+        return oauth.signed_in(self.region)
 
     def credential_health(self) -> tuple[bool, str]:
         # No exit node is involved: Qoder's edge is reachable from here directly, so the
         # credential question and the can-it-serve-now question have the same answer.
-        return oauth.signed_in()
+        return oauth.signed_in(self.region)
 
     def login_plan(self) -> dict:
         return {
             "kind": "oauth",
             "name": self.display_name,
-            "runner": lambda on_url=None: oauth.run_login(on_url=on_url),
+            "runner": lambda on_url=None: oauth.run_login(on_url=on_url, region=self.region),
         }
 
     # --- accounts ---------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:
-        live, _reason = oauth.signed_in()
+        live, _reason = oauth.signed_in(self.region)
         if not live:
             self.accounts = []
             return []
-        cred = oauth.read_credential() or {}
+        cred = oauth.read_credential(self.region) or {}
         acc = Account(
             id=f"{self.name}-device",
             provider=self.name,
@@ -187,15 +196,15 @@ class QoderProvider(Provider):
         Renew while >24 h of the lease remain instead of spending the refresh token only
         after expiry; a failed refresh degrades to the old "sign in again" verdict.
         """
-        cred = oauth.read_credential() or {}
+        cred = oauth.read_credential(self.region) or {}
         stamp = oauth._expiry_epoch(cred.get("expires_at"))
         if stamp is not None and (stamp - time.time()) > _REFRESH_SKEW_S:
             acc.cred.access_token = str(cred.get("token") or acc.cred.access_token)
             acc.cred.refresh_token = str(cred.get("refresh_token") or acc.cred.refresh_token)
             return
-        tokens = oauth.refresh_credential()
+        tokens = oauth.refresh_credential(self.region)
         if tokens is None:
-            live, reason = oauth.signed_in()
+            live, reason = oauth.signed_in(self.region)
             if live:
                 # Not actually due (clock skew / probe) — keep serving the stored pair.
                 acc.cred.access_token = str(cred.get("token") or acc.cred.access_token)

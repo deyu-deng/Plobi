@@ -36,6 +36,34 @@ log = logging.getLogger("quota_hub.qoder")
 
 BASE = "https://qoder.com.cn"
 OPENAPI = "https://openapi.qoder.com.cn"
+
+#: The two account systems this product ships as (user 2026-11-08: CN 与国际是两张卡，不是一卡
+#: 两入口，因为它们是两套账号)。Measured 2026-11-08 on this machine: `api.qoder.com` answers
+#: **401** (not connection-failure) on the device poll, `/algo/api/v2/model/list` and
+#: `/api/v1/cloud`, and the installed international app names exactly that host — so the
+#: protocol is the same and only the hosts differ. `qoder.com/device/selectAccounts`
+#: answers 302 like its CN twin.
+_REGIONS: dict[str, dict[str, str]] = {
+    "cn": {
+        "base": "https://qoder.com.cn",
+        "openapi": "https://openapi.qoder.com.cn",
+        "gateway": "https://gateway.qoder.com.cn",
+        "home": ".qoder-cn",
+        "store": "qoder_creds.json",
+    },
+    "intl": {
+        "base": "https://qoder.com",
+        "openapi": "https://api.qoder.com",
+        "gateway": "https://api.qoder.com",
+        "home": ".qoder",
+        "store": "qoder_intl_creds.json",
+    },
+}
+
+
+def hosts(region: str = "cn") -> dict[str, str]:
+    """The host set and the store file for one region; unknown input falls back to CN."""
+    return _REGIONS.get(str(region or "cn").strip().lower(), _REGIONS["cn"])
 #: Device-lease renewal (measured 2026-11-03, HTTP 200). Body field must be
 #: `refresh_token`; the Go-side `refreshToken` spelling answers 400.
 REFRESH_PATH = "/api/v1/deviceToken/refresh"
@@ -54,13 +82,16 @@ def _root() -> Path:
     return (Path(home) / "plobi") if home else (Path.home() / ".plobi" / "plobi")
 
 
-def store_path() -> Path:
-    """Our own credential file for this leg - the CLI's directory is not ours to touch."""
-    return _root() / "qoder_creds.json"
+def store_path(region: str = "cn") -> Path:
+    """Our own credential file for this leg - the CLI's directory is not ours to touch.
+
+    One file per region: the two account systems never share a token.
+    """
+    return _root() / hosts(region)["store"]
 
 
-def read_credential() -> dict[str, Any] | None:
-    path = store_path()
+def read_credential(region: str = "cn") -> dict[str, Any] | None:
+    path = store_path(region)
     if not path.is_file():
         return None
     try:
@@ -70,10 +101,10 @@ def read_credential() -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def write_credential(tokens: dict[str, Any]) -> Path:
-    path = store_path()
+def write_credential(tokens: dict[str, Any], region: str = "cn") -> Path:
+    path = store_path(region)
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing = read_credential() or {}
+    existing = read_credential(region) or {}
     data = {**existing, **tokens, "saved_at": int(time.time())}
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     try:
@@ -106,8 +137,8 @@ def _expiry_epoch(value: object) -> float | None:
         return None
 
 
-def signed_in() -> tuple[bool, str]:
-    data = read_credential()
+def signed_in(region: str = "cn") -> tuple[bool, str]:
+    data = read_credential(region)
     if not data or not (data.get("token") or data.get("access_token")):
         return False, "no_desktop_credential"
     stamp = _expiry_epoch(data.get("expires_at"))
@@ -116,7 +147,7 @@ def signed_in() -> tuple[bool, str]:
     return True, "ok"
 
 
-def refresh_credential() -> dict[str, Any] | None:
+def refresh_credential(region: str = "cn") -> dict[str, Any] | None:
     """Renew the device lease via `deviceToken/refresh` (measured 2026-11-03, HTTP 200).
 
     Body field must be `refresh_token` (OAuth naming); the Go-side `refreshToken`
@@ -125,13 +156,13 @@ def refresh_credential() -> dict[str, Any] | None:
     `device_token` field is folded into `token` so read paths keep working). Returns
     the persisted credential dict, or None on any failure — caller owns backoff/reauth.
     """
-    data = read_credential()
+    data = read_credential(region)
     rt = (data or {}).get("refresh_token")
     if not rt:
         return None
     try:
         res = httpx.post(
-            f"{OPENAPI}{REFRESH_PATH}",
+            f"{hosts(region)['openapi']}{REFRESH_PATH}",
             json={"refresh_token": rt},
             headers={"Content-Type": "application/json", "User-Agent": "plobi-quota-hub/1.0"},
             timeout=30,
@@ -153,13 +184,19 @@ def refresh_credential() -> dict[str, Any] | None:
     normalized = dict(tokens)
     if normalized.get("device_token") and not normalized.get("token"):
         normalized["token"] = normalized["device_token"]
-    write_credential(normalized)
+    write_credential(normalized, region)
     return normalized
 
 
-def machine_id() -> str:
-    """The install id the CLI already uses, so a login here is not a new device."""
-    for candidate in (".qoder-cn", ".qoder"):
+def machine_id(region: str = "cn") -> str:
+    """The install id the CLI already uses, so a login here is not a new device.
+
+    The region's own directory is asked first (the two apps keep separate install ids);
+    the other one is a fallback so a machine with only one of them still looks stable.
+    """
+    own = hosts(region)["home"]
+    other = ".qoder" if own == ".qoder-cn" else ".qoder-cn"
+    for candidate in (own, other):
         path = Path.home() / candidate / "installation_id"
         if path.is_file():
             value = path.read_text(encoding="utf-8").strip()
@@ -175,19 +212,20 @@ def pkce_pair() -> tuple[str, str]:
     return verifier, base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-def login_url(challenge: str, nonce: str) -> str:
-    return (f"{BASE}/device/selectAccounts?challenge={challenge}&challenge_method=S256"
-            f"&nonce={nonce}&machine_id={machine_id()}&client_id={CLIENT_ID}")
+def login_url(challenge: str, nonce: str, region: str = "cn") -> str:
+    return (f"{hosts(region)['base']}/device/selectAccounts?challenge={challenge}&challenge_method=S256"
+            f"&nonce={nonce}&machine_id={machine_id(region)}&client_id={CLIENT_ID}")
 
 
-def run_login(on_url: Callable[[str], None] | None = None, *, timeout: float = _LOGIN_TIMEOUT) -> dict:
+def run_login(on_url: Callable[[str], None] | None = None, *, timeout: float = _LOGIN_TIMEOUT,
+              region: str = "cn") -> dict:
     """The card's click: consent in his browser, credential in our own store.
 
     Returns what landed (never the token itself) so the caller can say it in words.
     """
     verifier, challenge = pkce_pair()
     nonce = str(uuid.uuid4())
-    url = login_url(challenge, nonce)
+    url = login_url(challenge, nonce, region)
     if on_url is not None:
         on_url(url)
     else:
@@ -200,7 +238,7 @@ def run_login(on_url: Callable[[str], None] | None = None, *, timeout: float = _
     with httpx.Client(timeout=20.0) as client:
         while time.time() < deadline:
             try:
-                res = client.get(f"{OPENAPI}/api/v1/deviceToken/poll",
+                res = client.get(f"{hosts(region)['openapi']}/api/v1/deviceToken/poll",
                                  params={"nonce": nonce, "verifier": verifier, "challenge_method": "S256"})
             except httpx.HTTPError as exc:
                 last = f"{type(exc).__name__}"
@@ -213,7 +251,7 @@ def run_login(on_url: Callable[[str], None] | None = None, *, timeout: float = _
                     raise RuntimeError("Qoder 的登录回话不是 JSON，这次登录没认出来") from None
                 if not isinstance(tokens, dict) or not (tokens.get("token") or tokens.get("access_token")):
                     raise RuntimeError("Qoder 回了话，但里面没有令牌")
-                write_credential(tokens)
+                write_credential(tokens, region)
                 log.info("qoder: device-code login stored (token not printed) keys=%s", sorted(tokens))
                 return {"user_id": tokens.get("user_id") or "", "expires_at": tokens.get("expires_at")}
             last = f"HTTP {res.status_code}"

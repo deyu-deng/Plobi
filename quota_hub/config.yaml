@@ -156,6 +156,16 @@ providers:
   # `--strict-mcp-config` 忽略用户自己的 MCP 设置、只挂我们传进去的那台工具服务），
   # 把 `transport: acp` 加回这一格即可——registry 先看那行再看类表。
   # 模型名单不抄：10-31 现核 11 条由 `…/algo/api/v2/model/list` 自报（名字取它的 display_name）。
+  # 国际版 Qoder（用户 11-08 拍「CN 与国际两张卡」）。同一个类，region=intl 换主机
+  # （`api.qoder.com` 上 device poll / `/algo/api/v2/model/list` 都回 401 而不是连不上 ⇒
+  # 同一套协议、另一组主机）；凭据落在自己的 `qoder_intl_creds.json`，与 CN 那枚不共享。
+  qoder_intl:
+    enabled: true
+    region: intl
+    display_name: Qoder (International)
+    timeout: 300
+    stream_idle_seconds: 90
+
   qoder:
     enabled: true
     display_name: Qoder

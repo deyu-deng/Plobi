@@ -73,6 +73,9 @@ export const DESKTOP_QUOTA_NAMES: Record<string, string> = {
   // name; the row has to read as the product (裁定 204 made these legs first-class).
   opencode_api: 'OpenCode Zen',
   qoder: 'Qoder',
+  // Two account systems, two cards (user 2026-11-08). The machine name is a slug; the
+  // card has to read as the product.
+  qoder_intl: 'Qoder (International)',
   workbuddy: 'Workbuddy',
   cursor: 'Cursor'
 }
