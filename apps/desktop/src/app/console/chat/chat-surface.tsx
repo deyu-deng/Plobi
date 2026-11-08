@@ -38,6 +38,7 @@ import { secretaryShellLabel } from '@/app/desktop-controller-utils'
 import { Thread } from '@/components/assistant-ui/thread'
 import type { ThreadSpeaker } from '@/components/assistant-ui/thread/types'
 import { PlobiWordmark } from '@/components/brand-mark'
+import { useIntroGreeting } from '@/components/chat/intro'
 import { useI18n } from '@/i18n'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { cn } from '@/lib/utils'
@@ -111,12 +112,15 @@ export function ChatSurface({
   composer,
   modelMenuContent
 }: ChatSurfaceProps): React.ReactElement {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const messagesEmpty = useStore($messagesEmpty)
   const busy = useStore($busy)
   const enter = useStore($agentEnter)
   const gatewaySwapTarget = useStore($gatewaySwapTarget)
   const agents = useStore($consoleAgents)
+  // 空态上那句招呼语：取自 `components/chat/intro-copy.jsonl` 那只文案池（`Intro`
+  // 组件的池子）——随当前语言、随挂载轮换，屏上不会跳。
+  const greeting = useIntroGreeting({ locale })
 
   // 切换 Agent 时给新内容一次淡入上移（2026-10-21）。**这一面才是用户看的
   // 那一面**（`ChatView` 是另一套壳）——上一版把它加在 `ChatView` 上，Agent
@@ -176,11 +180,13 @@ export function ChatSurface({
               className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center"
               data-testid="chat-surface-empty"
             >
-              {/* 空态：品牌几何字标（随主题色），底下是一句提示。
+              {/* 空态：品牌几何字标（随主题色），底下是一句招呼语 ＋ 一句提示。
                   原来这里写的是 Agent 的名字——那个名字撞上产品名时，活文字看着像
                   一行没排版的品牌字样（用户 11-08：「空态现在就是一个 Plobi 的纯文字」）。
-                  名字本来就在面板抬头写着，这里不重复。 */}
+                  名字本来就在面板抬头写着，这里不重复。招呼语取自文案池
+                  （`intro-copy.jsonl`），随语言、随挂载换一句。 */}
               <PlobiWordmark className="w-48" />
+              <p className="text-sm text-(--ui-text-secondary)">{greeting}</p>
               <p className="text-xs text-(--ui-text-tertiary)">{t.console.chatEmptyHint}</p>
             </div>
           )}

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/assistant-ui/thread', () => ({ Thread: () => <div data-testid="thread" /> }))
 
+import { introGreetingCandidates } from '@/components/chat/intro'
 import { setGatewayState } from '@/store/session'
 
 import { ChatSurface } from './chat-surface'
@@ -193,15 +194,21 @@ describe('ChatSurface — 切换时的加载态与空态（WP-AGENT-RAIL-LIVE �
     renderSurface(<ChatSurface scope={agentScope('agenda')} />)
 
     const empty = screen.getByTestId('chat-surface-empty')
-    // 空态上头是**品牌几何字标**（随主题色），底下是一句提示（用户 11-08：「空态现在就是
-    // 一个 Plobi 的纯文字…能不能也换成随着主题色变化的 wordmark」）。Agent 的名字不在这儿
-    // ——它写在面板抬头上；那一行活文字撞上产品名时，看着像一行没排版的品牌字样。
+    // 空态上头是**品牌几何字标**（随主题色），底下是**一句招呼语** ＋ 一句操作提示
+    //（用户 11-08：「空态现在就是一个 Plobi 的纯文字…能不能也换成随着主题色变化的
+    // wordmark」；同日又拍板「把 Intro 接回 console 空态」⇒ 招呼语取自 `intro-copy.jsonl`
+    // 那只文案池）。Agent 的名字不在这儿——它写在面板抬头上；那一行活文字撞上产品名时，
+    // 看着像一行没排版的品牌字样。
     const wordmark = empty.querySelector('svg[role="img"]')
     expect(wordmark?.getAttribute('aria-label')).toBe('Plobi')
     expect(wordmark?.getAttribute('class')).toContain('text-(--theme-primary)')
-    // 提示那句跟着当前语言走（测试环境是 en），所以只钉「除字标之外还有一段提示」，
-    // 不把它钉成某一种译文。
-    expect(empty.querySelectorAll('p').length).toBe(1)
+    // 两句：一句招呼语（随语言、随挂载轮换）＋ 一句提示（跟着当前语言走，测试环境是 en）。
+    const lines = [...empty.querySelectorAll('p')].map(node => node.textContent ?? '')
+    expect(lines.length).toBe(2)
+    expect(new Set(lines).size, '招呼语与提示不许是同一句').toBe(2)
+    // 招呼语不是随手写的：它得是文案池里的一句（池子 = `intro-copy.jsonl`）。
+    const candidates = introGreetingCandidates('en')
+    expect(lines.filter(line => candidates.includes(line)).length, '招呼语不在文案池里').toBe(1)
     expect(empty.textContent).not.toContain('日程秘书')
   })
 

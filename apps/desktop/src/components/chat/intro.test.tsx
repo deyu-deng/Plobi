@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { Intro } from './intro'
+import { Intro, introGreetingCandidates, resolveIntroCopy } from './intro'
 
 /**
  * The chat empty state's wordmark is the **brand geometric wordmark**, drawn
@@ -38,5 +38,47 @@ describe('Intro wordmark', () => {
 
     expect(paths).toHaveLength(1)
     expect(paths[0].getAttribute('fill')).toBe('currentColor')
+  })
+})
+
+/**
+ * The copy pool behind the empty-state greeting (WP-BRAND-THEME-FOLLOW · 第三段).
+ *
+ * The pool is `intro-copy.jsonl` — one JSON record per line. A record may carry
+ * a `locale`; the ones written before locales existed are English. The console
+ * empty state shows one of these lines, so the pool has to answer "what does
+ * this screen say" in the language the user is actually running.
+ */
+describe('Intro copy pool', () => {
+  it('turns a different greeting for a different seed', () => {
+    const first = resolveIntroCopy({ locale: 'en', seed: 0 }).headline
+    const second = resolveIntroCopy({ locale: 'en', seed: 1 }).headline
+
+    expect(first).not.toBe(second)
+  })
+
+  it('answers in the current language', () => {
+    const candidates = introGreetingCandidates('zh')
+
+    expect(candidates.length).toBe(5)
+    expect(
+      candidates.every(line => /[\u4e00-\u9fff]/.test(line)),
+      '中文那档必须是中文'
+    ).toBe(true)
+  })
+
+  it('falls back to the English pool for a language without its own set', () => {
+    expect(introGreetingCandidates('fr')).toEqual(introGreetingCandidates('en'))
+  })
+
+  it('keeps every line short enough for one line on screen', () => {
+    for (const locale of ['en', 'zh', 'zh-hant', 'ja']) {
+      for (const line of introGreetingCandidates(locale)) {
+        // 屏上只留一句招呼：中日文按 16 字、拉丁文按 40 字符。
+        const limit = /[\u4e00-\u9fff]/.test(line) ? 16 : 40
+
+        expect(line.length, `${locale}：${line}`).toBeLessThanOrEqual(limit)
+      }
+    }
   })
 })

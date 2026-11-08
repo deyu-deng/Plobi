@@ -73,3 +73,18 @@
 {"personality":"none","headline":"Start anywhere.","body":"Drop a file path, a traceback, or a rough idea. I'll investigate, suggest next steps, and keep things reversible."}
 {"personality":"none","headline":"Your workspace, one prompt away.","body":"Search the repo, edit files, run tests, open PRs. Tell me the goal and I'll handle the mechanical parts."}
 {"personality":"none","headline":"Ready when you are.","body":"Type a task, question, or snippet. I remember the session, cite my sources, and stop to ask when I'm unsure."}
+{"personality":"none","locale":"zh","headline":"Plobi 已就绪。"}
+{"personality":"none","locale":"zh","headline":"今天的目标是什么？"}
+{"personality":"none","locale":"zh","headline":"可以从任何一处开始。"}
+{"personality":"none","locale":"zh","headline":"工作区就在手边。"}
+{"personality":"none","locale":"zh","headline":"随时可以开始。"}
+{"personality":"none","locale":"zh-hant","headline":"Plobi 已就緒。"}
+{"personality":"none","locale":"zh-hant","headline":"今天的目標是什麼？"}
+{"personality":"none","locale":"zh-hant","headline":"可以從任何一處開始。"}
+{"personality":"none","locale":"zh-hant","headline":"工作區就在手邊。"}
+{"personality":"none","locale":"zh-hant","headline":"隨時可以開始。"}
+{"personality":"none","locale":"ja","headline":"Plobi の準備ができました。"}
+{"personality":"none","locale":"ja","headline":"今日の目標は？"}
+{"personality":"none","locale":"ja","headline":"どこからでも始められます。"}
+{"personality":"none","locale":"ja","headline":"作業場はすぐそばです。"}
+{"personality":"none","locale":"ja","headline":"いつでもどうぞ。"}
