@@ -1427,6 +1427,8 @@ def _start_agent_build(sid: str, session: dict) -> None:
             # Session DB row deferred to first run_conversation() call.
             # pending_title applied post-first-message (see cli.exec handler).
             current["agent"] = agent
+            if current.get("context_length_override"):
+                _apply_context_length_override(agent, int(current["context_length_override"]))
             # Baseline for the per-turn config sync; the profile home
             # override is still active here.
             current["config_model_seen"] = _config_model_target()
@@ -4466,6 +4468,8 @@ def _reset_session_agent(sid: str, session: dict) -> dict:
     finally:
         _clear_session_context(tokens)
     session["agent"] = new_agent
+    if session.get("context_length_override"):
+        _apply_context_length_override(new_agent, int(session["context_length_override"]))
     session["config_model_seen"] = _config_model_target()
     session["attached_images"] = []
     session["edit_snapshots"] = {}
@@ -5341,6 +5345,17 @@ def _(rid, params: dict) -> dict:
     # Only pin "fast" when explicitly requested; leaving it None lets the build
     # fall back to the profile default service tier rather than forcing normal.
     create_service_tier_override = "priority" if params.get("fast") else None
+    # The model popover may adjust the window a model sells a menu of (user 2026-11-08).
+    # It rides in as a per-session override exactly like effort/model do.
+    create_context_override = None
+    try:
+        _ctx_raw = str(params.get("context_length") or "").strip()
+        if _ctx_raw:
+            _ctx_value = int(float(_ctx_raw))
+            if _ctx_value >= 1024:
+                create_context_override = _ctx_value
+    except (TypeError, ValueError):
+        create_context_override = None
 
     ready = threading.Event()
     now = time.time()
@@ -5372,6 +5387,7 @@ def _(rid, params: dict) -> dict:
             "model_override": session_model_override,
             "create_reasoning_override": create_reasoning_override,
             "create_service_tier_override": create_service_tier_override,
+            "context_length_override": create_context_override,
             "parent_session_id": parent_session_id,
             "pending_title": title or None,
             "profile_home": str(profile_home) if profile_home is not None else None,
@@ -10414,6 +10430,38 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5004, str(e))
 
 
+def _apply_context_length_override(agent, limit: int | None) -> None:
+    """Point a live agent's window at the value the picker was given.
+
+    User 2026-11-08: the model popover may adjust the context length on a model that sells
+    a menu of windows. The number the loop budgets against lives on the compressor, so the
+    dial has to go through the same recompute a model switch uses — otherwise the number on
+    screen and the number the agent compresses at are two truths.
+    """
+    comp = getattr(agent, "context_compressor", None)
+    if comp is None:
+        return
+    from agent.model_metadata import get_model_context_length
+
+    agent._config_context_length = limit
+    ctx = get_model_context_length(
+        agent.model,
+        base_url=getattr(agent, "base_url", ""),
+        api_key=agent.api_key if isinstance(agent.api_key, str) else "",
+        provider=getattr(agent, "provider", ""),
+        config_context_length=limit,
+    )
+    comp.update_model(
+        model=agent.model,
+        context_length=ctx,
+        base_url=getattr(agent, "base_url", ""),
+        api_key=agent.api_key,
+        provider=getattr(agent, "provider", ""),
+        api_mode=getattr(agent, "api_mode", ""),
+    )
+    agent._cached_system_prompt = None
+
+
 # ── Methods: config ──────────────────────────────────────────────────
 
 
@@ -10421,6 +10469,38 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     key, value = params.get("key", ""), params.get("value", "")
     session = _sessions.get(params.get("session_id", ""))
+
+    if key == "context":
+        # The picker's context dial (user 2026-11-08). A session picks its own window and
+        # the live agent follows immediately; with no session it becomes the global
+        # `model.context_length`, which is the same key Settings writes and the same one
+        # the next session is built with. `auto`/empty clears it.
+        try:
+            raw = str(value or "").strip().lower()
+            limit = 0 if raw in {"", "auto", "default", "none", "0"} else int(float(raw))
+            if 0 < limit < 1024:
+                limit = 0
+            if session:
+                session["context_length_override"] = limit or None
+                agent = session.get("agent")
+                if agent is not None:
+                    _apply_context_length_override(agent, limit or None)
+            else:
+                cfg = _load_cfg()
+                model_cfg = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
+                if limit:
+                    model_cfg["context_length"] = limit
+                else:
+                    model_cfg.pop("context_length", None)
+                cfg["model"] = model_cfg
+                _save_cfg(cfg)
+            return _ok(
+                rid,
+                {"key": key, "value": str(limit or ""),
+                 "scope": "session" if session else "global"},
+            )
+        except Exception as e:
+            return _err(rid, 5001, str(e))
 
     if key == "model":
         try:
