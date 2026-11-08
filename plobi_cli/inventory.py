@@ -37,6 +37,12 @@ from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 
+#: The local quota hub's own provider slug.  A routing value, never display copy —
+#: 裁定 45.4 keeps the word off the screen, so the renderer only ever *matches*
+#: it (the row it matches is the carrier every hub-backed pick joins against).
+QUOTA_HUB_SLUG = "aigw"
+
+
 # ─── Public types ───────────────────────────────────────────────────────
 
 
@@ -204,6 +210,27 @@ def build_models_payload(
         rows = list(rows) + _append_unconfigured_rows(
             rows, ctx, current_only=True
         )
+
+    # --- The quota hub's own row ---
+    # 裁定 46: the hub's catalogue is the single source of truth for the
+    # subscription legs, and the hub is this machine's own local service — not
+    # something the user has to declare in config.yaml to be routable (the
+    # `model-providers/aigw` profile resolves its key and base URL by itself,
+    # 裁定 81).  Its row is what the desktop's picker joins against, so it is
+    # added here — AFTER the explicit-only filter, because that filter asks
+    # "did the user configure this provider?" and the hub is not an answer to
+    # that question.
+    #
+    # Measured 2026-11-08 on this machine: the hub answered 58 selectable ids
+    # while the payload carried no hub row at all, so the desktop reported
+    # "This channel is not currently offered by the gateway" for a gateway that
+    # was offering 58 — and the switches the hub itself calls "connected"
+    # changed nothing in the picker.
+    if not any(str(row.get("slug", "")).lower() == QUOTA_HUB_SLUG for row in rows):
+        hub_row = _quota_hub_row()
+
+        if hub_row is not None:
+            rows.append(hub_row)
 
     # --- Deduplicate: remove models from aggregators that overlap with
     # user-defined providers.  When a local proxy (e.g. litellm-proxy)
@@ -721,6 +748,64 @@ def _apply_pricing(
                 # is never blocked from picking a model.
                 row["free_tier"] = False
                 row["unavailable_models"] = []
+
+
+def _quota_hub_row() -> dict | None:
+    """The quota hub's own catalog row — the carrier every hub-backed pick joins against.
+
+    The hub is not one of the user's configured providers: it is this machine's own
+    local gateway (the desktop starts it), and 裁定 46 makes its catalogue the single
+    source of truth for the subscription legs.  It therefore needs no ``config.yaml``
+    entry to be routable — the ``model-providers/aigw`` profile resolves its key and
+    base URL on its own (裁定 81) — but it DID need a row in this payload, because that
+    row is what the desktop's picker joins against: without it the subscription models
+    never reach the picker, and a switch the hub itself calls "connected" changes
+    nothing.
+
+    Measured 2026-11-08 on this machine: the hub answered 58 selectable ids while the
+    payload carried no hub row at all, so the desktop reported "This channel is not
+    currently offered by the gateway" for a gateway that was offering 58.
+
+    ``None`` when the hub does not answer: an unreachable hub must never be reported
+    as "you have no models" — the same rule the hub's own frame follows.
+    """
+    try:
+        from plobi.agents.registry import aigw_api_key, aigw_base_url
+        from plobi_cli.models import hub_selectable_model_ids
+
+        ids = hub_selectable_model_ids(aigw_api_key(), aigw_base_url())
+    except Exception:  # noqa: BLE001 — a missing piece means "no row", not a crash
+        return None
+
+    if not ids:
+        return None
+
+    try:
+        from plobi_cli.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
+
+        label = next(
+            (entry.label for entry in CANONICAL_PROVIDERS if entry.slug == QUOTA_HUB_SLUG),
+            "订阅额度",
+        )
+        name = _PROVIDER_LABELS.get(QUOTA_HUB_SLUG, label)
+    except Exception:  # noqa: BLE001 — the label is cosmetic, the row is not
+        name = "订阅额度"
+
+    return {
+        "slug": QUOTA_HUB_SLUG,
+        "name": name,
+        "is_current": False,
+        "is_user_defined": False,
+        "models": list(ids),
+        "total_models": len(ids),
+        "source": "quota-hub",
+        # The hub answered with a usable catalogue, so this row carries a working
+        # credential.  Without it the renderer's own filter drops the row
+        # (``authenticated === false``) and the whole subscription leg disappears
+        # again — the very bug this row exists to fix.
+        "authenticated": True,
+        "auth_type": "api_key",
+    }
 
 
 def _moa_provider_row(current_provider: str = "") -> dict | None:

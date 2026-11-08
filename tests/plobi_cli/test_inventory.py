@@ -21,12 +21,29 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 
 from plobi_cli.inventory import (
     ConfigContext,
     build_models_payload,
     load_picker_context,
 )
+
+
+@pytest.fixture(autouse=True)
+def _local_hub_not_answering(monkeypatch):
+    """The local quota hub is a machine-wide service; this file's contracts are
+    about the payload's shape and its explicit filter, not about that hub.
+
+    Without this, a machine that happens to run the hub would add one more row
+    (the hub's own) and these assertions would answer to the machine rather
+    than to the code.  The hub row itself is pinned in
+    ``tests/plobi/test_quota_hub_catalog_row.py``.
+    """
+    monkeypatch.setattr(
+        "plobi_cli.models.hub_selectable_model_ids",
+        lambda api_key, base_url, **kwargs: None,
+    )
 
 
 # ─── load_picker_context ───────────────────────────────────────────────
