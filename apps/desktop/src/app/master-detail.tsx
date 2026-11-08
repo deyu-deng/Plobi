@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useState } from 'react'
 
+import { SASH_GLOW_CENTER_VAR, sashGlowCenter, sashGlowStyle } from '@/components/pane-shell/sash'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -158,6 +159,12 @@ export function DetailPane({
   // top edge, clamped to [0, 70vh]; double-click resets to the default.
   const [dragging, setDragging] = useState(false)
 
+  // The glow's peak follows the pointer along the sash (Qoder's own resize
+  // handles track the pointer the same way).
+  const trackGlow = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.currentTarget.style.setProperty(SASH_GLOW_CENTER_VAR, `${sashGlowCenter(event, 'y')}px`)
+  }
+
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startY = event.clientY
@@ -184,12 +191,22 @@ export function DetailPane({
         className="group/sash absolute inset-x-0 top-0 z-10 h-1 -translate-y-1/2 cursor-row-resize"
         onDoubleClick={() => setPaneHeightOverride(id, undefined)}
         onPointerDown={startDrag}
+        onPointerMove={trackGlow}
       >
         <div
           className={cn(
             'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors',
-            dragging ? 'bg-(--ui-stroke-secondary)' : 'group-hover/sash:bg-(--ui-stroke-secondary)'
+            dragging ? 'bg-(--ui-accent)' : 'group-hover/sash:bg-(--ui-stroke-primary)'
           )}
+        />
+        {/* Qoder-shaped hover: a 1px gradient glow peaking at the pointer, not a
+            wide filled band (see `components/pane-shell/sash.ts`). */}
+        <span
+          className={cn(
+            'pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-opacity duration-150',
+            dragging ? 'opacity-100' : 'opacity-0 group-hover/sash:opacity-100'
+          )}
+          style={sashGlowStyle('y')}
         />
       </div>
       <header className="flex h-9 shrink-0 items-center gap-2 px-3">

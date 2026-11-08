@@ -323,6 +323,61 @@ describe('PaneShell composition', () => {
     expect($paneStates.get().files?.widthOverride).toBe(300)
   })
 
+  it('keeps the sash a 1px line — hovering never grows a wide band', () => {
+    const rendered = render(
+      <PaneShell>
+        <Pane id="files" maxWidth={360} minWidth={200} resizable side="left" width="240px">
+          <span data-testid="files-content">files</span>
+        </Pane>
+        <PaneMain>main</PaneMain>
+      </PaneShell>
+    )
+
+    const separator = rendered.getByLabelText('Resize files')
+
+    // The old shape: a filled strip as wide as the hover size (4px).
+    expect(separator.querySelector('[class*="sash-hover-size"]')).toBeNull()
+    expect(separator.querySelector('[class*="bg-(--ui-sash-hover-border)"]')).toBeNull()
+
+    // The new shape: a gradient glow painted on the 1px line itself.
+    const glow = separator.querySelector('[style*="linear-gradient"]')
+
+    expect(glow).not.toBeNull()
+    expect(glow?.className).toContain('w-px')
+    expect(glow?.className).toContain('group-hover:opacity-100')
+  })
+
+  it('keeps the sash glow lit while dragging', () => {
+    const rendered = render(
+      <PaneShell>
+        <Pane id="files" maxWidth={360} minWidth={200} resizable side="left" width="240px">
+          <span data-testid="files-content">files</span>
+        </Pane>
+        <PaneMain>main</PaneMain>
+      </PaneShell>
+    )
+
+    const paneCell = rendered.getByTestId('files-content').parentElement
+
+    if (!(paneCell instanceof HTMLElement)) {
+      throw new Error('Expected pane cell element')
+    }
+
+    mockWidth(paneCell, 240)
+    const separator = rendered.getByLabelText('Resize files')
+
+    fireEvent.pointerDown(separator, { clientX: 240, pointerId: 1 })
+
+    const glow = separator.querySelector('[style*="linear-gradient"]')
+
+    expect(glow?.className).toContain('opacity-100')
+    expect(glow?.className).not.toContain('group-hover:opacity-100')
+
+    fireEvent.pointerUp(window, { clientX: 240 })
+
+    expect(separator.querySelector('[style*="linear-gradient"]')?.className).toContain('group-hover:opacity-100')
+  })
+
   it('dragging a right-pane separator clamps to max width', () => {
     const rendered = render(
       <PaneShell>

@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { $paneStates, ensurePaneRegistered, setPaneHeightOverride, setPaneWidthOverride } from '@/store/panes'
 
 import { PaneShellContext, type PaneShellContextValue, type PaneSlot } from './context'
+import { SASH_GLOW_CENTER_VAR, sashGlowCenter, sashGlowStyle } from './sash'
 
 type PaneSide = 'left' | 'right'
 type WidthValue = string | number
@@ -97,18 +98,20 @@ const DEFAULT_RESIZE_MIN_HEIGHT = 120
 
 // Resize-sash geometry per axis: `x` is a vertical bar on the inner edge of a
 // column; `y` is a horizontal bar on the top edge of a bottom row.
+//
+// Qoder-shaped: the divider stays a 1px line. Hovering does NOT grow a wide
+// filled band — it fades a gradient glow onto that line, peaking at the
+// pointer (see `./sash.ts`). The 4px grab strip below stays invisible.
 const SASH = {
   x: {
     orientation: 'vertical',
     bar: 'bottom-0 top-0 w-1 cursor-col-resize',
-    line: 'inset-y-0 left-1/2 w-px -translate-x-1/2',
-    hover: 'inset-y-0 left-1/2 w-(--vscode-sash-hover-size,0.25rem) -translate-x-1/2'
+    line: 'inset-y-0 left-1/2 w-px -translate-x-1/2'
   },
   y: {
     orientation: 'horizontal',
     bar: 'inset-x-0 top-0 h-1 -translate-y-1/2 cursor-row-resize',
-    line: 'inset-x-0 top-1/2 h-px -translate-y-1/2',
-    hover: 'inset-x-0 top-1/2 h-(--vscode-sash-hover-size,0.25rem) -translate-y-1/2'
+    line: 'inset-x-0 top-1/2 h-px -translate-y-1/2'
   }
 } as const
 
@@ -371,6 +374,9 @@ export function Pane({
   const paneRef = useRef<HTMLDivElement | null>(null)
   // Keyboard (mod+b / mod+j) pins the reveal open while collapsed; hover is CSS.
   const [forced, setForced] = useState(false)
+  // While the sash is being dragged the glow stays lit even if the pointer
+  // wanders off the strip (Qoder keeps its handle lit while dragging).
+  const [resizing, setResizing] = useState(false)
 
   const slot = ctx?.paneById.get(id)
   const open = Boolean(slot?.open && !disabled)
@@ -444,6 +450,7 @@ export function Pane({
       }
 
       event.preventDefault()
+      setResizing(true)
 
       const handle = event.currentTarget
       const { pointerId } = event
@@ -467,6 +474,7 @@ export function Pane({
         document.body.style.cursor = restoreCursor
         document.body.style.userSelect = restoreSelect
         handle.releasePointerCapture?.(pointerId)
+        setResizing(false)
         window.removeEventListener('pointermove', onMove, true)
         window.removeEventListener('pointerup', cleanup, true)
         window.removeEventListener('pointercancel', cleanup, true)
@@ -479,6 +487,15 @@ export function Pane({
       window.addEventListener('blur', cleanup)
     },
     [canResize, hi, hiH, id, lo, loH, side]
+  )
+
+  // The glow's peak follows the pointer along the sash (Qoder's workspace
+  // handle tracks `clientY` the same way).
+  const trackGlow = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.currentTarget.style.setProperty(SASH_GLOW_CENTER_VAR, `${sashGlowCenter(event, axis)}px`)
+    },
+    [axis]
   )
 
   if (!ctx) {
@@ -566,15 +583,18 @@ export function Pane({
             !isBottomRow && (slot.side === 'left' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2')
           )}
           onPointerDown={e => startResize(e, axis)}
+          onPointerMove={trackGlow}
           role="separator"
           tabIndex={0}
         >
           {divider && <span className={cn('absolute bg-(--ui-stroke-secondary)', sash.line)} />}
           <span
             className={cn(
-              'absolute bg-(--ui-sash-hover-border) opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-visible:opacity-100',
-              sash.hover
+              'pointer-events-none absolute transition-opacity duration-150',
+              resizing ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100',
+              sash.line
             )}
+            style={sashGlowStyle(axis)}
           />
         </div>
       )}
