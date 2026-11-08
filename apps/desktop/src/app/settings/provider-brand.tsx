@@ -53,18 +53,31 @@ const BY_ENV_PREFIX: Array<[string, typeof SiAnthropic, string]> = [
   ['XIAOMI', SiXiaomi, '#FF6900']
 ]
 
+/** The same table for rows that carry a provider slug instead of a credential var. */
+const BY_SLUG: Record<string, number> = {
+  anthropic: 0, deepseek: 2, gemini: 3, vertex: 3, nvidia: 5, 'ollama-cloud': 8,
+  openrouter: 9, alibaba: 10, 'alibaba-cn': 10, 'ai-gateway': 11, 'meta-ai': 12,
+  minimax: 13, 'minimax-cn': 13, 'kimi-coding': 14, 'kimi-coding-cn': 14, xiaomi: 15
+}
+
 export function ProviderBrand({
   className,
-  envKey,
-  name
+  envKey = '',
+  name,
+  slug = ''
 }: {
   className?: string
   /** The provider's primary credential var (e.g. `DEEPSEEK_API_KEY`). */
-  envKey: string
+  envKey?: string
   name: string
+  /** The provider slug, for rows that never show a credential var. */
+  slug?: string
 }) {
   const upper = (envKey || '').toUpperCase()
-  const hit = BY_ENV_PREFIX.find(([prefix]) => upper.startsWith(prefix))
+  const bySlug = BY_SLUG[slug.toLowerCase()]
+  const hit = bySlug !== undefined
+    ? BY_ENV_PREFIX[bySlug]
+    : BY_ENV_PREFIX.find(([prefix]) => upper.startsWith(prefix))
   const monogram = (name || envKey || '?').trim().charAt(0).toUpperCase()
 
   if (!hit) {

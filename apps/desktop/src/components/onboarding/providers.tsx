@@ -1,4 +1,5 @@
 import { ListRow, ProviderStatusBadge } from '@/app/settings/primitives'
+import { ProviderBrand } from '@/app/settings/provider-brand'
 import { useI18n } from '@/i18n'
 import { ChevronRight, Terminal } from '@/lib/icons'
 import type { OAuthProvider } from '@/types/plobi'
@@ -96,17 +97,16 @@ export function ProviderRow({
     <ListRow
       action={<Trail className="size-4 shrink-0 text-muted-foreground" />}
       description={t.onboarding.flowSubtitles[provider.flow]}
+      // The first cell is the provider's own mark (user 2026-11-08「图标记得找啊」):
+      // same table the Settings tabs use, so a provider looks identical in both places.
+      icon={<ProviderBrand name={providerTitle(provider)} slug={provider.id} />}
       onActivate={() => onSelect(provider)}
-      title={
+      title={(
         <span className="flex items-center gap-2">
-          {loggedIn ? (
-            <ConnectedTag />
-          ) : (
-            <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--ui-stroke-secondary)" />
-          )}
+          {loggedIn ? <ConnectedTag /> : null}
           {providerTitle(provider)}
         </span>
-      }
+      )}
     />
   )
 }
