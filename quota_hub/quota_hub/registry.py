@@ -401,6 +401,29 @@ class Registry:
 
         return prov
 
+    async def ensure_accounts_discovered(self) -> None:
+        """Re-ask the legs that booted with no seat.
+
+        Accounts are discovered once, in `build()`. A store that was locked, empty or
+        mid-renewal at that instant leaves the leg seat-less for the whole process:
+        measured 2026-11-08 on the installed 0.3.0, Kiro's sqlite read fine a minute after
+        boot (one account, a live token) while the running hub still reported zero seats
+        and therefore zero models. Re-discovery for a seat-less leg is a local store read
+        — no upstream call, no spend — so the refresh loop can afford to retry it, and a
+        seat that appears gets its catalog refreshed by the caller right afterwards.
+        """
+        for name, prov in list(self.providers.items()):
+            if prov.accounts:
+                continue
+            try:
+                found = await prov.discover_accounts()
+            except Exception as exc:  # a locked store is a reason to retry, not to crash
+                logger.debug("%s account re-discovery failed: %s: %s", name, type(exc).__name__, exc)
+                continue
+            if found:
+                logger.info("%s: %d seat(s) appeared after boot; re-reading its catalog", name, len(found))
+                self._rebuild_model_index()
+
     async def ensure_models_refreshed(self) -> None:
         """Refresh every provider's model catalog from upstream, retrying until no leg is
         left with nothing to offer.
