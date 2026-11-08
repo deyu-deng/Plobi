@@ -858,3 +858,57 @@ def test_qoder_options_go_before_the_prompt_and_codebuddy_stays_as_measured():
     c = offload.build_argv("codebuddy", "/usr/bin/codebuddy", "干活", ("-y", "--permission-mode=bypassPermissions"), ())
     assert c == ("/usr/bin/codebuddy", "-p", "干活", "--output-format", "json",
                  "-y", "--permission-mode=bypassPermissions")
+
+
+# ── 名册补两家（11-08）：Kiro CLI 与 Qwen Code ───────────────────────────────
+
+def test_kiro_offload_runs_its_own_non_interactive_shape(workdir, monkeypatch):
+    """argv 来自 kiro-cli 自己的 `--help`：`chat --no-interactive`、`-a/--trust-all-tools`。
+
+    它的 `--output-format` 帮助里写明**只作用于 list 命令** ⇒ 不传给 chat：
+    回包按文本读，金额保持「未知」（None）而不是编一个 0。
+    """
+    seen = {}
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="kiro": "/usr/bin/kiro-cli")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    result = offload.run_task("干活", cwd=workdir, agent="kiro")
+
+    argv = seen["argv"]
+    assert argv[0] == "/usr/bin/kiro-cli"
+    assert argv[1] == "chat"
+    assert "--no-interactive" in argv
+    assert "--trust-all-tools" in argv
+    assert "--output-format" not in argv
+    # 回执脚注拼在任务后面 ⇒ 末位**以任务开头**，不是逐字相等。
+    assert argv[-1].startswith("干活")
+    assert result.cost is None
+
+
+def test_qwen_offload_uses_its_positional_prompt_and_json_envelope(workdir, monkeypatch):
+    """qwen 的提示词是位置参数（`-p` 官方标了 deprecated）⇒ 末位放任务；`-o json` 出机器读的回包。"""
+    seen = {}
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qwen": "/usr/bin/qwen")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    offload.run_task("干活", cwd=workdir, agent="qwen")
+
+    argv = seen["argv"]
+    assert argv[0] == "/usr/bin/qwen"
+    assert "-o" in argv and argv[argv.index("-o") + 1] == "json"
+    assert "--approval-mode" in argv and argv[argv.index("--approval-mode") + 1] == "yolo"
+    assert "-p" not in argv
+    assert argv[-1].startswith("干活")
+
+
+def test_the_two_new_agents_are_advertised_through_the_same_table():
+    """名册只有一张表（`EXTERNAL_AGENTS`）：入表即出现在名册，不另列一份名单。
+
+    （第三方软件进来时最容易出的岔子就是「表里加了、清单里没加」。）
+    """
+    from tools.offload_tools import agent_roster
+
+    names = {agent.name for agent in agent_roster()}
+
+    assert {"kiro", "qwen"} <= names
+    assert len(offload.EXTERNAL_AGENTS) == 10

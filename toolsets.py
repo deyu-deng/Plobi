@@ -374,6 +374,9 @@ TOOLSETS = {
             # 「我当前没有这两个工具」）。
             "external_sessions_scan", "external_sessions_mark",
             "external_sessions_rename", "external_sessions_archive", "external_sessions_delete",
+            # 11-08 补：三枚**通用原子**会话工具（说得上话 / 记模型预设 / 记权限档）。
+            # 它们同样只挂在运行期注册表上 ⇒ 这张静态表漏了它们，quiet 那种进程看不见。
+            "external_session_send", "external_session_model", "external_session_permission",
         ],
         "includes": [],
     },

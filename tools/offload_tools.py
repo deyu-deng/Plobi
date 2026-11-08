@@ -52,27 +52,44 @@ TOOLSET = "offload"
 
 #: 各外部 Agent 自带的"最放开档"旋钮在 `agent/external_offload.permission_flags` 里；
 #: 这里只留**登录态**的本地探针（不跑它、不花钱）。
-#: 探针取**保守方向**：指名位置里没有凭据 ⇒ 判"未登录"，不判"探不到所以能用"——
-#: 清单把一个点了必失败的东西列成可用，是这条刀明令禁止的形状（任务书硬边界）。
-#: 已知缺口：agy 的 OAuth 凭据不在 `~/.gemini/antigravity-cli/` 下（10-13 现核：该目录
-#: 只有 log/db/history，没有任何 auth 文件），所以它现在恒判"未登录"。要放开它，
-#: 补的是这里的探针路径，不是清单那一条判据。
-_CREDENTIAL_HINTS = {
+#: 各家外部 Agent 的**登录痕迹**落点（只探在不在，**不读内容**——里面是凭据）。
+#:
+#: 11-08 现读修正（这台机器上的真实落点，探针路径与旧版两处不符）：
+#: - **agy 的 OAuth 不在 `~/.agy/`**：它落在 `~/.gemini/antigravity-cli/antigravity-oauth-token`
+#:   （11-06 更新）＋ Windows 凭据管理器那条 `gemini:antigravity`。旧表指的那两个路径这台没有，
+#:   于是 agy 恒判「未登录」——**一个已装好、已登录、能跑的目标被白扔**。
+#: - **gemini** 的 OAuth 在 `~/.gemini/oauth_creds.json`；**cline** 的在
+#:   `~/.cline/data/settings/providers.json`（键里有 `providers.cline`）。
+#:
+#: 探针取**保守方向**：指名位置里没有凭据 ⇒ 判「未登录」，不判「探不到所以能用」
+#: ——清单把一个点了必失败的东西列成可用，是这条刀明令禁止的形状。
+#: 但**没登记探针的那一家判「探不到」（None），不判「没登录」**：那是我们没核到，
+#: 不是它没登录；`availability()` 只看 `False` 才拦，`None` 不拦（见 `offload.py`）。
+#: 今天 opencode / kiro 就在这一档：盘上找不到它们的凭据落点（它们可能走自己的账号体系），
+#: 而纸上的 10-30 实测记着 kiro 那一轮**自己跑工具并答对了当前时间**。
+_LOGIN_EVIDENCE: dict[str, tuple[str, ...]] = {
     "codebuddy": ("~/.codebuddy/local_storage",),
-    "agy": ("~/.agy/credentials", "~/.config/agy/credentials"),
-    # Qoder 的登录态落在 `~/.qoder/.auth`（10-22 实测：`qodercli login` 之前没有它，
-    # 登录之后它出现）。只探在不在，**不读内容**——里面是凭据。
     "qoder": ("~/.qoder/.auth",),
+    "agy": ("~/.gemini/antigravity-cli/antigravity-oauth-token",),
+    "gemini": ("~/.gemini/oauth_creds.json",),
+    "cline": ("~/.cline/data/settings/providers.json",),
+    "qwen": ("~/.qwen/oauth_creds.json",),
 }
 
 
 def _probe_logged_in(agent_name: str) -> Optional[bool]:
-    for raw in _CREDENTIAL_HINTS.get(agent_name, ()):
+    """这一家登录没有？**三态**：True / False（真没登录）/ None（探不到，不判成不能）。"""
+    hints = _LOGIN_EVIDENCE.get(agent_name)
+    if hints is None:
+        # 没登记落点 ⇒ 我们没核到，不替它下结论。
+        return None
+    for raw in hints:
         candidate = Path(os.path.expanduser(raw))
         try:
             if candidate.is_dir():
-                return any(candidate.iterdir())
-            if candidate.is_file():
+                if any(candidate.iterdir()):
+                    return True
+            elif candidate.is_file():
                 return True
         except OSError:
             continue

@@ -76,7 +76,7 @@ CONFIGURABLE_TOOLSETS = [
     ("session_search",  "🔎 Session Search",            "search past conversations"),
     ("clarify",         "❓ Clarifying Questions",      "clarify"),
     ("delegation",      "👥 Task Delegation",           "delegate_task"),
-    ("offload",         "🚀 External AI Offload",       "external_offload_status, external_offload_run — hand a piece to an external AI CLI on this machine"),
+    ("offload",         "🚀 External AI Offload",       "external_offload_status, external_offload_run — hand a piece to an external AI CLI on this machine; plus the external-session tools (external_sessions_scan/mark/rename/archive/delete, external_session_send/model/permission)"),
     ("cronjob",         "⏰ Cron Jobs",                 "create/list/update/pause/resume/run, with optional attached skills"),
     ("homeassistant",    "🏠 Home Assistant",           "smart home device control"),
     ("spotify",          "🎵 Spotify",                  "playback, search, playlists, library"),

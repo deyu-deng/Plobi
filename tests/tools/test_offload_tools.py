@@ -247,6 +247,11 @@ class TestOptInAndPolicy:
             "external_sessions_delete",
             "external_sessions_archive",
             "external_sessions_rename",
+            # 11-08 补：三枚通用原子会话工具原先只挂在运行期注册表上，
+            # 静态表漏了它们 ⇒ quiet 那种进程看不见（与上面那七枚同一个理由）。
+            "external_session_send",
+            "external_session_model",
+            "external_session_permission",
         }
         for name in TOOLSETS["offload"]["tools"]:
             assert name not in _PLOBI_CORE_TOOLS, "进了核心包就等于默认开（裁定 78）"
@@ -284,3 +289,60 @@ def test_the_offload_toolset_lists_all_four_tools_statically():
         "external_sessions_scan",
         "external_sessions_mark",
     } <= tools
+
+
+def test_the_offload_toolset_also_lists_the_three_atomic_session_tools():
+    """11-08 补：三枚**通用原子**会话工具（说得上话／记模型／记权限档）同样只挂在运行期
+    注册表上 ⇒ 静态表漏了它们，quiet 那种进程看不见（与上面那四枚同一个理由）。"""
+    from toolsets import get_toolset
+
+    tools = set(get_toolset("offload", include_registry=False)["tools"])
+
+    assert {
+        "external_session_send",
+        "external_session_model",
+        "external_session_permission",
+    } <= tools
+
+
+# ── 登录探针：三态（11-08）────────────────────────────────────────────────
+
+
+def test_login_probe_has_three_states(monkeypatch, tmp_path):
+    """True ／ False（真没登录）／ None（**探不到，不判成不能**）。
+
+    第三态是 11-08 补的：以前没登记落点的那几家一律返回 False ⇒ cline／gemini／opencode
+    被误判成「没登录」，三个已装好的目标白扔。
+    """
+    present = tmp_path / "token.json"
+    present.write_text("{}", encoding="utf-8")
+    missing = tmp_path / "absent.json"
+    monkeypatch.setattr(ot, "_LOGIN_EVIDENCE", {
+        "present": (str(present),),
+        "missing": (str(missing),),
+    })
+
+    assert ot._probe_logged_in("present") is True
+    assert ot._probe_logged_in("missing") is False
+    assert ot._probe_logged_in("not-registered") is None
+
+
+def test_the_login_evidence_table_points_at_the_real_paths():
+    """agy 的 OAuth 不在 `~/.agy/`：它落在 `~/.gemini/antigravity-cli/antigravity-oauth-token`。
+
+    旧表指的那两个路径这台没有 ⇒ agy 恒判「未登录」——一个已装好、已登录、能跑的目标被白扔。
+    """
+    assert ot._LOGIN_EVIDENCE["agy"] == ("~/.gemini/antigravity-cli/antigravity-oauth-token",)
+    assert "gemini" in ot._LOGIN_EVIDENCE
+    assert "cline" in ot._LOGIN_EVIDENCE
+
+
+def test_the_vendors_we_cannot_tell_are_none_not_false():
+    """opencode ／ kiro：盘上找不到它们的凭据落点。
+
+    「我们没核到」≠「它没登录」⇒ 判 None（`availability()` 只看 False 才拦），
+    不判 False——那会把两个已装好的目标从清单里抹掉。
+    """
+    for name in ("opencode", "kiro"):
+        assert name not in ot._LOGIN_EVIDENCE
+        assert ot._probe_logged_in(name) is None

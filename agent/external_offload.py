@@ -76,6 +76,22 @@ AGENT_GEMINI = "gemini"
 #: （config 里的 args_template），外包通道多走的是权限旗标那一档。
 AGENT_CODEX = "codex"
 AGENT_CLAUDE = "claude"
+#: 11-08 现核：这两家在这台都装着，而且都是**自己会跑工具的完整 agent**
+#: （`kiro-cli --version` = 2.35.1、`qwen --version` = 0.26.0）⇒ 按裁定 205 的口径，
+#: 它们该出现在外包这一栏（模型选择框那一侧走不了工具闭环的才是它们）。
+#: argv 形状来自它们自己 `--help`，不抄别家的：
+#: - kiro：`kiro-cli chat [OPTIONS] [INPUT]`，`--no-interactive` 一次性、`-a/--trust-all-tools` 放工具；
+#:   它的 `--output-format` 帮助里写明**只作用于 list 命令** ⇒ 不传给 chat，回包按文本读。
+#: - qwen：提示词是**位置参数**（`-p/--prompt` 官方标了 deprecated）⇒ 末位放任务；
+#:   `-o json` 出机器读的回包，`--approval-mode yolo` 放开（`-y` 同义）。
+AGENT_KIRO = "kiro"
+AGENT_QWEN = "qwen"
+KIRO_COMMAND_ENV = "PLOBI_OFFLOAD_KIRO_COMMAND"
+KIRO_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_KIRO_EXTRA_ARGS"
+KIRO_TRUST_ENV = "PLOBI_OFFLOAD_KIRO_TRUST_ALL_TOOLS"
+QWEN_COMMAND_ENV = "PLOBI_OFFLOAD_QWEN_COMMAND"
+QWEN_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_QWEN_EXTRA_ARGS"
+QWEN_YOLO_ENV = "PLOBI_OFFLOAD_QWEN_YOLO"
 CODEX_COMMAND_ENV = "PLOBI_OFFLOAD_CODEX_COMMAND"
 CODEX_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CODEX_EXTRA_ARGS"
 #: `codex exec --help`：`--full-auto` = 自动批准所有权限请求（沙箱内写文件 OK）。
@@ -272,6 +288,25 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         permission_mode_env=QODER_PERMISSION_MODE_ENV, permission_shape="sep",
         scrub_env=QODER_SDK_ENV, artifact_required=False,
         argv_template=("{flags}", "--output-format", "json", "{extra}", "-p", "{task}"),
+    ),
+    AGENT_KIRO: ExternalAgentSpec(
+        AGENT_KIRO, "kiro-cli", KIRO_COMMAND_ENV, KIRO_EXTRA_ARGS_ENV,
+        # `kiro-cli chat [OPTIONS] [INPUT]`：`--no-interactive` 一次性（不进 TUI），
+        # `-a/--trust-all-tools` 是它自己那一枚放开开关（不是 cline 的 `-y`，也不是 opencode 的 `--auto`）。
+        # 它的 `--output-format` 帮助里写明**只作用于 list 命令** ⇒ 不传给 chat：回包按文本读，
+        # 金额保持"未知"（None）而不是编一个 0。
+        skip_flag=("--trust-all-tools",), skip_permissions_env=KIRO_TRUST_ENV,
+        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
+        artifact_required=False,
+        argv_template=("chat", "--no-interactive", "{flags}", "{extra}", "{task}"),
+    ),
+    AGENT_QWEN: ExternalAgentSpec(
+        AGENT_QWEN, "qwen", QWEN_COMMAND_ENV, QWEN_EXTRA_ARGS_ENV,
+        # `qwen [OPTIONS] [query...]`：提示词是**位置参数**（`-p` 官方标了 deprecated）⇒ 末位放任务；
+        # `-o json` 出机器读的回包；`--approval-mode yolo` 放开（`-y` 同义开关）。
+        skip_flag=("--approval-mode", "yolo"), skip_permissions_env=QWEN_YOLO_ENV,
+        artifact_required=False,
+        argv_template=("-o", "json", "{flags}", "{extra}", "{task}"),
     ),
 }
 
