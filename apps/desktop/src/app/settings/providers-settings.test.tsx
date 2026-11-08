@@ -551,3 +551,71 @@ describe('Subscriptions switch', () => {
   })
 })
 
+
+// 用户 2026-11-08 的三条硬要求，落在屏上各钉一次：
+//   ① 一个已经登录、但 hub 说"一个可选模型都没有"的软件，形状必须是加号，不许亮着开关；
+//   ② API key 没配置时右边只有加号，输入框在点开之后才出现；
+//   ③ 订阅这一屏也有搜索，和另外两屏一致。
+describe('providers screen: shape is the truth (2026-11-08)', () => {
+  const shell = (rows: AuthCatalogRow[]) => {
+    window.plobiDesktop = {
+      authCatalog: vi.fn().mockResolvedValue(rows),
+      plobiGateway: { auth: vi.fn().mockResolvedValue({ models: [], ok: true }) },
+      requestQuotaApps: vi.fn()
+    } as never
+  }
+
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('a signed-in software with nothing pickable is a switch that is NOT lit', async () => {
+    shell([authRow('kiro_cli', { kind: 'local_session', live: true, reason: 'signed in' })])
+    applyDiscoveredQuotaApps([
+      { answered: true, apiKey: 'k', baseUrl: 'http://127.0.0.1:8000/v1', blocked: { 'deepseek-3.2': 'credential_expired' }, id: 'kiro_cli', models: [] }
+    ])
+
+    const { ProvidersSettings } = await import('./providers-settings')
+    render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
+
+    // Configured → the shape is a switch (the user can still turn it off); dark → it is
+    // not lit. The old bug lit it because "connected" meant "signed in once".
+    const switches = await screen.findAllByRole('switch')
+
+    expect(switches).toHaveLength(1)
+    expect(switches[0].getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'Set up' })).toBeNull()
+  })
+
+  it('the keys tab keeps the input closed behind the plus until it is clicked', async () => {
+    getEnvVars.mockResolvedValue({
+      WIDGETAI_API_KEY: keyVar({ provider: 'widgetai', provider_label: 'WidgetAI' })
+    })
+    listOAuthProviders.mockResolvedValue({ providers: [] })
+
+    const { ProvidersSettings } = await import('./providers-settings')
+    render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="keys" />)
+
+    await screen.findByText('WidgetAI')
+    // Nothing pasted yet: no input sitting on the row — that was the old screen.
+    expect(screen.queryByPlaceholderText('Paste WidgetAI key')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set' }))
+
+    expect(await screen.findByPlaceholderText('Paste WidgetAI key')).toBeTruthy()
+  })
+
+  it('filters the subscriptions cards by name, like the other two tabs', async () => {
+    shell([authRow('antigravity'), authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+
+    const { ProvidersSettings } = await import('./providers-settings')
+    render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
+
+    expect(await screen.findByText('Antigravity')).toBeTruthy()
+
+    fireEvent.change(screen.getByPlaceholderText('Search providers…'), { target: { value: 'codebuddy' } })
+
+    await waitFor(() => expect(screen.queryByText('Antigravity')).toBeNull())
+    expect(screen.getByText('CodeBuddy')).toBeTruthy()
+  })
+})

@@ -3,11 +3,13 @@ import { type ChangeEvent, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { translateNow, useI18n } from '@/i18n'
-import { ChevronDown, ExternalLink, Loader2, Save, Trash2 } from '@/lib/icons'
+import { ChevronDown, ExternalLink, Loader2, Plus, Save, Trash2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import type { EnvVarInfo } from '@/types/plobi'
 
+import { ConnectionControl } from './connection-control'
 import { CONTROL_TEXT } from './constants'
+import { EntityAvatar } from './entity-avatar'
 import { prettyName, withoutKey } from './helpers'
 import { ListRow } from './primitives'
 import type { EnvRowProps } from './types'
@@ -259,29 +261,44 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
   const { t } = useI18n()
   const docsUrl = group.docsUrl?.trim()
   const description = group.description?.trim()
-  const expandable = Boolean(description || docsUrl || group.advanced.length > 0)
+  const configured = group.hasAnySet
+  const expandable = Boolean(description || docsUrl || group.advanced.length > 0) || !configured
+  const setLabel = t.settings.envActions.set
 
   return (
     <ListRow
-      action={
-        <div
-          className="min-w-0"
-          onClick={e => e.stopPropagation()}
-          onFocus={() => {
-            if (expandable && !expanded) {
-              onExpand()
-            }
-          }}
-        >
-          <KeyField
-            expanded={expanded}
-            info={group.primary[1]}
-            placeholder={t.settings.credentials.pasteLabelKey(group.name)}
-            rowProps={rowProps}
-            varKey={group.primary[0]}
-          />
-        </div>
-      }
+      action={configured
+        ? (
+            <div
+              className="min-w-0"
+              onClick={e => e.stopPropagation()}
+              onFocus={() => {
+                if (expandable && !expanded) {
+                  onExpand()
+                }
+              }}
+            >
+              <KeyField
+                expanded={expanded}
+                info={group.primary[1]}
+                placeholder={t.settings.credentials.pasteLabelKey(group.name)}
+                rowProps={rowProps}
+                varKey={group.primary[0]}
+              />
+            </div>
+          )
+        : (
+            // Nothing pasted yet: the card is closed and the only thing on the right is
+            // the plus. The input appears after a click, inside the expanded card — a row
+            // of fifteen bare key inputs was the old screen and is what he asked away.
+            <ConnectionControl
+              configureLabel={setLabel}
+              configureTestId={`key-configure-${group.name}`}
+              mode="configure"
+              onConfigure={onExpand}
+              toggleLabel={setLabel}
+            />
+          )}
       below={
         <>
           {/* The reason lives under the row, on its own line (2026-11-04 ruling) —
@@ -297,6 +314,21 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
 
           {expandable && expanded && (
             <div className="grid gap-3 pt-2" onClick={e => e.stopPropagation()}>
+              {!configured && (
+                <ListRow
+                  action={
+                    <KeyField
+                      expanded
+                      info={group.primary[1]}
+                      placeholder={t.settings.credentials.pasteLabelKey(group.name)}
+                      rowProps={rowProps}
+                      varKey={group.primary[0]}
+                    />
+                  }
+                  title={t.settings.credentials.pasteKey}
+                />
+              )}
+
               {description && (
                 <p className="text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
                   {description}
@@ -332,23 +364,13 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
       }
       expanded={expandable ? expanded : undefined}
       onActivate={expandable ? onToggle : undefined}
-      title={
-        <span className="flex min-w-0 items-center gap-2">
-          {/* Status dot only — the reason is body copy below the row (2026-11-04:
-              tooltips overlapped the input and could not be dismissed). */}
-          <span
-            className={cn(
-              'size-2 shrink-0 rounded-full',
-              group.disabled
-                ? 'bg-destructive'
-                : group.hasAnySet
-                  ? 'bg-primary'
-                  : 'bg-(--ui-stroke-secondary)'
-            )}
-          />
-          <span className="truncate">{group.name}</span>
-        </span>
-      }
+      icon={(
+        <EntityAvatar
+          monogram={group.name.trim().slice(0, 1).toUpperCase()}
+          testId={`key-card-${group.name}-icon`}
+        />
+      )}
+      title={group.name}
     />
   )
 }

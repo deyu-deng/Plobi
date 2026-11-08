@@ -33,12 +33,14 @@ import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
+import { ConfigCard } from './config-card'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import {
   buildLoginCards,
   cardControl,
   cardDetail,
   cardDot,
+  isConfigured,
   type LoginCard,
   type RoutingVerdict
 } from './quota-login-cards'
@@ -63,6 +65,13 @@ export const PROVIDER_VIEWS = ['accounts', 'keys', 'desktop'] as const
 // the best verdict across its legs: usable if any leg is pickable.
 const QUOTA_APP_PEERS: Record<string, string[]> = {
   workbuddy: ['workbuddy', 'workbuddy_api']
+}
+
+/** Case-insensitive name match for the three provider tabs' search boxes. */
+function matchesQuery(name: string, query: string): boolean {
+  const q = query.trim().toLowerCase()
+
+  return q === '' || name.toLowerCase().includes(q)
 }
 
 /** Every hub leg that is the same piece of software behind this card. */
@@ -167,7 +176,15 @@ function OAuthPicker({
 }) {
   const { t } = useI18n()
   const p = t.settings.providers
+  const [query, setQuery] = useState('')
   const ordered = useMemo(() => sortProviders(providers), [providers])
+  const matching = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) {
+      return ordered
+    }
+    return ordered.filter(provider => providerTitle(provider).toLowerCase().includes(q))
+  }, [ordered, query])
 
   if (ordered.length === 0) {
     return null
@@ -175,17 +192,24 @@ function OAuthPicker({
 
   const select = (p: OAuthProvider) => startManualProviderOAuth(p.id)
 
-  const featured = ordered.find(p => p.id === FEATURED_ID && !p.status?.logged_in) ?? null
+  const featured = matching.find(p => p.id === FEATURED_ID && !p.status?.logged_in) ?? null
   // Dedupe (2026-11-04): OpenCode Zen renders once, as the disabled static key
   // entry on the Keys tab — drop the same-named OAuth row here.
-  const rest = (featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered).filter(p => p.id !== 'opencode_api')
+  const rest = (featured ? matching.filter(p => p.id !== FEATURED_ID) : matching).filter(p => p.id !== 'opencode_api')
   // Flat list: connected rows first (they are what the page leads with), then
   // the unconnected rows in `sortProviders` order (curated priority, then name).
   const connected = rest.filter(p => p.status?.logged_in)
   const others = rest.filter(p => !p.status?.logged_in)
 
   return (
-    <SettingsGroup
+    <>
+      <SearchField
+        aria-label={p.searchKeys}
+        onChange={setQuery}
+        placeholder={p.searchKeys}
+        value={query}
+      />
+      <SettingsGroup
       action={
         <Button
           className="text-[length:var(--conversation-caption-font-size)]"
@@ -214,7 +238,8 @@ function OAuthPicker({
       {others.map(p => (
         <ProviderRow key={p.id} onSelect={select} provider={p} />
       ))}
-    </SettingsGroup>
+      </SettingsGroup>
+    </>
   )
 }
 
@@ -314,6 +339,7 @@ function NoProviderKeys() {
 // control whose *shape* is the state. Nothing here explains how the hub works, and
 // nothing here names the software itself — the hub's catalog does.
 function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
+  const [query, setQuery] = useState('')
   const { t } = useI18n()
   const subs = t.settings.providers.subscriptions
   // The card the setup dialog is walking through, if any. Kept by id: the catalog is
@@ -607,17 +633,36 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
         // user just pressed); the why-this-leg-is-dark line lives under the card.
         const errorTitle = error ? `${subs.connectError(card.name)}${error.message ? `：${error.message}` : ''}` : undefined
 
+        const control = cardControl(card, routing, usable)
+        // Configured but the hub cannot serve it right now = "dark": red dot beside the
+        // control, reason in its tooltip. A leg the user turned off is their own choice,
+        // not a fault, so no dot.
+        const broken = isConfigured(card.state) && routing !== 'off' && !usable
+        const reasonText = [reason, stateReason].filter(Boolean).join(' · ')
+        const mode: 'configure' | 'toggle' | 'pending' | 'none' =
+          click === 'connecting' || control === 'loader'
+            ? 'pending'
+            : control === 'plus'
+              ? 'configure'
+              : control === 'none'
+                ? 'none'
+                : 'toggle'
+
         return {
           card,
-          checked: routing !== 'off',
+          broken,
+          // Checked only when this software can actually serve a turn right now — the
+          // user's 2026-11-08 invariant, and the reason `connected` changed meaning.
+          checked: usable && routing !== 'off',
+          control,
           dot: cardDot(card, routing),
-          control: cardControl(card, routing, usable),
+          errorTitle: [reasonText, errorTitle].filter(Boolean).join(' · ') || undefined,
+          mode,
           // The reason for a dark leg is body copy under the card (user 2026-11-04
           // ruling) — see `belowText`; the control tooltip only carries a click
           // failure, which an action (retry / turn off) can actually resolve.
           belowText: reason || stateReason || undefined,
           detail: cardDetail(card, errorTitle, undefined, undefined),
-          errorTitle,
           // A click that is still in flight is the only moment a control is disabled.
           isBusy: click === 'connecting',
           usable,
@@ -637,65 +682,6 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
     [desktopCards, conn, subs, errInfo, hubSelectable, quotaApps, quotaReason]
   )
 
-  /** The one control this row is allowed to show, in the shape the state asks for. */
-  function renderControl(row: (typeof rows)[number]) {
-    const { card, checked, control, errorTitle, isBusy } = row
-
-    if (control === 'switch' || control === 'disabled') {
-      // A disabled switch is "on but dark": the reason lives under the card, and
-      // the switch stays operable so the user can act on the message — turn the
-      // leg off — instead of only reading it (user 2026-11-04). Only turning it
-      // back on is gated while the leg is dark (the dropdown cannot offer it).
-      return (
-        <Switch
-          aria-label={subs.useQuota}
-          checked={checked}
-          disabled={control === 'disabled' && !checked}
-          onCheckedChange={value => (value ? handleTurnOn(card) : handleTurnOff(card))}
-          title={errorTitle || undefined}
-        />
-      )
-    }
-
-    // A click still in flight is the only moment this control is grey: it is not
-    // broken, it is busy. Everything else that is wrong rides on the tooltip.
-    if (control === 'plus' || isBusy) {
-      if (isBusy) {
-        return (
-          <Button aria-label={subs.connecting} disabled size="icon-sm" type="button" variant="secondary">
-            <Loader2 className="size-4 animate-spin" />
-          </Button>
-        )
-      }
-
-      // `+` is the entry to first-run setup, never a sign-in shortcut: on a new machine
-      // the app is missing first, and a click that only knows how to log in has nowhere
-      // to go. The dialog reads the hub's `state` and picks the smallest working path.
-      return (
-        <Button
-          aria-label={subs.configure}
-          onClick={() => setSetupId(card.id)}
-          size="icon-sm"
-          title={errorTitle || undefined}
-          type="button"
-          variant="secondary"
-        >
-          <Plus className="size-4" />
-        </Button>
-      )
-    }
-
-    if (control === 'loader') {
-      return (
-        <Button aria-label={subs.connecting} disabled size="icon-sm" type="button" variant="secondary">
-          <Loader2 className="size-4 animate-spin" />
-        </Button>
-      )
-    }
-
-    return null
-  }
-
   // The row the dialog walks through, resolved from the fresh catalog on every render:
   // a snapshot taken at click time would never notice the sign-in landing.
   const setupCard = setupId ? rows.find(row => row.card.id === setupId)?.card ?? null : null
@@ -704,6 +690,12 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
     <SettingsContent>
       {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：组名与那句说明在卡**上方**，
           卡内相邻两行之间一条虚线。OAuth 那一屏与 API 密钥那一屏不在此列（见各自注释）。 */}
+      <SearchField
+        aria-label={t.settings.providers.searchKeys}
+        onChange={setQuery}
+        placeholder={t.settings.providers.searchKeys}
+        value={query}
+      />
       <SettingsGroup description={subs.intro} title={subs.title}>
 
       {authCatalog === null ? (
@@ -742,43 +734,34 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
         </div>
       ) : (
         <div className="grid gap-2">
-          {rows.map(row => (
-            <ListRow
-              action={renderControl(row)}
-              // Why a leg is dark reads under the card, on its own row — never a
-              // tooltip overlapping the switch (user 2026-11-04 ruling).
+          {rows.filter(row => matchesQuery(row.card.name, query)).map(row => (
+            // One card grammar for all three provider pillars (user 2026-11-08): the
+            // same shell as the Sources screen — icon, name, one line, one control.
+            <ConfigCard
+              busy={row.isBusy}
+              checked={row.checked}
+              configureLabel={subs.configure.replace('{name}', row.card.name)}
+              configureTestId={`quota-configure-${row.card.id}`}
+              description={introOf(row.card)}
+              error={row.broken && Boolean(row.errorTitle)}
+              errorTitle={row.errorTitle}
+              key={row.card.id}
+              mode={row.mode}
+              monogram={row.card.name.trim().slice(0, 1).toUpperCase()}
+              name={row.card.name}
+              onConfigure={() => setSetupId(row.card.id)}
+              onToggle={next => (next ? handleTurnOn(row.card) : handleTurnOff(row.card))}
+              testId={`quota-card-${row.card.id}`}
+              toggleLabel={subs.useQuota}
               below={
                 row.belowText ? (
                   <p
-                    className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-destructive"
+                    className="text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-destructive"
                     role="note"
                   >
                     {row.belowText}
                   </p>
                 ) : undefined
-              }
-              description={introOf(row.card)}
-              key={row.card.id}
-              // Unified card template (2026-11-04): status dot + name + the one
-              // switch on the right — same shape as the key cards.
-              title={
-                <span className="flex min-w-0 items-center gap-2">
-                  {/* The dot is the whole status vocabulary: live (green) / idle
-                      (grey) / error (red, configured but dark). Colour comes from the
-                      state machine, not from the routing verdict, so a leg that is set
-                      up but unreachable reads red even when the user switched it off. */}
-                  <span
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      row.dot === 'live'
-                        ? 'bg-primary'
-                        : row.dot === 'error'
-                          ? 'bg-destructive'
-                          : 'bg-(--ui-stroke-secondary)'
-                    )}
-                  />
-                  <span className="truncate">{row.card.name}</span>
-                </span>
               }
             />
           ))}
