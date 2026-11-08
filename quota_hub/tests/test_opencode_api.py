@@ -384,3 +384,99 @@ def test_an_insufficient_funds_answer_ends_the_leg_instead_of_per_model_strikes(
             assert prov.credential_health() == (True, "ok"), "a top-up needs no restart"
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def _rows(*rows: dict) -> httpx.Response:
+    """The upstream's own rows, verbatim — the price and the limits included."""
+    return httpx.Response(200, json={"object": "list", "data": list(rows)})
+
+
+def _zen_row(model_id: str, *, price=None, context=None, output=None) -> dict:
+    """One row in the shape Zen wrote on 2026-11-08."""
+    row: dict = {"id": model_id, "object": "model"}
+    if price is not None:
+        row["cost"] = {"text": {"input": {"price": price}, "output": {"price": price}}}
+    limit: dict = {}
+    if context is not None:
+        limit["context"] = context
+    if output is not None:
+        limit["output"] = output
+    if limit:
+        row["limit"] = limit
+    return row
+
+
+def test_the_membership_lane_serves_only_what_the_subscription_covers(tmp_path, monkeypatch):
+    """A Zen membership is the free pool; the billed models are not part of it.
+
+    Measured 2026-11-08 against the vendor's own list: of 42 rows, 12 are free and 30
+    are billed per token. Serving all 42 promised a model the user cannot use — the
+    user's own rule (11-08 20:1x): 「我配置不了就不应该出现在这个模型框里面」.
+    """
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({"/v1/models": _rows(
+            _zen_row("big-pickle", price=0),
+            _zen_row("claude-opus-5-5", price=4),
+        )}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            await prov.discover_accounts()
+            assert prov.served_models == ("opencode_api/big-pickle",), prov.served_models
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_key_lane_serves_what_that_key_account_lists(tmp_path, monkeypatch):
+    """A key is billable, so the upstream's own list IS that account's entitlement."""
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({"/v1/models": _rows(
+            _zen_row("big-pickle", price=0),
+            _zen_row("claude-opus-5-5", price=4),
+        )}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "zen-key"}, http)
+            await prov.discover_accounts()
+            assert prov.served_models == (
+                "opencode_api/big-pickle",
+                "opencode_api/claude-opus-5-5",
+            ), prov.served_models
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_row_without_a_price_is_kept_because_the_leg_did_not_say(tmp_path, monkeypatch):
+    """Silence is not a refusal — the same rule the tuning hook follows."""
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({"/v1/models": _rows(_zen_row("mystery-model"))}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            await prov.discover_accounts()
+            assert prov.served_models == ("opencode_api/mystery-model",), prov.served_models
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_the_window_and_the_output_cap_come_from_the_models_own_row(tmp_path, monkeypatch):
+    """Zen writes each model's window on its row; the picker reads it from there."""
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({"/v1/models": _rows(
+            _zen_row("gpt-5.5", price=5, context=1050000, output=128000),
+        )}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "zen-key"}, http)
+            await prov.discover_accounts()
+            tuning = prov.tuning("opencode_api/gpt-5.5")
+            assert tuning["context"] == {
+                "adjustable": False,
+                "choices": [1050000],
+                "default": 1050000,
+                "max": 1050000,
+            }, tuning
+            assert tuning["max_output"] == 128000, tuning
+            assert prov.tuning("opencode_api/never-read") == {}, "a model we never read says nothing"
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))

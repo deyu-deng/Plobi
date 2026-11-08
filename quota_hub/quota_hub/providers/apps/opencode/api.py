@@ -241,6 +241,29 @@ def _project_id(config: dict) -> str:
     return hashlib.sha1(f"directory:{Path(directory).resolve()}".encode("utf-8")).hexdigest()
 
 
+def _row_price(row: dict) -> float | None:
+    """What the vendor wrote this model costs, per token. None when it wrote nothing.
+
+    Zen writes both sides of the bill (``cost.text.input.price`` and
+    ``cost.text.output.price``); the higher one is the model's price. A model whose
+    bill is zero is the free pool a membership covers; anything above zero is billed
+    per token and is not part of what the subscription covers.
+    """
+    text = row.get("cost")
+    text = text.get("text") if isinstance(text, dict) else None
+    if not isinstance(text, dict):
+        return None
+
+    prices: list[float] = []
+    for side in ("input", "output"):
+        side_price = text.get(side)
+        side_price = side_price.get("price") if isinstance(side_price, dict) else None
+        if isinstance(side_price, (int, float)) and not isinstance(side_price, bool):
+            prices.append(float(side_price))
+
+    return max(prices) if prices else None
+
+
 class OpencodeApiProvider(Provider):
     name = "opencode_api"
     display_name = "OpenCode Zen"
@@ -263,6 +286,10 @@ class OpencodeApiProvider(Provider):
         self.timeout = float(config.get("timeout", 120.0))
         self.served_models = ()
         self._credential: dict[str, Any] | None = None
+        #: The upstream's own rows, keyed by the id we publish them under. Kept
+        #: because a row carries more than its name: Zen writes the price of every
+        #: model and its own window on it, and both are answers we must not guess.
+        self._model_rows: dict[str, dict] = {}
         # A paid lane has to identify itself: OpenCode's docs ask for "its own user agent…
         # rather than a generic SDK" plus a stable session id. These are ours, per process.
         self._session_id = _session_id()
@@ -346,8 +373,8 @@ class OpencodeApiProvider(Provider):
         data = data or self._credential or read_credential() or {}
         return str(data.get("access") or data.get("access_token") or "")
 
-    async def _list_models(self, token: str) -> list[str]:
-        """Upstream's own list. Failure means "no models", not "use the old list"."""
+    async def _fetch_model_rows(self, token: str) -> list[dict]:
+        """Upstream's own list, as rows. Failure means "no models", not "use the old list"."""
         try:
             res = await self.http.get(
                 self.models_url,
@@ -365,18 +392,46 @@ class OpencodeApiProvider(Provider):
         except ValueError:
             return []
         rows = body.get("data") if isinstance(body, dict) else None
-        ids: list[str] = []
-        for row in rows or []:
-            mid = str((row or {}).get("id") or "").strip()
-            if mid:
-                ids.append(f"{self.name}/{mid}")
-        return ids
+        return [
+            row
+            for row in (rows or [])
+            if isinstance(row, dict) and str(row.get("id") or "").strip()
+        ]
+
+    def _covers(self, row: dict) -> bool:
+        """Whether THIS lane may serve the row's model.
+
+        Two lanes, two entitlements (measured 2026-11-08 against the vendor's own
+        `/inference/v1/models`):
+
+        * a **key** (``OPENCODE_ZEN_API_KEY``) is billable — the upstream's list is
+          that account's entitlement, so everything it lists is offered;
+        * the **membership** (OpenCode's own store credential) covers the free pool
+          only. Zen writes what every model costs in ``cost.text.{input,output}.price``;
+          the ones above zero are billed per token and are **not** part of what the
+          subscription covers. Offering them in the picker promised a model the user
+          cannot use — the user's own rule (11-08 20:1x): 「我配置不了就不应该出现在
+          这个模型框里面」. Of the 42 rows this account's Zen wrote on 11-08, 12 are
+          free and 30 are billed.
+
+        A row that says nothing about its price is **not** a refusal: "the leg did not
+        say" must never read as "not covered" — the same rule the ``tuning`` hook
+        follows, and the reason the pre-11-08 behaviour (every row served) was wrong
+        only for the rows that *did* speak.
+        """
+        if self.api_key:
+            return True
+
+        price = _row_price(row)
+
+        return price is None or price <= 0
 
     async def discover_accounts(self) -> list[Account]:
         live, reason, data = self._credential_state()
         if not live or data is None:
             self.accounts = []
             self.served_models = ()
+            self._model_rows = {}
             return []
         token = self._token(data)
         self._credential = data
@@ -392,9 +447,52 @@ class OpencodeApiProvider(Provider):
                 cred=Credential(access_token=token, refresh_token=str(data.get("refresh") or ""), expires_at=expires_at),
             )
         ]
-        self.served_models = tuple(await self._list_models(token))
-        log.info("[opencode_api] %d model(s) reported by the upstream", len(self.served_models))
+        rows = await self._fetch_model_rows(token)
+        self._model_rows = {
+            f"{self.name}/{str(row.get('id')).strip()}": row
+            for row in rows
+        }
+        self.served_models = tuple(
+            f"{self.name}/{str(row.get('id')).strip()}"
+            for row in rows
+            if self._covers(row)
+        )
+        log.info(
+            "[opencode_api] %d model(s) reported by the upstream, %d covered by this lane",
+            len(rows),
+            len(self.served_models),
+        )
         return self.accounts
+
+    def tuning(self, model: str) -> dict:
+        """What this model lets the user change, taken from the row Zen wrote.
+
+        Measured 2026-11-08: every row carries the model's own window
+        (``limit.context``) and output cap (``limit.output``). Zen sells no *menu* of
+        windows for one model — unlike Qoder, which lists 200K / 400K / 1M for the same
+        row and marks it editable — so the window is published the way a fixed window
+        is published elsewhere: one value, explicitly not adjustable. A leg that says
+        nothing says nothing; this leg says "one window", and the picker keeps its
+        generic controls for it.
+        """
+        row = self._model_rows.get(model) or {}
+        limit = row.get("limit") if isinstance(row.get("limit"), dict) else {}
+        out: dict[str, Any] = {}
+
+        window = limit.get("context")
+        if isinstance(window, int) and not isinstance(window, bool) and window > 0:
+            out["context"] = {
+                "adjustable": False,
+                "choices": [window],
+                "default": window,
+                "max": window,
+            }
+
+        cap = limit.get("output")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+            out["max_output"] = cap
+
+        return out
 
     async def ensure_fresh(self, acc: Account) -> None:
         # JIT renewal (endpoint measured 2026-11-03): renew while >24 h of the lease
