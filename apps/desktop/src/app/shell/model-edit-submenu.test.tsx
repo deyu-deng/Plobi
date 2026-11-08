@@ -249,4 +249,38 @@ describe('ModelEditSubmenu window menu', () => {
     // Only the five effort levels — no token numbers dressed up as choices.
     expect(within(document.body).queryByRole('menuitemradio', { name: '400K' })).toBeNull()
   })
+
+  it('shows the windows for a model that sells windows but no thinking levels', () => {
+    // 用户 11-08 第 4 条只对了一半：窗口那一组原本挂在「这个模型支不支持思考」上，
+    // 于是「有窗口、但没有思考档」的模型既看不到窗口，整个悬浮框还只写一句
+    // 「没有可用选项」。窗口与思考是两个独立的旋钮，各按各的真值说话。
+    render(
+      <DropdownMenu open>
+        <DropdownMenuContent>
+          <DropdownMenuSub open>
+            <DropdownMenuSubTrigger>edit</DropdownMenuSubTrigger>
+            <ModelEditSubmenu
+              context={{ adjustable: true, choices: [200000, 400000], default: 200000 }}
+              contextValue={200000}
+              effort="medium"
+              fastControl={{ kind: 'none' }}
+              isActive
+              model="opencode_api/glm-5.3"
+              onContext={vi.fn()}
+              onSelectModel={vi.fn()}
+              provider="hub-row"
+              reasoning={false}
+              requestGateway={vi.fn().mockResolvedValue({}) as never}
+            />
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+
+    const labels = within(document.body).getAllByRole('menuitemradio').map(node => node.textContent)
+
+    expect(labels).toEqual(expect.arrayContaining(['200K', '400K']))
+    // 有窗口可调，就不是「没有可用选项」那一句。
+    expect(within(document.body).queryByText('No options for this model')).toBeNull()
+  })
 })

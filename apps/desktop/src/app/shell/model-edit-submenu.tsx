@@ -171,6 +171,10 @@ export function ModelEditSubmenu({
 
   const contextChoices = (context?.adjustable ? context.choices ?? [] : [])
     .filter(choice => Number.isFinite(choice) && choice > 0)
+  // The window dial and the thinking levels are two separate knobs. Hanging the dial
+  // on `reasoning` hid the window from every model that sells windows but no levels
+  // — and the "nothing to change" line swallowed the whole submenu for them.
+  const hasContextChoice = contextChoices.length > 1
   const choices = effortChoices(efforts)
   const fallbackEffort = levelForModel(defaultEffort, choices)
   const effortValue = normalizeEffort(effort, choices, fallbackEffort)
@@ -254,7 +258,7 @@ export function ModelEditSubmenu({
 
   return (
     <DropdownMenuSubContent className="w-52 p-0" sideOffset={4}>
-      {!hasFast && !reasoning ? (
+      {!hasFast && !reasoning && !hasContextChoice ? (
         <div className="px-2.5 py-3 text-xs text-(--ui-text-tertiary)">{copy.noOptions}</div>
       ) : (
         <>
@@ -276,9 +280,9 @@ export function ModelEditSubmenu({
               <Switch checked={fastOn} className="ml-auto" onCheckedChange={toggleFast} size="xs" />
             </DropdownMenuItem>
           ) : null}
-          {reasoning && contextChoices.length > 1 ? (
+          {hasContextChoice ? (
             <>
-              <DropdownMenuSeparator className="mx-0" />
+              {reasoning || hasFast ? <DropdownMenuSeparator className="mx-0" /> : null}
               <DropdownMenuRadioGroup
                 onValueChange={value => onContext?.(Number(value))}
                 value={String(contextValue ?? context?.default ?? '')}
