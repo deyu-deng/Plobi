@@ -1453,6 +1453,55 @@ def prewarm_picker_cache_async() -> Optional["_threading.Thread"]:
     return t
 
 
+#: Providers whose own `/models` is the truth for their catalog (user 2026-11-08:
+#: 「获取的模型列表也和官网的不一样，过时了」). These are the ones whose snapshot in
+#: models.dev goes stale fastest, plus everything we added from upstream this week.
+#: Everything else keeps the snapshot — this must not turn opening the picker into a
+#: dozen network round-trips, so it is key-gated and cached.
+_LIVE_MODEL_PROVIDERS = (
+    "actual", "ai-gateway", "alibaba", "alibaba-cn", "commandcode", "deepinfra",
+    "fireworks", "kimi-coding", "kimi-coding-cn", "meta-ai", "minimax", "minimax-cn",
+    "nebius-token-factory", "tencent-tokenhub", "tencent-tokenplan", "upstage",
+    "zai", "zai-cn",
+)
+_LIVE_MODEL_CACHE: dict[str, tuple[float, list[str]]] = {}
+_LIVE_MODEL_TTL = 600.0
+#: Total wall-clock budget for the parallel probes above, in seconds.
+_LIVE_MODEL_BUDGET = 2.5
+
+
+def _live_models_for(slug: str) -> list[str]:
+    """Read one provider's own `/models`, or [] so the snapshot stands.
+
+    Key-gated (a provider the user never configured costs nothing), cached for ten
+    minutes (the picker is opened often), and every failure — no key, auth rejected,
+    endpoint down, odd payload — answers [] rather than an exception: a list we could not
+    refresh is not a reason for the picker to break.
+    """
+    import time
+
+    now = time.time()
+    hit = _LIVE_MODEL_CACHE.get(slug)
+    if hit and now - hit[0] < _LIVE_MODEL_TTL:
+        return hit[1]
+    try:
+        from plobi_cli.auth import resolve_api_key_provider_credentials
+        from plobi_cli.models import fetch_api_models
+
+        creds = resolve_api_key_provider_credentials(slug) or {}
+        key = str(creds.get("api_key") or "")
+        base = str(creds.get("base_url") or "")
+        if not key or not base:
+            return []
+        models = fetch_api_models(key, base, timeout=4.0) or []
+    except Exception:  # noqa: BLE001 - an unreadable catalog is not a broken picker
+        return []
+    ids = [str(model) for model in models if model]
+    if ids:
+        _LIVE_MODEL_CACHE[slug] = (now, ids)
+    return ids
+
+
 def list_authenticated_providers(
     current_provider: str = "",
     current_base_url: str = "",
@@ -1609,8 +1658,31 @@ def list_authenticated_providers(
 
     data = fetch_models_dev()
 
+    # Prefer each listed provider's own catalog when it publishes one. Probed in
+    # parallel under one deadline: opening the picker must not become eighteen
+    # sequential 4-second timeouts when several keys are configured. Whatever has not
+    # answered by then keeps its snapshot for this open (the cache fills on later opens).
+    live_lists: dict[str, list[str]] = {}
+    if _LIVE_MODEL_PROVIDERS:
+        from concurrent.futures import ThreadPoolExecutor, wait
+
+        with ThreadPoolExecutor(max_workers=min(8, len(_LIVE_MODEL_PROVIDERS))) as _pool:
+            _futures = {_pool.submit(_live_models_for, _slug): _slug
+                        for _slug in _LIVE_MODEL_PROVIDERS}
+            _done, _pending = wait(_futures, timeout=_LIVE_MODEL_BUDGET)
+            for _fut in _done:
+                try:
+                    live_lists[_futures[_fut]] = _fut.result()
+                except Exception:  # noqa: BLE001 - a probe that raised is the same as none
+                    continue
+            for _fut in _pending:
+                _fut.cancel()
+
     # Build curated model lists keyed by plobi provider ID
     curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)
+    for _slug, _ids in live_lists.items():
+        if _ids:
+            curated[_slug] = list(_ids)
     curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]
     # "nous" pulls from the remote model-catalog manifest published at
     # https://raw.githubusercontent.com/deyu-deng/Plobi/main/website/static/api/model-catalog.json so
