@@ -102,15 +102,13 @@ providers:
     model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
     accounts: [{ id: claude-default }]
 
-  opencode_cli:
+  # OpenCode Free（11-09）：走**客户端自带的本地 http 服务**（`opencode service`）——
+  # 不是 CLI spawn、也不是 ACP。免费层在裸 http 上是关着的（官方：Free-tier chat models
+  # require OpenCode）⇒ 能吃到额度的通道只有客户端自己，而客户端自己就带着一个 http 面。
+  # 名单按上游自报（`/api/model` 里价为零的那批 = 免费池），不抄名单。
+  opencode_free:
     enabled: true
-    binary: opencode
-    args_template: ["run", "{model_flag}", "{prompt}"]
-    model_flag: "--model"
-    timeout: 300
-    models: [opencode/default]
-    model_map: { opencode/default: "" }
-    accounts: [{ id: opencode-default }]
+    timeout: 240
 
   kiro_cli:
     enabled: true

@@ -72,7 +72,7 @@ const VENDOR_LEG_ID: Record<string, string> = {
   cursor: 'cursor',
   gemini: 'gemini_api',
   kiro: 'kiro_cli',
-  opencode: 'opencode_cli',
+  opencode: 'opencode_free',
   qoder: 'qoder',
   qwen: 'qwen-cli'
 }

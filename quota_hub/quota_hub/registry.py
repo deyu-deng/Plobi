@@ -37,6 +37,7 @@ from .providers.apps.kiro import KiroCliProvider
 from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
 from .providers.apps.opencode import OpenCodeCliProvider
 from .providers.apps.opencode.api import OpencodeApiProvider
+from .providers.apps.opencode.free import OpenCodeFreeProvider
 from .providers.apps.gemini.api import GeminiApiProvider
 from .providers.apps.qoder.api import QoderProvider
 from .providers.apps.workbuddy import (
@@ -74,7 +75,11 @@ _MODELS_MAX_PASSES = 6
 #   claude_code_cli   -> Anthropic Claude Code (`claude -p --output-format json`) +
 #                        native 5h/weekly usage from api.anthropic.com/api/oauth/usage
 #   opencode_cli      -> OpenCode (`opencode run`) + OpenCode Go 5h/weekly/monthly
-#                        usage from opencode.ai/zen/go/v1/usage
+#                        usage from opencode.ai/zen/go/v1/usage  (retired from the
+#                        quota card on 11-02; kept for rollback)
+#   opencode_free     -> OpenCode **Free** over the client's own local http service
+#                        (`opencode service` on 127.0.0.1:<port>) — the only lane that
+#                        the free pool answers on (measured 11-09)
 #   kiro_cli          -> AWS Kiro CLI (`kiro-cli chat --no-interactive`) + model
 #                        catalog from `--list-models --format json`
 #   cline_cli         -> Cline CLI over its own ACP stdio port (`cline --acp`): models
@@ -100,6 +105,11 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     "opencode_cli": OpenCodeCliProvider,
     # 裁定 204：本机 OAuth → 它自己的 OpenAI 兼容口（带工具），模型名取上游自报。
     "opencode_api": OpencodeApiProvider,
+    # 11-09：Free 走**客户端自带的本地 http 服务**（`opencode service`），不是 CLI
+    # spawn、也不是 ACP。免费层在裸 http 上是关着的（官方：Free-tier chat models
+    # require OpenCode）——能吃到额度的通道只有客户端自己，而客户端自己就带着一个
+    # http 面。见 providers/apps/opencode/free.py。
+    "opencode_free": OpenCodeFreeProvider,
     # 裁定 204：本机 OAuth → Gemini 的 generateContent（原生 functionCall → tool_calls）。
     "gemini_api": GeminiApiProvider,
     "kiro_cli": KiroCliProvider,
@@ -185,8 +195,12 @@ ADAPTED_APPS: dict[str, dict] = {
         "download": "https://github.com/google-gemini/gemini-cli",
         "intro_key": "gemini_api",
     },
-    "opencode_cli": {
-        "name": "OpenCode",
+    # 11-09：Free 那张卡换了实现 —— 现在是 **http 腿**（走 OpenCode 客户端自带的本地
+    # 服务，见 providers/apps/opencode/free.py），不再是 11-02 移出额度栏的 CLI spawn
+    # 形态。腿 id 是 opencode_free；副标题沿用现成的 i18n 键 opencode_cli（那四语
+    # 有在派认领，不动），桌面那张卡的图标键也同样指向这条腿。
+    "opencode_free": {
+        "name": "OpenCode Free",
         "kind": "cli",
         "login": "cli-auth",
         "probe": {"probe": "cli", "binary": "opencode"},

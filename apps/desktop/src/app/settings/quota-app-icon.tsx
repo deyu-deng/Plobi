@@ -53,7 +53,7 @@ const QUOTA_ICONS: Record<string, QuotaIconSpec> = {
   cursor: { Icon: SiCursor, color: '#7B61FF' },
   gemini_api: { Icon: SiGooglegemini, color: '#4285F4' },
   kiro_cli: { color: '#FF9900', mark: kiroMark },
-  opencode_cli: { Icon: SiOpencode, color: '#1B1D21' },
+  opencode_free: { Icon: SiOpencode, color: '#1B1D21' },
   qoder: { color: '#615CED', mark: qoderMark },
   'qwen-cli': { Icon: SiQwen, color: '#615CED' },
   workbuddy: { Icon: SiCodebuddy, color: '#0052D9' },

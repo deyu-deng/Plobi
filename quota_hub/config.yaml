@@ -114,6 +114,24 @@ providers:
     # 原来这里写死的是 `/zen/v1`，而那是被现成实现当"旧基座"迁移掉的一条：非 CLI 流量在上面
     # 一律按额度耗尽处理（429 FreeUsageLimitError）。要指别处再显式加 base_url / models_url。
 
+  # OpenCode Free（11-09 落地）：走**客户端自带的本地 http 服务**（`opencode service`），
+  # 不是 CLI spawn、也不是 ACP。免费层在裸 http 上是关着的（官方文档原文
+  # 「Free-tier chat models require OpenCode」；直连 `/inference/openai/v1` 恒 429）⇒
+  # 能吃到额度的通道只有客户端自己，而客户端自己就带着一个 http 面
+  # （`127.0.0.1:<port>`，Basic 认证，口令在 `~/.config/opencode/service.json`）。
+  # 端口与口令都是**现读**：端口由 `opencode service status` 读，口令从那个文件读。
+  # 模型名单按**上游自己写的价**裁（`/api/model` 每行的 `cost` 全 0 的那批 = 免费池，
+  # 11-09 实测 43 条里 11 条），不抄一份会过期的名单。
+  # ⚠️ 这条腿拿不到我们的工具：上游**静默忽略**请求体里的 `tools`（塞一个不存在的键
+  #    同样回 200，OpenAPI 全表也没有带 tools 的请求体）⇒ capabilities.tools=false
+  #    ⇒ 模型框里进不去（裁定 204 §5 的闸门不放宽）。工具那条路是让 OpenCode 去调
+  #    我们的 MCP 服务器，归 `WP-QUOTA-LEG-TOOLS-VIA-MCP` 那把刀。
+  opencode_free:
+    enabled: true
+    # 一个回合要跑完客户端自己的 agent，比一次补全慢（实测 ~2 s，纯文本 ~6 s）。
+    timeout: 240
+    # 不写 models：名单由上游现读，读不到就是零条。
+
   kiro_cli:
     enabled: true
     # 10-31：嘴换成它自己的流式 API（`transport: api`，见 providers/apps/kiro/http.py）。

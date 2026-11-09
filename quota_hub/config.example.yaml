@@ -259,17 +259,14 @@ providers:
     # Quota: ~/.claude/.credentials.json -> api.anthropic.com/api/oauth/usage
     accounts: [{ id: claude-default }]
 
-  opencode_cli:
+  # OpenCode Free (11-09): the client's **own** local http service (`opencode service`),
+  # not a CLI spawn and not ACP. The free pool is closed on bare http (the vendor says
+  # "Free-tier chat models require OpenCode"), so the client's own service is the only
+  # lane that answers. The model list is the upstream's own (`/api/model`, priced at
+  # zero); no list is written here on purpose.
+  opencode_free:
     enabled: true
-    binary: opencode
-    args_template: ["run", "{model_flag}", "{prompt}"]
-    model_flag: "--model"
-    timeout: 300
-    models: [opencode/default]       # add provider/model ids you use
-    model_map: { opencode/default: "" }
-    # Quota: ~/.local/share/opencode/auth.json opencode-go key ->
-    #        opencode.ai/zen/go/v1/usage (Go plan only)
-    accounts: [{ id: opencode-default }]
+    timeout: 240
 
   kiro_cli:
     enabled: true

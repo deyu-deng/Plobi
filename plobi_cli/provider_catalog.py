@@ -30,7 +30,11 @@ this catalog; the old hand lists are demoted to presentation/override overlays
 longer decide which providers exist.
 
 Parity contract (locked by tests): the union of the two tabs equals the
-``CANONICAL_PROVIDERS`` universe, i.e. exactly what ``plobi model`` shows.
+``CANONICAL_PROVIDERS`` universe **minus the ACP legs**, i.e. exactly what
+``plobi model`` shows — that picker already skips ``auth_type="external_process"``
+(裁定 205: an ACP leg's tools run closed upstream, so it is not a provider; it is an
+offload channel and lives in ``agent/external_offload.py``). 桌面这一面照同一条办：
+ACP 腿不进 provider 目录，因此不出现在 Accounts 那一栏。
 """
 
 from __future__ import annotations
@@ -65,7 +69,7 @@ class ProviderDescriptor:
     api_key_env_vars: tuple[str, ...]  # credential env vars (may be empty)
     base_url_env_var: str          # base-URL override env var (may be "")
     signup_url: str                # signup / console URL (may be "")
-    order: int                     # CANONICAL_PROVIDERS index — mirrors `plobi model`
+    order: int                     # position among the providers this catalog exposes
 
 
 def tab_for_auth_type(auth_type: str) -> str:
@@ -120,7 +124,7 @@ def provider_catalog() -> list[ProviderDescriptor]:
         PLOBI_OVERLAYS = {}
 
     out: list[ProviderDescriptor] = []
-    for order, entry in enumerate(CANONICAL_PROVIDERS):
+    for entry in CANONICAL_PROVIDERS:
         slug = entry.slug
         cfg = PROVIDER_REGISTRY.get(slug)
         prof = profiles.get(slug)
@@ -160,6 +164,17 @@ def provider_catalog() -> list[ProviderDescriptor]:
             info = OPTIONAL_ENV_VARS.get(api_key_vars[0]) or {}
             signup_url = info.get("url") or ""
 
+        # 裁定 205（用户 2026-10-28 亲口：「那就不属于 provider 了。放到外包那一栏去了」）：
+        # ACP 腿（`auth_type == "external_process"`）的工具在**上游闭环**执行，回到
+        # Plobi 的是一条成稿而不是 `tool_calls`（裁定 204 那张实测表）⇒ 它们不是
+        # 能被当成模型选的 provider。模型清单那一面早就照这条跳过了
+        # （`model_switch.list_authenticated_providers`），桌面这一面（Accounts 那一栏）
+        # 以前没有 ⇒ 11-09 起也不再发：那个「OpenCode Free」就是 ACP 实现
+        # （`opencode-acp`，base_url `acp://opencode`）。它们归外包
+        # （`agent/external_offload.py::EXTERNAL_AGENTS`）。
+        if auth_type == "external_process":
+            continue
+
         out.append(
             ProviderDescriptor(
                 slug=slug,
@@ -170,7 +185,7 @@ def provider_catalog() -> list[ProviderDescriptor]:
                 api_key_env_vars=api_key_vars,
                 base_url_env_var=base_url_var,
                 signup_url=signup_url,
-                order=order,
+                order=len(out),
             )
         )
     return out
