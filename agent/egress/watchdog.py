@@ -148,6 +148,37 @@ def _quit_marker_is_about_us(system_proxy: Any, home: str | Path | None) -> bool
     return at is not None and at >= _PROCESS_STARTED_AT - 1.0
 
 
+def _stop_a_switched_off_engine(engine: Any, table: Any, home: str | Path | None) -> None:
+    """Stop our own leftover engine when the table says the engine is switched off.
+
+    ``tick`` is also called with narrow stand-in tables in tests, so the shape is
+    checked rather than assumed; a table that cannot describe an engine has no
+    process to stop.  Never raises: a watchdog that dies of a bookkeeping error is
+    worse than one that misses a tick.
+    """
+    if getattr(table, "engine_enabled", False):
+        return
+    if not hasattr(table, "engine_mixed_port"):
+        return
+    try:
+        engine.stop_ours(table, home=home)
+    except Exception:  # noqa: BLE001 - cleanup is best-effort, the loop must survive
+        log.warning("watchdog: 停不掉那个已被关掉的引擎", exc_info=True)
+
+
+def _hand_the_registry_back(system_proxy: Any, table: Any, home: str | Path | None) -> None:
+    """停掉引擎之后，注册表不能继续指着它。
+
+    停在「停了进程」这一步就是 10-29 那个现场的另一半：进程没了，注册表还在，全机照旧
+    对着一个空端口说话。只交还**我们的**那一份，别人的设置一概不碰。Never raises。
+    """
+    try:
+        if system_proxy.status(table, home=home).get("ours"):
+            system_proxy.disable(home=home)
+    except Exception:  # noqa: BLE001 - a watchdog that dies of a registry error is worse
+        log.warning("watchdog: 交还系统代理失败", exc_info=True)
+
+
 def tick(table: Any = None, *, home: str | Path | None = None) -> str:
     """One decision. Returns one of ``idle``/``healthy``/``restarted``/``gave-up``.
 
@@ -167,12 +198,22 @@ def tick(table: Any = None, *, home: str | Path | None = None) -> str:
 
     if not getattr(table, "system_proxy_enabled", False):
         # Nothing on this machine points at the engine ⇒ nothing to keep alive.
+        # 「不用引擎」和「不接管系统代理」是两个开关：engine 被关掉而系统代理也关着的
+        # 机器上，少这一句就没有任何一条路径去停残留进程。
+        _stop_a_switched_off_engine(engine, table, home)
+        _hand_the_registry_back(system_proxy, table, home)
         return "idle"
     state = engine.status(table, home=home).state
     if state == engine.FOREIGN:
         # Somebody else's proxy owns the port; a watchdog must not fight it.
         return "gave-up"
     if state == engine.OFF:
+        # The table says off — but a live engine of ours does not read the table, and
+        # `status` stops looking at it the moment the switch flips.  A hand-edited
+        # config.yaml (or a save that landed before this cleanup existed) can leave our
+        # process holding the port with nothing supervising it.  Clean it, then idle.
+        _stop_a_switched_off_engine(engine, table, home)
+        _hand_the_registry_back(system_proxy, table, home)
         return "idle"
     verdict = "healthy"
     if state != engine.OURS:

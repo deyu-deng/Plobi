@@ -615,3 +615,45 @@ def test_a_refused_tun_reload_leaves_the_running_engine_alone(
     assert inert["up"] == {_PORT}, "被拒的那一拨不许让机器少一个出口"
     assert rep.state == engine.FAILED and "TUN 被守卫拒了" in rep.detail, rep
     assert any("before the stop" in n for n in rep.notes), rep.notes
+
+
+
+def _engine_of_ours(monkeypatch, tmp_path, fake_binary):
+    """A running engine of ours, plus the record that points at it."""
+    home = tmp_path / "home"
+    _record(home, binary=fake_binary)
+    fake = FakePsutil({4242: {"name": "mihomo.exe", "created": 1000.0}}, up={_PORT}, port=_PORT)
+    monkeypatch.setattr(engine, "_psutil", lambda: fake)
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: port in fake.up)
+    monkeypatch.setattr(
+        engine,
+        "probe_engine",
+        lambda port, **kw: (True, "204 via x") if port in fake.up else (False, "no listener"),
+    )
+    return home, fake
+
+
+def test_switching_the_engine_off_stops_the_process_we_started(monkeypatch, tmp_path, pool, fake_binary):
+    """The switch is a promise about a process, not only about a table.
+
+    11-08 现场：设置里关掉出口，界面写 off，mihomo 还在跑、还占着 mixed_port、系统代理
+    还指着它。`status` 在表说 off 的那一刻就不再往下看，于是下面每一层都以为干净了。
+    """
+    home, fake = _engine_of_ours(monkeypatch, tmp_path, fake_binary)
+
+    rep = ensure(_table(include=[str(pool)], binary=fake_binary, enabled=False), home=home, wait_s=0)
+
+    assert rep.state == OFF, rep
+    assert fake.terminated == [4242], "关掉开关必须落到进程上"
+    assert not (home / "egress" / engine.STATE_BASENAME).exists()
+
+
+def test_a_reload_that_switches_the_engine_off_says_what_it_stopped(monkeypatch, tmp_path, pool, fake_binary):
+    """保存即重载 —— 保存的是「关」，就要说清楚停掉了谁，而不是只说一句 off。"""
+    home, fake = _engine_of_ours(monkeypatch, tmp_path, fake_binary)
+
+    rep = engine.reload_engine(_table(include=[str(pool)], binary=fake_binary, enabled=False), home=home)
+
+    assert rep.state == OFF, rep
+    assert fake.terminated == [4242]
+    assert "已停掉" in rep.detail, rep.detail

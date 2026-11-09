@@ -21,7 +21,7 @@ def fakes(monkeypatch):
     """engine.status / engine.ensure replaced by recorders."""
     import types
 
-    state = {"state": engine.OURS, "ensured": 0, "ours": True, "taken": 0}
+    state = {"state": engine.OURS, "ensured": 0, "ours": True, "taken": 0, "handed_back": 0}
 
     monkeypatch.setattr(engine, "status", lambda table, **kw: engine.EngineReport(state["state"], "fake"))
     from agent.egress import system_proxy
@@ -33,6 +33,10 @@ def fakes(monkeypatch):
     monkeypatch.setattr(
         system_proxy, "enable",
         lambda table, **kw: (state.__setitem__("taken", state["taken"] + 1), types.SimpleNamespace(ok=True))[1],
+    )
+    monkeypatch.setattr(
+        system_proxy, "disable",
+        lambda **kw: (state.__setitem__("handed_back", state["handed_back"] + 1), (True, "交还 fake"))[1],
     )
     monkeypatch.setattr(engine, "ensure", lambda table, **kw: (state.__setitem__("ensured", state["ensured"] + 1),
                                                               engine.EngineReport(engine.OURS, "fake"))[1])
@@ -212,3 +216,61 @@ def test_a_failing_supervisor_never_breaks_the_engine_path(monkeypatch):
 
     monkeypatch.setattr(watchdog, "ensure_running", boom)
     engine._arm_supervisor(_WideTable(proxy=True))
+
+
+
+class _EngineTable:
+    """A table that can describe an engine: here `engine_enabled` is the switch that matters."""
+
+    def __init__(self, *, engine_on: bool, takeover: bool) -> None:
+        self.system_proxy_enabled = takeover
+        self.engine_enabled = engine_on
+        self.engine_mixed_port = 7896
+
+
+def test_a_switched_off_engine_is_stopped_even_when_nothing_depends_on_it(fakes, monkeypatch):
+    """两个开关各管一段：系统代理关着，不代表那个已被关掉的引擎可以继续活着。"""
+    stopped = []
+    monkeypatch.setattr(engine, "stop_ours", lambda table, **kw: stopped.append(table))
+
+    assert watchdog.tick(_EngineTable(engine_on=False, takeover=False)) == "idle"
+    assert len(stopped) == 1, "没有任何路径会再来管它，所以就在这里停"
+
+
+def test_an_off_state_cleans_up_a_leftover_before_idling(fakes, monkeypatch):
+    """状态 OFF 只说明「表里关了」；盘上还活着的那个进程得有人收尾。"""
+    stopped = []
+    monkeypatch.setattr(engine, "stop_ours", lambda table, **kw: stopped.append(table))
+    fakes["state"] = engine.OFF
+
+    assert watchdog.tick(_EngineTable(engine_on=False, takeover=True)) == "idle"
+    assert len(stopped) == 1
+
+
+def test_a_running_engine_is_never_stopped_by_the_cleanup(fakes, monkeypatch):
+    """收尾不许误伤：引擎开着、状态健康，清理路径一次都不许碰它。"""
+    stopped = []
+    monkeypatch.setattr(engine, "stop_ours", lambda table, **kw: stopped.append(table))
+
+    assert watchdog.tick(_EngineTable(engine_on=True, takeover=True)) == "healthy"
+    assert stopped == []
+
+
+
+def test_stopping_a_switched_off_engine_also_hands_the_registry_back(fakes, monkeypatch):
+    """停进程只做了一半：注册表还指着那个空端口，全机照旧不联网（10-29 现场）。"""
+    monkeypatch.setattr(engine, "stop_ours", lambda table, **kw: engine.EngineReport(engine.STOPPED, "stopped"))
+    fakes["state"] = engine.OFF
+
+    assert watchdog.tick(_EngineTable(engine_on=False, takeover=True)) == "idle"
+    assert fakes["handed_back"] == 1, "引擎停了，注册表也得跟着交还"
+
+
+def test_a_registry_that_is_not_ours_is_left_alone(fakes, monkeypatch):
+    """交还只针对我们写进去的那一份，别人的设置一概不碰。"""
+    monkeypatch.setattr(engine, "stop_ours", lambda table, **kw: engine.EngineReport(engine.STOPPED, "stopped"))
+    fakes["state"] = engine.OFF
+    fakes["ours"] = False
+
+    assert watchdog.tick(_EngineTable(engine_on=False, takeover=True)) == "idle"
+    assert fakes["handed_back"] == 0

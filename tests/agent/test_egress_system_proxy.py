@@ -185,6 +185,35 @@ def test_ensure_hands_the_machine_back_when_the_table_switch_goes_off(machine, t
     assert machine["ProxyServer"] == "http://parent.test:8080"
 
 
+def test_a_switched_off_engine_never_gets_the_machine_pointed_at_it(machine, tmp_path):
+    """接管是引擎的下游：引擎关掉之后，注册表里只剩一个没人监听的端口。
+
+    11-08：只关了引擎、接管那一格还开着（或手改 config.yaml 只改一处），`ensure` 照样
+    `enable`，全机对着空端口说话 —— 浏览器读作断网，比不接管更糟。
+    """
+    taken = _table(system_proxy={"enabled": True})
+    assert system_proxy.ensure(taken, home=tmp_path).ok
+    assert system_proxy.status(taken, home=tmp_path)["ours"] is True
+
+    engine_off = _table(system_proxy={"enabled": True}, engine={"enabled": False, "mixed_port": 7895})
+    plan = system_proxy.ensure(engine_off, home=tmp_path)
+
+    assert plan.ok and "交还" in plan.reason, plan.reason
+    assert system_proxy.status(engine_off, home=tmp_path)["ours"] is False, "没有引擎可指，就别接管"
+    assert machine["ProxyServer"] == "http://parent.test:8080", "原主的设置要原样回去"
+
+
+def test_a_switched_off_engine_leaves_a_foreign_registry_alone(machine, tmp_path):
+    """没引擎、注册表也不是我们的：这里一件东西都不该动。"""
+    engine_off = _table(system_proxy={"enabled": True}, engine={"enabled": False, "mixed_port": 7895})
+
+    plan = system_proxy.ensure(engine_off, home=tmp_path)
+
+    assert plan.ok and "不做接管" in plan.reason, plan.reason
+    assert machine["ProxyServer"] == "http://parent.test:8080"
+    assert system_proxy.status(engine_off, home=tmp_path)["ours"] is False
+
+
 def test_ensure_says_nothing_when_the_table_has_no_opinion(machine, tmp_path):
     assert system_proxy.ensure(_table(), home=tmp_path) is None
 

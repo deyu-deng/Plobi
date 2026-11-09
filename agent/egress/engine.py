@@ -365,7 +365,14 @@ def snapshot(table: Table, *, home: str | Path | None = None) -> _Snapshot:
     notes: list[str] = []
     port = table.engine_mixed_port
     if not table.engine_enabled:
-        return _Snapshot(False, table.engine_binary, port, None, None, "", None,
+        # The record is kept **even with the switch off**: `enabled` is a table field, and
+        # a process that is already running never reads the table.  Without the record,
+        # `stop_ours` cannot tell "there is nothing to stop" from "there is, but you threw
+        # away the only handle on it" — which is exactly how a switched-off engine stayed
+        # alive on this box (11-08: settings said off, mihomo kept the port and kept
+        # carrying traffic, system proxy still pointed at it).  Nothing else reads it:
+        # `status` still short-circuits to OFF above this line.
+        return _Snapshot(False, table.engine_binary, port, None, None, "", _read_record(home),
                          ("network.egress.engine.enabled is false",))
     binary = table.engine_binary
     if not binary:
@@ -454,7 +461,7 @@ def _render(snap: _Snapshot, table: Table) -> tuple[bytes, tuple[str, ...]]:
 def status(table: Table, *, home: str | Path | None = None) -> EngineReport:
     snap = snapshot(table, home=home)
     if not snap.enabled:
-        return EngineReport(OFF, "engine projection is switched off in config", snap.port,
+        return EngineReport(OFF, "配置里把引擎这一路关了", snap.port,
                             notes=snap.notes)
     listening_now = listening(snap.port)
     ours = bool(snap.record) and not snap.record.get("unreadable") and _pid_is_ours(snap.record)[0]
@@ -591,6 +598,13 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
     snap = snapshot(table, home=home)
     current = status(table, home=home)
     if not snap.enabled:
+        # 「关掉」不光是不再启动：手上还活着的那个引擎也要停。`status` above reports OFF the
+        # moment the table says so, which means a running process would otherwise become
+        # invisible to every supervision path while still holding the port (11-08).
+        stopped = stop_ours(table, home=home)
+        if stopped.state != STOPPED:
+            return replace(current, notes=(*snap.notes,
+                                           f"表里已关掉，但停不掉我们自己起的引擎：{stopped.detail}"))
         return current
     if current.state == OURS:
         recorded = snap.record or {}
@@ -713,7 +727,20 @@ def reload_engine(table: Table, *, home: str | Path | None = None) -> EngineRepo
     """
     snap = snapshot(table, home=home)
     if not snap.enabled:
-        return EngineReport(OFF, "engine projection is switched off in config", snap.port,
+        # 关掉开关也是一次「保存」，它必须落到进程上：表是唯一事实来源（裁定 94），
+        # 但一个已经起来的引擎不读表 —— 不停它，界面写 off、进程还在跑、系统代理还指着它
+        # （11-08 现场）。这一段与 `ensure` 的同名分支是同一件事的两个入口。
+        stopped = stop_ours(table, home=home)
+        if stopped.state != STOPPED:
+            return EngineReport(OFF, f"表里已关掉，但停不掉我们自己起的引擎：{stopped.detail}",
+                                snap.port, notes=snap.notes)
+        # `pid` 只在真的杀掉一个进程时才被填上（stop_ours 其余分支都是「没什么可停」），
+        # 比在一句 detail 里找子串可靠。原先是没加 f 的普通串，`{stopped.detail}`
+        # 会原样上屏 —— 用户看到的是花括号，不是原因。
+        if stopped.pid:
+            return EngineReport(OFF, f"配置里把引擎关了；已停掉 Plobi 起的那个（{stopped.detail}）",
+                                snap.port, notes=snap.notes)
+        return EngineReport(OFF, "配置里把引擎关了，盘上没有我们的进程要停", snap.port,
                             notes=snap.notes)
     current = status(table, home=home)
     if current.state == FOREIGN:

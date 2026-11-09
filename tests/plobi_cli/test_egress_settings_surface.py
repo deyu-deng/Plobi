@@ -212,11 +212,20 @@ class _Report:
 
 
 def _patch_table(monkeypatch, table=None):
-    """Keep the test off the real config: this slice is about the hand-off, not the read."""
+    """Keep the test off the real config: this slice is about the hand-off, not the read.
+
+    The registry is a second real surface behind the same call — ``_reload`` now asks
+    ``system_proxy`` to follow the engine's port — so both of its outbound functions are
+    stubbed here.  A unit test must never write ``ProxyServer`` on the machine it runs on.
+    """
     from agent.egress.rules import parse_table
 
     resolved = table if table is not None else parse_table(_VALID["egress"])
     monkeypatch.setattr("agent.egress.rules.load_table", lambda **kw: resolved)
+    monkeypatch.setattr(
+        "agent.egress.system_proxy.status", lambda *a, **k: {"ours": False, "declared": False}
+    )
+    monkeypatch.setattr("agent.egress.system_proxy.ensure", lambda *a, **k: None)
     return resolved
 
 
@@ -476,3 +485,48 @@ def test_a_switch_action_cannot_wipe_the_table_by_accident(tmp_path, monkeypatch
     # 表里只剩这一位成员；开关本身不该动成员，所以这条必须成功且成员还在
     assert set_system_proxy(True)[0] is True
     assert len(egress.load_table(force_reload=True).nodes) == 1
+
+
+
+class _Plan:
+    ok = True
+    reason = "already at 127.0.0.1:7895"
+
+
+def test_the_registry_follows_the_engine_to_its_new_port(monkeypatch):
+    """注册表里只有一个端口号：改了 mixed_port 不把它带过去，全机都对着死端口说话。"""
+    from plobi_cli import web_server
+
+    seen = []
+    _patch_table(monkeypatch)
+    monkeypatch.setattr("agent.egress.engine.reload_engine", lambda table, **kw: _Report.ours())
+    monkeypatch.setattr(
+        "agent.egress.system_proxy.status", lambda *a, **k: {"ours": True, "declared": True}
+    )
+    monkeypatch.setattr(
+        "agent.egress.system_proxy.ensure", lambda table, **kw: seen.append(table) or _Plan()
+    )
+
+    out = web_server._reload_egress_engine()
+
+    assert len(seen) == 1, "系统代理已经在用，就必须跟到新端口"
+    assert "系统代理" in out["detail"], out
+
+
+def test_a_save_does_not_take_over_a_machine_that_never_asked(monkeypatch):
+    """保存出口不是接管整机代理的许可证：那一格关着、注册表也不是我们，就不许动它。"""
+    from plobi_cli import web_server
+
+    calls = []
+    block = yaml.safe_load(yaml.safe_dump(_VALID["egress"]))
+    block["system_proxy"] = {"enabled": False}
+    _patch_table(monkeypatch, parse_table(block))
+    monkeypatch.setattr("agent.egress.engine.reload_engine", lambda table, **kw: _Report.ours())
+    monkeypatch.setattr(
+        "agent.egress.system_proxy.ensure", lambda *a, **k: calls.append(1) or _Plan()
+    )
+
+    out = web_server._reload_egress_engine()
+
+    assert out["state"] == "running-ours", out
+    assert calls == [], "没在用系统代理的机器，保存一次出口不该被接管"

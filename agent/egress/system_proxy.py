@@ -556,6 +556,15 @@ def ensure(table: Optional[Table] = None, *, home: str | Path | None = None) -> 
             ok, detail = disable(home=home)
             return ProxyPlan(ok, "表里已关掉，系统代理交还原主" if ok else f"想交还但没成：{detail}")
         return None
+    if not getattr(table, "engine_enabled", True):
+        # 接管整机是引擎的**下游**：engine 关掉之后，注册表里只剩下一个不会有人监听的端口。
+        # 11-08：只关了引擎、接管那一格忘了关（或手改 config.yaml 只改了一处），下面照样
+        # `enable`，把全机指过去 —— 浏览器一片 ERR_PROXY_CONNECTION_FAILED，比不接管更像断网。
+        # 表里两格自相矛盾时按「先交还」办：没有引擎可指，接管就没有内容。
+        if supported() and status(table, home=home)["ours"]:
+            ok, detail = disable(home=home)
+            return ProxyPlan(ok, "引擎已关掉，系统代理交还原主" if ok else f"想交还但没成：{detail}")
+        return ProxyPlan(True, "引擎已关掉，不做接管")
     # **Boot order matters.**  ``plan()`` refuses a takeover whose exit cannot carry
     # traffic, and a fresh boot has no engine listening yet — measured 10-31: after a
     # reboot nothing started the engine, the takeover was refused for that reason, and
