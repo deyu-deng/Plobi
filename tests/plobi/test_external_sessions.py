@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -86,6 +87,53 @@ def marvis_session(root: Path, session_id: str, *, title: str, prompt: str, repl
         (session_id, "user", prompt, "1", updated),
         (session_id, "assistant", reply, "2", updated),
     ])
+    con.commit()
+    con.close()
+
+
+def marvis_real_shape(root: Path, session_id: str, *, title: str, updated: str,
+                      messages: list[tuple[str, str]]) -> None:
+    """按**真机**的形状建一个 Marvis 库（11-08 现读）：
+
+    - ``message_seq`` 是 INTEGER（真库是整数，假库当年写成 text，排序会按字典序）；
+    - ``conversations`` 还带 ``metadata``（真库有，假库没有）；
+    - 时间戳是带时区偏移的 ISO 串（``2026-11-06T01:12:29.727545300+00:00``）。
+    """
+    db = root / "database" / "data.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(db)
+    con.executescript(
+        "create table conversations (conversation_id text, user_id text, title text, status text,"
+        " metadata text, created_at text, updated_at text);"
+        "create table messages (message_id text, conversation_id text, response_id text, role text,"
+        " content text, tool_calls text, tool_call_id text, tool_name text, message_seq integer,"
+        " event_seq_anchor integer, metadata text, created_at text);"
+    )
+    con.execute("insert into conversations values (?,?,?,?,?,?,?)",
+                (session_id, "", title, "completed", "{}", updated, updated))
+    for index, (role, content) in enumerate(messages, start=1):
+        con.execute("insert into messages values (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"msg_{index}", session_id, "", role, content, None, None, None,
+                     index, None, "{}", updated))
+    con.commit()
+    con.close()
+
+
+def cursor_only_drafts(root: Path) -> None:
+    """Cursor 的库在，但里面**只有草稿与已归档**（11-08 这台机器上的真形状）。"""
+    base = root / "User"
+    (base / "globalStorage").mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(base / "globalStorage" / "state.vscdb")
+    con.executescript(
+        "create table composerHeaders (composerId text, workspaceId text, createdAt integer,"
+        " lastUpdatedAt integer, isArchived integer);"
+        "create table cursorDiskKV (key text primary key, value text);"
+    )
+    con.execute("insert into composerHeaders values (?,?,?,?,0)", ("empty-state-draft", "ws-empty", 1, 1))
+    con.execute("insert into composerHeaders values (?,?,?,?,1)", ("899631c0-fbf9", "ws-empty", 2, 2))
+    con.execute("insert into cursorDiskKV values (?,?)",
+                ("composerData:899631c0-fbf9",
+                 json.dumps({"conversationMap": {}, "fullConversationHeadersOnly": []})))
     con.commit()
     con.close()
 
@@ -411,3 +459,100 @@ def test_an_unknown_agent_gets_a_reason_not_an_empty_shell(homes):
     payload = es.sessions_for_agent("Nobody")
 
     assert payload["reason"] and payload["sessions"] == []
+
+
+# ── Marvis / Cursor：照实那一面（WP-OFFLOAD-SESSION-MARVIS，11-08 现读）──────
+
+def test_marvis_shows_the_first_sentence_and_keeps_the_project_name_apart(homes):
+    marvis_real_shape(
+        homes.marvis, "conv_87a0e49f40ae4", title="Quota",
+        updated="2026-11-06T01:12:29.727545300+00:00",
+        messages=[
+            ("user", "你看 Project 里面有一个 Plobi 项目。\n第二行不进标题"),
+            ("assistant", "好"),
+        ])
+
+    row = {item["id"]: item for item in es.all_sessions()}["conv_87a0e49f40ae4"]
+
+    assert row["title"] == "你看 Project 里面有一个 Plobi 项目。"
+    # Marvis 自己的会话名（多半是项目名）不丢，另放一格
+    assert row["source_title"] == "Quota"
+    # Marvis 不记这条会话在哪个目录 ⇒ 留空，**不猜**
+    assert row["project"] == ""
+
+
+def test_marvis_time_is_local_so_the_list_sorts_right(homes):
+    stamp = "2026-11-06T01:12:29.727545300+00:00"
+    marvis_real_shape(homes.marvis, "conv_1", title="Quota", updated=stamp,
+                      messages=[("user", "在吗")])
+
+    row = {item["id"]: item for item in es.all_sessions()}["conv_1"]
+    expected = datetime.fromisoformat(stamp).astimezone().strftime("%Y-%m-%dT%H:%M:%S")
+
+    assert row["updated_at"] == expected
+    assert "+00:00" not in row["updated_at"]
+
+
+def test_the_list_orders_two_vendors_by_real_time_not_by_string(homes):
+    """两家的时钟形状不一样时，排序不能靠字符串瞎比（带时区的那一截会把序比反）。"""
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README",
+                  reply="读完了", updated="2026-11-06T05:00:00Z")  # 本地 13:00
+    marvis_real_shape(homes.marvis, "conv_1", title="Quota",
+                      updated="2026-11-06T01:12:29+00:00",  # 本地 09:12
+                      messages=[("user", "在吗")])
+
+    order = [item["vendor"] for item in es.all_sessions()]
+
+    assert order.index("qoder") < order.index("marvis")
+
+
+def test_a_huge_message_is_cut_and_says_so(homes):
+    marvis_real_shape(homes.marvis, "conv_long", title="Quota",
+                      updated="2026-11-06T01:12:29+00:00",
+                      messages=[("user", "长" * 31582), ("assistant", "好")])
+
+    out = es.read_transcript("marvis", "conv_long")
+    text = out["data"]["messages"][0]["text"]
+
+    assert len(text) == es.MAX_TRANSCRIPT_CHARS + len(es.TRUNCATED_MARK)
+    assert text.endswith(es.TRUNCATED_MARK)
+
+
+def test_a_long_conversation_gives_back_only_the_last_chunk(homes):
+    marvis_real_shape(homes.marvis, "conv_many", title="Quota",
+                      updated="2026-11-06T01:12:29+00:00",
+                      messages=[("user", f"第 {index} 句") for index in range(400)])
+
+    out = es.read_transcript("marvis", "conv_many")
+    messages = out["data"]["messages"]
+
+    assert len(messages) == es.MAX_MESSAGES
+    assert messages[-1]["text"] == "第 399 句"
+    assert messages[0]["text"] == "第 100 句"
+
+
+def test_cursor_says_it_left_nothing_behind(homes):
+    """Cursor：库在，但没有可读的对话 ⇒ 照实说「这台没留下」，不假装读得到。"""
+    cursor_only_drafts(homes.cursor)
+
+    rows = [item for item in es.all_sessions() if item["vendor"] == "cursor"]
+    sources = {item["vendor"]: item for item in es.session_sources()}
+
+    assert rows == []
+    assert sources["cursor"]["readable"] is False
+    assert "没留下" in sources["cursor"]["reason"]
+    assert sources["cursor"]["sessions"] == 0
+
+
+def test_reading_a_vendor_library_never_writes_to_it(homes):
+    marvis_real_shape(homes.marvis, "conv_1", title="Quota",
+                      updated="2026-11-06T01:12:29+00:00", messages=[("user", "在吗")])
+    cursor_only_drafts(homes.cursor)
+    marvis_db = homes.marvis / "database" / "data.db"
+    cursor_db = homes.cursor / "User" / "globalStorage" / "state.vscdb"
+    before = (marvis_db.read_bytes(), cursor_db.read_bytes())
+
+    es.all_sessions()
+    es.read_transcript("marvis", "conv_1")
+
+    assert (marvis_db.read_bytes(), cursor_db.read_bytes()) == before

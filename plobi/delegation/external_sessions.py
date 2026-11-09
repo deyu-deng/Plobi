@@ -6,12 +6,21 @@
 **只在 Plobi 这一侧做**：Qoder 桌面 App 的索引是另一套，实测不认 CLI 写的会话，
 所以不假装能驱动它的窗口。
 
-已核过的存放形状（10-27 现读）：
+已核过的存放形状（10-27 现读，11-08 再核一遍）：
 
 - ``qoder``      ``~/.qoder/projects/<项目键>/<会话号>.jsonl`` + ``<会话号>/state.json``
 - ``codebuddy``  ``~/.codebuddy/projects/<项目键>/<会话号>.jsonl``（记录顶层带 ``cwd``）
 - ``marvis``     ``~/.marvis/database/data.db`` 的 ``conversations`` / ``messages`` 两张表（只读）
-- ``cursor`` / ``agy``  还没找到可读的会话文件——**照实报**，不画空壳
+- ``cursor``     ``state.vscdb`` 里的 ``composerData:<id>``（只读）——**这台机器上没留下可读的对话**
+  （库在，6 条 composer 全是草稿或已归档；说「这台没留下」，不说「它没有对话」）
+- ``agy``        ``~/.gemini/antigravity-cli/brain/<会话号>/…/transcript.jsonl``（只读）
+
+两处**照实**（不许猜）：
+
+- **Marvis 不记这条会话在哪个目录**：库里（``conversations.metadata``／``messages.metadata``／
+  工具调用参数）三处都没有工作目录这一格，AppData 下那圈目录里也只有产物 ⇒ ``project`` 留空，
+  归属留给 L2 按标题判（``related=None``＝待判断），**不从产物名反推**（那是猜）。
+- **Cursor 在这台机器上没留下可读的对话** ⇒ 来源那一格照实写「没留下」，不假装读得到。
 
 三条判据：
 
@@ -30,6 +39,7 @@ import re
 import sqlite3
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
@@ -66,6 +76,11 @@ SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 MAX_MESSAGE_CHARS = 8000
 MAX_MESSAGES = 300
+
+#: 读回来的正文里，**单条**的上限（Marvis 有几万字的一条，整段塞进列表页会卡）。
+MAX_TRANSCRIPT_CHARS = 8000
+#: 截断时留的那句人话（只说「截了」，不解释机制）。
+TRUNCATED_MARK = "……（后面截断了）"
 
 
 # ── 各家的根目录 ──────────────────────────────────────────────────────────
@@ -219,6 +234,34 @@ def _mtime_iso(path: Path) -> str:
         return ""
 
 
+def _local_stamp(value: Any) -> str:
+    """各家的时间戳形状不一样（ISO 带时区／ISO 带 ``Z``／空格分隔），统一收成**本地时间串**。
+
+    **为什么非转不可**：排序是拿字符串比的（屏上也是按字符串排的），带时区偏移的 ISO 串
+    与本地串混在一起比，时区那一截会把序比错——Marvis 的 ``+00:00`` 串就是这样排反的。
+    读不出来就原样返回（宁可原样，不编一个时间）。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return text
+    if moment.tzinfo is not None:
+        moment = moment.astimezone()
+
+    return moment.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _clamp_text(text: str, limit: int = MAX_TRANSCRIPT_CHARS) -> str:
+    """超长的一条截掉（几万字的一条会卡住列表页）。"""
+    if len(text) <= limit:
+        return text
+
+    return text[:limit] + TRUNCATED_MARK
+
+
 def _entry(directory: Path, jsonl: Path, *, project: str, title: str, updated: str,
            sendable: bool) -> dict[str, Any]:
     return {
@@ -226,7 +269,7 @@ def _entry(directory: Path, jsonl: Path, *, project: str, title: str, updated: s
         "project": project,
         "sendable": sendable,
         "title": (title or jsonl.stem).splitlines()[0][:120],
-        "updated_at": updated or _mtime_iso(jsonl),
+        "updated_at": _local_stamp(updated) or _mtime_iso(jsonl),
         "vendor": "",
     }
 
@@ -333,6 +376,27 @@ def _codebuddy_sessions() -> list[dict[str, Any]]:
 
 # ── Marvis（SQLite，只读）──────────────────────────────────────────────────
 
+def _marvis_first_user_line(con: sqlite3.Connection, conversation_id: str) -> str:
+    """Marvis 的会话名多半是**项目名**（Plobi／SRTP／Quota），不是人说的第一句话。
+
+    屏上先看第一句话（跟别家同一形状），项目名另放一格（``source_title``），不丢信息。
+    读不到第一句就交回空串，让调用方退回会话名。
+    """
+    try:
+        row = con.execute(
+            "select content from messages where conversation_id = ? and role = 'user' "
+            "and content is not null order by message_seq limit 1",
+            (conversation_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return ""
+    text = str(row[0] if row else "").strip()
+    if not text:
+        return ""
+
+    return text.splitlines()[0][:120]
+
+
 def _marvis_sessions() -> list[dict[str, Any]]:
     db = marvis_db()
     if not db.is_file():
@@ -344,6 +408,7 @@ def _marvis_sessions() -> list[dict[str, Any]]:
             rows = con.execute(
                 "select conversation_id, title, updated_at from conversations order by updated_at desc"
             ).fetchall()
+            spoken = {row[0]: _marvis_first_user_line(con, row[0]) for row in rows}
         finally:
             con.close()
     except sqlite3.Error:
@@ -353,10 +418,15 @@ def _marvis_sessions() -> list[dict[str, Any]]:
             continue
         out.append({
             "id": conversation_id,
+            # Marvis **不记这条会话在哪个目录**（11-08 现读：库里的 metadata、工具调用参数、
+            # AppData 下那圈目录，三处都没有工作目录这一格）⇒ 留空，归属交给 L2 按标题判。
+            # **不从产物名反推**——那是猜，猜出来的目录会把「有关/无关」判反。
             "project": "",
             "sendable": False,
-            "title": str(title or conversation_id)[:120],
-            "updated_at": str(updated_at or ""),
+            "title": spoken.get(conversation_id, "") or str(title or conversation_id)[:120],
+            # Marvis 自己的会话名（多半是项目名）：屏上先看 title，这一格不丢信息。
+            "source_title": str(title or "").splitlines()[0][:120] if title else "",
+            "updated_at": _local_stamp(updated_at),
             "vendor": VENDOR_MARVIS,
         })
 
@@ -422,6 +492,12 @@ def _cursor_messages(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _cursor_sessions() -> list[dict[str, Any]]:
+    """Cursor 的对话在 ``composerData:<id>`` 里。
+
+    **这台机器上读不出**（11-08 现读）：``composerHeaders`` 6 条全是 ``empty-window`` 的草稿
+    或已归档，唯一那条真会话的 ``conversationMap`` 是空的 ⇒ 返回 0 条。
+    这是**照实**：库在，但没有留下可读的对话——不是「它没有对话」，也不是「读坏了」。
+    """
     db = cursor_db()
     if not db.is_file():
         return []
@@ -500,7 +576,7 @@ def _agy_sessions() -> list[dict[str, Any]]:
             "project": project,
             "sendable": False,
             "title": str(title or preview or session_id)[:120],
-            "updated_at": str(updated or ""),
+            "updated_at": _local_stamp(updated),
             "vendor": VENDOR_AGY,
         })
 
@@ -583,13 +659,21 @@ def session_sources() -> list[dict[str, Any]]:
     cursor = cursor_db()
     agy = agy_db()
 
+    # Cursor：库在 ≠ 读得到。**照实说「这台没留下」**——不假装读得到，
+    # 也不说成「它没有对话」（它装了、库在，只是里面没有可读的内容）。
+    cursor_readable = cursor.is_file()
+    cursor_reason = "" if cursor_readable else "没找到 Cursor 的 state.vscdb"
+    if cursor_readable and not counts.get(VENDOR_CURSOR, 0):
+        cursor_readable = False
+        cursor_reason = "Cursor 这台机器上没留下可读的对话"
+
     return [
         source(VENDOR_QODER, qoder_root(), readable=True, reason=""),
         source(VENDOR_CODEBUDDY, codebuddy_root(), readable=True, reason=""),
         source(VENDOR_MARVIS, marvis_db().parent, readable=True, reason=""),
         source(VENDOR_CURSOR, cursor.parent,
-               readable=cursor.is_file(),
-               reason="" if cursor.is_file() else "没找到 Cursor 的 state.vscdb"),
+               readable=cursor_readable,
+               reason=cursor_reason),
         source(VENDOR_AGY, agy.parent,
                readable=agy.is_file(),
                reason="" if agy.is_file() else "没找到 agy 的会话摘要库"),
@@ -1043,18 +1127,27 @@ def _marvis_transcript(session_id: str) -> list[dict[str, Any]]:
     try:
         con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
         try:
+            # 取**最后** MAX_MESSAGES 条就够（有一会话九千多条，整段读会卡住左栏）；
+            # 反向取走索引（conversation_id, message_seq），不整表排序。
             rows = con.execute(
                 "select role, content, created_at from messages where conversation_id = ? "
                 "and role in ('user','assistant') and content is not null "
-                "order by cast(message_seq as integer)",
-                (session_id,),
+                "order by message_seq desc limit ?",
+                (session_id, MAX_MESSAGES),
             ).fetchall()
         finally:
             con.close()
     except sqlite3.Error:
         return []
 
-    return [{"role": role, "text": str(content), "ts": str(created or "")} for role, content, created in rows if str(content).strip()]
+    messages: list[dict[str, Any]] = []
+    for role, content, created in reversed(rows):
+        text = str(content or "").strip()
+        if not text:
+            continue
+        messages.append({"role": role, "text": _clamp_text(text), "ts": _local_stamp(created)})
+
+    return messages
 
 
 def _cursor_transcript(session_id: str) -> list[dict[str, Any]]:
