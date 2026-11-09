@@ -14904,13 +14904,29 @@ def _reload_egress_engine() -> Dict[str, Any]:
     The report goes back to the caller rather than only into a log line (裁定 94).
     """
     from agent.egress import engine as _egress_engine
+    from agent.egress import system_proxy as _system_proxy
     from agent.egress.rules import load_table as _load_egress_table
 
     try:
-        report = _egress_engine.reload_engine(_load_egress_table())
+        table = _load_egress_table()
+        report = _egress_engine.reload_engine(table)
     except Exception as exc:  # noqa: BLE001 - the save landed; say what did not
         return {"state": "failed", "detail": f"{type(exc).__name__}: {exc}", "probe": ""}
-    return {"state": report.state, "detail": report.detail, "probe": report.probe}
+    detail = report.detail
+    # 注册表里只有一个端口号，引擎换了 mixed_port 而它没跟上，这台机器就等于断网：
+    # 每个程序都把流量交到一个没人听的端口。保存之后系统代理必须跟着表走。
+    # 只在「本来就在用系统代理」时碰注册表 —— 用户没开这一格，保存出口不该顺手接管整机代理。
+    try:
+        in_use = bool(getattr(table, "system_proxy_enabled", False)) or bool(
+            _system_proxy.status(table).get("ours")
+        )
+        plan = _system_proxy.ensure(table) if in_use else None
+    except Exception as exc:  # noqa: BLE001 - 引擎那一步的结论仍然有效
+        detail = f"{detail}；系统代理没跟上（{type(exc).__name__}: {exc}）"
+    else:
+        if plan is not None:
+            detail = f"{detail}；系统代理：{plan.reason}"
+    return {"state": report.state, "detail": detail, "probe": report.probe}
 
 
 @app.put("/api/network/egress")
