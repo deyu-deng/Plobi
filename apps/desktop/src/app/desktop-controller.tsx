@@ -34,7 +34,6 @@ import {
   $dossierPanelVisible,
   $fileBrowserOpen,
   $panesFlipped,
-  $rightRailView,
   $shellCards,
   $shellSwapped,
   $sidebarOpen,
@@ -43,8 +42,6 @@ import {
   setShellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
-  PREVIEW_PANE_ID,
-  RIGHT_RAIL_VIEW_NOTES,
   setFileBrowserOpen,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
@@ -55,7 +52,7 @@ import { cardDragProps, useCardDrop } from './shell/card-drag'
 import { useSystemTools } from './shell/system-tools'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
-import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab, type PreviewTarget } from '../store/preview'
+import { type PreviewTarget } from '../store/preview'
 import { $dirtyPreviewUrls } from '../store/preview-edit'
 import { $scopeAgent, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/scope'
 import { $reviewOpen, closeReview, openReview } from '../store/review'
@@ -83,15 +80,11 @@ import {
 import { onSessionsChanged } from '../store/session-sync'
 import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store/updates'
 import { isSecondaryWindow } from '../store/windows'
+import { $workbenchFileOpenRequest } from '../store/workbench-tabs'
 
 import { fileUrl } from './agenda/detail'
 import { requestComposerFocus, requestComposerInsert } from './chat/composer/focus'
 import { useComposerActions } from './chat/hooks/use-composer-actions'
-import {
-  ChatPreviewRail,
-  PREVIEW_RAIL_MIN_WIDTH,
-  PREVIEW_RAIL_PANE_WIDTH
-} from './chat/right-rail'
 import { ChatSidebar } from './chat/sidebar'
 import { CommandPalette } from './command-palette'
 import { getAgentOverview } from './console/api'
@@ -144,7 +137,7 @@ import {
   shellLevelForPath
 } from './routes'
 import { BrowserTabPanel } from './workbench/browser-tab'
-import { LocalFilePreview } from './chat/right-rail/preview-file'
+import { LocalFilePreview } from './workbench/file-preview'
 import { fileKindForPath } from './workbench/file-kind'
 import { isModelPath } from './workbench/model-paths'
 import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
@@ -205,9 +198,14 @@ const SkillsView = lazy(async () => ({ default: (await import('./skills')).Skill
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
 const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryView }))
 
-// ── 档案卡的两种形态（用户 11-08 22:3x 给的 Qoder 实物截图）─────────────────
-// 「任务监控」在 Qoder 里默认是**浮在对话右上角的一张圆角卡片**（对话不被挤窄），
-// 抬头右上角那枚**图钉**把它钉成对话右侧的一列。两套尺寸只有这里一处。
+// ── 档案卡的两种形态 ────────────────────────────────────────────────────────
+// **默认并排**（对话右侧占一列）——Qoder 的实证（11-09 11:5x 从 asar 取）：它的
+// `taskMonitorMode` 偏好默认 `"fix"`（「固定在任务右侧」），会话内的监控面板本体是
+// 280px 的 **flex 兄弟列**（区域 `CHAT_SESSION_B1_2_REGION`），**不是 absolute 浮层**
+// ⇒ 对话从不被它遮挡。浮层是用户主动切出来的另一种形态（Qoder 的 `"floating"`）。
+//
+// 抬头右上角那枚**图钉**在两者之间切；默认形态由 `store/layout.ts` 的
+// `$dossierPanelPinned` 决定（默认 `true`＝并排）。
 //
 // 浮层压在**抬头下面**（`--card-header-height` 之下）：抬头右边那几枚——档案图标本身、
 // 全屏、收起——都住在那一行，压上去就点不到了（11-09 现场：档案卡一露脸就把自己的
@@ -289,16 +287,12 @@ export function DesktopController() {
   const freshDraftReady = useStore($freshDraftReady)
   const resumeFailedSessionId = useStore($resumeFailedSessionId)
   const resumeExhaustedSessionId = useStore($resumeExhaustedSessionId)
-  const filePreviewTarget = useStore($filePreviewTarget)
-  const previewTarget = useStore($previewTarget)
-  const rightRailView = useStore($rightRailView)
   const selectedStoredSessionId = useStore($selectedStoredSessionId)
   const messagingSessions = useStore($messagingSessions)
   const terminalTakeover = useStore($terminalTakeover)
   const reviewOpen = useStore($reviewOpen)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const dirtyPreviewUrls = useStore($dirtyPreviewUrls)
-  const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
   const panesFlipped = useStore($panesFlipped)
   const shellCards = useStore($shellCards)
@@ -397,13 +391,6 @@ export function DesktopController() {
     setAgentScope(activeAgentId || 'l1')
   }, [activeAgentId])
 
-  const previewRailContent =
-    Boolean(previewTarget) ||
-    (isL2 && Boolean(filePreviewTarget)) ||
-    // The notes face has no file behind it, so it has to keep the rail mounted by
-    // itself — but only on an agent route, where "this agent's notes" means something.
-    (isL2 && rightRailView === RIGHT_RAIL_VIEW_NOTES)
-
   // The L1 rail owns the agenda poll; every other route leaves the store cold
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level !== null)
@@ -470,14 +457,28 @@ export function DesktopController() {
   ]
   const isL1Workbench = level === 'l1'
 
+  // 预览轨没了（用户 11-09：「界面上只有两张卡片……不要那个预览轨了。删掉它的实现逻辑。」）：
+  // 文件与笔记现在作为**工作区卡片**的页签打开（`store/workbench-tabs.ts` 的请求通道 ＋
+  // 下面的 `openFileTab`），对话旁不再有第三块。剩下的信号只回答一个问题：
+  // 「工作区卡片此刻有没有一条文件页签开着」——⌘/Ctrl+W 靠它决定是关页签还是关整窗。
+  const activeWorkbenchTab = isL1Workbench ? l1Active : l2Active
+  const workbenchFileTabOpen = Boolean(activeWorkbenchTab?.startsWith('file:'))
+
   // 文件页签两条腿共用一张 `openFiles` 表，但各自的标签栏是分开的（L1 是
   // agendaWorkbench，L2 是 filesWorkbench）。所以「开一个文件」要按当前腿写进
   // 对应的 tab 列表，否则页签会落到另一条腿的栏里、或者干脆不显示。
   const openFileTab = useCallback(
-    (target: PreviewTarget) => {
+    (target: PreviewTarget, titleOverride?: string) => {
       const key = target.path ?? target.url ?? 'preview'
-      const title = key.split(/[\\/]/).filter(Boolean).pop() ?? key
+      const title = titleOverride ?? key.split(/[\\/]/).filter(Boolean).pop() ?? key
       const id = `file:${key}` as RightRailTabId
+
+      // 对话卡**单独展开**的时候，工作区卡片压根没渲染（`focusChat` 那条分支只留主区）
+      // ⇒ 页签开着也看不见，用户只会觉得「点了没反应」。所以先把这一档退掉：
+      // 两张卡并排回来，页签落在工作区卡片上，看得见。
+      if ($cardFocus.get() === 'chat') {
+        setCardFocus(null)
+      }
 
       setOpenFiles(files => ({ ...files, [id]: { def: { icon: 'file', id, title }, target } }))
 
@@ -494,6 +495,22 @@ export function DesktopController() {
       setFileBrowserOpen(true)
     },
     [isL1Workbench]
+  )
+
+  // 「在工作区卡片里开一个页签」的请求通道（WP-TWO-CARDS）：档案卡「相关笔记」那一格、
+  // 右栏那些独立组件够不着 `openFileTab`（它在组件内 state 里）⇒ 它们走这条通道，
+  // 由这里落成**工作区卡片的一个页签**（预览轨已删，Qoder 那边文件也是这么开的）。
+  useEffect(
+    () =>
+      $workbenchFileOpenRequest.subscribe(request => {
+        if (!request) {
+          return
+        }
+
+        openFileTab(request.target, request.title)
+        $workbenchFileOpenRequest.set(null)
+      }),
+    [openFileTab]
   )
 
   // 附件点了在当前右栏开一个页签看内容（用户 10-31）。L1 的标签栏现在也收文件
@@ -951,7 +968,6 @@ export function DesktopController() {
 
   const titlebarToolGroups = useGroupRegistry<TitlebarTool>()
   const statusbarItemGroups = useGroupRegistry<StatusbarItem>()
-  const setTitlebarToolGroup = titlebarToolGroups.set
   const setStatusbarItemGroup = statusbarItemGroups.set
 
   const {
@@ -973,20 +989,14 @@ export function DesktopController() {
 
   const { connectionRef, gatewayRef, requestGateway } = useGatewayRequest()
 
+  // ⌘/Ctrl+W 在「有文件页签开着」时关页签，否则交给主进程关整窗。
+  // 预览轨删掉之后这个开关的语义跟着换了：判据从「预览轨在不在」变成「工作区卡里有没有
+  // 文件页签」，主进程那边（`electron/main.ts` 的 `previewShortcutActive`）一个字没改。
   useEffect(() => {
     window.plobiDesktop?.setPreviewShortcutActive?.(
-      Boolean(secretaryShellOpen && previewRailContent)
+      Boolean(secretaryShellOpen && workbenchFileTabOpen)
     )
-  }, [previewRailContent, secretaryShellOpen])
-
-  // Leaving the secretary shell (Artifacts / Skills / redirect bounce): force
-  // the preview column shut so persisted file tabs cannot paint full-bleed
-  // over an empty PaneMain. Tabs stay in storage for the next L2 visit.
-  useEffect(() => {
-    if (!secretaryShellOpen) {
-      setPaneOpen(PREVIEW_PANE_ID, false)
-    }
-  }, [secretaryShellOpen])
+  }, [workbenchFileTabOpen, secretaryShellOpen])
 
   useEffect(() => {
     startUpdatePoller()
@@ -1087,7 +1097,23 @@ export function DesktopController() {
     return () => unsubscribe?.()
   }, [])
 
+  // ⌘/Ctrl+W 关的是**工作区卡片**当前那条页签（预览轨删掉之后，页签只剩这一处了）。
+  // 这个键盘监听是挂载时注册一次的，而「当前页签」和「关页签的动作」每渲染都变 ⇒
+  // 走 ref 取最新值，别让闭包抱着一份旧的。
+  const activeWorkbenchTabRef = useRef<null | RightRailTabId>(null)
+  activeWorkbenchTabRef.current = activeWorkbenchTab
+  const closeWorkbenchTabRef = useRef(handleWorkbenchTabClose)
+  closeWorkbenchTabRef.current = handleWorkbenchTabClose
+
   useEffect(() => {
+    const closeActiveWorkbenchTab = () => {
+      const tab = activeWorkbenchTabRef.current
+
+      if (tab) {
+        closeWorkbenchTabRef.current(tab)
+      }
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.altKey || event.shiftKey || event.key.toLowerCase() !== 'w' || (!event.metaKey && !event.ctrlKey)) {
         return
@@ -1106,15 +1132,15 @@ export function DesktopController() {
         return
       }
 
-      // Otherwise ⌘/Ctrl+W closes the active preview tab when one is open.
-      if ($filePreviewTarget.get() || $previewTarget.get()) {
+      // Otherwise ⌘/Ctrl+W closes the active workbench tab when one is open.
+      if (activeWorkbenchTabRef.current) {
         event.preventDefault()
         event.stopPropagation()
-        closeActiveRightRailTab()
+        closeActiveWorkbenchTab()
       }
     }
 
-    const unsubscribe = window.plobiDesktop?.onClosePreviewRequested?.(closeActiveRightRailTab)
+    const unsubscribe = window.plobiDesktop?.onClosePreviewRequested?.(closeActiveWorkbenchTab)
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
 
@@ -1232,7 +1258,9 @@ export function DesktopController() {
     updateSessionState
   })
 
-  const { handleDesktopGatewayEvent, restartPreviewServer } = usePreviewRouting({
+  // 预览轨删掉之后，这个 hook 只剩「路由」这一半职责（把 Agent 提到的文件送进工作区卡的
+  // 页签）；`restartPreviewServer` 是给轨里那颗「重启预览服务器」按钮用的，随轨一起没了。
+  const { handleDesktopGatewayEvent } = usePreviewRouting({
     activeSessionIdRef,
     baseHandleGatewayEvent: handleGatewayEvent,
     currentCwd,
@@ -1906,27 +1934,6 @@ export function DesktopController() {
   const sidebarSide = panesFlipped ? 'right' : 'left'
   const railSide = panesFlipped ? 'left' : 'right'
 
-  const previewPane = (
-    <Pane
-      disabled={!secretaryShellOpen || !previewRailContent}
-      id={PREVIEW_PANE_ID}
-      key="preview"
-      minWidth={PREVIEW_RAIL_MIN_WIDTH}
-      resizable
-      side={railSide}
-      width={PREVIEW_RAIL_PANE_WIDTH}
-    >
-      {secretaryShellOpen && previewRailContent ? (
-        <ChatPreviewRail
-          agentId={activeAgentId}
-          onAddSelectionToChat={composer.addTerminalSelectionAttachment}
-          onRestartServer={restartPreviewServer}
-          setTitlebarToolGroup={setTitlebarToolGroup}
-        />
-      ) : null}
-    </Pane>
-  )
-
   // 互换后这块栏内容进主区：不再有侧边描边、也不用再让顶栏（卡本身已经让过了）。
   const workbenchAsideClass = cn(
     'relative flex h-full w-full min-w-0 flex-col overflow-hidden text-(--ui-text-tertiary)',
@@ -2320,7 +2327,6 @@ export function DesktopController() {
         : [
             <PaneMain key="main">{chatCard}</PaneMain>,
             panesFlipped ? fileBrowserPane : null,
-            previewPane,
             agendaTimelinePane,
             panesFlipped ? null : fileBrowserPane
           ]
@@ -2352,7 +2358,6 @@ export function DesktopController() {
       mainOverlays={mainOverlays}
       onOpenSettings={openSettings}
       overlays={overlays}
-      previewPaneOpen={!swapped && secretaryShellOpen && previewRailContent}
       rightRail={swapped ? undefined : shellRightRail}
       statusbarItems={statusbarItems}
       titlebarTools={titlebarToolGroups.flat.right}

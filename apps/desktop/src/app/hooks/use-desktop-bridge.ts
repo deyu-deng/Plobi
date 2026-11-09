@@ -5,10 +5,7 @@ import type { NavigateFunction } from 'react-router-dom'
 import { isFocusWithin } from '@/lib/keybinds/combo'
 
 import { storedSessionIdForNotification } from '../../lib/session-ids'
-import { PREVIEW_PANE_ID } from '../../store/layout'
 import { respondToApprovalAction } from '../../store/native-notifications'
-import { setPaneOpen } from '../../store/panes'
-import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../../store/preview'
 import { getRememberedSessionId, setRememberedSessionId } from '../../store/session'
 import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../../store/updates'
 import { requestComposerFocus, requestComposerInsert } from '../chat/composer/focus'
@@ -17,7 +14,8 @@ import { NEW_CHAT_ROUTE, sessionRoute } from '../routes'
 
 export interface UseDesktopBridgeOptions {
   secretaryShellOpen: boolean
-  previewRailContent: unknown
+  /** 对话旁那一面上现在有没有可看的内容（旧的预览轨删了 ⇒ 这里指工作区卡片）。 */
+  previewSurfaceContent: unknown
   routedSessionId: string | null | undefined
   locationPathname: string
   navigate: NavigateFunction
@@ -28,7 +26,7 @@ export interface UseDesktopBridgeOptions {
 export function useDesktopBridge(options: UseDesktopBridgeOptions) {
   const {
     secretaryShellOpen,
-    previewRailContent,
+    previewSurfaceContent,
     routedSessionId,
     locationPathname,
     navigate,
@@ -38,18 +36,9 @@ export function useDesktopBridge(options: UseDesktopBridgeOptions) {
 
   useEffect(() => {
     window.plobiDesktop?.setPreviewShortcutActive?.(
-      Boolean(secretaryShellOpen && previewRailContent)
+      Boolean(secretaryShellOpen && previewSurfaceContent)
     )
-  }, [previewRailContent, secretaryShellOpen])
-
-  // Leaving the secretary shell (Artifacts / Skills / redirect bounce): force
-  // the preview column shut so persisted file tabs cannot paint full-bleed
-  // over an empty PaneMain. Tabs stay in storage for the next L2 visit.
-  useEffect(() => {
-    if (!secretaryShellOpen) {
-      setPaneOpen(PREVIEW_PANE_ID, false)
-    }
-  }, [secretaryShellOpen])
+  }, [previewSurfaceContent, secretaryShellOpen])
 
   useEffect(() => {
     startUpdatePoller()
@@ -165,24 +154,12 @@ export function useDesktopBridge(options: UseDesktopBridgeOptions) {
           event.stopPropagation()
           closeActiveTerminal()
         }
-
-        return
-      }
-
-      // Otherwise ⌘/Ctrl+W closes the active preview tab when one is open.
-      if ($filePreviewTarget.get() || $previewTarget.get()) {
-        event.preventDefault()
-        event.stopPropagation()
-        closeActiveRightRailTab()
       }
     }
-
-    const unsubscribe = window.plobiDesktop?.onClosePreviewRequested?.(closeActiveRightRailTab)
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
 
     return () => {
-      unsubscribe?.()
       window.removeEventListener('keydown', onKeyDown, { capture: true })
     }
   }, [])

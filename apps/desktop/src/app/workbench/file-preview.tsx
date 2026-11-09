@@ -14,6 +14,12 @@ import { requestComposerFocus, requestComposerInsertRefs } from '@/app/chat/comp
 import { droppedFileInlineRef } from '@/app/chat/composer/inline-refs'
 import { PLOBI_PATHS_MIME } from '@/app/chat/hooks/use-composer-actions'
 import { isAddSelectionShortcut } from '@/app/right-sidebar/terminal/selection'
+import { ArchivePreview } from '@/app/workbench/archive-preview'
+import { HtmlPreview } from '@/app/workbench/html-preview'
+import { MediaPreview } from '@/app/workbench/media-preview'
+import { isModelPath } from '@/app/workbench/model-paths'
+import { NotebookPreview } from '@/app/workbench/notebook-preview'
+import { ThreePreview } from '@/app/workbench/three-preview'
 import { useFileRevision } from '@/app/workbench/use-file-revision'
 import { RichCodeBlock } from '@/components/assistant-ui/embeds'
 import { CodeEditor } from '@/components/chat/code-editor'
@@ -31,6 +37,7 @@ import {
 import { Check, Pencil, X } from '@/lib/icons'
 import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { shikiLanguageForFilename } from '@/lib/markdown-code'
+import { mediaKind } from '@/lib/media'
 import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 import { setPreviewDirty } from '@/store/preview-edit'
@@ -39,13 +46,6 @@ import { notifyWorkspaceChanged } from '@/store/workspace-events'
 
 import { delimitedKind, parseDelimited } from './delimited'
 import { DelimitedGrid } from './delimited-grid'
-import { HtmlPreview } from '@/app/workbench/html-preview'
-import { ArchivePreview } from '@/app/workbench/archive-preview'
-import { MediaPreview } from '@/app/workbench/media-preview'
-import { isModelPath } from '@/app/workbench/model-paths'
-import { ThreePreview } from '@/app/workbench/three-preview'
-import { NotebookPreview } from '@/app/workbench/notebook-preview'
-import { mediaKind } from '@/lib/media'
 
 const SHIKI_THEME = { dark: 'github-dark-default', light: 'github-light-default' } as const
 const TEXT_PREVIEW_MAX_BYTES = 512 * 1024
@@ -592,7 +592,83 @@ function SourceView({ filePath, language, text }: { filePath: string; language: 
 
 type PreviewViewMode = 'diff' | 'grid' | 'rendered' | 'source'
 
+interface PreviewWebview extends HTMLElement {
+  getURL?: () => string
+}
+
+/**
+ * URL 预览（`kind: 'url'`）：一条**活的**网页 —— 开发服务器、报表、文档站。
+ *
+ * 这条能力以前住在**对话旁那条预览轨**里（`preview-pane.tsx` 的 webview），
+ * 那条轨删掉了（用户 11-09 11:47：「不要那个预览轨了。删掉它的实现逻辑。」）
+ * ⇒ 现在由**工作区卡片的这条页签**来渲染，形状照抄右栏那个浏览器页签
+ * （`browser-tab.tsx`）：同样的 webview、同样的隔离设置、同样的分区。
+ */
+function UrlPreview({ target }: { target: PreviewTarget }) {
+  const { t } = useI18n()
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const host = hostRef.current
+
+    if (!host) {
+      return
+    }
+
+    const webview = document.createElement('webview') as PreviewWebview
+    webview.className = 'block h-full w-full border-0 bg-background'
+    webview.setAttribute('partition', 'persist:plobi-preview')
+    webview.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes')
+    webview.setAttribute('src', target.url)
+    host.replaceChildren(webview)
+
+    const onFail = (event: Event) => {
+      const detail = event as Event & { errorCode?: number; isMainFrame?: boolean }
+
+      // -3 是 ERR_ABORTED —— 一次被顶掉的导航，不是页面打不开。
+      if (detail.isMainFrame !== false && detail.errorCode !== -3) {
+        setFailed(true)
+      }
+    }
+
+    webview.addEventListener('did-fail-load', onFail)
+
+    return () => {
+      webview.removeEventListener('did-fail-load', onFail)
+      webview.remove()
+      host.replaceChildren()
+    }
+  }, [target.url])
+
+  if (failed) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-[0.8rem] font-medium text-foreground">{t.preview.unavailable}</p>
+        <p className="max-w-[36rem] truncate text-[0.68rem] text-(--ui-text-tertiary)">{target.url}</p>
+      </div>
+    )
+  }
+
+  return <div className="h-full w-full" data-testid="preview-webview-host" ref={hostRef} />
+}
+
+/**
+ * 渲染一个预览目标。
+ *
+ * 文件走 `LocalFileTargetPreview`（读盘、渲染 markdown、spot-edit…），
+ * URL 走 `UrlPreview`（活的 webview）—— 以前这条分工在**预览轨**里
+ * （`preview-pane.tsx` 与 `preview-file.tsx` 各管一半），轨删了之后并到一处。
+ */
 export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; target: PreviewTarget }) {
+  if (target.kind === 'url') {
+    return <UrlPreview target={target} />
+  }
+
+  return <LocalFileTargetPreview reloadKey={reloadKey} target={target} />
+}
+
+function LocalFileTargetPreview({ reloadKey, target }: { reloadKey: number; target: PreviewTarget }) {
   const { t } = useI18n()
   const [state, setState] = useState<LocalPreviewState>({ loading: true })
   const [forcePreview, setForcePreview] = useState(false)

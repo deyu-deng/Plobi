@@ -1,17 +1,9 @@
 import { atom, computed } from 'nanostores'
 
-import { persistentAtom } from '@/lib/persisted'
 import { normalize } from '@/lib/text'
 
-import {
-  $rightRailActiveTabId,
-  PREVIEW_PANE_ID,
-  RIGHT_RAIL_PREVIEW_TAB_ID,
-  type RightRailTabId,
-  selectRightRailTab
-} from './layout'
-import { setPaneOpen } from './panes'
 import { $activeSessionId, $selectedStoredSessionId } from './session'
+import { requestWorkbenchFileOpen } from './workbench-tabs'
 
 export interface PreviewTarget {
   binary?: boolean
@@ -55,45 +47,20 @@ export interface SessionPreviewRecord {
 
 type SessionPreviewRegistry = Record<string, SessionPreviewRecord[]>
 
-export interface FilePreviewTab {
-  id: `file:${string}`
-  target: PreviewTarget
-}
-
 const REGISTRY_STORAGE_KEY = 'plobi.desktop.sessionPreviews.v1'
-const TABS_STORAGE_KEY = 'plobi.desktop.filePreviewTabs.v1'
 const MAX_RECORDS_PER_SESSION = 1
 const MAX_SESSIONS = 120
 
-export const $previewTarget = atom<PreviewTarget | null>(null)
-// Persisted so open file-preview tabs survive a relaunch; content is re-read
-// from each target's path/url on demand. Invalid rows are dropped on load and
-// inline image bytes (megabytes) are stripped on save, mirroring the registry.
-export const $filePreviewTabs = persistentAtom<FilePreviewTab[]>(TABS_STORAGE_KEY, [], {
-  decode: raw => {
-    const parsed = JSON.parse(raw) as unknown
+/**
+ * 当前**开着**的那个预览目标。
+ *
+ * 预览轨删掉之后（用户 11-09 11:47：「不要那个预览轨了。删掉它的实现逻辑。」），
+ * 预览落在**工作区卡片的页签**里 ⇒ 这枚原子记的是「工作区卡片此刻开着的是哪一个」。
+ * 它回答两个问题：这一条预览是不是已经开着了（附件卡那个按钮的高亮）、
+ * 以及从预览里选一段文字时该标成哪个文件（`previewSelectionLabel`）。
+ */
+export const $activePreviewTarget = atom<PreviewTarget | null>(null)
 
-    return Array.isArray(parsed) ? parsed.filter(isFilePreviewTab) : []
-  },
-  encode: tabs => JSON.stringify(tabs, (key, value) => (key === 'dataUrl' ? undefined : value))
-})
-
-// Drop a restored active file-tab that didn't survive validation so the rail
-// never points at a tab that isn't there.
-if (
-  $rightRailActiveTabId.get().startsWith('file:') &&
-  !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())
-) {
-  selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
-}
-
-export const $filePreviewTarget = computed([$filePreviewTabs, $rightRailActiveTabId], (tabs, activeTabId) => {
-  if (!activeTabId.startsWith('file:')) {
-    return null
-  }
-
-  return tabs.find(tab => tab.id === activeTabId)?.target ?? null
-})
 export const $previewReloadRequest = atom(0)
 export const $previewServerRestart = atom<PreviewServerRestart | null>(null)
 export const $previewServerRestartStatus = computed($previewServerRestart, restart => restart?.status ?? 'idle')
@@ -101,7 +68,7 @@ export const $sessionPreviewRegistry = atom<SessionPreviewRegistry>(loadSessionP
 
 $sessionPreviewRegistry.subscribe(persistSessionPreviewRegistry)
 
-function isSamePreviewTarget(a: PreviewTarget | null, b: PreviewTarget | null): boolean {
+export function isSamePreviewTarget(a: PreviewTarget | null, b: PreviewTarget | null): boolean {
   if (a === b) {
     return true
   }
@@ -119,44 +86,8 @@ function isSamePreviewTarget(a: PreviewTarget | null, b: PreviewTarget | null): 
   )
 }
 
-function showLivePreviewTab() {
-  setPaneOpen(PREVIEW_PANE_ID, true)
-  selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
-}
-
-export function setPreviewTarget(target: PreviewTarget | null) {
-  if (isSamePreviewTarget($previewTarget.get(), target)) {
-    if (target) {
-      showLivePreviewTab()
-    }
-
-    return
-  }
-
-  $previewTarget.set(target)
-
-  if (target) {
-    showLivePreviewTab()
-  }
-}
-
-export function filePreviewTabId(target: PreviewTarget): `file:${string}` {
-  return `file:${target.url}`
-}
-
-function openFilePreviewTarget(target: PreviewTarget) {
-  const id = filePreviewTabId(target)
-  const current = $filePreviewTabs.get()
-  const index = current.findIndex(tab => tab.id === id)
-  const tab: FilePreviewTab = { id, target }
-
-  $filePreviewTabs.set(index === -1 ? [...current, tab] : current.map((item, i) => (i === index ? tab : item)))
-  setPaneOpen(PREVIEW_PANE_ID, true)
-  selectRightRailTab(id)
-}
-
 // Manual/file-browser opens are "peeking at a file" → source view in the file
-// pane. Tool/explicit-link opens are runnable artifacts → live preview pane.
+// pane. Tool/explicit-link opens are runnable artifacts → live preview.
 function isFilePreviewSource(source: PreviewRecordSource): boolean {
   return source === 'file-browser' || source === 'manual'
 }
@@ -167,16 +98,6 @@ function previewTargetForSource(target: PreviewTarget, source: PreviewRecordSour
   }
 
   return { ...target, renderMode: isFilePreviewSource(source) ? 'source' : 'preview' }
-}
-
-function tryOpenFilePreview(target: PreviewTarget, source: PreviewRecordSource): boolean {
-  if (target.kind !== 'file' || !isFilePreviewSource(source)) {
-    return false
-  }
-
-  openFilePreviewTarget(previewTargetForSource(target, source))
-
-  return true
 }
 
 function isPreviewTarget(value: unknown): value is PreviewTarget {
@@ -192,16 +113,6 @@ function isPreviewTarget(value: unknown): value is PreviewTarget {
     typeof r.source === 'string' &&
     typeof r.url === 'string'
   )
-}
-
-function isFilePreviewTab(value: unknown): value is FilePreviewTab {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const r = value as Record<string, unknown>
-
-  return typeof r.id === 'string' && r.id.startsWith('file:') && isPreviewTarget(r.target)
 }
 
 function isPreviewRecord(value: unknown): value is SessionPreviewRecord {
@@ -335,19 +246,29 @@ export function registerSessionPreview(
   return nextRecord
 }
 
+/**
+ * 打开一个预览 —— 落点是**工作区卡片的一个页签**。
+ *
+ * 以前这条函数把目标塞进**对话旁那条预览轨**（`setPreviewTarget` ＋
+ * `selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)`），那条轨已经删掉了
+ * （用户 11-09 11:47：「以后只有两张卡片了吗？一个叫工作区卡片。一个叫对话区卡片。」）。
+ * 现在唯一的去处是 `requestWorkbenchFileOpen`：调用方只管「我要开这个」，
+ * 真正的页签由 `desktop-controller.tsx` 落进工作区卡片。
+ */
 export function setSessionPreviewTarget(
   sessionId: string | null | undefined,
   target: PreviewTarget,
   source: PreviewRecordSource,
   rawTarget = target.source
 ): SessionPreviewRecord | null {
-  if (tryOpenFilePreview(target, source)) {
-    return null
-  }
+  const normalized = previewTargetForSource(target, source)
 
-  const record = registerSessionPreview(sessionId, target, source, rawTarget)
+  // 文件浏览/手动打开的是「看一眼这个文件」，不进会话的预览记忆；
+  // 工具产出与显式链接才是这个会话的「那一份预览」，回来时还能再开。
+  const record = isFilePreviewSource(source) ? null : registerSessionPreview(sessionId, target, source, rawTarget)
 
-  setPreviewTarget(record?.normalized ?? previewTargetForSource(target, source))
+  $activePreviewTarget.set(normalized)
+  requestWorkbenchFileOpen(normalized, normalized.label)
 
   return record
 }
@@ -370,156 +291,9 @@ export function getSessionPreviewRecord(sessionId: string | null | undefined): S
   return $sessionPreviewRegistry.get()[id]?.find(record => !record.dismissedAt && record.autoOpen !== false) ?? null
 }
 
-export function dismissSessionPreview(sessionId: string | null | undefined, url?: string) {
-  const id = sessionId?.trim()
-
-  if (!id) {
-    return
-  }
-
-  const current = $sessionPreviewRegistry.get()
-  const records = current[id]
-
-  if (!records?.length) {
-    return
-  }
-
-  const now = Date.now()
-  const targetUrl = url || records.find(record => !record.dismissedAt)?.normalized.url
-
-  if (!targetUrl) {
-    return
-  }
-
-  // The preview rail is a single active file, not a back stack. Dismissing the
-  // current preview should leave the rail closed instead of revealing an older
-  // record for the same session.
-  const dismissedRecords = records.map(record => ({
-    ...record,
-    autoOpen: false,
-    dismissedAt: now
-  }))
-
-  $sessionPreviewRegistry.set({
-    ...current,
-    [id]: dismissedRecords
-  })
-}
-
-/** User clicked the close X — clear the target and persist dismissal for the current session. */
-export function dismissPreviewTarget() {
-  const current = $previewTarget.get()
-
-  if (current?.url) {
-    dismissSessionPreview(currentPreviewSessionId(), current.url)
-  }
-
-  $previewTarget.set(null)
-
-  if ($rightRailActiveTabId.get() === RIGHT_RAIL_PREVIEW_TAB_ID) {
-    selectRightRailTab($filePreviewTabs.get()[0]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID)
-  }
-
-  setPaneOpen(PREVIEW_PANE_ID, $filePreviewTabs.get().length > 0)
-}
-
-function closeFilePreviewTab(tabId: RightRailTabId) {
-  if (!tabId.startsWith('file:')) {
-    return
-  }
-
-  const current = $filePreviewTabs.get()
-  const index = current.findIndex(tab => tab.id === tabId)
-
-  if (index === -1) {
-    return
-  }
-
-  const next = current.filter(tab => tab.id !== tabId)
-
-  $filePreviewTabs.set(next)
-
-  if ($rightRailActiveTabId.get() === tabId) {
-    selectRightRailTab(next[Math.min(index, next.length - 1)]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID)
-  }
-
-  if (next.length === 0 && !$previewTarget.get()) {
-    setPaneOpen(PREVIEW_PANE_ID, false)
-  }
-}
-
-export function closeRightRailTab(tabId: RightRailTabId) {
-  if (tabId === RIGHT_RAIL_PREVIEW_TAB_ID) {
-    if ($previewTarget.get()) {
-      dismissPreviewTarget()
-    }
-
-    return
-  }
-
-  closeFilePreviewTab(tabId)
-}
-
-export const closeActiveRightRailTab = () => closeRightRailTab($rightRailActiveTabId.get())
-
-// The rail's visible tab order: the live preview tab (when present) first, then
-// the file tabs in their stored order. Mirrors `ChatPreviewRail`'s `tabs` memo
-// so "close others / to the right" act on what the user actually sees.
-function rightRailTabOrder(): RightRailTabId[] {
-  const ids: RightRailTabId[] = []
-
-  if ($previewTarget.get()) {
-    ids.push(RIGHT_RAIL_PREVIEW_TAB_ID)
-  }
-
-  for (const tab of $filePreviewTabs.get()) {
-    ids.push(tab.id)
-  }
-
-  return ids
-}
-
-/** Close every rail tab except `keepId`, then make `keepId` active. */
-export function closeOtherRightRailTabs(keepId: RightRailTabId) {
-  for (const id of rightRailTabOrder()) {
-    if (id !== keepId) {
-      closeRightRailTab(id)
-    }
-  }
-
-  selectRightRailTab(keepId)
-}
-
-/** Close every rail tab positioned after `tabId` (VS Code's "Close to the Right"). */
-export function closeRightRailTabsToRight(tabId: RightRailTabId) {
-  const order = rightRailTabOrder()
-  const index = order.indexOf(tabId)
-
-  if (index === -1) {
-    return
-  }
-
-  for (const id of order.slice(index + 1)) {
-    closeRightRailTab(id)
-  }
-}
-
-/** Dismisses the active preview + every file tab so the rail pane unmounts. */
-export function closeRightRail() {
-  if ($previewTarget.get()) {
-    dismissPreviewTarget()
-  }
-
-  $filePreviewTabs.set([])
-  setPaneOpen(PREVIEW_PANE_ID, false)
-}
-
 export function clearSessionPreviewRegistry() {
   $sessionPreviewRegistry.set({})
-  setPreviewTarget(null)
-  $filePreviewTabs.set([])
-  setPaneOpen(PREVIEW_PANE_ID, false)
-  selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
+  $activePreviewTarget.set(null)
 }
 
 /**
@@ -528,7 +302,7 @@ export function clearSessionPreviewRegistry() {
  * than a bogus "zsh:N lines".
  */
 export function previewSelectionLabel(): string {
-  const target = $filePreviewTarget.get() ?? $previewTarget.get()
+  const target = $activePreviewTarget.get()
   const source = target?.path || target?.url || ''
 
   return source.split(/[/\\]/).filter(Boolean).pop() || target?.label?.trim() || ''

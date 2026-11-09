@@ -52,19 +52,12 @@ const SIDEBAR_AGENT_CATEGORY_COLLAPSED_STORAGE_KEY = 'plobi.desktop.agentCategor
 const SIDEBAR_DISMISSED_AUTO_PROJECTS_STORAGE_KEY = 'plobi.desktop.dismissedAutoProjects'
 const SIDEBAR_DISMISSED_WORKTREES_STORAGE_KEY = 'plobi.desktop.dismissedWorktrees'
 const PANES_FLIPPED_STORAGE_KEY = 'plobi.desktop.panesFlipped'
-const RIGHT_RAIL_ACTIVE_TAB_STORAGE_KEY = 'plobi.desktop.rightRailActiveTab'
-const RIGHT_RAIL_VIEW_STORAGE_KEY = 'plobi.desktop.rightRailView'
 
 export const CHAT_SIDEBAR_PANE_ID = 'chat-sidebar'
 export const FILE_BROWSER_PANE_ID = 'file-browser'
-export const PREVIEW_PANE_ID = 'preview'
-export const RIGHT_RAIL_PREVIEW_TAB_ID = 'preview'
-
-export type RightRailTabId = typeof RIGHT_RAIL_PREVIEW_TAB_ID | `file:${string}`
 
 ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true })
 ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false })
-ensurePaneRegistered(PREVIEW_PANE_ID, { open: true })
 
 // 收起 = 40px 图标条，不再归零（用户 10-31）。Pane 永远开着；「展开/收起」只是
 // 这条栏的形态开关，所以不再跟 pane 的 open 状态绑在一起。
@@ -77,37 +70,6 @@ export const $fileBrowserOpen: ReadableAtom<boolean> = computed(
   $paneStates,
   states => states[FILE_BROWSER_PANE_ID]?.open ?? false
 )
-
-// Persisted so a relaunch reopens the same rail tab. A restored file-tab id with
-// no matching tab is reconciled back to the preview tab in the preview store.
-export const $rightRailActiveTabId = persistentAtom<RightRailTabId>(
-  RIGHT_RAIL_ACTIVE_TAB_STORAGE_KEY,
-  RIGHT_RAIL_PREVIEW_TAB_ID,
-  { decode: raw => raw as RightRailTabId, encode: tabId => tabId }
-)
-
-export const RIGHT_RAIL_VIEW_PREVIEW = 'preview'
-export const RIGHT_RAIL_VIEW_NOTES = 'notes'
-
-export type RightRailView = typeof RIGHT_RAIL_VIEW_PREVIEW | typeof RIGHT_RAIL_VIEW_NOTES
-
-// Which face the right rail shows on an agent route: the file preview it has
-// always had, or that agent's brain notes (WP-MIND-NOTES-VIEW). Persisted, so the
-// rail reopens where you left it. Decode is a whitelist rather than a cast: a
-// stale or hand-edited value falls back to the preview instead of showing a rail
-// that renders nothing.
-export const $rightRailView = persistentAtom<RightRailView>(
-  RIGHT_RAIL_VIEW_STORAGE_KEY,
-  RIGHT_RAIL_VIEW_PREVIEW,
-  {
-    decode: raw => (raw === RIGHT_RAIL_VIEW_NOTES ? RIGHT_RAIL_VIEW_NOTES : RIGHT_RAIL_VIEW_PREVIEW),
-    encode: view => view
-  }
-)
-
-export function setRightRailView(view: RightRailView): void {
-  $rightRailView.set(view)
-}
 
 export const $sidebarWidth: ReadableAtom<number> = computed($paneStates, states => {
   const override = states[CHAT_SIDEBAR_PANE_ID]?.widthOverride
@@ -349,10 +311,19 @@ $cardFocus.listen(() => {
   $dossierPanelMode.set('auto')
 })
 
-// 档案卡的**两种形态**（Qoder 的 Floating／Fixed，用户 11-08 22:3x 给的那张截图）：
-// 浮层＝一张圆角卡片压着对话右上角，对话不被挤窄；固定＝钉成对话右侧的一列。
-// 卡片抬头右上角那枚图钉在两者之间切。
-export const $dossierPanelPinned = atom(false)
+/**
+ * 档案卡的形态：**并排一列**（对话右侧，占位）还是**浮层**（压着对话右上角）。
+ *
+ * 默认**并排**（Qoder 的实证，11-09 11:5x 从 asar 取的活证据）：Qoder 的
+ * `taskMonitorMode` 偏好默认是 `"fix"`——「固定在任务右侧」，`"floating"` 是**用户
+ * 可配的另一种偏好**，不是默认形态；会话内的监控面板本体是 280px 的 **flex 兄弟列**
+ * （区域 `CHAT_SESSION_B1_2_REGION`），**不是 absolute 浮层**，所以它从不对话。
+ *
+ * 11-09 11:47 用户判：「在对话区单独展开的时候不是说了档案要默认显示吗？**而且不要
+ * 遮挡对话区**」⇒ 浮层（absolute 压着对话）不该是默认；对话区单独展开时档案**默认在**，
+ * 且**并排**（对话窄一点，但不遮挡）。
+ */
+export const $dossierPanelPinned = atom(true)
 
 export function toggleDossierPanelPin(): void {
   $dossierPanelPinned.set(!$dossierPanelPinned.get())
@@ -388,10 +359,6 @@ function markSidebarAnimating(): void {
     $sidebarAnimating.set(false)
     sidebarAnimationTimer = null
   }, 240)
-}
-
-export function selectRightRailTab(id: RightRailTabId) {
-  $rightRailActiveTabId.set(id)
 }
 
 export function setSidebarPinsOpen(open: boolean) {

@@ -1,29 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_PREVIEW_TAB_ID } from './layout'
-import { $paneOpen } from './panes'
 import {
-  $filePreviewTabs,
-  $filePreviewTarget,
+  $activePreviewTarget,
   $previewServerRestart,
   $previewServerRestartStatus,
-  $previewTarget,
   $sessionPreviewRegistry,
   beginPreviewServerRestart,
   clearSessionPreviewRegistry,
-  closeActiveRightRailTab,
-  dismissPreviewTarget,
   getSessionPreviewRecord,
+  previewSelectionLabel,
   type PreviewTarget,
   progressPreviewServerRestart,
   setCurrentSessionPreviewTarget
 } from './preview'
 import { $activeSessionId, $selectedStoredSessionId } from './session'
+import { $workbenchFileOpenRequest } from './workbench-tabs'
 
 function previewTarget(source: string): PreviewTarget {
   return {
     kind: 'file',
-    label: source,
+    label: source.split(/[/\\]/).filter(Boolean).pop() ?? source,
     path: source,
     previewKind: 'html',
     source,
@@ -40,6 +36,7 @@ describe('preview store', () => {
     $previewServerRestart.set(null)
     $activeSessionId.set('session-1')
     $selectedStoredSessionId.set(null)
+    $workbenchFileOpenRequest.set(null)
     window.localStorage.clear()
     clearSessionPreviewRegistry()
   })
@@ -48,6 +45,7 @@ describe('preview store', () => {
     $previewServerRestart.set(null)
     $activeSessionId.set(null)
     $selectedStoredSessionId.set(null)
+    $workbenchFileOpenRequest.set(null)
     window.localStorage.clear()
     clearSessionPreviewRegistry()
   })
@@ -64,26 +62,26 @@ describe('preview store', () => {
     expect(statuses).toEqual(['idle', 'running'])
   })
 
-  it('persists registered previews and dismissal per session', () => {
+  it('opens a preview as a tab of the workbench card, not on a preview rail', () => {
     const target = previewTarget('/work/demo.html')
 
     setCurrentSessionPreviewTarget(target, 'tool-result')
 
-    expect($previewTarget.get()).toEqual(withRenderMode(target, 'preview'))
-    expect($paneOpen(PREVIEW_PANE_ID).get()).toBe(true)
-    expect(getSessionPreviewRecord('session-1')?.normalized).toEqual(withRenderMode(target, 'preview'))
-    expect(window.localStorage.getItem('plobi.desktop.sessionPreviews.v1')).toContain('/work/demo.html')
+    // 通道里躺着一条「在工作区卡片里开这个」的请求，页签由 desktop-controller 落。
+    expect($workbenchFileOpenRequest.get()).toEqual({
+      target: withRenderMode(target, 'preview'),
+      title: target.label
+    })
+    expect($activePreviewTarget.get()).toEqual(withRenderMode(target, 'preview'))
+  })
 
-    dismissPreviewTarget()
-
-    expect($previewTarget.get()).toBeNull()
-    expect($paneOpen(PREVIEW_PANE_ID).get()).toBe(false)
-    expect(getSessionPreviewRecord('session-1')).toBeNull()
-    expect($sessionPreviewRegistry.get()['session-1']?.[0]?.dismissedAt).toEqual(expect.any(Number))
+  it('persists registered previews per session', () => {
+    const target = previewTarget('/work/demo.html')
 
     setCurrentSessionPreviewTarget(target, 'tool-result')
 
-    expect(getSessionPreviewRecord('session-1')?.dismissedAt).toBeUndefined()
+    expect(getSessionPreviewRecord('session-1')?.normalized).toEqual(withRenderMode(target, 'preview'))
+    expect(window.localStorage.getItem('plobi.desktop.sessionPreviews.v1')).toContain('/work/demo.html')
   })
 
   it('replaces the session preview instead of keeping a back stack', () => {
@@ -95,44 +93,24 @@ describe('preview store', () => {
 
     expect($sessionPreviewRegistry.get()['session-1']).toHaveLength(1)
     expect(getSessionPreviewRecord('session-1')?.normalized).toEqual(withRenderMode(second, 'preview'))
-
-    dismissPreviewTarget()
-
-    expect($previewTarget.get()).toBeNull()
-    expect(getSessionPreviewRecord('session-1')).toBeNull()
     expect($sessionPreviewRegistry.get()['session-1']?.map(record => record.normalized.url)).toEqual([
       'file:///work/second.html'
     ])
   })
 
-  it('keeps file inspection separate from live preview', () => {
+  it('peeking at a file is not remembered as the session preview', () => {
     const target = previewTarget('/work/demo.html')
-    const preview = previewTarget('/work/live.html')
 
-    setCurrentSessionPreviewTarget(preview, 'tool-result')
+    setCurrentSessionPreviewTarget(target, 'file-browser')
 
-    setCurrentSessionPreviewTarget(target, 'manual')
-
-    expect($filePreviewTarget.get()).toEqual(withRenderMode(target, 'source'))
-    expect($previewTarget.get()).toEqual(withRenderMode(preview, 'preview'))
-    expect(getSessionPreviewRecord('session-1')?.normalized).toEqual(withRenderMode(preview, 'preview'))
-
-    closeActiveRightRailTab()
-
-    expect($filePreviewTarget.get()).toBeNull()
-    expect($previewTarget.get()).toEqual(withRenderMode(preview, 'preview'))
+    // 文件浏览是「看一眼这个文件」⇒ 不进会话记忆，但**照样开页签**。
+    expect(getSessionPreviewRecord('session-1')).toBeNull()
+    expect($workbenchFileOpenRequest.get()?.target).toEqual(withRenderMode(target, 'source'))
   })
 
-  it('keeps file tabs when a live preview opens', () => {
-    const file = previewTarget('/work/file.html')
-    const live = previewTarget('/work/live.html')
+  it('names the file that is open for a selection carried into the composer', () => {
+    setCurrentSessionPreviewTarget(previewTarget('/work/notes/rust.md'), 'tool-result')
 
-    setCurrentSessionPreviewTarget(file, 'manual')
-    setCurrentSessionPreviewTarget(live, 'tool-result')
-
-    expect($filePreviewTabs.get().map(tab => tab.target)).toEqual([withRenderMode(file, 'source')])
-    expect($filePreviewTarget.get()).toBeNull()
-    expect($rightRailActiveTabId.get()).toBe(RIGHT_RAIL_PREVIEW_TAB_ID)
-    expect($previewTarget.get()).toEqual(withRenderMode(live, 'preview'))
+    expect(previewSelectionLabel()).toBe('rust.md')
   })
 })

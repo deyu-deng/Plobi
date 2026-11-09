@@ -3,16 +3,17 @@ import { type MutableRefObject, useCallback, useEffect } from 'react'
 
 import { gatewayEventCompletedFileDiff } from '@/lib/gateway-events'
 import {
-  $previewTarget,
+  $activePreviewTarget,
   $sessionPreviewRegistry,
   beginPreviewServerRestart,
   completePreviewServerRestart,
   getSessionPreviewRecord,
+  isSamePreviewTarget,
   progressPreviewServerRestart,
-  requestPreviewReload,
-  setPreviewTarget
+  requestPreviewReload
 } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
+import { requestWorkbenchFileOpen } from '@/store/workbench-tabs'
 import type { RpcEvent } from '@/types/plobi'
 
 type EventHandler = (event: RpcEvent) => void
@@ -53,18 +54,24 @@ export function usePreviewRouting({
 
   // Restore a *user-opened* preview when its session becomes active. Tool
   // results no longer auto-register/open a preview — the inline preview card in
-  // the tool row is the only entry point, so HTML artifacts never pop the rail
+  // the tool row is the only entry point, so HTML artifacts never pop a tab
   // open on their own.
+  //
+  // 落点是**工作区卡片的一个页签**（预览轨删掉了，用户 11-09 11:47）——
+  // 这里只管「把这一份再开一次」，真正的页签由 `desktop-controller.tsx` 落。
   useEffect(() => {
     if (currentView !== 'chat' || !previewSessionId) {
-      setPreviewTarget(null)
-
       return
     }
 
     const record = getSessionPreviewRecord(previewSessionId)
 
-    setPreviewTarget(record?.normalized ?? null)
+    if (!record || isSamePreviewTarget($activePreviewTarget.get(), record.normalized)) {
+      return
+    }
+
+    $activePreviewTarget.set(record.normalized)
+    requestWorkbenchFileOpen(record.normalized, record.normalized.label)
   }, [currentView, previewRegistry, previewSessionId])
 
   const restartPreviewServer = useCallback(
@@ -122,7 +129,7 @@ export function usePreviewRouting({
       // Only refresh an already-open live preview when a file changes; never
       // open one unprompted. (Preview links are surfaced from the tool row into
       // the status stack — see tool-fallback.tsx.)
-      if ($previewTarget.get()?.kind === 'url' && gatewayEventCompletedFileDiff(event)) {
+      if ($activePreviewTarget.get()?.kind === 'url' && gatewayEventCompletedFileDiff(event)) {
         requestPreviewReload()
       }
     },

@@ -2,19 +2,21 @@
  * North Star preview bus (desktop).
  *
  * Priority: artifact (产出) > progress (进度) > resource (资源).
- * Auto-push opens the preview rail; users can also open manually anytime.
+ * Auto-push opens the file as one tab of the **workbench card**.
+ *
+ * 以前它推的是**对话旁那条预览轨**（`setPaneOpen(PREVIEW_PANE_ID)` ＋
+ * `selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)`）。那条轨删掉了
+ * （用户 11-09 11:47：「以后只有两张卡片了吗？一个叫工作区卡片。一个叫对话区卡片。」），
+ * 于是自动推送的落点跟着改成工作区卡片的一个页签。
  */
 
 import { atom } from 'nanostores'
 
 import {
-  setCurrentSessionPreviewTarget,
-  setPreviewTarget,
+  type PreviewRecordSource,
   type PreviewTarget,
-  type PreviewRecordSource
+  setCurrentSessionPreviewTarget
 } from './preview'
-import { setPaneOpen } from './panes'
-import { PREVIEW_PANE_ID, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from './layout'
 
 export type PreviewBusPriority = 'artifact' | 'progress' | 'resource'
 
@@ -73,7 +75,7 @@ function toPreviewTarget(item: PreviewBusItem): PreviewTarget | null {
     }
   }
 
-  // text-only: surface as url data placeholder label; live pane still opens
+  // text-only: surface as url data placeholder label; the tab still opens
   return {
     kind: 'url',
     label: item.title,
@@ -95,20 +97,13 @@ export function pushPreviewBusItem(item: PreviewBusItem, source: PreviewRecordSo
   if (auto) {
     const target = toPreviewTarget(item)
     if (target) {
+      // 这一条现在落进**工作区卡片**（`setCurrentSessionPreviewTarget` 内部
+      // 走 `requestWorkbenchFileOpen`），对话旁不再有第三块。
       setCurrentSessionPreviewTarget(target, source)
-      setPreviewTarget(target)
-    } else {
-      openPreviewPanelManual()
     }
   }
 
   return item
-}
-
-/** Manual open — user can open the preview rail anytime (North Star UX). */
-export function openPreviewPanelManual(): void {
-  setPaneOpen(PREVIEW_PANE_ID, true)
-  selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
 }
 
 /** Apply the highest-priority pending auto item (e.g. after polling host bus). */

@@ -6,8 +6,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { cn } from '@/lib/utils'
-import { RIGHT_RAIL_VIEW_PREVIEW, setRightRailView } from '@/store/layout'
-import { setCurrentSessionPreviewTarget } from '@/store/preview'
+import { requestWorkbenchFileOpen } from '@/store/workbench-tabs'
 
 type State =
   | { kind: 'error'; message: string }
@@ -43,11 +42,16 @@ export interface AgentNotesListProps {
 }
 
 /**
- * Opening a note hands it to the rail's existing file preview instead of growing
- * a second markdown surface here: that preview already renders `.md` with
- * highlighted fences, opens as a closable tab, and its ⌘/Ctrl+L selection
- * shortcut is how a passage becomes context in the conversation — which is the
- * whole point of reading a note next to the agent you are asking about it.
+ * Opening a note hands it to the **workbench card** as one of its tabs (WP-TWO-CARDS).
+ *
+ * It used to go the other way round — `setCurrentSessionPreviewTarget` ＋
+ * `setRightRailView(RIGHT_RAIL_VIEW_PREVIEW)` — which dropped it into the preview
+ * rail beside the conversation, i.e. a **third** card on screen. The user ruled that
+ * out on 11-09 11:47: 「以后只有两张卡片了吗？一个叫工作区卡片。一个叫对话区卡片。」
+ * 「点击打开笔记…还是在最右边那个有页签的卡片里面展示」⇒ the note opens as a tab of
+ * the workbench card, where the file preview already lives (that rail renders `.md`
+ * with highlighted fences and opens it as a closable tab, and its ⌘/Ctrl+L selection
+ * shortcut is how a passage becomes context in the conversation).
  */
 async function openNote(note: AgentNote): Promise<void> {
   const target = await normalizeOrLocalPreviewTarget(note.fsPath, null)
@@ -56,8 +60,7 @@ async function openNote(note: AgentNote): Promise<void> {
     return
   }
 
-  setCurrentSessionPreviewTarget(target, 'file-browser', note.fsPath)
-  setRightRailView(RIGHT_RAIL_VIEW_PREVIEW)
+  requestWorkbenchFileOpen(target, note.title)
 }
 
 /**

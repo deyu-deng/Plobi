@@ -1,29 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./preview', () => ({
-  setCurrentSessionPreviewTarget: vi.fn(),
-  setPreviewTarget: vi.fn()
+  setCurrentSessionPreviewTarget: vi.fn()
 }))
 
-vi.mock('./panes', () => ({
-  setPaneOpen: vi.fn()
-}))
-
-vi.mock('./layout', () => ({
-  PREVIEW_PANE_ID: 'preview',
-  RIGHT_RAIL_PREVIEW_TAB_ID: 'preview-live',
-  selectRightRailTab: vi.fn()
-}))
-
-import { setPaneOpen } from './panes'
-import { selectRightRailTab } from './layout'
+import { setCurrentSessionPreviewTarget } from './preview'
 import {
   $previewBusItems,
   applyHighestPriorityPreview,
-  openPreviewPanelManual,
   pushPreviewBusItem
 } from './preview-bus'
-import { setCurrentSessionPreviewTarget } from './preview'
 
 describe('preview-bus', () => {
   beforeEach(() => {
@@ -38,7 +24,7 @@ describe('preview-bus', () => {
     expect($previewBusItems.get().map(i => i.title)).toEqual(['a', 'p', 'r'])
   })
 
-  it('auto-opens artifact into session preview', () => {
+  it('auto-opens an artifact into the workbench card', () => {
     pushPreviewBusItem({
       title: 'out.html',
       priority: 'artifact',
@@ -46,13 +32,9 @@ describe('preview-bus', () => {
       path: 'D:/tmp/out.html',
       autoOpen: true
     })
+    // 预览轨删了 ⇒ 自动推送的落点是工作区卡片的一个页签（`setCurrentSessionPreviewTarget`
+    // 内部走 `requestWorkbenchFileOpen`）。
     expect(setCurrentSessionPreviewTarget).toHaveBeenCalled()
-  })
-
-  it('openPreviewPanelManual opens the rail', () => {
-    openPreviewPanelManual()
-    expect(setPaneOpen).toHaveBeenCalledWith('preview', true)
-    expect(selectRightRailTab).toHaveBeenCalled()
   })
 
   it('applyHighestPriorityPreview prefers artifact', () => {

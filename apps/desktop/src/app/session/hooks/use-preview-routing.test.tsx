@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { assistantTextPart, type ChatMessage } from '@/lib/chat-messages'
 import {
-  $previewTarget,
+  $activePreviewTarget,
   clearSessionPreviewRegistry,
   type PreviewTarget,
   registerSessionPreview
 } from '@/store/preview'
 import { $currentCwd, $messages } from '@/store/session'
+import { $workbenchFileOpenRequest } from '@/store/workbench-tabs'
 import type { RpcEvent } from '@/types/plobi'
 
 import { usePreviewRouting } from './use-preview-routing'
@@ -61,7 +62,8 @@ describe('usePreviewRouting', () => {
   beforeEach(() => {
     $currentCwd.set('/work')
     $messages.set([])
-    $previewTarget.set(null)
+    $activePreviewTarget.set(null)
+    $workbenchFileOpenRequest.set(null)
     window.localStorage.clear()
     clearSessionPreviewRegistry()
     handleEvent = () => undefined
@@ -77,13 +79,14 @@ describe('usePreviewRouting', () => {
   afterEach(() => {
     cleanup()
     $messages.set([])
-    $previewTarget.set(null)
+    $activePreviewTarget.set(null)
+    $workbenchFileOpenRequest.set(null)
     window.localStorage.clear()
     clearSessionPreviewRegistry()
     vi.restoreAllMocks()
   })
 
-  it('opens the active session preview from the registry', async () => {
+  it('re-opens the active session preview as a workbench card tab', async () => {
     const target = previewTarget('/work/demo.html')
 
     registerSessionPreview('session-1', target, 'tool-result')
@@ -96,7 +99,10 @@ describe('usePreviewRouting', () => {
     )
 
     await waitFor(() => {
-      expect($previewTarget.get()).toEqual({ ...target, renderMode: 'preview' })
+      expect($workbenchFileOpenRequest.get()).toEqual({
+        target: { ...target, renderMode: 'preview' },
+        title: target.label
+      })
     })
   })
 
@@ -116,7 +122,8 @@ describe('usePreviewRouting', () => {
       ])
     })
 
-    expect($previewTarget.get()).toBeNull()
+    expect($activePreviewTarget.get()).toBeNull()
+    expect($workbenchFileOpenRequest.get()).toBeNull()
     expect(window.plobiDesktop.normalizePreviewTarget).not.toHaveBeenCalled()
   })
 
@@ -138,7 +145,8 @@ describe('usePreviewRouting', () => {
     )
     act(() => handleEvent({ payload: { path: './dist/index.html' }, session_id: 'session-1', type: 'tool.complete' }))
 
-    expect($previewTarget.get()).toBeNull()
+    expect($activePreviewTarget.get()).toBeNull()
+    expect($workbenchFileOpenRequest.get()).toBeNull()
     // The registry atom persists eagerly (module-load subscribe), so an empty
     // `{}` row is expected; what must not happen is a session entry.
     const stored = window.localStorage.getItem('plobi.desktop.sessionPreviews.v1')

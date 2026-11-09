@@ -7,8 +7,7 @@ import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { previewName } from '@/lib/preview-targets'
 import { notifyError } from '@/store/notifications'
 import {
-  $previewTarget,
-  dismissPreviewTarget,
+  $activePreviewTarget,
   type PreviewRecordSource,
   setCurrentSessionPreviewTarget
 } from '@/store/preview'
@@ -17,7 +16,7 @@ import { $currentCwd } from '@/store/session'
 export function PreviewAttachment({ source = 'manual', target }: { source?: PreviewRecordSource; target: string }) {
   const { t } = useI18n()
   const cwd = useStore($currentCwd)
-  const activePreview = useStore($previewTarget)
+  const activePreview = useStore($activePreviewTarget)
   const [opening, setOpening] = useState(false)
   const activePreviewRef = useRef(activePreview)
   const cwdRef = useRef(cwd)
@@ -25,7 +24,6 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
   const requestTokenRef = useRef(0)
   const targetRef = useRef(target)
   const name = previewName(target)
-  const isActive = activePreview?.source === target
 
   activePreviewRef.current = activePreview
   cwdRef.current = cwd
@@ -45,14 +43,10 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
     setOpening(false)
   }, [cwd, target])
 
-  async function togglePreview() {
+  // 预览不再是一条「轨」，而是**工作区卡片的一个页签** ⇒ 这里只管「开」，
+  // 关是那条页签自己的 X（以及 ⌘/Ctrl+W）。预览轨删掉了，用户 11-09 11:47。
+  async function openPreview() {
     if (opening) {
-      return
-    }
-
-    if (isActive) {
-      dismissPreviewTarget()
-
       return
     }
 
@@ -114,10 +108,10 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
       <button
         className="shrink-0 rounded-md border border-border/55 bg-background/40 px-2 py-1 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-accent/55 hover:text-foreground disabled:opacity-50"
         disabled={opening}
-        onClick={() => void togglePreview()}
+        onClick={() => void openPreview()}
         type="button"
       >
-        {opening ? t.preview.opening : isActive ? t.preview.hide : t.preview.openPreview}
+        {opening ? t.preview.opening : t.preview.openPreview}
       </button>
     </div>
   )

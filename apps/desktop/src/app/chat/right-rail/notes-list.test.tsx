@@ -1,12 +1,18 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentNotesView } from '@/app/console/types'
+import { $workbenchFileOpenRequest } from '@/store/workbench-tabs'
 
 const getAgentNotes = vi.hoisted(() => vi.fn())
+const normalizeOrLocalPreviewTarget = vi.hoisted(() => vi.fn())
 
 vi.mock('@/app/console/api', () => ({
   getAgentNotes: (...args: unknown[]) => getAgentNotes(...args)
+}))
+
+vi.mock('@/lib/local-preview', () => ({
+  normalizeOrLocalPreviewTarget: (...args: unknown[]) => normalizeOrLocalPreviewTarget(...args)
 }))
 
 vi.mock('@/i18n', () => ({
@@ -48,6 +54,7 @@ function view(overrides: Partial<AgentNotesView> = {}): AgentNotesView {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  $workbenchFileOpenRequest.set(null)
 })
 
 describe('AgentNotesList', () => {
@@ -94,5 +101,26 @@ describe('AgentNotesList', () => {
 
     expect(await screen.findByTestId('agent-notes-truncated')).toBeTruthy()
     expect(screen.getByTestId('agent-notes-unknown').textContent).toContain('Ghost')
+  })
+
+  it('opens a note as a tab of the workbench card, not on a preview rail', async () => {
+    const target = {
+      kind: 'file' as const,
+      label: 'Rust 所有权',
+      path: 'M:/notes/Rust.md',
+      source: 'M:/notes/Rust.md',
+      url: 'file:///M:/notes/Rust.md'
+    }
+
+    normalizeOrLocalPreviewTarget.mockResolvedValue(target)
+    getAgentNotes.mockResolvedValue(view())
+
+    render(<AgentNotesList agentId="SRTP" />)
+
+    fireEvent.click(await screen.findByTestId('agent-note-Surface/notes/数学 Math/Rust 所有权.md'))
+
+    await waitFor(() => {
+      expect($workbenchFileOpenRequest.get()).toEqual({ target, title: 'Rust 所有权' })
+    })
   })
 })

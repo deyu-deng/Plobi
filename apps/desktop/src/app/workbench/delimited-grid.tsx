@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { DataGrid, type Column, type RenderEditCellContentProps } from 'react-data-grid'
 import 'react-data-grid/lib/styles.css'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { type Column, DataGrid, type RenderEditCellContentProps } from 'react-data-grid'
 
 import { useI18n } from '@/i18n'
 import { Plus } from '@/lib/icons'
@@ -8,9 +9,9 @@ import { cn } from '@/lib/utils'
 
 import {
   delimitedColumnLabel,
+  type DelimitedKind,
   parseDelimited,
-  serializeDelimited,
-  type DelimitedKind
+  serializeDelimited
 } from './delimited'
 
 type GridRow = { id: number } & Record<string, number | string>

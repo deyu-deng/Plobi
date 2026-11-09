@@ -1,4 +1,3 @@
-import { useStore } from '@nanostores/react'
 import { memo, useState } from 'react'
 
 import { StatusRow } from '@/components/chat/status-row'
@@ -8,10 +7,8 @@ import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { cn } from '@/lib/utils'
-import { PREVIEW_PANE_ID } from '@/store/layout'
 import { notifyError } from '@/store/notifications'
-import { $paneOpen } from '@/store/panes'
-import { $previewTarget, dismissPreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
+import { setCurrentSessionPreviewTarget } from '@/store/preview'
 import { type PreviewArtifact } from '@/store/preview-status'
 
 interface PreviewStatusRowProps {
@@ -22,10 +19,7 @@ interface PreviewStatusRowProps {
 /** One detected artifact, single line, always visible: filename + open + close. */
 export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss }: PreviewStatusRowProps) {
   const { t } = useI18n()
-  const activePreview = useStore($previewTarget)
-  const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
   const [opening, setOpening] = useState(false)
-  const isOpen = activePreview?.source === item.target && previewPaneOpen
 
   const resolveTarget = async () => {
     const target = await normalizeOrLocalPreviewTarget(item.target, item.cwd || undefined)
@@ -37,14 +31,10 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
     return target
   }
 
-  const togglePreview = async () => {
+  // 预览落在**工作区卡片的一个页签**里（预览轨删了，用户 11-09 11:47）⇒
+  // 这里只管「开」，关是那条页签自己的 X。
+  const openPreview = async () => {
     if (opening) {
-      return
-    }
-
-    if (isOpen) {
-      dismissPreviewTarget()
-
       return
     }
 
@@ -83,11 +73,11 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
           size="0.8rem"
         />
       }
-      // Plain click opens the link in the browser; ⌘/Ctrl-click opens it in the
-      // in-app preview pane instead. (isOpen still toggles the pane closed.)
+      // Plain click opens the link in the browser; ⌘/Ctrl-click opens it as a
+      // tab of the workbench card instead.
       onActivate={event => {
         if (event.metaKey || event.ctrlKey) {
-          void togglePreview()
+          void openPreview()
         } else {
           void openInBrowser()
         }

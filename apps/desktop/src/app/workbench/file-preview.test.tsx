@@ -1,7 +1,7 @@
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { MarkdownPreview } from './preview-file'
+import { MarkdownPreview } from './file-preview'
 
 // 用户 11-03 在 `大物小测-公式卡.md` 的预览里看到一整页裸 LaTeX（`$\mathbf{F}=\dfrac…`）。
 // 成因是文件预览的 Streamdown 没挂 math 插件——聊天那边挂了，预览这边漏了。

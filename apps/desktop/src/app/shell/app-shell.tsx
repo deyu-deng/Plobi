@@ -42,10 +42,6 @@ interface AppShellProps {
   mainOverlays?: ReactNode
   onOpenSettings: () => void
   overlays?: ReactNode
-  // Rails that sit at the window's left edge in the flipped layout but never
-  // force-collapse to hover-reveal overlays — so they cover the top-left traffic
-  // lights (and zero the titlebar inset) even below the collapse breakpoint.
-  previewPaneOpen?: boolean
   /** L1: titlebar right-rail button toggles the agenda pane, not the file tree. */
   rightRail?: { open: boolean; toggle: () => void }
   statusbarItems?: readonly StatusbarItem[]
@@ -74,7 +70,6 @@ export function AppShell({
   mainOverlays,
   onOpenSettings,
   overlays,
-  previewPaneOpen = false,
   rightRail,
   statusbarItems,
   titlebarTools
@@ -124,12 +119,9 @@ export function AppShell({
   // is uncovered there regardless of their stored open state. A standalone
   // session window renders no sidebar at all, so its edge is always uncovered.
   const collapsibleLeftPaneOpen = panesFlipped ? fileBrowserOpen : sidebarOpen
-  // The preview rail never force-collapses, so when it's the leftmost open pane
-  // (flipped layout) it covers the edge even when narrow.
-  const persistentLeftPaneOpen = panesFlipped && previewPaneOpen
 
   const leftEdgePaneOpen =
-    !isSecondaryWindow() && ((!narrowViewport && collapsibleLeftPaneOpen) || persistentLeftPaneOpen)
+    !isSecondaryWindow() && !narrowViewport && collapsibleLeftPaneOpen
 
   const titlebarContentInset = leftEdgePaneOpen
     ? 0
