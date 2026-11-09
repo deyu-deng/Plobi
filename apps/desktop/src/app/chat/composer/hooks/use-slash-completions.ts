@@ -1,7 +1,7 @@
 import type { Unstable_TriggerAdapter, Unstable_TriggerItem } from '@assistant-ui/core'
 import { useCallback } from 'react'
 
-import type { PlobiGateway } from '@/plobi'
+import { useI18n } from '@/i18n/context'
 import { sessionTitle } from '@/lib/chat-runtime'
 import {
   type CommandsCatalogLike,
@@ -13,6 +13,7 @@ import {
   isDesktopSlashSuggestion
 } from '@/lib/desktop-slash-commands'
 import { normalize } from '@/lib/text'
+import type { PlobiGateway } from '@/plobi'
 import { $sessions } from '@/store/session'
 
 import type { CompletionEntry, CompletionPayload } from './use-live-completion-adapter'
@@ -62,6 +63,8 @@ export function useSlashCompletions(options: {
   loading: boolean
 } {
   const { gateway, skinThemes, activeSkin } = options
+  const { t } = useI18n()
+  const browseAllSessions = t.desktop.slashCommands.browseAllSessions
   const enabled = Boolean(gateway)
 
   const fetcher = useCallback(
@@ -122,7 +125,7 @@ export function useSlashCompletions(options: {
         // submitting it (Enter) still opens the overlay if the action is skipped.
         items.push({
           text: '/resume',
-          display: 'Browse all sessions…',
+          display: browseAllSessions,
           meta: '',
           group: 'Sessions',
           action: 'session-picker'
@@ -200,7 +203,7 @@ export function useSlashCompletions(options: {
         return { items: [], query }
       }
     },
-    [gateway, skinThemes, activeSkin]
+    [gateway, skinThemes, activeSkin, browseAllSessions]
   )
 
   const toItem = useCallback((entry: CompletionEntry, index: number): Unstable_TriggerItem => {

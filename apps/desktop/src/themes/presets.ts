@@ -36,6 +36,7 @@ export const nousTheme: DesktopTheme = {
   name: 'nous',
   label: 'Nous',
   description: 'Glass neutrals with Nous blue accents',
+  descriptionKey: 'settings.appearance.themeDescriptions.nous',
   colors: {
     background: '#F8FAFF',
     foreground: '#17171A',
@@ -114,6 +115,7 @@ export const plobiTheme: DesktopTheme = {
   name: 'plobi',
   label: 'Plobi',
   description: 'Terracotta on warm neutrals — the house color',
+  descriptionKey: 'settings.appearance.themeDescriptions.plobi',
   colors: {
     background: '#FBF6F0',
     foreground: '#241812',
@@ -175,6 +177,7 @@ export const midnightTheme: DesktopTheme = {
   name: 'midnight',
   label: 'Midnight',
   description: 'Deep blue-violet with cool accents',
+  descriptionKey: 'settings.appearance.themeDescriptions.midnight',
   colors: {
     background: '#08081c',
     foreground: '#ddd6ff',
@@ -212,6 +215,7 @@ export const emberTheme: DesktopTheme = {
   name: 'ember',
   label: 'Ember',
   description: 'Warm crimson and bronze — forge vibes',
+  descriptionKey: 'settings.appearance.themeDescriptions.ember',
   colors: {
     background: '#160800',
     foreground: '#ffd8b0',
@@ -249,6 +253,7 @@ export const monoTheme: DesktopTheme = {
   name: 'mono',
   label: 'Mono',
   description: 'Clean grayscale — minimal and focused',
+  descriptionKey: 'settings.appearance.themeDescriptions.mono',
   colors: {
     background: '#0e0e0e',
     foreground: '#eaeaea',
@@ -282,6 +287,7 @@ export const cyberpunkTheme: DesktopTheme = {
   name: 'cyberpunk',
   label: 'Cyberpunk',
   description: 'Neon green on black — matrix terminal',
+  descriptionKey: 'settings.appearance.themeDescriptions.cyberpunk',
   colors: {
     background: '#000a00',
     foreground: '#00ff41',
@@ -319,6 +325,7 @@ export const slateTheme: DesktopTheme = {
   name: 'slate',
   label: 'Slate',
   description: 'Cool slate blue — focused developer theme',
+  descriptionKey: 'settings.appearance.themeDescriptions.slate',
   colors: {
     background: '#0d1117',
     foreground: '#c9d1d9',

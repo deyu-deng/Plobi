@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { TRANSLATIONS } from '@/i18n/catalog'
+import { setRuntimeI18nLocale } from '@/i18n/runtime'
 
 import {
   desktopSkinSlashCompletions,
@@ -11,6 +14,10 @@ import {
   isPickerCommand,
   resolveDesktopCommand
 } from './desktop-slash-commands'
+
+afterEach(() => {
+  setRuntimeI18nLocale('en')
+})
 
 describe('desktop slash command curation', () => {
   it('keeps core desktop chat commands in suggestions', () => {
@@ -149,6 +156,51 @@ describe('desktop slash command curation', () => {
     expect(desktopSlashDescription('/skin', 'Show or change the display skin/theme')).toBe(
       'Switch desktop theme or cycle to the next one'
     )
+  })
+
+  it('follows the current language instead of showing English on a Chinese screen', () => {
+    setRuntimeI18nLocale('zh')
+
+    expect(desktopSlashDescription('/branch', 'fallback')).toBe(
+      TRANSLATIONS.zh.desktop.slashCommands.branch
+    )
+    expect(desktopSlashDescription('/branch', 'fallback')).not.toContain('English')
+
+    setRuntimeI18nLocale('ja')
+
+    expect(desktopSlashDescription('/branch', 'fallback')).toBe(
+      TRANSLATIONS.ja.desktop.slashCommands.branch
+    )
+  })
+
+  it('gives every slash command a label in all four languages', () => {
+    const locales = ['en', 'zh', 'ja', 'zh-hant'] as const
+
+    for (const locale of locales) {
+      const labels = TRANSLATIONS[locale].desktop.slashCommands
+
+      for (const [key, value] of Object.entries(labels)) {
+        expect(value.length, `${locale}.${key} 是空的`).toBeGreaterThan(0)
+      }
+    }
+
+    // The table and the catalog must not drift: every command that carries a
+    // key must find that key in every language.
+    const commands = ['/new', '/branch', '/yolo', '/handoff', '/agent', '/skin', '/title', '/help',
+      '/browser', '/journey', '/model', '/resume', '/agents', '/background', '/compress', '/debug',
+      '/goal', '/personality', '/pet', '/hatch', '/queue', '/retry', '/rollback', '/save', '/status',
+      '/steer', '/stop', '/tools', '/undo', '/usage', '/version']
+
+    for (const locale of locales) {
+      setRuntimeI18nLocale(locale)
+
+      for (const command of commands) {
+        const description = desktopSlashDescription(command, '')
+
+        expect(description, `${locale} 的 ${command} 没有文案`).not.toBe('')
+        expect(description, `${locale} 的 ${command} 落回了键名`).not.toContain('desktop.slashCommands')
+      }
+    }
   })
 
   it('builds /skin completions from desktop themes', () => {

@@ -603,6 +603,16 @@ export interface Translations {
       intro: string
       colorMode: string
       colorModeDesc: string
+      /** One line per built-in theme, shown under its name in the theme grid. */
+      themeDescriptions: {
+        nous: string
+        plobi: string
+        midnight: string
+        ember: string
+        mono: string
+        cyberpunk: string
+        slate: string
+      }
       toolViewTitle: string
       toolViewDesc: string
       uiScaleTitle: string
@@ -1048,6 +1058,29 @@ export interface Translations {
       modelSelectedMessage: (model: string) => string
       failedSelectModel: (model: string) => string
     }
+    /**
+     * The three uninstall choices, each with what it takes away and what it
+     * leaves behind. The consequence line is what the user is really asking
+     * about, so it is its own sentence rather than part of the description.
+     */
+    uninstall: {
+      guiTitle: string
+      guiDescription: string
+      guiConsequence: string
+      liteTitle: string
+      liteDescription: string
+      liteConsequence: string
+      fullTitle: string
+      fullDescription: string
+      fullConsequence: string
+    }
+    /** The computer-use panel's per-OS notes and its waiting state. */
+    computerUse: {
+      linuxNote: string
+      win32Note: string
+      waitingApproval: string
+      grantPermissions: string
+    }
   }
 
   skills: {
@@ -1222,12 +1255,22 @@ export interface Translations {
     agentDossier: string
     /** 档案卡片里那一段折叠的标题：属于这个 Agent 的笔记。 */
     notesSection: string
-    /** 档案卡（对话卡右侧那条长卡）的三段标题。 */
-    dossierPlanSection: string
+    /** 档案卡（对话卡右侧那条长卡）的分段标题。 */
+    dossierStagesSection: string
     dossierProgressSection: string
     dossierNotesSection: string
-    /** 计划那一段空着的时候说什么。 */
-    dossierPlanEmpty: string
+    /** 现状那一段的小标题（档案本体里的 ``status``）。 */
+    dossierStatusLabel: string
+    /** 现状空着的时候说什么。 */
+    dossierStatusEmpty: string
+    /** 阶段空着的时候说什么。 */
+    dossierStagesEmpty: string
+    /** 目标那枚图标（进度条右上角）的名字。 */
+    dossierGoalLabel: string
+    /** 目标空着的时候说什么。 */
+    dossierGoalEmpty: string
+    /** 档案本体读不出来的时候说什么（不是「还没写」）。 */
+    dossierProfileLoadFailed: string
     /** 按日清单空着的时候说什么（不是「读不到」，是「还没列」）。 */
     dossierTasksEmptyDesc: string
     /** 按日清单读不出来的时候说什么。 */
@@ -1252,6 +1295,10 @@ export interface Translations {
     close: string
     refresh: string
     memory: string
+    /** The legend in the bottom-left corner: what each dot means, and which end is older. */
+    legendSkill: string
+    legendMemory: string
+    legendAge: string
     filterAll: string
     filterUsed: string
     filterLearned: string
@@ -1476,6 +1523,8 @@ export interface Translations {
     loading: string
     loadFailed: string
     states: Record<string, string>
+    /** One setup paragraph per messaging platform, shown while it is unconfigured. */
+    platformIntros: Record<string, string>
     unknown: string
     hintPendingRestart: string
     hintGatewayStopped: string
@@ -2953,6 +3002,50 @@ export interface Translations {
     providerCredentialRequired: string
     emptySlashCommand: string
     desktopCommands: string
+    /**
+     * One label per slash command, shown in the slash popover and in `/help`.
+     * The English text lives here rather than in `lib/desktop-slash-commands.ts`
+     * because that table is read outside React too — a literal there would put
+     * English on a Japanese or Traditional-Chinese screen.
+     */
+    slashCommands: {
+      new: string
+      branch: string
+      yolo: string
+      handoff: string
+      agent: string
+      skin: string
+      skinList: string
+      skinNext: string
+      currentTheme: string
+      title: string
+      help: string
+      browser: string
+      journey: string
+      model: string
+      resume: string
+      agents: string
+      background: string
+      compress: string
+      debug: string
+      goal: string
+      personality: string
+      pet: string
+      hatch: string
+      queue: string
+      retry: string
+      rollback: string
+      save: string
+      status: string
+      steer: string
+      stop: string
+      tools: string
+      undo: string
+      usage: string
+      version: string
+      /** "Browse all sessions…" — the entry that opens the full session picker. */
+      browseAllSessions: string
+    }
     skillCommandsAvailable: (count: number) => string
     warningLine: (message: string) => string
     yoloArmed: string

@@ -89,6 +89,14 @@ export interface DesktopTheme {
   name: string
   label: string
   description: string
+  /**
+   * i18n path of the description, for the built-in themes only. The English
+   * `description` stays as-is because it is also the **search keyword** for the
+   * theme pickers — a translated keyword would stop matching. User-imported
+   * themes carry no key: their description is a source marker
+   * (`VS Code · <publisher.extension>`), not copy.
+   */
+  descriptionKey?: string
   /** Light palette (also reused for dark when `darkColors` is omitted). */
   colors: DesktopThemeColors
   /** Hand-tuned dark palette. Skins like `nous` ship one. */

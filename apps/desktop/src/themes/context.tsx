@@ -13,6 +13,7 @@ import { useStore } from '@nanostores/react'
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query'
+import { translateNow } from '@/i18n/runtime'
 import { persistString, storedString } from '@/lib/storage'
 
 import { hexToRgb, mix, readableOn } from './color'
@@ -266,12 +267,37 @@ interface ThemeContextValue {
    * this so it matches what's on screen instead of inverting.
    */
   renderedMode: 'light' | 'dark'
-  availableThemes: Array<{ name: string; label: string; description: string }>
+  availableThemes: Array<{ name: string; label: string; description: string; descriptionKey?: string }>
   setTheme: (name: string) => void
   setMode: (mode: ThemeMode) => void
 }
 
-const SKIN_LIST = BUILTIN_THEME_LIST.map(({ name, label, description }) => ({ name, label, description }))
+const SKIN_LIST = BUILTIN_THEME_LIST.map(({ name, label, description, descriptionKey }) => ({
+  name,
+  label,
+  description,
+  descriptionKey
+}))
+
+/**
+ * The description to put on screen for a theme.
+ *
+ * Built-in themes carry an i18n key and follow the current language; imported
+ * ones carry a source marker (`VS Code · <publisher.extension>`) instead of
+ * copy, so their own text is what the user sees.
+ */
+export function themeDescription(theme: {
+  description: string
+  descriptionKey?: string
+}): string {
+  if (!theme.descriptionKey) {
+    return theme.description
+  }
+
+  const translated = translateNow(theme.descriptionKey)
+
+  return translated === theme.descriptionKey ? theme.description : translated
+}
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: nousTheme,
@@ -291,11 +317,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const availableThemes = useMemo(
     () =>
-      [...Object.values(BUILTIN_THEMES), ...Object.values(userThemes)].map(({ name, label, description }) => ({
-        name,
-        label,
-        description
-      })),
+      [...Object.values(BUILTIN_THEMES), ...Object.values(userThemes)].map(
+        ({ name, label, description, descriptionKey }) => ({
+          name,
+          label,
+          description,
+          descriptionKey
+        })
+      ),
     [userThemes]
   )
 

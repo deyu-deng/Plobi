@@ -1,3 +1,5 @@
+import { translateNow } from '@/i18n/runtime'
+
 export interface CommandsCatalogSection {
   name: string
   pairs: [string, string][]
@@ -69,8 +71,14 @@ export type DesktopCommandSurface =
 export interface DesktopCommandSpec {
   /** Canonical command, leading slash included (e.g. `/resume`). */
   name: string
-  /** Popover/help label; omitted for unavailable commands (never surfaced). */
-  description?: string
+  /**
+   * i18n path of the popover/help label; omitted for unavailable commands
+   * (never surfaced). **The English text lives in the i18n catalog, not here**
+   * — this table is read outside React too (the `/help` catalog filter), so a
+   * literal here would put English on a Japanese or Traditional-Chinese screen.
+   * See `desktop.slashCommands.*` in `src/i18n/`.
+   */
+  descriptionKey?: string
   aliases?: string[]
   surface: DesktopCommandSurface
   /**
@@ -99,42 +107,42 @@ const unavailable = (reason: DesktopUnavailableReason): DesktopCommandSurface =>
  */
 const DESKTOP_COMMAND_SPECS: readonly DesktopCommandSpec[] = [
   // Local client actions
-  { name: '/new', description: 'Start a new desktop chat', aliases: ['/reset'], surface: action('new') },
+  { name: '/new', descriptionKey: 'desktop.slashCommands.new', aliases: ['/reset'], surface: action('new') },
   {
     name: '/branch',
-    description: 'Branch the latest message into a new chat',
+    descriptionKey: 'desktop.slashCommands.branch',
     aliases: ['/fork'],
     surface: action('branch')
   },
-  { name: '/yolo', description: 'Toggle YOLO — auto-approve dangerous commands', surface: action('yolo') },
+  { name: '/yolo', descriptionKey: 'desktop.slashCommands.yolo', surface: action('yolo') },
   {
     name: '/handoff',
-    description: 'Hand off this session to a messaging platform',
+    descriptionKey: 'desktop.slashCommands.handoff',
     surface: action('handoff'),
     args: true
   },
-  { aliases: ['/profile'], name: '/agent', description: 'Switch which agent the next chat runs as', surface: action('profile') },
-  { name: '/skin', description: 'Switch desktop theme or cycle to the next one', surface: action('skin'), args: true },
-  { name: '/title', description: 'Rename the current session', surface: action('title') },
-  { name: '/help', description: 'Show desktop slash commands', aliases: ['/commands'], surface: action('help') },
+  { aliases: ['/profile'], name: '/agent', descriptionKey: 'desktop.slashCommands.agent', surface: action('profile') },
+  { name: '/skin', descriptionKey: 'desktop.slashCommands.skin', surface: action('skin'), args: true },
+  { name: '/title', descriptionKey: 'desktop.slashCommands.title', surface: action('title') },
+  { name: '/help', descriptionKey: 'desktop.slashCommands.help', aliases: ['/commands'], surface: action('help') },
   {
     name: '/browser',
-    description: 'Manage browser CDP connection [connect|disconnect|status] (local gateway only)',
+    descriptionKey: 'desktop.slashCommands.browser',
     surface: action('browser'),
     args: true
   },
   {
     name: '/journey',
-    description: 'Open the memory graph — skills + memories over time',
+    descriptionKey: 'desktop.slashCommands.journey',
     aliases: ['/learning', '/memory-graph'],
     surface: action('journey')
   },
 
   // Overlay pickers
-  { name: '/model', description: 'Switch the model for this session', surface: picker('model'), hidden: true },
+  { name: '/model', descriptionKey: 'desktop.slashCommands.model', surface: picker('model'), hidden: true },
   {
     name: '/resume',
-    description: 'Resume a saved session',
+    descriptionKey: 'desktop.slashCommands.resume',
     aliases: ['/sessions', '/switch'],
     surface: picker('session'),
     args: true
@@ -143,38 +151,38 @@ const DESKTOP_COMMAND_SPECS: readonly DesktopCommandSpec[] = [
   // Backend-executed commands that render useful inline output
   {
     name: '/agents',
-    description: 'Show active desktop sessions and running tasks',
+    descriptionKey: 'desktop.slashCommands.agents',
     aliases: ['/tasks'],
     surface: exec()
   },
-  { name: '/background', description: 'Run a prompt in the background', aliases: ['/bg', '/btw'], surface: exec() },
-  { name: '/compress', description: 'Compress this conversation context', surface: exec() },
-  { name: '/debug', description: 'Create a debug report', surface: exec() },
-  { name: '/goal', description: 'Manage the standing goal for this session', surface: exec() },
-  { name: '/personality', description: 'Switch personality for this session', surface: exec(), args: true },
+  { name: '/background', descriptionKey: 'desktop.slashCommands.background', aliases: ['/bg', '/btw'], surface: exec() },
+  { name: '/compress', descriptionKey: 'desktop.slashCommands.compress', surface: exec() },
+  { name: '/debug', descriptionKey: 'desktop.slashCommands.debug', surface: exec() },
+  { name: '/goal', descriptionKey: 'desktop.slashCommands.goal', surface: exec() },
+  { name: '/personality', descriptionKey: 'desktop.slashCommands.personality', surface: exec(), args: true },
   {
     name: '/pet',
-    description: 'Toggle or adopt a petdex mascot (/pet, /pet list, /pet boba)',
+    descriptionKey: 'desktop.slashCommands.pet',
     surface: action('pet'),
     args: true
   },
   {
     name: '/hatch',
-    description: 'Generate a new pet (opens the pet generator)',
+    descriptionKey: 'desktop.slashCommands.hatch',
     aliases: ['/generate-pet'],
     surface: action('hatch')
   },
-  { name: '/queue', description: 'Queue a prompt for the next turn', aliases: ['/q'], surface: exec() },
-  { name: '/retry', description: 'Retry the last user message', surface: exec() },
-  { name: '/rollback', description: 'List or restore filesystem checkpoints', surface: exec() },
-  { name: '/save', description: 'Save the current transcript to JSON', surface: exec() },
-  { name: '/status', description: 'Show current session status', surface: exec() },
-  { name: '/steer', description: 'Steer the current run after the next tool call', surface: exec() },
-  { name: '/stop', description: 'Stop running background processes', surface: exec() },
-  { name: '/tools', description: 'List or toggle tools available to the agent', surface: exec(), args: true },
-  { name: '/undo', description: 'Remove the last user/assistant exchange', surface: exec() },
-  { name: '/usage', description: 'Show token usage for this session', surface: exec() },
-  { name: '/version', description: 'Show Plobi Agent version', surface: exec() },
+  { name: '/queue', descriptionKey: 'desktop.slashCommands.queue', aliases: ['/q'], surface: exec() },
+  { name: '/retry', descriptionKey: 'desktop.slashCommands.retry', surface: exec() },
+  { name: '/rollback', descriptionKey: 'desktop.slashCommands.rollback', surface: exec() },
+  { name: '/save', descriptionKey: 'desktop.slashCommands.save', surface: exec() },
+  { name: '/status', descriptionKey: 'desktop.slashCommands.status', surface: exec() },
+  { name: '/steer', descriptionKey: 'desktop.slashCommands.steer', surface: exec() },
+  { name: '/stop', descriptionKey: 'desktop.slashCommands.stop', surface: exec() },
+  { name: '/tools', descriptionKey: 'desktop.slashCommands.tools', surface: exec(), args: true },
+  { name: '/undo', descriptionKey: 'desktop.slashCommands.undo', surface: exec() },
+  { name: '/usage', descriptionKey: 'desktop.slashCommands.usage', surface: exec() },
+  { name: '/version', descriptionKey: 'desktop.slashCommands.version', surface: exec() },
 
   // No desktop surface, but carry an alias (underscore spelling variants).
   { name: '/reload-mcp', aliases: ['/reload_mcp'], surface: unavailable('advanced') },
@@ -357,7 +365,19 @@ export function desktopSlashUnavailableMessage(command: string): string | null {
 }
 
 export function desktopSlashDescription(command: string, fallback = ''): string {
-  return SPEC_BY_NAME.get(canonicalDesktopSlashCommand(command))?.description || fallback
+  const spec = SPEC_BY_NAME.get(canonicalDesktopSlashCommand(command))
+
+  if (!spec?.descriptionKey) {
+    return fallback
+  }
+
+  // Non-React module (the `/help` catalog filter runs outside the tree), so it
+  // resolves against the runtime locale rather than a hook.
+  const translated = translateNow(spec.descriptionKey)
+
+  // `translateNow` returns the key itself when the path is missing — that
+  // would put a dotted path on screen, so fall back instead.
+  return translated === spec.descriptionKey ? fallback : translated
 }
 
 /**
@@ -380,17 +400,17 @@ export function desktopSkinSlashCompletions(
     {
       text: '/skin list',
       display: '/skin list',
-      meta: 'Show available desktop themes'
+      meta: translateNow('desktop.slashCommands.skinList')
     },
     {
       text: '/skin next',
       display: '/skin next',
-      meta: 'Cycle to the next desktop theme'
+      meta: translateNow('desktop.slashCommands.skinNext')
     },
     ...themes.map(theme => ({
       text: `/skin ${theme.name}`,
       display: `/skin ${theme.name}`,
-      meta: `${theme.label}${theme.name === activeThemeName ? ' (current)' : ''} - ${theme.description}`
+      meta: `${theme.label}${theme.name === activeThemeName ? ` (${translateNow('desktop.slashCommands.currentTheme')})` : ''} - ${theme.description}`
     }))
   ]
 
