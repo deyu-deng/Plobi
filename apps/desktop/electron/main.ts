@@ -7439,6 +7439,11 @@ async function startPlobi() {
       // scheduler tick loop (the gateway isn't running under the app).
       PLOBI_DESKTOP: '1',
       PLOBI_WEB_DIST: webDist,
+      // The backend reads the quota catalogue from the hub we started (裁定 46:
+      // one catalogue, one truth). Handing it the base we actually use keeps
+      // the two processes on the same hub even when the port is overridden
+      // (a dev run beside an installed one, or a test hub).
+      PLOBI_QUOTA_HUB_URL: PRODUCT_QUOTA_BASE,
       ...(readyFile ? { PLOBI_DESKTOP_READY_FILE: readyFile } : {})
     }
 
@@ -9494,7 +9499,7 @@ async function ensureChatlogServer(): Promise<void> {
 // render what it serves, never keep its own copy. So the hub's coordinates live
 // here, next to the code that spawns it — the one place that knows the port/key —
 // and are handed to the renderer rather than hardcoded there.
-const PRODUCT_QUOTA_PORT = 8000
+const PRODUCT_QUOTA_PORT = Number(process.env.PLOBI_QUOTA_HUB_PORT || 8000)
 const PRODUCT_QUOTA_BASE = `http://127.0.0.1:${PRODUCT_QUOTA_PORT}/v1`
 
 function productQuotaApiKey(): string {
