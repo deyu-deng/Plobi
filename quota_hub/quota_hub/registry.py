@@ -158,62 +158,11 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 # `install.command` 只在包名确定时填写：写不准的命令比没有命令更坏，没有就退到
 # 「打开官方页面」，绝不猜一个装不上的包名。
 ADAPTED_APPS: dict[str, dict] = {
-    "antigravity": {
-        "name": "Antigravity",
-        "kind": "desktop-app",
-        "login": "oauth",
-        "probe": {"probe": "none"},
-        "download": "https://antigravity.google/",
-        "intro_key": "antigravity",
-    },
-    "antigravity_cli": {
-        "name": "Antigravity CLI",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "agy"},
-        "download": "https://antigravity.google/",
-        "intro_key": "antigravity_cli",
-    },
-    "claude_code_cli": {
-        "name": "Claude Code",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "claude"},
-        "install": {"kind": "npm", "command": "npm install -g @anthropic-ai/claude-code"},
-        "download": "https://claude.com/product/claude-code",
-        "intro_key": "claude_code_cli",
-    },
-    "codex_cli": {
-        "name": "Codex CLI",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "codex"},
-        "install": {"kind": "npm", "command": "npm install -g @openai/codex"},
-        "download": "https://developers.openai.com/codex/",
-        "intro_key": "codex_cli",
-    },
-    "gemini_api": {
-        "name": "Gemini CLI",
-        "kind": "cli",
-        "login": "oauth",
-        "probe": {"probe": "cli", "binary": "gemini"},
-        "install": {"kind": "npm", "command": "npm install -g @google/gemini-cli"},
-        "download": "https://github.com/google-gemini/gemini-cli",
-        "intro_key": "gemini_api",
-    },
+    # 11-09：订阅那一半的卡片**跟着 Magpie 的 provider 列表走**（它加一个插件我们这边多一张卡，它撤一个我们这边少一张）——这张表只留我们自己还维护的：marvis 两条 ＋ Zen 付费 key 那条（用户自己的 key，归 Keys/Account）。已退场的腿（antigravity／qoder／workbuddy／kiro／cline／codex／claude code／cursor／gemini）在这里也不再留卡片：留着的卡只会说「未在网关启用」，那是用户看得见的一句废话。
     # 11-09：Free 那张卡换了实现 —— 现在是 **http 腿**（走 OpenCode 客户端自带的本地
     # 服务，见 providers/apps/opencode/free.py），不再是 11-02 移出额度栏的 CLI spawn
     # 形态。腿 id 是 opencode_free；副标题沿用现成的 i18n 键 opencode_cli（那四语
     # 有在派认领，不动），桌面那张卡的图标键也同样指向这条腿。
-    "opencode_free": {
-        "name": "OpenCode Free",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "opencode"},
-        "install": {"kind": "npm", "command": "npm install -g opencode-ai"},
-        "download": "https://opencode.ai/",
-        "intro_key": "opencode_cli",
-    },
     "opencode_api": {
         "name": "OpenCode Zen",
         "kind": "api",
@@ -221,55 +170,6 @@ ADAPTED_APPS: dict[str, dict] = {
         "probe": {"probe": "credential"},
         "download": "https://opencode.ai/auth",
         "intro_key": "opencode_api",
-    },
-    "cline_cli": {
-        "name": "Cline",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "cline"},
-        "install": {"kind": "npm", "command": "npm install -g cline"},
-        "download": "https://cline.bot/",
-        "intro_key": "cline_cli",
-    },
-    "kiro_cli": {
-        "name": "Kiro CLI",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "kiro-cli"},
-        "download": "https://kiro.dev/",
-        "intro_key": "kiro_cli",
-    },
-    "cursor": {
-        "name": "Cursor",
-        "kind": "desktop-app",
-        "login": "local-session",
-        "probe": {"probe": "desktop", "paths": ["Cursor", "cursor"]},
-        "download": "https://cursor.com/download",
-        "intro_key": "cursor",
-    },
-    "qoder": {
-        "name": "Qoder",
-        "kind": "desktop-app",
-        "login": "oauth",
-        "probe": {"probe": "desktop", "paths": ["Qoder", "qoder"]},
-        "download": "https://qoder.com/",
-        "intro_key": "qoder",
-    },
-    "workbuddy": {
-        "name": "CodeBuddy",
-        "kind": "desktop-app",
-        "login": "local-session",
-        "probe": {"probe": "desktop", "paths": ["CodeBuddy", "CodeBuddy CN", "WorkBuddy"]},
-        "download": "https://www.codebuddy.ai/",
-        "intro_key": "workbuddy",
-    },
-    "workbuddy_cli": {
-        "name": "CodeBuddy CLI",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "workbuddy"},
-        "download": "https://www.codebuddy.ai/",
-        "intro_key": "workbuddy_cli",
     },
     "marvis_cli": {
         "name": "Marvis CLI",

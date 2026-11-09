@@ -553,12 +553,49 @@ class MagpieProviderLeg(MagpieProvider):
         }
 
     def login_plan(self) -> dict:
-        """Signing in happens behind magpie; the drawer is ours either way."""
+        """Signing in happens behind magpie: we run **its** login command.
+
+        The drawer's shape and wording are ours and do not change — the button
+        says 「开始登录」, it waits, and the switch appears when the catalogue
+        says so. What runs behind it is magpie's own `plugin login`, which opens
+        the browser itself (that is where the account is signed in — the same
+        credential the provider's own app would hold).
+        """
+        binary = ""
+        umbrella = self.umbrella
+        if umbrella is not None:
+            binary = umbrella._binary() or ""
         return {
-            "kind": "oauth",
+            "kind": "cli_login",
             "name": self.display_name,
+            "binary": binary,
+            "argv": ["plugin", "login", self.provider_id],
             "reason": f"它的登录在 Magpie 那边（{self.display_name}）",
         }
+
+    def signed_in(self) -> tuple[bool, str]:
+        """Has *this* provider an account in magpie yet?
+
+        The gateway being up is not the same question: magpie runs long before
+        its providers are signed in, and a card that says 「已连接」 while the
+        vendor has no account is a lie (the user's own rule, 11-07).
+        """
+        if self.served_models:
+            return True, "ok"
+        return False, "它还没在 Magpie 那边登录"
+
+    def credential_health(self) -> tuple[bool, str]:
+        """Can this provider serve a turn right now?
+
+        Only if magpie is up **and** this provider is signed in — the first is
+        the gateway, the second is the account.
+        """
+        live, reason = MagpieProvider.credential_health(self)
+        if not live:
+            return False, reason
+        if not self.served_models:
+            return False, "no_desktop_credential"
+        return True, "ok"
 
     # --- the catalogue -----------------------------------------------------
     async def refresh_models(self, acc: Account) -> list[str] | None:

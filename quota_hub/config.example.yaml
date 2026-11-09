@@ -279,7 +279,9 @@ providers:
     timeout: 300
 
   kiro_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     binary: kiro-cli
     args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
     model_flag: "--model"
@@ -295,7 +297,9 @@ providers:
   # its `mcpServers`. No `models:` key on purpose — a name list here would be a second
   # copy of a fact Cline already reports, and it rots on its next upgrade.
   cline_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     binary: cline
     timeout: 300
     # Quota: Cline fronts the user's own provider key; no unified local endpoint.

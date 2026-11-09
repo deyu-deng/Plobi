@@ -79,7 +79,9 @@ providers:
   # ⚠️ 别拿目录第一项当默认——顺序不稳，`antigravity/gemini-pro-agent` 这类条目对
   #    generateContent+tools 回 `Request contains an invalid argument`。
   antigravity:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     # 11-01 现核：同一个凭据、同一个模型，prod 那道门 0.3 秒回 429 RESOURCE_EXHAUSTED
     # （四个模型全一样），daily 这道门 200 并真答了「好」；而账号自己的 quota summary
     # 四格都还剩 0.98–1.0。所以 prod 那个 429 是**公共门满了**，不是他的额度——原来这里
@@ -103,7 +105,9 @@ providers:
   # Gemini CLI（裁定 204）：读 ~/.gemini/oauth_creds.json 的 Google OAuth，打 generateContent，
   # functionCall 翻成 OpenAI tool_calls；登录由 `gemini` 自己做，我们只读它写下的凭据。
   gemini_api:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     # 只给这条腿挂代理（不靠 TUN、不靠 trust_env）：填 http://127.0.0.1:7890 这类地址；留空＝直连。
     # 代理只承载 Google 系流量；它挂了只坏这一条腿，不会像 10-14 那样拖垮全部上游。
     proxy: ""
@@ -139,7 +143,9 @@ providers:
     # 不写 models：名单由上游现读，读不到就是零条。
 
   kiro_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     # 10-31：嘴换成它自己的流式 API（`transport: api`，见 providers/apps/kiro/http.py）。
     # 11-04 现核：目录 7 个具体模型（auto 不在其中，INVALID_MODEL_ID）；model_map 只
     # 在 CLI spawn 路径消费，api 路径由 _model_id 剥前缀直发，故 models/model_map 直接
@@ -163,7 +169,9 @@ providers:
   # 类常量提供（binary/login_args），config 不再携带 spawn 残留。
   # 不写 models：名单由这条腿现读，读不到就是零条，不抄一份会过期的。
   cline_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     timeout: 300
     accounts: [{ id: cline-default }]
 
@@ -184,14 +192,18 @@ providers:
   # （`api.qoder.com` 上 device poll / `/algo/api/v2/model/list` 都回 401 而不是连不上 ⇒
   # 同一套协议、另一组主机）；凭据落在自己的 `qoder_intl_creds.json`，与 CN 那枚不共享。
   qoder_intl:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     region: intl
     display_name: Qoder (International)
     timeout: 300
     stream_idle_seconds: 90
 
   qoder:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     display_name: Qoder
     model_prefix: qoder
     # 10-31：换成它自己那扇签名的门（设备码登录 + COSY 签名 SSE，一个回合 1.0 s 回
@@ -212,7 +224,9 @@ providers:
   # 名单不在这儿抄（11-09 改）：厂商目录口已验过（`/v2/enterprises/personal/models`
   # 回 200），腿自己现读；抄本里那些旧名字（hy4-preview 之类）是厂商已经换掉的。
   workbuddy:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     base_url: https://www.workbuddy.cn
     dialect: openai
     chat_path: /v2/chat/completions

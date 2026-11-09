@@ -570,31 +570,33 @@ def test_two_clicks_do_not_start_two_logins(tmp_path, monkeypatch):
     assert first is second
 
 
-def test_the_catalog_lists_every_leg_and_says_whether_it_is_installed(monkeypatch):
-    """The card list is the catalogue of adapted legs, not what this machine happens to
-    have (user ruling 2026-11-07: a brand-new machine showed a blank settings page).
+def test_the_card_list_is_what_we_still_maintain_and_magpies_own(monkeypatch):
+    """The card list follows **what we still run** — and magpie's own provider list.
 
-    The 2026-10-27 ruling ("only scan what is installed, never offer to download it") is
-    superseded: every adapted leg gets a card, and *whether it is installed* is a separate
-    field on that card — so the button can be a "+" that opens first-time configuration.
+    2026-11-09: the subscription legs we maintained are retired (magpie keeps the
+    vendor adapters now), so their cards go with them: a card for a leg we no
+    longer run can only say 「未在网关启用」, which is noise on the user's screen.
+    What stays is what only we have (marvis) and the Zen key lane (the user's own
+    key, 归 Keys/Account) — plus the cards magpie's provider list grows.
     """
-    from quota_hub.providers.apps.codex.cli import CodexCliProvider
+    from quota_hub.providers.apps.marvis.cli import MarvisCliProvider
 
     class _Reg:
-        providers = {"codex_cli": CodexCliProvider({}, None)}
+        providers = {"marvis_cli": MarvisCliProvider({}, None)}
 
         def credential_health(self, prov):
             return True, "ok"
 
-    monkeypatch.setattr(CodexCliProvider, "_binary_present", lambda self: False)
+    monkeypatch.setattr(MarvisCliProvider, "_binary_present", lambda self: False)
     rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
-    assert "codex_cli" in rows, "an adapted leg gets a card even when it is not installed here"
-    assert rows["codex_cli"]["installed"] is False
-    assert rows["codex_cli"]["state"] == "not_installed"
+    assert "marvis_cli" in rows, "a leg we still maintain keeps its card"
+    assert "opencode_api" in rows, "the Zen key lane keeps its card"
+    for retired in ("codex_cli", "qoder", "workbuddy", "kiro_cli", "opencode_free"):
+        assert retired not in rows, "a leg we no longer run keeps no card: %s" % retired
 
-    monkeypatch.setattr(CodexCliProvider, "_binary_present", lambda self: True)
+    monkeypatch.setattr(MarvisCliProvider, "_binary_present", lambda self: True)
     rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
-    assert rows["codex_cli"]["installed"] is True
+    assert rows["marvis_cli"]["installed"] is True
 
 
 def test_a_login_only_target_without_its_cli_is_still_listed_as_not_installed(monkeypatch):

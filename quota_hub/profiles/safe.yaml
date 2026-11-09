@@ -118,7 +118,9 @@ providers:
     timeout: 300
 
   kiro_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     binary: kiro-cli
     args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
     model_flag: "--model"
@@ -128,7 +130,9 @@ providers:
     accounts: [{ id: kiro-default }]
 
   cline_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     binary: cline
     args_template: ["--json", "{model_flag}", "{prompt}"]
     model_flag: "-m"
@@ -138,7 +142,9 @@ providers:
     accounts: [{ id: cline-default }]
 
   workbuddy:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
     prefer: cli
     models:
       - workbuddy/default
