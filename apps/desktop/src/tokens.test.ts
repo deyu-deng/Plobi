@@ -51,24 +51,23 @@ const TEXT_EXT = new Set(['.ts', '.tsx', '.css', '.html'])
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.vite'])
 
 /**
- * 已知欠账（下一刀收，落法见 `Docs/tasks/dead-hover-face-task.md` 的「下一刀」一节）：
- * · `--ui-surface-secondary`（1 处）＝ 外部来源那一个清单的底色空 → 按角色判
- * · `--ui-text-danger`（8 处）＝ 危险色那几处不显红 → `text-destructive`
- *   （其中出口面板与外包屏那 6 处在别的在派线认领下，要等它们交割）
- * · `--ui-accent-foreground`／`--ui-text-on-accent`（4 处）＝ 强调色底上的字读不清 → `text-white`
- *   （日历那几处带 `, white` 的 fallback，屏上看得出来的不算死）
+ * 已知欠账（下一刀收，落法见 `Docs/tasks/dead-danger-accent-task.md` 的「下一刀」一节）：
+ * · `--ui-text-danger`（5 处）＝ 危险色那几处不显红 → `text-destructive`
+ *   （全仓 8 处，本刀还了网络设置 2＋外包设置 1；出口面板那 5 处在别的在派线认领下，要等它们交割）
  * · `--ui-background`（2 处）＝ 侧栏那枚头像的 ring 偏移底色空 → `ring-offset-background`
  *   （那一档在派线认领着，本刀不碰）
  *
- * `--ui-surface-2` 与 `--ui-surface` 已随 `WP-DEAD-HOVER-FACE` 还完（hover 面与底色那 13 处），
- * 不再是欠账 ⇒ 下一把刀再写错这两支，那扇门当场红。
+ * `--ui-accent-foreground`／`--ui-text-on-accent`／`--ui-surface-secondary` 已随
+ * `WP-DEAD-DANGER-ACCENT` 还完（强调底上的字与那块空底色），不再是欠账 ⇒
+ * 下一把刀再写错这三支，那扇门当场红。
+ *
+ * 日历那 4 处 `--ui-accent-foreground` 带 `, white` 的 fallback（CSS 的 `var(--x, white)`
+ * 在变量没定义时取 fallback，屏上是白的）——门扫得到它们，但它们照屏不病，列在这里。
  */
 const KNOWN_DEBT = new Set([
-  '--ui-surface-secondary',
   '--ui-text-danger',
-  '--ui-accent-foreground',
-  '--ui-text-on-accent',
-  '--ui-background'
+  '--ui-background',
+  '--ui-accent-foreground'
 ])
 
 /** CSS 里的定义：`--名: 值`（不含 `var(--名)` 那种用法）。 */

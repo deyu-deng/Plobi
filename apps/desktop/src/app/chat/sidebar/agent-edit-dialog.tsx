@@ -310,7 +310,7 @@ export function AgentEditDialog({
                 </ul>
                 <div className="flex items-center gap-1.5">
                   <button
-                    className="rounded-md bg-(--ui-accent) px-2 py-1 text-[0.6875rem] text-(--ui-accent-foreground) disabled:opacity-60"
+                    className="rounded-md bg-(--ui-accent) px-2 py-1 text-[0.6875rem] text-white disabled:opacity-60"
                     disabled={renaming}
                     onClick={() => {
                       void confirmRename()
@@ -343,7 +343,7 @@ export function AgentEditDialog({
             {c.agentEditCancel}
           </button>
           <button
-            className="rounded-md bg-(--ui-accent) px-3 py-1.5 text-sm text-(--ui-accent-foreground) disabled:opacity-60"
+            className="rounded-md bg-(--ui-accent) px-3 py-1.5 text-sm text-white disabled:opacity-60"
             disabled={busy || !displayName.trim()}
             onClick={() => {
               void save()

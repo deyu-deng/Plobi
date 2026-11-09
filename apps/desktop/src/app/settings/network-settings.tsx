@@ -418,7 +418,7 @@ export function NetworkSettings() {
       {/* 标题不摆 `engine.state`：`running-ours` 这类机器词不许上屏（用户 10-27 令），
           而引擎在不在跑已经由底栏那枚图标的颜色和面板上的点说了。 */}
       {!loaded ? (
-        <p className="mb-2 text-sm text-(--ui-text-danger)">{copy.notLoaded}</p>
+        <p className="mb-2 text-sm text-destructive">{copy.notLoaded}</p>
       ) : null}
 
       {/* 「这套出口现在到底成没成」：读数来自与面板、托盘、CLI 同一份快照
@@ -687,7 +687,7 @@ export function NetworkSettings() {
         title={copy.save}
       />
       {error ? (
-        <p className="text-sm text-(--ui-text-danger)">
+        <p className="text-sm text-destructive">
           {copy.refused}: {error}
         </p>
       ) : null}

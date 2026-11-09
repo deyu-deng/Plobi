@@ -540,7 +540,7 @@ function WeekStrip({
                 className={cn(
                   'flex size-6 max-w-full items-center justify-center rounded-full text-[0.78rem] tabular-nums',
                   active
-                    ? 'bg-(--ui-accent) font-semibold text-(--ui-text-on-accent)'
+                    ? 'bg-(--ui-accent) font-semibold text-white'
                     : count === 0
                       ? 'text-(--ui-text-quaternary)'
                       : 'text-foreground/90',
@@ -552,7 +552,7 @@ function WeekStrip({
               <span className="flex h-1 items-center gap-0.5">
                 {Array.from({ length: Math.min(count, 3) }, (_, dot) => (
                   <span
-                    className={cn('size-[3px] rounded-full', active ? 'bg-(--ui-text-on-accent)/80' : 'bg-(--ui-accent)')}
+                    className={cn('size-[3px] rounded-full', active ? 'bg-white/80' : 'bg-(--ui-accent)')}
                     key={dot}
                   />
                 ))}

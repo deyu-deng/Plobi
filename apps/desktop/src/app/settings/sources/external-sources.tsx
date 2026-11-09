@@ -182,7 +182,7 @@ export function ExternalSources({ labels, onChanged }: { labels: Labels; onChang
 
       {lines?.length ? (
         <pre
-          className="max-h-48 overflow-auto rounded-md bg-(--ui-surface-secondary) p-2 text-[0.72rem] text-(--ui-text-tertiary)"
+          className="max-h-48 overflow-auto rounded-md bg-(--ui-bg-secondary) p-2 text-[0.72rem] text-(--ui-text-tertiary)"
           data-testid="external-log"
         >
           {lines.join('\n')}

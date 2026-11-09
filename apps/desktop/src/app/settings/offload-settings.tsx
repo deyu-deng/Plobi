@@ -172,7 +172,7 @@ export function OffloadSettings() {
         description={s.note}
         title={s.title}
       >
-        {error ? <p className="py-2 text-sm text-(--ui-text-danger)">{error}</p> : null}
+        {error ? <p className="py-2 text-sm text-destructive">{error}</p> : null}
         {!payload && !error ? <LoadingState label={s.loading} /> : null}
         {payload?.agents.map(agent => {
           // 「配好了」= 装上了、且没判成未登录；能不能用另算（那是后端一处判据）。
