@@ -17,7 +17,7 @@ vi.mock('./dossier-api', () => ({
   setDossierTaskDone: (...args: unknown[]) => setDossierTaskDone(...args)
 }))
 
-// 笔记那一条走的是右栏页签（现成那条路），本档只关心档案卡自己的三段。
+// 笔记那一条走的是右栏页签（现成那条路），本档只关心档案卡自己的几段。
 vi.mock('@/app/chat/right-rail/notes-list', () => ({
   AgentNotesList: () => <div data-testid="agent-notes" />
 }))
@@ -44,11 +44,16 @@ vi.mock('@/i18n', () => ({
         dossierCollapse: '收起',
         dossierDoneByAgent: 'Agent',
         dossierDoneByUser: '你',
+        dossierGoalEmpty: '还没有写目标。',
+        dossierGoalLabel: '目标',
         dossierNotesSection: '相关笔记',
         dossierPin: '固定',
-        dossierPlanEmpty: '这个 Agent 还没有写计划。',
-        dossierPlanSection: '计划',
+        dossierProfileLoadFailed: '档案读不出来',
         dossierProgressSection: '进度',
+        dossierStagesEmpty: '这个 Agent 还没有列阶段。',
+        dossierStagesSection: '阶段',
+        dossierStatusEmpty: '这个 Agent 还没有写现状。',
+        dossierStatusLabel: '现状',
         dossierTasksEmptyDesc: '这份档案还没有按天列的任务。',
         dossierTasksLoadFailed: '清单读不出来',
         dossierToday: '今天',
@@ -69,18 +74,19 @@ function agent(overrides: Record<string, unknown> = {}) {
   return {
     description: '情绪追踪应用',
     displayName: 'Aura',
-    docs: [
-      {
-        exists: true,
-        filename: 'plan.md',
-        key: 'plan',
-        label: '计划',
-        text: '---\nproject: Aura\n---\n\n## Goal\n\n上架应用',
-        updated: '2026-11-08'
-      }
+    docs: [],
+    goal: '上架一款情绪追踪应用',
+    milestones: { done: 2, total: 4 },
+    profileError: '',
+    profileExists: true,
+    stages: [
+      { detail: '罗素模型落地', done: true, id: 's1', title: '核心模型' },
+      { detail: '流体水母', done: true, id: 's2', title: '交互打磨' },
+      { detail: '矢量图标与测试', done: false, id: 's3', title: 'UX 打磨' },
+      { detail: '软著已提交', done: false, id: 's4', title: '上架' }
     ],
-    milestones: { done: 1, total: 4 },
     status: 'active',
+    summary: '当前阶段：UX 打磨；下一步：矢量图标',
     updated: '2026-11-08',
     workPath: 'D:/data/dossiers/projects/Aura',
     ...overrides
@@ -120,31 +126,97 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('档案卡（浮在对话右上角那张卡）', () => {
-  it('三段同时在屏上——不是三个抽屉', async () => {
+describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔记）', () => {
+  it('五段同时在屏上', async () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
     renderPanel()
 
-    expect(await screen.findByText('计划')).toBeTruthy()
+    expect(await screen.findByText('阶段')).toBeTruthy()
     expect(screen.getByText('进度')).toBeTruthy()
     expect(screen.getByText('相关笔记')).toBeTruthy()
-    // 计划正文不用点开就看得见（抽屉形态要点一下）。
-    expect(screen.getAllByText(/上架应用/).length).toBeGreaterThan(0)
+    // ① 现状：一段话。
+    expect(screen.getByTestId('dossier-summary').textContent).toContain('当前阶段：UX 打磨')
   })
 
-  it('顶部是回顾块：「更新于 某天」＋ 一段摘要（照 Qoder 那张卡）', async () => {
+  it('① 现状用的是档案本体那一段，不是 md 的正文', async () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
     renderPanel()
 
-    expect(await screen.findByText('更新于 2026-11-08')).toBeTruthy()
-    // 摘要＝计划的第一段正文，不是整篇计划。
-    const summary = screen.getByTestId('dossier-summary')
+    const summary = await screen.findByTestId('dossier-summary')
 
-    expect(summary.textContent).toContain('上架应用')
+    expect(summary.textContent).toContain('当前阶段：UX 打磨')
+    expect(summary.textContent).not.toContain('## Goal')
+  })
+
+  it('③ 阶段进度条：一个节点一个阶段', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    await screen.findByTestId('dossier-stage-bar')
+
+    for (const id of ['s1', 's2', 's3', 's4']) {
+      expect(screen.getByTestId(`dossier-stage-${id}`)).toBeTruthy()
+    }
+
+    expect(screen.getByText('核心模型')).toBeTruthy()
+  })
+
+  it('③ hover 一个阶段 ⇒ 出那一个阶段的详情', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    const node = await screen.findByTestId('dossier-stage-s3')
+
+    fireEvent.mouseEnter(node)
+
+    const detail = screen.getByTestId('dossier-stage-detail-s3')
+
+    expect(detail.textContent).toContain('UX 打磨')
+    expect(detail.textContent).toContain('矢量图标与测试')
+    // 别的那一段不该一起冒出来。
+    expect(screen.queryByTestId('dossier-stage-detail-s1')).toBeNull()
+  })
+
+  it('② 目标在进度条右上角一枚图标上，hover 出目标详情', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    const goal = await screen.findByTestId('dossier-goal')
+
+    expect(goal.getAttribute('aria-label')).toBe('目标')
+
+    fireEvent.mouseEnter(goal)
+
+    expect(screen.getByTestId('dossier-goal-detail').textContent).toContain('上架一款情绪追踪应用')
+  })
+
+  it('档案本体读不出来时说的是「读不出来」，不许显示成「还没写」', async () => {
+    fetchVaultAgent.mockResolvedValue(agent({ profileError: 'dossier.json is not valid JSON: boom' }))
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    expect(await screen.findByText('档案读不出来')).toBeTruthy()
+    expect(screen.queryByText('这个 Agent 还没有写现状。')).toBeNull()
+  })
+
+  it('还没建立档案时，现状说的是「还没写现状」', async () => {
+    fetchVaultAgent.mockResolvedValue(agent({ profileExists: false, summary: '' }))
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderPanel()
+
+    expect(await screen.findByText('这个 Agent 还没有写现状。')).toBeTruthy()
   })
 
   it('图钉在「固定／取消固定」之间切', async () => {
