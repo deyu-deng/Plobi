@@ -1,11 +1,15 @@
-"""agent_dossier：名册 + 标准档案的只读读手（WP-VAULT-AGENTS-VIEW）。
+"""agent_dossier：名册 + 档案本体的只读读手（WP-VAULT-AGENTS-VIEW → WP-DOSSIER-SHAPE）。
 
-钉住四件事：类别决定该有哪几份档案、缺领地如实报缺、里程碑/状态从真文件读、
-读一趟不写任何东西（尤其不许触发名册自愈回写）。
+钉住四件事：**档案本体**（``dossier.json``）是目标／状况／阶段的真源、缺领地如实报缺、
+坏文件不许糊成空表、读一趟不写任何东西（尤其不许触发名册自愈回写）。
+
+11-09 起 ``plan.md``／``progress.md`` 那一对退役（用户：「抽成结构化并把 md 删掉」）：
+档案本体是一份结构化记录，测试也照它写。
 """
 
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -38,24 +42,37 @@ ROSTER = textwrap.dedent(
     """
 ).lstrip()
 
-PLAN = """---
-project: Aura
-title: Aura
-type: engineering
-status: active
-updated: 2026-09-28
-summary: 一句摘要。
----
+PROFILE: dict = {
+    "version": 1,
+    "agent": "Aura",
+    "title": "Aura",
+    "category": "projects",
+    "goal": "把情绪记录做成一个能用的应用。",
+    "status": "当前阶段：上线准备；下一步：过审",
+    "stages": [
+        {"id": "s1", "title": "核心模型", "detail": "罗素模型落地", "done": True},
+        {"id": "s2", "title": "交互打磨", "detail": "流体水母", "done": True},
+        {"id": "s3", "title": "上架", "detail": "软著已提交", "done": False},
+    ],
+    "registry": {
+        "project": "Aura",
+        "state": "active",
+        "summary": "一句摘要。",
+        "updated": "2026-09-28",
+    },
+    "updated": "2026-09-28",
+    "log": "# Aura · 流水\n\n- 2026-09-28：建档\n",
+}
 
-# Aura
 
-## Milestones
-
-- [x] M1
-- [x] M2
-- [ ] M3
-- [ ] M4
-"""
+def _write_profile(directory: Path, profile: dict | None = None) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "dossier.json"
+    path.write_text(
+        json.dumps(PROFILE if profile is None else profile, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return path
 
 
 @pytest.fixture()
@@ -75,9 +92,8 @@ def roots(tmp_path, monkeypatch):
 
 def test_index_shape_and_categories(roots):
     _, surface, roster = roots
-    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
-    (surface / "dossiers" / "projects" / "Aura" / "progress.md").write_text("# p\n", encoding="utf-8")
-    (surface / "dossiers" / "research" / "SRTP" / "plan.md").write_text("# s\n", encoding="utf-8")
+    _write_profile(surface / "dossiers" / "projects" / "Aura")
+    (surface / "dossiers" / "projects" / "Aura" / "research.md").write_text("# r\n", encoding="utf-8")
 
     data = ad.build_index(roster)
     by_name = {row["id"]: row for row in data["agents"]}
@@ -86,15 +102,16 @@ def test_index_shape_and_categories(roots):
     assert data["totals"] == {"agents": 4, "withHome": 3, "withoutHome": 1}
 
     aura = by_name["Aura"]
-    assert [d["key"] for d in aura["docs"]] == ["plan", "progress"]
-    assert all(d["exists"] for d in aura["docs"])
+    # md 那一对退役了：projects 只剩**研究笔记**那一份文档。
+    assert [d["key"] for d in aura["docs"]] == ["research"]
+    assert aura["docs"][0]["exists"] is True
     assert aura["categoryLabel"] == "项目"
     assert aura["homeLabel"] == "Surface/dossiers/projects/Aura"
     assert aura["workPath"] == "D:/projects/Aura"
 
     srtp = by_name["SRTP"]
-    assert [d["key"] for d in srtp["docs"]] == ["plan", "progress", "research"]
-    assert [d["exists"] for d in srtp["docs"]] == [True, False, False]
+    assert [d["key"] for d in srtp["docs"]] == ["research"]
+    assert [d["exists"] for d in srtp["docs"]] == [False]
 
     course = by_name["电工电子学"]
     assert [d["key"] for d in course["docs"]] == ["requirements", "syllabus"]
@@ -103,39 +120,55 @@ def test_index_shape_and_categories(roots):
     assert all(not d["exists"] for d in course["docs"])
 
 
-def test_milestones_status_and_summary(roots):
+def test_profile_drives_goal_status_and_stages(roots):
     _, surface, roster = roots
-    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    _write_profile(surface / "dossiers" / "projects" / "Aura")
 
     aura = {row["id"]: row for row in ad.build_index(roster)["agents"]}["Aura"]
-    assert aura["milestones"] == {"done": 2, "total": 4}
+    assert aura["goal"] == "把情绪记录做成一个能用的应用。"
+    # **现状**在 ``summary`` 那一格；``status`` 是**生命周期状态**（侧栏那颗点认它）。
+    assert aura["summary"] == "当前阶段：上线准备；下一步：过审"
     assert aura["status"] == "active"
-    assert aura["summary"] == "一句摘要。"
+    assert aura["milestones"] == {"done": 2, "total": 3}
+    assert [s["title"] for s in aura["stages"]] == ["核心模型", "交互打磨", "上架"]
     assert aura["updated"] == "2026-09-28"
+    assert aura["profileExists"] is True
+    assert aura["profileError"] == ""
 
 
-def test_plan_without_frontmatter_still_has_excerpt(roots):
+def test_missing_profile_reports_not_established(roots):
     _, surface, roster = roots
-    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(
-        "# Aura\n\n> 引用不算\n\n第一段正文。\n", encoding="utf-8"
+
+    aura = {row["id"]: row for row in ad.build_index(roster)["agents"]}["Aura"]
+    assert aura["profileExists"] is False
+    assert aura["profileError"] == ""
+    assert aura["goal"] == ""
+    assert aura["summary"] == ""
+    assert aura["milestones"] == {"done": 0, "total": 0}
+
+
+def test_broken_profile_reports_unreadable_not_empty(roots):
+    _, surface, roster = roots
+    (surface / "dossiers" / "projects" / "Aura" / "dossier.json").write_text(
+        "{ 这不是 JSON", encoding="utf-8"
     )
 
     aura = {row["id"]: row for row in ad.build_index(roster)["agents"]}["Aura"]
-    assert aura["status"] == ""
-    assert aura["summary"] == "第一段正文。"
+    # 坏文件**不许糊成空档案**：读得到「读不到」，不是「什么都没有」。
+    assert aura["profileExists"] is True
+    assert aura["profileError"] != ""
+    assert aura["summary"] == ""
 
 
-def test_read_agent_returns_bodies(roots):
+def test_read_agent_returns_the_whole_profile(roots):
     _, surface, roster = roots
-    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    _write_profile(surface / "dossiers" / "projects" / "Aura")
 
     page = ad.read_agent("Aura", roster)
     assert page is not None
-    plan = page["docs"][0]
-    assert plan["exists"] is True
-    assert "## Milestones" in plan["text"]
-    assert plan["truncated"] is False
-    assert plan["fsPath"].endswith("plan.md")
+    assert page["profile"]["exists"] is True
+    assert page["profile"]["error"] is None
+    assert page["profile"]["profile"]["log"].startswith("# Aura · 流水")
 
     course = ad.read_agent("电工电子学", roster)
     assert course is not None
@@ -146,7 +179,7 @@ def test_read_agent_returns_bodies(roots):
 
 def test_read_only_leaves_disk_and_roster_untouched(roots):
     tmp, surface, roster = roots
-    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text(PLAN, encoding="utf-8")
+    _write_profile(surface / "dossiers" / "projects" / "Aura")
 
     def snapshot() -> dict[str, tuple[int, int]]:
         return {
@@ -164,15 +197,15 @@ def test_read_only_leaves_disk_and_roster_untouched(roots):
 
 def test_truncates_oversized_doc(roots, monkeypatch):
     _, surface, roster = roots
-    big = surface / "dossiers" / "projects" / "Aura" / "plan.md"
+    big = surface / "dossiers" / "projects" / "Aura" / "research.md"
     big.write_text("x" * (ad.MAX_DOC_BYTES + 10), encoding="utf-8")
     monkeypatch.setattr(ad, "MAX_DOC_BYTES", 64)
     monkeypatch.setattr(ad, "LIST_SCAN_BYTES", 64)
 
     page = ad.read_agent("Aura", roster)
-    plan = page["docs"][0]
-    assert plan["truncated"] is True
-    assert len(plan["text"]) == 64
+    doc = page["docs"][0]
+    assert doc["truncated"] is True
+    assert len(doc["text"]) == 64
 
 
 def test_missing_mind_root_reports_no_home(roots, monkeypatch):
@@ -180,6 +213,7 @@ def test_missing_mind_root_reports_no_home(roots, monkeypatch):
     monkeypatch.delenv("MIND_ROOT", raising=False)
     monkeypatch.setattr(ad, "real_target", lambda *a, **k: (_ for _ in ()).throw(ad.MindUnavailable("no root")))
 
-    aura = ad.build_index(roster)["agents"][0]
-    assert aura["hasHome"] is False
-    assert aura["docs"][0]["exists"] is False
+    rows = {row["id"]: row for row in ad.build_index(roster)["agents"]}
+    assert rows["Aura"]["hasHome"] is False
+    assert rows["Aura"]["docs"][0]["exists"] is False
+    assert rows["Aura"]["profileExists"] is False

@@ -36,7 +36,19 @@ def live(monkeypatch, tmp_path):
     surface = tmp_path / "surface"
     (mind / "wiki").mkdir(parents=True)
     (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
-    (surface / "dossiers" / "projects" / "Aura" / "plan.md").write_text("# Aura\n\n目标。\n", encoding="utf-8")
+    # 档案本体（11-09 起真源）：目标／现状／阶段。
+    (surface / "dossiers" / "projects" / "Aura" / "dossier.json").write_text(
+        json.dumps(
+            {
+                "agent": "Aura",
+                "goal": "目标。",
+                "status": "当前阶段：立项。",
+                "stages": [{"id": "s1", "title": "立项", "done": False}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("SURFACE_ROOT", str(surface))
@@ -56,7 +68,36 @@ def test_detail_route_returns_bodies(live):
     response = asyncio.run(surface_api.get_surface_agent("Aura"))
     body = response if isinstance(response, dict) else json.loads(response.body)
     assert body["ok"] is True
-    assert "目标。" in body["data"]["docs"][0]["text"]
+    # 档案本体整份都在这一页里（目标／状况／阶段／流水）。
+    assert body["data"]["profile"]["profile"]["goal"] == "目标。"
+    assert body["data"]["profile"]["profile"]["status"] == "当前阶段：立项。"
+    assert body["data"]["goal"] == "目标。"
+    assert body["data"]["summary"] == "当前阶段：立项。"
+
+
+def test_profile_route_returns_the_whole_record(live):
+    response = asyncio.run(surface_api.get_surface_agent_profile("Aura"))
+    body = response if isinstance(response, dict) else json.loads(response.body)
+    assert body["ok"] is True
+    assert body["data"]["exists"] is True
+    assert body["data"]["error"] is None
+    assert body["data"]["profile"]["stages"][0]["title"] == "立项"
+
+
+def test_profile_route_separates_missing_from_broken(live):
+    """**没建立**与**读不到**是两件事：空档案会被读成「什么都没有」，而那是假的。"""
+    profile_path = live / "surface" / "dossiers" / "projects" / "Aura" / "dossier.json"
+    profile_path.unlink()
+    response = asyncio.run(surface_api.get_surface_agent_profile("Aura"))
+    body = response if isinstance(response, dict) else json.loads(response.body)
+    assert body["data"]["exists"] is False
+    assert body["data"]["error"] is None
+
+    profile_path.write_text("{ 坏的", encoding="utf-8")
+    response = asyncio.run(surface_api.get_surface_agent_profile("Aura"))
+    body = response if isinstance(response, dict) else json.loads(response.body)
+    assert body["data"]["exists"] is True
+    assert body["data"]["error"] is not None
 
 
 def test_unknown_agent_is_404_not_an_empty_page(live):

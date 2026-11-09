@@ -50,8 +50,13 @@ def surface(tmp_path, monkeypatch):
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     # 详版画像在脑里（用户 10-24：surface 不进记忆系统；USER.md 是精简版）
     (root / "persona" / "profile.md").write_text("我是邓德宇。", encoding="utf-8")
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
+    # **档案本体**是目标／现状的真源（11-09，WP-DOSSIER-SHAPE）；md 那一对退役了，
+    # 留着它们是为了钉住「读侧不再看 md 一眼」。
+    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "dossier.json").write_text(
+        '{"agent": "Plobi", "goal": "北极星…", "status": "M1 进行中"}', encoding="utf-8"
+    )
+    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n旧目标。", encoding="utf-8")
+    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("旧进展。", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
     return root
 
@@ -561,8 +566,9 @@ def test_reader_pulls_persona_and_projects(surface):
 
     assert "邓德宇" in context.persona
     assert [p.name for p in context.projects] == ["Plobi"]
-    assert "北极星" in context.projects[0].plan_excerpt
-    assert "M1" in context.projects[0].progress_excerpt
+    # 目标／现状来自**档案本体**，不是 md（md 那一对已退役）。
+    assert "北极星" in context.projects[0].goal
+    assert "M1" in context.projects[0].status
 
 
 def test_reader_excerpts_are_capped(surface):

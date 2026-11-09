@@ -109,8 +109,8 @@ def _profile_block(root: Path, *, include_persona: bool = True) -> str:
     """画像/项目状态的窄切读取（无模型、纯文件）。
 
     来源：``<MIND_ROOT>/persona/profile.md``（详版画像；用户 10-24：画像不是 skill，是脑的一部分）
-    + ``<MIND_ROOT>/<项目>/plan.md``/
-    ``progress.md``（MindReader，大写 Plobi 是当前项目写入位）。为空返回
+    + ``Surface/dossiers/projects/<项目>/dossier.json``（**档案本体**：现状与目标；
+    MindReader，大写 Plobi 是当前项目写入位）。为空返回
     ``""``——调用方据此跳过注入，不产生空块。
 
     ``include_persona=False`` 时只取项目简报、跳过用户画像段：画像已由稳定
@@ -130,7 +130,7 @@ def _profile_block(root: Path, *, include_persona: bool = True) -> str:
             persona = persona[:PROFILE_MAX_CHARS_PER_SECTION].rstrip() + "…"
         sections.append(f"### 用户画像\n{persona}")
     for brief in ctx.projects:
-        piece = (brief.progress_excerpt or brief.plan_excerpt or "").strip()
+        piece = (brief.status or brief.goal or "").strip()
         if not piece:
             continue
         if len(piece) > PROFILE_MAX_CHARS_PER_SECTION:

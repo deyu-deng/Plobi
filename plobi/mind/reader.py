@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from .dossier_profile import PROFILE_FILENAME, read_profile
 from .paths import real_target, resolve_root
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,15 @@ MAX_EXCERPT_CHARS = 4000
 
 @dataclass
 class ProjectBrief:
+    """一个项目的**现状摘要**。
+
+    11-09 起（WP-DOSSIER-SHAPE）这份摘要来自**档案本体**（``dossier.json``），
+    与屏上那张卡的第一段**同一份数据**——一个真源两个消费者，不再各读各的 md。
+    """
+
     name: str
-    plan_excerpt: str = ""
-    progress_excerpt: str = ""
+    goal: str = ""
+    status: str = ""
 
 
 @dataclass
@@ -88,11 +95,13 @@ class MindReader:
         if not directory.is_dir():
             return None
 
-        return ProjectBrief(
-            name=name,
-            plan_excerpt=_read_excerpt(directory / "plan.md"),
-            progress_excerpt=_read_excerpt(directory / "progress.md"),
-        )
+        # **档案本体**（``dossier.json``）：目标与现状都在这里。md 那一对已退役，
+        # 读侧不再看它一眼——屏上那张卡与这段摘要读的是同一个文件。
+        profile = read_profile(directory / PROFILE_FILENAME).profile
+        if profile is None:
+            return None
+
+        return ProjectBrief(name=name, goal=profile.goal, status=profile.status)
 
     def projects(self, limit: int = 10) -> list[ProjectBrief]:
         root = self.root
@@ -106,7 +115,7 @@ class MindReader:
         briefs: list[ProjectBrief] = []
         for directory in sorted(p for p in base.iterdir() if p.is_dir()):
             brief = self.project(directory.name)
-            if brief and (brief.plan_excerpt or brief.progress_excerpt):
+            if brief and (brief.goal or brief.status):
                 briefs.append(brief)
             if len(briefs) >= limit:
                 break

@@ -2,8 +2,9 @@
 
 返回 ``{ok, data|error}`` 同一个信封：
 
-* ``GET /api/surface/agents`` —— 24 张卡（名册身份 + 标准档案元数据，不带正文）
-* ``GET /api/surface/agents/{name}`` —— 一页（标准档案正文）
+* ``GET /api/surface/agents`` —— 24 张卡（名册身份 + 档案本体的目标／状况／阶段，不带正文）
+* ``GET /api/surface/agents/{name}`` —— 一页（档案本体整份 + 目录里那几份文档）
+* ``GET /api/surface/agents/{name}/profile`` —— 档案本体（目标／状况／阶段／流水）
 * ``GET /api/surface/agents/{name}/tasks`` —— 那一页的每日任务清单（``tasks.json``）
 * ``POST /api/surface/agents/{name}/tasks/toggle`` —— 人勾选／取消勾选（改同一份 ``tasks.json``）
 * ``GET /api/surface/notes`` —— 知识库：全部笔记的元数据
@@ -59,51 +60,14 @@ def _root_gone(what: str, root: str) -> JSONResponse | None:
 
 @router.get("/surface/agents")
 async def list_surface_agents():
-    """优先从数据库查询 agent_dossiers 表；没有则降级到文件系统扫描。
+    """名册里每一行 ＋ 它的档案本体（目标／状况／阶段）。
 
-    **两条腿返回的形状必须一致**（前端 `AgentDossierCard` / `AgentProgressPane` 只认一种）。
-    DB 腿给的是**元数据索引**（里程碑数、工作路径、更新时间）；正文档列表（docs）
-    那部分 DB 里没有 ⇒ 走文件系统腿补齐，**不让 DB 那一半变成一个更瘦的形状**。
+    **只有一条腿**（11-09，WP-DOSSIER-SHAPE）：档案本体是文件（``dossier.json``），
+    库那份 ``agent_dossiers`` 是旧 md 的影子——md 退役之后影子只剩陈账，走它等于把
+    一个月前的计划端到屏上。库继续做笔记与日记的索引，档案这一格不再经它。
     """
     from plobi.mind.agent_dossier import build_index as fs_build_index
 
-    # 1. 先试数据库
-    try:
-        from .vault import list_dossiers
-
-        dossiers = list_dossiers()
-        if dossiers:
-            from plobi.agents.registry import AgentRegistry
-            registry = AgentRegistry.load()
-
-            # 文件系统腿的底稿（docs 那一组只有它有）——DB 腿在上面补里程碑与路径
-            fs_index = await run_in_threadpool(fs_build_index)
-            fs_agents = {a.get("id"): a for a in (fs_index.get("agents") or [])}
-
-            agents_data = []
-            for dossier in dossiers:
-                entry = registry.get(dossier.agent_id)
-                if not entry:
-                    continue
-                base = dict(fs_agents.get(dossier.agent_id) or {})
-                if not base:
-                    continue
-                base["milestones"] = {
-                    "total": dossier.milestones_total,
-                    "done": dossier.milestones_done,
-                }
-                if dossier.work_path:
-                    base["workPath"] = dossier.work_path
-                if dossier.updated:
-                    base["updated"] = dossier.updated
-                agents_data.append(base)
-
-            if agents_data:
-                return {"ok": True, "data": {"agents": agents_data}}
-    except Exception as e:
-        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
-
-    # 2. 降级：直接读文件系统
     try:
         data = await run_in_threadpool(fs_build_index)
         return {"ok": True, "data": data}
@@ -113,10 +77,9 @@ async def list_surface_agents():
 
 @router.get("/surface/agents/{name}")
 async def get_surface_agent(name: str):
-    """优先从数据库查询 agent_dossiers 表；没有则降级到文件系统扫描。
+    """一个 Agent 的档案：本体（目标／状况／阶段／流水）＋ 目录里那几份文档。
 
-    DB 里存的是 plan/progress 的**正文**；文档元数据（文件名、时间、摘要）仍以文件系统为准，
-    两条腿拼出来的形状与纯文件系统腿一致。
+    同样**不走库**：库那份是 md 的影子，md 退役后它只会把陈账端上屏。
     """
     from plobi.mind.agent_dossier import read_agent as fs_read_agent, resolve_dossier_id
 
@@ -125,60 +88,6 @@ async def get_surface_agent(name: str):
     # ``/api/surface/agents/l1`` ⇒ 404「agent 'l1' is not registered」。
     name = resolve_dossier_id(name)
 
-    # 1. 先试数据库
-    try:
-        from .vault import get_dossier
-
-        dossier = get_dossier(name)
-        if dossier:
-            from plobi.agents.registry import AgentRegistry
-            registry = AgentRegistry.load()
-
-            # `AgentRegistry` 只有 `get(name)`，**没有 `get_agent`**（旧代码调它 ⇒ AttributeError
-            # ⇒ 每次都落回文件系统，DB 白建）
-            entry = registry.get(name)
-            if not entry:
-                return _error(404, f"agent {name!r} is not registered")
-
-            # 文件系统腿做底稿：docs 那一组（key/filename/chars/updated）只有它有
-            base = await run_in_threadpool(fs_read_agent, name)
-            if not base:
-                return _error(404, f"agent {name!r} is not registered")
-
-            # 用 DB 里的正文替换同名文档的 text
-            by_key = {d.get("key"): d for d in (base.get("docs") or [])}
-            for key, content in (("plan", dossier.plan_content), ("progress", dossier.progress_content)):
-                if not content:
-                    continue
-                doc = by_key.get(key)
-                if doc is None:
-                    doc = {
-                        "key": key,
-                        "label": "计划" if key == "plan" else "进展",
-                        "filename": "plan.md" if key == "plan" else "progress.md",
-                        "exists": True,
-                        "chars": len(content),
-                        "updated": dossier.updated,
-                    }
-                    by_key[key] = doc
-                    base.setdefault("docs", []).append(doc)
-                doc["text"] = content[:131072]  # MAX_DOC_BYTES = 128KB
-                doc["exists"] = True
-
-            base["milestones"] = {
-                "total": dossier.milestones_total,
-                "done": dossier.milestones_done,
-            }
-            if dossier.work_path:
-                base["workPath"] = dossier.work_path
-            if dossier.updated:
-                base["updated"] = dossier.updated
-
-            return {"ok": True, "data": base}
-    except Exception as e:
-        logger.warning("vault.db query failed: %s; falling back to filesystem", e)
-
-    # 2. 降级：直接读文件系统
     try:
         data = await run_in_threadpool(fs_read_agent, name)
         if data is None:
@@ -186,6 +95,31 @@ async def get_surface_agent(name: str):
         return {"ok": True, "data": data}
     except Exception as exc:
         return _unavailable("surface dossier", exc)
+
+
+@router.get("/surface/agents/{name}/profile")
+async def get_surface_agent_profile(name: str):
+    """一档档案的**本体**：目标／状况／阶段／流水（屏上那张卡的数据源）。
+
+    坏文件不许糊成空表：文件不在 ⇒ ``data.exists`` 为 False（屏上说「还没建立」）；
+    文件在但 JSON 坏了 ⇒ ``data.error`` 有值（屏上说「读不到」）。这两件事必须分开——
+    空档案会被读成「什么都没有」，而那是**假的**。
+    """
+    from plobi.mind.agent_dossier import resolve_dossier_id
+    from plobi.mind.dossier_profile import profile_for_agent
+    from plobi.mind.dossier_tasks import AgentNotRegistered, DossierRootUnavailable
+
+    name = resolve_dossier_id(name)
+
+    try:
+        data = await run_in_threadpool(profile_for_agent, name)
+    except AgentNotRegistered as exc:
+        return _error(404, str(exc))
+    except DossierRootUnavailable as exc:
+        return _unavailable("surface dossier profile", exc)
+    except Exception as exc:
+        return _unavailable("surface dossier profile", exc)
+    return {"ok": True, "data": data.to_dict()}
 
 
 @router.get("/surface/agents/{name}/tasks")

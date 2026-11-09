@@ -1994,8 +1994,8 @@ def register_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentE
 # Hard-coded binding for the live workspace (no env lookup, no index scan).
 # The Mind INDEX records ``cloud: D:\Cloud\Projects\Plobi``, but the *source*
 # copy lives under ``D:/Projects/Plobi/Code`` (task: "Plobi 固定
-# ``D:\Projects\Plobi\Code``"). Anything else gets the cloud path from plan.md
-# frontmatter or, failing that, ``D:\Cloud\Projects\<name>``.
+# ``D:\Projects\Plobi\Code``"). Anything else gets the cloud path from the
+# dossier profile's ``registry.cloud`` or, failing that, ``D:\Cloud\Projects\<name>``.
 PLOBI_PROJECT_PATH = r"D:\Projects\Plobi\Code"
 DEFAULT_CLOUD_PROJECTS_ROOT = r"D:\Cloud\Projects"
 
@@ -2024,6 +2024,9 @@ def _read_plan_frontmatter(plan_path: Path) -> dict[str, str]:
     Returns an empty dict when the file is missing, unreadable, or has no
     frontmatter. Never raises — the project scanner treats unknown plans as
     in-progress and falls back to the default category.
+
+    **迁移期兜底**：``plan.md`` 那一对 11-09 退役了（WP-DOSSIER-SHAPE），真源是档案本体
+    （``dossier.json``）的 ``registry``。这一段只留给还没抽成结构化的老档案。
     """
     try:
         text = plan_path.read_text(encoding="utf-8")
@@ -2051,14 +2054,29 @@ def _read_plan_frontmatter(plan_path: Path) -> dict[str, str]:
     return {str(key): ("" if value is None else str(value)) for key, value in parsed.items()}
 
 
-def _project_is_skipped(front: dict[str, str]) -> bool:
-    """True when the project's plan.md marks it paused / done / archived.
+def _read_project_registry(entry_dir: Path) -> dict[str, str]:
+    """一棵树的身份那几格（status／group／cloud…）。
 
-    Looks at the frontmatter ``status`` field first (canonical), then falls
+    真源是**档案本体**（``dossier.json``）里的 ``registry``；``plan.md`` 那一对
+    11-09 退役（WP-DOSSIER-SHAPE）。迁移期兜底：本体还不存在的老档案仍按它自己的
+    frontmatter 读——抽完 md 就只剩本体这一条路。
+    """
+    from plobi.mind.dossier_profile import profile_path, read_profile
+
+    profile = read_profile(profile_path(entry_dir)).profile
+    if profile is not None:
+        return {str(key): str(value) for key, value in profile.registry.items()}
+    return _read_plan_frontmatter(entry_dir / "plan.md")
+
+
+def _project_is_skipped(front: dict[str, str]) -> bool:
+    """True when the project's dossier profile marks it paused / done / archived.
+
+    Looks at the ``registry.state`` field first (canonical), then falls
     back to a substring scan over the rendered body when frontmatter is
     absent or ambiguous.
     """
-    status = (front.get("status") or "").strip().lower()
+    status = (front.get("status") or front.get("state") or "").strip().lower()
     if status and status in PROJECT_SKIP_STATUS_MARKERS:
         return True
     return False
@@ -2081,8 +2099,8 @@ def _resolve_project_path(name: str, front: dict[str, str]) -> str:
     r"""Pick the ``project_path`` for one project.
 
     Plobi is always ``D:\Projects\Plobi\Code`` (task rule). Other projects
-    prefer the Cloud path already declared in plan.md (``cloud:``); if the
-    frontmatter omits it, fall back to ``D:\Cloud\Projects\<name>``. The
+    prefer the Cloud path already declared in the dossier profile
+    (``registry.cloud``); if it is missing, fall back to ``D:\Cloud\Projects\<name>``. The
     ``registry.upsert`` auto-seed is bypassed because we pass ``project_path``
     explicitly below.
     """
@@ -2151,10 +2169,11 @@ def ensure_mind_project_agents(
     """Seed every active Mind project into the L2 registry.
 
     Walks the category folders (``_mind_project_trees``) one level deep. Skips
-    the system-self project (``Mind``), any directory without a ``plan.md``, and
-    any plan whose frontmatter ``status`` matches the skip markers. The remaining
+    the system-self project (``Mind``), any directory without a dossier profile
+    (``dossier.json``; the legacy ``plan.md`` still counts during migration), and
+    any profile whose ``registry.state`` matches the skip markers. The remaining
     projects become ``l2_project`` entries with ``category=projects`` (or ``research``
-    only when ``plan.md``'s ``group`` says so). Returns ``(registry, seeded)``
+    only when the profile's ``registry.group`` says so). Returns ``(registry, seeded)``
     where ``seeded`` lists the *new* agent names registered on this call.
 
     Idempotent: re-running the function never duplicates rows. Existing rows
@@ -2178,10 +2197,11 @@ def ensure_mind_project_agents(
     for relative, entry in _mind_project_trees(root):
         if entry.name == "Mind":
             continue
-        plan_path = entry / "plan.md"
-        if not plan_path.is_file():
+        profile_file = entry / "dossier.json"
+        legacy_plan = entry / "plan.md"
+        if not profile_file.is_file() and not legacy_plan.is_file():
             continue
-        front = _read_plan_frontmatter(plan_path)
+        front = _read_project_registry(entry)
         if _project_is_skipped(front):
             continue
         safe_id = _project_safe_id(entry.name)

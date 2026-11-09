@@ -22,33 +22,32 @@ from typing import Any, Iterable, Optional
 
 import yaml
 
+from .dossier_profile import ProfileFile, profile_path, read_profile
 from .paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
 
 # 类别 -> ((键, 中文名, 文件名), …)。顺序就是屏上的顺序。
+#
+# 11-09 起（WP-DOSSIER-SHAPE）**档案本体是 ``dossier.json``**：目标／状况／阶段都在
+# 那一份结构化记录里（见 :mod:`plobi.mind.dossier_profile`），``plan.md``／``progress.md``
+# 那一对退役了——「Plan现在占的位置太长了，本质还是md，没有UI设计」。
+#
+# 这里剩下的 md 是**文档**，不是档案状态：研究笔记与课程那两份。所以它们照旧列出来，
+# 但**不参与**目标／状况／阶段的判读。
 CATEGORY_DOCS: dict[str, tuple[tuple[str, str, str], ...]] = {
     "projects": (
-        ("plan", "计划", "plan.md"),
-        ("progress", "进展", "progress.md"),
+        ("research", "研究", "research.md"),
     ),
     "research": (
-        ("plan", "计划", "plan.md"),
-        ("progress", "进展", "progress.md"),
         ("research", "研究", "research.md"),
     ),
     "courses": (
         ("requirements", "课程要求", "requirements.md"),
         ("syllabus", "教学计划", "syllabus.md"),
     ),
-    "butler": (
-        ("plan", "计划", "plan.md"),
-        ("progress", "进展", "progress.md"),
-    ),
-    "events": (
-        ("plan", "计划", "plan.md"),
-        ("progress", "进展", "progress.md"),
-    ),
+    "butler": (),
+    "events": (),
 }
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -179,17 +178,30 @@ def _doc_card(home: Path | None, key: str, label: str, filename: str) -> DocCard
     return card
 
 
+def _profile_for(home: Path | None) -> ProfileFile:
+    """档案本体。目录都没有 ⇒「还没建立」；文件在但坏了 ⇒「读不到」（两件事分开）。"""
+    if home is None:
+        return ProfileFile(exists=False, error=None, profile=None)
+    return read_profile(profile_path(home))
+
+
 def _agent_payload(entry: Any, home: Path | None) -> dict[str, Any]:
+    """一档档案在**列表**里的那一格。
+
+    目标／现状／阶段都来自档案本体（``dossier.json``）——同一个真源，屏上那张卡与
+    喂给 L1 的现状摘要读的是同一份（用户 11-09：「同一个数据」）。
+
+    ``status`` 这一格**不是**现状，是**生命周期状态**（``active``／``paused``…）：
+    侧栏那颗点与状态徽章认它（见 ``agent-category-group.tsx``／``agent-progress-pane.tsx``），
+    现状在 ``summary`` 那一格。
+    """
     category = (getattr(entry, "category", "") or "butler").strip().lower()
     cards = [_doc_card(home, *spec) for spec in docs_for_category(category)]
-    plan = cards[0] if cards else None
-    plan_text = ""
-    if home is not None:
-        plan_path = home / docs_for_category(category)[0][2]
-        if plan_path.is_file():
-            plan_text, _ = _read_limited(plan_path, LIST_SCAN_BYTES)
-    plan_meta = _frontmatter(plan_text)
+    profile_file = _profile_for(home)
+    profile = profile_file.profile
+    stages = profile.stages if profile else []
     latest = max((c.updated for c in cards if c.exists), default="")
+    state = str((profile.registry.get("state") if profile else "") or "").strip()
     return {
         "id": entry.name,
         "name": entry.name,
@@ -203,13 +215,17 @@ def _agent_payload(entry: Any, home: Path | None) -> dict[str, Any]:
         "hasHome": bool(home is not None and home.is_dir()),
         "workPath": getattr(entry, "project_path", "") or "",
         "workPaths": list(getattr(entry, "project_paths", ()) or ()),
-        "status": str(plan_meta.get("status") or "").strip(),
-        "updated": latest or (_file_updated(home) if home is not None else ""),
-        "summary": (plan.summary if plan and plan.summary else str(plan_meta.get("summary") or "")).strip(),
+        "status": state,
+        "goal": profile.goal if profile else "",
+        "summary": profile.status if profile else "",
+        "stages": [stage.to_dict() for stage in stages],
+        "updated": (profile.updated if profile else "") or latest or (_file_updated(home) if home is not None else ""),
         "milestones": {
-            "done": plan.milestones_done if plan else 0,
-            "total": plan.milestones_total if plan else 0,
+            "done": sum(1 for stage in stages if stage.done),
+            "total": len(stages),
         },
+        "profileExists": profile_file.exists,
+        "profileError": profile_file.error or "",
         "docs": [
             {
                 "key": c.key,
@@ -318,6 +334,9 @@ def read_agent(name: str, roster_path: Path | None = None) -> dict[str, Any] | N
         return None
     home = _home_for(entry)
     payload = _agent_payload(entry, home)
+    # 档案本体整份（含**流水**）：目标／状况／阶段／那份历史都在这儿。
+    # 列表腿不带走它——流水有十几 KB，25 张卡一起搬会拖垮那一屏。
+    payload["profile"] = _profile_for(home).to_dict()
     docs = []
     for key, label, filename in docs_for_category(payload["category"]):
         card = _doc_card(home, key, label, filename)

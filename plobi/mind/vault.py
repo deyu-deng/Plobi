@@ -84,7 +84,13 @@ class VaultNote:
 
 @dataclass
 class AgentDossier:
-    """agent_dossiers 记录。"""
+    """agent_dossiers 记录。
+
+    11-09 起（WP-DOSSIER-SHAPE）档案本体是 ``dossier.json``，这份记录是它的**镜像**
+    （元数据索引），不是真源：``plan_content``／``progress_content`` 那两格留着是为了
+    不动既有库的结构，它们**不再被写**；结构化内容走 ``profile_json``。
+    """
+
     agent_id: str
     plan_content: Optional[str] = None
     progress_content: Optional[str] = None
@@ -92,10 +98,11 @@ class AgentDossier:
     milestones_done: int = 0
     work_path: Optional[str] = None
     updated: str = ""
-    
+    profile_json: Optional[str] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "AgentDossier":
         return cls(**data)
@@ -151,7 +158,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_vault_notes_topic ON vault_notes(topic);
         CREATE INDEX IF NOT EXISTS idx_vault_notes_updated ON vault_notes(updated);
         
-        -- agent_dossiers: L2 Agent 档案
+        -- agent_dossiers: L2 Agent 档案（**镜像**：真源是档案本体 dossier.json）
         CREATE TABLE IF NOT EXISTS agent_dossiers (
             agent_id          TEXT PRIMARY KEY,
             plan_content      TEXT,
@@ -159,7 +166,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             milestones_total  INTEGER NOT NULL DEFAULT 0,
             milestones_done   INTEGER NOT NULL DEFAULT 0,
             work_path         TEXT,
-            updated           TEXT
+            updated           TEXT,
+            profile_json      TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_agent_dossiers_updated ON agent_dossiers(updated);
         
@@ -171,7 +179,24 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_user_diary_date ON user_diary(date);
         """)
+    _ensure_columns(conn)
     conn.commit()
+
+
+# 后加的那几列：``CREATE TABLE IF NOT EXISTS`` 不会给**既有**的表补列，老库自己不长。
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "agent_dossiers": {"profile_json": "TEXT"},
+}
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """给既有库补上后加的那几列（幂等；表与列名都是这里的常量，不来自输入）。"""
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column, decl in columns.items():
+            if column in existing:
+                continue
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 # --- vault_notes operations ----------------------------------------------
@@ -277,12 +302,12 @@ def upsert_dossier(dossier: AgentDossier) -> None:
     try:
         cursor = conn.execute(
             """INSERT OR REPLACE INTO agent_dossiers
-               (agent_id, plan_content, progress_content, milestones_total, 
-                milestones_done, work_path, updated)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (agent_id, plan_content, progress_content, milestones_total,
+                milestones_done, work_path, updated, profile_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (dossier.agent_id, dossier.plan_content, dossier.progress_content,
              dossier.milestones_total, dossier.milestones_done,
-             dossier.work_path, dossier.updated)
+             dossier.work_path, dossier.updated, dossier.profile_json)
         )
         conn.commit()
     finally:
@@ -394,22 +419,30 @@ def migrate_notes_from_filesystem(notes_root: Path) -> int:
 
 
 def migrate_dossiers_from_filesystem(mind_root: Path) -> int:
-    """Scan filesystem and migrate dossiers to database. Returns count of migrated dossiers."""
+    """Scan filesystem and migrate dossiers to database. Returns count of migrated dossiers.
+
+    真源是**档案本体**（``dossier.json``），这份迁移只把它的**元数据**搬进库当索引：
+    目标／现状／阶段／状态都在 ``profile_json`` 里；md 那一对退役之后不再有正文可搬。
+    """
     from plobi.mind.agent_dossier import build_index as build_index_from_fs
-    
+
     index = build_index_from_fs()
     count = 0
     for agent_data in index["agents"]:
+        profile = {
+            "goal": agent_data.get("goal", ""),
+            "status": agent_data.get("summary", ""),
+            "state": agent_data.get("status", ""),
+            "stages": agent_data.get("stages", []),
+            "updated": agent_data.get("updated", ""),
+        }
         dossier = AgentDossier(
-            agent_id=agent_data["agent_id"],
-            plan_content=next((doc["text"] for doc in agent_data.get("docs", []) 
-                             if doc.get("key") == "plan"), None),
-            progress_content=next((doc["text"] for doc in agent_data.get("docs", []) 
-                                  if doc.get("key") == "progress"), None),
+            agent_id=agent_data.get("id", ""),
             milestones_total=agent_data.get("milestones", {}).get("total", 0),
             milestones_done=agent_data.get("milestones", {}).get("done", 0),
-            work_path=agent_data.get("work_path"),
-            updated=agent_data.get("updated", "")
+            work_path=agent_data.get("workPath", ""),
+            updated=agent_data.get("updated", ""),
+            profile_json=json.dumps(profile, ensure_ascii=False),
         )
         upsert_dossier(dossier)
         count += 1

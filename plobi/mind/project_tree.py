@@ -2,16 +2,18 @@
 
 用户 2026-10-06 的要求（R-013 扩写）：「每创建一个 project 类型的 L2 agent，mind 里面
 要自动创建对应的文件夹和相关文件。如果有出现重名的就直接禁止创建。」这里只负责「建」
-的那一半——照 ``Surface/dossiers/projects/`` 里活项目的形状生成目录 + 三件套；「禁止重名」的判据
+的那一半——照 ``Surface/dossiers/projects/`` 里活项目的形状生成目录 + 两件套；「禁止重名」的判据
 在 :func:`plobi.agents.registry.registration_blocker`，两处不许各写一套。
 
 形状是抄来的，不是发明的（Mind ``AGENTS.md`` §4 场景二：按用户给定名称建目录，初始化
-``plan.md`` / ``progress.md`` / ``research.md`` 三件套）：
+档案那一套）：
 
-* ``plan.md`` 的 frontmatter 键 = Mind 的 ``Mind/scripts/verifier.py`` 重生成
+* 11-09 起（WP-DOSSIER-SHAPE）三件套收成**两件套**：``dossier.json``（档案本体：
+  目标／状况／阶段）＋ ``research.md``（调研文档）。``plan.md``／``progress.md``
+  那一对退役了——「Plan现在占的位置太长了，本质还是md，没有UI设计」。
+* ``dossier.json`` 的 ``registry`` 那几格 = Mind 的 ``Mind/scripts/verifier.py`` 重生成
   ``Surface/dossiers/projects/INDEX.md`` 时实际读的那几个（project / title / type / group / cloud /
-  status / created / updated / tech / summary），段落取活项目里公认的那七节
-  （Goal / Roadmap / Milestones / Status / Decisions / Risks / References）。
+  status / created / updated / tech / summary），它们仍在，只是住在结构化记录里。
 * ``cloud`` 写项目名本身、不写盘符——2026-09-28 那轮元数据修正（见 Nymo / Personal-Website
   的 ``progress.md`` 留痕）把设备事实从这一格里清出去了，新建的格子里不能再塞回去。
 * Mind ``AGENTS.md`` §5「Surface 禁止 AI 元注释」：生成体里不写「最后更新：」「来源：」。
@@ -30,11 +32,12 @@ adapter 只准往 Mind 消化区写字），这里落的是用户点「新建项
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date as _date
 from pathlib import Path
-from typing import Sequence
 
+from .dossier_profile import PROFILE_FILENAME, DossierProfile, Stage
 from .paths import real_target, resolve_root
 
 PROJECTS_RELATIVE = "Surface/dossiers/projects"
@@ -49,10 +52,12 @@ TREE_ROOT_RELATIVES: tuple[str, ...] = (
     "Surface/dossiers/butler",
     "Surface/dossiers/events",
 )
-ENTRY_FILE_NAMES: tuple[str, ...] = ("plan.md", "progress.md", "research.md")
+# 一棵树有两件：档案本体（``dossier.json``）＋ 调研文档（``research.md``）。
+ENTRY_FILE_NAMES: tuple[str, ...] = (PROFILE_FILENAME, "research.md")
 
-# registry category -> (plan.md ``type``, plan.md ``group``)。活项目里 engineering/product
-# 与 research/research 两种配对（Aura/Kit/Nymo vs Wealth-Lab/SRTP），没有第三种。
+# registry category -> (档案本体的 ``registry.type`` 与 ``registry.group``)。活项目里
+# engineering/product 与 research/research 两种配对（Aura/Kit/Nymo vs Wealth-Lab/SRTP），
+# 没有第三种。
 _CATEGORY_TO_PLAN_META: dict[str, tuple[str, str]] = {
     "projects": ("engineering", "product"),
     "research": ("research", "research"),
@@ -77,7 +82,7 @@ class ProjectTreeUnwritable(RuntimeError):
 class ProjectTreeWrite:
     """一次立项的落地结果，带着「怎么撤销自己」的账。
 
-    ``reused`` = 磁盘上早有这棵树（含 ``plan.md``），我们一个字没写；``relative`` 用的是
+    ``reused`` = 磁盘上早有这棵树（含 ``dossier.json``），我们一个字没写；``relative`` 用的是
     **磁盘上真实的那个名字**，不是我们传进去的大小写——不分大小写的盘上 ``Surface/dossiers/projects/Nymo``
     和请求里的 ``nymo`` 是同一个目录，注册表里必须记那一个名字，否则下一轮播种机认不出它。
     """
@@ -110,98 +115,51 @@ def _today_iso() -> str:
     return _date.today().isoformat()
 
 
-def _yaml_inline_list(values: Sequence[str]) -> str:
-    return "[" + ", ".join(str(v).strip() for v in values if str(v).strip()) + "]"
-
-
-def plan_document(
+def profile_document(
     *,
     title: str,
     summary: str,
     category: str,
-    tech: Sequence[str] = (),
     today: str = "",
 ) -> str:
-    """新建项目 ``plan.md`` 的全文（frontmatter + 七节骨架）。"""
+    """新建项目**档案本体**（``dossier.json``）的全文。
+
+    骨架与活项目同一形状：一段目标、一句现状、一个阶段（立项）。**不写 md**——
+    md 那一对 11-09 退役了（WP-DOSSIER-SHAPE）。
+    """
     day = today or _today_iso()
     plan_type, group = _CATEGORY_TO_PLAN_META.get(category, ("engineering", "product"))
-    safe_title = title.replace("---", "- - -")
-    # summary 里若有换行会撕开 frontmatter 那一格，压成一行。
+    # summary 里若有换行会撕开 JSON 那一格，压成一行。
     one_line = " ".join((summary or "").split())
-    return (
-        "---\n"
-        f"project: {safe_title}\n"
-        f"title: {safe_title}\n"
-        f"type: {plan_type}\n"
-        f"group: {group}\n"
-        f"cloud: {safe_title}\n"
-        "status: active\n"
-        f"created: {day}\n"
-        f"updated: {day}\n"
-        f"tech: {_yaml_inline_list(tech)}\n"
-        f"summary: {one_line}\n"
-        "---\n"
-        "\n"
-        f"# {safe_title}\n"
-        "\n"
-        f"> {one_line}\n"
-        "\n"
-        "## Goal\n"
-        "\n"
-        "（待补：这个项目要达成什么。）\n"
-        "\n"
-        "## Roadmap\n"
-        "\n"
-        "| # | 阶段 | 交付标准 |\n"
-        "|---|------|----------|\n"
-        "| 1 | 立项 | 目标与第一阶段交付写清楚 |\n"
-        "\n"
-        "## Milestones\n"
-        "\n"
-        "- [ ] M1：明确目标与第一个可展示的闭环\n"
-        "\n"
-        "## Status\n"
-        "\n"
-        "- 当前阶段：立项\n"
-        "- 下一步：（待补）\n"
-        "\n"
-        "## Decisions\n"
-        "\n"
-        "- （待补充）\n"
-        "\n"
-        "## Risks\n"
-        "\n"
-        "- （待补充）\n"
-        "\n"
-        "## References\n"
-        "\n"
-        "- （待补充）\n"
+    profile = DossierProfile(
+        agent=title,
+        title=title,
+        category=category,
+        goal=one_line or "（待补：这个项目要达成什么。）",
+        status="当前阶段：立项；下一步：（待补）",
+        stages=[
+            Stage(
+                id="s1",
+                title="立项",
+                detail="目标与第一阶段交付写清楚",
+                done=False,
+            )
+        ],
+        registry={
+            "project": title,
+            "title": title,
+            "type": plan_type,
+            "group": group,
+            "cloud": title,
+            "state": "active",
+            "created": day,
+            "updated": day,
+            "tech": [],
+            "summary": one_line,
+        },
+        updated=day,
     )
-
-
-def progress_document(*, title: str, today: str = "") -> str:
-    """新建项目 ``progress.md`` 的全文（Status / Sprint / Log 三段，形状同 Nymo）。"""
-    day = today or _today_iso()
-    return (
-        f"# {title} · 进度\n"
-        "\n"
-        "## Status\n"
-        "\n"
-        "- 阶段：立项\n"
-        "- 进行中：—\n"
-        "- 阻塞：无\n"
-        "- 下一步：—\n"
-        "\n"
-        "## Sprint\n"
-        "\n"
-        "| 日期 | 任务 | 状态 |\n"
-        "|------|------|------|\n"
-        "| — | 明确目标与第一阶段交付 | ⬜ |\n"
-        "\n"
-        "## Log\n"
-        "\n"
-        f"- {day}：建档（Plobi 登记项目分身时自动建的三件套）\n"
-    )
+    return json.dumps(profile.to_dict(), ensure_ascii=False, indent=2) + "\n"
 
 
 def research_document(*, title: str) -> str:
@@ -215,12 +173,11 @@ def research_document(*, title: str) -> str:
 def entry_files(
     *, title: str, summary: str, category: str, today: str = ""
 ) -> dict[str, str]:
-    """三件套的文件名 → 内容（键顺序与 :data:`ENTRY_FILE_NAMES` 一致）。"""
+    """两件套的文件名 → 内容（键顺序与 :data:`ENTRY_FILE_NAMES` 一致）。"""
     return {
-        "plan.md": plan_document(
+        PROFILE_FILENAME: profile_document(
             title=title, summary=summary, category=category, today=today
         ),
-        "progress.md": progress_document(title=title, today=today),
         "research.md": research_document(title=title),
     }
 
@@ -261,9 +218,9 @@ def _existing_tree(root: Path, dir_name: str) -> tuple[str, Path] | None:
     for relative in TREE_ROOT_RELATIVES:
         base = real_target(relative, root)
         actual = _case_insensitive_child(base, dir_name) or (
-            dir_name if (base / dir_name / "plan.md").is_file() else ""
+            dir_name if (base / dir_name / PROFILE_FILENAME).is_file() else ""
         )
-        if actual and (base / actual / "plan.md").is_file():
+        if actual and (base / actual / PROFILE_FILENAME).is_file():
             return f"{relative}/{actual}", base / actual
     return None
 
@@ -276,14 +233,14 @@ def ensure_project_tree(
     mind_root: Path | str | None = None,
     today: str = "",
 ) -> ProjectTreeWrite:
-    """在 ``<SURFACE_ROOT>/<分类>/<目录名>`` 建出三件套，返回这次写了什么。
+    """在 ``<SURFACE_ROOT>/<分类>/<目录名>`` 建出两件套，返回这次写了什么。
 
     分类文件夹就是 L2 那五栏（:data:`TREE_ROOT_RELATIVES`），所以 ``category=research``
     的项目落在 ``Surface/dossiers/research/``，不再一律挤进 ``Surface/dossiers/projects/``。
 
-    规则：盘上任何分类文件夹里已经有这棵树（带 ``plan.md``）就**只认领**，哪怕注册表那一格
+    规则：盘上任何分类文件夹里已经有这棵树（带 ``dossier.json``）就**只认领**，哪怕注册表那一格
     还指着搬家前的旧路径；够不着 Mind 就抛（调用方按创建失败处理，不留孤儿行）；认领时一个字
-    都不写（``reused=True``）；目录已存在但没有 ``plan.md``（Mind 自己的 verifier 会把它报成
+    都不写（``reused=True``）；目录已存在但没有 ``dossier.json``（Mind 自己的 verifier 会把它报成
     「幽灵目录」）时只补缺的那几份，已有的文件不动。
 
     目录名走 :func:`plobi.agents.registry._project_safe_id`——播种机
@@ -354,13 +311,13 @@ def ensure_project_tree(
 
 
 def project_tree_exists(*, mind_subtree: str, mind_root: Path | str | None = None) -> bool:
-    """注册表这一格的 ``mind_subtree`` 指的是一个真有 ``plan.md`` 的目录吗。"""
+    """注册表这一格的 ``mind_subtree`` 指的是一个真有**档案本体**的目录吗。"""
     if not (mind_subtree or "").strip():
         return False
     root = resolve_root(mind_root)
     if root is None:
         return False
-    return (real_target(mind_subtree, root) / "plan.md").is_file()
+    return (real_target(mind_subtree, root) / PROFILE_FILENAME).is_file()
 
 
 __all__ = [
@@ -372,7 +329,7 @@ __all__ = [
     "ProjectTreeWrite",
     "entry_files",
     "ensure_project_tree",
-    "plan_document",
+    "profile_document",
     "project_tree_exists",
     "tree_root_for",
 ]
