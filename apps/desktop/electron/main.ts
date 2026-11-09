@@ -9577,9 +9577,15 @@ async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; ap
     }
 
     const data = (await res.json()) as {
-      data?: Array<{ id?: string; provider?: string; selectable?: boolean; unselectable_reason?: string }>
+      data?: Array<{
+        id?: string
+        provider?: string
+        provider_name?: string
+        selectable?: boolean
+        unselectable_reason?: string
+      }>
     }
-    const byProvider = new Map<string, { blocked: Record<string, string>; models: string[] }>()
+    const byProvider = new Map<string, { blocked: Record<string, string>; models: string[]; name: string }>()
 
     for (const row of data.data ?? []) {
       const provider = (row?.provider ?? '').trim()
@@ -9590,7 +9596,12 @@ async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; ap
       }
 
       const name = id.startsWith(`${provider}/`) ? id.slice(provider.length + 1) : id
-      const entry = byProvider.get(provider) ?? { models: [], blocked: {} }
+      const entry = byProvider.get(provider) ?? { blocked: {}, models: [], name: '' }
+      // The product's own name for this group ("WorkBuddy", "WorkBuddy AI").
+      // Without it the picker would print the slug — a machine word on screen.
+      if (row.provider_name) {
+        entry.name = row.provider_name
+      }
 
       // `selectable === false` is the only thing that removes a model from the list.
       // A hub that sends no annotation at all is a hub we did not ask, not a hub that
@@ -9613,6 +9624,7 @@ async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; ap
 
     return [...byProvider.entries()].map(([id, entry]) => ({
       id,
+      name: entry.name || undefined,
       models: entry.models,
       blocked: entry.blocked,
       // Only a response we actually parsed sets this. Every failure branch below

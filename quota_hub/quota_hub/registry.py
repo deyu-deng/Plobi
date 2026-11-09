@@ -34,7 +34,7 @@ from .providers.apps.cline import ClineCliProvider
 from .providers.apps.codex import CodexCliProvider
 from .providers.apps.cursor import CursorProvider
 from .providers.apps.kiro import KiroCliProvider
-from .providers.apps.magpie import MagpieProvider
+from .providers.apps.magpie import MagpieProvider, MagpieProviderLeg
 from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
 from .providers.apps.opencode import OpenCodeCliProvider
 from .providers.apps.opencode.api import OpencodeApiProvider
@@ -390,7 +390,46 @@ class Registry:
             self.providers[name] = prov
             for m in prov.served_models:
                 self.model_to_provider[m] = name
+        await self._expand_magpie_providers()
         return self
+
+    async def _expand_magpie_providers(self) -> None:
+        """One leg per provider magpie has — the card list follows **their** list.
+
+        magpie keeps the vendor adapters; we keep the mechanism (the card, the
+        waiting verdict, the context ladder, the tool loop). So the products the
+        user signs in to are magpie's providers, and each of them becomes one of
+        our legs: its models are published under magpie's own ids (the provider
+        is their first segment), so the picker groups them per vendor and the
+        card says the vendor's name — no "MAGPIE" bucket, and a provider they
+        add becomes a card without a line of ours changing (user, 11-09 20:3x:
+        「你的卡片列表可以按它的列表来维护了」).
+        """
+        umbrella = self.providers.get("magpie")
+        if umbrella is None:
+            return
+        specs = await umbrella.provider_specs()
+        if not specs:
+            return
+        cfg = dict(self.config.get("providers", {}).get("magpie") or {})
+        for spec in specs:
+            leg_id = str(spec.get("id") or "").strip()
+            if not leg_id:
+                continue
+            if leg_id in self.providers:
+                # Their provider id collides with a leg we already run (magpie calls
+                # the CodeBuddy route "workbuddy" too). Two legs must not answer to
+                # one id, or the second one silently takes the first one's models.
+                # The card stays with the leg that is here.
+                continue
+            leg = MagpieProviderLeg({**cfg, "leg": leg_id}, self.http, spec, umbrella)
+            await leg.discover_accounts()
+            acc = next((a for a in leg.accounts if a.schedulable()), None)
+            if acc is not None:
+                await leg.refresh_models(acc)
+            self.providers[leg.name] = leg
+            for m in leg.served_models:
+                self.model_to_provider[m] = leg.name
 
     async def enable_leg(self, name: str) -> Provider | None:
         """按需装上一条腿 —— 只在用户点了 + 的那一刻发生。
@@ -662,6 +701,11 @@ class Registry:
                     "parent": None,
                     # Plobi / Plobi extensions (OpenAI clients ignore unknown keys)
                     "provider": prov_name,
+                    # The product's own name for that provider — the desktop's group
+                    # title. Without it the picker prints the slug (a machine word);
+                    # with it, magpie's providers each carry their vendor's name
+                    # ("WorkBuddy", "WorkBuddy AI", …).
+                    "provider_name": self._provider_name(prov),
                     "capabilities": caps,
                     # What this model itself says the user may change: its thinking levels,
                     # its context windows, its output cap. `{}` = the leg did not say
@@ -690,6 +734,17 @@ class Registry:
                 }
             )
         return out
+
+    @staticmethod
+    def _provider_name(prov) -> str:
+        """The product's own name for a leg, when the leg knows one."""
+        spec = getattr(prov, "card_spec", None)
+        if not callable(spec):
+            return ""
+        try:
+            return str((spec() or {}).get("name") or "").strip()
+        except Exception:
+            return ""
 
     async def refresh_quotas(self) -> None:
         """Poll every schedulable account's quota summary (best effort).

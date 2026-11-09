@@ -29,8 +29,10 @@ still keep stay as the fallback for the vendors they serve.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import shutil
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -240,10 +242,122 @@ class MagpieProvider(Provider):
         if not picked:
             return None
 
-        self._model_rows = picked
-        self.served_models = tuple(picked)
+        # The umbrella publishes **nothing**: every row belongs to the provider
+        # leg for its own vendor (see `MagpieProviderLeg`), so publishing them
+        # here too would list the same models twice under two names.
+        self._model_rows = {}
+        self.served_models = ()
         self._health = (True, "ok", time.time())
-        return list(picked)
+        return None
+
+    # --- the provider list -------------------------------------------------
+    #: Their CLI is the only place that knows which providers this machine has:
+    #: the HTTP surface serves models and turns, while the provider list (names,
+    #: login methods, which account) lives in the plugin host the CLI drives.
+    #: So we ask the CLI, read-only, and cache it for a few seconds.
+    PLUGIN_LIST_ARGS = ("plugin", "list", "--json")
+    PLUGIN_LIST_TTL_SECONDS = 20.0
+
+    def _binary(self) -> str | None:
+        """Where magpie's own CLI is, if we can find it.
+
+        Order: what the config says (the bundled copy will live there), then
+        the PATH, then our own home. Nothing here guesses a version or
+        downloads anything.
+        """
+        explicit = str(self.config.get("binary") or "").strip()
+        if explicit and Path(explicit).is_file():
+            return explicit
+        for name in ("magpie-cli", "magpie"):
+            found = shutil.which(name)
+            if found:
+                return found
+        home = os.environ.get("PLOBI_HOME") or ""
+        if home:
+            for candidate in (
+                Path(home) / "magpie" / "magpie-cli.exe",
+                Path(home) / "magpie" / "magpie-cli",
+            ):
+                if candidate.is_file():
+                    return str(candidate)
+        return None
+
+    async def provider_specs(self) -> list[dict]:
+        """The providers this machine has, as magpie itself lists them.
+
+        Each entry: ``id`` (their provider id — also the first segment of their
+        model ids), ``name`` (the product's own name), and ``methods`` (how it
+        can be signed in to). This list is the card list now: a provider they
+        add is a card we grow, and one they remove is a card that goes away.
+        """
+        now = time.time()
+        cached = getattr(self, "_specs_cache", None)
+        if cached is not None and now - cached[0] < self.PLUGIN_LIST_TTL_SECONDS:
+            return list(cached[1])
+        binary = self._binary()
+        if not binary:
+            return []
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                binary,
+                *self.PLUGIN_LIST_ARGS,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env={**os.environ, "DO_NOT_TRACK": "1"},
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=20.0)
+        except Exception:
+            return []
+        try:
+            payload = json.loads(stdout.decode("utf-8", "replace") or "{}")
+        except Exception:
+            return []
+        specs: list[dict] = []
+        for entry in (payload or {}).get("providers") or []:
+            if not isinstance(entry, dict):
+                continue
+            pid = str(entry.get("id") or "").strip()
+            if not pid:
+                continue
+            specs.append(
+                {
+                    "id": pid,
+                    "name": str(entry.get("name") or pid),
+                    "api": str(entry.get("api") or ""),
+                    "methods": [m for m in (entry.get("methods") or []) if isinstance(m, dict)],
+                }
+            )
+        self._specs_cache = (now, list(specs))
+        return specs
+
+    async def read_catalogue(self) -> dict[str, dict]:
+        """magpie's own rows, keyed by their id — one read for every leg."""
+        base = self._base_url()
+        try:
+            res = await self.http.get(
+                base + MODELS_PATH,
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+        except Exception:
+            return {}
+        if res.status_code != 200:
+            return {}
+        try:
+            payload = res.json()
+        except Exception:
+            return {}
+        rows = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            return {}
+        picked: dict[str, dict] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            mid = str(row.get("id") or "").strip()
+            if mid:
+                picked[mid] = row
+        return picked
 
     def tuning(self, model: str) -> dict:
         """What this model lets the user change, from magpie's own row.
@@ -380,3 +494,100 @@ class MagpieProvider(Provider):
                     continue
                 chunk["model"] = oai_req.get("model") or chunk.get("model")
                 yield chunk
+
+
+class MagpieProviderLeg(MagpieProvider):
+    """One of magpie's providers, as one of our legs.
+
+    magpie's own model ids are ``<provider>/<model>`` — the provider is the
+    first segment. Publishing them **verbatim** means three things fall out for
+    free: the desktop groups them the way magpie groups them (each vendor under
+    its own name, never one "MAGPIE" bucket), our routing needs no translation
+    table, and a provider magpie adds becomes a card and a group without a line
+    of ours changing (user, 11-09 20:3x: 「你的卡片列表可以按它的列表来维护了」).
+
+    The card is the vendor's, not magpie's: the user signs in to WorkBuddy, and
+    the sign-in lives behind magpie (user, 11-09 20:0x: 「前端还是用我们自己的
+    操作逻辑。要配置 workbuddy 就要在相应的卡片点击加号配置的」).
+    """
+
+    def __init__(
+        self,
+        config: dict,
+        http: httpx.AsyncClient,
+        spec: dict,
+        umbrella: MagpieProvider | None = None,
+    ):
+        super().__init__(config, http)
+        self.spec = dict(spec)
+        self.provider_id = str(self.spec.get("id") or "").strip()
+        #: The leg id IS the provider id, so the desktop's row identity and the
+        #: model id prefix are the same word.
+        self.name = self.provider_id or self.name
+        self.display_name = str(self.spec.get("name") or self.name)
+        #: The umbrella leg: one catalogue read serves every provider leg.
+        self.umbrella = umbrella
+
+    # --- the card ----------------------------------------------------------
+    def present(self) -> bool:
+        """This one **is** a card: the product behind it is what the user sets up."""
+        return True
+
+    def card_spec(self) -> dict:
+        """The card's own fields, taken from magpie's provider list.
+
+        ``login`` is the one the drawer already knows how to speak: their
+        methods are oauth (browser) or api (a key). We do not invent a method
+        they did not offer.
+        """
+        methods = self.spec.get("methods") or []
+        kinds = {str(m.get("type") or "") for m in methods if isinstance(m, dict)}
+        login = "oauth" if "oauth" in kinds else ("api_key" if "api" in kinds else "unknown")
+        return {
+            "name": self.display_name,
+            "kind": "app",
+            "login": login,
+            "probe": {"probe": "none"},
+            "download": None,
+            "intro_key": self.provider_id,
+        }
+
+    def login_plan(self) -> dict:
+        """Signing in happens behind magpie; the drawer is ours either way."""
+        return {
+            "kind": "oauth",
+            "name": self.display_name,
+            "reason": f"它的登录在 Magpie 那边（{self.display_name}）",
+        }
+
+    # --- the catalogue -----------------------------------------------------
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        """This provider's models, read from magpie's own catalogue.
+
+        Their ids already carry the provider as their first segment, so they are
+        published verbatim: ``workbuddy/hy4free`` is the same word in both
+        systems.
+        """
+        reader = self.umbrella or self
+        rows = await reader.read_catalogue()
+        if not rows:
+            return None
+        mine = {
+            mid: row
+            for mid, row in rows.items()
+            if mid.split("/", 1)[0] == self.provider_id
+        }
+        if not mine:
+            return None
+        self._model_rows = mine
+        self.served_models = tuple(mine)
+        self._health = (True, "ok", time.time())
+        return list(mine)
+
+    def provider_of(self, model: str) -> str:
+        """The vendor behind a model — the group the picker lists it under."""
+        return self.provider_id
+
+    def _map_model(self, model: str) -> str:
+        """magpie's id is already ours: the provider segment is part of it."""
+        return str(model or "")

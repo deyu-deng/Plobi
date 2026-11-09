@@ -561,6 +561,16 @@ def _reason_code(reason: str) -> str:
 
 def _catalog_row(app_id: str, spec: dict, prov, registry) -> dict:
     """一条腿在设置页的那一行：装没装、登没登、现在能不能用，一次说清。"""
+    # A leg that knows its own card fields wins over the static table: magpie's
+    # provider legs carry the product's own name and login method, so the card
+    # list follows magpie's provider list instead of a table we keep by hand
+    # (user, 11-09 20:3x: 「你的卡片列表可以按它的列表来维护了」).
+    own = getattr(prov, "card_spec", None) if prov is not None else None
+    if callable(own):
+        try:
+            spec = {**spec, **(own() or {})}
+        except Exception:  # a broken card spec must not lose the row
+            pass
     name = spec.get("name") or app_id
     installed = detect_installed(spec)
     login_method = spec.get("login") or "unknown"

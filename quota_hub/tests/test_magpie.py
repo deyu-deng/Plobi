@@ -22,7 +22,7 @@ import json
 import httpx
 import pytest
 
-from quota_hub.providers.apps.magpie import MagpieProvider
+from quota_hub.providers.apps.magpie import MagpieProvider, MagpieProviderLeg
 
 
 def _provider(http, **extra):
@@ -150,17 +150,36 @@ async def test_the_roster_is_theirs_and_it_carries_their_own_numbers():
     assert len(accounts) == 1, "the gateway needs no credential of ours"
 
     got = await prov.refresh_models(accounts[0])
-    assert got == ["magpie/opencode-zen-free/big-pickle", "magpie/workbuddy/hy4free"], got
-    assert prov.served_models == tuple(got)
+    # The umbrella publishes nothing: every row belongs to the provider leg for
+    # its own vendor, so the same models are never listed twice under two names.
+    assert prov.served_models == (), prov.served_models
+    assert got is None, "the umbrella is a reader, not a leg"
 
-    big_pickle = prov.tuning("magpie/opencode-zen-free/big-pickle")
+    leg = MagpieProviderLeg(
+        {"base_url": "http://127.0.0.1:3425"},
+        prov.http,
+        {"id": "opencode-zen-free", "name": "OpenCode Zen Free"},
+        umbrella=prov,
+    )
+    served = await leg.refresh_models(accounts[0])
+    assert served == ["opencode-zen-free/big-pickle"], served
+    assert leg.served_models == tuple(served)
+
+    big_pickle = leg.tuning("opencode-zen-free/big-pickle")
     assert big_pickle["context"]["choices"] == [200000], big_pickle
     assert big_pickle["context"]["max"] == 200000
     assert big_pickle["max_output"] == 32000
     assert big_pickle["efforts"] == ["low", "high"], big_pickle
     assert big_pickle["default_effort"] in big_pickle["efforts"]
 
-    hy4 = prov.tuning("magpie/workbuddy/hy4free")
+    wb_leg = MagpieProviderLeg(
+        {"base_url": "http://127.0.0.1:3425"},
+        prov.http,
+        {"id": "workbuddy", "name": "WorkBuddy"},
+        umbrella=prov,
+    )
+    await wb_leg.refresh_models(accounts[0])
+    hy4 = wb_leg.tuning("workbuddy/hy4free")
     assert hy4["context"]["choices"] == [960000], hy4
     assert "efforts" not in hy4, "a model that says nothing keeps the generic controls"
 

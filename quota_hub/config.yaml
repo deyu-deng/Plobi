@@ -242,3 +242,6 @@ providers:
   magpie:
     enabled: true
     timeout: 300
+    # 它的 CLI 在哪儿（读它的 provider 名单用：`plugin list --json`）。随包发布之后
+    # 这一行指向发行包里那份；这台机器上先指便携版。
+    binary: D:\Temp\magpie-portable\magpie-cli.exe
