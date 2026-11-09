@@ -433,6 +433,7 @@ function OutsourcedStripMiddle({
                   sendable: session.sendable,
                   sessionId: session.id,
                   title: session.title || session.id.slice(0, 8),
+                  updatedAt: session.updated_at,
                   vendor: session.vendor
                 })}
             >

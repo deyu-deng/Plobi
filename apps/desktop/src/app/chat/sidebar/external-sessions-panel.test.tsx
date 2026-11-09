@@ -92,6 +92,8 @@ describe('外部会话（并进外包那一格）', () => {
       sendable: true,
       sessionId: 'aaaaaaaa-1111',
       title: '先读 README，把标题写进回执文件',
+      // 这条会话最后一句话的时间也要带过去：抬头要写「什么时候的」。
+      updatedAt: '2026-10-27T10:00:00.000Z',
       vendor: 'qoder'
     })
     // 左栏自己不再读正文：正文归主区，左栏只管挑。
@@ -118,6 +120,7 @@ describe('外部会话（并进外包那一格）', () => {
       sendable: false,
       sessionId: 'conv_1',
       title: 'Computor',
+      updatedAt: '2026-10-27T10:00:00.000Z',
       vendor: 'marvis'
     })
   })

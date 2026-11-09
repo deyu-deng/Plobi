@@ -190,6 +190,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                                 sendable: item.session.sendable,
                                 sessionId: item.session.id,
                                 title: item.session.title || item.session.id.slice(0, 8),
+                                updatedAt: item.session.updated_at,
                                 vendor: item.session.vendor
                               })}
                             // 还没判断的那一批：整行压暗一档（形状说它还没定性，不写「待判断」上屏）。
@@ -262,6 +263,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                           sendable: session.sendable,
                           sessionId: session.id,
                           title: session.title || session.id.slice(0, 8),
+                          updatedAt: session.updated_at,
                           vendor: session.vendor
                         })}
                       session={session}

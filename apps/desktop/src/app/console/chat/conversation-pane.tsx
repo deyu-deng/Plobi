@@ -6,9 +6,11 @@ import {
   deleteExternalSession,
   getExternalTranscript,
   patchExternalSession,
-  sendExternalMessage
+  sendExternalMessage,
+  vendorLabel,
+  whenText
 } from '@/app/chat/sidebar/external-sessions'
-import { OffloadVendorIcon } from '@/app/chat/sidebar/offload-vendor-icon'
+import { VendorBrandBlock } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Thread } from '@/components/assistant-ui/thread'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -50,6 +52,8 @@ export function ConversationPane({
   const [lines, setLines] = useState<Line[]>([])
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  /** 那条会话的工作目录（后端给的）：只进抬头的悬停，不上屏。 */
+  const [project, setProject] = useState('')
 
   const { agentId, kind, sessionId } = conversation
   const vendor = conversation.kind === 'external' ? conversation.vendor : ''
@@ -70,6 +74,7 @@ export function ConversationPane({
           const body = await getExternalTranscript(agentId, vendor, sessionId)
 
           if (!cancelled()) {
+            setProject(String(body?.data?.project ?? ''))
             setLines((body?.data?.messages ?? []).map(message => ({ role: message.role, text: message.text })))
           }
 
@@ -170,9 +175,15 @@ export function ConversationPane({
     }
   }
 
+  // 机器细节（会话号、工作目录）只进悬停：抬头上一件也不多。
+  const detail = [
+    conversation.kind === 'external' ? conversation.sessionId : '',
+    project
+  ].filter(Boolean).join(' · ')
+
   return (
     <div className="relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">
-      {showHeader && <ConversationTopBar conversation={conversation} />}
+      {showHeader && <ConversationTopBar conversation={conversation} detail={detail} />}
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <AssistantRuntimeProvider runtime={runtime}>
@@ -194,8 +205,14 @@ export function ConversationPane({
 
       {error && <p className="shrink-0 px-4 pb-1 text-[0.72rem] text-(--ui-red)">{error}</p>}
 
-      {conversation.kind === 'external' && conversation.sendable ? (
-        <ConversationComposer disabled={pending} onSend={send} />
+      {conversation.kind === 'external' ? (
+        // 能说话的那家给输入框；不能说话的那家**照实说一句**（现成那一句，四语目录里早就有）——
+        // 什么都不画＝看着像这一格坏了。
+        conversation.sendable ? (
+          <ConversationComposer disabled={pending} onSend={send} />
+        ) : (
+          <ReadOnlyNotice />
+        )
       ) : conversation.kind === 'expert' && conversation.role ? (
         // 专家卡片底部那条：位置与高度照主对话的 composer，里面只放模型选择。
         // 选完存到这个角色上，下次派它就用这个模型（用户 11-04）。
@@ -210,7 +227,7 @@ export function ConversationPane({
   )
 }
 
-function ConversationTopBar({ conversation }: { conversation: OpenConversation }) {
+function ConversationTopBar({ conversation, detail }: { conversation: OpenConversation, detail: string }) {
   const { t } = useI18n()
   const c = t.console
   const [renaming, setRenaming] = useState(false)
@@ -270,7 +287,9 @@ function ConversationTopBar({ conversation }: { conversation: OpenConversation }
       </Button>
 
       {external ? (
-        <OffloadVendorIcon className="shrink-0" vendor={external.vendor} />
+        // 第一格是**品牌方块**：与左栏分组行、设置屏 Providers 那一屏同一颗
+        // （品牌字形优先，没有字形落中性底＋首字母）——不再拿一枚中性图标替它认领身份。
+        <VendorBrandBlock size="md" vendor={external.vendor} />
       ) : (
         <span className="grid size-4 shrink-0 place-items-center text-(--ui-text-tertiary)">
           <Codicon name="person" size="0.875rem" />
@@ -296,10 +315,18 @@ function ConversationTopBar({ conversation }: { conversation: OpenConversation }
           value={draft}
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-foreground" title={detail}>
           {conversation.title}
         </span>
       )}
+
+      {external ? (
+        // 谁家的、什么时候的：品牌名来自共用那张表，时间用现成那个 —— 两件都不是新文案。
+        <span className="shrink-0 text-[0.68rem] text-(--ui-text-tertiary)">
+          <span>{vendorLabel(external.vendor)}</span>
+          {external.updatedAt ? <span>{` · ${whenText(external.updatedAt)}`}</span> : null}
+        </span>
+      ) : null}
 
       {external ? (
         <DropdownMenu>
@@ -338,6 +365,24 @@ function ConversationTopBar({ conversation }: { conversation: OpenConversation }
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * 不能说话的那家：屏上**照实说一句**（现成那一句，四语目录里早就有，只是谁也没用过）。
+ *
+ * 什么都不画＝看着像这一格坏了；写「读不出来」＝那是另一回事（读得好好的）。
+ * 位置：输入框本来该在的那儿——形状上说得通「这儿本来有个输入框」。
+ */
+function ReadOnlyNotice() {
+  const { t } = useI18n()
+
+  return (
+    <div className="shrink-0 px-4 pb-[var(--composer-shell-pad-block-end,0.75rem)] pt-2">
+      <div className="mx-auto w-full max-w-[var(--composer-width,46rem)] px-3 py-2 text-[0.72rem] text-(--ui-text-tertiary)">
+        {t.console.externalSessionsReadOnly}
+      </div>
     </div>
   )
 }

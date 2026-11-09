@@ -42,6 +42,7 @@ const EXTERNAL: OpenConversation = {
   sendable: true,
   sessionId: 's-1',
   title: '跟它说一句',
+  updatedAt: '2026-03-04T10:00:00',
   vendor: 'qoder'
 }
 
@@ -159,13 +160,41 @@ describe('对话卡片：外部软件那条会话', () => {
     expect(await screen.findByText(/这次没有登进去/)).toBeTruthy()
   })
 
-  it('只读的那家不给输入框', async () => {
+  it('只读的那家不给输入框，但屏上照实说一句（不留「什么都没有」）', async () => {
     api.mockResolvedValue(TRANSCRIPT)
     renderPane({ ...EXTERNAL, sendable: false })
 
     await screen.findByText('读完了，标题是 Sindri')
 
     expect(screen.queryByPlaceholderText('Say something to it…')).toBeNull()
+    // 现成那一句（四语目录里早就有，只是谁也没用过）：什么都不画＝看着像这一格坏了。
+    expect(screen.getByText('You cannot speak to this app from Plobi yet.')).toBeTruthy()
+  })
+
+  it('抬头第一格是品牌方块，旁边是那家软件的名字与这条会话的时间', async () => {
+    api.mockResolvedValue(TRANSCRIPT)
+    renderPane()
+
+    await screen.findByText('读完了，标题是 Sindri')
+
+    // 与 Providers 那一屏同一颗（品牌字形／中性底首字母）——不再是那枚中性图标。
+    expect(screen.getByTestId('vendor-brand-block-qoder')).toBeTruthy()
+    expect(screen.queryByTestId('offload-vendor-fallback-qoder')).toBeNull()
+    // 谁家的、什么时候的：两件都不是新文案（品牌名来自共用那张表，时间用现成那个）。
+    expect(screen.getByText('Qoder')).toBeTruthy()
+    expect(screen.getByText(/\d{2}:\d{2}/)).toBeTruthy()
+  })
+
+  it('机器细节进悬停：会话号与工作目录不上屏面', async () => {
+    api.mockResolvedValue(TRANSCRIPT)
+    renderPane()
+
+    await screen.findByText('读完了，标题是 Sindri')
+
+    const title = screen.getByText('跟它说一句')
+
+    expect(title.getAttribute('title')).toContain('s-1')
+    expect(title.getAttribute('title')).toContain('D:/Projects/Sindri')
   })
 })
 

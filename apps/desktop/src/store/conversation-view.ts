@@ -18,6 +18,12 @@ export type OpenConversation =
     sendable: boolean
     sessionId: string
     title: string
+    /**
+     * 这条会话最后一句话的时间（`ExternalSession.updated_at`，本地时间串）。
+     * **抬头要它**：左栏那一行有时间，点开就没了 ⇒ 两个屏对不上。
+     * 后端早就在返回里给全了，这里只是把它带过去（协议不动）。
+     */
+    updatedAt?: string
     vendor: string
   }
   | {
