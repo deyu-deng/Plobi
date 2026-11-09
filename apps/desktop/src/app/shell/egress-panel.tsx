@@ -290,7 +290,7 @@ export function EgressPanel() {
           {copy.tabNodes}
         </TabButton>
         {busy ? <Loader2 className="ml-auto size-3.5 animate-spin text-(--ui-text-tertiary)" /> : null}
-        {!busy && !loaded ? <AlertTriangle className="ml-auto size-3.5 text-(--ui-text-danger)" title={copy.readFailed} /> : null}
+        {!busy && !loaded ? <AlertTriangle className="ml-auto size-3.5 text-destructive" title={copy.readFailed} /> : null}
       </div>
 
       {view === 'switch' ? (
@@ -348,7 +348,7 @@ export function EgressPanel() {
             </div>
             {tunBlocked ? (
               <span
-                className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-danger)"
+                className="grid size-6 shrink-0 place-items-center rounded-md text-destructive"
                 data-testid="tun-warning"
                 title={tun.reasons?.join('\n')}
               >
@@ -357,7 +357,7 @@ export function EgressPanel() {
             ) : null}
             {proxyWarn ? (
               <span
-                className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-danger)"
+                className="grid size-6 shrink-0 place-items-center rounded-md text-destructive"
                 data-testid="proxy-warning"
                 title={proxyTooltip(copy, status?.system_proxy)}
               >
@@ -370,7 +370,7 @@ export function EgressPanel() {
             //: 屏上那一行只说"这件事没成"，机器原话留在悬停里（10-27 文案纪律：机器词不许上屏）。
             //: 11-05 这台的现场是 `Error invoking remote method 'plobi:api': Invalid character in
             //: header content [...]` ——一整句内部机制顶在开关下面，还把这一屏往下挤出弹窗的可见高度。
-            <p className="line-clamp-1 text-xs text-(--ui-text-danger)" title={error}>
+            <p className="line-clamp-1 text-xs text-destructive" title={error}>
               {/invoking remote method|ERR_[A-Z_]+|Invalid character|\b(TypeError|ReferenceError|RangeError)\b/.test(error)
                 ? copy.refused
                 : error}
@@ -467,7 +467,7 @@ function StatusDot({ ok, title }: { ok: boolean; title: string }) {
   return (
     <span
       aria-hidden="true"
-      className={`size-2 shrink-0 rounded-full ${ok ? 'bg-(--theme-primary)' : 'bg-(--ui-text-danger)'}`}
+      className={`size-2 shrink-0 rounded-full ${ok ? 'bg-(--theme-primary)' : 'bg-destructive'}`}
       title={title}
     />
   )

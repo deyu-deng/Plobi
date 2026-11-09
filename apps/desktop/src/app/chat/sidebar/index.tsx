@@ -708,8 +708,8 @@ export function ChatSidebar({
                     className={cn(
                       'size-5 rounded-full ring-offset-2 transition-shadow',
                       createAgentColor === color
-                        ? 'ring-2 ring-(--ui-text-tertiary) ring-offset-(--ui-background)'
-                        : 'hover:ring-2 hover:ring-(--ui-text-quaternary) hover:ring-offset-(--ui-background)'
+                        ? 'ring-2 ring-(--ui-text-tertiary) ring-offset-background'
+                        : 'hover:ring-2 hover:ring-(--ui-text-quaternary) hover:ring-offset-background'
                     )}
                     key={color}
                     onClick={() => setCreateAgentColor(createAgentColor === color ? '' : color)}

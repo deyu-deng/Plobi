@@ -51,22 +51,21 @@ const TEXT_EXT = new Set(['.ts', '.tsx', '.css', '.html'])
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.vite'])
 
 /**
- * 已知欠账（下一刀收，落法见 `Docs/tasks/dead-danger-accent-task.md` 的「下一刀」一节）：
- * · `--ui-text-danger`（5 处）＝ 危险色那几处不显红 → `text-destructive`
- *   （全仓 8 处，本刀还了网络设置 2＋外包设置 1；出口面板那 5 处在别的在派线认领下，要等它们交割）
- * · `--ui-background`（2 处）＝ 侧栏那枚头像的 ring 偏移底色空 → `ring-offset-background`
- *   （那一档在派线认领着，本刀不碰）
+ * 已知欠账（**只准更少，不准更多**；落法见 `Docs/tasks/dead-token-tail-task.md`）：
+ * · `--ui-accent-foreground`（4 处）＝ 日历那几处带 `, white` 的 fallback
+ *   （CSS 的 `var(--x, white)` 在变量没定义时**取 fallback**，屏上是白的）
+ *   ——门扫得到它们，但它们**照屏不病**，所以只留这一支。
+ * · `--ui-text-danger` 已随 `WP-DEAD-TOKEN-TAIL`（11-09）还完（出口面板那 5 处危险色
+ *   ＝ 4 处 `text-destructive` ＋ 1 处 `bg-destructive`）⇒ **从本清单里删掉**。
+ * · `--ui-background` 已随同一把刀还完（侧栏那 2 处 ring 偏移底色 ⇒ `ring-offset-background`）
+ *   ⇒ **从本清单里删掉**。
+ * · `--ui-accent-foreground`／`--ui-text-on-accent`／`--ui-surface-secondary` 早已随
+ *   `WP-DEAD-DANGER-ACCENT` 还完（强调底上的字与那块空底色）。
  *
- * `--ui-accent-foreground`／`--ui-text-on-accent`／`--ui-surface-secondary` 已随
- * `WP-DEAD-DANGER-ACCENT` 还完（强调底上的字与那块空底色），不再是欠账 ⇒
- * 下一把刀再写错这三支，那扇门当场红。
- *
- * 日历那 4 处 `--ui-accent-foreground` 带 `, white` 的 fallback（CSS 的 `var(--x, white)`
- * 在变量没定义时取 fallback，屏上是白的）——门扫得到它们，但它们照屏不病，列在这里。
+ * **口径**：清单里留一支，是「照屏不病」的登记，**不是「欠着不管」的借口**——
+ * 下一把刀再写 `--ui-text-danger`／`--ui-background`，那扇门当场红（那才是「收干净」）。
  */
 const KNOWN_DEBT = new Set([
-  '--ui-text-danger',
-  '--ui-background',
   '--ui-accent-foreground'
 ])
 
