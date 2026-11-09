@@ -19,6 +19,7 @@ MIND_ROOT 一律指到 tmp 里的假库——真脑仓（``MIND_ROOT`` 指到的
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,11 @@ def mind_home(tmp_path, monkeypatch):
     root = tmp_path / "mind"
     root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MIND_ROOT", str(root))
+    # 人读面钉在这棵**假脑**的 ``Surface/`` 下面——跟 conftest 3d 同一个原意：解析不许
+    # 跑到真面上。不钉的话 ``_surface_root()`` 会落到 ``PLOBI_HOME``（另一个 tmp），
+    # 这一档断言里的落点就全对不上了（这是 md 时代就有的旧账，不是档案改形状带来的）。
+    (root / "Surface").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SURFACE_ROOT", str(root / "Surface"))
 
     registry = AgentRegistry(path=tmp_path / "projects.yaml")
     console_router.set_registry(registry)
@@ -97,11 +103,30 @@ def register(registry: AgentRegistry, name: str, **raw) -> None:
     )
 
 
-def make_tree(root: Path, name: str, *, plan: str = "") -> None:
+def make_tree(root: Path, name: str, *, status: str = "") -> None:
+    """盘上已经有一棵用户自己立的树。
+
+    11-09 起档案从 md 退役（WP-DOSSIER-SHAPE）：「这棵树在不在」看的是**档案本体**
+    ``dossier.json``，不再是 ``plan.md``。所以这里摆的也是那一份 JSON。
+    """
     directory = surface(root) / name
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "plan.md").write_text(
-        plan or f"---\nproject: {name}\n---\n\n# {name}\n", encoding="utf-8"
+    (directory / "dossier.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "agent": name,
+                "title": name,
+                "category": "projects",
+                "goal": name,
+                "status": status or f"{name} 的现状",
+                "stages": [],
+                "registry": {"project": name, "title": name},
+                "updated": "2026-01-01",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
     )
 
 
@@ -131,14 +156,18 @@ def test_project_create_makes_the_mind_tree_and_mounts_it(client, mind_home, tmp
     for name in ENTRY_FILE_NAMES:
         assert (directory / name).is_file(), f"{name} 没建出来"
 
-    plan = (directory / "plan.md").read_text(encoding="utf-8")
-    # frontmatter 的键 = Mind 的 ``Mind/scripts/verifier.py`` 重生成 INDEX 时读的那几个。
-    for key in ("project", "title", "type", "group", "cloud", "status",
-                "created", "updated", "tech", "summary"):
-        assert f"\n{key}:" in plan, f"{key} 这一格没了"
-    assert "从零手写编程语言系统" in plan
+    raw = (directory / "dossier.json").read_text(encoding="utf-8")
+    profile = json.loads(raw)
+    # ``registry`` 里的键 = Mind 的 ``Mind/scripts/verifier.py`` 重生成 INDEX 时读的那几个
+    # （11-09 起它们住在结构化记录里，不再是 md 的 frontmatter）。
+    registry = profile["registry"]
+    for key in ("project", "title", "type", "group", "cloud", "state", "created",
+                "updated", "tech", "summary"):
+        assert key in registry, f"{key} 这一格没了"
+    assert "从零手写编程语言系统" in profile["goal"]
+    assert "从零手写编程语言系统" in registry["summary"]
     # 设备事实不进 Mind（2026-09-28 那轮元数据修正把盘符从 cloud 格里清出去了）。
-    assert "D:\\" not in plan and str(tmp_path) not in plan
+    assert "D:\\" not in raw and str(tmp_path) not in raw
 
     # 注册表这一格也落了盘，不只活在内存里。
     saved = AgentRegistry.load(mind_home.path).get("stithy")
@@ -153,12 +182,14 @@ def test_research_category_projects_under_the_research_group(client, mind_home, 
     assert response.status_code == 200, response.json()
     root = tmp_path / "mind"
     # 分类决定这棵树住在哪个文件夹：research 的落 ``Surface/dossiers/research/``，不再挤进 ``projects/``。
-    plan = (root / "Surface" / "dossiers" / "research" / "Wealth-Lab" / "plan.md").read_text(
-        encoding="utf-8"
+    profile = json.loads(
+        (
+            root / "Surface" / "dossiers" / "research" / "Wealth-Lab" / "dossier.json"
+        ).read_text(encoding="utf-8")
     )
     # 活项目里 research 那一类的配对是 type=research + group=research（Wealth-Lab/SRTP）。
-    assert "type: research" in plan
-    assert "group: research" in plan
+    assert profile["registry"]["type"] == "research"
+    assert profile["registry"]["group"] == "research"
     assert not (root / "Surface" / "dossiers" / "projects" / "Wealth-Lab").exists()
     saved = AgentRegistry.load(mind_home.path).get("wealth-lab")
     assert saved is not None and saved.mind_subtree == "Surface/dossiers/research/Wealth-Lab"
@@ -261,8 +292,8 @@ def test_a_genuinely_different_project_is_still_created(client, mind_home, tmp_p
 def test_existing_mind_tree_is_claimed_not_overwritten(client, mind_home, tmp_path):
     """Mind 里已有这棵树（用户自己立的项）：只认领，一个字都不覆盖。"""
     root = tmp_path / "mind"
-    make_tree(root, "Orbit", plan="---\nproject: Orbit\n---\n\n# Orbit\n\n用户自己写的\n")
-    before = (surface(root) / "Orbit" / "plan.md").read_text(encoding="utf-8")
+    make_tree(root, "Orbit", status="用户自己写的")
+    before = (surface(root) / "Orbit" / "dossier.json").read_text(encoding="utf-8")
 
     response = client.post(
         "/api/agents", json={"id": "orbit", "name": "Orbit", "category": "projects"}
@@ -270,7 +301,7 @@ def test_existing_mind_tree_is_claimed_not_overwritten(client, mind_home, tmp_pa
 
     assert response.status_code == 200, response.json()
     assert response.json()["data"]["mindSubtree"] == f"{VAULT_PROJECTS}/Orbit"
-    after = (surface(root) / "Orbit" / "plan.md").read_text(encoding="utf-8")
+    after = (surface(root) / "Orbit" / "dossier.json").read_text(encoding="utf-8")
     assert after == before
 
 

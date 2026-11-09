@@ -509,7 +509,7 @@ def test_a_root_without_the_brain_gates_still_creates_just_the_tree(
     response = create(client, {"id": "orbit", "name": "Orbit", "category": "projects"})
 
     assert response.status_code == 200, response.json()
-    assert (paths.real_target(PROJECTS_RELATIVE, root) / "Orbit" / "plan.md").is_file()
+    assert (paths.real_target(PROJECTS_RELATIVE, root) / "Orbit" / "dossier.json").is_file()
     # 没有声明可同步 ≠ 自己造一份：那正是脑仓门禁与磁盘长期不一致的来源。
     assert not (root / AGENTS_RELATIVE).exists()
     assert not (paths.real_target(INDEX_RELATIVE, root)).exists()

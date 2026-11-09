@@ -301,7 +301,7 @@ def test_a_tree_lands_in_its_category_folder_and_a_stale_pointer_adopts_it(
 
     write = ensure_project_tree(raw_name="SRTP", category="research", mind_root=mind)
     assert write.relative == "Surface/dossiers/research/SRTP"
-    assert (sibling_vault / "dossiers" / "research" / "SRTP" / "plan.md").is_file()
+    assert (sibling_vault / "dossiers" / "research" / "SRTP" / "dossier.json").is_file()
     assert not (sibling_vault / "dossiers" / "projects" / "SRTP").exists()
 
     adopted = ensure_project_tree(raw_name="SRTP", category="projects", mind_root=mind)
