@@ -46,7 +46,8 @@ providers:
   # 桌面订阅（agy / Google）。凭据来自桌面应用自己维护的本机存储，
   # 这里不写 refresh_token；没有凭据时卡片会请用户跑一次 agy 登录。
   antigravity:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单）⇒ 这条腿退场，码留着当兜底。
     host: https://daily-cloudcode-pa.googleapis.com
     api_version: v1internal
     accounts:
@@ -55,7 +56,8 @@ providers:
   # Gemini CLI 路线：读 ~/.gemini/oauth_creds.json 的 Google OAuth。
   # 只给这条腿留代理位：留空 = 直连；它挂了只坏这一条腿。
   gemini_api:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单）⇒ 这条腿退场，码留着当兜底。
     proxy: ""
 
   # OpenCode Zen：读本机 OAuth，打它自己的 OpenAI 兼容口，模型名取它自报清单。
@@ -65,20 +67,23 @@ providers:
   # Kiro：走它自己的流式 API；不写 models —— 名单由这条腿现读，
   # 抄一份清单只会在厂商改模型时变成一堆点了必失败的名字。
   kiro_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单）⇒ 这条腿退场，码留着当兜底。
     transport: api
     timeout: 300
     accounts: [{ id: kiro-default }]
 
   # Cline：OpenAI 兼容口，凭据在就是纯 HTTP 腿；没有凭据时卡片请用户跑 cline auth。
   cline_cli:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单）⇒ 这条腿退场，码留着当兜底。
     timeout: 300
     accounts: [{ id: cline-default }]
 
   # Qoder：设备码 PKCE 自登录 + COSY 签名 SSE。
   qoder:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单）⇒ 这条腿退场，码留着当兜底。
     display_name: Qoder
     model_prefix: qoder
     timeout: 300
@@ -87,7 +92,8 @@ providers:
   # CodeBuddy 订阅的 HTTP 口（OpenAI 形状、带工具），凭据只在运行时从桌面记录中读。
   # models 不写：由这条腿自报目录。
   workbuddy:
-    enabled: true
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单）⇒ 这条腿退场，码留着当兜底。
     base_url: https://www.workbuddy.cn
     dialect: openai
     chat_path: /v2/chat/completions
@@ -97,3 +103,11 @@ providers:
       - { name: "X-Auth-Refresh-Source", value: "plugin" }
     accounts:
       - { id: desktop }
+
+
+  # Magpie（MIT，本机那个多模型网关）：厂商那一层交给它与它的社区插件维护，
+  # 它的 provider 列表当我们的腿与卡片清单（providers.yaml 是我们自己的表）。
+  # 它随包发布、由桌面起（PLOBI_MAGPIE_BINARY 指向随包那一份），运行数据落 D 盘。
+  magpie:
+    enabled: true
+    timeout: 300
