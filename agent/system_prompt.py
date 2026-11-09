@@ -33,6 +33,7 @@ from agent.prompt_builder import (
     PLOBI_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
     DIARY_GUIDANCE,
+    DOSSIER_GUIDANCE,
     MEMORY_GUIDANCE,
     OPENAI_MODEL_EXECUTION_GUIDANCE,
     PARALLEL_TOOL_CALL_GUIDANCE,
@@ -225,6 +226,10 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         tool_guidance.append(SESSION_SEARCH_GUIDANCE)
     if "surface_read" in agent.valid_tool_names:
         tool_guidance.append(DIARY_GUIDANCE)
+        # 档案面（``dossier.json``）：11-09 起档案从 md 退役成结构化记录，
+        # Agent 不知道它存在就会继续去改那对已经不在了的 md（用户 11-09 原话：
+        # 「我叫Agent维护相关的笔记，Plan或者progress它都不知道有这个东西的存在」）。
+        tool_guidance.append(DOSSIER_GUIDANCE)
     if "skill_manage" in agent.valid_tool_names:
         tool_guidance.append(SKILLS_GUIDANCE)
     # Kanban worker/orchestrator lifecycle — only present when the

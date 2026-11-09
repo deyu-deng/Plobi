@@ -247,7 +247,9 @@ class MindProvider(MemoryProvider):
                 "name": SURFACE_READ_TOOL,
                 "description": (
                     "Read one file of the human-readable surface by its LOGICAL path, "
-                    "``Surface/...`` — a dossier (``Surface/dossiers/projects/Aura/progress.md``), a note "
+                    "``Surface/...`` — a dossier record "
+                    "(``Surface/dossiers/projects/Aura/dossier.json``: goal, status, stages), "
+                    "the checklist beside it (``tasks.json``), a note "
                     "(``Surface/notes/...``), today's diary (``Surface/diary/<date>-<Weekday>.md``). "
                     "Only paths inside that surface resolve; anything else comes back as an "
                     "error, never as an empty file. The brain's own pages are a different tool: "
@@ -258,7 +260,7 @@ class MindProvider(MemoryProvider):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Surface/dossiers/projects/Aura/plan.md",
+                            "description": "Logical path on the human surface, e.g. Surface/dossiers/projects/Aura/dossier.json",
                         }
                     },
                     "required": ["path"],
@@ -268,9 +270,16 @@ class MindProvider(MemoryProvider):
                 "name": SURFACE_WRITE_TOOL,
                 "description": (
                     "Overwrite one file on the human-readable surface (``Surface/...``) by its "
-                    "LOGICAL path, e.g. ``Surface/dossiers/projects/Aura/progress.md``. This is how a "
-                    "dossier stays current: rewrite the whole file, keeping its frontmatter "
-                    "and bumping ``updated`` to today. Notes under ``Surface/notes/`` carry a "
+                    "LOGICAL path, e.g. ``Surface/dossiers/projects/Aura/dossier.json``. A dossier "
+                    "record is JSON: ``version``, ``agent``, ``title``, ``category``, ``goal``, "
+                    "``status`` (one paragraph on where this stands), ``stages`` (each with "
+                    "``id``, ``title``, ``detail``, ``done``), ``registry``, ``updated`` and "
+                    "``log`` (the running history). This is how a dossier stays current: read "
+                    "it first, keep every key it already has — including any you do not "
+                    "recognise — change only what actually changed, and write the whole file "
+                    "back with ``updated`` set to today. The old ``plan.md`` / ``progress.md`` "
+                    "pair is retired; there is nothing to keep up there. Notes under "
+                    "``Surface/notes/`` carry a "
                     "hard contract: frontmatter must carry title, tags and a `belongs` key "
                     "(`[]` = public knowledge, otherwise registered agent names), may carry "
                     "`relates` for agents whose tasks use it, have exactly one top-level "
@@ -285,7 +294,7 @@ class MindProvider(MemoryProvider):
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Surface/dossiers/research/SRTP/progress.md",
+                            "description": "Logical path on the human surface, e.g. Surface/dossiers/research/SRTP/dossier.json",
                         },
                         "content": {
                             "type": "string",

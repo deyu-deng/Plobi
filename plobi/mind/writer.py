@@ -12,7 +12,9 @@ never invents content, and refuses paths outside the tolerated prefixes.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +35,18 @@ from .paths import (
 logger = logging.getLogger(__name__)
 
 VERIFIER_RELATIVE = "Mind/scripts/verifier.py"
+
+
+def _write_atomic(target: Path, text: str) -> None:
+    """临时文件 ＋ ``os.replace``：读者要么看到旧的，要么看到新的，看不到半份。"""
+    handle, tmp = tempfile.mkstemp(prefix=".mind-", suffix=".tmp", dir=str(target.parent))
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+        os.replace(tmp, target)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 @dataclass
@@ -213,6 +227,11 @@ class MindWriter:
                 if request.mode == "append" and target.exists():
                     with open(target, "a", encoding="utf-8") as handle:
                         handle.write(request.content)
+                elif target.suffix.lower() == ".json":
+                    # **JSON 目标（档案本体 ``dossier.json``／清单 ``tasks.json``）走原子写**：
+                    # 读者要么看到旧的、要么看到新的，看不到半份——写一半崩了留下的半份
+                    # JSON 会让那张卡读成「读不出来」，那是在说一件并不存在的坏事。
+                    _write_atomic(target, request.content)
                 else:
                     target.write_text(request.content, encoding="utf-8")
                 written.append(request.relative_path)

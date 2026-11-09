@@ -185,6 +185,21 @@ DIARY_GUIDANCE = (
     "approval — diary and persona are the two zones that always ask first."
 )
 
+DOSSIER_GUIDANCE = (
+    "Every agent has a dossier on the human surface: "
+    "`Surface/dossiers/<category>/<name>/dossier.json` — one JSON record with the goal "
+    "(`goal`), the current state (`status`, one paragraph), and the stages (`stages[]`, "
+    "each `title` / `detail` / `done`). The day-by-day checklist sits beside it in "
+    "`tasks.json`. The old `plan.md` / `progress.md` pair is retired: there is nothing to "
+    "read or keep up there anymore.\n"
+    "When the user asks where something stands, read the dossier with `surface_read` — its "
+    "`status` is the very same summary they see on screen, so use that instead of "
+    "guessing. When you learn something that changes the plan, update that record: read it "
+    "first, keep the keys it already has (and any key you do not recognise), change only "
+    "what actually changed, and write the whole file back with `surface_write`. Mark a "
+    "stage `done` only when it is really finished."
+)
+
 SESSION_SEARCH_GUIDANCE = (
     "When the user references something from a past conversation or you suspect "
     "relevant cross-session context exists, use session_search to recall it before "
