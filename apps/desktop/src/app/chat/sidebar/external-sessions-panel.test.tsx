@@ -105,6 +105,30 @@ describe('外部会话（并进外包那一格）', () => {
     }))
   })
 
+  it('OpenCode 的会话按同形出现：自己一组，点进去交出去的是那一条', async () => {
+    api.mockResolvedValue({ ok: true, data: { projects: [], reason: '', sessions: [
+      { ...LIST.data.sessions[0], id: 'ses_abc123', vendor: 'opencode', title: '验收一下', sendable: true }
+    ] } })
+    render(<AgentOffloadPanel agentId="Sindri" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /OpenCode/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /验收一下/ }))
+
+    // 屏上与别家同形：分组行是**品牌方块**，不是那枚中性「机器人」。
+    expect(screen.getByTestId('vendor-brand-block-opencode')).toBeTruthy()
+    expect(screen.queryByTestId('offload-vendor-fallback-opencode')).toBeNull()
+
+    expect($openConversation.get()).toEqual({
+      agentId: 'Sindri',
+      kind: 'external',
+      sendable: true,
+      sessionId: 'ses_abc123',
+      title: '验收一下',
+      updatedAt: '2026-10-27T10:00:00.000Z',
+      vendor: 'opencode'
+    })
+  })
+
   it('那家软件不支持从这里说话时，交出去的 `sendable` 是 false（主区据此收起输入框）', async () => {
     api.mockResolvedValue({ ok: true, data: { projects: [], reason: '', sessions: [
       { ...LIST.data.sessions[0], id: 'conv_1', sendable: false, title: 'Computor', vendor: 'marvis' }

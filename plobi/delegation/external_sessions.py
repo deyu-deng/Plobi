@@ -14,6 +14,9 @@
 - ``cursor``     ``state.vscdb`` 里的 ``composerData:<id>``（只读）——**这台机器上没留下可读的对话**
   （库在，6 条 composer 全是草稿或已归档；说「这台没留下」，不说「它没有对话」）
 - ``agy``        ``~/.gemini/antigravity-cli/brain/<会话号>/…/transcript.jsonl``（只读）
+- ``opencode``   ``~/.local/share/opencode/opencode.db`` 的 ``session_v2`` / ``session_message`` 两张表（只读）
+  ——**路径不写死**（用户 11-09：「每个用户安装的应用的位置可是不一样的」）：
+  环境变量 override → ``XDG_DATA_HOME`` 规矩 → 各平台默认，取第一个存在的。
 
 两处**照实**（不许猜）：
 
@@ -38,6 +41,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -48,8 +52,9 @@ VENDOR_CODEBUDDY = "codebuddy"
 VENDOR_MARVIS = "marvis"
 VENDOR_CURSOR = "cursor"
 VENDOR_AGY = "agy"
+VENDOR_OPENCODE = "opencode"
 
-#: 这一版能真的把话送进去的只有 Qoder：其余两家只读。不是漏做，是没实测过回跳旗标。
+#: 这一版能真的把话送进去的：Qoder ＋ OpenCode。其余只读。
 #: 能力表在 `external_capabilities.py` 里，这里只留一份**兼容旧调用**的派生集合。
 def _known_vendors() -> tuple[str, ...]:
     from plobi.delegation.external_capabilities import vendor_names
@@ -65,7 +70,7 @@ def capabilities_for(vendor: str):
 
 
 #: 能真的把话送进去的那几家从能力表派生，不在这里再列第二份。
-#: 今天只有 Qoder；其余只读，不是漏做，是没实测过回跳旗标。
+#: 今天有 Qoder 与 OpenCode；其余只读，不是漏做，是没实测过回跳旗标。
 SENDABLE = frozenset(
     v for v in _known_vendors()
     if (spec := capabilities_for(v)) is not None and spec.send
@@ -134,6 +139,32 @@ def agy_db() -> Path:
     base = Path(os.path.expanduser(override)) if override else Path.home() / ".gemini" / "antigravity-cli"
 
     return base / "conversation_summaries.db"
+
+
+def opencode_db() -> Path:
+    """OpenCode 的会话库（SQLite，只读）。
+
+    **路径不写死**（用户 11-09：「每个用户安装的应用的位置可是不一样的」）：
+    候选顺序＝环境变量 override → ``XDG_DATA_HOME`` 规矩 → 各平台默认，取**第一个存在的**。
+    找不到就交回第一个候选（调用方按「没有」处理），不编一个路径出来。
+    """
+    candidates: list[Path] = []
+    override = os.environ.get("OPENCODE_HOME", "").strip()
+    if override:
+        candidates.append(Path(os.path.expanduser(override)) / "opencode.db")
+    xdg = os.environ.get("XDG_DATA_HOME", "").strip()
+    if xdg:
+        candidates.append(Path(os.path.expanduser(xdg)) / "opencode" / "opencode.db")
+    home = Path.home()
+    if sys.platform == "darwin":
+        candidates.append(home / "Library" / "Application Support" / "opencode" / "opencode.db")
+    else:
+        candidates.append(home / ".local" / "share" / "opencode" / "opencode.db")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    return candidates[0]
 
 
 
@@ -252,6 +283,22 @@ def _local_stamp(value: Any) -> str:
         moment = moment.astimezone()
 
     return moment.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _epoch_stamp(value: Any) -> str:
+    """epoch **毫秒** → 本地时间串（OpenCode 的时间戳是毫秒，不是 ISO 串）。
+
+    与 `_local_stamp` 收成同一种形状：排序是拿字符串比的，两种格式混在一起排不对。
+    读不出来就空串——宁可空着，不编一个时间。
+    """
+    try:
+        millis = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if millis <= 0:
+        return ""
+
+    return datetime.fromtimestamp(millis / 1000).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _clamp_text(text: str, limit: int = MAX_TRANSCRIPT_CHARS) -> str:
@@ -620,6 +667,126 @@ def _agy_transcript(session_id: str) -> list[dict[str, Any]]:
             text = str(record.get("content") or "").strip()
             if text and text != "None":
                 messages.append({"role": "assistant", "text": text, "ts": str(record.get("created_at") or "")})
+
+    return messages
+
+
+# ── OpenCode（SQLite，只读）──────────────────────────────────────────────
+
+def _opencode_message_text(message_type: str, raw: Any) -> str:
+    """一条消息的正文（`session_message.data` 是一段 JSON 串）。
+
+    - user：``{"text": "...", "time": …}``；
+    - assistant：``{"content": [{"type": "text", "text": "…"}, {"type": "reasoning", …}]}``
+      ——**只取 text 那几块**：reasoning 与 tool 不是「说的话」，不上屏（与别家同一形状）。
+    """
+    data: Any = raw
+    if isinstance(raw, (str, bytes)):
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return ""
+    if not isinstance(data, dict):
+        return ""
+    if message_type == "user":
+        text = data.get("text")
+        return text.strip() if isinstance(text, str) else ""
+    parts = data.get("content")
+    if isinstance(parts, list):
+        chunks = [
+            part.get("text").strip()
+            for part in parts
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+        ]
+        chunks = [chunk for chunk in chunks if chunk]
+        if chunks:
+            return "\n".join(chunks)
+    text = data.get("text")
+    return text.strip() if isinstance(text, str) else ""
+
+
+def _opencode_first_user_line(con: sqlite3.Connection, session_id: str) -> str:
+    """第一条用户消息的首行。
+
+    与 Marvis 同一形状：屏上先看**人说的第一句**，OpenCode 自己起的会话名另放一格。
+    """
+    try:
+        row = con.execute(
+            "select data from session_message where session_id = ? and type = 'user' order by seq limit 1",
+            (session_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return ""
+    text = _opencode_message_text("user", row[0] if row else "")
+    if not text:
+        return ""
+    return text.splitlines()[0][:120]
+
+
+def _opencode_sessions() -> list[dict[str, Any]]:
+    db = opencode_db()
+    if not db.is_file():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = con.execute(
+                "select id, title, directory, time_updated from session_v2 order by time_updated desc"
+            ).fetchall()
+            spoken = {row[0]: _opencode_first_user_line(con, row[0]) for row in rows}
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+    for session_id, title, directory, updated in rows:
+        if not isinstance(session_id, str) or not SESSION_ID_RE.match(session_id):
+            continue
+        own = str(title or "").splitlines()[0][:120] if title else ""
+        out.append({
+            "id": session_id,
+            # OpenCode **记这条会话在哪个目录**（`session_v2.directory`）⇒ 归属能按目录判，
+            # 与 Marvis 那一格留空不同。
+            "project": str(directory or "").strip(),
+            "sendable": VENDOR_OPENCODE in SENDABLE,
+            "title": spoken.get(session_id) or own or session_id[:120],
+            # 它自己起的会话名（多是人写的标题）：另放一格，不丢信息。
+            "source_title": own,
+            "updated_at": _epoch_stamp(updated),
+            "vendor": VENDOR_OPENCODE,
+        })
+
+    return out
+
+
+def _opencode_transcript(session_id: str) -> list[dict[str, Any]]:
+    db = opencode_db()
+    if not db.is_file():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = con.execute(
+                "select type, data, time_created from session_message where session_id = ? "
+                "and type in ('user','assistant') order by seq desc limit ?",
+                (session_id, MAX_MESSAGES),
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+    messages: list[dict[str, Any]] = []
+    for message_type, data, created in reversed(rows):
+        text = _opencode_message_text(message_type, data)
+        if not text:
+            continue
+        messages.append({
+            "role": "user" if message_type == "user" else "assistant",
+            "text": _clamp_text(text),
+            "ts": _epoch_stamp(created),
+        })
+
     return messages
 
 
@@ -631,7 +798,7 @@ def all_sessions() -> list[dict[str, Any]]:
         return list(_ALL_CACHE["rows"])
     sessions = [
         *_qoder_sessions(), *_codebuddy_sessions(), *_marvis_sessions(),
-        *_cursor_sessions(), *_agy_sessions(),
+        *_cursor_sessions(), *_agy_sessions(), *_opencode_sessions(),
     ]
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     _ALL_CACHE["rows"] = sessions
@@ -642,7 +809,8 @@ def all_sessions() -> list[dict[str, Any]]:
 
 def session_sources() -> list[dict[str, Any]]:
     """设置那一屏要看的：这台上每家外部软件、会话在哪、读不读得动、能不能说。"""
-    counts = {VENDOR_QODER: 0, VENDOR_CODEBUDDY: 0, VENDOR_MARVIS: 0, VENDOR_CURSOR: 0, VENDOR_AGY: 0}
+    counts = {VENDOR_QODER: 0, VENDOR_CODEBUDDY: 0, VENDOR_MARVIS: 0, VENDOR_CURSOR: 0,
+              VENDOR_AGY: 0, VENDOR_OPENCODE: 0}
     for item in all_sessions():
         counts[item["vendor"]] = counts.get(item["vendor"], 0) + 1
 
@@ -658,6 +826,7 @@ def session_sources() -> list[dict[str, Any]]:
 
     cursor = cursor_db()
     agy = agy_db()
+    opencode = opencode_db()
 
     # Cursor：库在 ≠ 读得到。**照实说「这台没留下」**——不假装读得到，
     # 也不说成「它没有对话」（它装了、库在，只是里面没有可读的内容）。
@@ -666,6 +835,13 @@ def session_sources() -> list[dict[str, Any]]:
     if cursor_readable and not counts.get(VENDOR_CURSOR, 0):
         cursor_readable = False
         cursor_reason = "Cursor 这台机器上没留下可读的对话"
+
+    # OpenCode 同理：库在但一条会话都没有 ⇒ 照实说没留下。
+    opencode_readable = opencode.is_file()
+    opencode_reason = "" if opencode_readable else "没找到 OpenCode 的会话库"
+    if opencode_readable and not counts.get(VENDOR_OPENCODE, 0):
+        opencode_readable = False
+        opencode_reason = "OpenCode 这台机器上没留下可读的对话"
 
     return [
         source(VENDOR_QODER, qoder_root(), readable=True, reason=""),
@@ -677,6 +853,9 @@ def session_sources() -> list[dict[str, Any]]:
         source(VENDOR_AGY, agy.parent,
                readable=agy.is_file(),
                reason="" if agy.is_file() else "没找到 agy 的会话摘要库"),
+        source(VENDOR_OPENCODE, opencode.parent,
+               readable=opencode_readable,
+               reason=opencode_reason),
     ]
 
 
@@ -1182,6 +1361,8 @@ def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
         messages = _cursor_transcript(session_id)
     elif vendor == VENDOR_AGY:
         messages = _agy_transcript(session_id)
+    elif vendor == VENDOR_OPENCODE:
+        messages = _opencode_transcript(session_id)
     else:
         return {"ok": False, "status": 400, "error": "这家外部软件的会话还读不了"}
 
@@ -1192,7 +1373,100 @@ def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
     }
 
 
-# ── 说（这一版只有 Qoder）──────────────────────────────────────────────────
+# ── 说（Qoder ＋ OpenCode）────────────────────────────────────────────────
+
+def _send_channel_agent(vendor: str) -> str:
+    """这一家在**派活通道**里的键（`agent/external_offload.py::EXTERNAL_AGENTS`）。"""
+    if vendor == VENDOR_OPENCODE:
+        from agent import external_offload as channel
+
+        return channel.AGENT_OPENCODE
+    from agent import external_offload as channel
+
+    return channel.AGENT_QODER
+
+
+def _send_argv(vendor: str, binary: str, session_id: str, body: str) -> list[str]:
+    """这一家续接的 argv 排法（各家现读自己的 ``--help``，不互相抄）。
+
+    - Qoder：``qodercli --resume <id> --output-format json -p <text>``（10-23／10-27 真跑过）。
+    - OpenCode：``opencode run --session <id> --format json <text>``
+      ——``run`` 的消息是**变长位置参数**，旗标必须排在它前面（排在后面会被吞进消息里）。
+    """
+    if vendor == VENDOR_OPENCODE:
+        return [binary, "run", "--session", session_id, "--format", "json", body]
+    if vendor == VENDOR_QODER:
+        return [binary, "--resume", session_id, "--output-format", "json", "-p", body]
+    raise ValueError(f"没登记这家怎么续接：{vendor}")
+
+
+def _opencode_events(stdout: str) -> list[dict[str, Any]]:
+    """把回包拆成事件。
+
+    官方形状是**逐行一个 JSON 对象**；但**不假设它一定逐行**——整段能当一个对象解析时
+    也认（`{"type": "text", …}`），实在认不出就交回空列表（**不编**）。
+    """
+    text = (stdout or "").strip()
+    if not text:
+        return []
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        return [payload]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    events: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+
+    return events
+
+
+def _parse_opencode_stream(stdout: str) -> tuple[str, dict[str, Any], list[str]]:
+    """``opencode run --format json`` 的回包是**逐行 JSON 事件**（不是一整个对象）。
+
+    认得三种：``text``（正文在 ``part.text``）／``step_finish``（``part.cost`` 是美元、
+    ``part.tokens`` 是用量）／``error``（``error.data.message`` 是它自己的原话）。
+    **认不出的行跳过**——回包形状变了最多回一句「没读懂」，不许编一段出来。
+    """
+    parts: list[str] = []
+    usage: dict[str, Any] = {}
+    errors: list[str] = []
+    for event in _opencode_events(stdout):
+        part = event.get("part") if isinstance(event.get("part"), dict) else {}
+        kind = event.get("type")
+        if kind == "text":
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        elif kind == "step_finish":
+            cost = part.get("cost")
+            if isinstance(cost, (int, float)):
+                usage["total_cost_usd"] = float(cost)
+            tokens = part.get("tokens")
+            if isinstance(tokens, dict):
+                usage["tokens"] = tokens
+        elif kind == "error":
+            error = event.get("error")
+            if isinstance(error, dict):
+                data = error.get("data")
+                message = data.get("message") if isinstance(data, dict) else None
+                text = str(message or error.get("name") or "").strip()
+                if text:
+                    errors.append(text)
+
+    return "\n".join(parts).strip(), usage, errors
+
 
 def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: float = 600.0) -> dict[str, Any]:
     body = (text or "").strip()
@@ -1210,20 +1484,22 @@ def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: fl
 
     from agent import external_offload as channel
 
-    binary = channel.resolve_command(channel.AGENT_QODER)
+    channel_agent = _send_channel_agent(vendor)
+    binary = channel.resolve_command(channel_agent)
     if not binary:
-        return {"ok": False, "status": 409, "error": "找不到 qoder 对应的可执行程序"}
+        return {"ok": False, "status": 409, "error": f"找不到 {vendor} 对应的可执行程序"}
     allowed, why = channel.cwd_is_allowed(project)
     if not allowed:
         return {"ok": False, "status": 409, "error": f"记录的项目目录当前不可用：{why}"}
 
-    env = channel.scrub_child_env(channel.AGENT_QODER, dict(os.environ))
-    argv = [binary, "--resume", session["id"], "--output-format", "json", "-p", body]
+    env = channel.scrub_child_env(channel_agent, dict(os.environ))
+    argv = _send_argv(vendor, binary, str(session["id"]), body)
     started = time.time()
     try:
         finished = subprocess.run(  # noqa: S603 — 固定模板 + 校验过的会话号
             argv, cwd=project, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8",
             errors="replace", timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -1231,7 +1507,11 @@ def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: fl
     except OSError as exc:
         return {"ok": False, "status": 500, "error": f"起不来：{exc}"}
 
-    answer, usage, _session, _source = channel._parse_envelope(finished.stdout or "")
+    errors: list[str] = []
+    if vendor == VENDOR_OPENCODE:
+        answer, usage, errors = _parse_opencode_stream(finished.stdout or "")
+    else:
+        answer, usage, _session, _source = channel._parse_envelope(finished.stdout or "")
     cost, cost_status = channel._cost(usage)
     ok = finished.returncode == 0 and bool(answer)
 
@@ -1244,7 +1524,8 @@ def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: fl
             "duration_seconds": round(time.time() - started, 2),
             "reply": answer,
         },
-        "error": "" if ok else ((finished.stderr or "").strip()[:300] or f"exit={finished.returncode}"),
+        "error": "" if ok else (errors[0] if errors else
+                                ((finished.stderr or "").strip()[:300] or f"exit={finished.returncode}")),
     }
 
 

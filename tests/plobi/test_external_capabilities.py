@@ -22,13 +22,15 @@ def agent(monkeypatch):
 
 # ── 单一真源 ──────────────────────────────────────────────────────────────
 
-def test_the_five_vendors_are_the_only_truth_and_the_text_is_generated():
-    assert caps.vendor_names() == ("qoder", "codebuddy", "marvis", "cursor", "agy")
-    assert caps.vendor_list_text() == "qoder / codebuddy / marvis / cursor / agy"
+def test_the_six_vendors_are_the_only_truth_and_the_text_is_generated():
+    assert caps.vendor_names() == ("qoder", "codebuddy", "marvis", "cursor", "agy", "opencode")
+    assert caps.vendor_list_text() == "qoder / codebuddy / marvis / cursor / agy / opencode"
 
 
-def test_only_qoder_can_speak_and_nobody_takes_attachments_yet():
+def test_qoder_and_opencode_can_speak_and_nobody_takes_attachments_yet():
     assert caps.supports("qoder", "send") is True
+    # OpenCode：`opencode run --session <id>` 能续接那条会话（现读 `--help`）。
+    assert caps.supports("opencode", "send") is True
     for vendor in ("codebuddy", "marvis", "cursor", "agy"):
         assert caps.supports(vendor, "send") is False
     assert all(not caps.supports(v, "attachments") for v in caps.vendor_names())

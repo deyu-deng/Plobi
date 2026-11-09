@@ -21,24 +21,27 @@ from plobi.delegation import external_sessions as es  # noqa: E402
 
 @pytest.fixture
 def homes(tmp_path, monkeypatch):
-    """三家各自的根 + 一个钉住的 PLOBI_HOME（L2 标记写在那里）。"""
+    """各家各自的根 + 一个钉住的 PLOBI_HOME（L2 标记写在那里）。"""
     qoder = tmp_path / "qoder"
     codebuddy = tmp_path / "codebuddy"
     marvis = tmp_path / "marvis"
+    opencode = tmp_path / "opencode"
     home = tmp_path / "home"
-    for directory in (qoder, codebuddy, marvis / "database", home):
+    for directory in (qoder, codebuddy, marvis / "database", opencode, home):
         directory.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("QODER_CONFIG_DIR", str(qoder))
     monkeypatch.setenv("CODEBUDDY_CONFIG_DIR", str(codebuddy))
     monkeypatch.setenv("MARVIS_HOME", str(marvis))
     monkeypatch.setenv("CURSOR_HOME", str(tmp_path / "cursor-home"))
     monkeypatch.setenv("AGY_HOME", str(tmp_path / "agy-home"))
+    monkeypatch.setenv("OPENCODE_HOME", str(opencode))
     monkeypatch.setenv("PLOBI_HOME", str(home))
     es._ALL_CACHE.update({"at": 0.0, "rows": []})
     es._META_CACHE.clear()
 
     return SimpleNamespace(qoder=qoder, codebuddy=codebuddy, marvis=marvis, home=home,
-                           cursor=tmp_path / "cursor-home", agy=tmp_path / "agy-home")
+                           cursor=tmp_path / "cursor-home", agy=tmp_path / "agy-home",
+                           opencode=opencode)
 
 
 def qoder_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
@@ -115,6 +118,44 @@ def marvis_real_shape(root: Path, session_id: str, *, title: str, updated: str,
         con.execute("insert into messages values (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (f"msg_{index}", session_id, "", role, content, None, None, None,
                      index, None, "{}", updated))
+    con.commit()
+    con.close()
+
+
+def opencode_session(root: Path, session_id: str, *, title: str | None, prompt: str, reply: str,
+                     directory: str, updated_ms: int = 1790000000000, reasoning: str = "") -> None:
+    """按**真机**的形状建一个 OpenCode 库（11-09 现读）：
+
+    - ``session_v2``：``id`` 是 ``ses_…``；``title`` 是它自己起的会话名（可以没有）；
+      ``directory`` 记这条会话的工作目录；``time_updated`` 是 **epoch 毫秒**（不是 ISO 串）。
+    - ``session_message``：``type`` ∈ {user, assistant, …}；``data`` 是**一段 JSON 串**——
+      user 是 ``{"text": …}``，assistant 是 ``{"content": [{"type": "text"|"reasoning", …}]}``。
+    """
+    db = root / "opencode.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(db)
+    con.executescript(
+        "create table session_v2 (id text, title text, directory text, time_created integer,"
+        " time_updated integer);"
+        "create table session_message (id text, session_id text, type text, seq integer,"
+        " time_created integer, data text);"
+    )
+    con.execute("insert into session_v2 values (?,?,?,?,?)",
+                (session_id, title, directory, updated_ms, updated_ms))
+    if prompt:
+        con.execute("insert into session_message values (?,?,?,?,?,?)",
+                    (f"msg_{session_id}_1", session_id, "user", 1, updated_ms,
+                     json.dumps({"text": prompt, "time": {"created": updated_ms}}, ensure_ascii=False)))
+    content: list[dict] = []
+    if reasoning:
+        content.append({"type": "reasoning", "text": reasoning})
+    content.append({"type": "text", "text": reply})
+    con.execute("insert into session_message values (?,?,?,?,?,?)",
+                (f"msg_{session_id}_2", session_id, "assistant", 2, updated_ms,
+                 json.dumps({"agent": "build", "content": content, "cost": 0.01, "finish": "stop",
+                             "model": "opencode/big-pickle",
+                             "time": {"created": updated_ms, "completed": updated_ms},
+                             "tokens": {"input": 10, "output": 5}}, ensure_ascii=False)))
     con.commit()
     con.close()
 
@@ -556,3 +597,156 @@ def test_reading_a_vendor_library_never_writes_to_it(homes):
     es.read_transcript("marvis", "conv_1")
 
     assert (marvis_db.read_bytes(), cursor_db.read_bytes()) == before
+
+
+# ── OpenCode（WP-EXTERNAL-SESSIONS-OPENCODE）────────────────────────────────
+
+def test_opencode_is_discovered_with_the_first_thing_you_said_and_its_directory(homes):
+    opencode_session(homes.opencode, "ses_abc123", title="Plobi 桌面端验收", prompt="验收一下",
+                     reply="验收通过", directory=r"D:\Projects\Plobi")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "opencode"}
+
+    assert "ses_abc123" in rows
+    # 屏上先看**人说的第一句**，它自己起的会话名另放一格（不丢信息）。
+    assert rows["ses_abc123"]["title"] == "验收一下"
+    assert rows["ses_abc123"]["source_title"] == "Plobi 桌面端验收"
+    # 它**记了工作目录** ⇒ 归属能按目录判（与 Marvis 那一格留空不同）。
+    assert rows["ses_abc123"]["project"] == r"D:\Projects\Plobi"
+    assert rows["ses_abc123"]["sendable"] is True
+    # 时间是 epoch 毫秒 ⇒ 换成本地时间串（排序是拿字符串比的）。
+    assert rows["ses_abc123"]["updated_at"].startswith("20")
+
+
+def test_opencode_transcript_reads_the_dialogue_and_leaves_the_reasoning_out(homes):
+    opencode_session(homes.opencode, "ses_abc123", title="验收", prompt="验收一下",
+                     reply="验收通过", directory=r"D:\Projects\Plobi", reasoning="这段心里话不该上屏")
+
+    out = es.read_transcript("opencode", "ses_abc123")
+
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    assert out["data"]["messages"][1]["text"] == "验收通过"
+    assert "这段心里话不该上屏" not in json.dumps(out, ensure_ascii=False)
+
+
+def test_an_opencode_session_without_a_question_still_shows_up_under_its_own_name(homes):
+    """这台机器上有 28 条只有助手消息的空跑会话（11-09 现读）。
+
+    照实列出来，标题退回 OpenCode 自己起的会话名——**不假装它有人问过话**。
+    """
+    opencode_session(homes.opencode, "ses_empty01", title="空跑", prompt="", reply="回了一句",
+                     directory=r"D:\Temp")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "opencode"}
+
+    assert rows["ses_empty01"]["title"] == "空跑"
+
+
+def test_the_opencode_library_path_follows_the_machine_instead_of_a_fixed_folder(homes, monkeypatch, tmp_path):
+    """**路径不许写死**（用户 11-09：「每个用户安装的应用的位置可是不一样的」）。"""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setenv("OPENCODE_HOME", str(elsewhere))
+
+    assert es.opencode_db() == elsewhere / "opencode.db"
+
+    monkeypatch.delenv("OPENCODE_HOME", raising=False)
+    xdg = tmp_path / "xdg"
+    (xdg / "opencode").mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+
+    assert es.opencode_db() == xdg / "opencode" / "opencode.db"
+
+
+def test_opencode_says_it_left_nothing_behind_when_its_library_is_empty(homes):
+    (homes.opencode / "opencode.db").write_bytes(b"")
+
+    sources = {item["vendor"]: item for item in es.session_sources()}
+
+    assert sources["opencode"]["readable"] is False
+    assert "没留下" in sources["opencode"]["reason"]
+
+
+def test_sending_to_opencode_continues_that_session_and_reads_its_event_stream(homes, monkeypatch):
+    opencode_session(homes.opencode, "ses_abc123", title="验收", prompt="验收一下",
+                     reply="验收通过", directory=r"D:\Projects\Plobi")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Plobi")
+    es.mark_for_agent("Sindri", [{"vendor": "opencode", "id": "ses_abc123", "related": True}])
+
+    seen: dict = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = list(argv)
+        seen["cwd"] = kwargs["cwd"]
+        return SimpleNamespace(returncode=0, stdout="\n".join([
+            json.dumps({"type": "step_start", "timestamp": 1790000000000, "sessionID": "ses_abc123",
+                        "part": {"type": "step-start"}}),
+            json.dumps({"type": "text", "timestamp": 1790000001000, "sessionID": "ses_abc123",
+                        "part": {"type": "text", "text": "回答正文"}}),
+            json.dumps({"type": "step_finish", "timestamp": 1790000002000, "sessionID": "ses_abc123",
+                        "part": {"type": "step-finish", "reason": "stop", "cost": 0.002,
+                                 "tokens": {"input": 671, "output": 8}}}),
+        ]), stderr="")
+
+    from agent import external_offload as channel
+
+    monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/bin/opencode.exe")
+    monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+    monkeypatch.setattr(channel.subprocess, "run", fake_run)
+
+    out = es.send_for_agent("Sindri", "opencode", "ses_abc123", "接着说")
+
+    assert out["ok"] is True, out
+    # `opencode run` 的消息是**变长位置参数** ⇒ 旗标排在它前面。
+    assert seen["argv"][1:5] == ["run", "--session", "ses_abc123", "--format"]
+    assert seen["argv"][-1] == "接着说"
+    assert seen["cwd"] == r"D:\Projects\Plobi"
+    assert out["data"]["reply"] == "回答正文"
+    assert out["data"]["cost_usd"] == 0.002
+
+
+def test_an_opencode_reply_that_is_not_line_by_line_is_still_read(homes, monkeypatch):
+    """回包形状若换成**一个对象**（不是逐行），也要读得出正文——不假设它一定逐行。"""
+    opencode_session(homes.opencode, "ses_abc123", title="验收", prompt="验收一下",
+                     reply="验收通过", directory=r"D:\Projects\Plobi")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Plobi")
+    es.mark_for_agent("Sindri", [{"vendor": "opencode", "id": "ses_abc123", "related": True}])
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            "type": "text", "part": {"type": "text", "text": "整段回包"}}), stderr="")
+
+    from agent import external_offload as channel
+
+    monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/bin/opencode.exe")
+    monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+    monkeypatch.setattr(channel.subprocess, "run", fake_run)
+
+    out = es.send_for_agent("Sindri", "opencode", "ses_abc123", "接着说")
+
+    assert out["ok"] is True
+    assert out["data"]["reply"] == "整段回包"
+
+
+def test_an_opencode_error_event_is_reported_in_its_own_words(homes, monkeypatch):
+    opencode_session(homes.opencode, "ses_abc123", title="验收", prompt="验收一下",
+                     reply="验收通过", directory=r"D:\Projects\Plobi")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Plobi")
+    es.mark_for_agent("Sindri", [{"vendor": "opencode", "id": "ses_abc123", "related": True}])
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(returncode=1, stdout=json.dumps({
+            "type": "error", "timestamp": 1790000000000, "sessionID": "ses_abc123",
+            "error": {"name": "APIError", "data": {"message": "Rate limit exceeded"}}}), stderr="")
+
+    from agent import external_offload as channel
+
+    monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/bin/opencode.exe")
+    monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+    monkeypatch.setattr(channel.subprocess, "run", fake_run)
+
+    out = es.send_for_agent("Sindri", "opencode", "ses_abc123", "接着说")
+
+    assert out["ok"] is False
+    assert out["error"] == "Rate limit exceeded"

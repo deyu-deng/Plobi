@@ -35,7 +35,7 @@ ACTIONS = ("read", "rename", "edit", "model", "permission", "send", "attachments
 class VendorCapabilities:
     vendor: str
     label: str
-    # 五家共有的账本操作（改名/归档/删除/标记都在 Plobi 这一侧，与对方软件无关）
+    # 各家共有的账本操作（改名/归档/删除/标记都在 Plobi 这一侧，与对方软件无关）
     ledger_actions: tuple[str, ...] = ("read", "rename", "archive", "delete", "mark")
     # 能不能往那条会话里接着说话
     send: bool = False
@@ -107,6 +107,10 @@ VENDORS: dict[str, VendorCapabilities] = {
     "marvis": VendorCapabilities(vendor="marvis", label="Marvis"),
     "cursor": VendorCapabilities(vendor="cursor", label="Cursor"),
     "agy": VendorCapabilities(vendor="agy", label="agy"),
+    # OpenCode：**能续接说话**（现读 `opencode run --help`：`--session <id>` 续接那条会话）。
+    # 它的回包是**逐行 JSON 事件**（不是 Qoder 那种一个对象）⇒ 解析在
+    # `external_sessions.py::_parse_opencode_stream` 里，不在能力表这一层。
+    "opencode": VendorCapabilities(vendor="opencode", label="OpenCode", send=True),
 }
 
 
