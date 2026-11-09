@@ -110,6 +110,13 @@ providers:
     enabled: true
     timeout: 240
 
+  # Magpie（11-09）：本机那个多模型网关（MIT 开源）。厂商适配交给它与它的社区插件
+  # 维护，我们只当它是一条腿：端口现读它自己的 settings.json，名单现读它的
+  # /v1/models。没装 magpie 的机器上这条腿没有模型。
+  magpie:
+    enabled: true
+    timeout: 300
+
   kiro_cli:
     enabled: true
     binary: kiro-cli

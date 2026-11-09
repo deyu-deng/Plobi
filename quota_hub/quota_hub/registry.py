@@ -34,6 +34,7 @@ from .providers.apps.cline import ClineCliProvider
 from .providers.apps.codex import CodexCliProvider
 from .providers.apps.cursor import CursorProvider
 from .providers.apps.kiro import KiroCliProvider
+from .providers.apps.magpie import MagpieProvider
 from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
 from .providers.apps.opencode import OpenCodeCliProvider
 from .providers.apps.opencode.api import OpencodeApiProvider
@@ -128,6 +129,11 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     # 2026-10-14: CLI 腿（--tools "" 纯文本）已退役，workbuddy 键现在绑定
     # CodeBuddy HTTP 通道（原 workbuddy_api 改名）。Hybrid 类保留在代码库供回滚。
     "workbuddy": WorkbuddyApiProvider,
+    # 11-09：Magpie（MIT 开源的本机模型网关）当一条腿。厂商适配那一层交给它与它的
+    # 社区插件维护（qoder／workbuddy／zen-free／kiro／cline／copilot／cursor／
+    # devin／grok 都已经是插件了），我们只读它那份现读的清单——每行的窗口与思考档
+    # 都是它写的，不是我们猜的。我们这边仍留着的腿是兜底。
+    "magpie": MagpieProvider,
     "mock": MockProvider,
 }
 

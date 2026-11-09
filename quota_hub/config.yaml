@@ -126,8 +126,14 @@ providers:
   #    同样回 200，OpenAPI 全表也没有带 tools 的请求体）⇒ capabilities.tools=false
   #    ⇒ 模型框里进不去（裁定 204 §5 的闸门不放宽）。工具那条路是让 OpenCode 去调
   #    我们的 MCP 服务器，归 `WP-QUOTA-LEG-TOOLS-VIA-MCP` 那把刀。
+  # 11-09：**Free 那家已由 magpie 接管**（实测：走 magpie 带得上我们的工具，一个回合真
+  #    回了 `finish_reason=tool_calls`），所以这条腿在这台机器上让位，免得模型框里出现
+  #    两份同一个免费池（我们这份 `tools=false`，只能灰着；它那份可选）。
+  #    **它仍是兜底**：把下面这行改回 `enabled: true`，或者把 magpie 停掉，它立刻接管。
+  #    ⚠️ `config.example.yaml` 与 `profiles/safe.yaml` 里**保持开着**——新机器上还没有
+  #    magpie，那边只有这一条路。
   opencode_free:
-    enabled: true
+    enabled: false
     # 一个回合要跑完客户端自己的 agent，比一次补全慢（实测 ~2 s，纯文本 ~6 s）。
     timeout: 240
     # 不写 models：名单由上游现读，读不到就是零条。
@@ -225,3 +231,14 @@ providers:
     # 选择框与运行时的上下文预算就不再靠 Plobi 的旧本地表编。
     accounts:
       - { id: desktop }
+
+  # 11-09：Magpie —— 本机那个多模型网关（MIT 开源，github.com/yetone/magpie）。
+  # 厂商适配那一层交给它与它的社区插件维护（qoder／workbuddy／zen-free／kiro／cline／
+  # copilot／cursor／devin／grok 在他们那儿都已经是插件了），我们这边只当它是一条腿：
+  # 端口现读它自己的 `~/.config/magpie/settings.json`（默认 3425）；名单与每行的
+  # 窗口／思考档现读 `GET /v1/models`；回合走 `POST /v1/chat/completions`，我们的
+  # key 名叫 `magpie-plobi`（那边的用量按这个名字记在我们名下）。
+  # 这台机器上没装 magpie ⇒ 这条腿没有模型：我们不装它、不登它、也不编一份名单。
+  magpie:
+    enabled: true
+    timeout: 300

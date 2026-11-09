@@ -268,6 +268,16 @@ providers:
     enabled: true
     timeout: 240
 
+  # Magpie (11-09): the local multi-model gateway (MIT, github.com/yetone/magpie).
+  # The vendor adapters are its community plugins' maintenance now; this leg only
+  # reads its live catalogue (`GET /v1/models`, every row with that model's own
+  # window and thinking levels) and sends the turn to its OpenAI-compatible
+  # endpoint under our own key name (`magpie-plobi`). The port comes from magpie's
+  # own settings file; without magpie on this machine there is simply no such leg.
+  magpie:
+    enabled: true
+    timeout: 300
+
   kiro_cli:
     enabled: true
     binary: kiro-cli
