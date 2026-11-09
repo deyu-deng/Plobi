@@ -4,13 +4,14 @@ import { useState } from 'react'
 import { useI18n } from '@/i18n'
 import { requestModelOptions } from '@/lib/model-options'
 import { currentPickerSelection } from '@/lib/model-status-label'
+import { remainingPhrase, unavailableOf } from '@/lib/model-unavailable'
 import { normalize } from '@/lib/text'
+import { quotaProviders } from '@/store/desktop-quotas'
 import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 
-import type { PlobiGateway } from '../plobi'
 import { cn } from '../lib/utils'
+import type { PlobiGateway } from '../plobi'
 import { startManualOnboarding } from '../store/onboarding'
-import { quotaProviders } from '@/store/desktop-quotas'
 
 import { InlineNotice } from './notifications'
 import { Button } from './ui/button'
@@ -193,6 +194,15 @@ function ModelResults({
 
         const unavailable = new Set(provider.unavailable_models ?? [])
 
+        // A model that is only *waiting* — its leg's bucket ran out and refills on
+        // its own — is greyed here for the same reason it is greyed in the composer
+        // dropdown: the same state, read the same way (user, 2026-11-08 21:3x).
+        // The Pro list above is a different thing (a model the plan does not cover),
+        // so the two do not share a label.
+        const waiting = new Set(
+          (provider.models ?? []).filter(model => unavailableOf(provider.capabilities?.[model]))
+        )
+
         return (
           <CommandGroup
             heading={<ProviderHeading provider={provider} />}
@@ -218,24 +228,43 @@ function ModelResults({
               const price = provider.pricing?.[model]
               const locked = unavailable.has(model)
 
+              const waitingNote = waiting.has(model)
+                ? (() => {
+                    const state = unavailableOf(provider.capabilities?.[model])
+                    const known = t.desktop.quotaReason as unknown as Record<string, string>
+                    const reason = state ? (known[state.reason] ?? known.unknown ?? '') : ''
+
+                    const left = state
+                      ? remainingPhrase(state.retry_after_seconds, {
+                          minutes: t.settings.sources.timeMinutesIn,
+                          hours: t.settings.sources.timeHoursIn,
+                          days: t.settings.sources.timeDaysIn
+                        })
+                      : null
+
+                    return left ? `${reason}（${left}）` : reason
+                  })()
+                : null
+
               return (
                 <CommandItem
                   className={cn(
                     'flex items-center gap-2 pl-6 font-mono',
                     isCurrent &&
                       'bg-primary text-primary-foreground data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground',
-                    locked && 'cursor-not-allowed opacity-45'
+                    (locked || waitingNote) && 'cursor-not-allowed opacity-45'
                   )}
-                  disabled={locked}
+                  disabled={locked || Boolean(waitingNote)}
                   // Same identity as the group above, so a row is keyable even when
                   // two hub legs happen to serve the same model id. `value` stays the
                   // routing string — it is what cmdk selects on, not what React keys on.
                   key={`${provider.ui_key ?? provider.slug}:${model}`}
                   onSelect={() => {
-                    if (!locked) {
+                    if (!locked && !waitingNote) {
                       onSelectModel(provider, model)
                     }
                   }}
+                  title={waitingNote ?? undefined}
                   value={`${provider.slug}:${model}`}
                 >
                   <span className="min-w-0 flex-1 truncate">{model}</span>

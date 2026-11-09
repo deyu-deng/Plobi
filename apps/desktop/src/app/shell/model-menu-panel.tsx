@@ -15,7 +15,6 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { PlobiGateway } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { requestModelOptions } from '@/lib/model-options'
 import {
@@ -24,8 +23,10 @@ import {
   modelDisplayParts,
   reasoningEffortLabel
 } from '@/lib/model-status-label'
+import { remainingPhrase, unavailableOf } from '@/lib/model-unavailable'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
+import type { PlobiGateway } from '@/plobi'
 import { quotaProviders, requestQuotaCatalog } from '@/store/desktop-quotas'
 import { $modelPresets, applyModelPreset, modelPresetKey, setModelPreset } from '@/store/model-presets'
 import {
@@ -279,6 +280,25 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                 // -fast variant carries the same param support as its base.
                 const caps = group.provider.capabilities?.[family.id]
                 const tuning = tuningOf(caps)
+                // A model that is only *waiting* (its leg's bucket ran out and refills
+                // on its own) stays in the list — greyed out, with the time left on it.
+                // A leg the user can fix is not offered at all (user, 2026-11-08 21:3x).
+                const unavailable = unavailableOf(caps)
+
+                const unavailableNote = unavailable
+                  ? (() => {
+                      const known = t.desktop.quotaReason as unknown as Record<string, string>
+                      const reason = known[unavailable.reason] ?? known.unknown ?? ''
+
+                      const left = remainingPhrase(unavailable.retry_after_seconds, {
+                        minutes: t.settings.sources.timeMinutesIn,
+                        hours: t.settings.sources.timeHoursIn,
+                        days: t.settings.sources.timeDaysIn
+                      })
+
+                      return left ? `${reason}（${left}）` : reason
+                    })()
+                  : null
 
                 // Effective settings for this row: live session state when it's
                 // the active model, otherwise its remembered preset (Plobi
@@ -311,6 +331,14 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                 // edit submenu (reasoning/fast) is reached by HOVER, so you can
                 // still tweak those without the click dismissing everything.
                 const activate = () => {
+                  // A row that is only waiting must not be switchable to. Radix's
+                  // `disabled` on a SubTrigger does NOT stop our own onClick (and
+                  // `DropdownMenuSubTrigger` carries no `data-[disabled]:opacity-50`,
+                  // so it does not even look greyed) — the guard has to live here.
+                  if (unavailable) {
+                    return
+                  }
+
                   if (!isCurrent) {
                     void selectFamily(family, group.provider)
                   }
@@ -321,7 +349,13 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                 return (
                   <DropdownMenuSub key={`${group.provider.slug}:${family.id}`}>
                     <DropdownMenuSubTrigger
-                      className={dropdownMenuRow}
+                      className={cn(
+                        dropdownMenuRow,
+                        // The greyed look is ours: the shared SubTrigger has no
+                        // disabled styling of its own (only `DropdownMenuItem` does).
+                        unavailable && 'pointer-events-none opacity-50'
+                      )}
+                      disabled={Boolean(unavailable)}
                       hideChevron
                       onClick={activate}
                       onKeyDown={event => {
@@ -329,6 +363,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                           activate()
                         }
                       }}
+                      title={unavailableNote ?? undefined}
                     >
                       <span className="min-w-0 flex-1 truncate">
                         {name}
@@ -339,8 +374,15 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                     <ModelEditSubmenu
                       context={tuning.context}
                       contextValue={preset.context}
+                      defaultEffort={tuning.default_effort}
+                      effort={effEffort}
+                      efforts={tuning.efforts}
+                      fastControl={fastControl}
+                      isActive={isCurrent}
+                      model={family.id}
                       onContext={tokens => {
                         setModelPreset(group.provider.slug, family.id, { context: tokens })
+
                         if (isCurrent && activeSessionId) {
                           void requestGateway('config.set', {
                             key: 'context',
@@ -349,12 +391,6 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                           })
                         }
                       }}
-                      defaultEffort={tuning.default_effort}
-                      efforts={tuning.efforts}
-                      effort={effEffort}
-                      fastControl={fastControl}
-                      isActive={isCurrent}
-                      model={family.id}
                       onSelectModel={nextModel => switchTo(nextModel, group.provider.slug)}
                       provider={group.provider.slug}
                       reasoning={caps?.reasoning ?? true}

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 import time
 
@@ -239,7 +240,54 @@ def test_a_spent_free_bucket_cools_down_by_exactly_what_upstream_asked_for(tmp_p
             assert caught.value.cooldown == 1234.0, "cool down by the seconds upstream named"
             assert prov.credential_health() == (False, "quota_exhausted")
             prov._free_blocked_until = time.time() - 1
+            assert prov.credential_health() == (False, "quota_exhausted"), (
+                "the cooldown is on disk now: forgetting the in-memory field does not "
+                "unlock the leg")
+            prov.clear_cooldown()
             assert prov.credential_health() == (True, "ok"), "a window that passed is over"
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_spent_free_bucket_is_still_spent_after_a_restart(tmp_path, monkeypatch):
+    """A restart must not forget that the bucket is empty (user, 2026-11-08 21:2x).
+
+    The picker offers this leg's models whenever the leg looks live. If the
+    "the bucket is empty for another ten hours" answer only lived in memory, the
+    very next restart would put those models back into the box — and the user
+    would find out by clicking one.
+    """
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+    monkeypatch.setenv("QUOTA_HUB_LEG_COOLDOWN", str(tmp_path / "cooldowns.json"))
+    refusal = httpx.Response(
+        429,
+        json={"type": "error", "error": {"type": "FreeUsageLimitError",
+                                         "message": "Free usage limit reached"}},
+        headers={"retry-after": "3600"})
+
+    async def _go():
+        async with _http({"/v1/models": _models("big-pickle"),
+                          "/v1/chat/completions": refusal}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            accounts = await prov.discover_accounts()
+            with pytest.raises(UpstreamError):
+                await prov.chat(accounts[0], {"model": "opencode_api/big-pickle",
+                                              "messages": [{"role": "user", "content": "hi"}]})
+            assert (tmp_path / "cooldowns.json").exists(), "the cooldown must be on disk"
+            from quota_hub import leg_cooldown as _lc
+            assert _lc.remaining("opencode_api") > 3000, (
+                "remaining=%s path=%s env=%s" % (
+                    _lc.remaining("opencode_api"), _lc.cooldown_path(),
+                    os.environ.get("QUOTA_HUB_LEG_COOLDOWN")))
+
+        # …a restart: a brand-new provider instance, nothing in memory.
+        async with _http({"/v1/models": _models("big-pickle")}) as http:
+            fresh = OpencodeApiProvider({"base_url": BASE}, http)
+            assert fresh.credential_health() == (False, "quota_exhausted"), (
+                "the leg is still spent after a restart")
+            wait = fresh.quota_retry_after()
+            assert wait is not None and 3000 < wait <= 3600, (
+                "and it still knows how long that lasts")
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 

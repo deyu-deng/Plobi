@@ -52,6 +52,21 @@ function catalog(hubModels: string[] = []): ModelOptionProvider[] {
 
 const rows = (hubModels: string[]) => quotaProviders(catalog(hubModels)).filter(row => row.slug === 'aigw')
 
+/** The hub row with the per-model verdicts the backend attaches to it. */
+function catalogWithCapabilities(hubModels: string[], capabilities?: Record<string, unknown>) {
+  return [
+    { models: ['gpt-4o'], name: 'OpenAI', slug: 'openai', total_models: 1 } as ModelOptionProvider,
+    {
+      authenticated: true,
+      capabilities,
+      models: hubModels,
+      name: 'Local Quota Hub',
+      slug: 'aigw',
+      total_models: hubModels.length
+    } as ModelOptionProvider
+  ]
+}
+
 // `quotaProviders` is the single combinator behind all three picker surfaces
 // (model-menu-panel, model-picker, chat-runtime), so these are the rules that
 // decide what the user can pick. The invariant they exist to hold: **a row is a
@@ -182,6 +197,83 @@ describe('quotaProviders', () => {
     markConnected({ id: 'cursor', models: [] })
 
     expect(rows(['workbuddy_api/hy3'])).toEqual([])
+  })
+})
+
+// A model whose leg's bucket ran out is not broken — it is waiting. It stays in
+// the picker, greyed, with the time left on it (user, 2026-11-08 21:3x). The hub
+// is the one that knows; the renderer only reads its verdict.
+describe('a model that is only waiting', () => {
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('stays in the picker even though the hub calls it unselectable', () => {
+    // The whole leg is in cooldown: the hub dropped every one of its models from
+    // the pickable list and said why. The card must stay (the models are greyed,
+    // with the time left on them), so the app still counts as connected.
+    applyDiscoveredQuotaApps([
+      frame('opencode_api', {
+        blocked: { 'big-pickle': 'quota_exhausted' },
+        models: []
+      })
+    ])
+
+    const [row] = quotaProviders(
+      catalogWithCapabilities(['opencode_api/big-pickle'], {
+        'opencode_api/big-pickle': {
+          unavailable: { reason: 'quota_exhausted', retry_after_seconds: 1754 }
+        }
+      })
+    ).filter(r => r.slug === 'aigw')
+
+    expect(row?.models).toEqual(['opencode_api/big-pickle'])
+  })
+
+  it('a leg the user can fix is not waiting — its card does not claim a pick', () => {
+    applyDiscoveredQuotaApps([
+      frame('opencode_api', {
+        blocked: { 'big-pickle': 'credential_expired' },
+        models: []
+      })
+    ])
+
+    const [row] = quotaProviders(
+      catalogWithCapabilities(['opencode_api/big-pickle'], {
+        'opencode_api/big-pickle': {
+          unavailable: { reason: 'credential_expired' }
+        }
+      })
+    ).filter(r => r.slug === 'aigw')
+
+    expect(row?.models ?? []).toEqual([])
+  })
+
+  it('appears exactly once, even though the catalog and the frame both name it', () => {
+    // The backend keeps a waiting model in the catalog row so the reason has
+    // somewhere to live, and the app frame may name it too — concatenating the
+    // two lists would show the row twice.
+    markConnected({ id: 'opencode_api', models: ['big-pickle'], name: 'OpenCode Free' })
+
+    const [row] = quotaProviders(
+      catalogWithCapabilities(['opencode_api/big-pickle'], {
+        'opencode_api/big-pickle': {
+          unavailable: { reason: 'quota_exhausted', retry_after_seconds: 1754 }
+        }
+      })
+    ).filter(r => r.slug === 'aigw')
+
+    expect(row?.models).toEqual(['opencode_api/big-pickle'])
+  })
+
+  it('a model with no verdict is not waiting', () => {
+    markConnected({ id: 'opencode_api', models: ['big-pickle'], name: 'OpenCode Free' })
+
+    const [row] = quotaProviders(catalogWithCapabilities(['opencode_api/big-pickle'])).filter(
+      r => r.slug === 'aigw'
+    )
+
+    expect(row?.models).toEqual(['opencode_api/big-pickle'])
   })
 })
 

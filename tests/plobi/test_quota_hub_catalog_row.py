@@ -33,6 +33,16 @@ from plobi_cli.inventory import (
 #: 网关答的那批 id —— 前缀是卡 id，渲染层就是按这个前缀接头的。
 HUB_IDS = ["workbuddy/hy3", "opencode_api/gpt-5.5"]
 
+#: 额度冷却中的那条腿：模型不在可选清单里，但它只是「等一会儿」。
+WAITING_IDS = ["opencode_api/big-pickle"]
+WAITING_VERDICT = {
+    "opencode_api/big-pickle": {
+        "reason": "quota_exhausted",
+        "retry_after_seconds": 1754,
+        "available_at": "2026-11-08T23:13:02",
+    }
+}
+
 
 def _ctx() -> ConfigContext:
     return ConfigContext(
@@ -54,6 +64,10 @@ def hub_answers(monkeypatch):
     monkeypatch.setattr(
         "plobi_cli.models.hub_selectable_model_ids",
         lambda api_key, base_url, **kwargs: list(HUB_IDS),
+    )
+    monkeypatch.setattr(
+        "plobi_cli.models.hub_waiting_models",
+        lambda api_key, base_url, **kwargs: dict(WAITING_VERDICT),
     )
 
 
@@ -88,15 +102,20 @@ def _hub_rows(payload: dict) -> list[dict]:
 
 
 def test_the_hub_row_is_in_the_catalogue_when_the_hub_answers(hub_answers):
-    """网关答了，那一行就得在目录里 —— 且它带的正是网关那批可选 id。"""
+    """网关答了，那一行就得在目录里 —— 它带的是网关那批可选 id，加上在等的那些。
+
+    「在等」的那批不在网关的**可选**清单里（那正是「在等」的意思），但它们要
+    在这一行里 —— 否则它们连被标灰的机会都没有（用户 11-08 21:3x：等恢复的标灰
+    保留并写剩余时间）。
+    """
     with _providers([]):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
     rows = _hub_rows(payload)
     assert len(rows) == 1, payload.get("providers")
     row = rows[0]
-    assert list(row["models"]) == HUB_IDS
-    assert row["total_models"] == len(HUB_IDS)
+    assert list(row["models"]) == HUB_IDS + WAITING_IDS
+    assert row["total_models"] == len(HUB_IDS) + len(WAITING_IDS)
 
 
 def test_the_explicit_filter_does_not_drop_the_hub_row(hub_answers):
@@ -129,6 +148,31 @@ def test_the_hub_row_shows_no_internal_vocabulary(hub_answers):
     row = _hub_rows(payload)[0]
     assert row["name"] == "订阅额度"
     assert QUOTA_HUB_SLUG not in row["name"].lower()
+
+
+def test_a_model_that_is_only_waiting_is_in_the_row_with_its_verdict(hub_answers):
+    """等恢复的模型要进这一行，且带上原因与剩余时间。
+
+    它不在网关的**可选**清单里（那正是「在等」的意思），所以它只能从另一条
+    读法进来；判词挂在 `capabilities[model].unavailable` 上 —— 那是唯一一条
+    能把「为什么现在不能选、还要等多久」带到屏幕上的通道。
+    """
+    with _providers([]):
+        payload = build_models_payload(_ctx(), explicit_only=True, capabilities=True)
+
+    row = _hub_rows(payload)[0]
+    assert WAITING_IDS[0] in row["models"]
+    assert row["capabilities"][WAITING_IDS[0]]["unavailable"] == WAITING_VERDICT[WAITING_IDS[0]]
+
+
+def test_a_waiting_model_does_not_claim_a_pickable_row(hub_answers):
+    """普通行不该带「不可用」的标记 —— 只有冷却中的那批带。"""
+    with _providers([]):
+        payload = build_models_payload(_ctx(), explicit_only=True, capabilities=True)
+
+    row = _hub_rows(payload)[0]
+    for model in HUB_IDS:
+        assert "unavailable" not in row["capabilities"].get(model, {})
 
 
 def test_a_silent_hub_leaves_no_row_and_claims_nothing(hub_silent):

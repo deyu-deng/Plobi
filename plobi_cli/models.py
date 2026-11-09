@@ -1902,6 +1902,87 @@ def hub_selectable_model_ids(api_key: str, base_url: str, *, timeout: float = 6.
     return [str(row.get("id")) for row in rows if row.get("id")]
 
 
+def hub_model_rows(api_key: str, base_url: str, *, timeout: float = 6.0) -> list[dict] | None:
+    """Ask the local quota hub for **every** model row it knows, with its own verdict.
+
+    ``/v1/models`` (without the selectable filter) is the complete catalogue: each row
+    says whether it may be picked (``selectable``), why not (``unselectable_reason``),
+    and — when a leg is only waiting for a bucket to refill — when it comes back
+    (``retry_after_seconds`` / ``available_at``).
+
+    Two kinds of "not now" have to be told apart (user, 2026-11-08 21:3x):
+
+      * one the **user can fix** — a dead credential: those models must not be offered
+        at all (「我配置不了就不应该出现在这个模型框里面呀」);
+      * one that only has to **wait** — a spent bucket that refills on its own: those
+        models stay in the box, greyed out, with the time left on them.
+
+    ``None`` means "the hub did not answer" — the caller then keeps whatever it had,
+    because an unreachable hub must never be reported as "you have no models".
+    """
+    if not base_url:
+        return None
+
+    import json
+    import urllib.request
+
+    root = base_url.rstrip("/")
+    url = f"{root}/models" if root.endswith("/v1") else f"{root}/v1/models"
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # localhost: never proxied
+
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001 — unreachable hub is a normal state
+        return None
+
+    rows = (payload or {}).get("data") or []
+    return [row for row in rows if isinstance(row, dict) and row.get("id")]
+
+
+def hub_row_is_waiting(row: dict) -> bool:
+    """Is this row only *waiting* (a bucket that refills), rather than broken?
+
+    A dead credential has to be fixed by the user, so its models are dropped from the
+    picker. A spent bucket comes back by itself, so its models stay visible — greyed
+    out, with the time left on them.
+    """
+    return str(row.get("unselectable_reason") or "") == "quota_exhausted"
+
+
+def hub_offered_model_ids(api_key: str, base_url: str, *, timeout: float = 6.0) -> list[str] | None:
+    """The ids the picker may show: the usable ones plus the ones that are only waiting."""
+    rows = hub_model_rows(api_key, base_url, timeout=timeout)
+    if rows is None:
+        return None
+    ids: list[str] = []
+    for row in rows:
+        if row.get("selectable") or hub_row_is_waiting(row):
+            ids.append(str(row.get("id")))
+    return ids
+
+
+def hub_waiting_models(api_key: str, base_url: str, *, timeout: float = 6.0) -> dict[str, dict]:
+    """The models that are only waiting, with how long that lasts.
+
+    ``{model id: {"reason", "retry_after_seconds", "available_at"}}`` — the reason
+    stays a machine code; the screens translate it (机器词不上屏).
+    """
+    rows = hub_model_rows(api_key, base_url, timeout=timeout) or []
+    out: dict[str, dict] = {}
+    for row in rows:
+        if not hub_row_is_waiting(row):
+            continue
+        seconds = row.get("retry_after_seconds")
+        out[str(row.get("id"))] = {
+            "reason": str(row.get("unselectable_reason") or "quota_exhausted"),
+            "retry_after_seconds": int(seconds) if isinstance(seconds, (int, float)) else None,
+            "available_at": str(row.get("available_at")) if row.get("available_at") else None,
+        }
+    return out
+
+
 
 def _provider_keys(provider: str) -> set[str]:
     key = (provider or "").strip().lower()
@@ -2410,6 +2491,13 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                 base_url = str(creds.get("base_url") or "").strip()
             except Exception:  # noqa: BLE001
                 pass
+        # Only the models that can be picked RIGHT NOW. A model that is merely
+        # waiting (its bucket refills on its own) must not come through this
+        # global list: this list feeds the CLI/TUI picker, the switch validation
+        # and the settings page, none of which know how to grey a row out. The
+        # waiting ones reach the chat picker through the one channel that does
+        # carry the verdict — the payload's `capabilities[model].unavailable`
+        # (see `inventory._apply_capabilities`).
         hub_models = hub_selectable_model_ids(api_key, base_url)
         if hub_models is not None:
             return hub_models

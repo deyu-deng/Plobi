@@ -1,6 +1,7 @@
 import { atom } from 'nanostores'
 
 import { isMockProvider } from '@/app/shell/model-provider-label'
+import { unavailableOf } from '@/lib/model-unavailable'
 import { persistString, storedString } from '@/lib/storage'
 import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 
@@ -99,6 +100,19 @@ function readStore(): Record<string, ConnectedDesktopApp> {
 export const $connectedDesktopApps = atom<Record<string, ConnectedDesktopApp>>(readStore())
 
 /**
+ * Does this frame carry a model that is only *waiting*?
+ *
+ * The hub drops a model from the pickable list when it cannot be served right
+ * now, and says why: a dead credential (the user has to fix it) or a spent
+ * bucket that refills on its own. Only the second kind still belongs on screen —
+ * greyed, with the time left on it (user, 2026-11-08 21:3x). The reason code is
+ * the hub's own; this only recognizes the one that means "wait".
+ */
+function hasWaitingModel(blocked: Record<string, string> | undefined): boolean {
+  return Object.values(blocked ?? {}).some(reason => reason === 'quota_exhausted')
+}
+
+/**
  * Register an app as routable. This is the user saying yes, so it clears a
  * previous `optedOut` — that is what makes Disconnect reversible.
  */
@@ -110,8 +124,7 @@ export function markConnected(app: {
   apiKey?: string
   blocked?: Record<string, string>
   answered?: boolean
-}): void {
-  const next = { ...$connectedDesktopApps.get() }
+}): void {  const next = { ...$connectedDesktopApps.get() }
   const previous = next[app.id]
 
   next[app.id] = {
@@ -127,9 +140,14 @@ export function markConnected(app: {
     // false ⇒ the card shows the plus, not an open switch. A frame the hub did not answer
     // (`answered === false`) is not a verdict: carry the last truth forward instead of
     // reporting an outage as "you never configured this".
+    //
+    // A leg whose every model is only *waiting* (its bucket ran out and refills on its
+    // own) still counts as connected: its models are in the picker, greyed, with the
+    // time left on them (user, 2026-11-08 21:3x). Treating it as dead would drop the
+    // card — and with it the one thing that tells the user when it comes back.
     connected: app.answered === false
       ? (previous?.connected ?? false)
-      : (app.models ?? previous?.models ?? []).length > 0,
+      : (app.models ?? previous?.models ?? []).length > 0 || hasWaitingModel(app.blocked),
     // An explicit connect is the user changing their mind about a Disconnect, so
     // the opt-out goes with it. A frame that arrives on its own does NOT come
     // through here — see `applyDiscoveredQuotaApps`.
@@ -298,6 +316,7 @@ export function applyDiscoveredQuotaApps(apps: QuotaAppFrame[]): void {
   if (apps.some(app => app.answered)) {
     const reported = new Set(apps.map(app => app.id))
     const current = $connectedDesktopApps.get()
+
     const kept = Object.fromEntries(
       Object.entries(current).filter(([id, app]) => reported.has(id) || app.optedOut)
     )
@@ -366,6 +385,7 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
   const usable = providers.filter(
     provider => provider.selectable !== false && provider.authenticated !== false
   )
+
   const hubRow = usable.find(provider => QUOTA_HUB_ROW.test(provider.slug))
 
   if (!hubRow) {
@@ -385,7 +405,20 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
       continue
     }
 
-    const models = pickableModelIds(app).filter(model => offered.has(model))
+    // A model of a leg that is only *waiting* — its bucket ran out and refills on its
+    // own — stays in the list: greyed out, with the time left on it (user, 2026-11-08
+    // 21:3x). The hub calls it unselectable, so it is normally not in this app's frame;
+    // it comes from the catalog row, which lists it with the reason and the time.
+    const waiting = (hubRow.models ?? []).filter(
+      model => model.startsWith(`${app.id}/`) && unavailableOf(hubRow.capabilities?.[model])
+    )
+
+    // The catalog row and the app frame can both name the same model (the backend
+    // keeps a waiting model in the row so the reason has somewhere to live), so the
+    // two lists are joined, not concatenated — otherwise the row would show up twice.
+    const models = [
+      ...new Set([...pickableModelIds(app).filter(model => offered.has(model)), ...waiting])
+    ]
 
     if (models.length === 0) {
       continue

@@ -338,7 +338,10 @@ class OpencodeApiProvider(Provider):
         # with `retry-after: 38690` (~10.7 h). Saying "要付费订阅" for a bucket that refills
         # on its own sends him to buy something he does not need; say what is spent instead,
         # and for how long.
-        blocked = float(self._free_blocked_until or 0.0)
+        blocked = max(
+            float(self._free_blocked_until or 0.0),
+            time.time() + self.cooldown_remaining(),
+        )
         if blocked > time.time():
             return False, "quota_exhausted", data
         # An account-level "no funds" answer outranks "live" until a turn proves otherwise;
@@ -362,8 +365,10 @@ class OpencodeApiProvider(Provider):
         This is a duration, not a diagnosis: it stays None for legs and for windows
         that have already passed.
         """
-        blocked = float(self._free_blocked_until or 0.0)
-        remaining = blocked - time.time()
+        remaining = max(
+            float(self._free_blocked_until or 0.0) - time.time(),
+            self.cooldown_remaining(),
+        )
         if remaining <= 0:
             return None
         return max(1, math.ceil(remaining))
@@ -429,6 +434,32 @@ class OpencodeApiProvider(Provider):
     async def discover_accounts(self) -> list[Account]:
         live, reason, data = self._credential_state()
         if not live or data is None:
+            if reason == "quota_exhausted" and data is not None:
+                # The bucket is empty, but the **catalogue** is not: reading the model
+                # list costs no allowance, and those models are still worth showing —
+                # greyed out, with the time left on them (user, 2026-11-08 21:3x: a
+                # leg that only has to wait must not vanish from the picker). What we do
+                # not do is hand out an account: there is nothing to serve right now.
+                try:
+                    rows = await self._fetch_model_rows(self._token(data))
+                except Exception:  # noqa: BLE001 — the old catalogue stands
+                    rows = []
+                if rows:
+                    self._model_rows = {
+                        f"{self.name}/{str(row.get('id')).strip()}": row
+                        for row in rows
+                    }
+                    self.served_models = tuple(
+                        f"{self.name}/{str(row.get('id')).strip()}"
+                        for row in rows
+                        if self._covers(row)
+                    )
+                    log.info(
+                        "[opencode_api] %d model(s) kept while the bucket refills",
+                        len(self.served_models),
+                    )
+                self.accounts = []
+                return []
             self.accounts = []
             self.served_models = ()
             self._model_rows = {}
@@ -573,6 +604,10 @@ class OpencodeApiProvider(Provider):
                 wait = 0.0
             wait = wait or 300.0
             self._free_blocked_until = time.time() + wait
+            # …and on disk: a restart must not forget that the bucket is empty
+            # (the picker would offer these models again and the user would only
+            # find out by clicking one — user, 2026-11-08 21:2x).
+            self.note_cooldown(wait, "quota_exhausted")
             return UpstreamError(429, text, retryable=True, cooldown=wait)
         return UpstreamError(res.status_code, text, retryable=res.status_code in (429, 500, 502, 503))
 
@@ -586,6 +621,7 @@ class OpencodeApiProvider(Provider):
         if res.status_code != 200:
             raise self._refuse(res)
         self._no_wallet = False  # a served turn outranks any earlier "no funds"
+        self.clear_cooldown()  # …and it proves the bucket is not empty any more
         try:
             return res.json()
         except ValueError as exc:

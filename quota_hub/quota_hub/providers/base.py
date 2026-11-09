@@ -214,6 +214,32 @@ class Provider:
         """
         return None
 
+    # --- remembering that cooldown across a restart -----------------------
+    def note_cooldown(self, seconds: float, reason: str = "quota_exhausted") -> None:
+        """Record that this leg is parked for ``seconds`` (from now), and why.
+
+        The in-memory field a provider keeps dies with the process, and a gateway
+        restart is routine.  A leg that the upstream said "not for another ten
+        hours" must still say so after the restart — otherwise the picker offers
+        its models again and the user finds out by clicking one
+        (user, 2026-11-08 21:2x: 「开关打开就一定要能用」).
+        """
+        from .. import leg_cooldown
+
+        leg_cooldown.note(self.name, seconds, reason)
+
+    def cooldown_remaining(self) -> float:
+        """Seconds left on this leg's recorded cooldown; 0 when it is not parked."""
+        from .. import leg_cooldown
+
+        return leg_cooldown.remaining(self.name)
+
+    def clear_cooldown(self) -> None:
+        """Forget this leg's cooldown — a served turn is the proof that it is back."""
+        from .. import leg_cooldown
+
+        leg_cooldown.clear(self.name)
+
     # --- sign-in ---------------------------------------------------------
     def login_plan(self) -> dict:
         """How the user signs into THIS provider, stated by the provider itself.

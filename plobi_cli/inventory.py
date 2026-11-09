@@ -382,6 +382,11 @@ def _apply_capabilities(rows: list[dict]) -> None:
         # per payload build, from the hub that already owns the catalog (裁定 46). An
         # empty answer means the hub is not there, not that the model has no knobs.
         hub_tuning: dict[str, dict] = {}
+        # The models of a leg that is only *waiting* (a spent bucket that refills on
+        # its own) stay in the picker — greyed out, with the time left on them
+        # (user, 2026-11-08 21:3x). A leg the user can fix does not: its models are
+        # not offered at all (「我配置不了就不应该出现在这个模型框里面呀」).
+        hub_waiting: dict[str, dict] = {}
         if slug.lower() == "aigw":
             try:
                 from plobi.agents.registry import aigw_api_key, aigw_base_url
@@ -390,6 +395,13 @@ def _apply_capabilities(rows: list[dict]) -> None:
                 hub_tuning = catalog_tuning(aigw_base_url(), aigw_api_key()) or {}
             except Exception:
                 hub_tuning = {}
+            try:
+                from plobi.agents.registry import aigw_api_key, aigw_base_url
+                from plobi_cli.models import hub_waiting_models
+
+                hub_waiting = hub_waiting_models(aigw_api_key(), aigw_base_url()) or {}
+            except Exception:
+                hub_waiting = {}
 
         caps: dict[str, dict[str, Any]] = {}
 
@@ -423,6 +435,12 @@ def _apply_capabilities(rows: list[dict]) -> None:
             menu = _context_menu(caps[model].get("context"), model, meta)
             if menu is not None:
                 caps[model]["context"] = menu
+
+            # 此刻用不了的模型：只标，不藏（用户 11-08 21:3x 拍板：能修的摘掉，
+            # 等恢复的标灰并写剩余时间）。原因码是机器词，屏上由前端翻译。
+            waiting = hub_waiting.get(model)
+            if waiting:
+                caps[model]["unavailable"] = waiting
 
         row["capabilities"] = caps
 
@@ -838,7 +856,7 @@ def _quota_hub_row() -> dict | None:
     """
     try:
         from plobi.agents.registry import aigw_api_key, aigw_base_url
-        from plobi_cli.models import hub_selectable_model_ids
+        from plobi_cli.models import hub_selectable_model_ids, hub_waiting_models
 
         ids = hub_selectable_model_ids(aigw_api_key(), aigw_base_url())
     except Exception:  # noqa: BLE001 — a missing piece means "no row", not a crash
@@ -846,6 +864,21 @@ def _quota_hub_row() -> dict | None:
 
     if not ids:
         return None
+
+    # The models of a leg that is only *waiting* (a spent bucket that refills on its
+    # own) belong in this row too — greyed out, with the time left on them (user,
+    # 2026-11-08 21:3x). They are NOT in the hub's selectable list (that is what
+    # "waiting" means), so without this they would never reach the picker at all.
+    # The verdict rides on `capabilities[model].unavailable` (`_apply_capabilities`),
+    # which is the one channel that carries it.
+    try:
+        from plobi.agents.registry import aigw_api_key, aigw_base_url
+        from plobi_cli.models import hub_waiting_models as _waiting
+
+        waiting_ids = list(_waiting(aigw_api_key(), aigw_base_url()).keys())
+    except Exception:  # noqa: BLE001 — no waiting models is a normal state
+        waiting_ids = []
+    ids = list(ids) + [mid for mid in waiting_ids if mid not in set(ids)]
 
     try:
         from plobi_cli.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
