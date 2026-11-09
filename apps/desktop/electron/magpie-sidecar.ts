@@ -17,6 +17,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+/** Where this module lives — the bundle is ESM, where `__dirname` does not exist. */
+const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 export interface MagpieSidecar {
   /** The binary we will run, or null when this machine has none. */
@@ -35,7 +39,7 @@ function candidates(): string[] {
     // Packaged: electron-builder puts `build/magpie` under `resources/`.
     path.join(process.resourcesPath ?? '', 'magpie'),
     // Dev: the same build tree, before packaging.
-    path.resolve(__dirname, '..', 'build', 'magpie')
+    path.resolve(HERE, '..', 'build', 'magpie')
   ]
   const out: string[] = []
   for (const root of roots) {

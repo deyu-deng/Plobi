@@ -8,7 +8,7 @@ import https from 'node:https'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
   app,
@@ -31,6 +31,13 @@ import {
   Tray
 } from 'electron'
 import nodePty from 'node-pty'
+
+/**
+ * Where this file lives. The main is bundled as **ESM** (`bundle-electron-main.mjs`:
+ * `format: 'esm'`), and ESM has no `__dirname` — asking for it threw
+ * `__dirname is not defined` and took the whole desktop down with it.
+ */
+const ELECTRON_DIR = path.dirname(fileURLToPath(import.meta.url))
 
 import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './backend-command'
 import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
@@ -9876,7 +9883,10 @@ function defaultAigwConfigCandidates(): string[] {
     path.join(process.resourcesPath, 'aigw-config.default.yaml'),
     // Dev: dist/electron-main.mjs -> ../electron/aigw-config.default.yaml, and the
     // source tree itself when the app path is the desktop package.
-    path.resolve(__dirname, '..', 'electron', 'aigw-config.default.yaml'),
+    // The main is bundled as ESM, where `__dirname` does not exist — asking for it
+    // threw `__dirname is not defined` and took the whole gateway down with it
+    // (the packaged path above hits first, which is why only the dev run saw it).
+    path.resolve(ELECTRON_DIR, '..', 'electron', 'aigw-config.default.yaml'),
     path.join(app.getAppPath(), 'electron', 'aigw-config.default.yaml')
   ]
 }
