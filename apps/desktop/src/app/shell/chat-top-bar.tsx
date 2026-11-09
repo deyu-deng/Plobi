@@ -38,10 +38,13 @@ export function ChatTopBar({
   // 档案跟着 **Agent** 走，不跟着会话走：Plobi 没有「会话」这个概念，一个 Agent 就是
   // 一张嘴，同一个 Agent 的多轮对话共用同一份档案。
   //
-  // 这一枚图标现在**不再弹小窗**（用户 11-08 21:1x：「你的就像一个小弹窗，并没有完全
-  // 逆向Qoder的形态」）：它开合的是**对话卡右侧那条长卡**（Qoder 的 Fixed 形态）。
-  // 显隐口径：对话卡全屏展开时默认显示，工作区在显示时默认收起，点它才展开。
-  // 档案卡本体在 `app/dossier/dossier-panel.tsx`，由控制器挂在对话卡右侧。
+  // 这一枚图标开合的是**浮在对话右上角的那张档案卡**（Qoder 的「任务监控」形态，
+  // 用户 11-08 22:3x 实物截图后定的）：默认浮在对话上，卡内抬头右上角那枚**图钉**
+  // 把它钉成对话右侧的一列。它**不再弹小窗**（用户 11-08 21:1x：「你的就像一个小
+  // 弹窗，并没有完全逆向Qoder的形态」）。
+  // 显隐口径在 store 里：对话卡全屏时默认显示，工作区在显示时默认收起，点它才展开；
+  // 点过的那一次只在这一面算数（换了面回到默认）。
+  // 档案卡本体在 `app/dossier/dossier-panel.tsx`，由控制器挂在对话卡里。
 
   return (
     <div className="flex h-(--card-header-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]">

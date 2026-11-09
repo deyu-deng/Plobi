@@ -208,8 +208,13 @@ const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryVi
 // ── 档案卡的两种形态（用户 11-08 22:3x 给的 Qoder 实物截图）─────────────────
 // 「任务监控」在 Qoder 里默认是**浮在对话右上角的一张圆角卡片**（对话不被挤窄），
 // 抬头右上角那枚**图钉**把它钉成对话右侧的一列。两套尺寸只有这里一处。
+//
+// 浮层压在**抬头下面**（`--card-header-height` 之下）：抬头右边那几枚——档案图标本身、
+// 全屏、收起——都住在那一行，压上去就点不到了（11-09 现场：档案卡一露脸就把自己的
+// 开关盖住了）。`calc` 里减号两边不留空格是**非法值**（浏览器整条丢掉，这一档就白写了），
+// Tailwind 的写法是 `calc(100%_-_2rem)`。
 const DOSSIER_FLOATING =
-  'absolute right-4 top-4 z-30 w-[19rem] max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] rounded-xl border border-(--ui-stroke-tertiary) shadow-xl shadow-black/5'
+  'absolute right-4 top-[calc(var(--card-header-height)+0.5rem)] z-30 w-[19rem] max-w-[calc(100%_-_2rem)] max-h-[calc(100%_-_3.25rem)] rounded-xl border border-(--ui-stroke-tertiary) shadow-xl shadow-black/5'
 
 const DOSSIER_PINNED = 'w-[22rem] max-w-[45%] shrink-0 border-l border-(--ui-stroke-tertiary)'
 

@@ -314,8 +314,14 @@ export type DossierPanelMode = 'auto' | 'open' | 'closed'
 
 export const $dossierPanelMode = atom<DossierPanelMode>('auto')
 
-/** 档案卡此刻该不该露脸：`auto` 跟着对话卡全屏（Qoder 的默认形态），`open`/`closed` 是用户点过的结果。 */
-export const $dossierPanelVisible = computed([$dossierPanelMode, $cardFocus], ([mode, focus]) => {
+/**
+ * 档案卡此刻该不该露脸：`auto` 跟着对话卡全屏（Qoder 的默认形态），`open`/`closed` 是用户点过的结果。
+ *
+ * 回调是**按参数展开**拿值的（nanostores 1.x 的 `computed([a, b], cb)` 调的是 `cb(a, b)`，
+ * 不是 `cb([a, b])`）——写成数组解构会把 `'auto'` 这个字符串切成一两个字，
+ * 三档全不匹配，于是这张卡**恒为不露脸**（11-09 现场：点图标开不了、全屏也不默认显示）。
+ */
+export const $dossierPanelVisible = computed([$dossierPanelMode, $cardFocus], (mode, focus) => {
   if (mode === 'open') {
     return true
   }
@@ -335,6 +341,13 @@ export function setDossierPanelMode(mode: DossierPanelMode): void {
 export function toggleDossierPanel(): void {
   $dossierPanelMode.set($dossierPanelVisible.get() ? 'closed' : 'open')
 }
+
+// 「默认」只在这一面算数（用户 11-09：「全屏也不默认显示」）。
+// 点过的那一次——开或关——只在这一面算数：换了面（对话卡全屏 ⇄ 工作区）就回到 `auto`，
+// 否则关过一次之后，全屏也永远不显示了。对话卡全屏 ⇒ 默认显示；工作区 ⇒ 默认收起。
+$cardFocus.listen(() => {
+  $dossierPanelMode.set('auto')
+})
 
 // 档案卡的**两种形态**（Qoder 的 Floating／Fixed，用户 11-08 22:3x 给的那张截图）：
 // 浮层＝一张圆角卡片压着对话右上角，对话不被挤窄；固定＝钉成对话右侧的一列。

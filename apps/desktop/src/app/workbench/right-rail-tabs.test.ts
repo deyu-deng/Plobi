@@ -73,6 +73,12 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     expect(controller).toContain('<DossierPanel')
     // 浮层那一套尺寸：绝对定位 ＋ 圆角 ＋ 投影。
     expect(controller).toMatch(/DOSSIER_FLOATING\s*=\s*\n\s*'absolute[^']*rounded-xl/)
+    // 浮层压在**抬头下面**：抬头右边那几枚（档案图标本身、全屏、收起）都住在那一行，
+    // 压上去就点不到了（11-09：档案卡一露脸就把自己的开关盖住了）。
+    // 减号两边不留空格的 calc 是**非法 CSS** ⇒ 浏览器整条丢掉（这一档就白写了）。
+    const floating = controller.match(/DOSSIER_FLOATING\s*=\s*\n\s*'([^']*)'/)?.[1] ?? ''
+    expect(floating).toContain('card-header-height')
+    expect(floating).not.toMatch(/calc\(100%-[0-9]/)
     // 钉住那一套：对话右侧的一列（带左边线，不带圆角）。
     expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*border-l/)
     // 对话容器要 relative，浮层才贴得住它的右上角。
