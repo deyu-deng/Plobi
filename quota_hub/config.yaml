@@ -256,6 +256,6 @@ providers:
   magpie:
     enabled: true
     timeout: 300
-    # 它的 CLI 在哪儿（读它的 provider 名单用：`plugin list --json`）。随包发布之后
-    # 这一行指向发行包里那份；这台机器上先指便携版。
-    binary: D:\Temp\magpie-portable\magpie-cli.exe
+    # 它自己的 CLI 在哪儿由桌面告诉这条腿（`PLOBI_MAGPIE_BINARY`，指向**随包发布**
+    # 的那一份：`resources/magpie/magpie-cli.exe`；开发态是 `build/magpie/`）。
+    # 找不到就当这条腿不在：我们不代下载、不代安装。

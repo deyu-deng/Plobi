@@ -36,6 +36,7 @@ import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './
 import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
+import { ensureMagpieSidecar, stopMagpieSidecar } from './magpie-sidecar'
 import {
   buildHiddenHandoffLauncher,
   buildWindowsRestartHandoff,
@@ -10416,7 +10417,11 @@ async function startAigwGateway(
   // Prefer an explicitly-passed token (e.g. from the auth flow); fall back to a
   // previously persisted one so a restart can self-heal without re-login.
   const token = extraEnv.ANTIGRAVITY_REFRESH_TOKEN ?? loadAigwToken() ?? ''
-  const env = { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), QUOTA_HUB_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...extraEnv }
+  // magpie is the vendor layer behind the subscription legs: the gateway reads
+  // its provider list and its model catalogue, so it has to be up before we ask
+  // it anything — and the gateway must talk to the same copy we start.
+  const magpie = ensureMagpieSidecar(PLOBI_HOME)
+  const env = { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), QUOTA_HUB_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...(magpie.binary ? { PLOBI_MAGPIE_BINARY: magpie.binary } : {}), ...extraEnv }
   const baseUrl = `http://127.0.0.1:${opts.port}/v1`
 
   let child: ReturnType<typeof spawn>
@@ -12967,6 +12972,9 @@ app.on('before-quit', () => {
     stopBackendChild(child)
     clearAigwChild(appId)
   }
+
+  // magpie is the vendor layer behind the quota legs: it goes down with us.
+  stopMagpieSidecar()
 })
 
 app.on('window-all-closed', () => {

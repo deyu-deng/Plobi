@@ -261,10 +261,14 @@ class MagpieProvider(Provider):
     def _binary(self) -> str | None:
         """Where magpie's own CLI is, if we can find it.
 
-        Order: what the config says (the bundled copy will live there), then
-        the PATH, then our own home. Nothing here guesses a version or
-        downloads anything.
+        Order: the path the desktop handed us (``PLOBI_MAGPIE_BINARY`` — the copy
+        that ships inside the app, so both processes talk to the same one), then
+        what the config says, then the PATH, then our own home. Nothing here
+        guesses a version or downloads anything.
         """
+        env_path = str(os.environ.get("PLOBI_MAGPIE_BINARY") or "").strip()
+        if env_path and Path(env_path).is_file():
+            return env_path
         explicit = str(self.config.get("binary") or "").strip()
         if explicit and Path(explicit).is_file():
             return explicit
