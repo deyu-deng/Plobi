@@ -11,24 +11,13 @@
  * **不搜第三方画的 logo** 替它认领身份。
  */
 
-import { vendorLabelFor } from '@/app/chat/sidebar/offload-vendor-icon'
+import { vendorLabelFor, vendorLegIdFor } from '@/app/chat/sidebar/offload-vendor-icon'
 
 import { QuotaAppIcon } from './quota-app-icon'
 
-/** 厂商 id → hub 的腿 id（品牌表那一把键）。查不到 ⇒ 中性底 ＋ 首字母。 */
-const VENDOR_LEG_ID: Record<string, string> = {
-  agy: 'antigravity',
-  claude: 'claude_code_cli',
-  cline: 'cline_cli',
-  codebuddy: 'workbuddy',
-  codex: 'codex_cli',
-  cursor: 'cursor',
-  gemini: 'gemini_api',
-  kiro: 'kiro_cli',
-  opencode: 'opencode_cli',
-  qoder: 'qoder',
-  qwen: 'qwen-cli'
-}
+// 厂商 id → hub 的腿 id（品牌表那一把键）**不再在这里留一份**：
+// 11-09 起那张对照表住在两边共用的品牌名那张表里（`offload-vendor-icon.tsx`），
+// 屏上出现第二份对照表＝迟早有一边忘了更新。
 
 /**
  * 一家外包软件的那颗方块。形状归 `EntityAvatar`（`QuotaAppIcon` 的薄壳）：
@@ -39,7 +28,7 @@ export function OffloadVendorAvatar({ name }: { name: string }) {
 
   return (
     <span data-testid={`offload-vendor-avatar-${vendor}`}>
-      <QuotaAppIcon id={VENDOR_LEG_ID[vendor] ?? ''} name={vendorLabelFor(vendor)} />
+      <QuotaAppIcon id={vendorLegIdFor(vendor)} name={vendorLabelFor(vendor)} />
     </span>
   )
 }

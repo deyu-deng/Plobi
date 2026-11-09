@@ -76,7 +76,7 @@ describe('外部会话（并进外包那一格）', () => {
     render(<AgentOffloadPanel agentId="Sindri" />)
 
     expect(await screen.findByText('Outsourced')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Unjudged' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /judged/i })).toBeTruthy()
   })
 
   it('点一条不是弹窗：把这条会话交给主区那张对话卡片', async () => {
@@ -153,7 +153,7 @@ describe('外部会话（并进外包那一格）', () => {
     expect(screen.queryByRole('button', { name: /Qoder/ })).toBeNull()
   })
 
-  it('L2 标过无关的不出现；还没判断的收在开关里', async () => {
+  it('L2 标过无关的不出现；还没判断的默认看得见（整行压暗一档），眼睛能收起来', async () => {
     api.mockImplementation(({ path }: { path: string }) => {
       if (path.endsWith('/external-sessions')) {
         return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
@@ -170,10 +170,29 @@ describe('外部会话（并进外包那一格）', () => {
 
     expect(await screen.findByText('相关的一条')).toBeTruthy()
     expect(screen.queryByText('无关的一条')).toBeNull()
-    expect(screen.queryByText('待判断的一条')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: /Unjudged/ }))
-    expect(await screen.findByText('待判断的一条')).toBeTruthy()
+    // 11-09：待判断的那批**默认展开**——藏在一枚裸数字后面等于没有。
+    // 状态由形状表达：整行压暗一档，不写「待判断」三个字上屏。
+    const pending = await screen.findByText('待判断的一条')
+
+    expect(pending.closest('.group\\/row')?.className).toContain('opacity-70')
+
+    // 那枚眼睛还在，收起来就收起来。
+    fireEvent.click(screen.getByRole('button', { name: /judged/i }))
+    expect(screen.queryByText('待判断的一条')).toBeNull()
+  })
+
+  it('会话行只留标题 ＋ 时间；会话号与工作目录进悬停', async () => {
+    api.mockResolvedValue(LIST)
+    render(<AgentOffloadPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
+
+    const row = await screen.findByRole('button', { name: /先读 README/ })
+
+    // 机器细节进悬停：行面上一件也不多。
+    expect(row.getAttribute('title')).toContain('aaaaaaaa-1111')
+    expect(row.getAttribute('title')).toContain('D:/Projects/Sindri')
+    expect(row.textContent).toMatch(/\d{2}:\d{2}|\d{2}-\d{2}/)
   })
 
   it('归档的收在「已归档」里，不在主列表', async () => {

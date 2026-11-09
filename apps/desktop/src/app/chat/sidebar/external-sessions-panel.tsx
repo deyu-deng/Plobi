@@ -68,6 +68,7 @@ export function ExternalSessionRow({
   muted = false,
   onMarked,
   onOpen,
+  pending = false,
   session,
   trailing
 }: {
@@ -80,6 +81,11 @@ export function ExternalSessionRow({
   muted?: boolean
   onMarked?: () => void
   onOpen: () => void
+  /**
+   * 「还没判断跟这个 Agent 有没有关系」的那一批：**整行压暗一档**表达它还没定性
+   * （用户 11-09：状态用形状表达，不写「待判断」三个字上屏）。
+   */
+  pending?: boolean
   session: ExternalSession
   /** 右侧那格默认是时间；归档列表里换成那家软件的名字。 */
   trailing?: string
@@ -97,15 +103,23 @@ export function ExternalSessionRow({
     void markExternalSession(agentId, session.vendor, session.id, related).then(() => onMarked?.())
   }
 
+  // 机器细节（会话号、工作目录）只进悬停：行上只留「标题 ＋ 时间」这一件。
+  const detail = [session.id, session.project].filter(Boolean).join(' · ')
+
   return (
-    <div className="group/row flex h-7 w-full items-center gap-1 rounded-md pr-1 transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none">
+    <div
+      className={cn(
+        'group/row flex h-7 w-full items-center gap-1 rounded-md pr-1 transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:transition-none',
+        pending && 'opacity-70'
+      )}
+    >
       <button
         className={cn(
           'flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left text-[0.8125rem] leading-none transition-colors duration-100 ease-out hover:text-foreground hover:transition-none',
           muted ? 'text-(--ui-text-tertiary)' : 'text-(--ui-text-secondary)'
         )}
         onClick={onOpen}
-        title={session.project}
+        title={detail}
         type="button"
       >
         <span className="min-w-0 flex-1 truncate">{titleOf(session)}</span>

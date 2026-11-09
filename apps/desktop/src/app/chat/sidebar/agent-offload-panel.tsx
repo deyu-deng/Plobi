@@ -11,9 +11,9 @@ import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarDrawerRow } from './chrome'
 import { ExpertRoleRow, useAgentExperts } from './expert-panel'
 import { EXPERT_ROLES, latestRun, runsOfRole } from './expert-roles'
-import { vendorLabel } from './external-sessions'
+import { unreadableSources, vendorLabel } from './external-sessions'
 import { ExternalSessionRow, useExternalSessions } from './external-sessions-panel'
-import { OffloadVendorIcon } from './offload-vendor-icon'
+import { VendorBrandBlock } from './offload-vendor-icon'
 
 /**
  * 点进一个 L2 时，左栏中段可以切到这一格：**这一摊的活派给了谁**。
@@ -41,7 +41,9 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
   const [expertsOpen, setExpertsOpen] = useState(true)
   const [outsourcedOpen, setOutsourcedOpen] = useState(true)
   const [openVendor, setOpenVendor] = useState<null | string>(null)
-  const [showUnknown, setShowUnknown] = useState(false)
+  // 「待判断」那批**默认展开**（用户 11-09）：Marvis 那 11 条里只有两条自动判成有关，
+  // 藏在一枚裸数字后面 ⇒ 别的 Agent 打开这一格几乎看不见东西。那枚眼睛还在，可收起来。
+  const [showUnknown, setShowUnknown] = useState(true)
   const [showArchived, setShowArchived] = useState(false)
   const experts = useAgentExperts(agentId)
   const { data, reload: reloadExternal } = useExternalSessions(agentId)
@@ -92,6 +94,12 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
   // 抽屉当场消失——「已归档」那个开关跟着没了，收回去的东西再也捞不回来。
   const total = shownCount + (showUnknown ? 0 : unknown.length) + archived.length
 
+  // 库里在、但这台机器上没留下可读对话的那家（现读＝Cursor）：**照实说一行人话**，
+  // 句子直接用后端给的那句（屏上不另写）。已经有分组的那家不重复说——它自己就在表里。
+  const unreadable = unreadableSources(data?.sources).filter(
+    source => !groups.some(group => group.vendor === source.vendor)
+  )
+
   if (rounds === null) {
     return null
   }
@@ -133,7 +141,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
         </div>
       </SidebarDrawerRow>
 
-      {total > 0 && (
+      {(total > 0 || unreadable.length > 0) && (
         <SidebarDrawerRow
           count={total}
           icon="send"
@@ -156,7 +164,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                     title={group.label}
                     type="button"
                   >
-                    <OffloadVendorIcon vendor={group.vendor} />
+                    <VendorBrandBlock vendor={group.vendor} />
                     <span className="min-w-0 flex-1 truncate">{group.label}</span>
                     <Codicon
                       className="shrink-0 text-(--ui-text-tertiary) opacity-60"
@@ -184,6 +192,8 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                                 title: item.session.title || item.session.id.slice(0, 8),
                                 vendor: item.session.vendor
                               })}
+                            // 还没判断的那一批：整行压暗一档（形状说它还没定性，不写「待判断」上屏）。
+                            pending={item.session.related === null}
                             session={item.session}
                           />
                         )
@@ -193,6 +203,21 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                 </div>
               )
             })}
+
+            {/* 照实说：库里在、但这台机器上没留下可读对话的那家，一行人话——
+                句子是后端给的那句原话（屏上不另写，也不改写成「它没有对话」）。 */}
+            {unreadable.map(source => (
+              <div
+                className="flex items-center gap-2 rounded-md px-2 py-1"
+                data-testid={`external-session-unreadable-${source.vendor}`}
+                key={source.vendor}
+              >
+                <VendorBrandBlock vendor={source.vendor} />
+                <span className="min-w-0 flex-1 truncate text-[0.7rem] text-(--ui-text-tertiary)">
+                  {source.reason}
+                </span>
+              </div>
+            ))}
 
             {unknown.length > 0 && (
               <button

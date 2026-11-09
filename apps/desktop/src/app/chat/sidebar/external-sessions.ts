@@ -155,6 +155,17 @@ export function vendorLabel(vendor: string): string {
   return vendorLabelFor(vendor)
 }
 
+/**
+ * 库里在、但这台机器上**没留下可读对话**的那几家（用户 11-09：照实说）。
+ *
+ * 后端给的那句 `reason` 就是人话（「Cursor 这台机器上没留下可读的对话」）——
+ * 屏上**照抄它**，不另写一句：写「它没有对话」是不属实的，写「读不到」又把它说成坏了。
+ * 读得到的那几家（哪怕此刻 0 条）不在这里出现——0 条就是 0 条，不必解释。
+ */
+export function unreadableSources(sources: readonly ExternalSessionSource[] | undefined): ExternalSessionSource[] {
+  return (sources ?? []).filter(source => !source.readable && (source.reason || '').trim() !== '')
+}
+
 export function patchExternalSession(
   agentId: string,
   vendor: string,

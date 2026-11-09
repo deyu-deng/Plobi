@@ -90,7 +90,17 @@ describe('AgentOffloadPanel', () => {
 
     expect(codebuddy.textContent).toContain('CodeBuddy')
     expect(codebuddy.textContent).not.toMatch(/\d/)
-    expect(screen.getByRole('button', { name: /agy/ })).toBeTruthy()
+    // 10-30 裁定：屏上写品牌名（Antigravity），内部 id（agy）不上屏。
+    expect(screen.getByRole('button', { name: /Antigravity/ })).toBeTruthy()
+  })
+
+  it('分组行是品牌方块（与 Providers 那一屏同一件），不再是那枚中性「机器人」', async () => {
+    await renderPanel([round({ agent: 'agy' })])
+
+    // 11-09：厂商 id → 腿 id 的对照表搬进共用的品牌名那张表，这儿画的是 Providers 那颗方块。
+    expect(screen.getByTestId('vendor-brand-block-agy')).toBeTruthy()
+    // 那枚「机器人」不再替任何一家认领身份。
+    expect(screen.queryByTestId('offload-vendor-fallback-agy')).toBeNull()
   })
 
   it('点组头才展开，展开后这一段活、权限档与花费都在', async () => {
@@ -215,5 +225,35 @@ describe('AgentOffloadPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /把今天的读数写成页/ }))
 
     expect(await screen.findByText(/could not open/i)).toBeTruthy()
+  })
+
+  it('库里在、但没留下可读对话的那家：照实给一行人话（后端给的那句原话）', async () => {
+    const api = vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path.endsWith('/external-sessions')) {
+        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [], sources: [
+          {
+            readable: false,
+            reason: 'Cursor 这台机器上没留下可读的对话',
+            root: 'D:/Data/AppData/Cursor',
+            sendable: false,
+            sessions: 0,
+            vendor: 'cursor'
+          }
+        ] } })
+      }
+
+      return Promise.resolve({ ok: true, data: {} })
+    })
+
+    Object.defineProperty(window, 'plobiDesktop', {
+      configurable: true,
+      value: { ...(window.plobiDesktop || {}), api }
+    })
+
+    await renderPanel([])
+
+    // 照实说，不改写：不说「它没有对话」（不属实），也不假装读得到。
+    expect(await screen.findByText('Cursor 这台机器上没留下可读的对话')).toBeTruthy()
+    expect(screen.getByTestId('external-session-unreadable-cursor')).toBeTruthy()
   })
 })
