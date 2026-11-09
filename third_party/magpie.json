@@ -1,0 +1,11 @@
+{
+  "name": "magpie",
+  "repo": "yetone/magpie",
+  "license": "MIT",
+  "version": "v0.1.3403",
+  "asset": "magpie-cli-windows-amd64.exe",
+  "sha256": "6e65b7d3f2a282e6c60b059016c7001607142bf96aa4b068214b75e2965fc121",
+  "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-windows-amd64.exe",
+  "checked_at": "2026-11-09",
+  "note": "magpie 是我们的厂商那一层（MIT）。这个文件是**唯一一份钉子**：发行包里的本体、打包脚本、机器人，都从这儿读版本与 sha256。机器人（scripts/plobi/check_magpie_release.py + .github/workflows/magpie-release-watch.yml）盯着上游发布，有新版就开 PR 升这里——不自动合、不自动发版。"
+}

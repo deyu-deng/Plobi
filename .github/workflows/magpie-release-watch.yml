@@ -1,0 +1,71 @@
+# Watch magpie's releases: when upstream ships one, open a PR that bumps our pin.
+#
+# Why: magpie ships many releases a day (v0.1.3403 was 2026-11-09 19:3x) and we
+# ship it inside our installer — so the version and hash we ship must follow
+# upstream instead of being copied by hand. See third_party/magpie.json (the one
+# pin) and scripts/plobi/check_magpie_release.py (the reading of it).
+#
+# This bot **opens a pull request and stops there**: it never merges and never
+# publishes a release. Upgrading a third-party binary that changes daily is
+# something a human should look at once.
+#
+# "Cannot reach upstream" is **not** a red: the job reports it and ends green.
+# A watcher that cries wolf every time the network hiccups gets ignored, and an
+# ignored watcher is the failure mode this whole thing exists to avoid.
+
+name: Magpie release watch
+
+on:
+  schedule:
+    - cron: "23 4 * * *"          # daily, off the :00 mark
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  watch:
+    name: Bump the magpie pin when upstream moves
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Ask upstream
+        id: check
+        run: |
+          set -uo pipefail
+          python3 scripts/plobi/check_magpie_release.py --check
+          status=$?
+          if [ "$status" -eq 10 ]; then
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "newer=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Bump the pin
+        if: steps.check.outputs.newer == 'true'
+        run: |
+          set -euo pipefail
+          python3 scripts/plobi/check_magpie_release.py --write
+          git config user.name "plobi-bot"
+          git config user.email "plobi-bot@users.noreply.github.com"
+          git add third_party/magpie.json
+          git commit -m "chore(magpie): 升到上游最新的 release"
+          git push origin HEAD:refs/heads/magpie-release-watch
+
+      - name: Open a pull request
+        if: steps.check.outputs.newer == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json;print(json.load(open('third_party/magpie.json'))['version'])")
+          gh pr create \
+            --base main \
+            --head magpie-release-watch \
+            --title "chore(magpie): 升到 $version" \
+            --body "上游发布了 $version。钉子（third_party/magpie.json）与 sha256 已更新；**人看一眼再合**（第三方二进制每天在变）。" \
+            || echo "a pull request for this version is already open"
