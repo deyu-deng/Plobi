@@ -47,12 +47,32 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any
 
 from ...base import Account, Capabilities, Credential, Provider, UpstreamError
 from ....tokens import desktop_stores as ds
 
 # Refresh this early, so a request never starts on a token that dies mid-flight.
 TOKEN_SKEW_SECONDS = 300
+
+#: Where the vendor publishes what this account may run, and what each of those
+#: models says about itself.
+#:
+#: Measured 2026-11-09 on this machine (`GET /v2/enterprises/personal/models`
+#: with the desktop app's own token): the roster is the "cli" agent's list —
+#: 16 ids — and every row carries the window menu that model sells
+#: (`contextWindow.supportedLengths`: 300000 / 600000 / 960000 on the hy4 rows,
+#: with `defaultLength`), its own ceiling (`maxInputTokens`), its output cap
+#: (`maxOutputTokens`) and the thinking levels it takes
+#: (`reasoning.supportedEfforts`). `auto` has no menu and one fixed window.
+#:
+#: Until this existed the leg served a list we had copied by hand (10-13),
+#: so the picker offered names the vendor no longer sells (`hy4-preview`,
+#: `hy3-x`, `minimax-m2.7`) and said nothing about any window — leaving the
+#: picker to invent one out of Plobi's own stale table (user, 11-09 18:4x:
+#: 「显示的模型也不正确。别人Workbuddy都是Hy4了。你还是Hy4 Preview.」 and
+#: 「上下文调整选项根本不符合这个模型」).
+CATALOG_PATH = "/v2/enterprises/personal/models"
 
 
 def _flatten_oai(parts) -> str:
@@ -103,8 +123,22 @@ class WorkbuddyApiProvider(Provider):
         self.dialect = config.get("dialect", "openai")
         self.chat_path = config.get("chat_path", "/v1/chat/completions")
         self.chat_path_tpl = config.get("chat_path_template")
-        self.served_models = tuple(config.get("models", ["workbuddy/default"]))
+        # The card id, not the class name: this leg is configured under two ids
+        # (`workbuddy` for the CodeBuddy HTTP route, `workbuddy_api` for the
+        # passthrough build), and the ids we publish must carry the one the
+        # desktop joins on.
+        self.leg_id = str(config.get("leg") or self.name)
+        self.model_prefix = f"{self.leg_id}/"
+        #: Where the vendor publishes this account's roster and each model's knobs.
+        self.catalog_path = str(config.get("catalog_path") or CATALOG_PATH)
+        # No seed. The roster is the vendor's own (see `refresh_models`): a list
+        # we wrote ourselves is a second truth that rots the day the vendor
+        # renames a model — which is how `hy4-preview` outlived the vendor's
+        # `hy4free` / `hy4std` in the picker for a week.
+        self.served_models: tuple[str, ...] = ()
         self._model_map = config.get("model_map", {})
+        #: The vendor's own rows, keyed by the id we publish them under.
+        self._model_rows: dict[str, dict] = {}
 
     def credential_health(self) -> tuple[bool, str]:
         """Live when the desktop record holds a token that works or can be renewed.
@@ -258,6 +292,142 @@ class WorkbuddyApiProvider(Provider):
         # Static tokens by default.
         if not acc.cred.access_token:
             raise UpstreamError(401, "no workbuddy token configured", reauth=True)
+
+    # --- the vendor's own catalogue ---------------------------------------
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        """The roster the vendor publishes for this account, read now.
+
+        Returns the ids we publish (``<leg>/<upstream id>``) on success, and
+        ``None`` on any failure — the Registry then keeps whatever we had, and a
+        leg that never managed a read simply offers nothing. That is deliberate:
+        a hand-written list is a second truth about names that only the vendor
+        can vouch for, and a name the vendor dropped must leave the picker
+        rather than sit there promising a turn that will fail.
+
+        The read costs nothing (the catalogue is free) and the same token that
+        serves a turn opens it.
+        """
+        try:
+            await self.ensure_fresh(acc)
+            res = await self.http.get(
+                self.base_url + self.catalog_path,
+                headers=self._render_headers(acc, {"model": ""}),
+            )
+            if res.status_code != 200:
+                return None
+            payload = res.json()
+        except Exception:  # noqa: BLE001 — a catalogue read must not break routing
+            return None
+        if not isinstance(payload, dict):
+            return None
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return None
+
+        rows = {
+            str(row.get("id")): row
+            for row in (data.get("models") or [])
+            if isinstance(row, dict) and row.get("id")
+        }
+        roster = self._roster_of(data)
+        if not roster:
+            return None
+
+        self._model_rows = {
+            f"{self.model_prefix}{mid}": rows[mid] for mid in roster if mid in rows
+        }
+        self.served_models = tuple(f"{self.model_prefix}{mid}" for mid in roster)
+        return list(self.served_models)
+
+    @staticmethod
+    def _roster_of(data: dict) -> list[str]:
+        """Which models this account may run, as the vendor's own agent says.
+
+        The catalogue lists one entry per agent; the one tagged ``default`` is the
+        agent the product itself runs, and its ``models`` list is the roster.
+        An agent without a model list (a sub-agent that borrows the parent's)
+        says nothing and is skipped.
+        """
+        agents = data.get("agents")
+        if not isinstance(agents, list):
+            return []
+        fallback: list[str] = []
+        for agent in agents:
+            if not isinstance(agent, dict):
+                continue
+            models = agent.get("models")
+            if not isinstance(models, list) or not models:
+                continue
+            ids = [str(m).strip() for m in models if str(m).strip()]
+            if not ids:
+                continue
+            tags = [str(t).strip().lower() for t in (agent.get("tags") or [])]
+            if "default" in tags:
+                return ids
+            if not fallback:
+                fallback = ids
+        return fallback
+
+    def tuning(self, model: str) -> dict:
+        """What this model lets the user change, from the vendor's own row.
+
+        Measured 2026-11-09: the hy4 rows sell a **menu** of windows
+        (300000 / 600000 / 960000, default 300000) and say so with
+        ``contextWindow.supportedLengths``; ``auto`` sells none and has one
+        fixed window (``maxInputTokens``). Each row also states its own ceiling
+        and output cap, and the thinking levels it takes
+        (``reasoning.supportedEfforts``).
+
+        A model that says nothing about a window gets no window from us either:
+        Plobi's own table is a guess, and a guess is what the user was looking
+        at when they said 「上下文调整选项根本不符合这个模型」.
+        """
+        row = self._model_rows.get(model) or {}
+        out: dict[str, Any] = {}
+
+        window = row.get("contextWindow") if isinstance(row.get("contextWindow"), dict) else {}
+        lengths = sorted({
+            int(value) for value in (window.get("supportedLengths") or [])
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+        })
+        ceiling = row.get("maxInputTokens")
+        if lengths:
+            default = window.get("defaultLength")
+            out["context"] = {
+                "adjustable": len(lengths) > 1,
+                "choices": lengths,
+                "default": (
+                    int(default)
+                    if isinstance(default, (int, float)) and not isinstance(default, bool)
+                    and int(default) in lengths
+                    else lengths[0]
+                ),
+                "max": lengths[-1],
+            }
+        elif isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) and ceiling > 0:
+            # One window, and the vendor says it is not adjustable.
+            out["context"] = {
+                "adjustable": False,
+                "choices": [int(ceiling)],
+                "default": int(ceiling),
+                "max": int(ceiling),
+            }
+
+        cap = row.get("maxOutputTokens")
+        if isinstance(cap, (int, float)) and not isinstance(cap, bool) and cap > 0:
+            out["max_output"] = int(cap)
+
+        reasoning = row.get("reasoning") if isinstance(row.get("reasoning"), dict) else {}
+        efforts = [
+            str(level).strip().lower()
+            for level in (reasoning.get("supportedEfforts") or [])
+            if str(level).strip()
+        ]
+        if efforts:
+            out["efforts"] = efforts
+            default_effort = str(reasoning.get("defaultEffort") or "").strip().lower()
+            out["default_effort"] = default_effort if default_effort in efforts else efforts[0]
+        return out
 
     # --- templating ------------------------------------------------------
     def _ctx(self, acc: Account, oai_req: dict) -> dict:

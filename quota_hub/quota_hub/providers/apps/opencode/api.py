@@ -241,29 +241,6 @@ def _project_id(config: dict) -> str:
     return hashlib.sha1(f"directory:{Path(directory).resolve()}".encode("utf-8")).hexdigest()
 
 
-def _row_price(row: dict) -> float | None:
-    """What the vendor wrote this model costs, per token. None when it wrote nothing.
-
-    Zen writes both sides of the bill (``cost.text.input.price`` and
-    ``cost.text.output.price``); the higher one is the model's price. A model whose
-    bill is zero is the free pool a membership covers; anything above zero is billed
-    per token and is not part of what the subscription covers.
-    """
-    text = row.get("cost")
-    text = text.get("text") if isinstance(text, dict) else None
-    if not isinstance(text, dict):
-        return None
-
-    prices: list[float] = []
-    for side in ("input", "output"):
-        side_price = text.get(side)
-        side_price = side_price.get("price") if isinstance(side_price, dict) else None
-        if isinstance(side_price, (int, float)) and not isinstance(side_price, bool):
-            prices.append(float(side_price))
-
-    return max(prices) if prices else None
-
-
 class OpencodeApiProvider(Provider):
     name = "opencode_api"
     display_name = "OpenCode Zen"
@@ -406,30 +383,26 @@ class OpencodeApiProvider(Provider):
     def _covers(self, row: dict) -> bool:
         """Whether THIS lane may serve the row's model.
 
-        Two lanes, two entitlements (measured 2026-11-08 against the vendor's own
-        `/inference/v1/models`):
+        One lane, one question: **do we have a route that can actually answer?**
 
-        * a **key** (``OPENCODE_ZEN_API_KEY``) is billable — the upstream's list is
-          that account's entitlement, so everything it lists is offered;
-        * the **membership** (OpenCode's own store credential) covers the free pool
-          only. Zen writes what every model costs in ``cost.text.{input,output}.price``;
-          the ones above zero are billed per token and are **not** part of what the
-          subscription covers. Offering them in the picker promised a model the user
-          cannot use — the user's own rule (11-08 20:1x): 「我配置不了就不应该出现在
-          这个模型框里面」. Of the 42 rows this account's Zen wrote on 11-08, 11 are
-          free and 31 are billed.
+        * With a **key** (``OPENCODE_ZEN_API_KEY``) the answer is yes for every row
+          the upstream lists: the list *is* that account's entitlement, and the
+          account pays per token for what it uses (measured 2026-11-08 against the
+          vendor's own ``/inference/v1/models``: 11 rows free, 31 billed).
+        * Without a key the answer is **no** — and that is not a guess about the
+          price, it is a fact about the route. The free pool a membership covers is
+          reachable only through the OpenCode client itself: the bare inference face
+          answers 429 for anything that is not that client (measured 2026-11-09 on
+          this machine). The route that does reach the free pool is the client's own
+          local service, and that is the ``opencode_free`` leg (裁定 206 §2).
 
-        A row that says nothing about its price is **not** a refusal: "the leg did not
-        say" must never read as "not covered" — the same rule the ``tuning`` hook
-        follows, and the reason the pre-11-08 behaviour (every row served) was wrong
-        only for the rows that *did* speak.
+        So before this, the membership lane published eleven selectable models that
+        every request refused — the user's own rule (11-08 20:1x): 「我配置不了就不
+        应该出现在这个模型框里面」, and their question on 11-09 18:4x: 「OpenCode Zen
+        我又没有填Key。怎么会出现在这里呢？」. A leg that cannot serve a model has
+        no business naming it.
         """
-        if self.api_key:
-            return True
-
-        price = _row_price(row)
-
-        return price is None or price <= 0
+        return bool(self.api_key)
 
     async def discover_accounts(self) -> list[Account]:
         live, reason, data = self._credential_state()

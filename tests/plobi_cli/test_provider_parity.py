@@ -31,7 +31,31 @@ HEADERS = {"X-Plobi-Session-Token": _SESSION_TOKEN}
 # derived from the catalog so any future virtual provider is covered without a
 # hardcoded slug.
 _VIRTUAL = {d.slug for d in provider_catalog() if d.auth_type == "virtual"}
-_EXEMPT = {"custom"} | _VIRTUAL
+
+
+def _acp_slugs() -> set[str]:
+    """The ACP legs — the ones the desktop deliberately does **not** offer.
+
+    裁定 205: an ACP leg's tools run closed upstream, so it is not a provider at
+    all; it is an offload channel and lives in the 外包 column
+    (``agent/external_offload.py``). The model-picker side skipped them long
+    ago; the desktop's provider catalog followed on 11-09 (that "OpenCode Free"
+    was the ACP implementation ``opencode-acp``). So the parity contract is
+    "the two tabs == the ``plobi model`` universe **minus the ACP legs**" —
+    written down in ``plobi_cli/provider_catalog.py``. Derived from the registry
+    so a future ACP leg is covered without a hardcoded slug.
+    """
+    from plobi_cli.auth import PROVIDER_REGISTRY
+
+    canonical = {e.slug for e in CANONICAL_PROVIDERS}
+    return {
+        slug
+        for slug, cfg in PROVIDER_REGISTRY.items()
+        if slug in canonical and getattr(cfg, "auth_type", "") == "external_process"
+    }
+
+
+_EXEMPT = {"custom"} | _VIRTUAL | _acp_slugs()
 
 # Providers that legitimately offer BOTH auth methods and so intentionally
 # appear on both desktop tabs (an API-key card AND an account sign-in card).

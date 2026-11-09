@@ -203,7 +203,8 @@ providers:
   # 因此 `providers/workbuddy.py::chat()` 现在永远走 SSE 再把增量折回一条 completion。
   # 凭据不落盘、不进日志、不进 .env：`token_source` 只在运行时从桌面 app 自己的记录里读，
   # 续期出来的新 token 也只留在内存（那张文件归桌面 app，我们不当第二个写的人）。
-  # 只列**实测过的那一个**模型 id：厂商目录口没验过，宁可名单短，也不放一条点了必失败的名字。
+  # 名单不在这儿抄（11-09 改）：厂商目录口已验过（`/v2/enterprises/personal/models`
+  # 回 200），腿自己现读；抄本里那些旧名字（hy4-preview 之类）是厂商已经换掉的。
   workbuddy:
     enabled: true
     base_url: https://www.workbuddy.cn
@@ -213,29 +214,14 @@ providers:
     header_templates:
       - { name: "X-Agent-Intent", value: "craft" }
       - { name: "X-Auth-Refresh-Source", value: "plugin" }
-    # 目录 = CodeBuddy 那张 CLI 目录的同一批模型名，逐条在 10-13 19:3x–19:5x 用真流量探过
-    # （`stream:false` 走本腿的内部聚合）：**18 条全部可达，其中 16 条当场回了 tool_calls**；
-    # `glm-5.1` 与 `kimi-k2.8-preview` 回了 stop 且没调工具（模型行为，不是通道不行），
-    # 仍然列着——能不能带工具由 `capabilities.tools` 说，不由我们挑。
-    # ⚠️ 这是一份**抄本**，厂商加模型时不会自己长出来：重探的方法与判据见
-    # `Docs/PROGRESS.md` 10-13 那行；正解是让这条腿自己去取活目录（下一个格子），
-    # 但在那之前，少一条就是选择框里少一条能用的模型——用户 10-13 19:4x 就是为这个骂的。
-    models:
-      - workbuddy/hy4-preview
-      - workbuddy/hy3
-      - workbuddy/hy3-x
-      - workbuddy/deepseek-v4.1-flash
-      - workbuddy/deepseek-v4-pro
-      - workbuddy/step-5-preview
-      - workbuddy/glm-5.3
-      - workbuddy/glm-5.3-flash
-      - workbuddy/glm-5.2
-      - workbuddy/space-bunny
-      - workbuddy/minimax-m3.1-flash
-      - workbuddy/minimax-m2.7
-      - workbuddy/kimi-k3.1-pro
-      - workbuddy/kimi-k3-1
-      - workbuddy/kimi-k2.8-preview
-      - workbuddy/mimo-v2.6-pro
+    # 名单不在这儿抄：这条腿自己现读厂商的目录口
+    # （`GET /v2/enterprises/personal/models`，用桌面端那枚 token，见
+    # `providers/apps/workbuddy/api.py::CATALOG_PATH`）。11-09 18:4x 那三问的根因
+    # 就在这份抄本上：厂商 11-09 现读的名单里已经没有 `hy4-preview`／`hy3-x`／
+    # `minimax-m2.7`，改成了 `hy4free`／`hy4std`（厂商显示名都叫「Hy4」）＋`auto`，
+    # 而抄本里还挂着旧名字（用户原话：「别人Workbuddy都是Hy4了。你还是Hy4 Preview.」）。
+    # 抄本还少说了一件事：厂商每一行都写了**这个模型自己的窗口菜单**
+    # （`contextWindow.supportedLengths`）、自己的上限与输出上限，腿把它们发出去，
+    # 选择框与运行时的上下文预算就不再靠 Plobi 的旧本地表编。
     accounts:
       - { id: desktop }

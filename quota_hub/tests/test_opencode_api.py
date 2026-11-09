@@ -214,7 +214,11 @@ def test_a_store_credential_is_believed_until_the_upstream_says_otherwise(tmp_pa
             assert prov.credential_health() == (True, "ok")
             accounts = await prov.discover_accounts()
             assert accounts, "a real credential yields an account"
-            assert prov.served_models == ("opencode_api/big-pickle", "opencode_api/beam-free")
+            # 11-09: a membership is a credential, not a route. The free pool is
+            # reachable only through the OpenCode client's own service (the
+            # `opencode_free` leg); from this lane the bare face answers 429.
+            # So until a key is configured this leg names nothing.
+            assert prov.served_models == (), prov.served_models
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
@@ -454,12 +458,16 @@ def _zen_row(model_id: str, *, price=None, context=None, output=None) -> dict:
     return row
 
 
-def test_the_membership_lane_serves_only_what_the_subscription_covers(tmp_path, monkeypatch):
-    """A Zen membership is the free pool; the billed models are not part of it.
+def test_without_a_key_this_lane_publishes_nothing(tmp_path, monkeypatch):
+    """A Zen membership is a credential, not a route that can answer.
 
-    Measured 2026-11-08 against the vendor's own list: of 42 rows, 11 are free and 31
-    are billed per token. Serving all 42 promised a model the user cannot use — the
-    user's own rule (11-08 20:1x): 「我配置不了就不应该出现在这个模型框里面」.
+    Measured 2026-11-09 on this machine: the bare inference face answers 429 for
+    anything that is not the OpenCode client, so publishing the membership's free
+    pool here promised eleven models that every request refused — the user's own
+    rule (11-08 20:1x): 「我配置不了就不应该出现在这个模型框里面」, and their
+    question on 11-09 18:4x: 「OpenCode Zen我又没有填Key。怎么会出现在这里呢？」.
+    The route that does reach the free pool is the client's own local service,
+    and that is the `opencode_free` leg (裁定 206 §2).
     """
     monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
 
@@ -470,7 +478,7 @@ def test_the_membership_lane_serves_only_what_the_subscription_covers(tmp_path, 
         )}) as http:
             prov = OpencodeApiProvider({"base_url": BASE}, http)
             await prov.discover_accounts()
-            assert prov.served_models == ("opencode_api/big-pickle",), prov.served_models
+            assert prov.served_models == (), prov.served_models
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
@@ -495,12 +503,16 @@ def test_a_key_lane_serves_what_that_key_account_lists(tmp_path, monkeypatch):
 
 
 def test_a_row_without_a_price_is_kept_because_the_leg_did_not_say(tmp_path, monkeypatch):
-    """Silence is not a refusal — the same rule the tuning hook follows."""
+    """Silence is not a refusal — the same rule the tuning hook follows.
+
+    On the key lane the upstream's list is the entitlement, so a row that says
+    nothing about its price is still offered: the leg did not refuse it.
+    """
     monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
 
     async def _go():
         async with _http({"/v1/models": _rows(_zen_row("mystery-model"))}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             await prov.discover_accounts()
             assert prov.served_models == ("opencode_api/mystery-model",), prov.served_models
 
