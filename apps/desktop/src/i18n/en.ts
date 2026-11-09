@@ -309,6 +309,74 @@ export const en: Translations = {
   },
 
   settings: {
+    uninstall: {
+      guiTitle: 'Uninstall Chat GUI only',
+      guiDescription: 'Remove this desktop app. The Plobi agent, your config, and chats all stay.',
+      guiConsequence: 'the desktop Chat GUI (this app and its data)',
+      liteTitle: 'Uninstall GUI + agent, keep my data',
+      liteDescription: 'Remove the app and the Plobi agent, but keep config, chats, and secrets for a future reinstall.',
+      liteConsequence: 'the Chat GUI and the Plobi agent (config, chats, and secrets are kept)',
+      fullTitle: 'Uninstall everything',
+      fullDescription: 'Remove the app, the agent, and all user data — config, chats, scheduled jobs, secrets, logs.',
+      fullConsequence:
+        'EVERYTHING — the Chat GUI, the Plobi agent, and all of your config, chats, secrets, and logs',
+      dangerZone: 'Danger zone',
+      checking: 'Checking what is installed…',
+      confirmTitle: 'Confirm uninstall',
+      confirmBody: consequence => `This removes ${consequence}. This cannot be undone.`,
+      appPath: path => `App: ${path}`,
+      yesUninstall: 'Yes, uninstall',
+      uninstalling: 'Uninstalling…',
+      cancel: 'Cancel',
+      sectionTitle: 'Uninstall Plobi',
+      sectionHint:
+        'Choose how much to remove. The app closes to finish the job; reopen the installer any time to come back.',
+      startFailed: 'Uninstall could not start.'
+    },
+    computerUse: {
+      linuxNote:
+        'Drives your desktop via the X11/XWayland accessibility stack — no permission prompt.',
+      win32Note:
+        'First run may trigger a Windows SmartScreen prompt for the cua-driver UIAccess worker — allow it.',
+      waitingApproval: 'Waiting for approval…',
+      grantPermissions: 'Grant permissions',
+      checkingStatus: 'Checking Computer Use status…',
+      statusReadFailed: 'Could not read Computer Use status',
+      requestFailed: 'Could not request permissions',
+      approveTitle: 'Approve in System Settings',
+      approveMessage:
+        'macOS will show a permission dialog attributed to CuaDriver. Approve it, then return here.',
+      unsupported: platform => `Computer Use is not supported on this platform (${platform}).`,
+      installHint: 'Install the cua-driver backend below to drive this machine.',
+      installHintGrant: 'Then grant Accessibility and Screen Recording here.',
+      identityNote:
+        'Grants attach to the identity of CuaDriver (com.trycua.driver), not to Plobi — the dialog is attributed to the process that drives the Mac.',
+      recheck: 'Recheck',
+      granted: 'Granted',
+      notGranted: 'Not granted',
+      unknown: 'Unknown',
+      driverHealth: 'Driver health',
+      ready: 'Ready',
+      notReady: 'Not ready',
+      readyHint: 'Computer Use is ready. Ask the agent to capture an app and click around.',
+      accessibilityLabel: 'Accessibility',
+      accessibilityHint:
+        'Lets cua-driver post clicks, keystrokes, and read the accessibility tree.',
+      screenLabel: 'Screen Recording',
+      screenHint: 'Lets cua-driver capture screenshots of app windows.'
+    },
+    memory: {
+      connect: 'Connect',
+      connectViaOauth: 'Connect via OAuth',
+      reconnect: 'Reconnect',
+      apiKeySet: 'API key set',
+      oauthSet: 'OAuth set',
+      waitingConsent: 'Waiting for browser consent…',
+      startFailed: 'Failed to start connection',
+      connectFailed: 'Could not start the connection.',
+      timedOut: 'Timed out — try again.',
+      connectionFailed: 'Connection failed.'
+    },
     offload: {
       title: 'Offload',
       note: 'Hand a piece of work to an outside AI app and let it finish in its own window. Borrowing its subscription/API as a model lives under Providers — the two do not share a list.',
@@ -725,6 +793,8 @@ export const en: Translations = {
       technicalDesc: 'Include raw tool args/results and low-level details.',
       themeTitle: 'Theme',
       themeDesc: 'Desktop palettes only. The selected mode is applied on top.',
+      themeSearchPlaceholder: 'Search your themes or the VS Code Marketplace…',
+      noInstalledMatch: query => `No installed themes match "${query}".`,
       installTitle: 'Install from VS Code',
       installDesc:
         'Paste a Marketplace extension id (e.g. dracula-theme.theme-dracula) to convert its color theme into a desktop palette.',
@@ -1436,6 +1506,9 @@ export const en: Translations = {
     close: 'Close memory graph',
     refresh: 'Refresh',
     memory: 'Memory',
+      legendSkill: 'Skill',
+      legendMemory: 'Memory',
+      legendAge: 'Core = oldest · outer = newer',
     filterAll: 'All',
     filterUsed: 'Used',
     filterLearned: 'Learned',
@@ -1543,6 +1616,7 @@ export const en: Translations = {
       remixConfirmBody:
         'This generates a fresh set of drafts using this one as the starting point. It can take several minutes.',
       genericError: 'Generation failed — try again or pick a suggestion.',
+      addReference: 'Add a reference',
       referenceImageTooLarge: 'Reference image is too large. Use one under 16 MB.',
       referenceImageInvalid: 'Could not read that reference image. Try a PNG, JPG, WebP, or GIF.',
       adopt: 'Adopt',
@@ -1802,7 +1876,42 @@ export const en: Translations = {
         help: 'Recommended. Comma-separated phone numbers or WhatsApp IDs.'
       }
     },
-    platformIntro: {}
+    platformIntro: {
+      telegram:
+        'In Telegram, talk to @BotFather, run /newbot, and copy the token it gives you. Then grab your numeric user ID from @userinfobot.',
+      discord:
+        'Open the Discord Developer Portal, create an application, add a Bot, then copy its token. Invite the bot to your server with the right scopes.',
+      slack:
+        'Create a Slack app, enable Socket Mode, install it to your workspace, then copy the bot token and app-level token.',
+      mattermost:
+        'On your Mattermost server, create a bot account or personal access token, then paste the server URL and token here.',
+      matrix: 'Sign in to your homeserver with the bot account, then copy the access token, user ID, and homeserver URL.',
+      signal:
+        'Run a signal-cli REST bridge somewhere reachable, then point Plobi at the URL and the registered phone number.',
+      whatsapp:
+        'Start the WhatsApp bridge that ships with Plobi, scan the QR code on first run, then enable the platform.',
+      bluebubbles:
+        'Run BlueBubbles Server on a Mac with iMessage, expose its API, then point Plobi at the URL with the server password.',
+      homeassistant:
+        'In Home Assistant, open your user settings and create a long-lived access token. Paste it here along with your HA URL.',
+      email:
+        'Use a dedicated mailbox. For Gmail/Workspace, create an app password and use imap.gmail.com / smtp.gmail.com.',
+      sms: 'Get your Twilio Account SID and Auth Token from the Twilio console, plus a phone number that can send SMS.',
+      dingtalk: 'Create a DingTalk app in the developer console, then copy the Client ID (App key) and Client Secret here.',
+      feishu:
+        'Create a Feishu / Lark app, configure the bot capability, and copy the App ID, App secret, and event encryption keys.',
+      wecom:
+        'Add a group robot in WeCom and copy its webhook key as WECOM_BOT_ID. Send-only — use the WeCom (app) option for two-way.',
+      wecom_callback:
+        'Set up a WeCom self-built app, expose its callback URL, and provide the corp ID, secret, agent ID, and AES key.',
+      weixin:
+        "Run `plobi gateway setup`, select Weixin, then scan and confirm the QR code with a personal WeChat account. Plobi connects through Tencent's iLink Bot API and saves the credentials.",
+      qqbot: 'Register an app on the QQ Open Platform (q.qq.com) and copy the App ID and Client Secret.',
+      api_server:
+        'Expose Plobi as an OpenAI-compatible API. Set an auth key, then point Open WebUI / LobeChat / etc. at the host:port.',
+      webhook:
+        'Run an HTTP server that other tools (GitHub, GitLab, custom apps) can POST to. Use the secret to verify signatures.'
+    }
   },
 
   mindPending: {

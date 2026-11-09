@@ -230,6 +230,67 @@ export const zhHant = defineLocale({
   },
 
   settings: {
+    uninstall: {
+      guiTitle: '只解除安裝桌面端',
+      guiDescription: '移除這個桌面應用程式。Plobi 智能體、設定與對話全部保留。',
+      guiConsequence: '桌面端本身（這個應用程式與它的資料）',
+      liteTitle: '解除桌面端與智能體，保留資料',
+      liteDescription: '移除應用程式與 Plobi 智能體，但保留設定、對話與憑證，日後重裝仍可使用。',
+      liteConsequence: '桌面端與 Plobi 智能體（設定、對話與憑證保留）',
+      fullTitle: '全部解除',
+      fullDescription: '移除應用程式、智能體與全部使用者資料——設定、對話、定時任務、憑證與記錄。',
+      fullConsequence: '全部內容——桌面端、Plobi 智能體，以及設定、對話、憑證與記錄',
+      dangerZone: '危險區',
+      checking: '正在檢查已安裝的項目…',
+      confirmTitle: '確認解除',
+      confirmBody: consequence => `將移除${consequence}。此操作無法復原。`,
+      appPath: path => `應用程式路徑：${path}`,
+      yesUninstall: '確認解除',
+      uninstalling: '正在解除…',
+      cancel: '取消',
+      sectionTitle: '解除 Plobi',
+      sectionHint: '選擇要移除的範圍。完成後應用程式會結束；隨時重新執行安裝程式即可回來。',
+      startFailed: '解除未能開始。'
+    },
+    computerUse: {
+      linuxNote: '透過 X11/XWayland 無障礙堆疊驅動桌面，不需要權限確認。',
+      win32Note: '首次執行可能彈出 Windows SmartScreen 提示（cua-driver 的 UIAccess 輔助處理程序），請選擇允許。',
+      waitingApproval: '等待授權…',
+      grantPermissions: '授予權限',
+      checkingStatus: '正在檢查 Computer Use 狀態…',
+      statusReadFailed: '無法讀取 Computer Use 狀態',
+      requestFailed: '無法請求權限',
+      approveTitle: '請在系統設定中核准',
+      approveMessage: 'macOS 會彈出一個歸屬於 CuaDriver 的權限對話方塊。核准後回到此處。',
+      unsupported: platform => `此平台不支援 Computer Use（${platform}）。`,
+      installHint: '請在下方安裝 cua-driver 後端，以便驅動這台機器。',
+      installHintGrant: '隨後在此授予「輔助使用」與「螢幕錄製」權限。',
+      identityNote: '權限歸屬於 CuaDriver 自身的識別碼（com.trycua.driver），而不是 Plobi，因此對話方塊會顯示為驅動這台 Mac 的那個處理程序。',
+      recheck: '重新檢查',
+      granted: '已授予',
+      notGranted: '未授予',
+      unknown: '未知',
+      driverHealth: '驅動程式狀態',
+      ready: '就緒',
+      notReady: '未就緒',
+      readyHint: 'Computer Use 已就緒。可以讓智能體擷取應用程式視窗並點選操作。',
+      accessibilityLabel: '輔助使用',
+      accessibilityHint: '允許 cua-driver 傳送點選與按鍵，並讀取無障礙樹。',
+      screenLabel: '螢幕錄製',
+      screenHint: '允許 cua-driver 擷取應用程式視窗的畫面。'
+    },
+    memory: {
+      connect: '連線',
+      connectViaOauth: '以 OAuth 連線',
+      reconnect: '重新連線',
+      apiKeySet: '已設定 API 金鑰',
+      oauthSet: '已設定 OAuth',
+      waitingConsent: '等待瀏覽器授權…',
+      startFailed: '連線啟動失敗',
+      connectFailed: '無法開始連線。',
+      timedOut: '已逾時——請重試。',
+      connectionFailed: '連線失敗。'
+    },
     offload: {
       title: '外包',
       note: '把一段活交給外面的 AI 軟體，讓它在自己的視窗裡做。把它的訂閱/API 借來當模型，是 Providers 那一屏的事——兩邊不共用一張表。',
@@ -642,6 +703,8 @@ export const zhHant = defineLocale({
       technicalDesc: '包含原始工具參數、結果與底層細節。',
       themeTitle: '主題',
       themeDesc: '僅限桌面端的調色盤。所選模式會套用在其上。',
+      themeSearchPlaceholder: '搜尋已安裝的主題或 VS Code 市集…',
+      noInstalledMatch: query => `沒有已安裝的主題符合「${query}」。`,
       installTitle: '從 VS Code 安裝',
       installDesc: '貼上 Marketplace 擴充功能 ID（例如 dracula-theme.theme-dracula），將其配色主題轉換為桌面調色盤。',
         installPlaceholder: 'publisher.extension',
@@ -1343,6 +1406,9 @@ export const zhHant = defineLocale({
     close: '關閉記憶圖譜',
     refresh: '重新整理',
     memory: '記憶',
+      legendSkill: '技能',
+      legendMemory: '記憶',
+      legendAge: '核心 = 最舊 · 外圈 = 更新',
     filterAll: '全部',
     filterUsed: '已使用',
     filterLearned: '已學習',
@@ -1435,6 +1501,7 @@ export const zhHant = defineLocale({
       remixConfirmTitle: '以此造型混合生成？',
       remixConfirmBody: '將以此造型為起點生成一組新草圖，可能需要幾分鐘。',
       genericError: '生成失敗——請重試或選一個建議。',
+      addReference: '新增參考圖',
       referenceImageTooLarge: '參考圖片過大。請使用小於 16 MB 的圖片。',
       referenceImageInvalid: '無法讀取該參考圖片。請嘗試 PNG、JPG、WebP 或 GIF。',
       adopt: '領養',
@@ -1637,7 +1704,34 @@ export const zhHant = defineLocale({
         help: '建議設定。逗號分隔的電話號碼或 WhatsApp ID。'
       }
     },
-    platformIntro: {}
+    platformIntro: {
+      telegram:
+        '在 Telegram 中與 @BotFather 對話，執行 /newbot，複製它給你的權杖。接著從 @userinfobot 取得你的數字使用者 ID。',
+      discord:
+        '開啟 Discord 開發者入口網站，建立應用程式，新增 Bot，然後複製其權杖。以正確的權限範圍把機器人邀請到你的伺服器。',
+      slack:
+        '建立 Slack 應用程式，啟用 Socket Mode，安裝到你的工作區，然後複製 bot 權杖與 app 層級權杖。',
+      mattermost: '在你的 Mattermost 伺服器上，建立機器人帳戶或個人存取權杖，然後在此貼上伺服器 URL 與權杖。',
+      matrix: '以機器人帳戶登入你的 homeserver，然後複製存取權杖、使用者 ID 與 homeserver URL。',
+      signal: '在可連線的位置執行 signal-cli REST 橋接，然後把 Plobi 指向該 URL 與已註冊的電話號碼。',
+      whatsapp: '啟動 Plobi 內建的 WhatsApp 橋接，首次執行時掃描 QR code，然後啟用該平台。',
+      bluebubbles:
+        '在裝有 iMessage 的 Mac 上執行 BlueBubbles Server，公開其 API，然後以伺服器密碼把 Plobi 指向該 URL。',
+      homeassistant: '在 Home Assistant 中開啟你的使用者設定並建立長期存取權杖。將它連同 HA URL 一起貼到這裡。',
+      email: '使用專用信箱。Gmail / Workspace 請建立應用程式密碼，並使用 imap.gmail.com 與 smtp.gmail.com。',
+      sms: '從 Twilio 主控台取得 Account SID 與 Auth Token，以及可傳送簡訊的電話號碼。',
+      dingtalk: '在開發者主控台建立釘釘應用程式，然後在此複製 Client ID（App key）與 Client Secret。',
+      feishu: '建立飛書 / Lark 應用程式，設定機器人功能，複製 App ID、App secret 與事件加密金鑰。',
+      wecom:
+        '在企業微信加入群機器人，複製其 webhook key 作為 WECOM_BOT_ID。僅可傳送——雙向請用企業微信（應用程式）選項。',
+      wecom_callback:
+        '設定企業微信自建應用程式，公開回呼 URL，並提供 corp ID、secret、agent ID 與 AES key。',
+      weixin: '選擇微信通道，然後以個人微信帳號掃描並確認 QR code。Plobi 透過官方 Bot 服務連線並保存憑證。',
+      qqbot: '在 QQ 開放平台（q.qq.com）註冊應用程式，複製 App ID 與 Client Secret。',
+      api_server:
+        '把 Plobi 公開為相容 OpenAI 的 API。設定一組鑑權金鑰，然後把 Open WebUI / LobeChat 等指向 host:port。',
+      webhook: '執行一個 HTTP 伺服器，供其他工具（GitHub、GitLab、自訂應用程式）POST。以 secret 驗證簽章。'
+    }
   },
 
 

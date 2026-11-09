@@ -631,6 +631,10 @@ export interface Translations {
       technicalDesc: string
       themeTitle: string
       themeDesc: string
+      /** The one search box above the theme grid: installed themes plus the marketplace. */
+      themeSearchPlaceholder: string
+      /** Shown when the search box filters every installed theme away. */
+      noInstalledMatch: (query: string) => string
       installTitle: string
       installDesc: string
       installPlaceholder: string
@@ -1073,6 +1077,18 @@ export interface Translations {
       fullTitle: string
       fullDescription: string
       fullConsequence: string
+      dangerZone: string
+      checking: string
+      confirmTitle: string
+      confirmBody: (consequence: string) => string
+      appPath: (path: string) => string
+      yesUninstall: string
+      uninstalling: string
+      cancel: string
+      sectionTitle: string
+      sectionHint: string
+      /** Fallback line when the uninstall bridge reports no reason of its own. */
+      startFailed: string
     }
     /** The computer-use panel's per-OS notes and its waiting state. */
     computerUse: {
@@ -1080,6 +1096,40 @@ export interface Translations {
       win32Note: string
       waitingApproval: string
       grantPermissions: string
+      checkingStatus: string
+      statusReadFailed: string
+      requestFailed: string
+      approveTitle: string
+      approveMessage: string
+      unsupported: (platform: string) => string
+      installHint: string
+      installHintGrant: string
+      identityNote: string
+      recheck: string
+      granted: string
+      notGranted: string
+      unknown: string
+      driverHealth: string
+      ready: string
+      notReady: string
+      readyHint: string
+      accessibilityLabel: string
+      accessibilityHint: string
+      screenLabel: string
+      screenHint: string
+    }
+    /** The memory provider's connect link: the OAuth hand-off and its failure lines. */
+    memory: {
+      connect: string
+      connectViaOauth: string
+      reconnect: string
+      apiKeySet: string
+      oauthSet: string
+      waitingConsent: string
+      startFailed: string
+      connectFailed: string
+      timedOut: string
+      connectionFailed: string
     }
   }
 
@@ -1404,6 +1454,8 @@ export interface Translations {
       remixConfirmTitle: string
       remixConfirmBody: string
       genericError: string
+      /** The link that opens the reference-image picker under the prompt box. */
+      addReference: string
       referenceImageTooLarge: string
       referenceImageInvalid: string
       adopt: string
@@ -1523,8 +1575,6 @@ export interface Translations {
     loading: string
     loadFailed: string
     states: Record<string, string>
-    /** One setup paragraph per messaging platform, shown while it is unconfigured. */
-    platformIntros: Record<string, string>
     unknown: string
     hintPendingRestart: string
     hintGatewayStopped: string

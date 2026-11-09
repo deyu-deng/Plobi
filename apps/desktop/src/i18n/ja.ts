@@ -237,6 +237,74 @@ export const ja = defineLocale({
   },
 
   settings: {
+    uninstall: {
+      guiTitle: 'デスクトップのみアンインストール',
+      guiDescription:
+        'このデスクトップアプリだけを削除します。Plobi エージェント、設定、チャットはそのまま残ります。',
+      guiConsequence: 'デスクトップチャット GUI（このアプリとそのデータ）',
+      liteTitle: 'GUI とエージェントをアンインストールし、データを残す',
+      liteDescription:
+        'アプリと Plobi エージェントを削除します。設定、チャット、認証情報は再インストール用に保持されます。',
+      liteConsequence: 'チャット GUI と Plobi エージェント（設定、チャット、認証情報は保持されます）',
+      fullTitle: 'すべてアンインストール',
+      fullDescription:
+        'アプリ、エージェント、ユーザーの全データ（設定、チャット、定期ジョブ、認証情報、ログ）を削除します。',
+      fullConsequence: 'すべて（チャット GUI、Plobi エージェント、設定、チャット、認証情報、ログ）',
+      dangerZone: '危険ゾーン',
+      checking: 'インストール状況を確認しています…',
+      confirmTitle: 'アンインストールの確認',
+      confirmBody: consequence => `${consequence}を削除します。この操作は元に戻せません。`,
+      appPath: path => `アプリのパス：${path}`,
+      yesUninstall: 'アンインストールする',
+      uninstalling: 'アンインストールしています…',
+      cancel: 'キャンセル',
+      sectionTitle: 'Plobi をアンインストール',
+      sectionHint:
+        '削除する範囲を選んでください。完了後、アプリは終了します。再び使うときはインストーラーを起動してください。',
+      startFailed: 'アンインストールを開始できませんでした。'
+    },
+    computerUse: {
+      linuxNote: 'X11/XWayland のアクセシビリティ API を使ってデスクトップを操作します。権限の確認は不要です。',
+      win32Note:
+        '初回起動時に cua-driver の UIAccess ワーカーに対する Windows SmartScreen の確認が出ることがあります。許可してください。',
+      waitingApproval: '承認待ち…',
+      grantPermissions: '権限を許可する',
+      checkingStatus: 'Computer Use の状態を確認しています…',
+      statusReadFailed: 'Computer Use の状態を読み取れませんでした',
+      requestFailed: '権限を要求できませんでした',
+      approveTitle: 'システム設定で承認してください',
+      approveMessage: 'macOS が CuaDriver の権限ダイアログを表示します。承認したら、この画面に戻ってください。',
+      unsupported: platform => `このプラットフォームは Computer Use に対応していません（${platform}）。`,
+      installHint: 'このマシンを操作するには、下に cua-driver バックエンドをインストールしてください。',
+      installHintGrant: 'その後、「アクセシビリティ」と「画面収録」をここで許可してください。',
+      identityNote:
+        '権限は Plobi ではなく CuaDriver 自身の識別子（com.trycua.driver）に付与されます。ダイアログは Macintosh を操作するプロセスのものとして表示されます。',
+      recheck: '再確認',
+      granted: '許可済み',
+      notGranted: '未許可',
+      unknown: '不明',
+      driverHealth: 'ドライバーの状態',
+      ready: '準備完了',
+      notReady: '準備ができていません',
+      readyHint: 'Computer Use の準備ができました。エージェントにアプリの取得と操作を指示できます。',
+      accessibilityLabel: 'アクセシビリティ',
+      accessibilityHint:
+        'cua-driver がクリックとキー入力を行い、アクセシビリティツリーを読み取ることを許可します。',
+      screenLabel: '画面収録',
+      screenHint: 'cua-driver がアプリウィンドウの画面を撮影することを許可します。'
+    },
+    memory: {
+      connect: '接続',
+      connectViaOauth: 'OAuth で接続',
+      reconnect: '再接続',
+      apiKeySet: 'API キー設定済み',
+      oauthSet: 'OAuth 設定済み',
+      waitingConsent: 'ブラウザでの許可待ち…',
+      startFailed: '接続を開始できませんでした',
+      connectFailed: '接続を開始できませんでした。',
+      timedOut: 'タイムアウトしました。もう一度お試しください。',
+      connectionFailed: '接続に失敗しました。'
+    },
     offload: {
       title: '外部委託',
       note: '仕事を外の AI アプリに渡し、そのアプリ自身の画面で仕上げてもらう。サブスク/API をモデルとして借りるのは Providers 側で、両者は同じ一覧を共有しない。',
@@ -652,6 +720,8 @@ export const ja = defineLocale({
       technicalDesc: '生のツール引数、結果、低レベルの詳細を含めます。',
       themeTitle: 'テーマ',
       themeDesc: 'デスクトップ専用のパレットです。選択したモードの上に適用されます。',
+      themeSearchPlaceholder: 'テーマまたは VS Code マーケットプレイスを検索…',
+      noInstalledMatch: query => `「${query}」に一致するインストール済みテーマはありません。`,
       installTitle: 'VS Code から導入',
       installDesc:
         'Marketplace の拡張機能 ID（例: dracula-theme.theme-dracula）を貼り付けると、その配色テーマをデスクトップ用パレットに変換します。',
@@ -1372,6 +1442,9 @@ export const ja = defineLocale({
     close: 'メモリグラフを閉じる',
     refresh: '更新',
     memory: 'メモリ',
+      legendSkill: 'スキル',
+      legendMemory: 'メモリ',
+      legendAge: '中心 = 最古 · 外側 = 新着',
     filterAll: 'すべて',
     filterUsed: '使用済み',
     filterLearned: '学習済み',
@@ -1464,6 +1537,7 @@ export const ja = defineLocale({
       remixConfirmTitle: 'この見た目でリミックスしますか？',
       remixConfirmBody: 'これを起点に新しい候補を生成します。数分かかることがあります。',
       genericError: '生成に失敗しました。もう一度試すか、候補を選んでください。',
+      addReference: '参照画像を追加',
       referenceImageTooLarge: '参照画像が大きすぎます。16 MB 未満の画像を使ってください。',
       referenceImageInvalid: '参照画像を読み込めませんでした。PNG/JPG/WebP/GIF を試してください。',
       adopt: '迎え入れる',
@@ -1682,7 +1756,43 @@ export const ja = defineLocale({
         help: '推奨。カンマ区切りの電話番号または WhatsApp ID。'
       }
     },
-    platformIntro: {}
+    platformIntro: {
+      telegram:
+        'Telegram では @BotFather と会話し、/newbot を実行して、発行されたトークンをコピーします。続けて @userinfobot から数値のユーザー ID を取得します。',
+      discord:
+        'Discord Developer Portal を開き、アプリケーションを作成して Bot を追加し、そのトークンをコピーします。適切な権限でボットをサーバーに招待します。',
+      slack:
+        'Slack アプリを作成し、Socket Mode を有効化して、ワークスペースにインストールしてから、ボットトークンとアプリレベルのトークンをコピーします。',
+      mattermost:
+        'Mattermost サーバー側でボットアカウントまたは個人アクセストークンを作成し、サーバー URL とトークンをここに貼り付けます。',
+      matrix: 'ボットアカウントでホームサーバーにサインインし、アクセストークン、ユーザー ID、ホームサーバー URL をコピーします。',
+      signal:
+        '接続できる場所で signal-cli の REST ブリッジを動かし、その URL と登録済みの電話番号を Plobi に設定します。',
+      whatsapp:
+        'Plobi に同梱の WhatsApp ブリッジを起動し、初回起動時に QR コードをスキャンしてから、そのプラットフォームを有効にします。',
+      bluebubbles:
+        'iMessage の入った Mac で BlueBubbles Server を動かし、API を公開してから、サーバーパスワードとともにその URL を Plobi に設定します。',
+      homeassistant:
+        'Home Assistant でユーザー設定を開き、長期アクセストークンを作成します。HA URL と一緒にここへ貼り付けます。',
+      email:
+        '専用のメールボックスを使用します。Gmail / Workspace ではアプリパスワードを作成し、imap.gmail.com と smtp.gmail.com を使います。',
+      sms: 'Twilio コンソールで Account SID と Auth Token を取得し、SMS を送信できる電話番号も用意します。',
+      dingtalk:
+        '開発者コンソールで DingTalk アプリを作成し、Client ID（App key）と Client Secret をここにコピーします。',
+      feishu:
+        'Feishu / Lark アプリを作成し、ボット機能を設定して、App ID、App secret、イベント暗号化キーをコピーします。',
+      wecom:
+        'WeCom でグループボットを追加し、その webhook キーを WECOM_BOT_ID としてコピーします。送信専用です。双方向には WeCom（アプリ）側のオプションを使います。',
+      wecom_callback:
+        'WeCom の自作アプリを設定し、コールバック URL を公開して、corp ID、secret、agent ID、AES key を指定します。',
+      weixin:
+        'Weixin を選び、個人用の WeChat アカウントで QR コードをスキャンして確認します。Plobi は Tencent の iLink Bot API を経由して接続し、認証情報を保存します。',
+      qqbot: 'QQ オープンプラットフォーム（q.qq.com）でアプリを登録し、App ID と Client Secret をコピーします。',
+      api_server:
+        'Plobi を OpenAI 互換の API として公開します。認証キーを設定し、Open WebUI / LobeChat などの接続先を host:port に指定します。',
+      webhook:
+        '他のツール（GitHub、GitLab、独自のアプリ）が POST できる HTTP サーバーを動かします。署名の検証に secret を使います。'
+    }
   },
 
 
