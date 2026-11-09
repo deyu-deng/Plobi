@@ -55,6 +55,9 @@ DEFAULT_KEY_NAME = "magpie-plobi"
 HELLO_PATH = "/api/hello"
 MODELS_PATH = "/v1/models"
 CHAT_PATH = "/v1/chat/completions"
+#: Our own provider table — the truth about what a card is called, how we sign in,
+#: and which id we publish. Their CLI only says which providers exist today.
+PROVIDERS_FILE = Path(__file__).with_name("providers.yaml")
 #: How long a health verdict is trusted before it is asked again. The registry
 #: asks once per model row, so without this a catalogue of a hundred models
 #: would probe the gateway a hundred times.
@@ -287,52 +290,104 @@ class MagpieProvider(Provider):
         return None
 
     async def provider_specs(self) -> list[dict]:
-        """The providers this machine has, as magpie itself lists them.
+        """The providers we know about — **our** table, checked against theirs.
 
-        Each entry: ``id`` (their provider id — also the first segment of their
-        model ids), ``name`` (the product's own name), and ``methods`` (how it
-        can be signed in to). This list is the card list now: a provider they
-        add is a card we grow, and one they remove is a card that goes away.
+        Our table (``providers.yaml``) is the truth about what a card is called,
+        how we sign in, and which id we publish. Their CLI only answers two
+        questions: *is this provider still there* and *what is it called today*.
+        A provider they added that we have not claimed gets **no card** — it is
+        reported (``unclaimed_providers``) so a human can claim it in one line.
+
+        When their CLI cannot be read at all (magpie is not running here), the
+        cards still appear: our table does not depend on them. They then say
+        「Magpie 没起来」 instead of pretending the vendor is not set up.
         """
-        now = time.time()
-        cached = getattr(self, "_specs_cache", None)
-        if cached is not None and now - cached[0] < self.PLUGIN_LIST_TTL_SECONDS:
-            return list(cached[1])
-        binary = self._binary()
-        if not binary:
-            return []
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                binary,
-                *self.PLUGIN_LIST_ARGS,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                env={**os.environ, "DO_NOT_TRACK": "1"},
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=20.0)
-        except Exception:
-            return []
-        try:
-            payload = json.loads(stdout.decode("utf-8", "replace") or "{}")
-        except Exception:
-            return []
+        table = self._our_table()
+        theirs = self._their_provider_ids()
         specs: list[dict] = []
-        for entry in (payload or {}).get("providers") or []:
-            if not isinstance(entry, dict):
-                continue
-            pid = str(entry.get("id") or "").strip()
-            if not pid:
-                continue
+        for ours, row in table.items():
+            upstream = str(row.get("upstream") or ours)
             specs.append(
                 {
-                    "id": pid,
-                    "name": str(entry.get("name") or pid),
-                    "api": str(entry.get("api") or ""),
-                    "methods": [m for m in (entry.get("methods") or []) if isinstance(m, dict)],
+                    "id": ours,
+                    "upstream": upstream,
+                    "name": str(row.get("name") or ours),
+                    "card": bool(row.get("card", True)),
+                    "login": str(row.get("login") or "oauth"),
+                    # They have it? (None = we could not ask — say so, do not guess.)
+                    "present": None if theirs is None else upstream in theirs,
                 }
             )
-        self._specs_cache = (now, list(specs))
         return specs
+
+    def _our_table(self) -> dict[str, dict]:
+        """Our provider table, read once per process."""
+        cached = getattr(self, "_table_cache", None)
+        if cached is not None:
+            return cached
+        table: dict[str, dict] = {}
+        try:
+            import yaml  # noqa: PLC0415 - optional at runtime, present in the venv
+
+            raw = yaml.safe_load(PROVIDERS_FILE.read_text(encoding="utf-8")) or {}
+            for key, row in (raw.get("providers") or {}).items():
+                if isinstance(row, dict):
+                    table[str(key)] = row
+        except Exception:
+            # No table, no providers: we never invent one out of their JSON.
+            table = {}
+        self._table_cache = table
+        return table
+
+    def _their_provider_ids(self) -> set[str] | None:
+        """The provider ids magpie reports today, or None when we cannot ask."""
+        cached = getattr(self, "_their_ids_cache", None)
+        if cached is not None:
+            return cached[0]
+        ids = self._their_ids_via_cli()
+        self._their_ids_cache = (ids,)
+        return ids
+
+    def _their_ids_via_cli(self) -> set[str] | None:
+        """Run their CLI once and read the provider ids out of it."""
+        binary = self._binary()
+        if not binary:
+            return None
+        try:
+            import subprocess  # noqa: PLC0415 - sync call in a sync helper
+
+            out = subprocess.run(
+                [binary, *self.PLUGIN_LIST_ARGS],
+                capture_output=True,
+                timeout=20.0,
+                env={**os.environ, "DO_NOT_TRACK": "1"},
+            )
+            payload = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+        except Exception:
+            return None
+        ids: set[str] = set()
+        for entry in (payload or {}).get("providers") or []:
+            if isinstance(entry, dict):
+                pid = str(entry.get("id") or "").strip()
+                if pid:
+                    ids.add(pid)
+        return ids or None
+
+    def unclaimed_providers(self) -> list[dict]:
+        """Providers magpie has that our table does not claim — nobody's business yet.
+
+        They are reported (log line ＋ ``check_magpie_providers.py``) and they get
+        **no card**: a provider we have not named must not show up on the user's
+        screen just because somebody upstream added it.
+        """
+        theirs = self._their_provider_ids()
+        if not theirs:
+            return []
+        ours = set(self._our_table())
+        unknown: list[dict] = []
+        for pid in sorted(theirs - ours):
+            unknown.append({"id": pid})
+        return unknown
 
     async def read_catalogue(self) -> dict[str, dict]:
         """magpie's own rows, keyed by their id — one read for every leg."""
@@ -524,9 +579,13 @@ class MagpieProviderLeg(MagpieProvider):
     ):
         super().__init__(config, http)
         self.spec = dict(spec)
+        #: **Our** id — the card id, the model id prefix, the preset key. It does
+        #: not change when magpie renames the provider upstream.
         self.provider_id = str(self.spec.get("id") or "").strip()
-        #: The leg id IS the provider id, so the desktop's row identity and the
-        #: model id prefix are the same word.
+        #: Their id — what we send them. Renaming is a one-line change in our table.
+        self.upstream_id = str(self.spec.get("upstream") or self.provider_id).strip()
+        #: The leg id IS our id, so the desktop's row identity and the model id
+        #: prefix are the same word.
         self.name = self.provider_id or self.name
         self.display_name = str(self.spec.get("name") or self.name)
         #: The umbrella leg: one catalogue read serves every provider leg.
@@ -535,18 +594,16 @@ class MagpieProviderLeg(MagpieProvider):
     # --- the card ----------------------------------------------------------
     def present(self) -> bool:
         """This one **is** a card: the product behind it is what the user sets up."""
-        return True
+        return bool(self.spec.get("card", True))
 
     def card_spec(self) -> dict:
-        """The card's own fields, taken from magpie's provider list.
+        """The card's own fields, from **our** table.
 
-        ``login`` is the one the drawer already knows how to speak: their
-        methods are oauth (browser) or api (a key). We do not invent a method
-        they did not offer.
+        ``login`` is the one the drawer already knows how to speak: ours says
+        which lane we use (oauth = browser, api = a key). We do not invent a
+        method magpie did not offer.
         """
-        methods = self.spec.get("methods") or []
-        kinds = {str(m.get("type") or "") for m in methods if isinstance(m, dict)}
-        login = "oauth" if "oauth" in kinds else ("api_key" if "api" in kinds else "unknown")
+        login = str(self.spec.get("login") or "oauth")
         return {
             "name": self.display_name,
             "kind": "app",
@@ -573,7 +630,7 @@ class MagpieProviderLeg(MagpieProvider):
             "kind": "cli_login",
             "name": self.display_name,
             "binary": binary,
-            "argv": ["plugin", "login", self.provider_id],
+            "argv": ["plugin", "login", self.upstream_id],
             "reason": f"它的登录在 Magpie 那边（{self.display_name}）",
         }
 
@@ -586,7 +643,14 @@ class MagpieProviderLeg(MagpieProvider):
         """
         if self.served_models:
             return True, "ok"
+        if not self._gateway_up():
+            return False, "Magpie 没起来"
         return False, "它还没在 Magpie 那边登录"
+
+    def _gateway_up(self) -> bool:
+        """Is magpie itself answering right now?"""
+        live, _reason = MagpieProvider.credential_health(self)
+        return live
 
     def credential_health(self) -> tuple[bool, str]:
         """Can this provider serve a turn right now?
@@ -594,9 +658,8 @@ class MagpieProviderLeg(MagpieProvider):
         Only if magpie is up **and** this provider is signed in — the first is
         the gateway, the second is the account.
         """
-        live, reason = MagpieProvider.credential_health(self)
-        if not live:
-            return False, reason
+        if not self._gateway_up():
+            return False, "no_desktop_credential"
         if not self.served_models:
             return False, "no_desktop_credential"
         return True, "ok"
@@ -605,19 +668,20 @@ class MagpieProviderLeg(MagpieProvider):
     async def refresh_models(self, acc: Account) -> list[str] | None:
         """This provider's models, read from magpie's own catalogue.
 
-        Their ids already carry the provider as their first segment, so they are
-        published verbatim: ``workbuddy/hy4free`` is the same word in both
-        systems.
+        Their rows carry **their** provider id; we publish **ours** in front of
+        the model name, so a rename upstream never changes the ids the user's
+        presets and sessions hold.
         """
         reader = self.umbrella or self
         rows = await reader.read_catalogue()
         if not rows:
             return None
-        mine = {
-            mid: row
-            for mid, row in rows.items()
-            if mid.split("/", 1)[0] == self.provider_id
-        }
+        mine: dict[str, dict] = {}
+        for mid, row in rows.items():
+            upstream, _, model = mid.partition("/")
+            if upstream != self.upstream_id or not model:
+                continue
+            mine[f"{self.provider_id}/{model}"] = row
         if not mine:
             return None
         self._model_rows = mine
@@ -630,5 +694,9 @@ class MagpieProviderLeg(MagpieProvider):
         return self.provider_id
 
     def _map_model(self, model: str) -> str:
-        """magpie's id is already ours: the provider segment is part of it."""
-        return str(model or "")
+        """Our id → theirs: the only place the two vocabularies meet."""
+        name = str(model or "")
+        prefix = f"{self.provider_id}/"
+        if name.startswith(prefix):
+            return f"{self.upstream_id}/{name[len(prefix):]}"
+        return name

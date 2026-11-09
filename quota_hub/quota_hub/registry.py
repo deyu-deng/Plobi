@@ -314,7 +314,10 @@ class Registry:
         cfg = dict(self.config.get("providers", {}).get("magpie") or {})
         for spec in specs:
             leg_id = str(spec.get("id") or "").strip()
-            if not leg_id:
+            if not leg_id or not spec.get("card", True):
+                continue
+            if spec.get("present") is False:
+                # magpie no longer has this one: the card goes with it.
                 continue
             if leg_id in self.providers:
                 # Their provider id collides with a leg we already run (magpie calls
@@ -330,6 +333,22 @@ class Registry:
             self.providers[leg.name] = leg
             for m in leg.served_models:
                 self.model_to_provider[m] = leg.name
+
+        # Providers magpie added that we have not claimed: they get **no card**
+        # (our table decides the card list), but they are reported so a human can
+        # claim one in a single line.
+        try:
+            unclaimed = umbrella.unclaimed_providers()
+        except Exception:
+            unclaimed = []
+        if unclaimed:
+            import logging
+
+            logging.getLogger("quota_hub").info(
+                "magpie: %d provider(s) we have not claimed (no card): %s",
+                len(unclaimed),
+                ", ".join(str(u.get("id")) for u in unclaimed),
+            )
 
     async def enable_leg(self, name: str) -> Provider | None:
         """按需装上一条腿 —— 只在用户点了 + 的那一刻发生。

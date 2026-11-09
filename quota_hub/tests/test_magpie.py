@@ -17,6 +17,7 @@ probe is answered by the leg's own seam.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -228,3 +229,59 @@ async def test_the_turn_goes_out_under_our_own_key_name():
     assert seen["body"]["tools"], "the tool list has to reach the gateway"
     assert out["model"] == "magpie/opencode-zen-free/big-pickle"
     assert out["choices"][0]["message"]["content"] == "hi"
+
+# --- our table is the truth about the cards --------------------------------
+#
+# magpie ships several releases a day and its `plugin list --json` is an
+# internal shape. If that JSON decided the cards, a rename on their side would
+# rename our cards — and our model ids with them (the user's presets and
+# sessions hold those ids). So: our table decides, their CLI only answers
+# "does this provider still exist".
+
+
+def test_the_card_list_is_our_table_not_their_json():
+    prov = _provider(_http({}))
+    prov._their_provider_ids = lambda: {"workbuddy", "opencode-zen-free", "brand-new-one"}
+    specs = asyncio.run(prov.provider_specs())
+
+    ids = [s["id"] for s in specs]
+    assert "workbuddy" in ids and "opencode-zen-free" in ids, ids
+    assert "brand-new-one" not in ids, "a provider we have not claimed gets no card"
+
+    names = {s["id"]: s["name"] for s in specs}
+    assert names["workbuddy"] == "WorkBuddy"
+    assert names["workbuddy-ai"] == "WorkBuddy AI", "国际版与国内版是两张卡"
+
+
+def test_a_provider_we_have_not_claimed_is_reported_but_not_offered():
+    prov = _provider(_http({}))
+    prov._their_provider_ids = lambda: {"workbuddy", "brand-new-one"}
+    unclaimed = prov.unclaimed_providers()
+    assert [u["id"] for u in unclaimed] == ["brand-new-one"], unclaimed
+
+
+def test_our_model_ids_survive_their_rename():
+    """Their provider id is a wire detail; ours is what the user's presets hold."""
+    prov = _with_gateway(_provider(_http({})))
+    leg = MagpieProviderLeg(
+        {"base_url": "http://127.0.0.1:3425"},
+        prov.http,
+        {"id": "workbuddy", "upstream": "workbuddy-v2", "name": "WorkBuddy"},
+        umbrella=prov,
+    )
+    assert leg._map_model("workbuddy/hy4free") == "workbuddy-v2/hy4free"
+    assert leg.provider_of("workbuddy/hy4free") == "workbuddy"
+
+
+def test_the_cards_exist_even_when_magpie_is_not_running():
+    """Magpie missing is a reason we can say out loud — not a missing card."""
+    prov = _provider(_http({}))
+    prov._hello_body = lambda: None
+    prov._their_provider_ids = lambda: None
+    specs = asyncio.run(prov.provider_specs())
+    assert specs, "our table does not depend on them being up"
+
+    leg = MagpieProviderLeg({"base_url": "http://127.0.0.1:3425"}, prov.http, specs[0], umbrella=prov)
+    signed, reason = leg.signed_in()
+    assert signed is False
+    assert "Magpie" in reason, reason

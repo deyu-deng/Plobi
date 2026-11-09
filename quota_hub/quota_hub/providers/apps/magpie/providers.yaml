@@ -1,0 +1,38 @@
+# 我们认识的 magpie provider —— 一份**我们自己说了算**的表。
+#
+# 为什么有这张表（2026-11-09）：magpie 一天发好几版、单人主维护、外部 PR 关闭，
+# 它的 `plugin list --json` 是**内部形状**，随时会改。我们曾经直接拿它当卡片清单：
+# 卡叫什么、我们怎么登、**我们发布的模型 id**，全都由它决定 —— 它把 `workbuddy-ai`
+# 改名一次，我们存过的模型 id 就失配，那一行会从用户的模型框里直接消失。
+#
+# 所以规矩是：
+#   * 左边是**我们的 id**（屏上、存档、预设都用它）。定下就不改。
+#   * 右边是它在 magpie 那边今天叫什么。他们改名 ⇒ 只改右边这一格。
+#   * 名字、登录方式、要不要出卡，都由我们说了算。
+#   * magpie 加了一家我们还不认识的 provider ⇒ **不出卡**（`check_magpie_providers.py`
+#     会把它列出来等人认领）。宁可晚一天上屏，也不要让他们的目录变成我们的产品清单。
+#
+# 一行一家：`upstream` 是发给他们时用的 id，`name` 是屏上读的名字，`card` 说要不要在
+# 「订阅额度」里出这张卡，`login` 说我们怎么登它（走 magpie 的 `plugin login`）。
+
+providers:
+  workbuddy:
+    upstream: workbuddy
+    name: WorkBuddy
+    card: true
+    login: oauth
+
+  # 国际版：另一家厂商、另一张卡（用户 2026-11-09 20:3x：「国际版和国内版本来就是要
+  # 分成两张卡片的」）。
+  workbuddy-ai:
+    upstream: workbuddy-ai
+    name: WorkBuddy AI
+    card: true
+    login: oauth
+
+  # 免费池：他们那边免个人 key（键填 public），所以它没有登录这一步。
+  opencode-zen-free:
+    upstream: opencode-zen-free
+    name: OpenCode Zen Free
+    card: true
+    login: api
