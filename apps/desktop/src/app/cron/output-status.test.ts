@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { setRuntimeI18nLocale } from '@/i18n/runtime'
+
 import { cronOutputView, normalizeCronOutputStatus, OUTPUT_STATUS_TEXT } from './output-status'
 
 const WARNING_BODY = [
@@ -52,12 +54,33 @@ describe('cronOutputView', () => {
     expect(view.charsTotal).toBe(91_000)
   })
 
-  it('both locales have words for every verdict', () => {
+  it('every language has words for every verdict', () => {
     for (const status of Object.keys(OUTPUT_STATUS_TEXT)) {
       const key = status as keyof typeof OUTPUT_STATUS_TEXT
 
-      expect(OUTPUT_STATUS_TEXT[key].zh.length).toBeGreaterThan(0)
-      expect(OUTPUT_STATUS_TEXT[key].en.length).toBeGreaterThan(0)
+      for (const language of ['zh', 'en', 'ja', 'zh-hant'] as const) {
+        expect(OUTPUT_STATUS_TEXT[key][language].length, `${status}/${language} is empty`).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('a Japanese or Traditional-Chinese interface speaks its own language, not English', () => {
+    // 调用方（cron/index.tsx）只能表达「中/英」——它那一档在别人的在派格上，
+    // 本刀不碰——所以日文与繁中只能靠运行时 locale 说得清。
+    setRuntimeI18nLocale('ja')
+
+    try {
+      expect(cronOutputView({ status: 'failed' }, 'en').label).toBe(OUTPUT_STATUS_TEXT.failed.ja)
+    } finally {
+      setRuntimeI18nLocale('en')
+    }
+
+    setRuntimeI18nLocale('zh-hant')
+
+    try {
+      expect(cronOutputView({ status: 'failed' }, 'en').label).toBe(OUTPUT_STATUS_TEXT.failed['zh-hant'])
+    } finally {
+      setRuntimeI18nLocale('en')
     }
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { setRuntimeI18nLocale } from '@/i18n/runtime'
 import type { ModelOptionProvider } from '@/types/plobi'
 
 import { humanizeProviderName, humanizeProviders, isMockModelId } from './model-provider-label'
@@ -29,6 +30,22 @@ describe('humanizeProviderName', () => {
 
   it('falls back to the slug so groups are never untitled', () => {
     expect(humanizeProviderName(provider({ slug: 'my-gateway', name: 'AIGW' }))).toBe('My Gateway')
+  })
+
+  it('the quota hub folds into the catalog word — in every interface language', () => {
+    // 这一支原来写死「订阅额度」（日文与繁中界面上也是中文），而且那条正则里
+    // 混进两枚控制字符（`39020bf8` 带进来的），英文那一半永远不命中 ⇒
+    // 「Local Quota Hub」会原样上屏。现在两半都活了，文案走 i18n 目录。
+    expect(humanizeProviderName(provider({ slug: 'aigw', name: 'Local Quota Hub' }))).toBe('Subscriptions')
+    expect(humanizeProviderName(provider({ slug: 'aigw', name: '本地额度网关' }))).toBe('Subscriptions')
+
+    setRuntimeI18nLocale('ja')
+
+    try {
+      expect(humanizeProviderName(provider({ slug: 'aigw', name: 'Local Quota Hub' }))).toBe('サブスクリプション')
+    } finally {
+      setRuntimeI18nLocale('en')
+    }
   })
 })
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { setRuntimeI18nLocale } from '@/i18n/runtime'
 import { $connectedDesktopApps, markConnected } from '@/store/desktop-quotas'
 import type { ModelOptionProvider } from '@/types/plobi'
 
@@ -22,8 +23,22 @@ describe('mainProviderRows', () => {
   it('never shows the internal hub name as a provider', () => {
     const rows = mainProviderRows(catalog)
 
-    expect(rows.map(row => row.name)).toEqual(['Z.AI', '订阅额度'])
-    expect(rows.find(row => row.name === '订阅额度')?.ui_key).toBe('aigw::订阅额度')
+    expect(rows.map(row => row.name)).toEqual(['Z.AI', 'Subscriptions'])
+    expect(rows.find(row => row.name === 'Subscriptions')?.ui_key).toBe('aigw::Subscriptions')
+  })
+
+  it('the hub row speaks the interface language, not a hard-coded Chinese word', () => {
+    // 那一行原来写死「订阅额度」——日文与繁中界面上也是中文。
+    // 现在它跟界面语言走（默认英文；切到简中就是「订阅额度」）。
+    setRuntimeI18nLocale('zh')
+
+    try {
+      const rows = mainProviderRows(catalog)
+
+      expect(rows.map(row => row.name)).toEqual(['Z.AI', '订阅额度'])
+    } finally {
+      setRuntimeI18nLocale('en')
+    }
   })
 
   it("never lets the gateway own name reach a row, even with no software connected", () => {

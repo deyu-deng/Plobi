@@ -1,7 +1,7 @@
 import { quotaProviders } from '@/store/desktop-quotas'
 import type { ModelOptionProvider } from '@/types/plobi'
 
-import { humanizeProviderRows } from '../shell/model-provider-label'
+import { humanizeProviderRows, quotaHubLabel } from '../shell/model-provider-label'
 
 /**
  * Provider rows for the main-model picker.
@@ -36,8 +36,8 @@ export function mainProviderRows(providers: readonly ModelOptionProvider[]): Mod
     prefixes.size === 1
       ? humanizeProviderRows([
           { name: String([...prefixes][0]), slug: String([...prefixes][0]) }
-        ])[0]?.name ?? '订阅额度'
-      : '订阅额度'
+        ])[0]?.name ?? quotaHubLabel()
+      : quotaHubLabel()
 
   const withFallback =
     !hasQuotaGroups && hub ? [...rows, { ...hub, name: fallbackName }] : rows

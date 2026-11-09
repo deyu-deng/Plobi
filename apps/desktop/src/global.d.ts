@@ -684,8 +684,9 @@ export interface DesktopCloudAgentSignInResult {
 export interface DesktopDeferredSubsystem {
   enableHint: string
   id: string
-  /** Localized name supplied by the main process. */
-  name: { en: string; zh: string }
+  /** Localized name supplied by the main process. `ja` / `zh-hant` are optional
+   *  so a window still renders when it was opened by an older main process. */
+  name: { en: string; ja?: string; zh: string; 'zh-hant'?: string }
   /** 'ready': what was observed. 'deferred': observed cause + R-047 wording. 'red': observed cause + fault wording. */
   detail: string
   observed: string

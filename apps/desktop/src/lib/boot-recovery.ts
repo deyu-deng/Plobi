@@ -13,7 +13,8 @@
 // graph that just broke. Its copy mirrors `boot.recovery.*` in src/i18n/ (the
 // normal-render-path registration of the same strings; asserted in lockstep by
 // ./boot-recovery.test.ts) and is picked by `navigator.language` here so the
-// card still speaks Chinese on a zh machine even with the i18n runtime gone.
+// card still speaks the interface language on a Japanese or Traditional-Chinese
+// machine even with the i18n runtime gone.
 //
 // It renders into `#root` — the mount point the app itself uses — and reloads
 // the window on click. A reload is the only recovery that exists: it re-fetches
@@ -30,8 +31,8 @@ export interface BootRecoveryCopy {
   title: string
 }
 
-/** Mirrors `boot.recovery.*` in src/i18n/{en,zh}.ts — keep the two in lockstep. */
-export const BOOT_RECOVERY_COPY: Record<'en' | 'zh', BootRecoveryCopy> = {
+/** Mirrors `boot.recovery.*` in src/i18n/{en,zh,ja,zh-hant}.ts — keep the two in lockstep. */
+export const BOOT_RECOVERY_COPY: Record<'en' | 'ja' | 'zh' | 'zh-hant', BootRecoveryCopy> = {
   en: {
     description:
       'Plobi failed to load and the window cannot start. Retry reloads the window — your chats and settings are untouched.',
@@ -39,11 +40,24 @@ export const BOOT_RECOVERY_COPY: Record<'en' | 'zh', BootRecoveryCopy> = {
     retry: 'Retry',
     title: 'Load failed'
   },
+  ja: {
+    description:
+      'Plobi の読み込みに失敗し、ウィンドウを開始できません。再試行するとウィンドウが再読み込みされます。チャットと設定には影響ありません。',
+    details: 'エラーの詳細',
+    retry: '再試行',
+    title: '読み込みに失敗しました'
+  },
   zh: {
     description: 'Plobi 加载失败，窗口无法启动。点击重试会重新加载窗口——你的对话与设置不受影响。',
     details: '错误详情',
     retry: '点击重试',
     title: '加载失败'
+  },
+  'zh-hant': {
+    description: 'Plobi 載入失敗，視窗無法啟動。重試會重新載入視窗——你的對話與設定不受影響。',
+    details: '錯誤詳情',
+    retry: '點擊重試',
+    title: '載入失敗'
   }
 }
 
@@ -111,7 +125,16 @@ const STYLES = `
 function pickCopy(): BootRecoveryCopy {
   const language = (typeof navigator === 'undefined' ? '' : navigator.language || '').toLowerCase()
 
-  return language.startsWith('zh') ? BOOT_RECOVERY_COPY.zh : BOOT_RECOVERY_COPY.en
+  if (language.startsWith('zh')) {
+    // 繁中（zh-Hant / zh-TW / zh-HK）与简中不是同一句文案，两边都要有。
+    return /hant|tw|hk/.test(language) ? BOOT_RECOVERY_COPY['zh-hant'] : BOOT_RECOVERY_COPY.zh
+  }
+
+  if (language.startsWith('ja')) {
+    return BOOT_RECOVERY_COPY.ja
+  }
+
+  return BOOT_RECOVERY_COPY.en
 }
 
 function errorText(error: unknown): string {

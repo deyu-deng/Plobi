@@ -267,4 +267,24 @@ describe('deferredRowLabel', () => {
     expect(deferredRowLabel(subject, 'en')).toBe('Local Quota Hub')
     expect(deferredRowLabel(subject, 'ja')).toBe('Local Quota Hub')
   })
+
+  it('speaks Japanese and Traditional Chinese when the row carries those names', () => {
+    // 主进程现在把四语都发过来（`electron/deferred-sidecars.ts`），
+    // 旧主进程没有的那两语回落英文，不留空。
+    const subject = row({
+      id: 'aigw',
+      name: {
+        en: 'Local Quota Service',
+        ja: 'ローカルクォータサービス',
+        zh: '本地额度服务',
+        'zh-hant': '本機額度服務'
+      }
+    })
+
+    expect(deferredRowLabel(subject, 'ja')).toBe('ローカルクォータサービス')
+    expect(deferredRowLabel(subject, 'zh-hant')).toBe('本機額度服務')
+    expect(deferredRowLabel(subject, 'zh-TW')).toBe('本機額度服務')
+    expect(deferredRowLabel(subject, 'zh')).toBe('本地额度服务')
+    expect(deferredRowLabel(subject, 'en')).toBe('Local Quota Service')
+  })
 })

@@ -133,5 +133,26 @@ describe('copy parity with src/i18n', () => {
       retry: TRANSLATIONS.zh.boot.recovery.retry,
       title: TRANSLATIONS.zh.boot.recovery.title
     })
+    // 四语齐：日文与繁中那两张屏也不能露英文。
+    expect(BOOT_RECOVERY_COPY.ja).toEqual({
+      description: TRANSLATIONS.ja.boot.recovery.description,
+      details: TRANSLATIONS.ja.boot.recovery.details,
+      retry: TRANSLATIONS.ja.boot.recovery.retry,
+      title: TRANSLATIONS.ja.boot.recovery.title
+    })
+    expect(BOOT_RECOVERY_COPY['zh-hant']).toEqual({
+      description: TRANSLATIONS['zh-hant'].boot.recovery.description,
+      details: TRANSLATIONS['zh-hant'].boot.recovery.details,
+      retry: TRANSLATIONS['zh-hant'].boot.recovery.retry,
+      title: TRANSLATIONS['zh-hant'].boot.recovery.title
+    })
+  })
+
+  it('every language says something — a blank card is worse than an English one', () => {
+    for (const [language, copy] of Object.entries(BOOT_RECOVERY_COPY)) {
+      for (const [field, value] of Object.entries(copy)) {
+        expect(value.trim().length, `${language}.${field} is empty`).toBeGreaterThan(0)
+      }
+    }
   })
 })

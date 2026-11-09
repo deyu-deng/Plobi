@@ -147,7 +147,11 @@ test('every deferred row states how to turn it on', () => {
   for (const [id, definition] of Object.entries(DEFERRED_SUBSYSTEMS)) {
     assert.ok(definition.enableHint.length > 10, `${id} needs an actionable enable hint`)
     assert.ok(definition.port > 0 && definition.port < 65536, `${id} needs a real port`)
-    assert.ok(definition.name.en && definition.name.zh, `${id} needs both tray languages`)
+    // 四语齐：主进程没有自己的 i18n 目录，名字由这里发过去，缺一语那一语就露英文。
+    assert.ok(definition.name.en, `${id} needs the English tray name`)
+    assert.ok(definition.name.zh, `${id} needs the Simplified-Chinese tray name`)
+    assert.ok(definition.name.ja, `${id} needs the Japanese tray name`)
+    assert.ok(definition.name['zh-hant'], `${id} needs the Traditional-Chinese tray name`)
   }
 })
 

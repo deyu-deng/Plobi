@@ -36,11 +36,22 @@ export function deferredNoticeId(subsystemId: string): string {
 }
 
 /**
- * Localized display name of a row. The main process ships both languages because
+ * Localized display name of a row. The main process ships every language because
  * the Electron side has no i18n catalog of its own; the renderer picks.
  */
 export function deferredRowLabel(row: DesktopDeferredSubsystem, locale: string = currentI18nLocale()): string {
-  return locale.startsWith('zh') ? row.name.zh : row.name.en
+  const normalized = locale.toLowerCase()
+
+  if (normalized.startsWith('ja')) {
+    return row.name.ja ?? row.name.en
+  }
+
+  if (normalized.startsWith('zh')) {
+    // 繁中（zh-Hant / zh-TW / zh-HK）与简中不是同一句文案。
+    return /hant|tw|hk/.test(normalized) ? row.name['zh-hant'] ?? row.name.zh : row.name.zh
+  }
+
+  return row.name.en
 }
 
 /**

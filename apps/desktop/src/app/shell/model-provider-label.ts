@@ -1,3 +1,4 @@
+import { translateNow } from '@/i18n/runtime'
 import type { ModelOptionProvider } from '@/types/plobi'
 
 /**
@@ -29,6 +30,20 @@ const VENDOR_LABELS: ReadonlyArray<readonly [string, string]> = [
 
 /** Internal vocabulary that must never surface as a group title. */
 const INTERNAL_WORDS = /\b(aigw|custom\s*endpoint|custom|endpoint|gateway|aggregator)\b/gi
+
+/** The catalog path that holds the quota-hub row's display word. */
+const QUOTA_HUB_LABEL_KEY = 'settings.nav.providerSubscriptions'
+
+/**
+ * The quota hub's display word. It lives in the i18n catalog — hard-coding
+ * 「订阅额度」 here would put Chinese on a Japanese or Traditional-Chinese
+ * screen. The fallback is the English word, never the dotted key path.
+ */
+export function quotaHubLabel(): string {
+  const label = translateNow(QUOTA_HUB_LABEL_KEY)
+
+  return label === QUOTA_HUB_LABEL_KEY ? 'Subscriptions' : label
+}
 
 function titleCaseSlug(slug: string): string {
   return slug
@@ -66,8 +81,8 @@ export function humanizeProviderName(provider: Pick<ModelOptionProvider, 'name' 
   //    verbatim on a surface that had no per-software clone to fall back on. The
   //    gateway rename is fixed at the source too; this is the belt-and-braces so a
   //    future name like "本地额度网关" cannot reach a screen either.
-  if (/(quota hub|local quota)/i.test(name) || /额度网关|本地额度/.test(name)) {
-    return '订阅额度'
+  if (/(quota hub|local quota)/i.test(name) || /额度网关|本地额度/.test(name)) {
+    return quotaHubLabel()
   }
 
   // 3. Direct-API providers show the vendor's own name.

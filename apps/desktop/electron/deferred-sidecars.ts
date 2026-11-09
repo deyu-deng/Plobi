@@ -65,7 +65,9 @@ export type DeferredSubsystemState = 'deferred' | 'probing' | 'ready' | 'red'
 
 export interface DeferredSubsystemName {
   en: string
+  ja: string
   zh: string
+  'zh-hant': string
 }
 
 export interface DeferredSubsystemDefinition {
@@ -100,14 +102,24 @@ const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
     // the same thing wherever the user reads it.
     enableHint: 'Plobi 会在需要时自动启动该服务，无需手动操作',
     id: 'aigw',
-    name: { en: 'Local Quota Service', zh: '本地额度服务' },
+    name: {
+      en: 'Local Quota Service',
+      ja: 'ローカルクォータサービス',
+      zh: '本地额度服务',
+      'zh-hant': '本機額度服務'
+    },
     port: 8000
   },
   chatlog: {
     enableHint:
       '微信消息采集服务，应用需要时自动启动，无需手动操作。',
     id: 'chatlog',
-    name: { en: 'WeChat message collector', zh: '微信消息采集' },
+    name: {
+      en: 'WeChat message collector',
+      ja: 'WeChat メッセージ収集',
+      zh: '微信消息采集',
+      'zh-hant': '微信訊息採集'
+    },
     port: 5030
   }
 }
@@ -165,7 +177,12 @@ function profileBackendDefinition(id: string): DeferredSubsystemDefinition | nul
   return {
     enableHint: PROFILE_BACKEND_ENABLE_HINT,
     id,
-    name: { en: `Project service · ${profile}`, zh: `项目服务 · ${profile}` },
+    name: {
+      en: `Project service · ${profile}`,
+      ja: `プロジェクトサービス · ${profile}`,
+      zh: `项目服务 · ${profile}`,
+      'zh-hant': `專案服務 · ${profile}`
+    },
     port: 0
   }
 }
@@ -199,7 +216,12 @@ function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null 
   return {
     enableHint: KEY_RECONCILE_ENABLE_HINT,
     id,
-    name: { en: 'Key consistency check', zh: '密钥一致性核对' },
+    name: {
+      en: 'Key consistency check',
+      ja: '鍵の一致性チェック',
+      zh: '密钥一致性核对',
+      'zh-hant': '金鑰一致性核對'
+    },
     port: 0
   }
 }
@@ -224,7 +246,12 @@ function restartRowDefinition(id: string): DeferredSubsystemDefinition | null {
   return {
     enableHint: TRAY_RESTART_ENABLE_HINT,
     id,
-    name: { en: 'App restart', zh: '应用重启' },
+    name: {
+      en: 'App restart',
+      ja: 'アプリの再起動',
+      zh: '应用重启',
+      'zh-hant': '應用程式重新啟動'
+    },
     port: 0
   }
 }
