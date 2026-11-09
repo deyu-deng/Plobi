@@ -1,4 +1,4 @@
-"""两对读写工具：一面一对（surface_* 给人读面，mind_* 给脑那一面）。
+"""两对读写工具：一面一对（surface_* 给人读面，mind_* 给脑那一面）＋档案那把编辑手。
 
 用户 2026-10-25：「档案严重过时了……Agent 会自己维护吗？」两答＝给模型一枚写档案的手、
 白名单放开到全部项目与研究。用户 2026-10-29 再拍两问：名字要按读者分（``surface_write`` 才
@@ -6,6 +6,10 @@
 **一枚工具只碰一面**（越面当场拒，不装作读不到）、**闸门关着时不许谎报落盘**（裁 199）、
 **给人看的拼法不许出现盘上没有的那个词**（脑那一面对模型叫 ``Mind/…``，``Mind/…`` 是内部与
 存量的旧拼法）。
+
+11-09：档案本体（``dossier.json``）是目标／现状的真源，``plan.md``／``progress.md``
+那一对退役——这一档的契约跟着迁到 ``dossier.json``；另加第五把 ``dossier_write``
+（档案本体的字段级编辑手）。
 """
 
 from __future__ import annotations
@@ -40,13 +44,27 @@ def roots(tmp_path, monkeypatch):
     (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
     (surface / "dossiers" / "research" / "SRTP").mkdir(parents=True)
     (surface / "notes").mkdir()
-    (surface / "dossiers" / "projects" / "Aura" / "progress.md").write_text(
-        textwrap.dedent(
-            """\
-            # Aura · 进度
-
-            上一句还停在九月。
-            """
+    # **档案本体**（``dossier.json``）是目标／现状的真源（11-09）；``plan.md``／
+    # ``progress.md`` 那一对退役了——这一档的契约跟着迁到 ``dossier.json``。
+    (surface / "dossiers" / "projects" / "Aura" / "dossier.json").write_text(
+        json.dumps(
+            {
+                "agent": "Aura",
+                "goal": "把情绪记录做成一个能用的应用。",
+                "status": "上一句还停在九月。",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (surface / "dossiers" / "research" / "SRTP" / "dossier.json").write_text(
+        json.dumps(
+            {
+                "agent": "SRTP",
+                "goal": "把电动装载机那件事做成学位论文。",
+                "status": "在写第三章。",
+            },
+            ensure_ascii=False,
         ),
         encoding="utf-8",
     )
@@ -59,15 +77,15 @@ def roots(tmp_path, monkeypatch):
 
 def test_every_dossier_home_is_now_writable(roots):
     _mind, _vault, _provider = roots
-    assert is_safe_relative("Surface/dossiers/projects/Aura/progress.md") is True
-    assert is_safe_relative("Surface/dossiers/research/SRTP/progress.md") is True
+    assert is_safe_relative("Surface/dossiers/projects/Aura/dossier.json") is True
+    assert is_safe_relative("Surface/dossiers/research/SRTP/dossier.json") is True
     assert is_safe_relative("Surface/dossiers/courses/电工电子学/requirements.md") is True
 
 
 def test_widening_surface_does_not_widen_the_memory_surface(roots):
     _mind, _vault, _provider = roots
     # 记忆的读写只认脑里那几格；人读面再宽也不是记忆区（用户 10-24/25 两次判）。
-    assert is_memory_zone("Surface/dossiers/projects/Aura/progress.md") is False
+    assert is_memory_zone("Surface/dossiers/projects/Aura/dossier.json") is False
     assert is_memory_zone("Surface/notes") is False
     assert is_memory_zone("Mind/wiki/daily/2026-10-25.md") is True
 
@@ -78,12 +96,13 @@ def test_paths_still_refuse_escapes_and_legacy_zones(roots):
         assert is_safe_relative(bad) is False, bad
 
 
-def test_the_four_tools_are_atomic(roots):
+def test_the_tools_are_atomic(roots):
     _mind, _vault, provider = roots
     schemas = provider.get_tool_schemas()
     assert [schema["name"] for schema in schemas] == [
         "surface_read",
         "surface_write",
+        "dossier_write",
         "mind_read",
         "mind_write",
     ]
@@ -94,6 +113,16 @@ def test_the_four_tools_are_atomic(roots):
     for schema in schemas:
         if schema["name"].endswith("_read"):
             assert set(schema["parameters"]["properties"]) == {"path"}
+        elif schema["name"] == "dossier_write":
+            # 档案那把手是**字段级**的：改哪几格由参数说了算。
+            assert set(schema["parameters"]["properties"]) == {
+                "path",
+                "agent",
+                "goal",
+                "status",
+                "stages",
+                "log_append",
+            }
         else:
             assert set(schema["parameters"]["properties"]) == {"path", "content"}
     # 描述里不许出现**退役的旧拼法**（用户 10-29：「不是已经没有 Loom 这个东西了吗」；
@@ -102,12 +131,16 @@ def test_the_four_tools_are_atomic(roots):
     joined = " ".join(str(schema["description"]) for schema in schemas)
     assert "Loom" not in joined
     assert "Vault" not in joined
+    # 档案那把手的描述按 ``dossier.json`` 的形状写：目标／现状／阶段。
+    dossier = next(s for s in schemas if s["name"] == "dossier_write")
+    assert "goal" in dossier["description"] and "status" in dossier["description"]
+    assert "stages" in dossier["description"]
 
 
 def test_surface_read_returns_the_file_or_says_it_is_missing(roots):
     _mind, _vault, provider = roots
 
-    ok = json.loads(provider.handle_tool_call("surface_read", {"path": "Surface/dossiers/projects/Aura/progress.md"}))
+    ok = json.loads(provider.handle_tool_call("surface_read", {"path": "Surface/dossiers/projects/Aura/dossier.json"}))
     assert ok["success"] is True
     assert "上一句还停在九月" in ok["content"]
 
@@ -126,6 +159,8 @@ def test_surface_read_returns_the_file_or_says_it_is_missing(roots):
 def test_surface_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
     _mind, surface, provider = roots
     staged = []
+    target = surface / "dossiers" / "research" / "SRTP" / "dossier.json"
+    before = target.read_bytes()
 
     def fake_stage(self, batch):
         staged.append([request.relative_path for request in batch])
@@ -136,16 +171,20 @@ def test_surface_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, 
 
     result = json.loads(
         provider.handle_tool_call(
-            "surface_write", {"path": "Surface/dossiers/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
+            "surface_write",
+            {
+                "path": "Surface/dossiers/research/SRTP/dossier.json",
+                "content": json.dumps({"agent": "SRTP", "status": "新东西。"}, ensure_ascii=False),
+            },
         )
     )
     assert result["success"] is False
     assert result["staged"] is True
     assert result["pending_id"] == "deadbeef"
     assert "approve" in result["detail"]
-    assert staged == [["Surface/dossiers/research/SRTP/progress.md"]]
-    # 待批就是待批：盘上不许有半个字节
-    assert not (surface / "dossiers" / "research" / "SRTP" / "progress.md").exists()
+    assert staged == [["Surface/dossiers/research/SRTP/dossier.json"]]
+    # 待批就是待批：盘上那一份一个字节都不许动。
+    assert target.read_bytes() == before
 
 
 def test_surface_write_lands_when_the_gate_opens(roots, monkeypatch):
@@ -159,23 +198,37 @@ def test_surface_write_lands_when_the_gate_opens(roots, monkeypatch):
 
     result = json.loads(
         provider.handle_tool_call(
-            "surface_write", {"path": "Surface/dossiers/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
+            "surface_write",
+            {
+                "path": "Surface/dossiers/projects/Aura/dossier.json",
+                "content": json.dumps(
+                    {"agent": "Aura", "goal": "今天写完了。"}, ensure_ascii=False
+                ),
+            },
         )
     )
     assert result["success"] is True, result
-    assert (surface / "dossiers" / "projects" / "Aura" / "progress.md").read_text(encoding="utf-8").startswith("# Aura · 进度")
+    written = (surface / "dossiers" / "projects" / "Aura" / "dossier.json").read_text(encoding="utf-8")
+    assert json.loads(written)["goal"] == "今天写完了。"
 
 
 def test_surface_write_refuses_empty_oversized_and_unknown_tools(roots):
     _mind, _vault, provider = roots
 
-    empty = json.loads(provider.handle_tool_call("surface_write", {"path": "Surface/dossiers/projects/Aura/plan.md", "content": "  "}))
+    empty = json.loads(
+        provider.handle_tool_call(
+            "surface_write", {"path": "Surface/dossiers/projects/Aura/dossier.json", "content": "  "}
+        )
+    )
     assert empty["success"] is False and "non-empty" in empty["error"]
 
     big = json.loads(
         provider.handle_tool_call(
             "surface_write",
-            {"path": "Surface/dossiers/projects/Aura/plan.md", "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1)},
+            {
+                "path": "Surface/dossiers/projects/Aura/dossier.json",
+                "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1),
+            },
         )
     )
     assert big["success"] is False and "too large" in big["error"]
@@ -201,14 +254,28 @@ def test_each_tool_touches_only_its_own_surface(roots):
     cross = [
         ("surface_read", "Mind/wiki/concepts/plobi-gate.md"),
         ("surface_write", "Mind/wiki/concepts/plobi-gate.md"),
-        ("mind_read", "Surface/dossiers/projects/Aura/progress.md"),
-        ("mind_write", "Surface/dossiers/projects/Aura/progress.md"),
+        ("mind_read", "Surface/dossiers/projects/Aura/dossier.json"),
+        ("mind_write", "Surface/dossiers/projects/Aura/dossier.json"),
     ]
     for tool, path in cross:
         result = call(tool, path)
         assert result["success"] is False, (tool, path)
         assert "不在这一枚工具的面里" in result["error"], (tool, result)
         assert "surface_" in result["error"] and "mind_" in result["error"]  # 要说清该用哪一枚
+
+
+def test_dossier_write_only_touches_dossier_records(roots):
+    """档案那把手只认档案本体：脑里的页、人读面别的文件，一律当场拒。"""
+    _mind, _vault, provider = roots
+
+    for path in (
+        "Mind/wiki/concepts/plobi-gate.md",
+        "Surface/dossiers/projects/Aura/plan.md",
+        "Surface/notes/某篇.md",
+    ):
+        result = json.loads(provider.handle_tool_call("dossier_write", {"path": path, "goal": "x"}))
+        assert result["success"] is False, path
+        assert "不是档案本体" in result["error"], (path, result)
 
 
 def test_mind_read_speaks_mind_not_loom(roots):

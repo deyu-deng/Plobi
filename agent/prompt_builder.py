@@ -194,10 +194,13 @@ DOSSIER_GUIDANCE = (
     "read or keep up there anymore.\n"
     "When the user asks where something stands, read the dossier with `surface_read` — its "
     "`status` is the very same summary they see on screen, so use that instead of "
-    "guessing. When you learn something that changes the plan, update that record: read it "
-    "first, keep the keys it already has (and any key you do not recognise), change only "
-    "what actually changed, and write the whole file back with `surface_write`. Mark a "
-    "stage `done` only when it is really finished."
+    "guessing. When you learn something that changes the plan, update that record with "
+    "`dossier_write`: name only the fields that actually changed (`goal`, `status`, the "
+    "whole `stages[]` list, or one paragraph of running history). It keeps every other key "
+    "exactly as it is — including keys you do not recognise — sets `updated` for you, and "
+    "refuses to write anything at all when the shape is wrong. Mark a stage `done` only "
+    "when it is really finished. `surface_write` still works for other files, but for a "
+    "dossier it rewrites the whole record, so prefer `dossier_write`."
 )
 
 SESSION_SEARCH_GUIDANCE = (

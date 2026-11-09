@@ -223,6 +223,87 @@ def update_profile(path: Path, profile: DossierProfile) -> ProfileFile:
     return read_profile(path)
 
 
+def apply_profile_update(
+    path: Path,
+    *,
+    goal: Any = None,
+    status: Any = None,
+    stages: Any = None,
+    log_append: Any = None,
+    today: str = "",
+) -> ProfileFile:
+    """按**字段**改一份档案本体——只改点名的几格，其余原样留着。
+
+    走 :func:`update_profile`：文件里我们不认识的键原样带回（只增不改），落盘原子
+    （临时文件 ＋ ``os.replace``）。``updated`` 由**代码**盖成今天——模型不填日期，
+    免得它把档案的时间写成上周。
+
+    形状不对就在**落盘前**抛 :class:`ProfileError`：盘上那一份一个字节都不动
+    （``stages`` 里有一条缺 ``title`` ⇒ 整次调用失败，不留半份档案）。
+
+    ``stages`` 是**整组替换**：传进来的就是全部阶段，没传进来的那几条等于被删了
+    （要保留的阶段请照原样一起传回来）。
+    """
+    current = read_profile(path)
+    if not current.exists:
+        raise ProfileError(f"{path.name} 还不存在：这份档案还没有建起来（{path}）")
+    if current.error:
+        # 坏文件不许被写回盖掉——盖掉了就是把一份「读不到」说成「什么都没有」。
+        raise ProfileError(f"{path.name} 读不出来：{current.error}——坏文件不许被写回盖掉")
+    profile = current.profile
+    if profile is None:  # pragma: no cover - read_profile 不会这么答
+        raise ProfileError(f"{path.name} 读不出来：档案本体不在预期形状里")
+
+    if goal is not None:
+        profile.goal = _require_text(goal, "goal")
+    if status is not None:
+        profile.status = _require_text(status, "status")
+    if stages is not None:
+        profile.stages = _validated_stages(stages)
+    if log_append is not None:
+        text = _require_text(log_append, "log_append")
+        if text:
+            profile.log = f"{profile.log}\n\n{text}" if profile.log else text
+
+    # 日期由代码盖：模型不填，免得档案的时间停在上一轮。
+    profile.updated = today or date.today().isoformat()
+    return update_profile(path, profile)
+
+
+def _require_text(value: Any, field: str) -> str:
+    """一格文本：类型不对当场说清，不落盘。"""
+    if not isinstance(value, str):
+        raise ProfileError(f"{field} 必须是字符串（收到 {type(value).__name__}）")
+    return value.strip()
+
+
+def _validated_stages(raw: Any) -> list[Stage]:
+    """阶段列表的形状闸：每一条都要 ``id`` ＋ ``title``，``done`` 必须是布尔。
+
+    有一条不合法 ⇒ 整组不合法（抛 :class:`ProfileError`）——半份阶段表比不改更糟。
+    """
+    if not isinstance(raw, list):
+        raise ProfileError(f"stages 必须是数组（收到 {type(raw).__name__}）")
+    stages: list[Stage] = []
+    for index, entry in enumerate(raw, start=1):
+        if not isinstance(entry, dict):
+            raise ProfileError(f"stages 第 {index} 条必须是对象（收到 {type(entry).__name__}）")
+        sid = str(entry.get("id") or "").strip()
+        if not sid:
+            raise ProfileError(f"stages 第 {index} 条缺 id")
+        title = str(entry.get("title") or "").strip()
+        if not title:
+            raise ProfileError(f"stages 第 {index} 条缺 title")
+        done = entry.get("done", False)
+        if not isinstance(done, bool):
+            raise ProfileError(f"stages 第 {index} 条的 done 必须是 true／false")
+        detail = entry.get("detail", "")
+        if not isinstance(detail, str):
+            raise ProfileError(f"stages 第 {index} 条的 detail 必须是字符串")
+        stages.append(Stage(id=sid, title=title, detail=detail.strip(), done=done))
+    return stages
+
+
 def _parse_profile(raw: dict[str, Any]) -> DossierProfile:
     """把文件里的东西收成一份档案。缺字段的补默认，坏的跳过。"""
     registry = raw.get("registry")

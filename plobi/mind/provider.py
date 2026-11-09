@@ -68,13 +68,21 @@ logger = logging.getLogger(__name__)
 # 两对读写工具，一面一对（用户 2026-10-29 拍「读写都给，真对称」）。
 # ``surface_*`` 只碰人读面，``mind_*`` 只碰脑自己那一面；两枚工具各自的面由**工具身份**决定，
 # 不是一颗给模型猜的 ``surface`` 参数（裁 185）。
+#
+# 第三枚 ``dossier_write`` 是**档案本体的结构化编辑手**（11-09）：``surface_write`` 是
+# 整份文件覆盖（模型得自己把整份 JSON 拼回去），而档案是结构化记录——改目标、改现状、
+# 改阶段、追加流水，各改各的格，其余原样留着。它走
+# :func:`plobi.mind.dossier_profile.update_profile`（只增不改 ＋ 原子写），**不过 L1 那道闸**。
 SURFACE_READ_TOOL = "surface_read"
 SURFACE_WRITE_TOOL = "surface_write"
 MIND_READ_TOOL = "mind_read"
 MIND_WRITE_TOOL = "mind_write"
+DOSSIER_WRITE_TOOL = "dossier_write"
 SURFACE_LOGICAL_PREFIX = "Surface/"
 VAULT_READ_MAX_CHARS = 24_000
 VAULT_WRITE_MAX_CHARS = 60_000
+# 档案本体的路径形状：``Surface/dossiers/<类>/<名>/dossier.json``。别的一律不接。
+DOSSIER_PATH_PATTERN = re.compile(r"^Surface/dossiers/[^/]+/[^/]+/dossier\.json$")
 # 盘上没有 ``Mind`` 这一层——脑仓摊平之后顶层就是 ``wiki/ raw/ persona/``（现核）。
 # ``Mind/`` 是**内部与存量**的旧拼法（待批队列、信任账、脑仓自己那份 AGENTS.md 里都写着它），
 # 所以给人和模型看的说法用 ``Mind/``，进 paths 之前在这一格归一；把 ``Mind/`` 全线改名是另一把刀
@@ -99,46 +107,115 @@ def _to_spoken(path: str) -> str:
 MAX_DIGEST_TURNS = 40
 MAX_DIGEST_CHARS_PER_MSG = 1200
 
-# WP-MIND 读接缝：画像/项目状态窄切进上下文（MindReader 已按 4000 字符/文件
-# 截断；这里再按块收紧，保证召回注入永不淹没对话上下文）。
-PROFILE_MAX_CHARS_PER_SECTION = 800
+# WP-MIND 读接缝：画像/档案状态窄切进上下文。
+#
+# 限量口径（11-09，数值都在这里，可调）：
+# * **按类目各自限量**：项目 3 份、研究 2 份。不是拿一个总数去切——项目一多，
+#   研究那两类就一份都进不来（真数据上 research 就 SRTP／Wealth-Lab 两份）。
+# * **当前那一份无条件入选**（它占掉一个名额，类内其余按名字补足）：旗舰项目
+#   不许被字母序切掉（以前按目录名截前 3，``Plobi`` 自己那个项目被切掉了）。
+# * 单档的宽度：目标 200 字 ＋ 现状 320 字；整块封顶 2800 字（窄切不淹上下文）。
 PROFILE_PROJECT_LIMIT = 3
+PROFILE_RESEARCH_LIMIT = 2
+PROFILE_GOAL_MAX_CHARS = 200
+PROFILE_STATUS_MAX_CHARS = 320
+PROFILE_PERSONA_MAX_CHARS = 800
+PROFILE_MAX_TOTAL_CHARS = 2800
+# 阶段那一行（**目标 ＋ 现状 ＋ 阶段**三样都是屏上那张卡有的东西），
+# 宽度按「几个节点 ＋ 正在做那个的标题」算，不把每个节点的 detail 灌进来。
+PROFILE_STAGE_MAX_CHARS = 120
 
 
-def _profile_block(root: Path, *, include_persona: bool = True) -> str:
-    """画像/项目状态的窄切读取（无模型、纯文件）。
+def _clip(text: str, limit: int) -> str:
+    """截到上限，截了要看得出来（尾上那点省略号）。"""
+    flat = (text or "").strip()
+    if len(flat) <= limit:
+        return flat
+    return flat[: max(0, limit - 1)].rstrip() + "…"
 
-    来源：``<MIND_ROOT>/persona/profile.md``（详版画像；用户 10-24：画像不是 skill，是脑的一部分）
-    + ``Surface/dossiers/projects/<项目>/dossier.json``（**档案本体**：现状与目标；
-    MindReader，大写 Plobi 是当前项目写入位）。为空返回
-    ``""``——调用方据此跳过注入，不产生空块。
 
-    ``include_persona=False`` 时只取项目简报、跳过用户画像段：画像已由稳定
-    记忆段 USER PROFILE 承载，两处同时注入构成同源双份（L1 注入审计 P4，
-    2533 字符重叠），prefetch 走窄切只补项目进度，不再重复画像。
+def _stage_line(brief) -> str:
+    """阶段那一行：`阶段：2/4 已完成 · 在做 <标题>`。
+
+    压成一行而不是逐条列：阶段条在屏上是一排节点，灌进上下文的是**走到哪儿了**，
+    不是每个节点的 detail（那要靠 ``dossier_write`` 去看档案本体）。
     """
-    from plobi.mind.reader import MindReader
+    stages = getattr(brief, "stages", None) or []
+    if not stages:
+        return ""
+    total = len(stages)
+    done = getattr(brief, "stages_done", 0)
+    current = getattr(brief, "current_stage", None)
+    piece = f"阶段：{done}/{total} 已完成"
+    if current is not None:
+        title = (getattr(current, "title", "") or "").strip()
+        if title:
+            piece += " · 在做 " + _clip(title, PROFILE_STAGE_MAX_CHARS)
+    return piece
 
-    ctx = MindReader(root).context(project_limit=PROFILE_PROJECT_LIMIT)
+
+def _profile_block(root: Path, *, include_persona: bool = True, current: str = "") -> str:
+    """档案状态的窄切读取（无模型、纯文件）。
+
+    来源：``<MIND_ROOT>/persona/profile.md``（详版画像；用户 10-24：画像不是 skill，
+    是脑的一部分）＋ ``Surface/dossiers/{projects,research}/<档案>/dossier.json``
+    （**档案本体**：目标与现状）。
+
+    **屏上与上下文同一份数据**：屏上那张卡显示的现状（``agent_dossier`` 的 ``summary``
+    那一格）与这里那一段现状读的是同一个 ``dossier.json`` 的 ``status``——不许屏上一套、
+    上下文另一套（两个口径迟早分叉，分叉了模型就在拿一份假现状做判断）。
+
+    **目标与现状都进**（目标在前、现状在后，各带标签）：以前这一格写的是
+    ``brief.status or brief.goal``，而 ``status`` 几乎从不为空 ⇒ 目标那一格永远
+    进不来（模型只看得见"现在怎么样"，看不见"要什么"）。**阶段也进**（压成一行
+    「几个节点、几个做完了、正在做哪个」）——屏上那张卡有阶段条，模型也该看见
+    走到哪儿了；三样（目标／现状／阶段）都出自同一份 ``dossier.json``。
+
+    ``include_persona=False`` 时只取档案段、跳过用户画像段：画像已由稳定记忆段
+    USER PROFILE 承载，两处同时注入构成同源双份（L1 注入审计 P4，2533 字符重叠）。
+    """
+    from plobi.mind.reader import CATEGORY_LABELS, MindReader
+
+    ctx = MindReader(root).context(
+        project_limit=PROFILE_PROJECT_LIMIT,
+        research_limit=PROFILE_RESEARCH_LIMIT,
+        current=current,
+    )
     if ctx.is_empty:
         return ""
 
     sections: List[str] = []
     if include_persona and ctx.persona:
-        persona = ctx.persona.strip()
-        if len(persona) > PROFILE_MAX_CHARS_PER_SECTION:
-            persona = persona[:PROFILE_MAX_CHARS_PER_SECTION].rstrip() + "…"
-        sections.append(f"### 用户画像\n{persona}")
-    for brief in ctx.projects:
-        piece = (brief.status or brief.goal or "").strip()
-        if not piece:
+        sections.append(f"### 用户画像\n{_clip(ctx.persona, PROFILE_PERSONA_MAX_CHARS)}")
+    for brief in ctx.dossiers:
+        label = CATEGORY_LABELS.get(brief.category, brief.category)
+        lines: List[str] = []
+        if brief.goal:
+            lines.append("目标：" + _clip(brief.goal, PROFILE_GOAL_MAX_CHARS))
+        if brief.status:
+            lines.append("现状：" + _clip(brief.status, PROFILE_STATUS_MAX_CHARS))
+        # **阶段**也进（屏上那张卡有阶段条，模型也该看见走到哪儿了）——
+        # 压成一行「几个节点、几个做完了、正在做哪个」，不把每个节点的 detail 灌进来。
+        stage_line = _stage_line(brief)
+        if stage_line:
+            lines.append(stage_line)
+        if not lines:
             continue
-        if len(piece) > PROFILE_MAX_CHARS_PER_SECTION:
-            piece = piece[:PROFILE_MAX_CHARS_PER_SECTION].rstrip() + "…"
-        sections.append(f"### 项目 {brief.name}\n{piece}")
+        sections.append(f"### {label} {brief.name}\n" + "\n".join(lines))
     if not sections:
         return ""
-    return "[Mind 画像]\n" + "\n\n".join(sections)
+
+    # 总量封顶：装不下就整段不再往下加（当前那一份在第一段，永远不会被砍掉）。
+    head = "[Mind 画像]\n"
+    body = ""
+    for section in sections:
+        candidate = f"{body}\n\n{section}" if body else section
+        if body and len(head) + len(candidate) > PROFILE_MAX_TOTAL_CHARS:
+            break
+        body = candidate
+    if not body:
+        return ""
+    return head + body
 
 
 def _resolve_root() -> Path:
@@ -211,6 +288,9 @@ class MindProvider(MemoryProvider):
         self._mind_root: Optional[Path] = None
         self._prefetch_cache: Dict[str, str] = {}
         self._agent_context: str = "primary"
+        # **当前是谁**：会话身份（``agent/agent_init.py`` 传进来的 ``agent_identity``）。
+        # 上下文里"当前那一份档案优先"就靠它——名册上的名字与盘上的目录名可能只差大小写。
+        self._agent_identity: str = ""
         self._agenda_published_date: str = ""
 
     @property
@@ -229,18 +309,24 @@ class MindProvider(MemoryProvider):
         self._mind_root = _resolve_root()
         # cron / flush 等非 primary 上下文不得往 Mind 写运行时摘要。
         self._agent_context = str(kwargs.get("agent_context") or "primary")
+        # 会话身份（每个 Agent 一份）：只用来决定"上下文里当前那一份档案是谁"。
+        self._agent_identity = str(kwargs.get("agent_identity") or "").strip()
         logger.info(
-            "[mind] initialized for session %s (root=%s, context=%s)",
-            session_id, self._mind_root, self._agent_context,
+            "[mind] initialized for session %s (root=%s, context=%s, identity=%s)",
+            session_id, self._mind_root, self._agent_context, self._agent_identity or "-",
         )
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        """两对原子工具：一面一对（WP-MIND-DOSSIER-WRITE；用户 10-29 拍「读写都给，真对称」）。
+        """两对原子工具 ＋ 一把档案编辑手（WP-MIND-DOSSIER-WRITE；用户 10-29 拍「读写都给，真对称」）。
 
         裁定 185：一枚工具只干一件事——所以是 ``surface_read``／``surface_write``／``mind_read``／
         ``mind_write`` 四只手，不是一颗带 ``action`` 或 ``surface`` 的开关：哪一面由**工具身份**决定。
-        写一律走 :class:`MindWriter`，因此过 L1 那道闸：这台 ``mind_write_auto_approve`` 关着时
-        落不了盘，就照实回「已进待批 + id」。
+
+        第五把 ``dossier_write`` 是**档案本体的字段级编辑手**：``surface_write`` 要整份文件
+        覆盖（模型得自己把整份 JSON 拼回去），这把只改点名的几格、其余原样留着。写文件的那两把
+        一律走 :class:`MindWriter`，因此过 L1 那道闸：这台 ``mind_write_auto_approve`` 关着时
+        落不了盘，就照实回「已进待批 + id」；``dossier_write`` 走
+        :func:`plobi.mind.dossier_profile.update_profile`（只增不改 ＋ 原子写），**不过那道闸**。
         """
         return [
             {
@@ -274,10 +360,11 @@ class MindProvider(MemoryProvider):
                     "record is JSON: ``version``, ``agent``, ``title``, ``category``, ``goal``, "
                     "``status`` (one paragraph on where this stands), ``stages`` (each with "
                     "``id``, ``title``, ``detail``, ``done``), ``registry``, ``updated`` and "
-                    "``log`` (the running history). This is how a dossier stays current: read "
-                    "it first, keep every key it already has — including any you do not "
-                    "recognise — change only what actually changed, and write the whole file "
-                    "back with ``updated`` set to today. The old ``plan.md`` / ``progress.md`` "
+                    "``log`` (the running history). To edit a dossier record, prefer "
+                    "``dossier_write``: it changes the fields you name and keeps the rest of "
+                    "the record as it is, while this tool rewrites the whole file — read it "
+                    "first and hand back every key it already has, including any you do not "
+                    "recognise. The old ``plan.md`` / ``progress.md`` "
                     "pair is retired; there is nothing to keep up there. Notes under "
                     "``Surface/notes/`` carry a "
                     "hard contract: frontmatter must carry title, tags and a `belongs` key "
@@ -298,10 +385,93 @@ class MindProvider(MemoryProvider):
                         },
                         "content": {
                             "type": "string",
-                            "description": "The full new contents of that file (markdown).",
+                            "description": (
+                                "The full new contents of that file: markdown for a ``.md`` "
+                                "file, JSON for a ``.json`` file (a dossier record is "
+                                "``dossier.json``)."
+                            ),
                         },
                     },
                     "required": ["path", "content"],
+                },
+            },
+            {
+                "name": DOSSIER_WRITE_TOOL,
+                "description": (
+                    "Edit one dossier record on the human-readable surface — the structured "
+                    "file ``Surface/dossiers/<category>/<name>/dossier.json`` — by LOGICAL path "
+                    "(``path``), or by the dossier's own name (``agent``, e.g. ``Aura``). "
+                    "Name only the fields you are changing: ``goal`` (what this project is "
+                    "for), ``status`` (where it stands now, one paragraph), ``stages`` (the "
+                    "whole stage list — every stage needs ``id`` and ``title``, and ``done`` "
+                    "is true only for a stage that is actually finished; pass every stage, "
+                    "including the ones you are not changing) and ``log_append`` (one "
+                    "paragraph appended to the running history). Every other key in the file "
+                    "is kept exactly as it is, including keys you do not recognise, and "
+                    "``updated`` is set to today for you. The file has to exist and be valid "
+                    "JSON: a broken file is refused, never overwritten, and a stage list with "
+                    "a wrong shape is refused without writing anything. This is the tool for "
+                    "editing a dossier; ``surface_read`` reads one back and ``surface_write`` "
+                    "rewrites a whole file."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Logical path of the dossier record, e.g. "
+                                "Surface/dossiers/projects/Aura/dossier.json"
+                            ),
+                        },
+                        "agent": {
+                            "type": "string",
+                            "description": (
+                                "The dossier's own name instead of its path, e.g. ``Aura``. "
+                                "Give either ``path`` or ``agent``, not both."
+                            ),
+                        },
+                        "goal": {
+                            "type": "string",
+                            "description": (
+                                "The new goal of this project — what it is for. Omit to keep "
+                                "the current one."
+                            ),
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": (
+                                "The new status — where this project stands now, one "
+                                "paragraph. Omit to keep the current one."
+                            ),
+                        },
+                        "stages": {
+                            "type": "array",
+                            "description": (
+                                "The whole stage list, replacing the current one. Each stage "
+                                "needs ``id`` and ``title``; ``done`` is true only for a "
+                                "stage that is really finished."
+                            ),
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "title": {"type": "string"},
+                                    "detail": {"type": "string"},
+                                    "done": {"type": "boolean"},
+                                },
+                                "required": ["id", "title"],
+                            },
+                        },
+                        "log_append": {
+                            "type": "string",
+                            "description": (
+                                "One paragraph appended to the running history. Omit to leave "
+                                "the history alone."
+                            ),
+                        },
+                    },
+                    "required": ["path"],
                 },
             },
             {
@@ -357,14 +527,17 @@ class MindProvider(MemoryProvider):
     # -- model-facing dossier tools (WP-MIND-DOSSIER-WRITE) --------------
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
-        """Serve the four tools; anything else is an explicit no-op.
+        """Serve the tools; anything else is an explicit no-op.
 
-        哪一面由工具身份决定——``surface_*`` 只给人读面，``mind_*`` 只给脑那一面。
+        哪一面由工具身份决定——``surface_*`` 只给人读面，``mind_*`` 只给脑那一面；
+        ``dossier_write`` 是档案本体的结构化编辑手（也只碰人读面那一面）。
         """
         if tool_name == SURFACE_READ_TOOL:
             return json.dumps(self._tool_read(args, (SURFACE_LOGICAL_PREFIX,)), ensure_ascii=False)
         if tool_name == SURFACE_WRITE_TOOL:
             return json.dumps(self._tool_write(args, (SURFACE_LOGICAL_PREFIX,)), ensure_ascii=False)
+        if tool_name == DOSSIER_WRITE_TOOL:
+            return json.dumps(self._tool_dossier_write(args), ensure_ascii=False)
         if tool_name == MIND_READ_TOOL:
             return json.dumps(self._tool_read(args, MEMORY_ZONES), ensure_ascii=False)
         if tool_name == MIND_WRITE_TOOL:
@@ -488,19 +661,141 @@ class MindProvider(MemoryProvider):
             "detail": result.detail or f"{shown} 被写路径的守卫拒了",
         }
 
+    # -- 档案本体的字段级编辑（dossier_write）--------------------------
+
+    def _tool_dossier_write(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """档案本体（``dossier.json``）的**字段级**编辑。
+
+        走 :func:`plobi.mind.dossier_profile.update_profile`：只改点名的几格、文件里
+        我们不认识的键原样留着（只增不改）、落盘原子（临时文件 ＋ ``os.replace``）。
+
+        **不过 L1 那道闸**：这道手是给 Agent 自己维护档案用的（``surface_write`` 是
+        整份文件覆盖，那把手的闸门照旧——闸开着才落盘，闸关着进待批）。
+
+        校验全在**落盘前**：路径形状、文件可解析、字段形状；有一条不合法就报错，
+        盘上那一份**一个字节都不动**。
+        """
+        from plobi.mind import dossier_profile as dp
+        from plobi.mind.paths import (
+            MindUnavailable,
+            UnsafeMindPath,
+            is_safe_relative,
+            require_root,
+            safe_target,
+        )
+
+        payload = args or {}
+        shown = str(payload.get("path") or "").strip().replace("\\", "/")
+        agent = str(payload.get("agent") or "").strip()
+        if not shown and not agent:
+            return {"success": False, "error": "path（或 agent）是必需的：要说清改哪一份档案"}
+
+        try:
+            root = require_root(self._mind_root)
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+
+        if shown:
+            logical = _to_logical(shown)
+            if not DOSSIER_PATH_PATTERN.match(logical):
+                return {
+                    "success": False,
+                    "error": (
+                        f"{shown} 不是档案本体：只认 "
+                        "Surface/dossiers/<类>/<名>/dossier.json 这一种形状。"
+                    ),
+                }
+            if not is_safe_relative(logical):
+                return {"success": False, "error": f"{shown} 不在可写的面里"}
+            try:
+                target = safe_target(root, logical)
+            except UnsafeMindPath as exc:
+                return {"success": False, "error": str(exc)}
+        else:
+            resolved = self._resolve_dossier_by_name(root, agent)
+            if resolved is None:
+                return {
+                    "success": False,
+                    "error": f"名册与盘上都找不到叫 {agent!r} 的档案",
+                }
+            logical, target = resolved
+
+        changes = {
+            key: payload[key]
+            for key in ("goal", "status", "stages", "log_append")
+            if key in payload and payload[key] is not None
+        }
+        if not changes:
+            return {
+                "success": False,
+                "error": "没有要改的格子：至少给 goal／status／stages／log_append 里的一个",
+            }
+
+        try:
+            result = dp.apply_profile_update(target, **changes)
+        except dp.ProfileError as exc:
+            return {"success": False, "path": logical, "error": str(exc)}
+        except OSError as exc:
+            logger.warning("[mind] dossier_write(%s) failed: %s", logical, exc)
+            return {"success": False, "path": logical, "error": f"写不下去：{exc}"}
+
+        profile = result.profile
+        if result.error or profile is None:
+            # 写完读不回来 = 没落成，不许报成功。
+            return {
+                "success": False,
+                "path": logical,
+                "error": result.error or "写完读不回来：盘上那份档案不在预期形状里",
+            }
+        return {
+            "success": True,
+            "path": logical,
+            "updated": profile.updated,
+            "goal": profile.goal,
+            "status": profile.status,
+            "stages": {"done": profile.milestones_done, "total": profile.milestones_total},
+        }
+
+    @staticmethod
+    def _resolve_dossier_by_name(root: Path, name: str) -> Optional[tuple[str, Path]]:
+        """按**名字**找一份档案：先按盘上的目录找，再问名册。
+
+        名册那一格 ``mind_subtree`` 才是"这个名字的档案在哪儿"的权威（名册名与
+        目录名可能只差大小写：名册 ``srtp`` ↔ 目录 ``SRTP``）。
+        """
+        from plobi.mind import dossier_profile as dp
+        from plobi.mind.paths import logical_target, real_target
+        from plobi.mind.reader import DOSSIER_CATEGORIES
+
+        for category, relative in DOSSIER_CATEGORIES:
+            directory = real_target(f"{relative}/{name}", root)
+            if (directory / dp.PROFILE_FILENAME).is_file():
+                return f"{relative}/{name}", directory / dp.PROFILE_FILENAME
+        try:
+            home = dp.home_for_agent(name)
+        except Exception:  # noqa: BLE001 - 名册那一格读不到就当没有
+            home = None
+        if home is not None:
+            path = home / dp.PROFILE_FILENAME
+            if path.is_file():
+                return logical_target(path, root) or "", path
+        return None
+
     # -- recall (per-turn, injected as context) --------------------------
 
     def _profile_summary(self, *, include_persona: bool = True) -> str:
-        """画像摘要（WP-MIND 读接缝）。任何失败都降级为告警 + 空串。
+        """档案摘要（WP-MIND 读接缝）。任何失败都降级为告警 + 空串。
 
-        ``include_persona=False`` 只保留项目简报，画像交给 USER PROFILE 段
+        ``include_persona=False`` 只保留档案段，画像交给 USER PROFILE 段
         （见 :func:`_profile_block`，审计 P4 防双份）。
         """
         try:
             root = _resolve_root()
             if not root.is_dir():
                 return ""
-            return _profile_block(root, include_persona=include_persona)
+            return _profile_block(
+                root, include_persona=include_persona, current=self._agent_identity
+            )
         except Exception as exc:  # noqa: BLE001 - recall must never crash a turn
             logger.warning("[mind] profile summary read failed (non-fatal): %s", exc)
             return ""

@@ -604,6 +604,113 @@ def test_reader_skips_empty_project_dirs(surface):
     assert [p.name for p in MindReader(surface).projects()] == ["Plobi"]
 
 
+def test_reader_covers_projects_and_research(surface):
+    """上下文接**项目 ＋ 研究**两类档案（11-09）。
+
+    研究那一类以前一条都进不来——读侧只认 ``Surface/dossiers/projects``。
+    """
+    research = surface / "Surface" / "dossiers" / "research" / "SRTP"
+    research.mkdir(parents=True)
+    (research / "dossier.json").write_text(
+        '{"agent": "SRTP", "goal": "研究目标", "status": "在写第三章"}', encoding="utf-8"
+    )
+
+    context = MindReader(surface).context()
+
+    assert [b.name for b in context.projects] == ["Plobi"]
+    assert [b.name for b in context.research] == ["SRTP"]
+    assert context.research[0].goal == "研究目标"
+    assert context.research[0].status == "在写第三章"
+
+
+def _add_project(surface, name: str) -> None:
+    directory = surface / "Surface" / "dossiers" / "projects" / name
+    directory.mkdir(parents=True)
+    (directory / "dossier.json").write_text(
+        '{"agent": "%s", "goal": "%s 目标", "status": "%s 现状"}' % (name, name, name),
+        encoding="utf-8",
+    )
+
+
+def test_reader_puts_the_current_dossier_first(surface):
+    """当前那一份**无条件入选**：旗舰项目不许被字母序切掉。"""
+    for name in ("Aura", "Kit", "Nymo"):
+        _add_project(surface, name)
+
+    context = MindReader(surface).context(project_limit=2, current="Plobi")
+
+    # 当前那份第一（它占掉一个名额），其余按名字补足。
+    assert [b.name for b in context.dossiers][:2] == ["Plobi", "Aura"]
+
+
+def test_reader_without_a_current_one_keeps_name_order(surface):
+    for name in ("Aura", "Kit", "Nymo"):
+        _add_project(surface, name)
+
+    context = MindReader(surface).context(project_limit=2)
+
+    assert [b.name for b in context.dossiers][:2] == ["Aura", "Kit"]
+
+
+def test_profile_block_carries_both_goal_and_status(surface):
+    """目标与现状**都**进上下文（目标在前、现状在后，各带标签）。
+
+    以前这一格写的是 ``brief.status or brief.goal``，而 ``status`` 几乎从不为空
+    ⇒ 目标那一格永远进不来（模型只看得见"现在怎么样"，看不见"要什么"）。
+    """
+    from plobi.mind.provider import _profile_block
+
+    block = _profile_block(surface, include_persona=False)
+
+    assert "### 项目 Plobi" in block
+    assert "目标：北极星…" in block
+    assert "现状：M1 进行中" in block
+    assert block.index("目标：") < block.index("现状：")
+
+
+def test_profile_block_carries_the_stages_too(surface):
+    """**阶段**也进上下文（屏上那张卡有阶段条，模型也该看见走到哪儿了）。
+
+    压成一行「几个节点、几个做完了、正在做哪个」——阶段条在屏上是一排节点，
+    灌进上下文的是**走到哪儿了**，不是每个节点的 detail。
+    """
+    from plobi.mind.provider import _profile_block
+
+    (surface / "Surface" / "dossiers" / "projects" / "Plobi" / "dossier.json").write_text(
+        '{"agent": "Plobi", "goal": "北极星…", "status": "M1 进行中", "stages": ['
+        '{"id": "s1", "title": "接线", "done": true},'
+        '{"id": "s2", "title": "MVP 五层闭环跑通", "done": false},'
+        '{"id": "s3", "title": "上架准备", "done": false}]}',
+        encoding="utf-8",
+    )
+
+    block = _profile_block(surface, include_persona=False)
+
+    assert "阶段：1/3 已完成" in block
+    assert "在做 MVP 五层闭环跑通" in block
+    # 三样（目标／现状／阶段）都在，而且顺序是目标 → 现状 → 阶段。
+    assert block.index("目标：") < block.index("现状：") < block.index("阶段：")
+
+
+def test_profile_block_includes_research_and_keeps_the_current_one_first(surface):
+    from plobi.mind.provider import _profile_block
+
+    research = surface / "Surface" / "dossiers" / "research" / "SRTP"
+    research.mkdir(parents=True)
+    (research / "dossier.json").write_text(
+        '{"agent": "SRTP", "goal": "研究目标", "status": "在写第三章"}', encoding="utf-8"
+    )
+    _add_project(surface, "Aura")
+
+    block = _profile_block(surface, include_persona=False, current="Plobi")
+
+    assert "### 研究 SRTP" in block
+    assert "目标：研究目标" in block
+    # 当前那份在第一段（旗舰项目不许被字母序切到后面去）。
+    assert block.index("### 项目 Plobi") < block.index("### 项目 Aura")
+    assert block.index("### 项目 Plobi") < block.index("### 研究 SRTP")
+
+
 # --- agenda digest ----------------------------------------------------------
 
 
