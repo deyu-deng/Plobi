@@ -8773,6 +8773,54 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
 
   mainWindow.webContents.on('unresponsive', () => rememberLog('[renderer] webContents became unresponsive'))
 
+  // ── A white window is a dead renderer, and it must heal itself ──────────
+  // In dev, a half-saved module (an editor writes a file in two steps) makes
+  // vite reload the page; the new module fails to evaluate, and the renderer
+  // sits there **alive but blank**. The crash handler above never fires — the
+  // process is perfectly fine — so nothing reloads it and the window stays
+  // white until someone presses Ctrl+R (measured 2026-11-10, twice in one
+  // afternoon: the page's own client is gone with the crash, so vite's next
+  // successful save never reaches it).
+  //
+  // So ask the page whether it mounted. If it did not, reload it — at most
+  // once every 15 s (a broken build is a normal moment in dev, not a shipped
+  // one, and a shipped one must not become a reload loop).
+  if (!app.isPackaged) {
+    let blankRounds = 0
+    let nextReloadAt = 0
+
+    const blankWatch = setInterval(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) {
+        return
+      }
+
+      void mainWindow.webContents
+        .executeJavaScript('Boolean(document.querySelector("#root") && document.querySelector("#root").firstElementChild)')
+        .then(mounted => {
+          if (mounted) {
+            blankRounds = 0
+            return
+          }
+
+          blankRounds += 1
+          const now = Date.now()
+
+          if (now < nextReloadAt) {
+            return
+          }
+
+          nextReloadAt = now + 15000
+          rememberLog(`[renderer] the page is alive but did not mount (round ${blankRounds}); reloading it`)
+          mainWindow.webContents.reload()
+        })
+        .catch(() => {
+          // the page is mid-navigation — the next round looks again
+        })
+    }, 5000)
+
+    mainWindow.on('closed', () => clearInterval(blankWatch))
+  }
+
   // Electron always passes the event first. The canonical (Electron 36+) shape
   // is (event, messageDetails); the deprecated positional shape is
   // (event, level, message, line, sourceId). Handle both. `level` is numeric
