@@ -178,6 +178,17 @@ def _remember_rejection(rec) -> None:
 def _apply_one(subsystem: str, rec, memory_store):
     payload = rec.get("payload", {})
     try:
+        if subsystem == wa.MEMORY and payload.get("kind") == "note_manage":
+            # 改名／删除这一支：人点了头，这一笔就落。
+            # 走自己的载荷（不走 ``mind_plan``）——那道 ``apply_plan`` 只认 ``MEMORY_ZONES``，
+            # 人读面的 ``Notes/…`` 不在里面。批准的**行为**只有这一处实现。
+            import json as _json
+
+            from plobi.mind import note_manage
+
+            op = note_manage.NoteOp.from_json(_json.dumps(payload.get("op") or {}, ensure_ascii=False))
+            note_manage.apply_op(op)
+            return True, ""
         if subsystem == wa.MEMORY and payload.get("kind") == "mind_plan":
             # 写脑那张计划：点这一下＝「你说的就是这个哈希」。apply_plan 会重新比对象身份、
             # 每档新旧 sha256 与 TTL；过期、人先改过、换了根，都在这儿被拒，不落一个字。

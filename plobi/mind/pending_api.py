@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List
 
@@ -44,6 +45,20 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - 一张读不出来的纸不该拖垮整个列表
             logger.warning("mind pending: plan unreadable (%s)", exc)
             summary = "读不出这张计划"
+    elif kind == "note_manage":
+        # 改名／删除：屏上要看出「要动哪几篇」，所以给的是路径，不是机理论。
+        try:
+            from plobi.mind import note_manage
+
+            op = note_manage.NoteOp.from_json(json.dumps(payload.get("op") or {}, ensure_ascii=False))
+            paths = [change.path for change in getattr(op, "changes", ())] or [op.path]
+            if op.kind == note_manage.RENAME:
+                summary = f"改名 {op.path} → {op.new_path}"
+            else:
+                summary = f"删除 {op.path}"
+        except Exception as exc:  # noqa: BLE001 - 一张读不出来的纸不该拖垮整个列表
+            logger.warning("mind pending: note op unreadable (%s)", exc)
+            summary = "读不出这一笔"
     else:
         # L0 条目（内置记忆）与技能那两类：卡片要能说清"它想记什么/改什么/删什么"，
         # 所以 action 与 old_text 一并给出（屏幕文案自己决定措辞，这里只给事实）。

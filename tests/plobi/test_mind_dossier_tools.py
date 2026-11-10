@@ -1,4 +1,5 @@
-"""九把原子工具：人读面那三样各有各的读写，脑那一面一对，外加一把「列自己名下有哪些笔记」。
+"""十一把原子工具：人读面那三样各有各的读写，脑那一面一对，外加一把「列自己名下有哪些笔记」
+与两把「改名／删除」（这两样**永不自动**）。
 
 用户 2026-10-25：「档案严重过时了……Agent 会自己维护吗？」两答＝给模型一枚写档案的手、
 白名单放开到全部项目与研究。用户 2026-10-29 再拍两问：名字要按读者分，并且**读写都给、
@@ -21,6 +22,7 @@ import pytest
 
 from plobi.mind import provider as provider_module
 from plobi.mind import writer as writer_module
+from tools import write_approval as write_approval_module
 from plobi.mind.paths import is_memory_zone, is_safe_relative
 from plobi.mind.provider import MindProvider
 
@@ -120,6 +122,8 @@ def test_the_tools_are_atomic(roots):
     assert [schema["name"] for schema in schemas] == [
         "note_read",
         "note_write",
+        "note_rename",
+        "note_delete",
         "diary_read",
         "diary_write",
         "dossier_read",
@@ -150,6 +154,11 @@ def test_the_tools_are_atomic(roots):
             }
         elif name == "agent_notes":
             assert set(schema["parameters"]["properties"]) == {"agent"}
+        elif name == "note_rename":
+            # 改名那把只收两个：哪一篇 ＋ 新名字（裁 185：一枚工具只干一件事）。
+            assert set(schema["parameters"]["properties"]) == {"path", "name"}
+        elif name == "note_delete":
+            assert set(schema["parameters"]["properties"]) == {"path"}
         else:
             assert set(schema["parameters"]["properties"]) == {"path", "content"}
     # 描述里不许出现**退役的旧拼法**（用户 10-29：「不是已经没有 Loom 这个东西了吗」；
@@ -199,6 +208,65 @@ def test_dossier_read_returns_the_file_or_says_it_is_missing(roots):
         outside = json.loads(provider.handle_tool_call("dossier_read", {"path": outside_path}))
         assert outside["success"] is False
         assert "Dossiers" in outside["error"]
+
+
+def test_rename_and_delete_always_wait_for_the_user(roots, monkeypatch):
+    """改名与删除：**永不自动**（用户 10-23 四拍：永不自动＝日记＋画像＋删除）。
+
+    Agent 调它们 ⇒ 一律进待批，盘上那一份一个字节都不许动；人点头才落。
+    这两把走自己的载荷（``kind: "note_manage"``）——``mind_plan`` 那条路只认脑里的落点。
+    """
+    _mind, surface, provider = roots
+    monkeypatch.setenv("PLOBI_HOME", str(surface.parent / "home"))
+    staged = []
+
+    def fake_stage(subsystem, payload, *, summary, origin):
+        staged.append((subsystem, payload, summary))
+        return {"id": "cafe1234"}
+
+    monkeypatch.setattr(write_approval_module, "stage_write", fake_stage)
+    target = surface / "notes" / "某主题" / "某篇.md"
+    before = target.read_bytes()
+
+    renamed = json.loads(
+        provider.handle_tool_call(
+            "note_rename", {"path": "Notes/某主题/某篇.md", "name": "新篇"}
+        )
+    )
+    assert renamed["success"] is False
+    assert renamed["staged"] is True
+    assert renamed["pending_id"] == "cafe1234"
+    assert "approve" in renamed["detail"]
+
+    deleted = json.loads(
+        provider.handle_tool_call("note_delete", {"path": "Notes/某主题/某篇.md"})
+    )
+    assert deleted["success"] is False
+    assert deleted["staged"] is True
+
+    # 待批就是待批：盘上那一份一个字节都不许动。
+    assert target.read_bytes() == before
+
+    assert [payload["kind"] for _sub, payload, _summary in staged] == [
+        "note_manage",
+        "note_manage",
+    ]
+    assert staged[0][1]["op"]["kind"] == "rename"
+    assert staged[0][1]["op"]["new_path"].endswith("新篇.md")
+    assert staged[1][1]["op"]["kind"] == "delete"
+    assert staged[1][1]["op"]["trash"].startswith(".trash/")
+
+
+def test_rename_and_delete_refuse_the_other_faces(roots):
+    """一枚工具只碰一类：日记与档案不归笔记那两把。"""
+    _mind, _surface, provider = roots
+    for tool, args in (
+        ("note_rename", {"path": "Diary/2026-11-10-Tuesday.md", "name": "新篇"}),
+        ("note_delete", {"path": "Dossiers/projects/Aura/dossier.json"}),
+    ):
+        result = json.loads(provider.handle_tool_call(tool, args))
+        assert result["success"] is False
+        assert "Notes" in result["error"], result
 
 
 def test_note_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):

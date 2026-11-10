@@ -85,6 +85,12 @@ DOSSIER_WRITE_TOOL = "dossier_write"
 MIND_READ_TOOL = "mind_read"
 MIND_WRITE_TOOL = "mind_write"
 AGENT_NOTES_TOOL = "agent_notes"
+# 改名与删除（用户 11-10 18:4x：「我不能右键标题进行删除或者重命名的操作……
+# 记得 Agent 的笔记相关工具能力也要对称」）——**永不自动**：这两样没有自动档
+# （用户 10-23 四拍：永不自动＝日记＋画像＋删除），Agent 调它们一律进待批，
+# 盘上一个字节不许动；人点头才落。
+NOTE_RENAME_TOOL = "note_rename"
+NOTE_DELETE_TOOL = "note_delete"
 
 # 每把工具**只碰一类**（逻辑前缀；旧写法 ``Surface/…`` 进 paths 之前就归一成这些，
 # 所以模型写旧路径照样能用，只是回话里不再广告那个词）。
@@ -126,7 +132,7 @@ def _to_spoken(path: str) -> str:
 
 # 每把工具越界时的那句提示（说清「该用哪一把」）。
 _FACE_HINTS = {
-    NOTE_PREFIX: "笔记用 `note_read`／`note_write`",
+    NOTE_PREFIX: "笔记用 `note_read`／`note_write`／`note_rename`／`note_delete`",
     DIARY_PREFIX: "日记用 `diary_read`／`diary_write`",
     DOSSIER_PREFIX: "档案用 `dossier_read`／`dossier_write`",
     MIND_FACE: "脑那一面用 `mind_read`／`mind_write`",
@@ -435,6 +441,49 @@ class MindProvider(MemoryProvider):
                 },
             },
             {
+                "name": NOTE_RENAME_TOOL,
+                "description": (
+                    "Rename one note on the human side (``Notes/...``). The file name, the "
+                    "frontmatter title, the top-level heading and every ``[[wikilink]]`` "
+                    "pointing at it move together — the note keeps one name, and the links "
+                    "into it keep working. Give the new name without ``.md`` and without "
+                    "path separators. Never automatic: this always waits for the user's "
+                    "approval, and says so with a pending id."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path of the note, e.g. Notes/<topic>/<title>.md",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The new name (no .md, no path separators).",
+                        },
+                    },
+                    "required": ["path", "name"],
+                },
+            },
+            {
+                "name": NOTE_DELETE_TOOL,
+                "description": (
+                    "Delete one note on the human side (``Notes/...``). It goes to the "
+                    "vault's trash and can be restored from there. Never automatic: this "
+                    "always waits for the user's approval, and says so with a pending id."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path of the note, e.g. Notes/<topic>/<title>.md",
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
                 "name": DIARY_READ_TOOL,
                 "description": (
                     "Read one diary entry on the human side by its LOGICAL path, "
@@ -684,6 +733,10 @@ class MindProvider(MemoryProvider):
             return json.dumps(
                 self._tool_write(args, (NOTE_PREFIX,), _FACE_HINTS[NOTE_PREFIX]), ensure_ascii=False
             )
+        if tool_name == NOTE_RENAME_TOOL:
+            return json.dumps(self._tool_manage(args, "rename"), ensure_ascii=False)
+        if tool_name == NOTE_DELETE_TOOL:
+            return json.dumps(self._tool_manage(args, "delete"), ensure_ascii=False)
         if tool_name == DIARY_READ_TOOL:
             return json.dumps(
                 self._tool_read(args, (DIARY_PREFIX,), _FACE_HINTS[DIARY_PREFIX]), ensure_ascii=False
@@ -828,6 +881,73 @@ class MindProvider(MemoryProvider):
             "path": shown,
             "error": "这一笔没有落盘",
             "detail": result.detail or f"{shown} 被写路径的守卫拒了",
+        }
+
+    def _tool_manage(self, args: Dict[str, Any], kind: str) -> Dict[str, Any]:
+        """改名与删除：**只出计划，永远先问**（用户 10-23：永不自动＝日记＋画像＋删除）。
+
+        屏上那一格（人右键）是直接落盘的；Agent 这一侧不一样——这两样动的是**人的东西**
+        （改一个文件名会牵动指向它的双链，一删就少一篇）⇒ 一律进待批，盘上一个字节不许动。
+
+        走自己的载荷（``kind: "note_manage"``）而不是 L1 那张 ``mind_plan``：
+        ``apply_plan`` 只认 ``MEMORY_ZONES``（用户 10-24／10-25「记忆只落脑」），
+        ``Notes/…`` 不在里面 ⇒ 走那条路，点了头也落不下去。
+
+        批准那一趟由 :func:`plobi_cli.write_approval_commands._apply_one` 里新加的一支执行
+        （批准的**行为**只有一处实现，不在这里另写一遍 apply）。
+        """
+        from plobi.mind import note_manage
+        from plobi.mind.paths import is_safe_relative
+
+        payload = args or {}
+        shown = str(payload.get("path") or "").strip().replace("\\", "/")
+        path = _to_logical(shown)
+        if not path:
+            return {"success": False, "error": "path is required"}
+        off = self._tool_face_guard(path, (NOTE_PREFIX,), _FACE_HINTS[NOTE_PREFIX])
+        if off:
+            return off
+        if not is_safe_relative(path):
+            return {"success": False, "error": f"{shown} 不在这一枚工具的面里"}
+        try:
+            if kind == note_manage.RENAME:
+                name = str(payload.get("name") or "").strip()
+                if not name:
+                    return {"success": False, "error": "name is required"}
+                op = note_manage.plan_rename(path, name)
+            else:
+                op = note_manage.plan_delete(path)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 算不出来也要回话，不能崩掉这一轮
+            logger.warning("[mind] %s(%s) failed: %s", kind, path, exc)
+            return {"success": False, "error": str(exc)}
+
+        from tools import write_approval as wa
+
+        linked = sum(1 for change in getattr(op, "changes", ()) if change.path != op.new_path)
+        if kind == note_manage.RENAME:
+            summary = f"改名 {op.path} → {op.new_path}"
+            if linked:
+                summary += f"（连带 {linked} 篇双链）"
+        else:
+            summary = f"删除 {op.path}（进回收站，可恢复）"
+        record = wa.stage_write(
+            wa.MEMORY,
+            {"kind": "note_manage", "op": json.loads(op.to_json())},
+            summary=summary,
+            origin="foreground",
+        )
+        pending_id = str(record.get("id") or "")
+        return {
+            "success": False,
+            "staged": True,
+            "pending_id": pending_id,
+            "path": shown,
+            "detail": (
+                "这一笔没有落盘：改名与删除永远先问。看：/memory pending · "
+                f"点头：/memory approve {pending_id} · 驳回：/memory reject {pending_id}"
+            ),
         }
 
     # -- 列自己名下有哪些笔记（agent_notes）-----------------------------

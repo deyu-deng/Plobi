@@ -10,6 +10,8 @@
 * ``GET /api/surface/notes`` —— 知识库：全部笔记的元数据
 * ``GET /api/surface/notes/content?path=`` —— 一篇笔记的正文
 * ``PUT /api/surface/notes/content?path=`` —— 人在笔记栏里整篇存回（``create=true`` 时新建）
+* ``POST /api/surface/notes/rename`` —— 给一篇改名：文件名、``title``、正文一级标题与入链一起改
+* ``POST /api/surface/notes/delete`` —— 删一篇：移进 ``.trash/``（可恢复），不是 unlink 掉
 * ``GET /api/surface/diary`` / ``GET /api/surface/diary/{date}`` —— 日记目录与某一天
 * ``PUT /api/surface/diary/{date}`` —— 保存某一天（落盘 + 只提交这一篇）
 
@@ -353,6 +355,77 @@ async def put_surface_note(
         return _error(404, f"note {path!r} does not exist under the notes root")
     try:
         data = await run_in_threadpool(save_note, path, text, base_text=base)
+    except NoteConflict as exc:
+        return _error(409, str(exc))
+    except ValueError as exc:
+        return _error(400, str(exc))
+    except Exception as exc:
+        return _unavailable("notes library", exc)
+    return {"ok": True, "data": data}
+
+
+@router.post("/surface/notes/rename")
+async def rename_surface_note(body: dict = Body(...)):
+    """给人改名：文件名、frontmatter 的 ``title``、正文第一个一级标题，还有别的笔记里
+    指向它的 ``[[双链]]``，一起改。
+
+    404 = 那篇不在；400 = 路径越界、名字不合法或重名；409 = 人在这期间改过它
+    （盘上现状与算计划时对不上，宁可不动）。
+    """
+    from plobi.mind import note_manage
+    from plobi.mind.notes_library import NoteConflict
+
+    payload = body if isinstance(body, dict) else {}
+    path = payload.get("path")
+    name = payload.get("name")
+    if not isinstance(path, str) or not isinstance(name, str) or not path.strip():
+        return _error(400, 'body must be {"path": "Notes/.../x.md", "name": "新名字"}')
+
+    try:
+        state = note_manage.classify_note(path)
+    except Exception as exc:
+        return _unavailable("notes library", exc)
+    if state == "invalid":
+        return _error(400, f"note path {path!r} is outside Notes/ or is not a .md file")
+    if state == "missing":
+        return _error(404, f"note {path!r} does not exist under the notes root")
+
+    try:
+        data = await run_in_threadpool(note_manage.rename_note, path, name)
+    except NoteConflict as exc:
+        return _error(409, str(exc))
+    except ValueError as exc:
+        return _error(400, str(exc))
+    except Exception as exc:
+        return _unavailable("notes library", exc)
+    return {"ok": True, "data": data}
+
+
+@router.post("/surface/notes/delete")
+async def delete_surface_note(body: dict = Body(...)):
+    """删一篇：移进人读面的 ``.trash/``，还能捞回来。
+
+    404 = 那篇不在；409 = 人在这期间改过它（盘上现状与算计划时对不上）。
+    """
+    from plobi.mind import note_manage
+    from plobi.mind.notes_library import NoteConflict
+
+    payload = body if isinstance(body, dict) else {}
+    path = payload.get("path")
+    if not isinstance(path, str) or not path.strip():
+        return _error(400, 'body must be {"path": "Notes/.../x.md"}')
+
+    try:
+        state = note_manage.classify_note(path)
+    except Exception as exc:
+        return _unavailable("notes library", exc)
+    if state == "invalid":
+        return _error(400, f"note path {path!r} is outside Notes/ or is not a .md file")
+    if state == "missing":
+        return _error(404, f"note {path!r} does not exist under the notes root")
+
+    try:
+        data = await run_in_threadpool(note_manage.delete_note, path)
     except NoteConflict as exc:
         return _error(409, str(exc))
     except ValueError as exc:

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from plobi.mind import note_manage as NM
 from plobi.mind import proposal as L1
 from plobi.mind.writer import MindWriter, WriteRequest
 
@@ -81,12 +82,16 @@ def test_one_rejection_falls_back_to_asking(roots):
 
 
 def test_delete_style_ops_have_no_automatic_route_yet(roots):
-    """「删除」这一样：还没有删除操作，等它出现时必须走 never_auto，别自动替用户删东西。
+    """「删除」这一样：它现在**有**那条腿了，但**永不自动**。
 
-    钉的是判据接口，不是行为：`never_auto` 对未知路径返回空串（=可以自动），
-    所以真正拦删除的地方是「writer 里没有 delete 这条腿」。这条测试保证哪天有人加删除，
-    必须同时给 never_auto 加一条，否则这里会红。
+    钉的是判据接口，不是行为。删除与改名住在 ``plobi.mind.note_manage``（人读面那一族），
+    **不是** L1 的写腿 ⇒ ``L1.MODES`` 里仍然只有「写内容」那几种（``Change`` 装上未知模式
+    就报错 ⇒ 删除压根进不了 L1 那条路；``never_auto`` 对未知模式本来就拒）。
+    真正让删除安全的是 note_manage 那一族**没有自动档**：``NEVER_AUTO_KINDS`` 里有它，
+    Agent 调它只会拿到一张待批的纸（用户 10-23：永不自动＝日记＋画像＋删除）。
     """
     assert L1.never_auto("Surface/diary/x.md", "overwrite") == "rewrites-the-user's-own-record"
     assert L1.never_auto("Mind/wiki/daily/a.md", "overwrite") == ""
-    assert "delete" not in L1.MODES, "加了删除操作就得同步给 never_auto 补一条，不能让它自动"
+    assert "delete" not in L1.MODES, "L1 的写腿仍然只写内容——删除走 note_manage 那一族"
+    assert L1.never_auto("Notes/x.md", "delete") != "", "未知模式本来就拒"
+    assert set(NM.NEVER_AUTO_KINDS) >= {"delete", "rename"}, "删除与改名永不自动"
