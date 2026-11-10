@@ -166,7 +166,14 @@ function makeMagpie(platform, write) {
   const rel = requiredMagpieBinary(platform).rel
   const full = path.join(buildDir, rel)
   fs.mkdirSync(path.dirname(full), { recursive: true })
-  if (write) write(full)
+  if (write) {
+    write(full)
+    // fetch-magpie.mjs now names the copy it ships. Without that name the app
+    // cannot tell this installer's build from one downloaded months ago, so a
+    // build tree with a binary and no version.json is exactly what the check
+    // exists to refuse.
+    fs.writeFileSync(path.join(path.dirname(full), 'version.json'), '{"version":"v0.1.3403"}')
+  }
   return { tempRoot, buildDir }
 }
 
@@ -234,6 +241,33 @@ test('checkMagpieBinary accepts the macOS Mach-O build with no extension', () =>
   try {
     assert.deepEqual(checkMagpieBinary(buildDir, 'darwin'), { ok: true, problems: [] })
     assert.match(requiredMagpieBinary('darwin').rel, /magpie[\\/]magpie-cli$/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('checkMagpieBinary fails a binary the build never named', () => {
+  // The 0.3.0 tree has fetched magpie since day one and never wrote a version
+  // beside it, so this is the state a stale checkout packages: a perfectly good
+  // 74 MB binary that the app cannot compare against a downloaded one.
+  const { tempRoot, buildDir } = makeMagpie('win32', full => writeFakeMagpie(full, 'MZ'))
+  try {
+    fs.rmSync(path.join(buildDir, 'magpie', 'version.json'))
+    const result = checkMagpieBinary(buildDir, 'win32')
+    assert.equal(result.ok, false)
+    assert.match(result.error, /version\.json is missing/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('checkMagpieBinary fails a version it cannot compare', () => {
+  const { tempRoot, buildDir } = makeMagpie('win32', full => writeFakeMagpie(full, 'MZ'))
+  try {
+    fs.writeFileSync(path.join(buildDir, 'magpie', 'version.json'), '{"version":"3403"}')
+    const result = checkMagpieBinary(buildDir, 'win32')
+    assert.equal(result.ok, false)
+    assert.match(result.error, /no usable version/)
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }

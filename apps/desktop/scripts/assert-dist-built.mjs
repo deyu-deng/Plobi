@@ -13,7 +13,7 @@
 // inherits it. It fails loud and early instead of shipping a broken bundle.
 // See issues #39484 (renderer blank page) and #41327 / #39472 (dashboard 404).
 
-import { existsSync, statSync, readdirSync, openSync, readSync, closeSync } from "fs"
+import { existsSync, statSync, readdirSync, openSync, readSync, closeSync, readFileSync } from "fs"
 import { join, resolve } from "path"
 import { isMain } from "./utils.mjs"
 import { looksRunnable } from "./build-chatlog.mjs"
@@ -180,6 +180,34 @@ export function checkMagpieBinary(buildDir, platform = process.platform) {
       error: `magpie binary at ${full} is only ${(size / 1048576).toFixed(1)} MB — the pin fetched the wrong thing`,
     }
   }
+
+  // `magpie/version.json` names the copy this installer carries; the runtime
+  // compares it against the pointer in the user's data directory, so a package
+  // shipped without it quietly loses the "a fresh installer beats a stale
+  // download" rule (apps/desktop/electron/magpie-channel.ts, rule 6). The only
+  // way to get here nameless is a build tree fetched before the file existed —
+  // which is exactly the case a rebuild fixes, so say that instead of shipping.
+  const versionFile = join(buildDir, "magpie", "version.json")
+  let named = null
+
+  try {
+    named = JSON.parse(readFileSync(versionFile, "utf8"))
+  } catch {
+    return {
+      ok: false,
+      problems: [{ ...item, full: versionFile, reason: "version.json missing or unreadable" }],
+      error: `magpie/version.json is missing in ${buildDir} — run \`npm run fetch:magpie\` to name the packaged copy`,
+    }
+  }
+
+  if (!named || typeof named.version !== "string" || !/^v\d+\.\d+\.\d+$/.test(named.version)) {
+    return {
+      ok: false,
+      problems: [{ ...item, full: versionFile, reason: `no usable version (${JSON.stringify(named && named.version)})` }],
+      error: `magpie/version.json in ${buildDir} carries no usable version — the app cannot tell a fresh installer from a stale download`,
+    }
+  }
+
   return { ok: true, problems: [] }
 }
 

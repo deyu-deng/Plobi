@@ -79,13 +79,16 @@ test('桌面壳找 bash 的那几处，与后端那几处一样宽', () => {
   }
 })
 
-test('收集脚本钉死版本、且只对 Windows 动手', () => {
+test('收集脚本钉死版本，git/ripgrep 只在 Windows 上收', () => {
   const script = fs.readFileSync(
     path.join(HERE, '..', 'scripts', 'collect-toolchain-bundle.mjs'),
     'utf-8'
   )
 
-  assert.ok(script.includes("process.platform !== 'win32'"), '非 Windows 必须跳过')
+  // 脚本已改成按平台返回资产表（platformAssets），不再是开头一句
+  // `if (process.platform !== 'win32') return` —— 这条断言原先钉的是那个写法，
+  // 重构后仍在钉旧实现，于是别的平台的腿接进来时它就开始红。
+  assert.ok(script.includes("process.platform === 'win32'"), 'Windows 必须单独一支')
   assert.ok(script.includes('PortableGit-'), 'PortableGit 的版本要钉死')
   assert.ok(script.includes('ripgrep-'), 'ripgrep 的版本要钉死')
   assert.ok(script.includes('github.com/git-for-windows/git/releases/download'), '下载地址要写死')

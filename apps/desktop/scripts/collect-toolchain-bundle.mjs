@@ -153,31 +153,100 @@ function say(msg) {
   console.log(`[collect-toolchain-bundle] ${msg}`)
 }
 
-function download(url, dest) {
+/** How long a socket may go quiet before we call the transfer dead. */
+const STALL_MS = 60_000
+/** Attempts per asset; each one resumes from whatever already landed. */
+const ATTEMPTS = 4
+
+/**
+ * Open a URL, following the redirects GitHub sends, and ask for `from` onwards.
+ *
+ * Resume is the whole reason this is not `https.get` + `pipe`: PortableGit is
+ * 60 MB over a link that stalls, and the first version of this file had no
+ * timeout at all — one silent socket left the build staring at a `.part` file
+ * for an hour, and because every attempt restarted from byte 0 the 31 MB that
+ * had arrived were thrown away each time. `req.setTimeout` is a *stall* timer
+ * (nothing arriving), not a deadline: a slow-but-alive transfer is left alone.
+ */
+function openStream(url, from, redirects = 0) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'plobi-desktop-build' } }, res => {
+    if (redirects > 5) {
+      reject(new Error(`too many redirects for ${url}`))
+      return
+    }
+    const headers = { 'User-Agent': 'plobi-desktop-build' }
+    if (from > 0) headers.Range = `bytes=${from}-`
+    const req = https.get(url, { headers }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
-        resolve(download(res.headers.location, dest))
+        openStream(res.headers.location, from, redirects + 1).then(resolve, reject)
         return
       }
-      if (res.statusCode !== 200) {
-        res.resume()
-        reject(new Error(`HTTP ${res.statusCode} for ${url}`))
+      if (res.statusCode === 200 || res.statusCode === 206) {
+        resolve(res)
         return
       }
-      const tmp = `${dest}.part`
-      const out = fs.createWriteStream(tmp)
-      res.pipe(out)
-      out.on('finish', () => {
-        out.close()
-        fs.renameSync(tmp, dest)
-        resolve()
-      })
-      out.on('error', reject)
+      res.resume()
+      reject(new Error(`HTTP ${res.statusCode} for ${url}`))
     })
+    req.setTimeout(STALL_MS, () => req.destroy(new Error(`stalled for ${STALL_MS / 1000}s`)))
     req.on('error', reject)
   })
+}
+
+/** One transfer, resuming from `<dest>.part` when there is something to resume. */
+async function transfer(url, dest) {
+  const tmp = `${dest}.part`
+  const have = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0
+  const res = await openStream(url, have)
+  // A server that ignores Range answers 200 with the whole body: start over
+  // rather than appending a second copy of the file to the first.
+  const resume = res.statusCode === 206 && have > 0
+  const total = Number(res.headers['content-length'] || 0)
+
+  if (resume) {
+    say(`  resuming at ${(have / 1048576).toFixed(1)} MB`)
+  }
+
+  const out = fs.createWriteStream(tmp, { flags: resume ? 'a' : 'w' })
+  let got = 0
+
+  await new Promise((resolve, reject) => {
+    res.on('data', chunk => {
+      got += chunk.length
+    })
+    res.on('error', reject)
+    out.on('error', reject)
+    out.on('finish', resolve)
+    res.pipe(out)
+  })
+
+  if (total > 0 && got !== total) {
+    throw new Error(`short read: ${got} of ${total} bytes`)
+  }
+  if (got === 0) {
+    throw new Error('nothing arrived')
+  }
+
+  fs.renameSync(tmp, dest)
+}
+
+async function download(url, dest) {
+  let lastError = null
+
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
+    try {
+      await transfer(url, dest)
+      return
+    } catch (err) {
+      lastError = err
+      if (attempt === ATTEMPTS) break
+      say(`  attempt ${attempt}/${ATTEMPTS} failed (${err.message}); retrying`)
+      await new Promise(r => setTimeout(r, 2000 * attempt))
+    }
+  }
+
+  throw new Error(`${lastError?.message ?? 'download failed'} (after ${ATTEMPTS} attempts)`)
 }
 
 function sizeMB(file) {
@@ -187,7 +256,14 @@ function sizeMB(file) {
 const ASSETS = platformAssets()
 say(`platform: ${process.platform}/${process.arch} → ${ASSETS.triple}`)
 
-fs.rmSync(OUT_DIR, { recursive: true, force: true })
+// Never wipe the directory by default. An interrupted run leaves finished
+// assets behind (the loop below skips them) and `.part` halves worth resuming;
+// deleting them meant every retry re-fetched ~160 MB because the *last* asset
+// failed. `--force` is the way to ask for a clean slate.
+if (process.argv.includes('--force')) {
+  say('--force: discarding the toolchain already on disk')
+  fs.rmSync(OUT_DIR, { recursive: true, force: true })
+}
 fs.mkdirSync(OUT_DIR, { recursive: true })
 
 const targets = []

@@ -100,6 +100,8 @@ FunctionEnd
 
 !macro customUnInstall
   ; 只摘程序的门牌，不动数据，也不抹掉「数据目录在哪一格」——重装指回同一格，历史还在。
-  DeleteRegKey /ifempty HKCU "Software\Plobi"
+  ; 这句话原先是靠 `DeleteRegKey /ifempty HKCU "Software\Plobi"` 完成的，但 /ifempty 只看
+  ; 子键：DataDir 是值不是子键，于是那一行照样会把路径记忆删掉，卸载后重装默认回到
+  ; %LOCALAPPDATA%\Plobi，D 盘那份库看着就像丢了。别删这个键。
   DeleteRegKey HKCU "Software\Classes\AppUserModelId\com.plobi.desktop"
 !macroend

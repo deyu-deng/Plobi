@@ -99,6 +99,37 @@ function assertCleanWorktree() {
 
 assertCleanWorktree()
 
+// ── Preflight: the toolchain travels in the package ──────────────────────────
+// CPython, uv, Node, PortableGit, ripgrep and ffmpeg are all shipped so that a
+// brand-new machine's first launch downloads nothing (scripts/install.ps1 reads
+// them out of resources/toolchain). The collector used to run in CI only, so a
+// locally built installer quietly shipped an EMPTY toolchain -- the first launch
+// on a fresh machine then fell back to fetching an interpreter, uv, Node and
+// ffmpeg over the network, which on this network means it never gets up.
+// 2026-11-10: build/toolchain held one truncated `.part` file and nothing else,
+// while the build printed no warning at all.
+//
+// The collector is idempotent (it skips assets already on disk), so running it
+// before every package costs a directory listing.
+function collectToolchain() {
+  const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "collect-toolchain-bundle.mjs")
+  const result = spawnSync(process.execPath, [script], { stdio: "inherit" })
+
+  if (result.error) {
+    console.warn(
+      `[run-electron-builder] could not run the toolchain collector (${result.error.message}); ` +
+        "the package may lack the offline toolchain."
+    )
+  } else if (result.status !== 0) {
+    console.warn(
+      "[run-electron-builder] the toolchain collector failed; the package may lack the offline " +
+        "toolchain (first launch would download it)."
+    )
+  }
+}
+
+collectToolchain()
+
 const dist = electronDistDir()
 const args = []
 if (dist && fs.existsSync(distBinary(dist))) {
