@@ -6,7 +6,7 @@
 
 这一刀做的是「抽」的那一半：
 
-* 扫人读面上的 ``Surface/dossiers/<类>/<名>/``，找出还带 ``plan.md`` 的那些档案；
+* 扫人读面上的 ``Dossiers/<类>/<名>/``，找出还带 ``plan.md`` 的那些档案；
 * 把 ``plan.md`` 抽成**目标／现状／阶段／注册表**，把 ``progress.md`` 的正文留成**流水**；
 * 写一份 ``dossier.json``（原子写）。
 
@@ -39,7 +39,7 @@ from plobi.mind.dossier_profile import (  # noqa: E402  (路径要先摆好)
 )
 from plobi.mind.paths import MindUnavailable, real_target  # noqa: E402
 
-DOSSIERS_LOGICAL = "Surface/dossiers"
+DOSSIERS_LOGICAL = "Dossiers"
 # 抽的是「档案状态」那两类：projects 与 research。
 # courses 那两份（requirements／syllabus）是**文档**，不是档案状态 ⇒ 本刀不动。
 MIGRATE_CATEGORIES = ("projects", "research")

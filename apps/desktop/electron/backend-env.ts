@@ -25,6 +25,22 @@ function pathModuleForPlatform(platform = process.platform) {
   return platform === 'win32' ? path.win32 : path.posix
 }
 
+// 人读面那根指针的两个名字：**新名 HUMAN_ROOT 优先**，旧名 SURFACE_ROOT 仍认
+// （兼容期——后端与装订件两套可能只认旧名）。两个都写进后端 env，**值必须一致**。
+const HUMAN_ROOT_ENV = 'HUMAN_ROOT'
+const LEGACY_HUMAN_ROOT_ENV = 'SURFACE_ROOT'
+
+/** 第一个非空（去空白后）的候选值——指针按「新名优先、旧名兜底」取用的那一只。 */
+function firstNonEmpty(values: (string | null | undefined)[]): string {
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (text) {
+      return text
+    }
+  }
+  return ''
+}
+
 function pathEnvKey(env = process.env, platform = process.platform) {
   if (platform !== 'win32') {
     return 'PATH'
@@ -161,7 +177,7 @@ export function dedupeEnvKeys(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * 脑与人读面住哪：env → 注册表 → 什么都不给。
  *
  * 2026-11-07 现核：从**开始菜单**启动的那个 app，它的进程环境是**登录那一刻**的快照；
- * 之后用 `setx` 写进 HKCU 的 MIND_ROOT／SURFACE_ROOT，它一个字都看不见 ⇒ 后端（继承
+ * 之后用 `setx` 写进 HKCU 的 MIND_ROOT／HUMAN_ROOT，它一个字都看不见 ⇒ 后端（继承
  * 这份环境）就按旧串去读脑 ⇒ **开机自启那条路读不到脑**。注册表那份是活的
  * （`readWindowsUserEnvVar` 读的就是 HKCU\Environment）⇒ 这一格按 env → 注册表 的
  * 次序解析，与 PLOBI_HOME 那边同一套口径（见 windows-user-env.ts 的注释与 #45471）。
@@ -192,21 +208,65 @@ export function resolveBrainSurfacePointers({
 } = {}) {
   const out: Record<string, string> = {}
 
-  for (const name of ['MIND_ROOT', 'SURFACE_ROOT']) {
-    const fromEnv = String(currentEnv?.[name] ?? '').trim()
-    const fromRegistry = String(readEnvVar(name, { platform, env: currentEnv }) ?? '').trim()
-    let value = fromEnv || fromRegistry
+  const mind = resolvePointer({
+    names: ['MIND_ROOT'],
+    currentEnv,
+    platform,
+    readEnvVar,
+    exists
+  })
+  if (mind) {
+    out.MIND_ROOT = mind
+  }
 
-    if (fromEnv && fromRegistry && fromRegistry !== fromEnv && !exists(fromEnv) && exists(fromRegistry)) {
-      value = fromRegistry
-    }
-
-    if (value) {
-      out[name] = value
-    }
+  // 人读面那一格有两个名字：**新名 HUMAN_ROOT 优先**，旧名 SURFACE_ROOT 兜底
+  // （兼容期——两套件可能只认旧名）。两个名字写**同一个值**，否则后端按两个
+  // 名字解析出两个家。
+  const human = resolvePointer({
+    names: [HUMAN_ROOT_ENV, LEGACY_HUMAN_ROOT_ENV],
+    currentEnv,
+    platform,
+    readEnvVar,
+    exists
+  })
+  if (human) {
+    out[HUMAN_ROOT_ENV] = human
+    out[LEGACY_HUMAN_ROOT_ENV] = human
   }
 
   return out
+}
+
+/**
+ * 一格指针的值：env → 注册表，**每个来源内部按名字列表取第一个非空**。
+ *
+ * env 与注册表那份不一致时，只有「env 指的那个目录已经不在了」才改读注册表
+ * 那份（长驻进程继承的是登录快照，见本文件上方的口径说明）。
+ */
+function resolvePointer({
+  names,
+  currentEnv,
+  platform,
+  readEnvVar,
+  exists
+}: {
+  names: string[]
+  currentEnv: NodeJS.ProcessEnv
+  platform: NodeJS.Platform
+  readEnvVar: typeof readWindowsUserEnvVar
+  exists: (candidate: string) => boolean
+}) {
+  const fromEnv = firstNonEmpty(names.map((name) => currentEnv?.[name]))
+  const fromRegistry = firstNonEmpty(
+    names.map((name) => readEnvVar(name, { platform, env: currentEnv }))
+  )
+  let value = fromEnv || fromRegistry
+
+  if (fromEnv && fromRegistry && fromRegistry !== fromEnv && !exists(fromEnv) && exists(fromRegistry)) {
+    value = fromRegistry
+  }
+
+  return value
 }
 
 /**
@@ -238,8 +298,32 @@ function deriveBrainSurfacePointers({
 
   return {
     MIND_ROOT: pathModule.join(home, 'mind'),
+    HUMAN_ROOT: home,
     SURFACE_ROOT: home
   }
+}
+
+/**
+ * 人读面那根指针的两个名字**必须同值**：只给了一个（老调用点显式传
+ * `brainSurface` 时会那样）就补上另一个。两个值都在且不一致时以**新名**为准。
+ *
+ * 入参／返回都走 `any`：这份指针的形状本来就随调用点变（老调用点只给旧名），
+ * 把它钉成 `Record<string, string>` 会把 `buildDesktopBackendEnv()` 的返回类型
+ * 从 `any` 收窄成一个固定对象形状 ⇒ 调用点读 `env.MIND_ROOT`／`env.Path` 之类的
+ * 键会变成编译错误。
+ */
+function alignHumanRootNames(values: any): any {
+  const out: Record<string, string> = { ...values }
+  const human = firstNonEmpty([out[HUMAN_ROOT_ENV], out[LEGACY_HUMAN_ROOT_ENV]])
+
+  if (!human) {
+    return out
+  }
+
+  out[HUMAN_ROOT_ENV] = human
+  out[LEGACY_HUMAN_ROOT_ENV] = human
+
+  return out
 }
 
 function buildDesktopBackendEnv({
@@ -269,7 +353,7 @@ function buildDesktopBackendEnv({
   const pointers = home
     ? deriveBrainSurfacePointers({ plobiHome: home, platform, pathModule })
     : resolveBrainSurfacePointers({ currentEnv, platform, ...(readEnvVar ? { readEnvVar } : {}), ...(exists ? { exists } : {}) })
-  const brainSurfaceValues = brainSurface ?? pointers
+  const brainSurfaceValues = alignHumanRootNames(brainSurface ?? pointers)
 
   return {
     PYTHONPATH: appendUniquePathEntries([...pythonPathEntries, currentPythonPath], { delimiter }),

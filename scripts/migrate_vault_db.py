@@ -44,10 +44,11 @@ def get_roots() -> Dict[str, Path]:
 
     **不许手拼字面路径**（``WP-VAULT-MIND-TWOROOT`` 的铁律：手拼路径的假读数正是那一族的成因）。
     一律走被测代码自己的解析函数 ``plobi.mind.paths.real_target``——它认得逻辑前缀
-    ``Surface/...``，并按 ``SURFACE_ROOT``／注册表／家目录的顺序解析。
+    ``Notes/…``／``Dossiers/…``（旧写法 ``Surface/...`` 仍解析），并按
+    ``HUMAN_ROOT``（旧名 ``SURFACE_ROOT`` 仍认）／注册表／家目录的顺序解析。
 
     旧版本这里写的是 ``home / "vault" / ...``，**那个目录在盘上不存在**（数据在
-    ``$SURFACE_ROOT`` 本体的 ``notes/``／``dossiers/``／``diary/`` 底下），
+    ``$HUMAN_ROOT`` 本体的 ``notes/``／``dossiers/``／``diary/`` 底下），
     于是每次扫描都扫到 0 条——那正是"迁移脚本跑完却什么都没迁"的成因。
 
     **跨家边界（用户 11-08 14:5x 拍定：「我们其实不需要把开发版的数据迁移过来。
@@ -65,9 +66,9 @@ def get_roots() -> Dict[str, Path]:
             raise SystemExit(f"无法解析 {logical!r}：{exc}")
 
     roots = {
-        "notes": _target("Surface/notes"),
-        "dossiers": _target("Surface/dossiers"),
-        "diary": _target("Surface/diary"),
+        "notes": _target("Notes"),
+        "dossiers": _target("Dossiers"),
+        "diary": _target("Diary"),
     }
 
     # **硬门：库必须与数据根在同一个家里**（用户 11-08 14:5x 拍定的跨家边界）
@@ -119,7 +120,7 @@ def migrate_notes(roots: Dict[str, Path], dry_run: bool = False) -> int:
         path = note_data.get("path", "")
 
         # Check minimum net chars threshold
-        # **正文按逻辑路径解析**：`build_library()` 给的是逻辑路径（`Surface/notes/...`），
+        # **正文按逻辑路径解析**：`build_library()` 给的是逻辑路径（`Notes/...`），
         # **没有 `fsPath` 这一格**——旧代码读 `note_data.get("fsPath", "")` 拿到空串，
         # 于是 `Path("")` 变成当前目录 `.`，一读就 PermissionError。
         # 落点仍走 `real_target()`，不手拼绝对路径。
@@ -165,7 +166,7 @@ def migrate_notes(roots: Dict[str, Path], dry_run: bool = False) -> int:
 def migrate_dossiers(roots: Dict[str, Path], dry_run: bool = False) -> int:
     """Migrate agent dossiers from filesystem to DB.
 
-    档案也在**人读面**上（``Surface/dossiers/<品类>/<名>/{plan,progress}.md``），
+    档案也在**人读面**上（``Dossiers/<品类>/<名>/{plan,progress}.md``），
     不在脑仓里 —— 所以这里只需要 dossiers 根，不需要 mind 根。
     """
     dossiers_root = roots["dossiers"]

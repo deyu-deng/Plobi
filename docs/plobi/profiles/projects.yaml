@@ -13,7 +13,7 @@ agents:
     profile: default
     provider: moonshot        # e.g. moonshot/kimi-k3
     model: kimi-k3
-    mind_subtree: Surface/projects/Plobi
+    mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-morning-report, plobi-message-digest]
     description: L1 日程秘书 — 统筹、决策、派工、收摘要
 
@@ -25,6 +25,6 @@ agents:
     profile: l2-agenda
     provider: aigw
     model: workbuddy/deepseek-chat
-    mind_subtree: Surface/projects/Plobi
+    mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-l2-resident]
     description: 日程采集 → SQLite → 看板 → 钉钉 闭环

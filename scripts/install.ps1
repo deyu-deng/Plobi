@@ -2414,6 +2414,8 @@ function Set-MindRootEnv {
     # 决定：安装记录 HKCU\Software\Plobi\DataDir（装机版）与 PLOBI_HOME env
     # （开发态）；桌面 spawn 后端时按数据根派生这两格，见
     # apps/desktop/electron/backend-env.ts::deriveBrainSurfacePointers()。
+    # 人读面那一格 2026-11-10 改名 HUMAN_ROOT（旧名 SURFACE_ROOT 仍认）：两个名字
+    # 在本进程里都写同一个值，见下面那段。
     param(
         [Parameter(Mandatory=$true)][string]$PlobiHomePath
     )
@@ -2447,16 +2449,24 @@ function Set-MindRootEnv {
     # 2026-11-03 起人读面**住在家目录本体**（不再有 `<家>\surface` 这一层）：这一格的值
     # 就是家。旧形状（`<家>\surface`）把指针指到一处根本不存在的地方 ⇒ 人读面读不到。
     # 2026-11-08：同样只设进程内 $env，不写用户级（理由见函数开头）。
+    # 2026-11-10：那一格**改名了**——新名 `HUMAN_ROOT`，旧名 `SURFACE_ROOT` 仍认
+    # （兼容期）。两个都写，**值必须一致**：只认旧名的那一套后端/装订件不能因为
+    # 改名就找不到人读面，读到两个不同的家更糟。
     $surfaceRoot = $PlobiHomePath
-    if ($env:SURFACE_ROOT) {
-        Write-Info "SURFACE_ROOT (this process only, already inherited): $env:SURFACE_ROOT"
-        if ($env:SURFACE_ROOT -ne $surfaceRoot) {
-            Write-Info "The human surface pointer in this process is $env:SURFACE_ROOT -- not moving it to $surfaceRoot (repointing it is the user's call)"
+    # 新名优先、旧名兜底：继承来的那一串按 HUMAN_ROOT 优先取。
+    $inheritedHuman = $env:HUMAN_ROOT
+    if ([string]::IsNullOrWhiteSpace($inheritedHuman)) { $inheritedHuman = $env:SURFACE_ROOT }
+    if ($inheritedHuman) {
+        Write-Info "HUMAN_ROOT (this process only, already inherited): $inheritedHuman"
+        if ($inheritedHuman -ne $surfaceRoot) {
+            Write-Info "The human surface pointer in this process is $inheritedHuman -- not moving it to $surfaceRoot (repointing it is the user's call)"
         }
     } else {
-        $env:SURFACE_ROOT = $surfaceRoot
-        Write-Info "SURFACE_ROOT (this process only, user env untouched): $surfaceRoot"
+        $inheritedHuman = $surfaceRoot
+        Write-Info "HUMAN_ROOT (this process only, user env untouched): $surfaceRoot"
     }
+    $env:HUMAN_ROOT = $inheritedHuman
+    $env:SURFACE_ROOT = $inheritedHuman
 
     # 家在，但人读面还没搬进来（dossiers/ notes/ diary/ 三样都还没有）＝ 还没到。
     $hasSurface = $false
@@ -2477,7 +2487,8 @@ function Set-MindRootEnv {
 # 收回的边界只有一条：只删"本次安装记录的数据根本身，或它的 mind / surface 子
 # 目录"——这种值只可能是旧安装器自己写的。指向别处（例如同机开发者手设的
 # D:\Data\AppData\Plobi-Dev）一律不动：那是人的配置，不是安装器的垃圾。
-# 不碰 HKCU\Software\Plobi\DataDir；三个变量都不存在时静默跳过；重复执行无变化。
+# 不碰 HKCU\Software\Plobi\DataDir；这几个变量都不存在时静默跳过；重复执行无变化。
+# HUMAN_ROOT 是 SURFACE_ROOT 的新名（2026-11-10）：指向同一处的也要一并收回。
 
 function Get-LegacyEnvVerdict {
     <#
@@ -2527,7 +2538,7 @@ function Remove-LegacySharedEnvVars {
 
     $store = $script:LegacyEnvStore
     $removedNames = @()
-    foreach ($name in @("PLOBI_HOME", "MIND_ROOT", "SURFACE_ROOT")) {
+    foreach ($name in @("PLOBI_HOME", "MIND_ROOT", "HUMAN_ROOT", "SURFACE_ROOT")) {
         $val = $null
         try { $val = & $store.GetUser $name } catch { continue }
         if ((Get-LegacyEnvVerdict -Value $val -DataRoot $DataRoot) -ne "remove") { continue }
@@ -3973,7 +3984,7 @@ function Get-RecordedDataDir {
       安装器把用户选的数据目录记在 HKCU\Software\Plobi\DataDir（installer.nsh 写、桌面
       electron/main.ts::readInstallerRecordedDataDir() 读、Python 侧
       plobi_constants.py::_install_recorded_data_dir() 读）。这是**唯一**的安装记录，
-      2026-11-08 起不再往 HKCU\Environment 写 PLOBI_HOME/MIND_ROOT/SURFACE_ROOT。
+      2026-11-08 起不再往 HKCU\Environment 写 PLOBI_HOME/MIND_ROOT/HUMAN_ROOT/SURFACE_ROOT。
       读不到 ⇒ ""（老机器 / 非 Windows / 键不存在）。
     #>
     try {

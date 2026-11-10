@@ -7,7 +7,8 @@ that *can* be regenerated. A backup set that skips the irreplaceable repo is not
 a backup set. The brain's location is read from ``MIND_ROOT`` only; nothing in
 this file hardcodes a drive letter.
 
-Since 2026-10-14 the human-facing surface is a repo of its own (``SURFACE_ROOT``)
+Since 2026-10-14 the human-facing surface is a repo of its own (``HUMAN_ROOT``;
+the old name ``SURFACE_ROOT`` is still accepted during the rename period)
 and it is the *more* irreplaceable half — diary, profile and notes, and it is not
 pushed anywhere. Same discipline as the brain: read the env pointer, no guessing
 a fallback location, and a missing pointer is a loud failure, not a skip.
@@ -32,12 +33,24 @@ DESKTOP = CODE.parent
 WORKSPACE = DESKTOP.parent
 
 MIN_ENV_VAR = "MIND_ROOT"
-VAULT_ENV_VAR = "SURFACE_ROOT"
+# 人读面那根指针：**新名 HUMAN_ROOT 优先**，旧名 SURFACE_ROOT 仍认（兼容期）。
+# 两个都空才算没钉 —— 猜一个默认位置正是当初把脑藏进代码仓的成因。
+HUMAN_ROOT_ENV_VAR = "HUMAN_ROOT"
+LEGACY_HUMAN_ROOT_ENV_VAR = "SURFACE_ROOT"
+
+
+def _human_root() -> str:
+    """人读面那根指针的值：新名 ``HUMAN_ROOT`` 优先，旧名 ``SURFACE_ROOT`` 兜底。"""
+    for name in (HUMAN_ROOT_ENV_VAR, LEGACY_HUMAN_ROOT_ENV_VAR):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def repos() -> dict[str, Path | None]:
     mind = os.environ.get(MIN_ENV_VAR, "").strip()
-    surface = os.environ.get(VAULT_ENV_VAR, "").strip()
+    surface = _human_root()
     return {
         "code": CODE,
         "docs": DESKTOP / "Docs",
