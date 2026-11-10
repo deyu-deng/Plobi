@@ -29,6 +29,28 @@ declare global {
       // Used after importing this machine's existing configuration: magpie only
       // reads them at boot, so without this the import looks like it did nothing.
       restartMagpie: () => Promise<{ port: null | number; reason: null | string; started: boolean }>
+      // Sidecar-only update: upstream ships the adapter layer far more often
+      // than Plobi ships an installer, so the sidecar may run a downloaded,
+      // verified build without a new Plobi release. `check` asks upstream for
+      // the latest tag only; `apply` downloads (~74MB), verifies the sha256,
+      // swaps the pointer and restarts the sidecar. Neither ever fires by
+      // itself — both are user-initiated from the gateway menu in the
+      // statusbar, next to the sidecar ledger.
+      checkMagpieUpdate: () => Promise<{
+        ok: boolean
+        running: null | string
+        latest: null | string
+        bytes: number
+        updateAvailable: boolean
+        reason: null | string
+      }>
+      applyMagpieUpdate: () => Promise<{
+        ok: boolean
+        version: null | string
+        started: boolean
+        port: null | number
+        reason: null | string
+      }>
       // Open (or focus) a standalone OS window for a single chat session so
       // the user can work with multiple chats side by side. Returns ok:false
       // with an error code when the sessionId is empty/invalid. `watch` opens

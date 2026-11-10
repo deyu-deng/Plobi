@@ -8,9 +8,11 @@
  *    `scripts/fetch-magpie.mjs` puts the pinned build into `build/magpie/`
  *    before packaging (packaged: `resources/magpie/`, dev: `build/magpie/`), and
  *    that copy is the floor: it is what runs when a downloaded build is absent
- *    or was marked bad. A downloaded build in `<PLOBI_HOME>/magpie/bin/<version>/`
- *    wins over it, and only because `magpie-channel.ts` hashed it against
- *    upstream's `SHA256SUMS` first. A machine that already runs its own magpie
+ *    or was marked bad. A downloaded build in
+ *    `<PLOBI_HOME>/magpie-runtime/bin/<version>/` wins over it, and only because
+ *    `magpie-channel.ts` hashed it against upstream's `SHA256SUMS` first — and
+ *    only when it is *newer* than the packaged copy, which names itself in
+ *    `magpie/version.json`. A machine that already runs its own magpie
  *    must keep running *its* magpie, and we must never quietly attach to it:
  *    that instance is not ours to stop, its data is not ours to read, and its
  *    providers are not the ones we told the gateway about.

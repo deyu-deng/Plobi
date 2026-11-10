@@ -3254,7 +3254,22 @@ export const zh: Translations = {
       switchModel: '切换模型',
       openModelPicker: '打开模型选择器',
       modelTitle: (provider, model) => `模型 · ${provider}: ${model}`,
-      providerModelTitle: (provider, model) => `${provider} · ${model}`
+      providerModelTitle: (provider, model) => `${provider} · ${model}`,
+      // 侧车单独更新：上游适配器层发版比 Plobi 发安装包勤得多。文案只说用户
+      // 关心的两件事——现在跑的是哪一版、有没有新的一版可以换。
+      magpieUpdate: {
+        title: 'magpie 适配器',
+        running: version => `当前 ${version}`,
+        unknown: '版本未知',
+        check: '检查更新',
+        checking: '检查中…',
+        available: version => `可更新到 ${version}`,
+        upToDate: '已是最新',
+        apply: '更新并重启',
+        applying: '正在更新…',
+        applied: version => `已切到 ${version}，适配器已重启`,
+        failed: reason => `未能更新：${reason}`
+      }
     }
   },
 

@@ -12,7 +12,10 @@ import { spawn } from 'node:child_process'
  * Five rules this file keeps:
  *
  * 1. **The packaged copy is the floor, never a casualty.** An update lands in
- *    `<PLOBI_HOME>/magpie/bin/<version>/`; `resources/magpie/` is left alone, so
+ *    `<PLOBI_HOME>/magpie-runtime/bin/<version>/` — beside `magpie/`, never
+ *    inside it: `magpie/` *is* magpie's XDG directory, so a binary in there is
+ *    a 74 MB executable that a backup or a "copy my settings over" would drag
+ *    along; `resources/magpie/` is left alone, so
  *    a downloaded build that cannot start is one pointer file away from being
  *    ignored (开箱即用 + 数据隔离 两条底线).
  * 2. **Nothing is installed that we did not hash.** Upstream publishes
@@ -32,10 +35,26 @@ import { spawn } from 'node:child_process'
  * 5. **A build that failed to start is remembered.** `markBad()` drops a marker
  *    next to it, `resolveUpdatedBuild()` skips it, and the sidecar falls back to
  *    the packaged copy — no update loop, no silent downgrade of the whole app.
+ * 6. **The floor is a real version, not a hope.** `fetch-magpie.mjs` writes
+ *    `version.json` beside the packaged binary, so the copy this installer
+ *    brought is *named*. A build downloaded last month cannot outrank it
+ *    (`resolveUpdatedBuild` compares, `installBuild` refuses to go below), and
+ *    the downgrade a swapped release channel would otherwise pull off dies in
+ *    that same comparison.
+ * 7. **Only the last usable builds stay.** Each version is ~74 MB on disk; once
+ *    a newer one is verified we keep that and one step back for a rollback and
+ *    drop the rest (`pruneOldBuilds`) — a quota adapter is not a version museum.
  */
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+/**
+ * Where this module lives. The electron main is bundled as **ESM**, so there is
+ * no `__dirname` to lean on (same reason `magpie-sidecar.ts` computes it).
+ */
+const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 /** The vendor repo. Also the only place a version literal comes from. */
 export const MAGPIE_UPSTREAM_REPO = 'yetone/magpie'
@@ -55,6 +74,8 @@ export interface MagpieBuild {
 /** What `current.json` records — a build plus when it became current. */
 export interface MagpieCurrent extends MagpieBuild {
   installedAt: string
+  /** Byte length written with the pointer; absent on pointers from before it. */
+  size?: number
 }
 
 /** An upstream release, resolved to the one asset this machine needs. */
@@ -67,9 +88,100 @@ export interface MagpieRelease {
   publishedAt: string
 }
 
-/** `<PLOBI_HOME>/magpie/bin` — the writable home of downloaded builds. */
+/**
+ * `<PLOBI_HOME>/magpie-runtime/bin` — the writable home of downloaded builds.
+ *
+ * Not `<PLOBI_HOME>/magpie/bin`: that directory is magpie's own
+ * `$XDG_CONFIG_HOME/magpie`, i.e. the thing a settings backup copies and the
+ * thing a user pokes at by hand. Binaries live in a sibling so the config volume
+ * holds config and nothing else.
+ */
 export function magpieBinRoot(plobiHome: string): string {
-  return path.join(plobiHome, 'magpie', 'bin')
+  return path.join(plobiHome, 'magpie-runtime', 'bin')
+}
+
+/** `v0.1.3492` > `v0.1.3403`. Anything unversioned compares equal to anything. */
+export function compareMagpieVersion(a: string, b: string): number {
+  if (!VERSION_RE.test(a) || !VERSION_RE.test(b)) {return 0}
+
+  const left = a.slice(1).split('.').map((part) => Number.parseInt(part, 10))
+  const right = b.slice(1).split('.').map((part) => Number.parseInt(part, 10))
+
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) {return left[index] > right[index] ? 1 : -1}
+  }
+
+  return 0
+}
+
+/** The build that shipped inside this app, and where it sits. */
+export interface MagpiePackagedBuild {
+  version: string
+  dir: string
+  binary: string
+  sha256: string | null
+}
+
+/**
+ * Where the packaged copy lives: `resources/magpie` after packaging,
+ * `build/magpie` in a dev tree — the same directory `fetch-magpie.mjs` fills.
+ *
+ * `process.resourcesPath` also exists under plain `electron .`, pointing at
+ * electron's own resources, so the packaged path only wins when it actually
+ * holds a `version.json`.
+ */
+export function packagedMagpieDir(): string {
+  const resources = process.resourcesPath ?? ''
+  const packaged = resources ? path.join(resources, 'magpie') : ''
+
+  if (packaged && fs.existsSync(path.join(packaged, 'version.json'))) {return packaged}
+
+  return path.resolve(HERE, '..', 'build', 'magpie')
+}
+
+/**
+ * Read `<dir>/version.json` — written by `fetch-magpie.mjs` at build time.
+ *
+ * Without it the packaged copy has no name and we cannot tell a fresh installer
+ * from an old one, which is exactly how a downloaded build ends up beating the
+ * copy the user just updated to. Installers built before this file existed have
+ * no `version.json`; that case returns null and callers keep the old behaviour.
+ */
+export function readPackagedBuild(
+  dir: string,
+  platform: NodeJS.Platform = process.platform
+): MagpiePackagedBuild | null {
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8'))
+  } catch {
+    return null
+  }
+
+  if (!parsed || typeof parsed !== 'object') {return null}
+  const value = parsed as Record<string, unknown>
+
+  if (typeof value.version !== 'string' || !VERSION_RE.test(value.version)) {return null}
+
+  const sha256 = typeof value.sha256 === 'string' && SHA256_RE.test(value.sha256) ? value.sha256 : null
+
+  return {
+    version: value.version,
+    dir,
+    binary: path.join(dir, magpieExeName(platform)),
+    sha256
+  }
+}
+
+/** The packaged copy as this process sees it (see `readPackagedBuild`). */
+export function packagedBuild(platform: NodeJS.Platform = process.platform): MagpiePackagedBuild | null {
+  return readPackagedBuild(packagedMagpieDir(), platform)
+}
+
+/** The version the installer pinned — the floor no download may go under. */
+export function packagedFloorVersion(platform: NodeJS.Platform = process.platform): string | null {
+  return packagedBuild(platform)?.version ?? null
 }
 
 /** The executable name we settle on, so the sidecar looks for one name only. */
@@ -134,6 +246,7 @@ export function readCurrent(plobiHome: string): MagpieCurrent | null {
   const value = parsed as Record<string, unknown>
   const { version, binary, sha256 } = value
   const installedAt = typeof value.installedAt === 'string' ? value.installedAt : ''
+  const size = typeof value.size === 'number' && Number.isFinite(value.size) && value.size > 0 ? value.size : 0
 
   if (typeof version !== 'string' || !VERSION_RE.test(version)) {return null}
 
@@ -146,19 +259,43 @@ export function readCurrent(plobiHome: string): MagpieCurrent | null {
   if (fs.existsSync(badMarker(plobiHome, version))) {return null}
 
   try {
-    if (!fs.statSync(binary).isFile()) {return null}
+    const stat = fs.statSync(binary)
+
+    if (!stat.isFile()) {return null}
+    // A truncated download or a swapped binary is not this build, whatever the
+    // pointer claims — the size is the cheap half of the check, the hash the
+    // expensive half we run when we actually install.
+    if (size > 0 && stat.size !== size) {return null}
   } catch {
     return null
   }
 
-  return { version, binary, sha256, installedAt }
+  return { version, binary, sha256, size, installedAt }
 }
 
-/** The downloaded build the sidecar should prefer over the packaged one. */
-export function resolveUpdatedBuild(plobiHome: string): MagpieBuild | null {
+/**
+ * The downloaded build the sidecar should prefer over the packaged one.
+ *
+ * Only when it is genuinely *newer* than the copy this installer carries. The
+ * pointer deliberately survives an app update — that is the whole point of it —
+ * so without this comparison a build pulled two weeks ago would keep running
+ * over the fresh one the user just installed, and the update would look like it
+ * did nothing. A package without `version.json` (built before this file was
+ * written) means "cannot tell", and the pointer keeps winning as it always did.
+ */
+export function resolveUpdatedBuild(
+  plobiHome: string,
+  platform: NodeJS.Platform = process.platform
+): MagpieBuild | null {
   const current = readCurrent(plobiHome)
 
-  return current ? { version: current.version, binary: current.binary, sha256: current.sha256 } : null
+  if (!current) {return null}
+
+  const floor = packagedBuild(platform)
+
+  if (floor && compareMagpieVersion(current.version, floor.version) <= 0) {return null}
+
+  return { version: current.version, binary: current.binary, sha256: current.sha256 }
 }
 
 /**
@@ -380,17 +517,77 @@ function writeJsonAtomic(file: string, value: unknown): void {
 }
 
 /**
+ * Drop version directories beyond the newest few.
+ *
+ * 74 MB per build and nothing ever reaches for an old one: the pointer follows
+ * exactly one version, `markBad` writes inside the version it names. Keeping two
+ * (the one we just installed plus one step back) leaves a rollback with bytes on
+ * disk, while a user who updates for a year does not quietly collect gigabytes.
+ * A directory we cannot delete is left for the next install to collect.
+ */
+export function pruneOldBuilds(plobiHome: string, keepVersion: string, keep = 2): string[] {
+  const root = magpieBinRoot(plobiHome)
+  let entries: fs.Dirent[]
+
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  const versions = entries
+    .filter((entry) => entry.isDirectory() && VERSION_RE.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => compareMagpieVersion(b, a))
+
+  const survivors = new Set<string>([keepVersion])
+
+  for (const version of versions) {
+    if (survivors.size >= Math.max(1, keep)) {break}
+    survivors.add(version)
+  }
+
+  const removed: string[] = []
+
+  for (const version of versions) {
+    if (survivors.has(version)) {continue}
+    try {
+      fs.rmSync(path.join(root, version), { recursive: true, force: true })
+      removed.push(version)
+    } catch {
+      // locked by a running sidecar or a dying virus scanner
+    }
+  }
+
+  return removed
+}
+
+/** Knobs `installBuild` accepts, all optional so the old call sites still read. */
+export interface InstallBuildOptions {
+  /** The packaged version — a download older than this is refused, not installed. */
+  floor?: string | null
+  /** How many version directories to keep on disk afterwards. */
+  keep?: number
+}
+
+/**
  * Install a build and point `current.json` at it. Idempotent: a second call for
  * an already-installed, still-hash-matching version only rewrites the pointer.
  *
  * The order matters. Hash first, rename second, pointer last — so the sidecar
  * can never observe a version it would exec before the bytes are on disk and
  * verified, and a rejected digest leaves the previous pointer untouched.
+ *
+ * `floor` closes the hole the digest cannot: `SHA256SUMS` and the asset come
+ * down the same channel, so a swapped channel serves both a bad binary and a
+ * matching bad digest. A version *older* than the packaged one is not an update
+ * by any reading of the word, so it is refused here.
  */
 export async function installBuild(
   plobiHome: string,
   release: Pick<MagpieRelease, 'version' | 'url' | 'sha256'>,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  options: InstallBuildOptions = {}
 ): Promise<MagpieCurrent> {
   const { version, url } = release
   const sha256 = release.sha256.toLowerCase()
@@ -398,6 +595,10 @@ export async function installBuild(
   if (!VERSION_RE.test(version)) {throw new Error(`not a magpie version: ${version}`)}
 
   if (!SHA256_RE.test(sha256)) {throw new Error(`not a sha256: ${sha256}`)}
+
+  if (options.floor && compareMagpieVersion(version, options.floor) < 0) {
+    throw new Error(`refusing ${version}: older than the packaged ${options.floor}`)
+  }
 
   const dir = path.join(magpieBinRoot(plobiHome), version)
   const binary = path.join(dir, magpieExeName(platform))
@@ -407,8 +608,15 @@ export async function installBuild(
     const existing = await sha256File(binary)
 
     if (existing === sha256) {
-      const current: MagpieCurrent = { version, binary, sha256, installedAt: new Date().toISOString() }
+      const current: MagpieCurrent = {
+        version,
+        binary,
+        sha256,
+        size: fs.statSync(binary).size,
+        installedAt: new Date().toISOString()
+      }
       writeJsonAtomic(currentPointer(plobiHome), current)
+      pruneOldBuilds(plobiHome, version, options.keep)
 
       return current
     }
@@ -443,8 +651,18 @@ export async function installBuild(
     // A fresh install clears the old verdict on this version.
     fs.rmSync(badMarker(plobiHome, version), { force: true })
 
-    const current: MagpieCurrent = { version, binary, sha256, installedAt: new Date().toISOString() }
+    const current: MagpieCurrent = {
+      version,
+      binary,
+      sha256,
+      size: fs.statSync(binary).size,
+      installedAt: new Date().toISOString()
+    }
     writeJsonAtomic(currentPointer(plobiHome), current)
+    // Only after the pointer moved: a half-pruned directory is harmless, but a
+    // pruned directory that was still current would not be. Same reason the
+    // prune runs last rather than as the download starts.
+    pruneOldBuilds(plobiHome, version, options.keep)
 
     return current
   } finally {
@@ -452,25 +670,11 @@ export async function installBuild(
   }
 }
 
-/**
- * Check upstream and install, if there is something newer than `current`.
- *
- * Returns the build that is now current, or null when nothing changed.
- * Deliberately no version comparison here: the caller decides whether to move,
- * so "install the version I was told to" (a rollback, a pinned build) stays
- * expressible.
+/*
+ * There used to be an `updateIfChanged()` here: fetch the latest, install it if
+ * the version string differed. Nothing ever called it — the IPC handler in
+ * `main.ts` does exactly that with a user watching — and keeping a second,
+ * uncalled entry point that downloads 74 MB is how "we never download silently"
+ * quietly stops being true. Check and apply are the two doors; this is neither.
  */
-export async function updateIfChanged(
-  plobiHome: string,
-  currentVersion: string | null,
-  platform: NodeJS.Platform = process.platform,
-  arch: string = process.arch
-): Promise<MagpieCurrent | null> {
-  const latest = await fetchLatestRelease(platform, arch)
 
-  if (!latest) {return null}
-
-  if (currentVersion && latest.version === currentVersion) {return null}
-
-  return installBuild(plobiHome, latest, platform)
-}

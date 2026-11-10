@@ -43,7 +43,14 @@ import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './
 import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
-import { fetchLatestRelease, installBuild, readCurrent, resolveUpdatedBuild } from './magpie-channel'
+import {
+  compareMagpieVersion,
+  fetchLatestRelease,
+  installBuild,
+  packagedFloorVersion,
+  readCurrent,
+  resolveUpdatedBuild
+} from './magpie-channel'
 import { ensureMagpieSidecar, magpieEnv, restartMagpieSidecar, stopMagpieSidecar } from './magpie-sidecar'
 import {
   buildHiddenHandoffLauncher,
@@ -11308,23 +11315,36 @@ ipcMain.handle('plobi:magpie:restart', async () => {
 
 // magpie 的适配器层（各家 provider 的额度形状）随它自己的版本走，上游一天几版，
 // Plobi 不可能跟着一天发一个安装包。所以侧车允许跑一个「我们下载并校验过」的版本，
-// 落在 <PLOBI_HOME>/magpie/bin/<version>/，包内那份退居兜底（起不来就自动退回去，
-// 见 magpie-sidecar 的 fallBackFromUpdate）。
+// 落在 <PLOBI_HOME>/magpie-runtime/bin/<version>/（不放在 <PLOBI_HOME>/magpie 里：
+// 那是 magpie 自己的 XDG 配置目录，备份会连可执行一起卷走），包内那份退居兜底
+// （起不来就自动退回去，见 magpie-sidecar 的 fallBackFromUpdate）。包内副本带
+// version.json，版本更高的包内副本会压住指针，客户端升版不会被旧下载顶住。
 //
 // 这里只提供入口，不自动下载：一次 74MB，静默替用户拉流量不合适，何时更新交给界面。
 ipcMain.handle('plobi:magpie:update:check', async () => {
   try {
-    const current = readCurrent(PLOBI_HOME)
+    // 「当前」不是指针里那个：包内副本更新过之后，指针会被 resolveUpdatedBuild
+    // 压回去（rule 6），界面得显示实际在跑的那个版本，否则升级客户端后按钮还
+    // 提示「可更新到更旧的包内版」。包内没写 version.json 的老构建退回读指针。
+    const floor = packagedFloorVersion()
+    const running = resolveUpdatedBuild(PLOBI_HOME)?.version ?? floor ?? readCurrent(PLOBI_HOME)?.version ?? null
     const latest = await fetchLatestRelease()
+    // 同版本不算更新；比在跑的还旧更不算（rule 7：同一通道被换成旧包时，
+    // 不能让它冒充更新把用户降级）。
+    const updateAvailable = Boolean(latest && (running ? compareMagpieVersion(latest.version, running) > 0 : true))
+    const stale = Boolean(latest && floor && compareMagpieVersion(latest.version, floor) < 0)
 
     return {
       ok: Boolean(latest),
-      running: current?.version ?? null,
+      running,
       latest: latest?.version ?? null,
       bytes: latest?.size ?? 0,
-      // 只有版本号不同才值得下载；同版本重装是浪费流量。
-      updateAvailable: Boolean(latest && latest.version !== current?.version),
-      reason: latest ? null : '上游没有可用的发布（网络不通，或该平台的产物没带上校验和）'
+      updateAvailable,
+      reason: !latest
+        ? '上游没有可用的发布（网络不通，或该平台的产物没带上校验和）'
+        : stale
+          ? `上游发布 ${latest.version} 比包内 ${floor} 还旧，已忽略`
+          : null
     }
   } catch (err) {
     return { ok: false, running: null, latest: null, bytes: 0, updateAvailable: false, reason: String(err) }
@@ -11347,8 +11367,23 @@ ipcMain.handle('plobi:magpie:update:apply', async () => {
         return { ok: false, version: null, started: false, port: null, reason: '上游没有可用的发布' }
       }
 
+      // rule 7：装之前先跟「实际在跑的版本」比一次。同版本重装是白拉 74MB，
+      // 更旧的版本是降级。installBuild 里还有一道 floor 闸，这里给的是人话原因。
+      const floor = packagedFloorVersion()
+      const running = resolveUpdatedBuild(PLOBI_HOME)?.version ?? floor ?? null
+
+      if (running && compareMagpieVersion(latest.version, running) <= 0) {
+        return {
+          ok: true,
+          version: running,
+          started: false,
+          port: null,
+          reason: `当前已经是 ${running}，上游 ${latest.version} 不比它新，没有下载`
+        }
+      }
+
       // 校验不过会在这里抛出去，指针保持不动，旧版本继续跑。
-      await installBuild(PLOBI_HOME, latest)
+      await installBuild(PLOBI_HOME, latest, process.platform, { floor })
 
       // 换完二进制必须重启侧车：它只在启动时加载 plugins/登录态，也不存在热替换这回事。
       // 新版本起不来的话 ensureMagpieSidecar 会标坏它并退回包内版本，所以这里拿到的

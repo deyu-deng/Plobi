@@ -54,9 +54,30 @@ if (!entry) {
 if (!entry.url || !entry.sha256) fail(`the pin's ${key} line has no url/sha256 — refusing to fetch an unpinned binary`)
 const expected = String(entry.sha256).toLowerCase()
 
+/**
+ * Name the copy we are shipping.
+ *
+ * The runtime compares this name against the pointer in the user's data
+ * directory: a build somebody downloaded last month must not outrank the one
+ * this installer carries, and with no version written next to the packaged
+ * binary there is nothing to compare it against. Written on every path — the
+ * "already here" fast exit included — so a build tree pinned before this file
+ * existed picks one up on the next run instead of shipping nameless.
+ */
+function writeVersionFile() {
+  const value = {
+    version: pin.version,
+    asset: entry.asset ?? path.basename(outFile),
+    sha256: expected,
+    target: key
+  }
+  fs.writeFileSync(path.join(outDir, 'version.json'), `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+}
+
 if (!force && fs.existsSync(outFile)) {
   const digest = createHash('sha256').update(fs.readFileSync(outFile)).digest('hex')
   if (digest.toLowerCase() === expected) {
+    writeVersionFile()
     console.log(`[fetch-magpie] already here and matches the pin (${pin.version}, ${key})`)
     process.exit(0)
   }
@@ -76,4 +97,5 @@ if (digest.toLowerCase() !== expected) {
 
 fs.writeFileSync(outFile, bytes)
 if (process.platform !== 'win32') fs.chmodSync(outFile, 0o755)
+writeVersionFile()
 console.log(`[fetch-magpie] ${pin.version} ${key} -> ${outFile} (${bytes.length} bytes, sha256 ok)`)

@@ -2930,7 +2930,21 @@ export const zhHant = defineLocale({
       switchModel: '切換模型',
       openModelPicker: '開啟模型選擇器',
       modelTitle: (provider, model) => `模型 · ${provider}：${model}`,
-      providerModelTitle: (provider, model) => `${provider} · ${model}`
+      providerModelTitle: (provider, model) => `${provider} · ${model}`,
+      // 側車單獨更新：上游適配層發版比 Plobi 發安裝包勤得多。
+      magpieUpdate: {
+        title: 'magpie 適配層',
+        running: version => `目前 ${version}`,
+        unknown: '版本未知',
+        check: '檢查更新',
+        checking: '檢查中…',
+        available: version => `可更新到 ${version}`,
+        upToDate: '已是最新',
+        apply: '更新並重新啟動',
+        applying: '正在更新…',
+        applied: version => `已切到 ${version}，適配器已重新啟動`,
+        failed: reason => `未能更新：${reason}`
+      }
     }
   },
 

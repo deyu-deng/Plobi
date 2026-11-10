@@ -3138,7 +3138,20 @@ export const en: Translations = {
       switchModel: 'Switch model',
       openModelPicker: 'Open model picker',
       modelTitle: (provider, model) => `Model · ${provider}: ${model}`,
-      providerModelTitle: (provider, model) => `${provider} · ${model}`
+      providerModelTitle: (provider, model) => `${provider} · ${model}`,
+      magpieUpdate: {
+        title: 'magpie adapter',
+        running: version => `on ${version}`,
+        unknown: 'version unknown',
+        check: 'Check for updates',
+        checking: 'Checking…',
+        available: version => `${version} available`,
+        upToDate: 'Up to date',
+        apply: 'Update and restart',
+        applying: 'Updating…',
+        applied: version => `Now on ${version}, adapter restarted`,
+        failed: reason => `Update failed: ${reason}`
+      }
     }
   },
 

@@ -3011,7 +3011,20 @@ export const ja = defineLocale({
       switchModel: 'モデルを切り替え',
       openModelPicker: 'モデルピッカーを開く',
       modelTitle: (provider, model) => `モデル · ${provider}: ${model}`,
-      providerModelTitle: (provider, model) => `${provider} · ${model}`
+      providerModelTitle: (provider, model) => `${provider} · ${model}`,
+      magpieUpdate: {
+        title: 'magpie アダプター',
+        running: version => `現在 ${version}`,
+        unknown: 'バージョン不明',
+        check: '更新を確認',
+        checking: '確認中…',
+        available: version => `${version} に更新できます`,
+        upToDate: '最新です',
+        apply: '更新して再起動',
+        applying: '更新中…',
+        applied: version => `${version} に切り替え、アダプターを再起動しました`,
+        failed: reason => `更新できませんでした：${reason}`
+      }
     }
   },
 

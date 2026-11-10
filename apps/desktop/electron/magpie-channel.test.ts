@@ -27,10 +27,26 @@ import {
   magpieAssetName,
   magpieBinRoot,
   markBad,
+  packagedFloorVersion,
   readCurrent,
   resolveUpdatedBuild,
   sha256FromSums
 } from './magpie-channel'
+
+/**
+ * A version that beats whatever this checkout ships in `resources/magpie`.
+ *
+ * `resolveUpdatedBuild` only hands back a downloaded build that is *newer* than
+ * the packaged one, so a hard-coded `v0.1.1002` silently became unreachable the
+ * day `build/magpie/version.json` started naming a real floor (`v0.1.3490`).
+ * Derive the number instead of pinning it: this test is about `markBad`, not
+ * about which build this machine happens to carry.
+ */
+function versionAbovePackagedFloor(step = 1): string {
+  const floor = packagedFloorVersion() ?? 'v0.0.0'
+  const [major, minor, patch] = floor.replace(/^v/, '').split('.').map(Number)
+  return `v${major}.${minor}.${patch + step}`
+}
 
 function tempHome(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-magpie-'))
@@ -149,17 +165,18 @@ test('markBad takes a build out of the running, and the pointer can be cleared',
   const home = tempHome()
   const body = Buffer.from('build that will not start', 'utf8')
   const server = await serveBytes(body)
+  const version = versionAbovePackagedFloor()
 
   try {
-    await installBuild(home, { version: 'v0.1.1002', url: server.url, sha256: digest(body) }, 'win32')
-    assert.equal(resolveUpdatedBuild(home)?.version, 'v0.1.1002')
+    await installBuild(home, { version, url: server.url, sha256: digest(body) }, 'win32')
+    assert.equal(resolveUpdatedBuild(home)?.version, version)
 
-    markBad(home, 'v0.1.1002', 'no answer on 3425 within 8s')
+    markBad(home, version, 'no answer on 3425 within 8s')
 
     assert.equal(readCurrent(home), null, 'a bad build must read as absent')
     assert.equal(resolveUpdatedBuild(home), null)
     // The version directory survives, so we can still look at it.
-    assert.equal(fs.existsSync(path.join(magpieBinRoot(home), 'v0.1.1002', '.bad')), true)
+    assert.equal(fs.existsSync(path.join(magpieBinRoot(home), version, '.bad')), true)
   } finally {
     server.close()
   }
@@ -182,4 +199,81 @@ test('a hand-edited pointer cannot point outside our bin root', async () => {
   )
 
   assert.equal(readCurrent(home), null, 'a path outside <home>/magpie/bin is not executable by us')
+})
+
+test('a download older than the packaged build is refused before any bytes move', async () => {
+  // Upstream can serve any tag it likes; the installer's own copy is a floor.
+  // Without it a user who just upgraded Plobi could be "updated" backwards.
+  const home = tempHome()
+  const body = Buffer.from('older build', 'utf8')
+  const server = await serveBytes(body)
+  try {
+    await assert.rejects(
+      installBuild(home, { version: 'v0.1.3402', url: server.url, sha256: digest(body) }, 'win32', {
+        floor: 'v0.1.3403'
+      }),
+      /older than the packaged v0\.1\.3403/
+    )
+    assert.equal(server.hits(), 0, 'nothing is downloaded once the version is refused')
+    assert.equal(readCurrent(home), null)
+    assert.equal(fs.existsSync(path.join(magpieBinRoot(home), 'v0.1.3402')), false)
+  } finally {
+    server.close()
+  }
+})
+test('installing a build collects the versions nobody can reach any more', async () => {
+  // Each build is ~74 MB and the pointer can only name one, so keeping the rest
+  // is keeping disk. Two stay: the one in use, and one to fall back on.
+  const home = tempHome()
+  const body = Buffer.from('prunable build', 'utf8')
+  const server = await serveBytes(body)
+  try {
+    for (const version of ['v0.1.1000', 'v0.1.1001', 'v0.1.1002']) {
+      await installBuild(home, { version, url: server.url, sha256: digest(body) }, 'win32')
+    }
+    const kept = fs.readdirSync(magpieBinRoot(home)).filter((name) => name.startsWith('v'))
+    assert.deepEqual(kept.sort(), ['v0.1.1001', 'v0.1.1002'])
+    assert.equal(readCurrent(home)?.version, 'v0.1.1002')
+  } finally {
+    server.close()
+  }
+})
+test('readCurrent refuses a binary that no longer matches the size it recorded', async () => {
+  // A half-written or truncated file still hashes differently, but the cheap
+  // check runs first: a pointer whose bytes shrank is not a build we can spawn.
+  const home = tempHome()
+  const body = Buffer.from('build that gets truncated later', 'utf8')
+  const server = await serveBytes(body)
+  try {
+    const installed = await installBuild(home, { version: 'v0.1.1004', url: server.url, sha256: digest(body) }, 'win32')
+    assert.equal(readCurrent(home)?.version, 'v0.1.1004')
+    fs.writeFileSync(installed.binary, Buffer.from('short', 'utf8'))
+    assert.equal(readCurrent(home), null)
+  } finally {
+    server.close()
+  }
+})
+test('a packaged build that moved forward takes over from the pointer', async () => {
+  // The whole point of naming the packaged copy: after a Plobi upgrade the
+  // installer's build is newer than whatever the user downloaded last month.
+  const home = tempHome()
+  const body = Buffer.from('downloaded build', 'utf8')
+  const server = await serveBytes(body)
+  const resources = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-packaged-'))
+  const packaged = path.join(resources, 'magpie')
+  fs.mkdirSync(packaged, { recursive: true })
+  fs.writeFileSync(path.join(packaged, 'magpie-cli.exe'), 'packaged', 'utf8')
+  fs.writeFileSync(path.join(packaged, 'version.json'), JSON.stringify({ version: 'v0.1.3500' }), 'utf8')
+  const restore = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+  Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true })
+  try {
+    await installBuild(home, { version: 'v0.1.3403', url: server.url, sha256: digest(body) }, 'win32')
+    assert.equal(readCurrent(home)?.version, 'v0.1.3403')
+    assert.equal(resolveUpdatedBuild(home, 'win32'), null, 'the packaged build is newer, so nothing downloaded may win')
+  } finally {
+    server.close()
+    if (restore) Object.defineProperty(process, 'resourcesPath', restore)
+    else delete (process as unknown as Record<string, unknown>).resourcesPath
+    fs.rmSync(resources, { recursive: true, force: true })
+  }
 })

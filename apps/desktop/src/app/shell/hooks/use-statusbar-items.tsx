@@ -4,6 +4,7 @@ import { useCallback, useMemo } from 'react'
 import type { CommandCenterSection } from '@/app/command-center'
 import { egressRailItem } from '@/app/shell/egress-panel'
 import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
+import { MagpieUpdateBlock } from '@/app/shell/magpie-update-block'
 import { Codicon } from '@/components/ui/codicon'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import type { DesktopDeferredSubsystem } from '@/global'
@@ -146,6 +147,9 @@ export function useStatusbarItems({
             </ul>
           </div>
         )}
+        {/* 侧车健康条旁边：上面那半截回答「谁没在跑」，这一格回答「跑的是不是
+            最新」。上游适配器层一天几版，换它不该等于换一个 Plobi 安装包。 */}
+        <MagpieUpdateBlock />
       </>
     ),
     [gatewayState, inferenceStatus, openCommandCenterSection, sidecarView, statusSnapshot, t.boot.sidecars]

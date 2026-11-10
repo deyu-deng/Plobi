@@ -2685,6 +2685,28 @@ export interface Translations {
       openModelPicker: string
       modelTitle: (provider: string, model: string) => string
       providerModelTitle: (provider: string, model: string) => string
+      /**
+       * Sidecar-only update: the magpie adapter layer ships upstream far more
+       * often than Plobi ships an installer, so this block (which sits under
+       * the sidecar ledger in the gateway menu) says which build is running and
+       * offers one explicit check / one explicit swap. Wording stays in product
+       * terms — the reader asks "is what I'm running current", not "what does
+       * the release pipeline do".
+       */
+      magpieUpdate: {
+        title: string
+        /** `running` is the build the sidecar is on now. */
+        running: (version: string) => string
+        unknown: string
+        check: string
+        checking: string
+        available: (version: string) => string
+        upToDate: string
+        apply: string
+        applying: string
+        applied: (version: string) => string
+        failed: (reason: string) => string
+      }
     }
   }
 
