@@ -34,7 +34,11 @@ def _make_adapter(routes, **extra_kw) -> WebhookAdapter:
     """Create a WebhookAdapter with the given routes."""
     extra = {"host": "0.0.0.0", "port": 0, "routes": routes}
     extra.update(extra_kw)
-    config = PlatformConfig(enabled=True, extra=extra)
+    # 裁定 215 起默认 observe；这些用例测的是既有自动执行路径，显式声明 auto。
+    config = PlatformConfig(
+        enabled=True,
+        extra={**extra, "trigger_policy": extra.get("trigger_policy", "auto")},
+    )
     return WebhookAdapter(config)
 
 

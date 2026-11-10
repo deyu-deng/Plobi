@@ -167,6 +167,22 @@ class WebhookAdapter(BasePlatformAdapter):
         self._route_processor = WebhookRouteProcessor(
             script_timeout_seconds=self._script_timeout_seconds
         )
+        # 裁定 215 #35：外部事件默认 observe（只记不做），显式 auto 才起 Agent 轮。
+        # route_config.trigger_policy > 平台级 config.extra.trigger_policy > "observe"。
+        self._trigger_policy_default = str(
+            config.extra.get("trigger_policy") or "observe"
+        ).strip().lower()
+        self._trigger_assessor = None
+
+    def set_trigger_assessor(self, assessor) -> None:
+        """注入 Trigger 的第二级判断（裁定 215）。
+
+        ``assess`` 档会调它，签名 ``(route, event_type, prompt, payload) -> bool|str``；
+        返回 ``True``／``"auto"`` 才放行。**没注入时 assess 一律降级为 observe**——
+        webhook 进程不烧 token，也不假装自己做过模型判断；放行后接手的域 Router
+        才是那一跳的语义判断者（递归 Router 模型，裁定 215 #33）。
+        """
+        self._trigger_assessor = assessor
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -735,6 +751,66 @@ class WebhookAdapter(BasePlatformAdapter):
                 {"status": "error", "error": "Delivery failed", "delivery_id": delivery_id},
                 status=502,
             )
+
+        # ── Trigger 两级门（裁定 215 #35） ──
+        # 第一级 Gate 已在上面跑完：HMAC 签名、限流、幂等、events 白名单。
+        # 第二级默认 observe：只落一条「本来会接」的票，不起 Agent 轮。
+        # 只有显式 ``auto``，或 ``assess`` 档里注入的 assessor 放行，才继续往下。
+        policy = str(
+            route_config.get("trigger_policy") or self._trigger_policy_default
+        ).strip().lower()
+        if policy != "auto":
+            approved = False
+            reason = "observe by default"
+            if policy == "assess":
+                if self._trigger_assessor is None:
+                    reason = "no assessor configured"
+                else:
+                    try:
+                        verdict = self._trigger_assessor(
+                            route=route_name,
+                            event_type=event_type,
+                            prompt=prompt,
+                            payload=payload,
+                        )
+                    except Exception:
+                        verdict = None
+                        logger.exception(
+                            "[webhook] trigger assessor failed route=%s", route_name
+                        )
+                    approved = verdict is True or verdict == "auto"
+                    reason = (
+                        "assessor approved" if approved
+                        else "assessor did not approve"
+                    )
+            if not approved:
+                ticket_id = ""
+                try:
+                    from plobi.delegation.tickets import TicketLedger
+
+                    ticket_id = TicketLedger().record_trigger(
+                        route=route_name,
+                        event_type=event_type,
+                        prompt=prompt,
+                        delivery_id=delivery_id,
+                        reason=reason,
+                    )
+                except Exception:
+                    logger.exception("[webhook] could not record observed ticket")
+                logger.info(
+                    "[webhook] observed event=%s route=%s delivery=%s ticket=%s reason=%s",
+                    event_type, route_name, delivery_id, ticket_id, reason,
+                )
+                return web.json_response(
+                    {
+                        "status": "observed",
+                        "ticket_id": ticket_id,
+                        "reason": reason,
+                        "route": route_name,
+                        "delivery_id": delivery_id,
+                    },
+                    status=202,
+                )
 
         # Use delivery_id in session key so concurrent webhooks on the
         # same route get independent agent runs (not queued/interrupted).

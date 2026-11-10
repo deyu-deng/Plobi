@@ -387,10 +387,32 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
 
     reply_to = (get_session_env("PLOBI_AGENT_ID") or "").strip()
 
+    # 裁定 215：外包改成**派发前**预授权票，不再是事后补的追溯票。
+    # 这一发是人（或域 Router）主动调用工具，等于已放行 ⇒ 直接 active；
+    # 外部不可信事件走 webhook 的 observe 门，不经过这里。
+    import dataclasses
+
+    from plobi.delegation.tickets import ACTIVE, TicketLedger
+
+    tickets = TicketLedger()
+    ticket = tickets.open_ticket(
+        parent_agent=reply_to or "l1",
+        leg="offload",
+        goal=task[:120],
+        scope={
+            "allowed_capabilities": ["offload"],
+            "agent": agent_name,
+            "cwd": str(cwd),
+        },
+        triggered_by="offload_tool",
+        status=ACTIVE,
+    )
     result = channel.run_task(task, cwd=cwd, agent=agent_name,
                               permission_mode=args.get("permission_mode") or None,
                               reply_to=reply_to)
-    ledger_row = to_ledger_result(result)
+    # 票号跟着结果走，不扩 RoundLedger.append 的签名（测试里的假 ledger 与老调用方
+    # 都照旧）；真账的 append 会从 result.ticket_id 认出预授权票并替它落终态。
+    ledger_row = dataclasses.replace(to_ledger_result(result), ticket_id=ticket.id)
     RoundLedger().append(ledger_row, brief=task)
 
     detail = getattr(result, "error", "") or ""

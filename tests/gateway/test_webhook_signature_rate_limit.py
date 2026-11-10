@@ -34,7 +34,11 @@ def _make_adapter(routes, rate_limit=5, **extra_kw) -> WebhookAdapter:
         "rate_limit": rate_limit,
     }
     extra.update(extra_kw)
-    config = PlatformConfig(enabled=True, extra=extra)
+    # 裁定 215 起默认 observe；这些用例测的是既有自动执行路径，显式声明 auto。
+    config = PlatformConfig(
+        enabled=True,
+        extra={**extra, "trigger_policy": extra.get("trigger_policy", "auto")},
+    )
     return WebhookAdapter(config)
 
 

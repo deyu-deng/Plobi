@@ -268,6 +268,39 @@ class TicketLedger:
         )
         return ticket.id
 
+    def record_trigger(
+        self,
+        *,
+        route: str,
+        event_type: str,
+        prompt: str,
+        delivery_id: str = "",
+        reason: str = "",
+        parent_agent: str = "l1",
+    ) -> str:
+        """外部事件只记「本来会接」（裁定 215 #35）。
+
+        Gate 规则门（HMAC／限流／幂等／events 白名单）过了才到这里；默认
+        ``observed``，**不起 Agent 轮、不预生成产物**。第二级语义判断由人放行后
+        接手的域 Router 承担，webhook 进程不烧 token，也不假装自己判过。
+        """
+        refs = {
+            "event_type": str(event_type or "")[:80],
+            "delivery_id": str(delivery_id or "")[:120],
+            "prompt_excerpt": str(prompt or "")[:120],
+            "reason": str(reason or "")[:120],
+        }
+        ticket = self.open_ticket(
+            parent_agent=parent_agent,
+            leg="trigger",
+            goal=f"{route}/{event_type}"[:160],
+            scope={"allowed_capabilities": [], "route": str(route or "")},
+            triggered_by=f"webhook:{route}",
+            refs={k: v for k, v in refs.items() if v},
+            status=OBSERVED,
+        )
+        return ticket.id
+
     # -- read ----------------------------------------------------------
 
     def get(self, ticket_id: str) -> Optional[Ticket]:

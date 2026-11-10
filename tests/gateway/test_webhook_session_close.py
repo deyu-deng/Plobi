@@ -35,7 +35,11 @@ from gateway.session import SessionSource, SessionStore
 def _make_adapter(routes, **extra_kw) -> WebhookAdapter:
     extra = {"host": "127.0.0.1", "port": 0, "routes": routes}
     extra.update(extra_kw)
-    config = PlatformConfig(enabled=True, extra=extra)
+    # 裁定 215 起默认 observe；这些用例测的是既有自动执行路径，显式声明 auto。
+    config = PlatformConfig(
+        enabled=True,
+        extra={**extra, "trigger_policy": extra.get("trigger_policy", "auto")},
+    )
     return WebhookAdapter(config)
 
 

@@ -58,7 +58,11 @@ def _make_config(
     }
     if secret:
         extra["secret"] = secret
-    return PlatformConfig(enabled=True, extra=extra)
+    # 裁定 215 起默认 observe；这些用例测的是既有自动执行路径，显式声明 auto。
+    return PlatformConfig(
+        enabled=True,
+        extra={**extra, "trigger_policy": extra.get("trigger_policy", "auto")},
+    )
 
 
 def _make_adapter(routes=None, **kwargs):
