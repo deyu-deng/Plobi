@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import concurrent.futures as _cf
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agent.web_search_provider import WebSearchProvider
 
@@ -28,6 +28,21 @@ logger = logging.getLogger(__name__)
 _SEARCH_TIMEOUT_SECS = 30
 
 
+def _exit_proxy() -> Optional[str]:
+    """这一条搜索走哪条出口。
+
+    仓里**只有一条**代理解析器（``agent.process_bootstrap._get_proxy_for_base_url``）：
+    表里有规则就用表里的答案，表里没规则就用环境变量。
+    这里**不自己再读一遍表**——第二个窄读者就是「代理修好了却在某个调用方没生效」的开始（裁定 94）。
+
+    问的是「没有指定目的地时该给哪条出口」（表里那条兜底规则）而不是某个具体域名：
+    ddgs 一次搜索会打不止一个域名（它自己有多引擎重试），按域名问会得到一半直连一半代理的答案。
+    """
+    from agent.process_bootstrap import _get_proxy_for_base_url
+
+    return _get_proxy_for_base_url(None)
+
+
 def _run_ddgs_search(query: str, safe_limit: int) -> list[dict[str, Any]]:
     """Run the blocking ddgs query and return normalized hits.
 
@@ -39,7 +54,7 @@ def _run_ddgs_search(query: str, safe_limit: int) -> list[dict[str, Any]]:
     from ddgs import DDGS  # type: ignore
 
     results: list[dict[str, Any]] = []
-    with DDGS(timeout=10) as client:
+    with DDGS(timeout=10, proxy=_exit_proxy()) as client:
         for i, hit in enumerate(client.text(query, max_results=safe_limit)):
             if i >= safe_limit:
                 break
