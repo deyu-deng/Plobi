@@ -1,11 +1,16 @@
-import { type ComponentProps, type ElementType, type FC, useEffect, useMemo, useRef } from 'react'
+import { type ComponentProps, type ElementType, type FC, useEffect, useMemo, useRef, useState } from 'react'
+import remarkGfm from 'remark-gfm'
 import { Streamdown } from 'streamdown'
 
 import { ExternalLink, ExternalLinkIcon } from '@/lib/external-link'
+import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { cn } from '@/lib/utils'
 
 import { findAnchor } from './anchor'
+import { decodeAssetSrc, isImageTarget, isRemoteAsset, loadNoteAssetDataUrl } from './note-media'
+import { NoteMermaid } from './note-mermaid'
 import { parseOutline, stripFrontmatter } from './outline'
+import { remarkNoteImages } from './remark-note-images'
 import { remarkWikilink } from './remark-wikilink'
 import { buildNoteLinkIndex, type NoteLinkIndex } from './wikilink'
 
@@ -34,6 +39,36 @@ const TAG_CLASSES = {
   ul: 'mb-3 list-disc pl-5 last:mb-0'
 } as const
 
+/**
+ * 公式插件（KaTeX）。
+ *
+ * 与聊天、文件预览**同一份实现**（`@/lib/katex-memo`）——那三处必须口径一致，
+ * 不许笔记这边另起一套（纪律 3.3「不新 REST／不另起一套」）。
+ *
+ * 模块级建一次：插件除了自己的 LRU 之外是无状态的，每次渲染重建只是白建。
+ * `singleDollarTextMath: true` ⇒ `$x$` 也当行内公式（与聊天、预览同口径）。
+ */
+const MATH_PLUGIN = createMemoizedMathPlugin({ singleDollarTextMath: true })
+
+/**
+ * Streamdown 的插件与 remark 插件链（模块级建一次，别每次渲染重建）。
+ *
+ * ⚠️ **`remarkPlugins` 一旦传就是**整个替换**默认那一份**（不是合并）——
+ * Streamdown 默认是 `[remarkGfm, codeMeta]`，我们这一侧原来只传了
+ * `[remarkWikilink]`，于是 **GFM 被顺带关掉了**：表格、任务列表、删除线全成
+ * 原样文字，`MarkdownTable` 那个组件成了死代码。⇒ 这里**必须把 gfm 带上**。
+ *
+ * `renderers` 按语言名匹配代码块 ⇒ ` ```mermaid ` 走我们那份渲染器出图，
+ * 而不用去覆盖 `code`／`pre` 组件（覆盖了就把普通代码块的既有形状也搭进去）。
+ */
+const NOTE_PLUGINS = {
+  math: MATH_PLUGIN,
+  renderers: [{ component: NoteMermaid, language: 'mermaid' }]
+}
+
+const NOTE_REMARK_PLUGINS = [remarkGfm, remarkNoteImages, remarkWikilink]
+
+
 function tagged<T extends keyof typeof TAG_CLASSES>(Tag: T) {
   const Component = (({ className, ...rest }: ComponentProps<T>) => {
     const Element = Tag as ElementType
@@ -55,6 +90,18 @@ function MarkdownTable({ className, ...rest }: ComponentProps<'table'>) {
       <table className={cn('w-full border-collapse [&_tr]:border-b [&_tr]:border-border/50 last:[&_tr]:border-0', className)} {...rest} />
     </div>
   )
+}
+
+/**
+ * 列表项：任务列表（`- [ ]`）不要那个圆点标记。
+ *
+ * GFM 的任务列表会带 `task-list-item` 类；不摘掉标记的话，勾选框左边还杵着
+ * 一个圆点，看着像两个东西。
+ */
+function MarkdownListItem({ className, ...rest }: ComponentProps<'li'>) {
+  const task = /task-list-item/.test(className ?? '')
+
+  return <li className={cn(task ? 'list-none' : 'marker:text-muted-foreground/60', className)} {...rest} />
 }
 
 /**
@@ -103,6 +150,10 @@ const LINK_BROKEN = 'cursor-default text-(--ui-text-tertiary) decoration-(--ui-t
 
 export interface NoteMarkdownProps {
   className?: string
+  /** 笔记库根（盘上绝对路径）：相对图片路径不许越出它。 */
+  assetRoot?: string
+  /** 这篇笔记自己的目录：相对路径先从这里找。 */
+  baseDir?: string
   /** 库里有哪些笔记——用来判断 `[[CATIA]]` 能不能跳。 */
   linkIndex?: NoteLinkIndex
   /** 同文件锚点跳转：传当前渲染容器的 ref 就行，插件在内部找元素。 */
@@ -112,7 +163,15 @@ export interface NoteMarkdownProps {
   text: string
 }
 
-export function NoteMarkdown({ className, linkIndex, onOpenAnchor, onOpenNote, text }: NoteMarkdownProps) {
+export function NoteMarkdown({
+  assetRoot,
+  baseDir,
+  className,
+  linkIndex,
+  onOpenAnchor,
+  onOpenNote,
+  text
+}: NoteMarkdownProps) {
   const ref = useRef<HTMLDivElement>(null)
   const clean = useMemo(() => stripFrontmatter(text), [text])
   const outline = useMemo(() => parseOutline(text), [text])
@@ -128,6 +187,87 @@ export function NoteMarkdown({ className, linkIndex, onOpenAnchor, onOpenNote, t
   }, [clean, outline])
 
   const components = useMemo(() => {
+    /**
+     * 笔记里的一张本地图片。
+     *
+     * `target` 是用户写的那串引用（`图.png`／`attachments/图.png`）。按
+     * 「笔记同目录 → 同目录的 attachments/ → 库根」去盘上找，读成 data URL ——
+     * 渲染进程的基址不是笔记库，相对路径交给浏览器一定是碎图。
+     *
+     * 读不到就**照实说**：落回一枚带文件名的占位，不拿碎图标糊过去。
+     */
+    const NoteImage = ({ alt, target, width }: { alt?: string; target: string; width?: string }) => {
+      const [dataUrl, setDataUrl] = useState<string | null>(null)
+      const [missing, setMissing] = useState(false)
+      const remote = isRemoteAsset(target)
+
+      useEffect(() => {
+        if (remote) {
+          setDataUrl(null)
+          setMissing(false)
+
+          return
+        }
+
+        let alive = true
+
+        setDataUrl(null)
+        setMissing(false)
+
+        void loadNoteAssetDataUrl(assetRoot, baseDir, target).then(url => {
+          if (!alive) return
+          if (url) {
+            setDataUrl(url)
+          } else {
+            setMissing(true)
+          }
+        })
+
+        return () => {
+          alive = false
+        }
+      }, [target, assetRoot, baseDir, remote])
+
+      const label = alt || target || '图片'
+
+      if (remote) {
+        return <img alt={label} className="my-2 block max-w-full rounded-lg" src={target} style={width ? { width } : undefined} />
+      }
+
+      if (missing) {
+        return (
+          <span
+            className="my-2 inline-flex items-center gap-1 rounded border border-(--ui-stroke-tertiary) px-1.5 py-px align-baseline text-[0.7rem] text-(--ui-text-tertiary)"
+            title={target}
+          >
+            {label}
+          </span>
+        )
+      }
+
+      if (!dataUrl) {
+        return <span className="my-2 block h-24 w-48 animate-pulse rounded-md bg-muted" />
+      }
+
+      return <img alt={label} className="my-2 block max-w-full rounded-lg" src={dataUrl} style={width ? { width } : undefined} />
+    }
+
+    /**
+     * Markdown 的图片标签。
+     *
+     * 本地引用在 remark 那层已经被编成 `streamdown:`（见 `remark-note-images.ts`），
+     * 这里解回来交给 `NoteImage` 去盘上找；不是本地引用（外链）就原样给浏览器。
+     */
+    const MarkdownImage = ({ alt, src, className, ...rest }: ComponentProps<'img'>) => {
+      const target = decodeAssetSrc(src)
+
+      if (target === null) {
+        return <img alt={alt ?? ''} className={cn('my-2 block max-w-full rounded-lg', className)} src={src} {...rest} />
+      }
+
+      return <NoteImage alt={alt} target={target} />
+    }
+
     const WikiAnchor = ({ children, className, href, node, ...rest }: ComponentProps<'a'> & { node?: unknown }) => {
       const payload = parseWikiHref(href)
 
@@ -148,9 +288,16 @@ export function NoteMarkdown({ className, linkIndex, onOpenAnchor, onOpenNote, t
         )
       }
 
-      // 嵌入：盘上只有示例图，没有真的图片文件，所以不假装能显示图——
-      // 渲染成一枚安静的占位徽标，写明是嵌入。
+      // 嵌入：图片画出来（Obsidian 的 `![[图.png]]` 就是插图），别的落成一枚
+      // 安静的占位徽标——盘上确实没有那一份时**不假装能显示**。
       if (payload.kind === 'embed') {
+        if (isImageTarget(payload.target)) {
+          // `![[图.png|300]]` 里的竖线后面是宽度（Obsidian 的写法），不是别名。
+          const width = /^\d+$/.test(String(children ?? '').trim()) ? `${String(children).trim()}px` : undefined
+
+          return <NoteImage alt={payload.target} target={payload.target} width={width} />
+        }
+
         return (
           <span
             className="mx-0.5 inline-flex items-center gap-1 rounded border border-(--ui-stroke-tertiary) px-1.5 py-px align-baseline text-[0.7rem] text-(--ui-text-tertiary)"
@@ -197,7 +344,8 @@ export function NoteMarkdown({ className, linkIndex, onOpenAnchor, onOpenNote, t
       h3: tagged('h3'),
       h4: tagged('h4'),
       hr: tagged('hr'),
-      li: tagged('li'),
+      img: MarkdownImage,
+      li: MarkdownListItem,
       ol: tagged('ol'),
       p: tagged('p'),
       pre: tagged('pre'),
@@ -207,7 +355,7 @@ export function NoteMarkdown({ className, linkIndex, onOpenAnchor, onOpenNote, t
       thead: tagged('thead'),
       ul: tagged('ul')
     }
-  }, [linkIndex, onOpenAnchor, onOpenNote])
+  }, [assetRoot, baseDir, linkIndex, onOpenAnchor, onOpenNote])
 
   return (
     <div ref={ref} className={cn('max-w-full text-foreground wrap-anywhere', className)}>
@@ -216,7 +364,8 @@ export function NoteMarkdown({ className, linkIndex, onOpenAnchor, onOpenNote, t
         controls={false}
         mode="static"
         parseIncompleteMarkdown={false}
-        remarkPlugins={[remarkWikilink]}
+        plugins={NOTE_PLUGINS}
+        remarkPlugins={NOTE_REMARK_PLUGINS}
       >
         {clean}
       </Streamdown>

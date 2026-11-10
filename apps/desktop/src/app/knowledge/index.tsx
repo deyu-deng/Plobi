@@ -18,6 +18,7 @@ import { notifyError } from '@/store/notifications'
 import { deleteNote, fetchNote, fetchNotes, NOTES_PREFIX, renameNote, saveNote } from './api'
 import type { NoteMeta } from './api'
 import { HoverPreview } from './hover-preview'
+import { noteBaseDir } from './note-media'
 import { NoteMarkdown, jumpToAnchor, makeLinkIndex } from './note-markdown'
 import { buildNoteTree, noteTemplate, parseOutline } from './outline'
 import type { NoteTreeNode } from './outline'
@@ -260,6 +261,11 @@ export function KnowledgeView() {
   const sourceText = editing ? draft : (page.data?.text ?? '')
   const outline = useMemo(() => parseOutline(sourceText), [sourceText])
   const dirty = editing && draft !== base
+
+  // 图片：相对路径按「笔记同目录 → 同目录的 attachments/ → 库根」找盘上那一份。
+  // 库根来自清单（`NotesLibrary.root`），笔记目录来自这一篇自己的 `fsPath`。
+  const assetRoot = library.data?.root
+  const baseDir = useMemo(() => noteBaseDir(page.data?.fsPath), [page.data?.fsPath])
 
   const tabs = useMemo(
     () =>
@@ -559,6 +565,8 @@ export function KnowledgeView() {
     if (editing && view === 'preview') {
       return (
         <NoteMarkdown
+          assetRoot={assetRoot}
+          baseDir={baseDir}
           linkIndex={linkIndex}
           onOpenAnchor={anchor => openAnchorRef.current(anchor)}
           onOpenNote={path => openNoteRef.current(path)}
@@ -587,6 +595,8 @@ export function KnowledgeView() {
           </div>
         </header>
         <NoteMarkdown
+          assetRoot={assetRoot}
+          baseDir={baseDir}
           linkIndex={linkIndex}
           onOpenAnchor={anchor => openAnchorRef.current(anchor)}
           onOpenNote={path => openNoteRef.current(path)}
