@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { runInTerminal } from '@/app/right-sidebar/store'
 import {
@@ -443,6 +443,24 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
 
     return () => clearInterval(timer)
   }, [anyPending, readAuthCatalog])
+
+  // magpie 的登录链接是**后到的**：点 `+` 的那一下网关立刻回答（那时链接还没生成），
+  // 跑登录的那条命令要先把厂商 CLI 装上、再问插件，几十秒后才把链接交回来 ⇒
+  // 「谁看着谁开」：链接一到就打开它。一张卡的链接只开一次。
+  const openedAuthUrls = useRef(new Set<string>())
+
+  useEffect(() => {
+    for (const card of authCatalog ?? []) {
+      const url = card.loginUrl
+
+      if (!url || openedAuthUrls.current.has(url)) {
+        continue
+      }
+
+      openedAuthUrls.current.add(url)
+      void window.plobiDesktop?.openExternal?.(url)
+    }
+  }, [authCatalog])
 
   // --- Sign-in handler, shared with the first-run dialog ---
   // The backend does NOT run the OAuth dance itself: it starts whatever the app's own

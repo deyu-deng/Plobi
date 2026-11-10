@@ -21,6 +21,23 @@ function row(over: Partial<AuthCatalogRow> = {}): AuthCatalogRow {
  * and the reason a leg is unusable stays on the control, never in the body.
  */
 describe('buildLoginCards', () => {
+  it('keeps the sign-in page the hub handed back', () => {
+    // magpie 的登录链接是**后到的**：点 `+` 的那一下网关立刻回答，链接要等跑完
+    // 登录命令才到（实测 2026-11-10：会话回的是 workbuddy.cn 的登录页）。
+    // 它得一路到卡上，渲染层才能在它出现时打开它。
+    const [card] = buildLoginCards([
+      row({ login: { state: 'ok', url: 'https://www.workbuddy.cn/login?state=x' } })
+    ])
+
+    expect(card.loginUrl).toBe('https://www.workbuddy.cn/login?state=x')
+  })
+
+  it('has no sign-in page when the session has none', () => {
+    const [card] = buildLoginCards([row()])
+
+    expect(card.loginUrl).toBeUndefined()
+  })
+
   it('gives every card a one-line product intro, never a paragraph', () => {
     const [card] = buildLoginCards([row()])
 

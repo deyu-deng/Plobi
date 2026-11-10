@@ -74,6 +74,15 @@ export interface LoginCard {
   name: string
   /** A sign-in is waiting on the user in the browser. */
   pending: boolean
+  /**
+   * The sign-in page the hub's session handed back, when there is one.
+   *
+   * It arrives **late**: the click that starts the sign-in is answered at once,
+   * while the command that produces the link finishes a good while later (it
+   * installs the vendor's CLI first, then asks the plugin). The renderer opens
+   * this link when it shows up — that is the whole sign-in for a browser flow.
+   */
+  loginUrl?: string
   /** The hub's state machine answer, which decides the control's shape. */
   state: SubscriptionState
   /** Machine code for the failure, translated by the renderer. */
@@ -280,6 +289,7 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
         id: row.id,
         intro: QUOTA_CARD_INTRO_FALLBACKS[introKey] ?? `${row.name} 订阅额度`,
         introKey,
+        loginUrl: row.login?.url || undefined,
         name: row.name,
         pending,
         state,

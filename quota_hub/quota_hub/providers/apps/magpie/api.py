@@ -661,6 +661,32 @@ class MagpieProviderLeg(MagpieProvider):
             "intro_key": self.provider_id,
         }
 
+    def _login_method(self) -> str:
+        """Which of magpie's own sign-in methods we take, named by us.
+
+        `magpie plugin login <provider>` **without** a method asks: it prints
+        a menu on the terminal. Read as a pipe — which is how the gateway runs
+        it — that menu is never drawn and the command waits forever (measured
+        2026-11-10: the card spun and the session came back `failed` with the
+        menu's tail as its detail, 「3. WorkBuddy API key；>」).
+
+        Their command takes the method as its 1-based number, its label or its
+        type (`oauth`/`api`) ⇒ we name the browser one ourselves, from their
+        own provider table (`plugin-providers.json`, the same file their
+        roster comes from).
+        """
+        table = their_list.read_provider_table(self._config_root()) or {}
+        row = table.get(self.upstream_id) or {}
+        methods = [m for m in (row.get("methods") or []) if isinstance(m, dict)]
+        oauth = [m for m in methods if str(m.get("type") or "") == "oauth"]
+        for method in oauth:
+            label = str(method.get("label") or "")
+            if "browser" in label.lower() or "浏览器" in label:
+                return label
+        if oauth:
+            return str(oauth[0].get("label") or "oauth")
+        return ""
+
     def login_plan(self) -> dict:
         """Signing in happens behind magpie: we run **its** login command.
 
@@ -670,24 +696,28 @@ class MagpieProviderLeg(MagpieProvider):
         the browser itself (that is where the account is signed in — the same
         credential the provider's own app would hold).
 
-        **`tty` is load-bearing**: their login is an **interactive menu**（先问
-        「用哪一种方式登录」）⇒ run without a terminal it reads EOF and exits at
-        once (measured 2026-11-10: that session's detail was the menu's tail
-        「3. WorkBuddy API key；>」 and the state was `failed`) ⇒ clicking `+`
-        would be a login guaranteed to fail. `tty` makes the hub give it a real
-        console (`cmd /c start "" /wait`), where the menu can be walked and
-        magpie opens the browser.
+        **The method is named by us**: without it their command asks on the
+        terminal, and a pipe never sees the menu ⇒ it waits forever (measured
+        2026-11-10). With it, no menu, no console window, and the browser
+        opens by itself.
+
+        `tty` is only for the one case a terminal is really needed: a provider
+        whose only sign-in is a key (zen-free's), which the user has to type.
         """
         binary = ""
         umbrella = self.umbrella
         if umbrella is not None:
             binary = umbrella._binary() or ""
+        method = self._login_method()
+        argv = ["plugin", "login", self.upstream_id]
+        if method:
+            argv.append(method)
         return {
             "kind": "cli_login",
             "name": self.display_name,
             "binary": binary,
-            "argv": ["plugin", "login", self.upstream_id],
-            "tty": True,
+            "argv": argv,
+            "tty": not method,
             "reason": f"它的登录在 Magpie 那边 {self.display_name}",
         }
 

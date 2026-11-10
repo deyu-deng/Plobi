@@ -240,12 +240,11 @@ async def test_the_turn_goes_out_under_our_own_key_name():
 
 
 def test_the_login_command_gets_a_real_terminal():
-    """magpie 的登录是**交互式菜单**——它先问「用哪一种方式登录」。
+    """（这一条已被「点名方法」取代：magpie 的菜单不该出现，也就不需要终端窗口。）
 
-    没有终端时它读到 EOF 就退（实测 2026-11-10 17:0x：用户点 `+` 的那次，会话的
-    detail 就是菜单尾巴「3. WorkBuddy API key；>」，状态 failed）⇒ 点 `+` 变成一次
-    注定失败的登录。authflow 有一条现成的路（`tty` ⇒ `cmd /c start "" /wait`），
-    它给那个子进程一个**真控制台**，`isatty()` 为真，菜单能走完，浏览器由 magpie 开。
+    留着的理由是**记下那条走错的路**：2026-11-10 先试的是「给它一个真终端」
+    （`tty`），那确实让菜单画出来了，可菜单在**另一个窗口**里，用户看不见 ⇒
+    卡片照样一直转圈。真正的解是下面那条：自己点名方法，菜单压根不出现。
     """
     prov = _provider(_http({}))
     leg = MagpieProviderLeg(
@@ -256,9 +255,71 @@ def test_the_login_command_gets_a_real_terminal():
     )
     plan = leg.login_plan()
 
-    assert plan["kind"] == "cli_login"
-    assert plan["argv"] == ["plugin", "login", "workbuddy"]
-    assert plan.get("tty") is True, "没有终端的交互式登录必然失败"
+    # 没有 magpie 的表（他们那份读不到）时退回「给个终端」——那是唯一还能走的路。
+    assert plan["argv"][:3] == ["plugin", "login", "workbuddy"]
+    assert plan.get("tty") is True, "读不到他们那张表 ⇒ 退回真终端，别让登录无声无息地死掉"
+
+
+def test_the_login_names_the_method_so_no_menu_appears(tmp_path, monkeypatch):
+    """magpie 的登录不给方法就会在终端上问菜单——被管道接走时它一个字都不吐、干等。
+
+    实测 2026-11-10 17:0x：卡片一直转圈，会话 `failed`，`detail` 是菜单尾巴
+    「3. WorkBuddy API key；>」。magpie 的 `plugin login <provider> [method]`
+    接受 1 基序号／标签／类型 ⇒ 我们自己从它那张表里点名「浏览器登录」那一个。
+    """
+    magpie_dir = tmp_path / "magpie"
+    magpie_dir.mkdir(parents=True, exist_ok=True)
+    (magpie_dir / "plugin-providers.json").write_text(
+        json.dumps([
+            {
+                "id": "workbuddy",
+                "methods": [
+                    {"type": "oauth", "label": "WorkBuddy account (browser)"},
+                    {"type": "oauth", "label": "WorkBuddy desktop's sign-in"},
+                    {"type": "api", "label": "WorkBuddy API key"},
+                ],
+            }
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    prov = _provider(_http({}))
+    leg = MagpieProviderLeg(
+        {"base_url": "http://127.0.0.1:3425"},
+        prov.http,
+        {"id": "workbuddy", "upstream": "workbuddy", "name": "WorkBuddy"},
+        umbrella=prov,
+    )
+    plan = leg.login_plan()
+
+    assert plan["argv"] == ["plugin", "login", "workbuddy", "WorkBuddy account (browser)"]
+    assert plan.get("tty") is False, "点了方法名就不该再开终端窗口（菜单不会再出现）"
+
+
+def test_a_provider_with_only_a_key_sign_in_keeps_the_terminal(tmp_path, monkeypatch):
+    """只有一个「填 key」的方法时，键要人敲 ⇒ 终端还是得给。"""
+    magpie_dir = tmp_path / "magpie"
+    magpie_dir.mkdir(parents=True, exist_ok=True)
+    (magpie_dir / "plugin-providers.json").write_text(
+        json.dumps([
+            {"id": "opencode-zen-free", "methods": [{"type": "api", "label": "Zen 免费访问（密钥填 public）"}]}
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    prov = _provider(_http({}))
+    leg = MagpieProviderLeg(
+        {"base_url": "http://127.0.0.1:3425"},
+        prov.http,
+        {"id": "opencode-zen-free", "upstream": "opencode-zen-free"},
+        umbrella=prov,
+    )
+    plan = leg.login_plan()
+
+    assert plan["argv"] == ["plugin", "login", "opencode-zen-free"]
+    assert plan.get("tty") is True, "键要人敲 ⇒ 得有终端"
 
 
 def test_the_card_list_is_our_table_not_their_json():

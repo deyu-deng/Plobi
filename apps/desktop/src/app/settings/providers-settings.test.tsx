@@ -284,6 +284,26 @@ describe('Subscriptions cards are the hub catalog', () => {
     expect(getEnvVars).not.toHaveBeenCalled()
   })
 
+  it('opens the sign-in page when the hub hands it back', async () => {
+    // magpie 的登录链接是**后到的**（点 `+` 的那一下网关立刻回答，链接几十秒后才到）。
+    // 链接一到就得打开它 —— 浏览器里那一步是整个签到（用户 11-10：卡片一直转圈，
+    // 因为没人打开那个链接）。一张卡的链接只开一次。
+    const openExternal = vi.fn()
+    window.plobiDesktop = {
+      authCatalog: vi.fn().mockResolvedValue([
+        authRow('workbuddy', { login: { state: 'ok', url: 'https://www.workbuddy.cn/login?state=x' } })
+      ]),
+      openExternal,
+      plobiGateway: { auth: vi.fn().mockResolvedValue({ models: [], ok: true }) },
+      requestQuotaApps: vi.fn()
+    } as never
+
+    await renderSubscriptions()
+
+    await waitFor(() => expect(openExternal).toHaveBeenCalledWith('https://www.workbuddy.cn/login?state=x'))
+    expect(openExternal).toHaveBeenCalledTimes(1)
+  })
+
   it('offers `+` for a signed-out software and a switch for one already in use', async () => {
     shell([authRow('antigravity'), authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
     frame('workbuddy', { models: ['hy3'] })
