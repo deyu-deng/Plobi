@@ -18,13 +18,17 @@ import type { NoteMeta, NotesLibrary } from './api'
 const fetchNotes = vi.fn()
 const fetchNote = vi.fn()
 const saveNote = vi.fn()
+const renameNote = vi.fn()
+const deleteNote = vi.fn()
 
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
   return {
     ...actual,
+    deleteNote: (...args: unknown[]) => deleteNote(...args),
     fetchNotes: () => fetchNotes(),
     fetchNote: (path: string) => fetchNote(path),
+    renameNote: (...args: unknown[]) => renameNote(...args),
     saveNote: (...args: unknown[]) => saveNote(...args)
   }
 })
@@ -93,7 +97,11 @@ beforeEach(() => {
   fetchNotes.mockReset()
   fetchNote.mockReset()
   saveNote.mockReset()
+  renameNote.mockReset()
+  deleteNote.mockReset()
   fetchNotes.mockResolvedValue(LIBRARY)
+  renameNote.mockResolvedValue({ path: NOTE.path, new_path: 'Notes/数学/线性代数.md', changed: true })
+  deleteNote.mockResolvedValue({ path: NOTE.path, trash: 'X:/trash/微积分.md' })
   saveNote.mockResolvedValue({
     path: NOTE.path,
     fsPath: 'X:/notes/数学/微积分.md',
@@ -301,6 +309,47 @@ describe('KnowledgeView', () => {
     // 指针再挪开：它就收。
     fireEvent.mouseOut(preview)
     await waitFor(() => expect(screen.queryByTestId('note-hover-preview')).toBeNull(), { timeout: 1500 })
+  })
+
+  it('offers rename and delete when a note row is right-clicked', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    const tree = screen.getByTestId('note-tree')
+    fireEvent.contextMenu(within(tree).getByText('工程图学'))
+
+    expect(await screen.findByText('Rename…')).toBeTruthy()
+    expect(screen.getByText('Delete')).toBeTruthy()
+  })
+
+  it('renames a note inline and sends the new name', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    const tree = screen.getByTestId('note-tree')
+    fireEvent.contextMenu(within(tree).getByText('工程图学'))
+    fireEvent.click(await screen.findByText('Rename…'))
+
+    const input = (await screen.findByLabelText('New name')) as HTMLInputElement
+    expect(input.value).toBe('工程图学')
+    fireEvent.change(input, { target: { value: '工程图学新' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(renameNote).toHaveBeenCalledWith(DRAWING.path, '工程图学新'))
+  })
+
+  it('asks before deleting a note and deletes it on confirm', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    const tree = screen.getByTestId('note-tree')
+    fireEvent.contextMenu(within(tree).getByText('工程图学'))
+    fireEvent.click(await screen.findByText('Delete'))
+
+    expect(await screen.findByText('Delete 工程图学?')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(deleteNote).toHaveBeenCalledWith(DRAWING.path))
   })
 
   it('closes the hover preview with Escape', async () => {

@@ -6,13 +6,16 @@ import { Pane, PaneMain, PaneShell } from '@/components/pane-shell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoader } from '@/components/page-loader'
-import { useI18n } from '@/i18n'
+import { translateNow, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { notifyError } from '@/store/notifications'
 
-import { NOTES_PREFIX, fetchNote, fetchNotes, saveNote } from './api'
+import { deleteNote, fetchNote, fetchNotes, NOTES_PREFIX, renameNote, saveNote } from './api'
 import type { NoteMeta } from './api'
 import { HoverPreview } from './hover-preview'
 import { NoteMarkdown, jumpToAnchor, makeLinkIndex } from './note-markdown'
@@ -31,38 +34,158 @@ function breadcrumb(path: string): string {
   return parts.split('/').slice(0, -1).join(' / ')
 }
 
+/**
+ * 行内改名：那一行变成输入框（初值是这篇的标题，名字部分预选中）。
+ * Enter 提交、Esc 取消、失焦提交——与右侧栏那一套行内改名同形。
+ */
+function InlineNoteRename({
+  initialValue,
+  onDone
+}: {
+  initialValue: string
+  /** 名字是提交，null 是取消。 */
+  onDone: (name: string | null) => void
+}) {
+  const { t } = useI18n()
+  const [value, setValue] = useState(initialValue)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Enter 之后的那次 blur 不许重复提交：只认第一次收尾。
+  const done = useRef(false)
+  // 刚挂上就 blur（右键菜单收尾、焦点乱动）——这一小段里把焦点抢回来。
+  const mountedAt = useRef(Date.now())
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) {
+      return
+    }
+
+    // 名字部分预选中：扩展名不算名字。
+    const dot = input.value.lastIndexOf('.')
+    input.setSelectionRange(0, dot > 0 ? dot : input.value.length)
+  }, [])
+
+  function finish(commit: boolean) {
+    if (done.current) {
+      return
+    }
+
+    done.current = true
+    const next = value.trim()
+
+    if (commit && next && next !== initialValue) {
+      onDone(next)
+
+      return
+    }
+
+    onDone(null)
+  }
+
+  return (
+    <input
+      aria-label={t.fileMenu.renameLabel}
+      autoCapitalize="off"
+      autoComplete="off"
+      autoCorrect="off"
+      autoFocus
+      className="w-full min-w-0 rounded-sm border border-(--ui-stroke-tertiary) bg-background px-1.5 py-1 text-[0.72rem] outline-none"
+      onBlur={event => {
+        if (Date.now() - mountedAt.current < 250) {
+          event.currentTarget.focus()
+
+          return
+        }
+
+        finish(true)
+      }}
+      onChange={event => setValue(event.target.value)}
+      onClick={event => event.stopPropagation()}
+      onDoubleClick={event => event.stopPropagation()}
+      onFocus={event => {
+        const dot = event.currentTarget.value.lastIndexOf('.')
+        event.currentTarget.setSelectionRange(0, dot > 0 ? dot : event.currentTarget.value.length)
+      }}
+      onKeyDown={event => {
+        event.stopPropagation()
+
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          finish(true)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          finish(false)
+        }
+      }}
+      ref={inputRef}
+      spellCheck={false}
+      value={value}
+    />
+  )
+}
+
 function NoteRow({
   active,
   note,
+  onDelete,
   onPreview,
   onPreviewEnd,
-  onSelect
+  onRename,
+  onRenameDone,
+  onSelect,
+  renaming
 }: {
   active: boolean
   note: NoteMeta
+  /** 右键菜单里的「删除」。 */
+  onDelete: () => void
   /** 悬停时回调（带上指针位置，预览卡片要跟着指针走）。 */
   onPreview?: (note: NoteMeta, position: { x: number; y: number }) => void
   /** 指针离开这一行——预览卡片该自己走掉了。 */
   onPreviewEnd?: () => void
+  /** 右键菜单里的「重命名…」：这一行换成行内输入框。 */
+  onRename: () => void
+  /** 行内改名的结果：名字是提交，null 是取消。 */
+  onRenameDone: (name: string | null) => void
   onSelect: () => void
+  /** 这一行正在改名（输入框占着这一格）。 */
+  renaming: boolean
 }) {
+  const { t } = useI18n()
+  const m = t.fileMenu
+
+  if (renaming) {
+    return <InlineNoteRename initialValue={note.title} onDone={onRenameDone} />
+  }
+
   return (
-    <button
-      className={cn(
-        'flex w-full items-center rounded-md px-2 py-1 text-left transition-colors',
-        'hover:bg-(--ui-control-hover-background)/60',
-        active && 'bg-(--ui-control-hover-background)'
-      )}
-      onClick={onSelect}
-      onMouseEnter={event => {
-        const rect = event.currentTarget.getBoundingClientRect()
-        onPreview?.(note, { x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 220) })
-      }}
-      onMouseLeave={onPreviewEnd}
-      type="button"
-    >
-      <span className={cn('min-w-0 truncate text-[0.72rem]', active && 'font-medium')}>{note.title}</span>
-    </button>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          className={cn(
+            'flex w-full items-center rounded-md px-2 py-1 text-left transition-colors',
+            'hover:bg-(--ui-control-hover-background)/60',
+            active && 'bg-(--ui-control-hover-background)'
+          )}
+          onClick={onSelect}
+          onMouseEnter={event => {
+            const rect = event.currentTarget.getBoundingClientRect()
+            onPreview?.(note, { x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 220) })
+          }}
+          onMouseLeave={onPreviewEnd}
+          type="button"
+        >
+          <span className={cn('min-w-0 truncate text-[0.72rem]', active && 'font-medium')}>{note.title}</span>
+        </button>
+      </ContextMenuTrigger>
+      {/* 不把焦点还给那一行：行内输入框刚挂上就被"焦点还回来"blur 掉。 */}
+      <ContextMenuContent onCloseAutoFocus={event => event.preventDefault()}>
+        <ContextMenuItem onSelect={onRename}>{m.rename}</ContextMenuItem>
+        <ContextMenuItem onSelect={onDelete} variant="destructive">
+          {m.delete}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -83,6 +206,11 @@ export function KnowledgeView() {
   const [newParent, setNewParent] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [activeHeading, setActiveHeading] = useState<string | null>(null)
+  // 右键菜单那一格：正在改名的笔记、等着确认删除的笔记。
+  const [renamingPath, setRenamingPath] = useState<string | null>(null)
+  const [deletingNote, setDeletingNote] = useState<NoteMeta | null>(null)
+  // 改名/删除还在路上：选中哪一格由我们自己定，下面那段"自动选第一篇"别来抢。
+  const [pendingPath, setPendingPath] = useState<string | null>(null)
 
   // 多标签页：开着哪几篇笔记。关掉最后一个时回到「无标签」态（空态）。
   const [openTabs, setOpenTabs] = useState<string[]>([])
@@ -113,12 +241,20 @@ export function KnowledgeView() {
   const linkIndex = useMemo(() => makeLinkIndex(notes), [notes])
 
   useEffect(() => {
-    if (isNew || (selected && visible.some(note => note.path === selected))) return
+    // 改名/删除还在路上：选中哪一格由我们自己定。
+    if (pendingPath) {
+      return
+    }
+
+    if (isNew || (selected && visible.some(note => note.path === selected))) {
+      return
+    }
+
     const first = visible[0]?.path ?? null
     setSelected(first)
     // 初始那一格也开成标签——Obsidian 的手感：打开过的笔记就留在标签栏上。
     if (first) setOpenTabs(previous => (previous.includes(first) ? previous : [...previous, first]))
-  }, [isNew, selected, visible])
+  }, [isNew, pendingPath, selected, visible])
 
   const activeNote = notes.find(note => note.path === selected) ?? null
   const sourceText = editing ? draft : (page.data?.text ?? '')
@@ -241,6 +377,53 @@ export function KnowledgeView() {
     setNewName('')
   }
 
+  function startRename(path: string) {
+    setRenamingPath(path)
+  }
+
+  // 行内改名的结果：名字是提交，null 是取消。
+  async function finishRename(path: string, name: string | null) {
+    setRenamingPath(null)
+    if (!name) {
+      return
+    }
+
+    setPendingPath(path)
+    try {
+      const result = await renameNote(path, name)
+      const fresh = await library.refetch()
+      const renamed = fresh.data?.notes.find(note => note.path === result.new_path)
+      // 改完名就是另一条路径了：选中它。
+      if (renamed) {
+        selectNote(renamed.path)
+      }
+    } catch (cause) {
+      notifyError(cause, translateNow('errors.genericFailure'))
+    } finally {
+      setPendingPath(null)
+    }
+  }
+
+  function requestDelete(note: NoteMeta) {
+    setDeletingNote(note)
+  }
+
+  // 确认之后才动盘。选中哪一格由下面那段"自动选第一篇"接手（删掉的那篇不在清单里了）。
+  async function confirmDelete() {
+    const target = deletingNote
+    if (!target) {
+      return
+    }
+
+    setPendingPath(target.path)
+    try {
+      await deleteNote(target.path)
+      await library.refetch()
+    } finally {
+      setPendingPath(null)
+    }
+  }
+
   async function save() {
     if (!selected || saving) return
     setSaving(true)
@@ -339,9 +522,13 @@ export function KnowledgeView() {
                 <NoteRow
                   active={note.path === selected}
                   note={note}
+                  onDelete={() => requestDelete(note)}
                   onPreview={previewNote}
                   onPreviewEnd={endPreview}
+                  onRename={() => startRename(note.path)}
+                  onRenameDone={name => void finishRename(note.path, name)}
                   onSelect={() => selectNote(note.path)}
+                  renaming={renamingPath === note.path}
                 />
               </div>
             ))}
@@ -429,9 +616,13 @@ export function KnowledgeView() {
                 active={note.path === selected}
                 key={note.path}
                 note={note}
+                onDelete={() => requestDelete(note)}
                 onPreview={previewNote}
                 onPreviewEnd={endPreview}
+                onRename={() => startRename(note.path)}
+                onRenameDone={name => void finishRename(note.path, name)}
                 onSelect={() => selectNote(note.path)}
+                renaming={renamingPath === note.path}
               />
             ))}
             {newParent !== null && (
@@ -581,6 +772,17 @@ export function KnowledgeView() {
         onClose={() => setSwitcherOpen(false)}
         onOpen={openFromSwitcher}
         open={switcherOpen}
+      />
+
+      {/* 删除笔记：二次确认。标题、说明、确认按钮都取既成的那一套文案。 */}
+      <ConfirmDialog
+        confirmLabel={t.fileMenu.delete}
+        description={t.fileMenu.deleteBody}
+        destructive
+        onClose={() => setDeletingNote(null)}
+        onConfirm={() => confirmDelete()}
+        open={deletingNote !== null}
+        title={deletingNote ? t.fileMenu.deleteTitle(deletingNote.title) : ''}
       />
 
       {/* 悬浮预览：停在目录树的一篇上，浮出正文开头；指针一走它就自己收掉。 */}
