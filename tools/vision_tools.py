@@ -1065,6 +1065,7 @@ async def vision_analyze_tool(
     user_prompt: str,
     model: str = None,
     task_id: Optional[str] = None,
+    provider: str = None,
 ) -> str:
     """
     Analyze an image from a URL or local file path using vision AI.
@@ -1248,6 +1249,14 @@ async def vision_analyze_tool(
         }
         if model:
             call_kwargs["model"] = model
+        if provider:
+            # The caller knows which leg this session is really on (the
+            # gateway passes the session's live provider). Without it the auto
+            # chain resolves the provider from config.yaml — which may name a
+            # provider with no model, and then the request goes out with
+            # model:"" and the provider answers 404 "no route for model ''".
+            # (WP-VISION-CHANNEL-FIX)
+            call_kwargs["provider"] = provider
         # Try full-size image first; on size-related rejection, downscale and retry.
         try:
             response = await async_call_llm(**call_kwargs)
@@ -1366,6 +1375,12 @@ def check_vision_requirements() -> bool:
     Without the auto-fallback step the tool would disappear from the model's
     tool list whenever the explicit provider name was unresolvable, even
     when the auto chain would have served the request (issue #31179).
+
+    A third case counts as usable too: no model id is known *yet* (config
+    names a provider but no model — 11-10 实测), yet a provider is reachable.
+    The caller that owns the image hands in the session's live leg, so the
+    tool works even though the tool table was built before that leg was known
+    (WP-VISION-CHANNEL-FIX).
     """
     try:
         from agent.auxiliary_client import resolve_vision_provider_client
@@ -1378,10 +1393,41 @@ def check_vision_requirements() -> bool:
         # Same fallback to "auto" that call_llm performs when the configured
         # provider can't be resolved.
         _provider, client, _model = resolve_vision_provider_client(provider="auto")
-        return client is not None
+        if client is not None:
+            return True
+    except Exception:
+        pass
+    try:
+        from agent.auxiliary_client import vision_provider_reachable
+
+        return vision_provider_reachable()
     except Exception:
         return False
 
+
+
+def vision_tool_available(enabled_toolsets=None) -> bool:
+    """True when ``vision_analyze`` would really be in a session's tool table.
+
+    Asks the same table the model is handed, so a hint that points at the
+    tool is never a guess: if the toolset is off, or the tool's own check
+    fails, the answer is "no" and the caller stays quiet about it
+    (WP-VISION-CHANNEL-FIX).
+    """
+    try:
+        from model_tools import get_tool_definitions
+
+        defs = (
+            get_tool_definitions(enabled_toolsets=enabled_toolsets, quiet_mode=True)
+            or []
+        )
+        return any(
+            (d.get("function") or {}).get("name") == "vision_analyze"
+            for d in defs
+            if isinstance(d, dict)
+        )
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":

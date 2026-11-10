@@ -122,9 +122,21 @@ async def test_prepare_image_routing_falls_back_to_text_for_text_only_session_ov
 
     monkeypatch.setattr("agent.image_routing._lookup_supports_vision", fake_supports)
 
-    async def fake_enrich(user_text, image_paths):
+    async def fake_enrich(
+        user_text,
+        image_paths,
+        *,
+        provider="",
+        model="",
+        vision_tool_available=True,
+    ):
         assert user_text == "look"
         assert image_paths == ["/tmp/cashback.png"]
+        # The pre-describe must run on the session's live leg — resolving it
+        # from config.yaml sent model:"" upstream and the provider 404'd
+        # (WP-VISION-CHANNEL-FIX).
+        assert provider == "xiaomi"
+        assert model == "mimo-v2.5-pro"
         return "[vision summary]\n\nlook"
 
     monkeypatch.setattr(runner, "_enrich_message_with_vision", fake_enrich)

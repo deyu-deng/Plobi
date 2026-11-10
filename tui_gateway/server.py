@@ -4896,8 +4896,46 @@ def _resolve_checkpoint_hash(mgr, cwd: str, ref: str) -> str:
     raise ValueError(f"Invalid checkpoint number. Use 1-{len(checkpoints)}.")
 
 
-def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
-    """Pre-analyze attached images via vision and prepend descriptions to user text."""
+def _session_tool_names(agent) -> set[str]:
+    """Names of the tools this session's agent can actually call.
+
+    Read from the agent's own tool table (the same list the model is handed
+    each turn), so a hint can point at a tool that really exists in this
+    session — and stay silent about one that does not.
+    """
+    try:
+        tools = getattr(agent, "tools", None) or []
+        return {
+            str((t.get("function") or {}).get("name") or "")
+            for t in tools
+            if isinstance(t, dict)
+        }
+    except Exception:
+        return set()
+
+
+def _enrich_with_attached_images(
+    user_text: str,
+    image_paths: list[str],
+    *,
+    provider: str = "",
+    model: str = "",
+    vision_tool_available: bool = False,
+) -> str:
+    """Pre-analyze attached images via vision and prepend descriptions to user text.
+
+    ``provider`` / ``model`` are the session's live leg — the picture has to be
+    described by the model this turn is really talking to. Resolving the leg
+    from config.yaml instead meant a config that names a provider but no model
+    id sent ``model: ""`` to the gateway, which answered
+    ``404 {"detail": "\"no route for model ''\""}`` and the turn reported
+    "analysis failed" with the cause thrown away (WP-VISION-CHANNEL-FIX).
+
+    ``vision_tool_available`` says whether ``vision_analyze`` is really in this
+    session's tool table. When it isn't, the hint must not name it: pointing at
+    a tool the model cannot call reads as "the image is on disk, ask the tool"
+    when no such tool is there.
+    """
     import asyncio, json as _json
     from tools.vision_tools import vision_analyze_tool
 
@@ -4907,24 +4945,47 @@ def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
         "and any other notable visual information."
     )
 
+    def _hint(path: Path) -> str:
+        if not vision_tool_available:
+            return ""
+        return f"[You can examine it with vision_analyze using image_url: {path}]"
+
+    def _failed(path: Path, reason: str) -> str:
+        # Say what actually went wrong. "analysis failed" with the cause
+        # swallowed is what left this unfixable for a week.
+        tail = f"\n{_hint(path)}" if _hint(path) else ""
+        return (
+            f"[The user attached an image ({path}) but it could not be read: "
+            f"{reason}]" + tail
+        )
+
     parts: list[str] = []
     for path in image_paths:
         p = Path(path)
         if not p.exists():
             continue
-        hint = f"[You can examine it with vision_analyze using image_url: {p}]"
         try:
             r = _json.loads(
-                asyncio.run(vision_analyze_tool(image_url=str(p), user_prompt=prompt))
+                asyncio.run(
+                    vision_analyze_tool(
+                        image_url=str(p),
+                        user_prompt=prompt,
+                        provider=provider or None,
+                        model=model or None,
+                    )
+                )
             )
             desc = r.get("analysis", "") if r.get("success") else None
-            parts.append(
-                f"[The user attached an image:\n{desc}]\n{hint}"
-                if desc
-                else f"[The user attached an image but analysis failed.]\n{hint}"
-            )
-        except Exception:
-            parts.append(f"[The user attached an image but analysis failed.]\n{hint}")
+            if desc:
+                tail = f"\n{_hint(p)}" if _hint(p) else ""
+                parts.append(f"[The user attached an image:\n{desc}]" + tail)
+            else:
+                reason = str(
+                    r.get("error") or r.get("analysis") or "unknown error"
+                )[:400]
+                parts.append(_failed(p, reason))
+        except Exception as exc:
+            parts.append(_failed(p, f"{type(exc).__name__}: {exc}"[:400]))
 
     text = user_text or ""
     prefix = "\n\n".join(parts)
@@ -9178,6 +9239,15 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Option
             # See agent/image_routing.py for the full decision table.
             run_message: Any = prompt
             if images:
+                # The session's live leg decides how the picture travels. The
+                # config cell can name a provider with no model id (or the
+                # wrong leg entirely), and routing on that is what made a
+                # multimodal model look blind — the turn went to the text
+                # pre-describe path and the pre-describe call went out with
+                # model:"" (WP-VISION-CHANNEL-FIX).
+                _live_provider = str(getattr(agent, "provider", "") or "").strip()
+                _live_model = str(getattr(agent, "model", "") or "").strip()
+                _vision_tool_on = "vision_analyze" in _session_tool_names(agent)
                 try:
                     from agent.image_routing import (
                         decide_image_input_mode,
@@ -9191,8 +9261,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Option
 
                     _cfg = _tui_load_config()
                     _mode = decide_image_input_mode(
-                        _read_main_provider(),
-                        _read_main_model(),
+                        _live_provider or _read_main_provider(),
+                        _live_model or _read_main_model(),
                         _cfg,
                     )
                     if getattr(agent, "api_mode", "") == "codex_app_server":
@@ -9203,6 +9273,15 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Option
                         file=sys.stderr,
                     )
                     _mode = "text"
+
+                def _describe() -> Any:
+                    return _enrich_with_attached_images(
+                        prompt,
+                        images,
+                        provider=_live_provider,
+                        model=_live_model,
+                        vision_tool_available=_vision_tool_on,
+                    )
 
                 if _mode == "native":
                     try:
@@ -9218,15 +9297,15 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Option
                         if any(p.get("type") == "image_url" for p in _parts):
                             run_message = _parts
                         else:
-                            run_message = _enrich_with_attached_images(prompt, images)
+                            run_message = _describe()
                     except Exception as _img_exc:
                         print(
                             f"[tui_gateway] native attach failed, falling back to text: {_img_exc}",
                             file=sys.stderr,
                         )
-                        run_message = _enrich_with_attached_images(prompt, images)
+                        run_message = _describe()
                 else:
-                    run_message = _enrich_with_attached_images(prompt, images)
+                    run_message = _describe()
 
             def _stream(delta):
                 with session["history_lock"]:

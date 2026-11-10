@@ -10487,9 +10487,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         "Image routing: text (mode=%s). Pre-analyzing %d image(s) via vision_analyze.",
                         _img_mode, len(image_paths),
                     )
+                    _leg_provider, _leg_model = self._resolve_session_image_leg(
+                        source=source,
+                        session_key=session_key,
+                    )
                     message_text = await self._enrich_message_with_vision(
                         message_text,
                         image_paths,
+                        provider=_leg_provider,
+                        model=_leg_model,
+                        vision_tool_available=self._vision_tool_in_table(source),
                     )
 
             if audio_paths:
@@ -15105,6 +15112,57 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except TypeError:
             executor.shutdown(wait=False)
 
+    def _resolve_session_image_leg(
+        self,
+        *,
+        source: Optional[SessionSource] = None,
+        session_key: Optional[str] = None,
+        user_config: Optional[dict] = None,
+    ) -> tuple[str, str]:
+        """Resolve the (provider, model) this session's turn will really use.
+
+        Same resolution order as ``_decide_image_input_mode``: session
+        ``/model`` override → channel override → config/env. The image
+        pre-describe has to run on that leg: resolving it from config.yaml
+        instead meant a config that names a provider but no model id sent
+        ``model: ""`` upstream and the provider answered 404 "no route for
+        model ''" — the picture was never read
+        (WP-VISION-CHANNEL-FIX).
+        """
+        try:
+            from agent.auxiliary_client import _read_main_model, _read_main_provider
+            from plobi_cli.config import load_config
+
+            cfg = user_config if isinstance(user_config, dict) else load_config()
+            resolved_provider = ""
+            resolved_model = ""
+            if source is not None or session_key:
+                try:
+                    turn_model, runtime_kwargs = self._resolve_session_agent_runtime(
+                        source=source,
+                        session_key=session_key,
+                        user_config=cfg,
+                    )
+                    if isinstance(turn_model, str):
+                        resolved_model = turn_model.strip()
+                    if isinstance(runtime_kwargs, dict):
+                        runtime_provider = runtime_kwargs.get("provider")
+                        if isinstance(runtime_provider, str):
+                            resolved_provider = runtime_provider.strip()
+                except Exception as exc:
+                    logger.debug(
+                        "image_routing: session runtime resolution failed, falling back to config — %s",
+                        exc,
+                    )
+            if not resolved_provider:
+                resolved_provider = _read_main_provider()
+            if not resolved_model:
+                resolved_model = _read_main_model()
+            return resolved_provider, resolved_model
+        except Exception as exc:
+            logger.debug("image_routing: session leg resolution failed — %s", exc)
+            return "", ""
+
     def _decide_image_input_mode(
         self,
         *,
@@ -15128,47 +15186,56 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """
         try:
             from agent.image_routing import decide_image_input_mode
-            from agent.auxiliary_client import _read_main_model, _read_main_provider
             from plobi_cli.config import load_config
 
             cfg = user_config if isinstance(user_config, dict) else load_config()
             resolved_provider = (provider or "").strip()
             resolved_model = (model or "").strip()
 
-            needs_session_runtime = not resolved_provider or not resolved_model
-            has_session_identity = source is not None or session_key
-            if needs_session_runtime and has_session_identity:
-                try:
-                    turn_model, runtime_kwargs = self._resolve_session_agent_runtime(
-                        source=source,
-                        session_key=session_key,
-                        user_config=cfg,
-                    )
-                    if not resolved_model and isinstance(turn_model, str):
-                        resolved_model = turn_model.strip()
-                    runtime_provider = runtime_kwargs.get("provider") if isinstance(runtime_kwargs, dict) else None
-                    if not resolved_provider and isinstance(runtime_provider, str):
-                        resolved_provider = runtime_provider.strip()
-                except Exception as exc:
-                    logger.debug(
-                        "image_routing: session runtime resolution failed, falling back to config — %s",
-                        exc,
-                    )
-
-            if not resolved_provider:
-                resolved_provider = _read_main_provider()
-            if not resolved_model:
-                resolved_model = _read_main_model()
+            if not resolved_provider or not resolved_model:
+                leg_provider, leg_model = self._resolve_session_image_leg(
+                    source=source,
+                    session_key=session_key,
+                    user_config=cfg,
+                )
+                resolved_provider = resolved_provider or leg_provider
+                resolved_model = resolved_model or leg_model
 
             return decide_image_input_mode(resolved_provider, resolved_model, cfg)
         except Exception as exc:
             logger.debug("image_routing: decision failed, falling back to text — %s", exc)
             return "text"
 
+    def _vision_tool_in_table(self, source: Optional[SessionSource] = None) -> bool:
+        """True when ``vision_analyze`` is really in this platform's tool table.
+
+        The hint that tells the model it can look at the picture again is only
+        allowed to name a tool that exists in this session — otherwise it
+        points the model at a tool it cannot call (WP-VISION-CHANNEL-FIX).
+        """
+        try:
+            from plobi_cli.tools_config import _get_platform_tools
+            from tools.vision_tools import vision_tool_available
+
+            user_config = _load_gateway_config()
+            platform_key = (
+                _platform_config_key(source.platform) if source else "gateway"
+            )
+            enabled = sorted(_get_platform_tools(user_config, platform_key))
+            return vision_tool_available(enabled)
+        except Exception:
+            # Can't tell ⇒ keep the old behaviour (point at the tool) rather
+            # than silently dropping a hint that may well be valid.
+            return True
+
     async def _enrich_message_with_vision(
         self,
         user_text: str,
         image_paths: List[str],
+        *,
+        provider: str = "",
+        model: str = "",
+        vision_tool_available: bool = True,
     ) -> str:
         """
         Auto-analyze user-attached images with the vision tool and prepend
@@ -15178,6 +15245,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         description *and* the local cache path are injected so the model can:
           1. Immediately understand what the user sent (no extra tool call).
           2. Re-examine the image with vision_analyze if it needs more detail.
+
+        ``provider`` / ``model`` are the session's live leg — the picture has
+        to be read by the model this turn is really talking to, not by
+        whatever config.yaml happens to name (WP-VISION-CHANNEL-FIX).
+
+        ``vision_tool_available`` says whether ``vision_analyze`` is really in
+        this session's tool table. When it isn't, the hint must not point at
+        it: naming a tool the model cannot call reads as "the image is there,
+        go look at it" when no such tool is there.
 
         Args:
             user_text:   The user's original caption / message text.
@@ -15197,33 +15273,45 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         enriched_parts = []
         for path in image_paths:
+            hint = (
+                f"[If you need a closer look, use vision_analyze with "
+                f"image_url: {path} ~]"
+                if vision_tool_available
+                else ""
+            )
             try:
                 logger.debug("Auto-analyzing user image: %s", path)
                 result_json = await vision_analyze_tool(
                     image_url=path,
                     user_prompt=analysis_prompt,
+                    provider=provider or None,
+                    model=model or None,
                 )
                 result = json.loads(result_json)
                 if result.get("success"):
                     description = result.get("analysis", "")
                     description = sanitize_context(description)
                     enriched_parts.append(
-                        f"[The user sent an image~ Here's what I can see:\n{description}]\n"
-                        f"[If you need a closer look, use vision_analyze with "
-                        f"image_url: {path} ~]"
+                        f"[The user sent an image~ Here's what I can see:\n{description}]"
+                        + (f"\n{hint}" if hint else "")
                     )
                 else:
+                    # Say what actually went wrong — "couldn't quite see it"
+                    # with the cause thrown away is what left this unfixable.
+                    reason = str(
+                        result.get("error") or result.get("analysis") or "unknown error"
+                    )[:400]
                     enriched_parts.append(
-                        "[The user sent an image but I couldn't quite see it "
-                        "this time (>_<) You can try looking at it yourself "
-                        f"with vision_analyze using image_url: {path}]"
+                        "[The user sent an image but it could not be read: "
+                        f"{reason}]"
+                        + (f"\n{hint}" if hint else "")
                     )
             except Exception as e:
                 logger.error("Vision auto-analysis error: %s", e)
                 enriched_parts.append(
-                    f"[The user sent an image but something went wrong when I "
-                    f"tried to look at it~ You can try examining it yourself "
-                    f"with vision_analyze using image_url: {path}]"
+                    "[The user sent an image but it could not be read: "
+                    f"{type(e).__name__}: {str(e)[:400]}]"
+                    + (f"\n{hint}" if hint else "")
                 )
 
         # Combine: vision descriptions first, then the user's original text

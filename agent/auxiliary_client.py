@@ -5306,6 +5306,18 @@ def resolve_vision_provider_client(
         if sync_client is None:
             return resolved_provider, None, None
         final_model = resolved_model or default_model
+        if not (final_model or "").strip():
+            # A client without a model name is worse than no client at all: the
+            # request goes out with ``model: ""`` and the provider answers
+            # ``404 {"detail": "\"no route for model ''\""}``. Refuse it here so
+            # the auto chain moves on to the next candidate instead of burning a
+            # request on a name the provider cannot route
+            # (WP-VISION-CHANNEL-FIX, 11-10 实测).
+            logger.info(
+                "Vision auto-detect: %s has no model name to call — skipping it",
+                resolved_provider,
+            )
+            return resolved_provider, None, None
         if async_mode:
             async_client, async_model = _to_async_client(sync_client, final_model, is_vision=True)
             return resolved_provider, async_client, async_model
@@ -5342,7 +5354,15 @@ def resolve_vision_provider_client(
         main_provider = _read_main_provider()
         main_model = _read_main_model()
         if main_provider and main_provider not in {"auto", ""}:
-            vision_model = _PROVIDER_VISION_MODELS.get(main_provider, main_model)
+            # The caller's live leg outranks the persisted config cell: the
+            # config may name a provider with **no model at all** (11-10 实测：
+            # 用户把 model.default 清空，让后端自己挑），而一个没有名字的模型
+            # 是 provider 路由不了的 —— 请求带着 model:"" 出去只会吃一个
+            # 404 "no route for model ''"。The live leg is the model this
+            # session is actually talking to, so it is also the best candidate
+            # to describe the image (WP-VISION-CHANNEL-FIX).
+            live_model = resolved_model or main_model
+            vision_model = _PROVIDER_VISION_MODELS.get(main_provider, live_model)
             if main_provider == "nous":
                 sync_client, default_model = _resolve_strict_vision_backend(
                     main_provider, vision_model
@@ -5473,6 +5493,78 @@ def resolve_vision_provider_client(
     if client is None:
         return requested, None, None
     return requested, client, final_model
+
+
+def vision_provider_reachable() -> bool:
+    """True when some provider could serve a vision request.
+
+    Answers "is there a vision path at all", not "can we call it right now with
+    the model id we happen to know". Those are different questions, and
+    conflating them is what made the Vision switch a fake one: config.yaml
+    names a provider but no model id (11-10 实测：用户把 model.default 清空，
+    让网关自己挑腿), so no model name was known at tool-table build time and
+    the tool never entered the table — even though the leg the session really
+    talks to reads images fine.
+
+    A leg that is *known* to be text-only does not count: sending it a
+    picture fails with a cryptic provider error, so it must stay gated off.
+    A leg whose model is unknown does count — the caller that owns the image
+    hands in the session's live leg, and the per-turn runtime main carries it
+    for the rest of the turn.
+    """
+    cfg = None
+    try:
+        from plobi_cli.config import load_config
+
+        cfg = load_config()
+    except Exception:
+        cfg = None
+
+    candidates: list[tuple[str, Optional[str]]] = []
+    try:
+        from agent.auxiliary_client import _get_auxiliary_task_config
+
+        task_cfg = _get_auxiliary_task_config("vision") or {}
+        configured = str(task_cfg.get("provider") or "").strip().lower()
+        if configured and configured != "auto":
+            candidates.append(
+                (configured, str(task_cfg.get("model") or "").strip() or None)
+            )
+    except Exception:
+        pass
+
+    main_provider = _read_main_provider()
+    if main_provider and main_provider != "auto":
+        main_model = _read_main_model()
+        vision_model = _PROVIDER_VISION_MODELS.get(main_provider, main_model) or None
+        candidates.append((main_provider, vision_model))
+
+    # The aggregator chain carries its own vision-capable defaults.
+    for aggregator in _VISION_AUTO_PROVIDER_ORDER:
+        candidates.append((aggregator, None))
+
+    seen: set[str] = set()
+    for provider, model in candidates:
+        key = provider.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if model:
+            try:
+                from agent.image_routing import _lookup_supports_vision
+
+                if _lookup_supports_vision(key, model, cfg) is False:
+                    # Known text-only leg — it cannot read the picture.
+                    continue
+            except Exception:
+                pass
+        try:
+            client, _model = resolve_provider_client(provider, None, is_vision=True)
+        except Exception:
+            client = None
+        if client is not None:
+            return True
+    return False
 
 
 def get_auxiliary_extra_body() -> dict:
