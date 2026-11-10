@@ -38,6 +38,7 @@ import {
   $shellSwapped,
   $sidebarOpen,
   $cardFocus,
+  $cardFocusAnimating,
   setCardFocus,
   setShellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
@@ -50,6 +51,7 @@ import {
 } from '../store/layout'
 import { cardDragProps, useCardDrop } from './shell/card-drag'
 import { useSystemTools } from './shell/system-tools'
+import { resolveWorkbenchAsideClass } from './shell/workbench-aside-class'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { type PreviewTarget } from '../store/preview'
@@ -302,6 +304,11 @@ export function DesktopController() {
   const cardFocus = useStore($cardFocus)
   const focusWorkbench = cardFocus === 'workbench'
   const focusChat = cardFocus === 'chat'
+  // 焦点态：右栏那两条轨照旧渲染、只被收成 0 宽（列数不变 ⇒ 列宽过渡成立）。
+  const railFocused = focusChat || focusWorkbench
+  // 「只显示这一张卡」那一下的动效窗口（11-10）：焦点换掉的那 240ms 里，
+  // 网格列宽有过渡、换面那张卡淡入一下；窗口一关，什么都不带延迟。
+  const cardFocusAnimating = useStore($cardFocusAnimating)
   const chatDrop = useCardDrop('chat', toggleShellSwapped)
   const railDrop = useCardDrop('rail', toggleShellSwapped)
   const profileScope = useStore($profileScope)
@@ -1935,16 +1942,16 @@ export function DesktopController() {
   const railSide = panesFlipped ? 'left' : 'right'
 
   // 互换后这块栏内容进主区：不再有侧边描边、也不用再让顶栏（卡本身已经让过了）。
-  const workbenchAsideClass = cn(
-    'relative flex h-full w-full min-w-0 flex-col overflow-hidden text-(--ui-text-tertiary)',
-    swapped
-      ? 'bg-(--ui-sidebar-surface-background)'
-      : cn(
-          'border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)',
-          panesFlipped
-            ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-        )
+  //
+  // **顶栏让位跟形态走，不跟位置走**（用户 11-10：「顶栏的高度还会变化」）：
+  // 那 34px 的让位是**右栏形态**要的；卡片模式里画布自己已经让过 ⇒ 卡片模式一律不让，
+  // 否则工作面卡被最大化进主区后，卡面顶部就多出一条 34px 的空带。
+  // 口径与判据在 `shell/workbench-aside-class.ts`。
+  const workbenchAsideClasses = cn(
+    resolveWorkbenchAsideClass({ panesFlipped, shellCards, swapped }),
+    // 换面（工作面卡被提升进主区、还原回右栏）时淡入一下——复用仓里现成的关键帧，
+    // 不碰样式表（那边在派别线手里）。
+    cardFocusAnimating && 'animate-[sidebar-swap-in_180ms_ease-out]'
   )
 
   const workbenchFilesContent = agentCwd.trim() ? (
@@ -2087,7 +2094,7 @@ export function DesktopController() {
   }
 
   const filesWorkbench = (
-    <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
+    <aside aria-label={t.workbench.aria} className={workbenchAsideClasses}>
       <RightRailWorkbench
         activeTab={l2Active}
         availableTabs={l2TabDefs.filter(
@@ -2121,7 +2128,9 @@ export function DesktopController() {
       defaultOpen={false}
       // WP-D: the file tree is the L2 workspace rail (§5.3). The workbench owns
       // the tabs here too; this column opens through Ctrl+J / review selection.
-      disabled={!isL2}
+      // 焦点态（只显示这一张卡）里这条轨**照旧渲染**，只是被收成 0 宽
+      // （`disabled`：track→0、aria-hidden，不写 store）—— 列数不变，列宽才能过渡。
+      disabled={!isL2 || railFocused}
       forceCollapsed={narrowViewport}
       hoverReveal={!shellCards}
       id="file-browser"
@@ -2136,7 +2145,8 @@ export function DesktopController() {
         data-shell-card-drop={railDrop.over ? '' : undefined}
         {...railDrop.dropProps}
       >
-        {filesWorkbench}
+        {/* 工作面卡被提升进主区时，这一条轨里的那份要让位——同一张卡不能渲染两份。 */}
+        {focusWorkbench && level !== 'l1' ? null : filesWorkbench}
       </div>
     </Pane>
   )
@@ -2153,7 +2163,7 @@ export function DesktopController() {
   // chrome moved from a hand-rolled aside to the shell's right rail. This Pane
   // is L1-only; L2 gets the same `agendaTabContent` inside its own workbench.
   const agendaWorkbench = (
-    <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
+    <aside aria-label={t.workbench.aria} className={workbenchAsideClasses}>
       <RightRailWorkbench
         activeTab={l1Active}
         availableTabs={l1TabDefs.filter(tab => !l1Tabs.includes(tab.id))}
@@ -2179,7 +2189,8 @@ export function DesktopController() {
   const agendaTimelinePane = (
     <Pane
       defaultOpen
-      disabled={level !== 'l1'}
+      // 同上：焦点态里照旧渲染、只收成 0 宽（列数不变 ⇒ 列宽过渡成立）。
+      disabled={level !== 'l1' || railFocused}
       divider
       forceCollapsed={narrowViewport}
       hoverReveal={!shellCards}
@@ -2195,7 +2206,8 @@ export function DesktopController() {
         data-shell-card-drop={railDrop.over ? '' : undefined}
         {...railDrop.dropProps}
       >
-        {agendaWorkbench}
+        {/* 同上：被提升进主区的那份不在这里了。 */}
+        {focusWorkbench && level === 'l1' ? null : agendaWorkbench}
       </div>
     </Pane>
   )
@@ -2318,18 +2330,22 @@ export function DesktopController() {
 
   // PaneShell 只收**直接子元素**（Children.forEach 不钻 Fragment）：这一组必须平铺成数组，
   // 用 <>…</> 包起来的话 Pane 收不到槽位、就整块不渲染（10-31 自测：右栏与对话窄卡都消失）。
+  // 焦点态（只显示这一张卡）**不卸载右栏那两条轨**，只把它们收成 0 宽。
+  // 列**个数**一变，`grid-template-columns` 就无从插值 ⇒ 卡片只能硬跳（11-10 现场：
+  // 最大化一点动静都没有）；列数不变时，那条 px 轨道可以从 320px 过渡到 0px ⇒ 卡片是「长大」的。
+  const railPanes = [
+    panesFlipped ? fileBrowserPane : null,
+    agendaTimelinePane,
+    panesFlipped ? null : fileBrowserPane
+  ]
+
   const shellPanes = focusChat
-    ? [<PaneMain key="main">{chatCard}</PaneMain>]
+    ? [<PaneMain key="main">{chatCard}</PaneMain>, ...railPanes]
     : focusWorkbench
-      ? [<PaneMain key="main">{railCard}</PaneMain>]
+      ? [<PaneMain key="main">{railCard}</PaneMain>, ...railPanes]
       : swapped
         ? [<PaneMain key="main">{railCard}</PaneMain>, chatPane]
-        : [
-            <PaneMain key="main">{chatCard}</PaneMain>,
-            panesFlipped ? fileBrowserPane : null,
-            agendaTimelinePane,
-            panesFlipped ? null : fileBrowserPane
-          ]
+        : [<PaneMain key="main">{chatCard}</PaneMain>, ...railPanes]
 
   // 左栏也是一条 Pane：换边后它必须排在同侧最后（最外一列），否则会掉进对话和工作面中间
   // ——10-31 第二张截图那个 bug。正常态它排最前。

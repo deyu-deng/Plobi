@@ -10,6 +10,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { startScrollActivityWatch } from '@/lib/scroll-activity'
 import { cn } from '@/lib/utils'
 import {
+  $cardFocusAnimating,
   $fileBrowserOpen,
   $panesFlipped,
   $shellCards,
@@ -76,6 +77,10 @@ export function AppShell({
 }: AppShellProps) {
   const sidebarOpen = useStore($sidebarOpen)
   const sidebarAnimating = useStore($sidebarAnimating)
+  // 「只显示这一张卡」那一下的列宽过渡（11-10）：只在焦点换掉的那 240ms 里给网格挂过渡，
+  // 别的时候一点延迟都不留 —— 拖拽改宽与手动调列都不该被拖慢。
+  // 曲线与左栏那把尺同一条（`styles.css:2076`），只是不写进样式表（那边在派别线手里）。
+  const cardFocusAnimating = useStore($cardFocusAnimating)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const panesFlipped = useStore($panesFlipped)
   const shellCards = useStore($shellCards)
@@ -213,7 +218,14 @@ export function AppShell({
           sidebarAnimating && 'shell-sidebar-animating'
         )}
       >
-        <PaneShell className="min-h-0 flex-1">
+        <PaneShell
+          className="min-h-0 flex-1"
+          style={
+            cardFocusAnimating
+              ? { transition: 'grid-template-columns 200ms cubic-bezier(0.32, 0.72, 0, 1)' }
+              : undefined
+          }
+        >
           <div
             aria-hidden="true"
             className="pointer-events-none absolute left-0 top-0 z-1 h-(--titlebar-height) w-(--titlebar-controls-left) [-webkit-app-region:drag]"

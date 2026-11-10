@@ -264,7 +264,32 @@ export function setPanesFlipped(value: boolean) {
 export type CardFocus = 'chat' | 'workbench' | null
 export const $cardFocus = atom<CardFocus>(null)
 
+/**
+ * 「只显示这一张卡」那 200ms：只在这时给网格列加过渡，拖拽改宽时不能有延迟。
+ *
+ * 与左栏那把尺（`$sidebarAnimating`）**同一个形状、两件事互不串门**：
+ * 卡片放大/还原时列数不变（那两条轨只是被收成 0 宽），所以
+ * `grid-template-columns` 可以从一条 px 轨道过渡到另一条 px 轨道——
+ * 列**个数**一变，浏览器无从插值，就只能硬跳（11-10 现场：最大化一点动静都没有）。
+ */
+export const $cardFocusAnimating = atom(false)
+let cardFocusAnimationTimer: ReturnType<typeof setTimeout> | null = null
+
+function markCardFocusAnimating(): void {
+  $cardFocusAnimating.set(true)
+
+  if (cardFocusAnimationTimer) {
+    clearTimeout(cardFocusAnimationTimer)
+  }
+
+  cardFocusAnimationTimer = setTimeout(() => {
+    $cardFocusAnimating.set(false)
+    cardFocusAnimationTimer = null
+  }, 240)
+}
+
 export function setCardFocus(next: CardFocus): void {
+  markCardFocusAnimating()
   $cardFocus.set(next)
 }
 
