@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   },
   // 导入本机配置后让侧车重新读一遍插件/登录（magpie 只在启动时加载）。
   restartMagpie: () => ipcRenderer.invoke('plobi:magpie:restart'),
+  // 侧车单独更新：上游适配器层一天几版，不值得为此发一个 Plobi 安装包。
+  // check 只问版本不下载；apply 会拉 74MB、校验 sha256、然后重启侧车。
+  checkMagpieUpdate: () => ipcRenderer.invoke('plobi:magpie:update:check'),
+  applyMagpieUpdate: () => ipcRenderer.invoke('plobi:magpie:update:apply'),
   api: request => ipcRenderer.invoke('plobi:api', request),
   notify: payload => ipcRenderer.invoke('plobi:notify', payload),
   requestMicrophoneAccess: () => ipcRenderer.invoke('plobi:requestMicrophoneAccess'),

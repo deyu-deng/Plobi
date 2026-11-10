@@ -43,6 +43,7 @@ import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './
 import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
+import { fetchLatestRelease, installBuild, readCurrent, resolveUpdatedBuild } from './magpie-channel'
 import { ensureMagpieSidecar, magpieEnv, restartMagpieSidecar, stopMagpieSidecar } from './magpie-sidecar'
 import {
   buildHiddenHandoffLauncher,
@@ -11255,6 +11256,72 @@ ipcMain.handle('plobi:magpie:restart', async () => {
   } catch (err) {
     return { started: false, port: null, reason: String(err) }
   }
+})
+
+// magpie 的适配器层（各家 provider 的额度形状）随它自己的版本走，上游一天几版，
+// Plobi 不可能跟着一天发一个安装包。所以侧车允许跑一个「我们下载并校验过」的版本，
+// 落在 <PLOBI_HOME>/magpie/bin/<version>/，包内那份退居兜底（起不来就自动退回去，
+// 见 magpie-sidecar 的 fallBackFromUpdate）。
+//
+// 这里只提供入口，不自动下载：一次 74MB，静默替用户拉流量不合适，何时更新交给界面。
+ipcMain.handle('plobi:magpie:update:check', async () => {
+  try {
+    const current = readCurrent(PLOBI_HOME)
+    const latest = await fetchLatestRelease()
+
+    return {
+      ok: Boolean(latest),
+      running: current?.version ?? null,
+      latest: latest?.version ?? null,
+      bytes: latest?.size ?? 0,
+      // 只有版本号不同才值得下载；同版本重装是浪费流量。
+      updateAvailable: Boolean(latest && latest.version !== current?.version),
+      reason: latest ? null : '上游没有可用的发布（网络不通，或该平台的产物没带上校验和）'
+    }
+  } catch (err) {
+    return { ok: false, running: null, latest: null, bytes: 0, updateAvailable: false, reason: String(err) }
+  }
+})
+
+// 同一时刻只允许一个下载任务：按钮点两下不该变成两个 74MB 的并发下载。
+let magpieUpdateInFlight: Promise<{ ok: boolean; version: string | null; started: boolean; port: number | null; reason: string | null }> | null = null
+
+ipcMain.handle('plobi:magpie:update:apply', async () => {
+  if (magpieUpdateInFlight) {
+    return magpieUpdateInFlight
+  }
+
+  magpieUpdateInFlight = (async () => {
+    try {
+      const latest = await fetchLatestRelease()
+
+      if (!latest) {
+        return { ok: false, version: null, started: false, port: null, reason: '上游没有可用的发布' }
+      }
+
+      // 校验不过会在这里抛出去，指针保持不动，旧版本继续跑。
+      await installBuild(PLOBI_HOME, latest)
+
+      // 换完二进制必须重启侧车：它只在启动时加载 plugins/登录态，也不存在热替换这回事。
+      // 新版本起不来的话 ensureMagpieSidecar 会标坏它并退回包内版本，所以这里拿到的
+      // started 就是最终结论，不需要我们再判断一次。
+      const sidecar = await restartMagpieSidecar(PLOBI_HOME)
+
+      return {
+        ok: sidecar.started,
+        version: resolveUpdatedBuild(PLOBI_HOME)?.version ?? null,
+        started: sidecar.started,
+        port: sidecar.port,
+        reason: sidecar.reason ?? (sidecar.started ? null : '新版本已下载，但没能起起来，已退回包内版本')
+      }
+    } catch (err) {
+      return { ok: false, version: null, started: false, port: null, reason: String(err) }
+    } finally {
+      magpieUpdateInFlight = null
+    }
+  })()
+
+  return magpieUpdateInFlight
 })
 
 ipcMain.on('plobi:previewShortcutActive', (_event, active) => {

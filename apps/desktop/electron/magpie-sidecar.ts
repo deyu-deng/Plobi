@@ -3,14 +3,17 @@
  *
  * Five rules this file keeps:
  *
- * 1. **The binary comes from the package, never from the internet at install
- *    time and never from whatever happens to be on PATH.**
+ * 1. **The binary comes from the package or from our own verified download —
+ *    never from whatever happens to be on PATH.**
  *    `scripts/fetch-magpie.mjs` puts the pinned build into `build/magpie/`
- *    before packaging; at runtime we only look for that copy (packaged:
- *    `resources/magpie/`, dev: `build/magpie/`). A machine that already runs
- *    its own magpie must keep running *its* magpie, and we must never quietly
- *    attach to it: that instance is not ours to stop, its data is not ours to
- *    read, and its providers are not the ones we told the gateway about.
+ *    before packaging (packaged: `resources/magpie/`, dev: `build/magpie/`), and
+ *    that copy is the floor: it is what runs when a downloaded build is absent
+ *    or was marked bad. A downloaded build in `<PLOBI_HOME>/magpie/bin/<version>/`
+ *    wins over it, and only because `magpie-channel.ts` hashed it against
+ *    upstream's `SHA256SUMS` first. A machine that already runs its own magpie
+ *    must keep running *its* magpie, and we must never quietly attach to it:
+ *    that instance is not ours to stop, its data is not ours to read, and its
+ *    providers are not the ones we told the gateway about.
  * 2. **Its own port, not the default one.** `magpie serve` reads `port` from
  *    `settings.json`; 3425 is the port a hand-installed magpie uses, so we
  *    write a port of our own there (reused across boots when it is still free).
@@ -34,6 +37,8 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { clearCurrent, markBad, resolveUpdatedBuild } from './magpie-channel'
 
 /**
  * Where this module lives. The electron main is bundled as **ESM**
@@ -154,15 +159,24 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function candidates(): string[] {
+function candidates(plobiHome?: string): string[] {
   const names = process.platform === 'win32' ? ['magpie-cli.exe', 'magpie-cli'] : ['magpie-cli']
+  const out: string[] = []
+  // A build we downloaded and verified outranks the one in the installer: that
+  // is the whole point of `magpie-channel.ts` — the adapter layer moves without
+  // a Plobi release. `readCurrent` already refuses anything not under our bin
+  // root, not matching a version shape, or marked bad, so a stale pointer here
+  // simply means "fall through to the packaged copy".
+  if (plobiHome) {
+    const updated = resolveUpdatedBuild(plobiHome)
+    if (updated) out.push(updated.binary)
+  }
   const roots = [
     // Packaged: electron-builder puts `build/magpie` under `resources/`.
     path.join(process.resourcesPath ?? '', 'magpie'),
     // Dev: the same build tree, before packaging.
     path.resolve(HERE, '..', 'build', 'magpie')
   ]
-  const out: string[] = []
   for (const root of roots) {
     for (const name of names) {
       out.push(path.join(root, name))
@@ -179,8 +193,8 @@ function candidates(): string[] {
  * port belong to another application. Missing means missing — the gateway says
  * so on the card instead of pretending the vendor layer is here.
  */
-export function resolveMagpieBinary(): string | null {
-  for (const candidate of candidates()) {
+export function resolveMagpieBinary(plobiHome?: string): string | null {
+  for (const candidate of candidates(plobiHome)) {
     try {
       if (fs.existsSync(candidate)) return candidate
     } catch {
@@ -288,6 +302,34 @@ function pinPort(plobiHome: string, port: number): void {
 }
 
 /**
+ * A downloaded build that will not serve is worse than an old one that will.
+ *
+ * Mark the version bad, forget the pointer, and start again: the second call
+ * sees no updated build and lands on the packaged copy (`candidates` falls
+ * through). `markBad` is what stops the next boot from repeating this exact
+ * failure, and it only ever names a *downloaded* version — the packaged copy is
+ * the installer's own and may not be condemned here.
+ *
+ * Returns null when there was nothing to fall back from, so both failure sites
+ * stay one line.
+ */
+async function fallBackFromUpdate(
+  plobiHome: string,
+  updated: { version: string } | null,
+  reason: string
+): Promise<MagpieSidecar | null> {
+  if (!updated) return null
+  markBad(plobiHome, updated.version, reason)
+  clearCurrent(plobiHome)
+  logLine(plobiHome, `magpie: ${updated.version} did not serve (${reason}) — back to the packaged copy`)
+  // Take the port back before the packaged copy asks for it.
+  stopMagpieSidecar(plobiHome)
+  await new Promise(resolve => setTimeout(resolve, 900))
+  running = null
+  return ensureMagpieSidecar(plobiHome)
+}
+
+/**
  * Start magpie if it is not already answering, on a port of our own.
  *
  * The gateway reads magpie's provider list and its model catalogue, so magpie
@@ -298,12 +340,17 @@ function pinPort(plobiHome: string, port: number): void {
 export async function ensureMagpieSidecar(plobiHome: string): Promise<MagpieSidecar> {
   if (running) return running
 
-  const binary = resolveMagpieBinary()
+  const binary = resolveMagpieBinary(plobiHome)
   if (!binary) {
     logLine(plobiHome, 'magpie: no binary in this package — the vendor layer stays off')
     running = { binary: null, started: false, port: null, reason: 'the package carries no magpie binary' }
     return running
   }
+
+  // Which build are we about to run? Only a downloaded one can be a bad update
+  // (the packaged copy is what the installer shipped, and marking *it* would
+  // leave this machine with no vendor layer at all), so remember the version.
+  const updated = resolveUpdatedBuild(plobiHome)
 
   fs.mkdirSync(magpieDataDir(plobiHome), { recursive: true })
 
@@ -353,6 +400,8 @@ export async function ensureMagpieSidecar(plobiHome: string): Promise<MagpieSide
     })
   } catch (err) {
     logLine(plobiHome, `magpie: spawn failed: ${String(err)}`)
+    const recovered = await fallBackFromUpdate(plobiHome, updated, `spawn failed: ${String(err)}`)
+    if (recovered) return recovered
     running = { binary, started: false, port, reason: `spawn failed: ${String(err)}` }
     return running
   }
@@ -390,6 +439,11 @@ export async function ensureMagpieSidecar(plobiHome: string): Promise<MagpieSide
   if (!sawGateway) {
     logLine(plobiHome, `magpie: did not answer on ${port} within 8s (see this log above)`)
   }
+  // Not answering is a failure, whoever is to blame — but only a downloaded
+  // build can be handed back. The packaged copy keeps the "did not answer"
+  // answer, which is the honest one when there is nothing else to try.
+  const recovered = await fallBackFromUpdate(plobiHome, updated, `no answer on ${port} within 8s`)
+  if (recovered) return recovered
   return running
 }
 
