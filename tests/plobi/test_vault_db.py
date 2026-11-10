@@ -43,6 +43,20 @@ def db(tmp_path, monkeypatch):
     vault._INITIALIZED.clear()
 
 
+def _physical(logical: str) -> Path:
+    """逻辑前缀 → 这一档测试用的物理相对路径（``Notes/…`` ⇒ ``notes/…``）。
+
+    旧写法 ``Surface/notes/…`` 也认（**仍解析**）——那一档是兼容期的兜底。
+    """
+    parts = Path(logical).as_posix().split("/")
+    head, rest = parts[0], parts[1:]
+    if head in ("Notes", "Diary", "Dossiers", "Meta", "Inbox"):
+        return Path(head.lower()).joinpath(*rest)
+    if head == "Surface":
+        return Path(*rest)
+    return Path(*parts)
+
+
 def _count(db_path: Path, table: str) -> int:
     conn = sqlite3.connect(str(db_path))
     try:
@@ -70,7 +84,7 @@ def test_three_tables_exist(db):
 def test_note_roundtrip(db):
     """笔记：写进去读出来是同一条。"""
     note = vault.VaultNote(
-        path="Surface/notes/数学/微积分.md",
+        path="Notes/数学/微积分.md",
         title="微积分",
         topic="数学",
         tags=["math"],
@@ -82,7 +96,7 @@ def test_note_roundtrip(db):
     )
     vault.upsert_note(note)
 
-    got = vault.get_note("Surface/notes/数学/微积分.md")
+    got = vault.get_note("Notes/数学/微积分.md")
     assert got is not None
     assert got.title == "微积分"
     assert got.topic == "数学"
@@ -93,11 +107,26 @@ def test_note_roundtrip(db):
 
 def test_upsert_is_idempotent(db):
     """同一条写两次不会变成两行（迁移脚本会重复跑）。"""
-    note = vault.VaultNote(path="Surface/notes/a.md", title="A", topic="")
+    note = vault.VaultNote(path="Notes/a.md", title="A", topic="")
     vault.upsert_note(note)
-    vault.upsert_note(vault.VaultNote(path="Surface/notes/a.md", title="A2", topic=""))
+    vault.upsert_note(vault.VaultNote(path="Notes/a.md", title="A2", topic=""))
     assert len(vault.list_notes()) == 1
-    assert vault.get_note("Surface/notes/a.md").title == "A2"
+    assert vault.get_note("Notes/a.md").title == "A2"
+
+
+def test_the_old_logical_prefix_still_finds_the_note(db):
+    """旧写法 ``Surface/notes/…`` 仍查得到同一条（旧路不是错话）。
+
+    库里的行用**新写法**；旧写法只作为查询的一路兜底。
+    """
+    vault.upsert_note(
+        vault.VaultNote(path="Notes/数学/微积分.md", title="微积分", topic="数学")
+    )
+    legacy = vault.get_note("Surface/notes/数学/微积分.md")
+    assert legacy is not None
+    assert legacy.title == "微积分"
+    # 回给调用方的永远是新写法。
+    assert legacy.path == "Notes/数学/微积分.md"
 
 
 def test_dossier_roundtrip(db):
@@ -135,7 +164,7 @@ def test_diary_roundtrip(db):
 def test_search_notes(db):
     """搜索按标题与摘要命中。"""
     vault.upsert_note(
-        vault.VaultNote(path="Surface/notes/x.md", title="微积分导数", topic="数学", excerpt="链式法则")
+        vault.VaultNote(path="Notes/x.md", title="微积分导数", topic="数学", excerpt="链式法则")
     )
     hits = vault.search_notes("微积分")
     assert any(h.title == "微积分导数" for h in hits)
@@ -194,7 +223,7 @@ def _point_at_home(monkeypatch, home: Path):
     monkeypatch.setattr(
         paths_mod,
         "real_target",
-        lambda logical, root=None: home / Path(logical).relative_to("Surface"),
+        lambda logical, root=None: home / _physical(logical),
     )
     monkeypatch.setattr(vault, "vault_db_path", lambda: home / "plobi" / "vault.db")
 
@@ -237,7 +266,7 @@ def test_migrate_reads_real_layout_and_never_writes_back(db, tmp_path, monkeypat
     assert _count(db, "user_diary") == 1
 
     # 内容对得上
-    note = vault.get_note("Surface/notes/数学/微积分.md")
+    note = vault.get_note("Notes/数学/微积分.md")
     assert note is not None
     assert note.title == "微积分"
     assert note.belongs == ["Aura"]
@@ -297,7 +326,7 @@ def test_missing_db_falls_back_to_filesystem(monkeypatch, tmp_path):
 
     surface = _make_surface(tmp_path)
     monkeypatch.setattr(
-        paths_mod, "real_target", lambda logical, root=None: surface / Path(logical).relative_to("Surface")
+        paths_mod, "real_target", lambda logical, root=None: surface / _physical(logical)
     )
     # 指到一个**建不出来的**路径 ⇒ connect() 抛错
     monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "no" / "such" / "dir" / "x.db"))
@@ -346,7 +375,7 @@ def test_migration_refuses_to_cross_homes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         paths_mod,
         "real_target",
-        lambda logical, root=None: dev_surface / Path(logical).relative_to("Surface"),
+        lambda logical, root=None: dev_surface / _physical(logical),
     )
 
     # 但库指到「装机态」那个家 ⇒ 两个身份 ⇒ 必须拒绝
@@ -371,7 +400,7 @@ def test_migration_allows_same_home(tmp_path, monkeypatch):
     monkeypatch.setattr(
         paths_mod,
         "real_target",
-        lambda logical, root=None: home / Path(logical).relative_to("Surface"),
+        lambda logical, root=None: home / _physical(logical),
     )
     monkeypatch.setattr(vault, "vault_db_path", lambda: home / "plobi" / "vault.db")
 

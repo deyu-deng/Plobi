@@ -25,7 +25,7 @@ from typing import Optional
 from plobi.mind.paths import real_target, resolve_roots
 
 #: 摘要落点的前缀由 agenda 那协调器拥有，这里不抄第二份路径规则
-# 摘要落点在脑里（用户 10-24：surface 不进记忆系统）；以前这里是 Surface/projects/Plobi/daily。
+# 摘要落点在脑里（用户 10-24：人读面不进记忆系统）；以前这里是 Surface/projects/Plobi/daily。
 _DIGEST_PREFIX = "Mind/wiki/daily"
 
 
@@ -42,7 +42,7 @@ def _digest_state(roots) -> tuple[str, str]:
     if not path.is_file():
         return logical, "缺席（今天还没有任何主会话写过它）"
     repo = None
-    for candidate in (roots.surface, roots.mind):
+    for candidate in (roots.human, roots.mind):
         if candidate is None:
             continue
         try:
@@ -68,7 +68,7 @@ def _digest_state(roots) -> tuple[str, str]:
 def _persona_state(roots) -> str:
     """画像两档：详版在脑里（persona/profile.md），精简版是 L0 的 USER.md。
 
-    surface 不进记忆系统（用户 2026-10-24 明确）：这一行以前读 Surface/meta/profile，
+    人读面不进记忆系统（用户 2026-10-24 明确）：这一行以前读 Surface/meta/profile，
     那份已按用户令删除；详版搬回脑里，摘要那份由 L0 自己维护。
     """
     from plobi.mind.reader import PERSONA_RELATIVE, MindReader
@@ -150,7 +150,7 @@ def status_lines() -> list[tuple[str, str]]:
         ("画像", _persona_state(roots) if roots else "无根可解析"),
         (f"今日摘要 {digest_logical}", digest_state),
         ("脑仓 MIND_ROOT", _repo_state(roots.mind) if roots else "未配置"),
-        ("人读面 SURFACE_ROOT", _repo_state(roots.surface) if roots else "未钉（人读面还在脑仓里）"),
+        ("人读面 HUMAN_ROOT", _repo_state(roots.human) if roots else "未钉（人读面还在脑仓里）"),
     ]
 
 

@@ -127,7 +127,7 @@ async def get_surface_agent_tasks(name: str):
     """那一页的每日任务清单（档案目录下的 ``tasks.json``，与 plan/progress 同目录）。
 
     屏上的进度就是这份文件：人勾选 ⇒ ``POST …/toggle`` 改它；Agent 用
-    ``surface_write`` 改**同一个**文件 ⇒ 两边共用一处真源。
+    ``dossier_write`` 改**同一个**文件 ⇒ 两边共用一处真源。
 
     坏文件不许糊成空表：JSON 坏了 ⇒ ``data.error`` 有值（前端显示「读不到」），
     文件不在 ⇒ ``data.exists`` 为 False（前端显示「还没有清单」）。
@@ -281,7 +281,7 @@ def get_vault_root() -> str:
     """Get the vault notes root path."""
     try:
         from plobi.mind.paths import real_target
-        return str(real_target("Surface/notes"))
+        return str(real_target("Notes"))
     except Exception:
         return "/unknown"
 

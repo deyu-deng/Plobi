@@ -1,11 +1,11 @@
-"""知识库：``Surface/notes`` 的目录、读取与**人工写入**（WP-VAULT-AGENTS-VIEW / WP-NOTES-WORKBENCH）。
+"""知识库：``Notes`` 的目录、读取与**人工写入**（WP-VAULT-AGENTS-VIEW / WP-NOTES-WORKBENCH）。
 
 用户把那面墙定成「知识库」，里面**只放笔记**——研究/课程的文档不进这里，只有标题的壳也不进（用户 10-27：「只留有内容的」）。
 扫、给元数据、按路径读一篇正文，以及人在笔记栏里编辑后整篇存回（2026-11-04：「Plobi 也可以编辑，
 我以后不想打开 Obsidian 了」）。不搬文件、不删笔记、不建主题以外的东西。
 
-路径安全：对外只认 ``Surface/notes/...`` 这种逻辑路径，读**和写**之前都再解析一次并确认落点在
-``<SURFACE_ROOT>/notes`` 之内——前端传来的字符串永远当不可信输入。
+路径安全：对外只认 ``Notes/...`` 这种逻辑路径（旧的 ``Surface/notes/...`` 也认，进来先归一），
+读**和写**之前都再解析一次并确认落点在 ``<HUMAN_ROOT>/notes`` 之内——前端传来的字符串永远当不可信输入。
 
 注意 :mod:`plobi.mind.notes_contract` 那道闸**只管 Agent 写**，明写「不管人自己写」；
 所以 :func:`save_note` 不调用 ``validate_note``。人写的笔记可以没有 frontmatter、可以有多个
@@ -25,11 +25,11 @@ from typing import Any
 import yaml
 
 from .notes_contract import INDEX_FILE_NAMES
-from .paths import MindUnavailable, real_target
+from .paths import MindUnavailable, normalize_logical, real_target
 
 logger = logging.getLogger(__name__)
 
-NOTES_LOGICAL_ROOT = "Surface/notes"
+NOTES_LOGICAL_ROOT = "Notes"
 MAX_NOTES = 800
 EXCERPT_CHARS = 120
 # 一条「是不是壳」的形状线，不是内容好坏的评分线：只有标题、或标题下一句「待补」的那种不进屏。
@@ -195,7 +195,7 @@ def _safe_note_target(logical: str) -> Path | None:
     读和写共用**同一份**判据——两处各写一套，早晚漂成「读得到但写不进去」或反过来。
     前端传来的字符串永远当不可信输入。
     """
-    raw = (logical or "").strip().replace("\\", "/")
+    raw = normalize_logical((logical or "").strip().replace("\\", "/"))
     if not raw.startswith(NOTES_LOGICAL_ROOT + "/") or not raw.endswith(".md"):
         return None
     parts = raw.split("/")
@@ -211,7 +211,7 @@ def _safe_note_target(logical: str) -> Path | None:
 
 
 def resolve_note(logical: str) -> Path | None:
-    """把 ``Surface/notes/...`` 解析成盘上的文件；越界或不是 md 一律 None。"""
+    """把 ``Notes/...`` 解析成盘上的文件；越界或不是 md 一律 None。"""
     candidate = _safe_note_target(logical)
     return candidate if candidate is not None and candidate.is_file() else None
 
@@ -282,7 +282,7 @@ def save_note(
     base_text: str | None = None,
     commit: bool = True,
 ) -> dict[str, Any]:
-    """把人在笔记栏里写的整篇存回 ``Surface/notes/...``；文件不存在就是新建。
+    """把人在笔记栏里写的整篇存回 ``Notes/...``；文件不存在就是新建。
 
     ``base_text`` 是编辑器打开时那份原文。带上它，保存前先比一次盘上现状：
     长笔记**不做**日记那种「按行合并」——2919 行的文章按行猜哪些是别人新加的，

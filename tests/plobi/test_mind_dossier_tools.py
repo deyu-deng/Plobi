@@ -1,15 +1,15 @@
-"""两对读写工具：一面一对（surface_* 给人读面，mind_* 给脑那一面）＋档案那把编辑手。
+"""九把原子工具：人读面那三样各有各的读写，脑那一面一对，外加一把「列自己名下有哪些笔记」。
 
 用户 2026-10-25：「档案严重过时了……Agent 会自己维护吗？」两答＝给模型一枚写档案的手、
-白名单放开到全部项目与研究。用户 2026-10-29 再拍两问：名字要按读者分（``surface_write`` 才
-对得上盘上那个根），并且**读写都给、真对称**。这里钉住四件事：**能写了**（以前静默 skip）、
-**一枚工具只碰一面**（越面当场拒，不装作读不到）、**闸门关着时不许谎报落盘**（裁 199）、
-**给人看的拼法不许出现盘上没有的那个词**（脑那一面对模型叫 ``Mind/…``，``Mind/…`` 是内部与
-存量的旧拼法）。
+白名单放开到全部项目与研究。用户 2026-10-29 再拍两问：名字要按读者分，并且**读写都给、
+真对称**。用户 2026-11-10 再拍一刀：**别再叫 surface 了**，日记／笔记／档案其实是三样
+不一样的东西，原子工具**按种类拆**。这里钉住五件事：**能写了**（以前静默 skip）、
+**一枚工具只碰一类**（越类当场拒，不装作读不到）、**闸门关着时不许谎报落盘**（裁 199）、
+**给人看的拼法不许出现盘上没有的那个词**（脑那一面对模型叫 ``Mind/…``）、
+**旧工具名退役不留别名**。
 
 11-09：档案本体（``dossier.json``）是目标／现状的真源，``plan.md``／``progress.md``
-那一对退役——这一档的契约跟着迁到 ``dossier.json``；另加第五把 ``dossier_write``
-（档案本体的字段级编辑手）。
+那一对退役——这一档的契约跟着迁到 ``dossier.json``。
 """
 
 from __future__ import annotations
@@ -44,6 +44,11 @@ def roots(tmp_path, monkeypatch):
     (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
     (surface / "dossiers" / "research" / "SRTP").mkdir(parents=True)
     (surface / "notes").mkdir()
+    (surface / "notes" / "某主题").mkdir()
+    (surface / "notes" / "某主题" / "某篇.md").write_text(
+        "---\ntitle: 某篇\ntags: [物理]\nbelongs: [Aura]\n---\n\n正文不该出现在清单里。\n",
+        encoding="utf-8",
+    )
     # **档案本体**（``dossier.json``）是目标／现状的真源（11-09）；``plan.md``／
     # ``progress.md`` 那一对退役了——这一档的契约跟着迁到 ``dossier.json``。
     (surface / "dossiers" / "projects" / "Aura" / "dossier.json").write_text(
@@ -69,30 +74,43 @@ def roots(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     provider = MindProvider()
-    provider.initialize("sess-dossier", agent_context="primary")
+    provider.initialize("sess-dossier", agent_context="primary", agent_identity="Aura")
     return mind, surface, provider
 
 
 def test_every_dossier_home_is_now_writable(roots):
     _mind, _vault, _provider = roots
+    assert is_safe_relative("Dossiers/projects/Aura/dossier.json") is True
+    assert is_safe_relative("Dossiers/research/SRTP/dossier.json") is True
+    assert is_safe_relative("Dossiers/courses/电工电子学/requirements.md") is True
+
+
+def test_the_old_logical_prefix_is_still_writable(roots):
+    """旧写法仍解析（旧路不是错话），但**回话里不再广告**那个词。"""
+    _mind, _vault, _provider = roots
     assert is_safe_relative("Surface/dossiers/projects/Aura/dossier.json") is True
-    assert is_safe_relative("Surface/dossiers/research/SRTP/dossier.json") is True
-    assert is_safe_relative("Surface/dossiers/courses/电工电子学/requirements.md") is True
+    assert is_safe_relative("Surface/notes/某主题/某篇.md") is True
 
 
 def test_widening_surface_does_not_widen_the_memory_surface(roots):
     _mind, _vault, _provider = roots
     # 记忆的读写只认脑里那几格；人读面再宽也不是记忆区（用户 10-24/25 两次判）。
-    assert is_memory_zone("Surface/dossiers/projects/Aura/dossier.json") is False
-    assert is_memory_zone("Surface/notes") is False
+    assert is_memory_zone("Dossiers/projects/Aura/dossier.json") is False
+    assert is_memory_zone("Notes") is False
     assert is_memory_zone("Mind/wiki/daily/2026-10-25.md") is True
 
 
 def test_paths_still_refuse_escapes_and_legacy_zones(roots):
     _mind, _vault, _provider = roots
-    for bad in ("../etc/passwd", "Surface/../../Windows", "Mind/raw/chat-logs/x.md", "random/file.md"):
+    for bad in (
+        "../etc/passwd",
+        "Surface/../../Windows",
+        "Notes/../../Windows",
+        "Mind/raw/chat-logs/x.md",
+        "random/file.md",
+    ):
         assert is_safe_relative(bad) is False, bad
 
 
@@ -100,21 +118,27 @@ def test_the_tools_are_atomic(roots):
     _mind, _vault, provider = roots
     schemas = provider.get_tool_schemas()
     assert [schema["name"] for schema in schemas] == [
-        "surface_read",
-        "surface_write",
+        "note_read",
+        "note_write",
+        "diary_read",
+        "diary_write",
+        "dossier_read",
         "dossier_write",
         "mind_read",
         "mind_write",
+        "agent_notes",
     ]
     for schema in schemas:
         # 裁定 185：不许用 action/mode/surface 这类选分支的参数把两件事塞进一枚工具——
-        # 「碰哪一面」由工具身份决定，不是让模型猜对才走对。
+        # 「碰哪一类」由工具身份决定，不是让模型猜对才走对。
         assert not {"action", "mode", "surface", "intent"} & set(schema["parameters"]["properties"])
     for schema in schemas:
-        if schema["name"].endswith("_read"):
-            assert set(schema["parameters"]["properties"]) == {"path"}
-        elif schema["name"] == "dossier_write":
-            # 档案那把手是**字段级**的：改哪几格由参数说了算。
+        name = schema["name"]
+        if name.endswith("_read"):
+            assert set(schema["parameters"]["properties"]) == {"path"}, name
+        elif name == "dossier_write":
+            # 档案那把手是**字段级**的：改哪几格由参数说了算（``content`` 是同一目录
+            # 里**另一个**文件那一路，例如当日清单 ``tasks.json``）。
             assert set(schema["parameters"]["properties"]) == {
                 "path",
                 "agent",
@@ -122,7 +146,10 @@ def test_the_tools_are_atomic(roots):
                 "status",
                 "stages",
                 "log_append",
+                "content",
             }
+        elif name == "agent_notes":
+            assert set(schema["parameters"]["properties"]) == {"agent"}
         else:
             assert set(schema["parameters"]["properties"]) == {"path", "content"}
     # 描述里不许出现**退役的旧拼法**（用户 10-29：「不是已经没有 Loom 这个东西了吗」；
@@ -131,35 +158,53 @@ def test_the_tools_are_atomic(roots):
     joined = " ".join(str(schema["description"]) for schema in schemas)
     assert "Loom" not in joined
     assert "Vault" not in joined
+    # 旧工具名退役：连描述里都不许再提（那两把已经不存在了）。
+    assert "surface_read" not in joined
+    assert "surface_write" not in joined
     # 档案那把手的描述按 ``dossier.json`` 的形状写：目标／现状／阶段。
     dossier = next(s for s in schemas if s["name"] == "dossier_write")
     assert "goal" in dossier["description"] and "status" in dossier["description"]
     assert "stages" in dossier["description"]
 
 
-def test_surface_read_returns_the_file_or_says_it_is_missing(roots):
+def test_the_old_tool_names_are_retired_without_aliases(roots):
+    """``surface_read``／``surface_write`` 退役，**不留别名**。
+
+    留别名等于那一把通吃的工具还在模型手上——按种类拆就白拆了。
+    """
+    _mind, _vault, provider = roots
+    for name in ("surface_read", "surface_write"):
+        result = json.loads(provider.handle_tool_call(name, {"path": "Notes/x.md"}))
+        assert result["success"] is False
+        assert "does not handle" in result["error"]
+
+
+def test_dossier_read_returns_the_file_or_says_it_is_missing(roots):
     _mind, _vault, provider = roots
 
-    ok = json.loads(provider.handle_tool_call("surface_read", {"path": "Surface/dossiers/projects/Aura/dossier.json"}))
+    ok = json.loads(
+        provider.handle_tool_call("dossier_read", {"path": "Dossiers/projects/Aura/dossier.json"})
+    )
     assert ok["success"] is True
     assert "上一句还停在九月" in ok["content"]
 
-    missing = json.loads(provider.handle_tool_call("surface_read", {"path": "Surface/dossiers/projects/Aura/plan.md"}))
+    missing = json.loads(
+        provider.handle_tool_call("dossier_read", {"path": "Dossiers/projects/Aura/plan.md"})
+    )
     assert missing["success"] is False
     assert "还不存在" in missing["error"]
 
-    # 工具面只认人读面：脑里的东西（原料区与 wiki 那两格都算）一律指名道姓拒掉。
-    # 用户 2026-10-27 拍「读也改：surface_read + surface_write」，代价就是模型再没有查脑仓的手。
+    # 工具面只认档案：脑里的东西（原料区与 wiki 那两格都算）一律指名道姓拒掉。
     for outside_path in ("Mind/raw/chat-logs/x.md", "Mind/wiki/concepts/x.md", "random/file.md"):
-        outside = json.loads(provider.handle_tool_call("surface_read", {"path": outside_path}))
+        outside = json.loads(provider.handle_tool_call("dossier_read", {"path": outside_path}))
         assert outside["success"] is False
-        assert "Surface/" in outside["error"]
+        assert "Dossiers" in outside["error"]
 
 
-def test_surface_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
+def test_note_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
     _mind, surface, provider = roots
     staged = []
-    target = surface / "dossiers" / "research" / "SRTP" / "dossier.json"
+    target = surface / "notes" / "某主题" / "某篇.md"
     before = target.read_bytes()
 
     def fake_stage(self, batch):
@@ -171,10 +216,10 @@ def test_surface_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, 
 
     result = json.loads(
         provider.handle_tool_call(
-            "surface_write",
+            "note_write",
             {
-                "path": "Surface/dossiers/research/SRTP/dossier.json",
-                "content": json.dumps({"agent": "SRTP", "status": "新东西。"}, ensure_ascii=False),
+                "path": "Notes/某主题/某篇.md",
+                "content": "---\ntitle: 某篇\ntags: [物理]\nbelongs: [Aura]\n---\n\n新的正文。\n",
             },
         )
     )
@@ -182,12 +227,12 @@ def test_surface_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, 
     assert result["staged"] is True
     assert result["pending_id"] == "deadbeef"
     assert "approve" in result["detail"]
-    assert staged == [["Surface/dossiers/research/SRTP/dossier.json"]]
+    assert staged == [["Notes/某主题/某篇.md"]]
     # 待批就是待批：盘上那一份一个字节都不许动。
     assert target.read_bytes() == before
 
 
-def test_surface_write_lands_when_the_gate_opens(roots, monkeypatch):
+def test_note_write_lands_when_the_gate_opens(roots, monkeypatch):
     _mind, surface, provider = roots
     monkeypatch.setattr(writer_module.MindWriter, "_gate_refusals", lambda self, batch: [])
     monkeypatch.setattr(
@@ -198,35 +243,33 @@ def test_surface_write_lands_when_the_gate_opens(roots, monkeypatch):
 
     result = json.loads(
         provider.handle_tool_call(
-            "surface_write",
+            "note_write",
             {
-                "path": "Surface/dossiers/projects/Aura/dossier.json",
-                "content": json.dumps(
-                    {"agent": "Aura", "goal": "今天写完了。"}, ensure_ascii=False
-                ),
+                "path": "Notes/某主题/某篇.md",
+                "content": "---\ntitle: 某篇\ntags: [物理]\nbelongs: [Aura]\n---\n\n新的正文。\n",
             },
         )
     )
     assert result["success"] is True, result
-    written = (surface / "dossiers" / "projects" / "Aura" / "dossier.json").read_text(encoding="utf-8")
-    assert json.loads(written)["goal"] == "今天写完了。"
+    written = (surface / "notes" / "某主题" / "某篇.md").read_text(encoding="utf-8")
+    assert "新的正文。" in written
 
 
-def test_surface_write_refuses_empty_oversized_and_unknown_tools(roots):
+def test_note_write_refuses_empty_oversized_and_unknown_tools(roots):
     _mind, _vault, provider = roots
 
     empty = json.loads(
         provider.handle_tool_call(
-            "surface_write", {"path": "Surface/dossiers/projects/Aura/dossier.json", "content": "  "}
+            "note_write", {"path": "Notes/某主题/某篇.md", "content": "  "}
         )
     )
     assert empty["success"] is False and "non-empty" in empty["error"]
 
     big = json.loads(
         provider.handle_tool_call(
-            "surface_write",
+            "note_write",
             {
-                "path": "Surface/dossiers/projects/Aura/dossier.json",
+                "path": "Notes/某主题/某篇.md",
                 "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1),
             },
         )
@@ -237,8 +280,8 @@ def test_surface_write_refuses_empty_oversized_and_unknown_tools(roots):
     assert unknown["success"] is False and "does not handle" in unknown["error"]
 
 
-def test_each_tool_touches_only_its_own_surface(roots):
-    """越面就当场拒：surface_* 读不到脑的页，mind_* 写不了人的笔记。"""
+def test_each_tool_touches_only_its_own_kind(roots):
+    """越类就当场拒：笔记那两把读不到档案，档案那两把写不了人的笔记，脑那两把碰不到人读面。"""
     _mind, _vault, provider = roots
 
     def call(tool, path):
@@ -252,16 +295,22 @@ def test_each_tool_touches_only_its_own_surface(roots):
         return json.loads(provider.handle_tool_call(tool, {"path": path, "content": content}))
 
     cross = [
-        ("surface_read", "Mind/wiki/concepts/plobi-gate.md"),
-        ("surface_write", "Mind/wiki/concepts/plobi-gate.md"),
-        ("mind_read", "Surface/dossiers/projects/Aura/dossier.json"),
-        ("mind_write", "Surface/dossiers/projects/Aura/dossier.json"),
+        ("note_read", "Dossiers/projects/Aura/dossier.json"),
+        ("note_write", "Dossiers/projects/Aura/dossier.json"),
+        ("diary_read", "Notes/某主题/某篇.md"),
+        ("diary_write", "Notes/某主题/某篇.md"),
+        ("dossier_read", "Notes/某主题/某篇.md"),
+        ("dossier_write", "Notes/某主题/某篇.md"),
+        ("mind_read", "Dossiers/projects/Aura/dossier.json"),
+        ("mind_write", "Notes/某主题/某篇.md"),
     ]
     for tool, path in cross:
         result = call(tool, path)
         assert result["success"] is False, (tool, path)
         assert "不在这一枚工具的面里" in result["error"], (tool, result)
-        assert "surface_" in result["error"] and "mind_" in result["error"]  # 要说清该用哪一枚
+        # 要说清该用哪一枚：人读面那几把各自的名字，脑那两把是 ``mind_*``。
+        assert "mind_" in result["error"] or "note_" in result["error"] or "diary_" in result["error"] \
+            or "dossier_" in result["error"], (tool, result)
 
 
 def test_dossier_write_only_touches_dossier_records(roots):
@@ -270,12 +319,92 @@ def test_dossier_write_only_touches_dossier_records(roots):
 
     for path in (
         "Mind/wiki/concepts/plobi-gate.md",
-        "Surface/dossiers/projects/Aura/plan.md",
-        "Surface/notes/某篇.md",
+        "Dossiers/projects/Aura/plan.md",
+        "Notes/某主题/某篇.md",
     ):
         result = json.loads(provider.handle_tool_call("dossier_write", {"path": path, "goal": "x"}))
         assert result["success"] is False, path
         assert "不是档案本体" in result["error"], (path, result)
+
+
+def test_dossier_write_changes_only_the_named_fields(roots):
+    """档案本体走**字段级**那一路：点名的格子改掉，其余原样留着（不过 L1 那道闸）。"""
+    _mind, surface, provider = roots
+    target = surface / "dossiers" / "projects" / "Aura" / "dossier.json"
+    before = json.loads(target.read_text(encoding="utf-8"))
+
+    result = json.loads(
+        provider.handle_tool_call(
+            "dossier_write",
+            {"path": "Dossiers/projects/Aura/dossier.json", "status": "今天写完了。"},
+        )
+    )
+    assert result["success"] is True, result
+    after = json.loads(target.read_text(encoding="utf-8"))
+    assert after["status"] == "今天写完了。"
+    assert after["goal"] == before["goal"]
+
+
+def test_dossier_write_refuses_a_raw_overwrite_of_the_record(roots):
+    """档案本体**不许整份覆盖**——那是字段级那把手存在的理由（形状一坏就报废）。"""
+    _mind, _vault, provider = roots
+    result = json.loads(
+        provider.handle_tool_call(
+            "dossier_write",
+            {"path": "Dossiers/projects/Aura/dossier.json", "content": "{ broken"},
+        )
+    )
+    assert result["success"] is False
+    assert "字段级" in result["error"]
+
+
+def test_dossier_write_can_write_the_checklist_beside_it(roots, monkeypatch):
+    """档案目录里的**另一个文件**（当日清单 ``tasks.json``）走 ``content`` 那一路。
+
+    旧那把通吃的 ``surface_write`` 有这个能力，按种类拆开之后不许丢。
+    """
+    _mind, surface, provider = roots
+    monkeypatch.setattr(writer_module.MindWriter, "_gate_refusals", lambda self, batch: [])
+    monkeypatch.setattr(
+        provider_module,
+        "MindWriter",
+        lambda root=None: writer_module.MindWriter(root, commit=False, run_verifier=False),
+    )
+    result = json.loads(
+        provider.handle_tool_call(
+            "dossier_write",
+            {
+                "path": "Dossiers/projects/Aura/tasks.json",
+                "content": json.dumps({"days": []}, ensure_ascii=False),
+            },
+        )
+    )
+    assert result["success"] is True, result
+    assert (surface / "dossiers" / "projects" / "Aura" / "tasks.json").is_file()
+
+
+def test_agent_notes_lists_the_notes_that_belong_to_you(roots):
+    """列自己名下有哪些笔记——与屏上「相关笔记」同一份投影；**只给清单，不给正文**。"""
+    _mind, _vault, provider = roots
+
+    result = json.loads(provider.handle_tool_call("agent_notes", {}))
+    assert result["success"] is True, result
+    paths = [note["path"] for note in result["notes"]]
+    assert paths == ["Notes/某主题/某篇.md"], paths
+    titles = [note["title"] for note in result["notes"]]
+    assert titles == ["某篇"], titles
+    # 正文一个字都不许漏进来。
+    assert "正文不该出现在清单里" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_agent_notes_without_an_agent_says_so(roots):
+    """连当前身份都没有 ⇒ 说清要一个名字，不许瞎猜一份清单出来。"""
+    _mind, _vault, _provider = roots
+    bare = MindProvider()
+    bare.initialize("sess-bare", agent_context="primary")
+    result = json.loads(bare.handle_tool_call("agent_notes", {}))
+    assert result["success"] is False
+    assert "Agent" in result["error"]
 
 
 def test_mind_read_speaks_mind_not_loom(roots):

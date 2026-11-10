@@ -108,7 +108,7 @@ def test_persona_status_says_when_the_condensed_copy_lags(tmp_path, monkeypatch)
     user_md.write_text("邓德彧（小龟）…\n", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("PLOBI_HOME", str(home))
-    roots = Roots(mind=mind, surface=None)
+    roots = Roots(mind=mind, human=None)
 
     # 精简版与详版同日 ⇒ 别喊
     now = time.time()

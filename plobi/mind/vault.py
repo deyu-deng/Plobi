@@ -7,7 +7,7 @@
 三个表：
 
 1. **vault_notes** - 学科笔记元数据
-   - id: 主键 = path（Surface/notes/...）
+   - id: 主键 = path（Notes/...；旧写法 Surface/notes/... 也认）
    - title, topic, tags JSONB, belongs JSONB, relates JSONB
    - updated, chars, excerpt
 
@@ -33,6 +33,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+
+from plobi.mind.paths import legacy_logical, normalize_logical
 
 # --- Shared DB path (shared across profiles) ---------------------------
 
@@ -201,10 +203,27 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
 
 # --- vault_notes operations ----------------------------------------------
 
+def _row_note(row) -> VaultNote:
+    """一行 → 一条记录（路径按新写法回；旧行还没被重建替换掉时也照样显示成新的）。"""
+    data = dict(row)
+    data["tags"] = json.loads(data["tags"]) if isinstance(data["tags"], str) else data["tags"]
+    data["belongs"] = json.loads(data["belongs"]) if isinstance(data["belongs"], str) else data["belongs"]
+    data["relates"] = json.loads(data["relates"]) if isinstance(data["relates"], str) else data["relates"]
+    data["path"] = normalize_logical(data.get("path") or "")
+    return VaultNote(**data)
+
+
 def upsert_note(note: VaultNote) -> None:
-    """Insert or update a note record."""
+    """Insert or update a note record.
+
+    路径一律用**新写法**（``Notes/…``）。同一条笔记若在库里还留着旧写法（``Surface/notes/…``），
+    先把那一行删掉再插——否则重建之后同��篇笔记会**出现两次**（一次旧路径、一次新路径）。
+    """
     conn = connect()
     try:
+        old = legacy_logical(note.path)
+        if old != note.path:
+            conn.execute("DELETE FROM vault_notes WHERE path = ?", (old,))
         cursor = conn.execute(
             """INSERT OR REPLACE INTO vault_notes 
                (path, title, topic, tags, belongs, relates, updated, chars, excerpt)
@@ -229,25 +248,29 @@ def delete_note(path: str) -> None:
 
 
 def get_note(path: str) -> Optional[VaultNote]:
-    """Get a note by path."""
+    """Get a note by path（新旧两种写法都查得到）。"""
     conn = connect()
     try:
-        row = conn.execute(
-            "SELECT * FROM vault_notes WHERE path = ?", (path,)
-        ).fetchone()
+        row = None
+        for candidate in (normalize_logical(path), legacy_logical(path), path):
+            row = conn.execute(
+                "SELECT * FROM vault_notes WHERE path = ?", (candidate,)
+            ).fetchone()
+            if row is not None:
+                break
         if not row:
             return None
-        data = dict(row)
-        data["tags"] = json.loads(data["tags"])
-        data["belongs"] = json.loads(data["belongs"])
-        data["relates"] = json.loads(data["relates"])
-        return VaultNote(**data)
+        return _row_note(row)
     finally:
         conn.close()
 
 
 def list_notes(topic: Optional[str] = None) -> List[VaultNote]:
-    """List all notes, optionally filtered by topic."""
+    """List all notes, optionally filtered by topic.
+
+    路径按**新写法**回（``Notes/…``）：库里若还留着旧写法（``Surface/notes/…``），
+    屏上与模型看到的都是新写法——旧行只是还没被重建替换掉。
+    """
     conn = connect()
     try:
         query = "SELECT * FROM vault_notes"
@@ -256,16 +279,9 @@ def list_notes(topic: Optional[str] = None) -> List[VaultNote]:
             query += " WHERE topic = ?"
             params.append(topic)
         query += " ORDER BY topic, title"
-        
+
         rows = conn.execute(query, params).fetchall()
-        notes = []
-        for row in rows:
-            data = dict(row)
-            data["tags"] = json.loads(data["tags"])
-            data["belongs"] = json.loads(data["belongs"])
-            data["relates"] = json.loads(data["relates"])
-            notes.append(VaultNote(**data))
-        return notes
+        return [_row_note(row) for row in rows]
     finally:
         conn.close()
 
@@ -276,20 +292,13 @@ def search_notes(query_text: str, limit: int = 50) -> List[VaultNote]:
     try:
         pattern = f"%{query_text}%"
         rows = conn.execute(
-            """SELECT * FROM vault_notes 
+            """SELECT * FROM vault_notes
                WHERE title LIKE ? OR excerpt LIKE ?
                ORDER BY updated DESC
                LIMIT ?""",
             (pattern, pattern, limit)
         ).fetchall()
-        notes = []
-        for row in rows:
-            data = dict(row)
-            data["tags"] = json.loads(data["tags"])
-            data["belongs"] = json.loads(data["belongs"])
-            data["relates"] = json.loads(data["relates"])
-            notes.append(VaultNote(**data))
-        return notes
+        return [_row_note(row) for row in rows]
     finally:
         conn.close()
 

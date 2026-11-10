@@ -1,12 +1,13 @@
 """Two roots, three layouts, one resolver (WP-MIND-STRUCTURE-MOVE).
 
-The ruling is that ``Surface/…`` and ``Mind/…`` are *logical* paths: the human-facing
-surface moved to a sibling repository of its own (``SURFACE_ROOT``), while the brain
-gets flattened (``Mind/wiki`` → ``wiki``). This suite pins the resolver itself, the
-one guard that stops a writer from resurrecting ``<mind>/Surface`` inside the AI repo,
+The ruling is that ``Notes/…``／``Diary/…``／``Dossiers/…`` and ``Mind/…`` are
+*logical* paths: the human side moved to a sibling repository of its own
+(``HUMAN_ROOT``; the old ``SURFACE_ROOT`` is still accepted), while the brain gets
+flattened (``Mind/wiki`` → ``wiki``). This suite pins the resolver itself, the one
+guard that stops a writer from resurrecting ``<mind>/Surface`` inside the AI repo,
 and the notes view reading the real thing through the split.
 
-Layouts are pinned by what is on disk and what ``SURFACE_ROOT`` says — never by a
+Layouts are pinned by what is on disk and what ``HUMAN_ROOT`` says — never by a
 flag, because the desktop, the backend and the scheduled jobs start in any order.
 """
 
@@ -29,7 +30,9 @@ from plobi.mind.paths import (
     safe_target,
 )
 
-SURFACE_LOGICAL = "Surface/notes"
+# 新的逻辑前缀（按种类分家）与旧写法（**仍解析**，只是不再广告）。
+HUMAN_LOGICAL = "Notes"
+LEGACY_LOGICAL = "Surface/notes"
 MIND_LOGICAL = "Mind/wiki/concepts"
 
 # ``tests/conftest.py`` swaps MindWriter._commit for a stub on every test; the commit
@@ -56,13 +59,13 @@ def sibling_vault(tmp_path):
 
 @pytest.fixture(autouse=True)
 def no_machine_registry_pin(monkeypatch):
-    """这台机器的注册表里**真钉着**一个 ``SURFACE_ROOT``（人读面的家）。
+    """这台机器的注册表里**真钉着**一个指针（人读面的家）。
 
     不把它按掉，这一档的断言就随「谁在跑测试」变——同一个 env 断言在钉过的机器上
     读注册表那份、在没钉过的机器上读 env 那份，测试就成了机器的快照。
     要测注册表那一支的档，自己再 monkeypatch 一次（见下面那两档）。
     """
-    monkeypatch.setattr(paths, "_pinned_surface_root", lambda: None)
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: None)
 
 
 # --- the resolver itself -----------------------------------------------------
@@ -75,22 +78,24 @@ def test_unpinned_pointer_falls_back_to_the_data_home(mind, tmp_path, monkeypatc
     （人读面 11-03 起就没有 ``vault/`` 那一层了）⇒ 笔记页与日记页一起报「读不到」，
     迁移脚本也扫不到东西。环境变量是**曾经的门牌**，不是运行的前提。
     """
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(home))
-    assert real_target(SURFACE_LOGICAL, mind) == home / "notes"
+    assert real_target(HUMAN_LOGICAL, mind) == home / "notes"
 
 
 def test_pinned_pointer_moves_the_human_surface_out(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
-    assert real_target(SURFACE_LOGICAL, mind) == sibling_vault / "notes"
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
+    assert real_target(HUMAN_LOGICAL, mind) == sibling_vault / "notes"
     # the brain half is the flattened one: Mind/ is a logical name only
     assert real_target(MIND_LOGICAL, mind) == mind / "wiki" / "concepts"
 
 
 def test_flattened_brain_drops_the_loom_level(mind, monkeypatch):
-    """The flag is the whole switch: False = 旧 Mind 壳，True = 平铺（现在是 True）."""
+    """The flag is the whole switch: False = 旧 Mind 壳，True = 平铺（现在是 True)."""
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     (mind / "Mind" / "wiki" / "concepts").mkdir(parents=True)
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", False)
@@ -103,6 +108,7 @@ def test_an_empty_brain_is_not_mistaken_for_a_flattened_one(mind, monkeypatch):
     """Why the flatten is a declared flag and not read off the disk: inference
     answers "flattened" for every test fake surface and every fresh clone, which
     would relocate AI-authored writes to the brain root without anyone deciding it."""
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", False)
     assert not (mind / "Mind").exists()
@@ -110,12 +116,12 @@ def test_an_empty_brain_is_not_mistaken_for_a_flattened_one(mind, monkeypatch):
 
 
 def test_resolve_roots_reads_the_env_once_and_never_guesses(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     roots = resolve_roots(mind)
-    assert isinstance(roots, Roots) and roots.surface == sibling_vault
+    assert isinstance(roots, Roots) and roots.human == sibling_vault
     # a pinned pointer that does not exist yet is still the pointer
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault / "nope"))
-    assert resolve_roots(mind).surface == sibling_vault / "nope"
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault / "nope"))
+    assert resolve_roots(mind).human == sibling_vault / "nope"
 
 
 # --- the stale inherited pointer (Windows: 进程在改钉之前就起来了) --------------
@@ -129,40 +135,42 @@ def test_a_stale_inherited_pointer_defers_to_the_registry_pin(mind, sibling_vaul
     同时报「读不到 surface」。跟 ``plobi_constants`` 为 ``PLOBI_HOME`` 做的那件事同形。
     """
     gone = sibling_vault / "surface"          # 搬走之前的那一处
-    monkeypatch.setenv("SURFACE_ROOT", str(gone))
-    monkeypatch.setattr(paths, "_pinned_surface_root", lambda: str(sibling_vault))
-    assert resolve_roots(mind).surface == sibling_vault
-    assert real_target(SURFACE_LOGICAL, mind) == sibling_vault / "notes"
+    monkeypatch.setenv("HUMAN_ROOT", str(gone))
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: str(sibling_vault))
+    assert resolve_roots(mind).human == sibling_vault
+    assert real_target(HUMAN_LOGICAL, mind) == sibling_vault / "notes"
 
 
 def test_the_env_still_wins_when_its_target_is_there(mind, sibling_vault, monkeypatch):
     """env 指的目录**还在** ⇒ 用 env。用户可能故意临时指到别处，env 是当下的选择。"""
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
-    monkeypatch.setattr(paths, "_pinned_surface_root", lambda: str(sibling_vault.parent))
-    assert resolve_roots(mind).surface == sibling_vault
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: str(sibling_vault.parent))
+    assert resolve_roots(mind).human == sibling_vault
 
 
 def test_a_pointer_to_a_surface_not_built_yet_is_still_the_pointer(mind, sibling_vault, monkeypatch):
     """注册表也没钉（或钉的是同一个）⇒ 仍用 env。新装时表面还没建出来，指针照样算数。"""
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault / "nope"))
-    monkeypatch.setattr(paths, "_pinned_surface_root", lambda: None)
-    assert resolve_roots(mind).surface == sibling_vault / "nope"
-    monkeypatch.setattr(paths, "_pinned_surface_root", lambda: str(sibling_vault / "nope"))
-    assert resolve_roots(mind).surface == sibling_vault / "nope"
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault / "nope"))
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: None)
+    assert resolve_roots(mind).human == sibling_vault / "nope"
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: str(sibling_vault / "nope"))
+    assert resolve_roots(mind).human == sibling_vault / "nope"
 
 
 def test_no_env_at_all_falls_back_to_the_registry_pin(mind, sibling_vault, monkeypatch):
     """长驻进程在改钉之前起来 ⇒ env 里压根没有这一项 ⇒ 读注册表那份钉的。"""
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
-    monkeypatch.setattr(paths, "_pinned_surface_root", lambda: str(sibling_vault))
-    assert resolve_roots(mind).surface == sibling_vault
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: str(sibling_vault))
+    assert resolve_roots(mind).human == sibling_vault
 
 
 def test_base_for_does_not_touch_the_disk(mind, sibling_vault):
-    split = Roots(mind=mind, surface=sibling_vault)
-    assert split.base_for("Surface/dossiers/projects/Plobi") == sibling_vault
+    split = Roots(mind=mind, human=sibling_vault)
+    assert split.base_for("Dossiers/projects/Plobi") == sibling_vault
     assert split.base_for("Mind/raw") == mind
-    assert Roots(mind=mind).base_for("Surface/notes") == mind / "Surface"
+    # 没钉时落回脑仓旁边的旧布局（物理目录名还是 ``Surface``）
+    assert Roots(mind=mind).base_for(HUMAN_LOGICAL) == mind / "Surface"
 
 
 # --- the writer's guard ------------------------------------------------------
@@ -173,11 +181,12 @@ def test_writer_never_recreates_the_old_surface_inside_the_brain(mind, tmp_path,
 
     那会把用户自己的笔记复制进 AI 仓：第二份、没有备份、还会在屏上读成「有两处」。
     """
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(home))
-    target = safe_target(mind, "Surface/notes/new.md", creating=True)
+    target = safe_target(mind, "Notes/new.md", creating=True)
     assert target == home / "notes" / "new.md"
     assert not (mind / "Surface").exists()
 
@@ -188,40 +197,44 @@ def test_the_legacy_layout_is_still_written_when_it_is_there(mind, tmp_path, mon
     装机态那一份的人读面就住在脑仓旁边的 ``Surface/`` 里（数据家的 ``notes``／``diary``
     是指着它的 junction）——换家＝把用户自己的笔记挪到别处去，那是另一件事。
     """
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     (mind / "Surface" / "notes").mkdir(parents=True)
-    assert safe_target(mind, "Surface/notes/new.md", creating=True) == (
+    assert safe_target(mind, "Notes/new.md", creating=True) == (
         mind / "Surface" / "notes" / "new.md"
     )
 
 
 def test_writer_into_the_sibling_needs_no_existing_directory(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
-    assert safe_target(mind, "Surface/notes/物理 Physics/new.md", creating=True) == (
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
+    assert safe_target(mind, "Notes/物理 Physics/new.md", creating=True) == (
         sibling_vault / "notes" / "物理 Physics" / "new.md"
     )
 
 
 def test_traversal_still_escapes_nothing(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
+    assert not is_safe_relative("Notes/../../etc/passwd")
     assert not is_safe_relative("Surface/../../etc/passwd")
     with pytest.raises(UnsafeMindPath):
-        safe_target(mind, "Surface/../../etc/passwd", creating=True)
+        safe_target(mind, "Notes/../../etc/passwd", creating=True)
 
 
 # --- the inverse the provider needs ------------------------------------------
 
 
 def test_logical_target_names_the_zone_a_file_belongs_to(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     note = sibling_vault / "notes" / "数学 Math" / "极限.md"
     note.parent.mkdir(parents=True)
     note.write_text("---\ntitle: 极限\n---\nbody\n", encoding="utf-8")
-    assert logical_target(note, mind) == "Surface/notes/数学 Math/极限.md"
+    # 回给屏上与模型的是**新**写法（旧写法只是仍能解析，不再广告）
+    assert logical_target(note, mind) == "Notes/数学 Math/极限.md"
     assert logical_target(mind / "unrelated.md", mind) is None
 
 
 def test_logical_target_relabels_a_flattened_brain_path(mind, monkeypatch):
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", True)
     concept = mind / "wiki" / "concepts" / "srtp.md"
@@ -237,6 +250,7 @@ def test_first_file_in_an_absent_zone_is_still_inside_it(mind, monkeypatch):
     裁定 198 之后那条腿已经作废）。判据本身照旧要钉：区域由**路径**定义，不由目录在不在定义。
     换一格还活着的区（wiki 的概念层）来钉它。
     """
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.delenv("SURFACE_ROOT", raising=False)
     assert not (mind / "wiki" / "concepts").exists()
     assert logical_target(mind / "wiki" / "concepts" / "chat.md", mind) == (
@@ -248,7 +262,7 @@ def test_first_file_in_an_absent_zone_is_still_inside_it(mind, monkeypatch):
 
 
 def test_notes_view_reads_the_split_layout(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     note = sibling_vault / "notes" / "物理 Physics" / "ch01.md"
     note.parent.mkdir(parents=True)
     note.write_text(
@@ -257,22 +271,22 @@ def test_notes_view_reads_the_split_layout(mind, sibling_vault, monkeypatch):
     scan = scan_notes(mind)
     assert scan.scanned == 1
     entry = scan.notes[0]
-    assert entry.path == "Surface/notes/物理 Physics/ch01.md"   # logical, stable for the desktop
-    assert Path(entry.fs_path) == note                          # real file, in the other repo
+    assert entry.path == "Notes/物理 Physics/ch01.md"   # logical, stable for the desktop
+    assert Path(entry.fs_path) == note                  # real file, in the other repo
 
 
 def test_notes_view_reports_a_missing_surface_instead_of_zero_notes(mind, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(mind.parent / "surface-that-is-not-there"))
+    monkeypatch.setenv("HUMAN_ROOT", str(mind.parent / "surface-that-is-not-there"))
     scan = scan_notes(mind)
     assert scan.scanned == 0
     assert any("目录不存在" in line for line in scan.skipped)
 
 
 def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vault, monkeypatch):
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     (sibling_vault / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
     entry = types.SimpleNamespace(
-        name="srtp", mind_subtree="Surface/dossiers/projects/SRTP", category="research", role="l2_course"
+        name="srtp", mind_subtree="Dossiers/projects/SRTP", category="research", role="l2_course"
     )
     from plobi.mind.notes_view import agent_aliases
 
@@ -281,9 +295,9 @@ def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vaul
 
 
 def test_a_research_tree_is_a_known_owner_too(mind, sibling_vault, monkeypatch):
-    """Counting only ``Surface/dossiers/projects`` would report ``research/SRTP`` as a note
+    """Counting only ``Dossiers/projects`` would report ``research/SRTP`` as a note
     tagged with an owner nobody registered — the sidebar's dangling-tag card."""
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     (sibling_vault / "dossiers" / "research" / "SRTP").mkdir(parents=True)
     assert "SRTP" in known_names(mind, [])
 
@@ -293,19 +307,19 @@ def test_a_tree_lands_in_its_category_folder_and_a_stale_pointer_adopts_it(
 ):
     """``category=research`` must not mint a second ``projects/SRTP`` beside the
     real tree. Live shape on 2026-10-16 08:35: the roster still said
-    ``Surface/dossiers/projects/SRTP`` after the move, so registering the 分身 wrote three
+    ``Dossiers/projects/SRTP`` after the move, so registering the 分身 wrote three
     boilerplate files into a brand-new folder on the human surface."""
     from plobi.mind.project_tree import ensure_project_tree
 
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
 
     write = ensure_project_tree(raw_name="SRTP", category="research", mind_root=mind)
-    assert write.relative == "Surface/dossiers/research/SRTP"
+    assert write.relative == "Dossiers/research/SRTP"
     assert (sibling_vault / "dossiers" / "research" / "SRTP" / "dossier.json").is_file()
     assert not (sibling_vault / "dossiers" / "projects" / "SRTP").exists()
 
     adopted = ensure_project_tree(raw_name="SRTP", category="projects", mind_root=mind)
-    assert (adopted.reused, adopted.relative) == (True, "Surface/dossiers/research/SRTP")
+    assert (adopted.reused, adopted.relative) == (True, "Dossiers/research/SRTP")
     assert not (sibling_vault / "dossiers" / "projects" / "SRTP").exists()
 
 
@@ -316,7 +330,7 @@ def test_the_seeder_reads_trees_from_every_category_folder(
     that moved to ``research/`` stops being a candidate and the two halves drift."""
     from plobi.agents import registry as registry_mod
 
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / ".plobi"))
     tree = sibling_vault / "dossiers" / "research" / "Wealth-Lab"
@@ -337,7 +351,7 @@ def test_the_seeder_reads_trees_from_every_category_folder(
     )
     assert seeded, "the tree under research/ was not discovered at all"
     entry = next(e for e in reg.entries() if e.mind_subtree.endswith("Wealth-Lab"))
-    assert entry.mind_subtree == "Surface/dossiers/research/Wealth-Lab"
+    assert entry.mind_subtree == "Dossiers/research/Wealth-Lab"
     assert entry.category == "research"
 
 
@@ -368,7 +382,7 @@ def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
     """The commit leg must follow the file, not the logical name.
 
     Before this the writer ran ``git add Surface/notes/x.md`` with ``cwd=MIND_ROOT``.
-    After the split that path exists only in ``SURFACE_ROOT``, so git matched nothing,
+    After the split that path exists only in ``HUMAN_ROOT``, so git matched nothing,
     the leg reported ``commit skipped`` — and every AI write sat untracked forever,
     which in turn froze ``sync_mind.py`` on its "dirty ⇒ skip both legs" rule.
     """
@@ -378,13 +392,13 @@ def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
     mind = _init_repo(tmp_path / "mind")
     surface = _init_repo(tmp_path / "surface")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
 
     result = MindWriter(
         mind, commit=True, run_verifier=False, require_approval=False
     ).write(
         [
-            WriteRequest("Surface/notes/ch01.md", "# note\n"),
+            WriteRequest("Notes/ch01.md", "# note\n"),
             WriteRequest("Mind/wiki/concepts/srtp.md", "---\ntype: concept\n---\n\n# concept\n"),
         ]
     )
@@ -400,7 +414,45 @@ def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
         f"surface_status={_git(surface, 'status', '--porcelain')} | "
         f"on_disk={(surface / 'notes' / 'ch01.md').is_file()}"
     )
-    assert "Surface/notes/ch01.md" not in surface_files, surface_files
+    assert "Notes/ch01.md" not in surface_files, surface_files
     assert "wiki/concepts/srtp.md" in mind_files, mind_files
     assert _git(surface, "status", "--porcelain").strip() == ""
     assert _git(mind, "status", "--porcelain").strip() == ""
+
+
+# --- 兼容期：旧名与旧写法都还认 ------------------------------------------------
+
+
+def test_the_new_pointer_name_wins_over_the_old_one(mind, sibling_vault, tmp_path, monkeypatch):
+    """两个都钉着 ⇒ 认**新**的那个（用户改口的方向）。
+
+    兼容期的口径写死在这里，别处各写一套：``HUMAN_ROOT`` 优先，``SURFACE_ROOT`` 兜底。
+    """
+    other = tmp_path / "other-human-root"
+    other.mkdir()
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
+    monkeypatch.setenv("SURFACE_ROOT", str(other))
+    assert resolve_roots(mind).human == sibling_vault
+
+
+def test_the_old_pointer_name_is_still_honoured(mind, sibling_vault, monkeypatch):
+    """只钉旧的 ``SURFACE_ROOT`` ⇒ 仍认它（兼容期：装机的旧件与旧脚本还在用那个名字）。"""
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
+    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
+    assert resolve_roots(mind).human == sibling_vault
+    assert real_target(HUMAN_LOGICAL, mind) == sibling_vault / "notes"
+
+
+def test_the_old_logical_prefix_still_resolves_to_the_same_file(mind, sibling_vault, monkeypatch):
+    """旧写法 ``Surface/notes/…`` 与新写法 ``Notes/…`` 落到**同一个物理文件**。
+
+    旧路不是错话——存量名册、存量 ``vault.db``、用户抄进对话框的路径都还在用。
+    """
+    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
+    assert real_target(LEGACY_LOGICAL, mind) == real_target(HUMAN_LOGICAL, mind)
+    assert real_target("Surface/diary/2026-11-10-Tuesday.md", mind) == (
+        sibling_vault / "diary" / "2026-11-10-Tuesday.md"
+    )
+    assert real_target("Surface/dossiers/projects/Aura/dossier.json", mind) == (
+        sibling_vault / "dossiers" / "projects" / "Aura" / "dossier.json"
+    )

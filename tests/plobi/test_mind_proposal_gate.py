@@ -60,7 +60,7 @@ def roots(tmp_path):
     mind = _repo(tmp_path, "mind")
     surface = _repo(tmp_path, "surface")
     (surface / "notes").mkdir()
-    return mind_paths.Roots(mind=mind, surface=surface)
+    return mind_paths.Roots(mind=mind, human=surface)
 
 
 class _FakeWriter:
@@ -83,7 +83,7 @@ def test_approval_is_bound_to_the_root_it_was_granted_against(roots):
 
     # same plan, same digest, different object: the brain moved somewhere else
     moved = _repo(roots.mind.parent, "elsewhere-mind")
-    moved_roots = mind_paths.Roots(mind=moved, surface=roots.surface)
+    moved_roots = mind_paths.Roots(mind=moved, human=roots.human)
     report = apply_plan(plan, approved=approve(plan), roots=moved_roots, writer=writer)
     assert not report.ok
     assert report.denied and "root-identity-changed" in report.denied[0].reason
@@ -91,7 +91,7 @@ def test_approval_is_bound_to_the_root_it_was_granted_against(roots):
 
 
 def test_a_human_edit_makes_the_plan_stale_instead_of_beaten(roots):
-    target = roots.surface / "notes" / "mech.md"
+    target = roots.human / "notes" / "mech.md"
     plan = build_plan([Change("Surface/notes/mech.md", "牛顿第二定律")], roots=roots)
     assert plan.old_shas["Surface/notes/mech.md"] == ABSENT
 
@@ -112,7 +112,7 @@ def test_expired_plan_is_void_not_late(roots):
 
 def test_the_unrecoverable_kinds_are_flagged_never_auto():
     assert never_auto("Surface/diary/2026-10-15.md", "overwrite") == "rewrites-the-user's-own-record"
-    assert never_auto("Surface/meta/profile/profile.md", "overwrite") == "rewrites-the-persona"
+    assert never_auto("Meta/profile/profile.md", "overwrite") == "rewrites-the-persona"
     assert never_auto("Surface/notes/new.md", "create") == ""
     assert never_auto("Surface/notes/x.md", "squash") == "unknown-mode"
     # classification is derived from the path, never from what the model believes
@@ -164,7 +164,7 @@ def test_the_persona_pointer_resolves_into_the_brain(roots, tmp_path, monkeypatc
     persona = mind_paths.real_target(mind_reader.PERSONA_RELATIVE, roots)
     assert persona == roots.mind / "persona" / "profile.md"
 
-    monkeypatch.setenv("SURFACE_ROOT", str(roots.surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(roots.human))
     reader = mind_reader.MindReader(roots.mind)
 
     persona.parent.mkdir(parents=True, exist_ok=True)

@@ -13,7 +13,7 @@
         profile: l2-agenda          # 对应 plobi profile（省略 = 用 agent 名）
         provider: deepseek          # 可选覆盖默认路由；省略 = 用 DEFAULT_ROUTES
         model: deepseek-chat
-        mind_subtree: Surface/dossiers/projects/Plobi   # 相对 MIND_ROOT（L2 直读）
+        mind_subtree: Dossiers/projects/Plobi   # 相对人读面根（L2 直读）
         skills: [morning-report, message-digest]
         description: 日程闭环 Agent
 
@@ -229,7 +229,7 @@ DEFAULT_CATEGORY = "butler"
 UNBOUND_CATEGORIES: tuple[str, ...] = ("butler",)
 
 # R-013 扩写（2026-10-06）：哪几类分身是「Mind 里的一个项目」——只有这两类建册时
-# 要在 ``Surface/dossiers/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
+# 要在 ``Dossiers/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
 # **裁定 121 二要我明判的那一格：``courses`` 不进这里。** 三条理由：① 课程条目是
 # 日程侧的数据，不是要写文档/代码的工作区，挂到脑仓没有消费方；② 脑仓自带 `.git` 与
 # 独立远端，`Code` 的闸门碰不到它（裁定 72）——为一个品类去那仓造目录要单独动作，
@@ -921,17 +921,20 @@ class AgentRegistry:
     ) -> str:
         """哪条**没归档**的分身已经挂着这棵 Mind 树（大小写归一比，没有则空串）。
 
-        一个项目一棵树：``Surface/dossiers/projects/Nymo`` 挂了 ``Nymo`` 之后再建一条挂同一棵树的分身，
+        一个项目一棵树：``Dossiers/projects/Nymo`` 挂了 ``Nymo`` 之后再建一条挂同一棵树的分身，
         就是用户 2026-10-06 报的「左栏两个 nymo」。比的是归一后的整串相对路径——不分大小写的
-        盘上 ``Surface/dossiers/projects/nymo`` 与 ``Surface/dossiers/projects/Nymo`` 也是同一棵树。
+        盘上 ``Dossiers/projects/nymo`` 与 ``Dossiers/projects/Nymo`` 也是同一棵树。
         """
-        needle = (relative or "").strip().casefold()
+        from plobi.mind.paths import normalize_logical
+
+        needle = normalize_logical(relative or "").strip().casefold()
         if not needle:
             return ""
         for other in self.live_entries():
             if other.name == exclude:
                 continue
-            if (other.mind_subtree or "").strip().casefold() == needle:
+            theirs = normalize_logical(other.mind_subtree or "").strip().casefold()
+            if theirs == needle:
                 return other.name
         return ""
 
@@ -1902,7 +1905,7 @@ def agenda_template_entry() -> AgentEntry:
     return AgentEntry(
         name=AGENDA_TEMPLATE_NAME,
         role=AGENDA_TEMPLATE_ROLE,
-        mind_subtree="Surface/dossiers/projects/Plobi",
+        mind_subtree="Dossiers/projects/Plobi",
         skills=("plobi-l2-resident",),
         description="日程采集 → SQLite → 看板 → 钉钉 闭环",
     )
@@ -3094,8 +3097,10 @@ def build_l2_identity_soul_block(
             f"- 你手上只有 **{project}** 这一个项目，但它的工作目录还没定下来。要动文件先问用户一句，不要替他猜一个路径。"
         )
     if entry.mind_subtree:
+        from plobi.mind.paths import normalize_logical
+
         lines.append(
-            f"- 你在 Mind 知识库里的地方是 `{entry.mind_subtree}`：这个项目的计划、进度、结论写在这棵树里，别的树只读不改。"
+            f"- 你在 Mind 知识库里的地方是 `{normalize_logical(entry.mind_subtree)}`：这个项目的计划、进度、结论写在这棵树里，别的树只读不改。"
         )
     # 用途那一格只印**人写过的话**：``registered`` 那一格判「这行算不算他登记的手下」，
     # :func:`_is_placeholder_project_description` 判「这句话是不是播种机自己写的备注」——

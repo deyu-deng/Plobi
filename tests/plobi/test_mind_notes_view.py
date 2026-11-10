@@ -82,7 +82,7 @@ def test_belongs_matches_through_agent_subtree(surface):
     matched = notes_for(scan, agent_aliases(entry))
 
     assert [note.title for note in matched] == ["Rust 所有权"]
-    assert matched[0].path == "Surface/notes/数学 Math/Rust 所有权.md"
+    assert matched[0].path == "Notes/数学 Math/Rust 所有权.md"
     assert matched[0].chars > 0
 
 

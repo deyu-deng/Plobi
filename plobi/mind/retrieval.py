@@ -2,8 +2,8 @@
 
 What this does (P0 + the §12.7 第 3 条 upgrade):
   - case-insensitive keyword grep over every ``.md`` file inside the **memory
-    zones only** (``Mind/wiki/*``; the human surface ``Surface/…`` deliberately left
-    this list — user 2026-10-24/25「surface 不要进记忆系统」).
+    zones only** (``Mind/wiki/*``; the human side (``Notes/…`` and its siblings)
+    deliberately left this list — user 2026-10-24/25「人读面不要进记忆系统」).
   - over-collect → score → de-duplicate by abstract → then fill the injection
     budget **tier by tier** (full / overview / abstract). A page that no longer
     fits its tier falls back to a smaller tier instead of being cut mid-sentence;
@@ -182,7 +182,7 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
     """Return relevant Mind markdown snippets for ``query``, within one budget.
 
     Scans the memory zones (:data:`plobi.mind.paths.MEMORY_ZONES` — the brain's
-    ``Mind/wiki/*``; the human surface ``Surface/…`` is not recalled), scores by
+    ``Mind/wiki/*``; the human side (``Notes/…``) is not recalled), scores by
     keyword occurrence, de-duplicates, and returns at most ``limit`` blocks whose
     combined length never exceeds :data:`MAX_TOTAL_CHARS`. Pages past
     :data:`FULL_DEPTH_SLOTS` come in as overviews; anything that stops fitting is

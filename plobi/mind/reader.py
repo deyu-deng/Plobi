@@ -23,15 +23,15 @@ logger = logging.getLogger(__name__)
 # 应该是 mind 的一个部分」）。它从 skills/profile/SKILL.md 搬到了 persona/，与 skills 这条线彻底脱钩；
 # 精简版仍是 L0 的 USER.md。
 PERSONA_RELATIVE = "persona/profile.md"
-PROJECTS_RELATIVE = "Surface/dossiers/projects"
-RESEARCH_RELATIVE = "Surface/dossiers/research"
+PROJECTS_RELATIVE = "Dossiers/projects"
+RESEARCH_RELATIVE = "Dossiers/research"
 
 # 上下文接哪几类档案（11-09）：**项目 ＋ 研究**。
 #
 # 另外三类不进 L1 的上下文，理由是它们的**内容性质**（不是"以后再说"）：
 # * ``courses``——盘上那 11 门课**没有档案本体**（只有 ``requirements.md``／``syllabus.md``），
 #   读档案本体读出来是空的；接进来只会多几个空段。
-# * ``butler``——秘书自己（``mind_subtree`` 指着 ``Surface/dossiers/butler`` 那一格），
+# * ``butler``——秘书自己（``mind_subtree`` 指着 ``Dossiers/butler`` 那一格），
 #   它是"谁在干活"，不是"在干什么"。
 # * ``events``——空目录。
 # 真有课程档案本体长出来那天，把那一类加进这张表即可（读侧只认这一张）。

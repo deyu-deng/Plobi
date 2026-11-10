@@ -114,7 +114,7 @@ def test_surface_children_appear_when_the_library_exists(
 
     mind_paths.ensure_root()
 
-    for rel in mind_paths.surface_skeleton():
+    for rel in mind_paths.human_skeleton():
         assert (surface / rel).is_dir(), f"人读面缺了 {rel}"
 
 

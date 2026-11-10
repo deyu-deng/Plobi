@@ -54,8 +54,8 @@ logger = logging.getLogger(__name__)
 AGENTS_RELATIVE = "AGENTS.md"
 # 与 plobi/mind/writer.py:23 同一个相对路径：脑仓的门禁脚本只有一个位置。
 VERIFIER_RELATIVE = "Mind/scripts/verifier.py"
-INDEX_RELATIVE = "Surface/dossiers/projects/INDEX.md"
-PROJECTS_RELATIVE = "Surface/dossiers/projects"
+INDEX_RELATIVE = "Dossiers/projects/INDEX.md"
+PROJECTS_RELATIVE = "Dossiers/projects"
 # 与 MindWriter._lock_path（plobi/mind/writer.py:63）同一个锁文件——串行的是同一把，
 # 别给同一个仓配两把锁。
 LOCK_RELATIVE = ".plobi-mind.lock"
@@ -162,11 +162,11 @@ def render_declaration(agents_text: str, names: list[str]) -> tuple[str, bool]:
 
 
 def project_dir_names(root: Path) -> list[str]:
-    """``<root>/Surface/dossiers/projects`` 下的目录名（排序）——声明与 INDEX 都对齐到它。"""
+    """``<root>/Dossiers/projects`` 下的目录名（排序）——声明与 INDEX 都对齐到它。"""
     base = real_target(PROJECTS_RELATIVE, root)
     if not base.is_dir():
         # 说的是**真正找的那个目录**，不是脑仓根：人读面与脑仓是两个并列的根
-        # （``Surface/…`` 住在 ``SURFACE_ROOT``，脑住在 ``MIND_ROOT``），报脑仓根会让人
+        # （``Dossiers/…`` 住在 ``HUMAN_ROOT``，脑住在 ``MIND_ROOT``），报脑仓根会让人
         # 去错的地方找（用户 11-07 22:0x 现场就撞了这一句）。
         raise DeclarationSyncError(
             f"{base} 不在盘上（{PROJECTS_RELATIVE}/ 找不到），项目清单对不了盘"
@@ -249,7 +249,7 @@ def _regenerate_index(
     index_path: Path,
     snapshot: dict[str, bytes | None],
 ) -> bool:
-    """第 ② 步：调脑仓自己的 ``--fix-projects`` 重生成 ``Surface/dossiers/projects/INDEX.md``。"""
+    """第 ② 步：调脑仓自己的 ``--fix-projects`` 重生成 ``Dossiers/projects/INDEX.md``。"""
     _snapshot(index_path, INDEX_RELATIVE, snapshot)
     completed = _run_verifier(root, "--fix-projects")
     if completed.returncode != 0:
@@ -283,7 +283,7 @@ def _restore_declarations(root: Path, snapshot: Mapping[str, bytes | None]) -> N
         except OSError as exc:
             logger.warning(
                 "mind: 声明回滚没成 %s: %s——磁盘留的是改动后的那版，"
-                "去脑仓里手工对齐（git diff AGENTS.md / Surface/dossiers/projects/INDEX.md）",
+                "去脑仓里手工对齐（git diff AGENTS.md / Dossiers/projects/INDEX.md）",
                 relative, exc,
             )
 
@@ -291,7 +291,7 @@ def _restore_declarations(root: Path, snapshot: Mapping[str, bytes | None]) -> N
 def sync_project_declarations(
     *, dir_name: str, mind_root: Path | str | None = None
 ) -> DeclarationSync:
-    """把 ``Surface/dossiers/projects/<dir_name>`` 同步进脑仓的两处声明，成功才返回。
+    """把 ``Dossiers/projects/<dir_name>`` 同步进脑仓的两处声明，成功才返回。
 
     三步按模块头那两条规则的顺序执行；任一步失败 → 先把已改的还原、再抛
     :class:`DeclarationSyncError`（消息带 verifier 的输出尾部，能直接照着修）。调用方只需要收回
@@ -358,7 +358,7 @@ def sync_project_declarations(
     if not verifier_path.is_file():
         raise DeclarationSyncError(
             f"{root} 带着 {AGENTS_RELATIVE}，却没有脑仓自己的 {VERIFIER_RELATIVE}："
-            "Surface/dossiers/projects/INDEX.md 只由那个脚本的 --fix-projects 生成，不另写一套。"
+            "Dossiers/projects/INDEX.md 只由那个脚本的 --fix-projects 生成，不另写一套。"
             "先把 Mind 装齐（或把 MIND_ROOT 指回真的脑仓）再建项目分身。"
         )
 
@@ -379,7 +379,7 @@ def sync_project_declarations(
             updated_line = _update_agents_line(
                 agents_path=agents_path, names=names, snapshot=snapshot
             )
-            # ② Surface/dossiers/projects/INDEX.md —— 脑仓自己的生成器，不是我们写的
+            # ② Dossiers/projects/INDEX.md —— 脑仓自己的生成器，不是我们写的
             regenerated = _regenerate_index(
                 root=root, index_path=index_path, snapshot=snapshot
             )

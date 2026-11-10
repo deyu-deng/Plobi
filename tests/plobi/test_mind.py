@@ -163,6 +163,43 @@ def test_ai_daily_digest_lands_in_the_human_surface(surface):
     assert real_target(rel, surface).read_text(encoding="utf-8") == "# 摘要\n"
 
 
+def test_the_writable_prefixes_are_the_new_kinds(surface):
+    """白名单那张表（唯一真源）按**种类**分家了：人读面那几格是 ``Notes``／``Diary``／
+    ``Dossiers/…``，旧写法不再列进去（仍解析，只是不再广告）。"""
+    from plobi.mind.paths import SAFE_PREFIXES
+
+    human = [p for p in SAFE_PREFIXES if not p.startswith("Mind/")]
+    assert human == [
+        "Dossiers/projects",
+        "Dossiers/research",
+        "Dossiers/courses",
+        "Dossiers/butler",
+        "Dossiers/events",
+        "Meta",
+        "Notes",
+        "Diary",
+        "Inbox",
+    ]
+
+
+def test_new_and_old_logical_prefixes_land_on_the_same_file(surface):
+    """新写法（``Inbox/…``）与旧写法（``Surface/inbox/…``）落到**同一个**物理文件。
+
+    旧路不是错话——存量脚本、存量名册还在用；但新写与回话一律走新写法。
+    """
+    from plobi.mind.paths import real_target
+
+    writer = MindWriter(surface, run_verifier=False)
+    result = writer.write_one("Inbox/new.md", "x")
+
+    assert result.ok is True
+    assert result.written == ["Inbox/new.md"]
+    assert real_target("Inbox/new.md", surface) == real_target(
+        "Surface/inbox/new.md", surface
+    )
+    assert (surface / "Surface" / "inbox" / "new.md").read_text(encoding="utf-8") == "x"
+
+
 def test_unsafe_write_is_skipped_not_fatal(surface):
     writer = MindWriter(surface, run_verifier=False)
     result = writer.write(

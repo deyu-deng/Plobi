@@ -89,7 +89,7 @@ def _install_recorded_data_dir() -> Optional[str]:
     ``DataDir`` 一格写"用户装的时候选的那个数据目录"，装机版桌面
     （``electron/main.ts::readInstallerRecordedDataDir()``）也读这一格。
     2026-11-08 起安装器**不再**往 ``HKCU\\Environment`` 写
-    ``PLOBI_HOME`` / ``MIND_ROOT`` / ``SURFACE_ROOT``——那三个是两份身份共用
+    ``PLOBI_HOME`` / ``MIND_ROOT`` / ``HUMAN_ROOT``——那三个是两份身份共用
     的门牌，谁后装谁把对方带偏。于是命令行 ``plobi``（Path 里指向装机版
     ``bin``）在没有 ``PLOBI_HOME`` env 的干净 shell 里，得靠这一格找到家。
 

@@ -138,7 +138,7 @@ HINDSIGHT = MemoryProvider(
 
 # Registry of providers that expose a desktop config surface. Providers without
 # an entry here (e.g. ``builtin``) simply render no config panel.
-# Mind is the workspace's own brain (a repo pinned by MIND_ROOT / SURFACE_ROOT),
+# Mind is the workspace's own brain (a repo pinned by MIND_ROOT / HUMAN_ROOT),
 # so it has no API key to collect. The two path fields exist to *surface* the
 # pointers with their current values — they read env first, which is the only
 # sanctioned source for a machine-local path (no drive letters in code).
@@ -155,10 +155,11 @@ MIND = MemoryProvider(
         ),
         ProviderField(
             key="surface_root",
-            label="SURFACE_ROOT（人看的面）",
+            label="HUMAN_ROOT（人读面）",
             kind=KIND_TEXT,
-            env_fallbacks=("SURFACE_ROOT",),
-            description="人看的面（日记/笔记/项目卡）。留空则用环境变量 SURFACE_ROOT。",
+            # 新名优先，旧名仍认（兼容期）——两处都空才回落到数据家本体。
+            env_fallbacks=("HUMAN_ROOT", "SURFACE_ROOT"),
+            description="人读面（日记/笔记/档案）。留空则用环境变量 HUMAN_ROOT（旧名 SURFACE_ROOT 也认）。",
         ),
     ),
 )

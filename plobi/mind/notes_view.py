@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 BELONGS_KEY = "belongs"
 
-# Where notes live, as a LOGICAL path: ``Surface/notes`` resolves through
+# Where notes live, as a LOGICAL path: ``Notes`` resolves through
 # :func:`plobi.mind.paths.real_target`, so the 2026-10-14 two-root move needs no
-# edit here — the human surface answers against ``SURFACE_ROOT`` once that pointer is
+# edit here — the human side answers against ``HUMAN_ROOT`` once that pointer is
 # pinned, and against ``<MIND_ROOT>/Surface`` until then. Exactly one entry is listed
 # because keeping both would be the "new and old layout coexisting" the ruling forbids.
-NOTE_ROOTS: tuple[str, ...] = ("Surface/notes",)
+NOTE_ROOTS: tuple[str, ...] = ("Notes",)
 
 MAX_ENTRIES = 200
 MAX_PAYLOAD_BYTES = 64 * 1024
@@ -148,7 +148,7 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 
     The agent's own name plus the last segment of its Mind subtree (that is the
     project's registered name), so ``belongs: SRTP`` matches an agent named
-    ``srtp`` hanging ``Surface/dossiers/research/SRTP``.
+    ``srtp`` hanging ``Dossiers/research/SRTP``.
     """
     candidates = [getattr(entry, "name", "") or ""]
     subtree = str(getattr(entry, "mind_subtree", "") or "").strip("/")
@@ -158,7 +158,7 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 
 
 # Every L2 category folder a tree may live in, as logical paths. Listing only
-# ``Surface/dossiers/projects`` would silently make ``research/SRTP`` — and after the move any
+# ``Dossiers/projects`` would silently make ``research/SRTP`` — and after the move any
 # course, butler or event tree — an "owner nobody registered", which the sidebar
 # reports as a dangling ``belongs:`` tag instead of a note list. Same list the
 # writer uses (:data:`plobi.mind.project_tree.TREE_ROOT_RELATIVES`), not a copy of it.

@@ -267,8 +267,16 @@ TOOLSETS = {
     },
 
     "surface": {
-        "description": "The human-readable archive (Surface/): dossiers, notes, diary — read one file and rewrite it",
-        "tools": ["surface_read", "surface_write"],
+        "description": "The human side: notes, diary, dossiers — one tool per kind, each with its own rules",
+        "tools": [
+            "note_read",
+            "note_write",
+            "diary_read",
+            "diary_write",
+            "dossier_read",
+            "dossier_write",
+            "agent_notes",
+        ],
         "includes": []
     },
 

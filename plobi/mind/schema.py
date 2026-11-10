@@ -95,7 +95,9 @@ def belongs_authority(roots=None) -> List[str]:
 
     roots = roots if roots is not None else resolve_roots()
     names: List[str] = []
-    base = getattr(roots, "surface", None)
+    # 别用 ``getattr(roots, "surface", None)`` 那种写法：字段一改名它**悄悄**返回 None，
+    # 这道校验就被跳过去了（静默失效比报错更坏）。字段名改了就直接用。
+    base = getattr(roots, "human", None)
     if not base:
         return names
     for sub in ("projects", "courses"):

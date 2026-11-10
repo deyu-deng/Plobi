@@ -9,9 +9,9 @@ Agent维护相关的笔记，Plan或者progress它都不知道有这个东西的
 
 为什么落文件而不是落库（长远口径，纸 ``tasks/dossier-shape-task.md`` §2）：
 
-* 每日备份捆的是**五个仓**，人读面（``SURFACE_ROOT``）是其中之一；``vault.db`` 不是
+* 每日备份捆的是**五个仓**，人读面（``HUMAN_ROOT``）是其中之一；``vault.db`` 不是
   仓，捆不到。
-* 写路径只有一条：Agent 用 ``surface_write``（同一套 L1 点头闸）。走库要么绕过那道
+* 写路径只有一条：Agent 用 ``dossier_write``（同一套 L1 点头闸）。走库要么绕过那道
   闸，要么另写一个写入器——两样都比现在差。
 * 与 ``tasks.json`` 同构：同一目录、同一套原子写、同一套「坏文件不许糊成空表」。
 

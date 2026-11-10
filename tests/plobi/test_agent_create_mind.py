@@ -31,7 +31,10 @@ import plobi.console.router as console_router
 from plobi.delegation.tracker import SubagentTracker, set_tracker
 from plobi.mind.project_tree import ENTRY_FILE_NAMES
 
-VAULT_PROJECTS = "Surface/dossiers/projects"
+# 逻辑前缀（名册里的 ``mind_subtree`` 用的就是它）……
+VAULT_PROJECTS = "Dossiers/projects"
+# ……与**物理落点**分开写：人读面的物理布局一个字不动（还是 ``Surface/dossiers/…``）。
+VAULT_PROJECTS_DIR = Path("Surface") / "dossiers" / "projects"
 
 
 @pytest.fixture()
@@ -65,7 +68,7 @@ def mind_home(tmp_path, monkeypatch):
     # 跑到真面上。不钉的话 ``_surface_root()`` 会落到 ``PLOBI_HOME``（另一个 tmp），
     # 这一档断言里的落点就全对不上了（这是 md 时代就有的旧账，不是档案改形状带来的）。
     (root / "Surface").mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("SURFACE_ROOT", str(root / "Surface"))
+    monkeypatch.setenv("HUMAN_ROOT", str(root / "Surface"))
 
     registry = AgentRegistry(path=tmp_path / "projects.yaml")
     console_router.set_registry(registry)
@@ -86,7 +89,8 @@ def live_registry() -> AgentRegistry:
 
 
 def surface(root: Path) -> Path:
-    return root / VAULT_PROJECTS
+    """人读面上那一棵棵项目树的**物理**落点。"""
+    return root / VAULT_PROJECTS_DIR
 
 
 def tree_names(root: Path) -> list[str]:
@@ -181,7 +185,7 @@ def test_research_category_projects_under_the_research_group(client, mind_home, 
     )
     assert response.status_code == 200, response.json()
     root = tmp_path / "mind"
-    # 分类决定这棵树住在哪个文件夹：research 的落 ``Surface/dossiers/research/``，不再挤进 ``projects/``。
+    # 分类决定这棵树住在哪个文件夹：research 的落 ``Dossiers/research/``，不再挤进 ``projects/``。
     profile = json.loads(
         (
             root / "Surface" / "dossiers" / "research" / "Wealth-Lab" / "dossier.json"
@@ -192,7 +196,7 @@ def test_research_category_projects_under_the_research_group(client, mind_home, 
     assert profile["registry"]["group"] == "research"
     assert not (root / "Surface" / "dossiers" / "projects" / "Wealth-Lab").exists()
     saved = AgentRegistry.load(mind_home.path).get("wealth-lab")
-    assert saved is not None and saved.mind_subtree == "Surface/dossiers/research/Wealth-Lab"
+    assert saved is not None and saved.mind_subtree == "Dossiers/research/Wealth-Lab"
 
 
 def test_butler_create_does_not_touch_mind(client, mind_home, tmp_path):

@@ -52,7 +52,7 @@ NEVER_AUTO_CATEGORIES = ("diary", "persona")
 
 @dataclass(frozen=True)
 class Change:
-    """One proposed write, addressed by its LOGICAL path (``Surface/…`` / ``Mind/…``)."""
+    """One proposed write, addressed by its LOGICAL path (``Notes/…`` / ``Mind/…``)."""
 
     logical_path: str
     content: str
@@ -85,7 +85,7 @@ def root_identity(roots) -> dict[str, str]:
     or onto a directory that merely has the same name.
     """
     out: dict[str, str] = {}
-    for label, base in (("mind", roots.mind), ("surface", roots.surface)):
+    for label, base in (("mind", roots.mind), ("human", roots.human)):
         if base is None:
             out[label] = "none"
             continue
@@ -134,11 +134,12 @@ def never_auto(logical: str, mode: str) -> str:
         return "unknown-mode"
     if low.endswith(".gitkeep"):
         return ""
-    if "/diary/" in low or low.startswith("surface/diary"):
+    if "/diary/" in low or low.startswith("diary/") or low.startswith("surface/diary"):
         return "rewrites-the-user's-own-record"
     if "/profile/" in low or "persona" in low:
         return "rewrites-the-persona"
-    if low.startswith("surface/dossiers/projects/mind") or low == "surface/dossiers/projects/mind":
+    if (low.startswith("dossiers/projects/mind")
+            or low.startswith("surface/dossiers/projects/mind")):
         return "deleted-project"
     return ""
 
@@ -207,8 +208,10 @@ def build_plan(changes: Iterable[Change], *, roots, categories: Optional[dict] =
 def category_of(logical: str) -> str:
     """Coarse class used by the trust ledger — derived from the path, never model-guessed."""
     low = logical.lower()
-    for marker, name in (("surface/notes", "notes"), ("surface/diary", "diary"),
-                         ("surface/meta/profile", "persona"), ("surface/dossiers/projects", "project-docs"),
+    # 标记按**种类**写（``notes/``／``diary/``／…）：旧的 ``surface/notes/…`` 里也含
+    # ``notes/``，所以新旧两种写法都归到同一类——不用为旧名单列一条。
+    for marker, name in (("notes/", "notes"), ("diary/", "diary"),
+                         ("meta/profile", "persona"), ("dossiers/projects", "project-docs"),
                          ("mind/raw", "digests"), ("mind/wiki", "wiki")):
         if marker in low or low.startswith(marker):
             return name
@@ -300,7 +303,7 @@ def _mode_for(change: Change) -> str:
 def dirty_repos(roots) -> list[str]:
     """Zero-pollution self-proof: a dry-run must leave both brain repos untouched."""
     dirty = []
-    for base in (roots.mind, roots.surface):
+    for base in (roots.mind, roots.human):
         if base is None or not base.is_dir():
             continue
         if _git(base, "status", "--porcelain"):

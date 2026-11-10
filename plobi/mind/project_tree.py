@@ -40,17 +40,17 @@ from pathlib import Path
 from .dossier_profile import PROFILE_FILENAME, DossierProfile, Stage
 from .paths import real_target, resolve_root
 
-PROJECTS_RELATIVE = "Surface/dossiers/projects"
+PROJECTS_RELATIVE = "Dossiers/projects"
 # The L2 categories are the human surface's folders (``Docs/specs/memory-adapter.md``
-# §12.3), so a project tree lives under ``Surface/<category>``. Names come from
+# §12.3), so a project tree lives under ``Dossiers/<category>``. Names come from
 # ``registry.AGENT_CATEGORIES``; an unknown category falls back to ``projects``
 # rather than inventing a sixth folder.
 TREE_ROOT_RELATIVES: tuple[str, ...] = (
-    "Surface/dossiers/projects",
-    "Surface/dossiers/research",
-    "Surface/dossiers/courses",
-    "Surface/dossiers/butler",
-    "Surface/dossiers/events",
+    "Dossiers/projects",
+    "Dossiers/research",
+    "Dossiers/courses",
+    "Dossiers/butler",
+    "Dossiers/events",
 )
 # 一棵树有两件：档案本体（``dossier.json``）＋ 调研文档（``research.md``）。
 ENTRY_FILE_NAMES: tuple[str, ...] = (PROFILE_FILENAME, "research.md")
@@ -65,8 +65,8 @@ _CATEGORY_TO_PLAN_META: dict[str, tuple[str, str]] = {
 
 
 def tree_root_for(category: str) -> str:
-    """Which ``Surface/<folder>`` a project tree of this L2 category lives in."""
-    candidate = f"Surface/dossiers/{(category or '').strip().lower()}"
+    """Which ``Dossiers/<folder>`` a project tree of this L2 category lives in."""
+    candidate = f"Dossiers/{(category or '').strip().lower()}"
     return candidate if candidate in TREE_ROOT_RELATIVES else PROJECTS_RELATIVE
 
 
@@ -83,7 +83,7 @@ class ProjectTreeWrite:
     """一次立项的落地结果，带着「怎么撤销自己」的账。
 
     ``reused`` = 磁盘上早有这棵树（含 ``dossier.json``），我们一个字没写；``relative`` 用的是
-    **磁盘上真实的那个名字**，不是我们传进去的大小写——不分大小写的盘上 ``Surface/dossiers/projects/Nymo``
+    **磁盘上真实的那个名字**，不是我们传进去的大小写——不分大小写的盘上 ``Dossiers/projects/Nymo``
     和请求里的 ``nymo`` 是同一个目录，注册表里必须记那一个名字，否则下一轮播种机认不出它。
     """
 
@@ -212,8 +212,8 @@ def _existing_tree(root: Path, dir_name: str) -> tuple[str, Path] | None:
 
     The roster may still carry a ``mind_subtree`` from before the two-root move.
     Without this lookup the create path would mint a second ``<Name>/`` next to
-    the real one — which is how ``Surface/dossiers/projects/SRTP`` reappeared beside
-    ``Surface/dossiers/research/SRTP`` on 2026-10-16.
+    the real one — which is how ``Dossiers/projects/SRTP`` reappeared beside
+    ``Dossiers/research/SRTP`` on 2026-10-16.
     """
     for relative in TREE_ROOT_RELATIVES:
         base = real_target(relative, root)
@@ -233,10 +233,10 @@ def ensure_project_tree(
     mind_root: Path | str | None = None,
     today: str = "",
 ) -> ProjectTreeWrite:
-    """在 ``<SURFACE_ROOT>/<分类>/<目录名>`` 建出两件套，返回这次写了什么。
+    """在 ``<HUMAN_ROOT>/dossiers/<分类>/<目录名>`` 建出两件套，返回这次写了什么。
 
     分类文件夹就是 L2 那五栏（:data:`TREE_ROOT_RELATIVES`），所以 ``category=research``
-    的项目落在 ``Surface/dossiers/research/``，不再一律挤进 ``Surface/dossiers/projects/``。
+    的项目落在 ``Dossiers/research/``，不再一律挤进 ``Dossiers/projects/``。
 
     规则：盘上任何分类文件夹里已经有这棵树（带 ``dossier.json``）就**只认领**，哪怕注册表那一格
     还指着搬家前的旧路径；够不着 Mind 就抛（调用方按创建失败处理，不留孤儿行）；认领时一个字

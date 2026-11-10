@@ -887,7 +887,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     R-013: ``project_path`` is optional; when absent the registry seeds it from
     the category default. The bound folder is created on disk if missing.
     R-013 扩写（2026-10-06）: a ``projects`` / ``research`` row is registered in
-    Mind first — ``Surface/dossiers/projects/<项目名>`` with its 三件套 — and the registry
+    Mind first — ``Dossiers/projects/<项目名>`` with its 三件套 — and the registry
     only gets written once that tree exists, so no row ever claims a subtree that
     is not on disk. Mind unreachable / unwritable means the create fails.
     裁定 19: ``category=events`` requires ``source_event_id`` pointing to a
@@ -1071,15 +1071,15 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
                 f"Mind 里 ``{tree.relative}`` 已经挂在智能体「{owner}」名下——同一个项目不登记"
                 f"第二条：要推进它就是去编辑「{owner}」，真另起一个项目请换一个项目名。",
             )
-        # 建完必须同步脑仓自己那两处声明（``AGENTS.md`` §1 那一行 + ``Surface/dossiers/projects/INDEX.md``）：
+        # 建完必须同步脑仓自己那两处声明（``AGENTS.md`` §1 那一行 + ``Dossiers/projects/INDEX.md``）：
         # 脑仓的门禁 ``Mind/scripts/verifier.py`` 把「§1 声明 ≠ 磁盘」判成 BLOCKER，pre-commit
         # 就在跑它——只建目录不同步声明，用户在脑仓的下一次提交会被这个**我们**造的洞拦下。
         # 顺序固定在落册之前：同步不成 = 这次创建不成，树收回、名册一个字都不写。
         #
         # ⚠️ 但只有 **projects 那一格**进这份声明：脑仓自己的 ``check_projects()`` 比的就是
-        # 「§1 那行列的 projects ↔ ``Surface/dossiers/projects`` 磁盘」，research/courses/… 的树
+        # 「§1 那名列的 projects ↔ ``Dossiers/projects`` 磁盘」，research/courses/… 的树
         # 根本不在那个名单里。硬同步会拿「这个名字不在那 10 个项目里」当失败 ⇒ research 那一格
-        # 的 Agent 压根建不出来（用户 11-07 22:0x 现场：新建 SRTP 报「Surface/dossiers/projects/SRTP
+        # 的 Agent 压根建不出来（用户 11-07 22:0x 现场：新建 SRTP 报「Dossiers/projects/SRTP
         # 不在 … 的盘上，声明对不了盘」，而 SRTP 一直在 ``Surface/dossiers/research/SRTP``）。
         # 判据是**树落在哪一格**，不是品类：projects 的树照旧进声明（§1 与门禁那条纪律不动），
         # research 的树不进，也不许让那份声明动一个字节。

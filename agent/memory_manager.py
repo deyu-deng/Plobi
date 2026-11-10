@@ -105,11 +105,19 @@ def resolve_memory_provider_name(configured: object) -> str:
     return name
 
 # 10-31（WP-TOOLSET-INBOUND-2）：memory-provider 的工具按门类归户。
-# surface_* 只碰人读面（Surface/），mind_* 只碰脑面（Mind/）——用户在 Tools 页
-# 可以分别开关，所以这里要一张 工具名 → 门类 的表来过滤。
+# 人读面那几把（note_*/diary_*/dossier_*/agent_notes）只碰人读面，mind_* 只碰脑面
+# （Mind/）——用户在 Tools 页可以分别开关，所以这里要一张 工具名 → 门类 的表来过滤。
+#
+# 门类 id 仍叫 ``surface``：它是 Tools 页上那个**开关的键**（用户在设置里存过），
+# 改名会把存量开关打回「全开」。退役的是那把通吃的 ``surface_read``／``surface_write``。
 _PROVIDER_TOOL_TOOLSET = {
-    "surface_read": "surface",
-    "surface_write": "surface",
+    "note_read": "surface",
+    "note_write": "surface",
+    "diary_read": "surface",
+    "diary_write": "surface",
+    "dossier_read": "surface",
+    "dossier_write": "surface",
+    "agent_notes": "surface",
     "mind_read": "mind",
     "mind_write": "mind",
 }
@@ -212,7 +220,7 @@ def inject_memory_provider_tools(agent: Any) -> int:
         tool_name = schema["name"]
         if tool_name in existing_tool_names:
             continue
-        # 10-31：surface_* / mind_* 各自归门类——所属门类没开就不下发。
+        # 10-31：人读面那几把 / mind_* 各自归门类——所属门类没开就不下发。
         # 这样 Tools 页上关掉「档案」就真的关掉了，而不是关了还在。
         owner = _PROVIDER_TOOL_TOOLSET.get(tool_name)
         if owner and enabled_names is not None and tool_name not in enabled_names:

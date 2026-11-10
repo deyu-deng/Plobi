@@ -22,7 +22,7 @@ from .paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
 
-DIARY_LOGICAL_ROOT = "Surface/diary"
+DIARY_LOGICAL_ROOT = "Diary"
 MAX_DIARY_BYTES = 512 * 1024
 
 
@@ -166,7 +166,7 @@ def save_entry(value: str, text: str, *, commit: bool = True, base_text: str | N
     result = {"committed": False, "commit": "", "detail": ""}
     if commit:
         try:
-            # git 的相对路径是相对 SURFACE_ROOT 的仓根，不是逻辑前缀 `Surface/`。
+            # git 的相对路径是相对人读面根的仓根，不是逻辑前缀 `Diary/`。
             result = _commit_one(root, path.relative_to(root).as_posix(), day)
         except Exception as exc:  # git 不可用不该吞掉已经落盘的那篇
             logger.warning("diary: commit skipped: %s", exc)

@@ -46,6 +46,7 @@ from plobi.mind.paths import (
     UnsafeMindPath,
     is_memory_zone,
     logical_target,
+    normalize_logical,
     real_target,
     safe_target,
 )
@@ -65,24 +66,38 @@ logger = logging.getLogger(__name__)
 # truth. Do NOT redefine it here; updating one without the other causes
 # security checks to diverge.
 
-# 两对读写工具，一面一对（用户 2026-10-29 拍「读写都给，真对称」）。
-# ``surface_*`` 只碰人读面，``mind_*`` 只碰脑自己那一面；两枚工具各自的面由**工具身份**决定，
-# 不是一颗给模型猜的 ``surface`` 参数（裁 185）。
+# 原子工具按**种类**拆（用户 11-10 拍板「原子工具按种类拆」；裁 185「一枚工具只干一件事」
+# 按种类切，不按「面」切）。
 #
-# 第三枚 ``dossier_write`` 是**档案本体的结构化编辑手**（11-09）：``surface_write`` 是
-# 整份文件覆盖（模型得自己把整份 JSON 拼回去），而档案是结构化记录——改目标、改现状、
-# 改阶段、追加流水，各改各的格，其余原样留着。它走
-# :func:`plobi.mind.dossier_profile.update_profile`（只增不改 ＋ 原子写），**不过 L1 那道闸**。
-SURFACE_READ_TOOL = "surface_read"
-SURFACE_WRITE_TOOL = "surface_write"
+# 为什么不再是一把通吃的 ``surface_read``／``surface_write``：人读面那三样**契约各不相同**——
+# 笔记有 frontmatter 硬约束（缺 title/tags/belongs 就拒写）、日记永远先问、档案是字段级
+# 结构化记录。一把通吃的工具只让模型去猜自己此刻要付哪种代价。
+#
+# 于是：每一样两把（读一把、写一把），脑那一面仍旧一对（它的契约只有一种），
+# 外加第九把 ``agent_notes``——**列自己名下有哪些笔记**：屏上那格「相关笔记」是端点
+# 投影，上下文块里没有这一格，召回也只扫脑内（``Mind/wiki/*``）⇒ Agent 以前拿不到那份清单。
+NOTE_READ_TOOL = "note_read"
+NOTE_WRITE_TOOL = "note_write"
+DIARY_READ_TOOL = "diary_read"
+DIARY_WRITE_TOOL = "diary_write"
+DOSSIER_READ_TOOL = "dossier_read"
+DOSSIER_WRITE_TOOL = "dossier_write"
 MIND_READ_TOOL = "mind_read"
 MIND_WRITE_TOOL = "mind_write"
-DOSSIER_WRITE_TOOL = "dossier_write"
-SURFACE_LOGICAL_PREFIX = "Surface/"
+AGENT_NOTES_TOOL = "agent_notes"
+
+# 每把工具**只碰一类**（逻辑前缀；旧写法 ``Surface/…`` 进 paths 之前就归一成这些，
+# 所以模型写旧路径照样能用，只是回话里不再广告那个词）。
+NOTE_PREFIX = "Notes"
+DIARY_PREFIX = "Diary"
+DOSSIER_PREFIX = "Dossiers"
+# 脑那一面的「门类键」——它不是逻辑前缀，只是提示表里的一格。
+MIND_FACE = "Mind"
+
 VAULT_READ_MAX_CHARS = 24_000
 VAULT_WRITE_MAX_CHARS = 60_000
-# 档案本体的路径形状：``Surface/dossiers/<类>/<名>/dossier.json``。别的一律不接。
-DOSSIER_PATH_PATTERN = re.compile(r"^Surface/dossiers/[^/]+/[^/]+/dossier\.json$")
+# 档案本体的路径形状：``Dossiers/<类>/<名>/dossier.json``。别的一律不接。
+DOSSIER_PATH_PATTERN = re.compile(r"^Dossiers/[^/]+/[^/]+/dossier\.json$")
 # 盘上没有 ``Mind`` 这一层——脑仓摊平之后顶层就是 ``wiki/ raw/ persona/``（现核）。
 # ``Mind/`` 是**内部与存量**的旧拼法（待批队列、信任账、脑仓自己那份 AGENTS.md 里都写着它），
 # 所以给人和模型看的说法用 ``Mind/``，进 paths 之前在这一格归一；把 ``Mind/`` 全线改名是另一把刀
@@ -92,10 +107,15 @@ BRAIN_LOGICAL_PREFIX = "Mind/"
 
 
 def _to_logical(path: str) -> str:
-    """模型说的 ``Mind/…`` → 内部用的 ``Mind/…``。"""
-    if path.startswith(BRAIN_SPOKEN_PREFIX):
-        return BRAIN_LOGICAL_PREFIX + path[len(BRAIN_SPOKEN_PREFIX) :]
-    return path
+    """模型说的路径 → 内部用的逻辑路径。
+
+    两处归一：``Mind/…`` 归成内部的 ``Mind/…``；旧的 ``Surface/notes/…`` 归成
+    ``Notes/…``（**旧路不是错话**，只是不再广告那个词）。
+    """
+    text = str(path or "").replace("\\", "/").strip("/")
+    if text.startswith(BRAIN_SPOKEN_PREFIX):
+        text = BRAIN_LOGICAL_PREFIX + text[len(BRAIN_SPOKEN_PREFIX) :]
+    return normalize_logical(text)
 
 
 def _to_spoken(path: str) -> str:
@@ -103,6 +123,35 @@ def _to_spoken(path: str) -> str:
     if path.startswith(BRAIN_LOGICAL_PREFIX):
         return BRAIN_SPOKEN_PREFIX + path[len(BRAIN_LOGICAL_PREFIX) :]
     return path
+
+# 每把工具越界时的那句提示（说清「该用哪一把」）。
+_FACE_HINTS = {
+    NOTE_PREFIX: "笔记用 `note_read`／`note_write`",
+    DIARY_PREFIX: "日记用 `diary_read`／`diary_write`",
+    DOSSIER_PREFIX: "档案用 `dossier_read`／`dossier_write`",
+    MIND_FACE: "脑那一面用 `mind_read`／`mind_write`",
+}
+
+
+def _agent_note_aliases(name: str) -> tuple[str, ...]:
+    """这个 Agent 认领笔记时可能用的那几个名字（名册那一行的 ``mind_subtree`` 末段也算）。
+
+    与屏上**同一只口**：``plobi.mind.notes_view.agent_aliases`` 是那处真源，
+    这里只负责把名字换成名册里那一行（换了就查得到 ``mind_subtree``）。
+    """
+    from plobi.mind.notes_view import agent_aliases
+
+    try:
+        from plobi.mind.agent_dossier import _find, load_entries
+
+        _path, entries = load_entries()
+        entry = _find(entries, name)
+    except Exception:  # noqa: BLE001 - 名册读不到就只按名字认
+        entry = None
+    if entry is None:
+        return (name,)
+    return agent_aliases(entry)
+
 
 MAX_DIGEST_TURNS = 40
 MAX_DIGEST_CHARS_PER_MSG = 1200
@@ -317,78 +366,68 @@ class MindProvider(MemoryProvider):
         )
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        """两对原子工具 ＋ 一把档案编辑手（WP-MIND-DOSSIER-WRITE；用户 10-29 拍「读写都给，真对称」）。
+        """九把原子工具，每把**只碰一类**（用户 11-10 拍板「原子工具按种类拆」）。
 
-        裁定 185：一枚工具只干一件事——所以是 ``surface_read``／``surface_write``／``mind_read``／
-        ``mind_write`` 四只手，不是一颗带 ``action`` 或 ``surface`` 的开关：哪一面由**工具身份**决定。
+        人读面那三样各有各的契约——笔记有 frontmatter 硬约束、日记永远先问、档案是
+        字段级结构化记录——所以拆成 ``note_*``／``diary_*``／``dossier_*`` 六把，
+        脑那一面仍旧 ``mind_read``／``mind_write``（它的契约只有一种），
+        再加 ``agent_notes``（列自己名下有哪些笔记，与屏上同一份投影）。
 
-        第五把 ``dossier_write`` 是**档案本体的字段级编辑手**：``surface_write`` 要整份文件
-        覆盖（模型得自己把整份 JSON 拼回去），这把只改点名的几格、其余原样留着。写文件的那两把
-        一律走 :class:`MindWriter`，因此过 L1 那道闸：这台 ``mind_write_auto_approve`` 关着时
-        落不了盘，就照实回「已进待批 + id」；``dossier_write`` 走
+        写文件的那几把一律走 :class:`MindWriter`，因此过 L1 那道闸：这台
+        ``mind_write_auto_approve`` 关着时落不了盘，就照实回「已进待批 + id」；
+        ``dossier_write`` 改档案本体时走
         :func:`plobi.mind.dossier_profile.update_profile`（只增不改 ＋ 原子写），**不过那道闸**。
         """
         return [
             {
-                "name": SURFACE_READ_TOOL,
+                "name": NOTE_READ_TOOL,
                 "description": (
-                    "Read one file of the human-readable surface by its LOGICAL path, "
-                    "``Surface/...`` — a dossier record "
-                    "(``Surface/dossiers/projects/Aura/dossier.json``: goal, status, stages), "
-                    "the checklist beside it (``tasks.json``), a note "
-                    "(``Surface/notes/...``), today's diary (``Surface/diary/<date>-<Weekday>.md``). "
-                    "Only paths inside that surface resolve; anything else comes back as an "
-                    "error, never as an empty file. The brain's own pages are a different tool: "
-                    "``mind_read`` — recalled content from there already arrives in your context."
+                    "Read one note on the human side by its LOGICAL path, ``Notes/...`` — "
+                    "e.g. ``Notes/<topic>/<title>.md``. A note carries a hard contract in "
+                    "its frontmatter: ``title``, ``tags`` and ``belongs`` (the agent "
+                    "names it belongs to; ``[]`` = public knowledge), optionally "
+                    "``relates``. Only paths under ``Notes/`` resolve — a dossier "
+                    "record is ``dossier_read``, today's diary is ``diary_read``, the "
+                    "brain's own pages are ``mind_read``."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Surface/dossiers/projects/Aura/dossier.json",
+                            "description": "Logical path of the note, e.g. Notes/<topic>/<title>.md",
                         }
                     },
                     "required": ["path"],
                 },
             },
             {
-                "name": SURFACE_WRITE_TOOL,
+                "name": NOTE_WRITE_TOOL,
                 "description": (
-                    "Overwrite one file on the human-readable surface (``Surface/...``) by its "
-                    "LOGICAL path, e.g. ``Surface/dossiers/projects/Aura/dossier.json``. A dossier "
-                    "record is JSON: ``version``, ``agent``, ``title``, ``category``, ``goal``, "
-                    "``status`` (one paragraph on where this stands), ``stages`` (each with "
-                    "``id``, ``title``, ``detail``, ``done``), ``registry``, ``updated`` and "
-                    "``log`` (the running history). To edit a dossier record, prefer "
-                    "``dossier_write``: it changes the fields you name and keeps the rest of "
-                    "the record as it is, while this tool rewrites the whole file — read it "
-                    "first and hand back every key it already has, including any you do not "
-                    "recognise. The old ``plan.md`` / ``progress.md`` "
-                    "pair is retired; there is nothing to keep up there. Notes under "
-                    "``Surface/notes/`` carry a "
-                    "hard contract: frontmatter must carry title, tags and a `belongs` key "
-                    "(`[]` = public knowledge, otherwise registered agent names), may carry "
-                    "`relates` for agents whose tasks use it, have exactly one top-level "
-                    "heading matching the title, and live under an existing topic folder — "
-                    "miss any of those and the write is refused with the reasons listed. "
-                    "The write is checked by the trust gate — the "
-                    "result says whether it landed, went to the pending queue (with an id), "
-                    "or was refused, and why. Never report success the model did not read back."
+                    "Overwrite one note on the human side (``Notes/...``) by its LOGICAL "
+                    "path. Notes carry a hard contract: frontmatter must carry title, "
+                    "tags and a `belongs` key (`[]` = public knowledge, otherwise "
+                    "registered agent names), may carry `relates` for agents whose tasks "
+                    "use it, have exactly one top-level heading matching the title, and "
+                    "live under an existing topic folder — miss any of those and the "
+                    "write is refused with the reasons listed. The write is checked by "
+                    "the trust gate — the result says whether it landed, went to the "
+                    "pending queue (with an id), or was refused, and why. Never report "
+                    "success the model did not read back. The diary and the dossier "
+                    "records are other tools (``diary_write`` / ``dossier_write``)."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "Logical path on the human surface, e.g. Surface/dossiers/research/SRTP/dossier.json",
+                            "description": "Logical path of the note, e.g. Notes/<topic>/<title>.md",
                         },
                         "content": {
                             "type": "string",
                             "description": (
-                                "The full new contents of that file: markdown for a ``.md`` "
-                                "file, JSON for a ``.json`` file (a dossier record is "
-                                "``dossier.json``)."
+                                "The full new contents of that note (markdown, with the "
+                                "frontmatter block)."
                             ),
                         },
                     },
@@ -396,10 +435,81 @@ class MindProvider(MemoryProvider):
                 },
             },
             {
+                "name": DIARY_READ_TOOL,
+                "description": (
+                    "Read one diary entry on the human side by its LOGICAL path, "
+                    "``Diary/...`` — e.g. ``Diary/2026-11-10-Tuesday.md``. The diary is "
+                    "the user's own writing and nothing is pushed into your context when "
+                    "they write it, so read it when it actually matters: the evening "
+                    "check-in, or a question about how their day went. Only paths under "
+                    "``Diary/`` resolve."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path of the diary entry, e.g. Diary/2026-11-10-Tuesday.md",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": DIARY_WRITE_TOOL,
+                "description": (
+                    "Write one diary entry on the human side (``Diary/...``) by its "
+                    "LOGICAL path. The diary is the user's own writing: ask before you "
+                    "write here and say what you are about to add — one-line jots at the "
+                    "end of today's page (`- HH:MM …`) are their habit, not a licence to "
+                    "rewrite the day. The write is checked by the trust gate; the result "
+                    "says whether it landed, went to the pending queue (with an id), or "
+                    "was refused, and why."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path of the diary entry, e.g. Diary/2026-11-10-Tuesday.md",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The full new contents of that entry (markdown).",
+                        },
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+            {
+                "name": DOSSIER_READ_TOOL,
+                "description": (
+                    "Read one file of an agent's dossier on the human side by its LOGICAL "
+                    "path, ``Dossiers/...`` — the record "
+                    "``Dossiers/<category>/<name>/dossier.json`` (goal, status, stages), "
+                    "the day-by-day checklist beside it (``tasks.json``), or the index "
+                    "beside that. Only paths under ``Dossiers/`` resolve — notes are "
+                    "``note_read``, the diary is ``diary_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Logical path of the dossier file, e.g. "
+                                "Dossiers/projects/Aura/dossier.json"
+                            ),
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
                 "name": DOSSIER_WRITE_TOOL,
                 "description": (
-                    "Edit one dossier record on the human-readable surface — the structured "
-                    "file ``Surface/dossiers/<category>/<name>/dossier.json`` — by LOGICAL path "
+                    "Edit one agent's dossier on the human side — the structured file "
+                    "``Dossiers/<category>/<name>/dossier.json`` — by LOGICAL path "
                     "(``path``), or by the dossier's own name (``agent``, e.g. ``Aura``). "
                     "Name only the fields you are changing: ``goal`` (what this project is "
                     "for), ``status`` (where it stands now, one paragraph), ``stages`` (the "
@@ -410,9 +520,10 @@ class MindProvider(MemoryProvider):
                     "is kept exactly as it is, including keys you do not recognise, and "
                     "``updated`` is set to today for you. The file has to exist and be valid "
                     "JSON: a broken file is refused, never overwritten, and a stage list with "
-                    "a wrong shape is refused without writing anything. This is the tool for "
-                    "editing a dossier; ``surface_read`` reads one back and ``surface_write`` "
-                    "rewrites a whole file."
+                    "a wrong shape is refused without writing anything. For another file in "
+                    "the same dossier folder (the day-by-day ``tasks.json``), give "
+                    "``content`` instead and it is written as-is. This is the tool for "
+                    "editing a dossier; ``dossier_read`` reads one back."
                 ),
                 "parameters": {
                     "type": "object",
@@ -420,8 +531,8 @@ class MindProvider(MemoryProvider):
                         "path": {
                             "type": "string",
                             "description": (
-                                "Logical path of the dossier record, e.g. "
-                                "Surface/dossiers/projects/Aura/dossier.json"
+                                "Logical path of the dossier file, e.g. "
+                                "Dossiers/projects/Aura/dossier.json"
                             ),
                         },
                         "agent": {
@@ -470,6 +581,14 @@ class MindProvider(MemoryProvider):
                                 "the history alone."
                             ),
                         },
+                        "content": {
+                            "type": "string",
+                            "description": (
+                                "The full new contents of another file in the same dossier "
+                                "folder (the day-by-day ``tasks.json``). Give it instead of "
+                                "the fields above."
+                            ),
+                        },
                     },
                     "required": ["path"],
                 },
@@ -481,8 +600,9 @@ class MindProvider(MemoryProvider):
                     "``Mind/wiki/...`` — concept pages, entity pages, source pages, "
                     "comparisons, the daily summary, memory notes. This is the AI-facing "
                     "surface: what is written here is mostly machine product, not prose for "
-                    "the user. Only paths inside those zones resolve; the human surface "
-                    "(``Surface/...``) is a different tool: ``surface_read``."
+                    "the user. Only paths inside those zones resolve; the human side "
+                    "(``Notes/…`` / ``Diary/…`` / ``Dossiers/…``) is other tools: "
+                    "``note_read``, ``diary_read``, ``dossier_read``."
                 ),
                 "parameters": {
                     "type": "object",
@@ -501,11 +621,12 @@ class MindProvider(MemoryProvider):
                     "Overwrite one page on the brain's OWN surface (``Mind/wiki/...``) by its "
                     "LOGICAL path — the zones this tool may touch are the memory system's own "
                     "pages (concepts, entities, sources, comparisons, daily, memory). Keep the "
-                    "file's frontmatter. Notes for the user (``Surface/notes/``) and dossiers "
-                    "(``Surface/dossiers/projects/``) are a different tool: ``surface_write``. The write is "
-                    "checked by the trust gate; the result says whether it landed, went to the "
-                    "pending queue (with an id), or was refused, and why. Never report success "
-                    "the model did not read back."
+                    "file's frontmatter. Notes for the user (``Notes/…``), the diary "
+                    "(``Diary/…``) and dossiers (``Dossiers/…``) are other tools: "
+                    "``note_write``, ``diary_write``, ``dossier_write``. The write is "
+                    "checked by the trust gate; the result says whether it landed, went to "
+                    "the pending queue (with an id), or was refused, and why. Never report "
+                    "success the model did not read back."
                 ),
                 "parameters": {
                     "type": "object",
@@ -522,6 +643,28 @@ class MindProvider(MemoryProvider):
                     "required": ["path", "content"],
                 },
             },
+            {
+                "name": AGENT_NOTES_TOOL,
+                "description": (
+                    "List the notes that belong to you on the human side — the same list "
+                    "the sidebar shows, by the same rule (a note's frontmatter ``belongs`` "
+                    "names you). You get titles, logical paths and sizes, never note "
+                    "bodies. Use it to see which notes exist before reading or writing "
+                    "one; to read a note, use ``note_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {
+                            "type": "string",
+                            "description": (
+                                "Which agent's notes to list. Leave it out for your own."
+                            ),
+                        }
+                    },
+                    "required": [],
+                },
+            },
         ]
 
     # -- model-facing dossier tools (WP-MIND-DOSSIER-WRITE) --------------
@@ -529,50 +672,76 @@ class MindProvider(MemoryProvider):
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         """Serve the tools; anything else is an explicit no-op.
 
-        哪一面由工具身份决定——``surface_*`` 只给人读面，``mind_*`` 只给脑那一面；
-        ``dossier_write`` 是档案本体的结构化编辑手（也只碰人读面那一面）。
+        哪一类由**工具身份**决定——``note_*`` 只碰笔记、``diary_*`` 只碰日记、
+        ``dossier_*`` 只碰档案、``mind_*`` 只碰脑那一面；
+        ``agent_notes`` 列出当前 Agent 名下的笔记。
         """
-        if tool_name == SURFACE_READ_TOOL:
-            return json.dumps(self._tool_read(args, (SURFACE_LOGICAL_PREFIX,)), ensure_ascii=False)
-        if tool_name == SURFACE_WRITE_TOOL:
-            return json.dumps(self._tool_write(args, (SURFACE_LOGICAL_PREFIX,)), ensure_ascii=False)
+        if tool_name == NOTE_READ_TOOL:
+            return json.dumps(
+                self._tool_read(args, (NOTE_PREFIX,), _FACE_HINTS[NOTE_PREFIX]), ensure_ascii=False
+            )
+        if tool_name == NOTE_WRITE_TOOL:
+            return json.dumps(
+                self._tool_write(args, (NOTE_PREFIX,), _FACE_HINTS[NOTE_PREFIX]), ensure_ascii=False
+            )
+        if tool_name == DIARY_READ_TOOL:
+            return json.dumps(
+                self._tool_read(args, (DIARY_PREFIX,), _FACE_HINTS[DIARY_PREFIX]), ensure_ascii=False
+            )
+        if tool_name == DIARY_WRITE_TOOL:
+            return json.dumps(
+                self._tool_write(args, (DIARY_PREFIX,), _FACE_HINTS[DIARY_PREFIX]), ensure_ascii=False
+            )
+        if tool_name == DOSSIER_READ_TOOL:
+            return json.dumps(
+                self._tool_read(args, (DOSSIER_PREFIX,), _FACE_HINTS[DOSSIER_PREFIX]),
+                ensure_ascii=False,
+            )
         if tool_name == DOSSIER_WRITE_TOOL:
             return json.dumps(self._tool_dossier_write(args), ensure_ascii=False)
+        if tool_name == AGENT_NOTES_TOOL:
+            return json.dumps(self._tool_agent_notes(args), ensure_ascii=False)
         if tool_name == MIND_READ_TOOL:
-            return json.dumps(self._tool_read(args, MEMORY_ZONES), ensure_ascii=False)
+            return json.dumps(
+                self._tool_read(args, MEMORY_ZONES, _FACE_HINTS[MIND_FACE]), ensure_ascii=False
+            )
         if tool_name == MIND_WRITE_TOOL:
-            return json.dumps(self._tool_write(args, MEMORY_ZONES), ensure_ascii=False)
+            return json.dumps(
+                self._tool_write(args, MEMORY_ZONES, _FACE_HINTS[MIND_FACE]), ensure_ascii=False
+            )
         return json.dumps(
             {"success": False, "error": f"mind provider does not handle tool {tool_name!r}"},
             ensure_ascii=False,
         )
 
     @staticmethod
-    def _surface_guard(logical: str, allowed: tuple[str, ...]) -> Dict[str, Any] | None:
-        """一枚工具只碰一面：越面的形状当场说清，不装作读不到。
+    def _tool_face_guard(logical: str, allowed: tuple[str, ...], hint: str) -> Dict[str, Any] | None:
+        """一枚工具只碰一类：越类的形状当场说清，不装作读不到。
 
-        ``plobi/mind/paths.py`` 的白名单比这两面加起来还宽（管道自己写脑的日页面要过它），
+        ``plobi/mind/paths.py`` 的白名单比这几类加起来还宽（管道自己写脑的日页面要过它），
         所以这里不是重复检查，是**模型的手**与**管道的写路**各自的面。
         """
-        if any(logical == a.rstrip("/") or logical.startswith(a) for a in allowed):
+        head = logical.strip("/").partition("/")[0]
+        if any(head == a or logical == a or logical.startswith(a + "/") for a in allowed):
             return None
         return {
             "success": False,
             "error": (
                 f"{_to_spoken(logical)} 不在这一枚工具的面里。能碰的形状只有："
                 + "、".join(f"`{_to_spoken(a)}`" for a in allowed)
-                + "——人读面（档案／笔记／日记）用 ``surface_*``，脑那一面用 ``mind_*``。"
+                + f"——{hint}。"
             ),
         }
 
-    def _tool_read(self, args: Dict[str, Any], allowed: tuple[str, ...]) -> Dict[str, Any]:
+
+    def _tool_read(self, args: Dict[str, Any], allowed: tuple[str, ...], face: str = "") -> Dict[str, Any]:
         from plobi.mind.paths import MindUnavailable, is_safe_relative, require_root
 
         shown = str((args or {}).get("path") or "").strip().replace("\\", "/")
         path = _to_logical(shown)
         if not path:
             return {"success": False, "error": "path is required"}
-        off = self._surface_guard(path, allowed)
+        off = self._tool_face_guard(path, allowed, face or _FACE_HINTS.get(allowed[0], ""))
         if off:
             return off
         if not is_safe_relative(path):
@@ -597,7 +766,7 @@ class MindProvider(MemoryProvider):
             "truncated": truncated,
         }
 
-    def _tool_write(self, args: Dict[str, Any], allowed: tuple[str, ...]) -> Dict[str, Any]:
+    def _tool_write(self, args: Dict[str, Any], allowed: tuple[str, ...], face: str = "") -> Dict[str, Any]:
         from plobi.mind.notes_contract import validate_note
         from plobi.mind.paths import MindUnavailable, is_safe_relative
         from plobi.mind.writer import WriteRequest
@@ -615,7 +784,7 @@ class MindProvider(MemoryProvider):
                 "success": False,
                 "error": f"content too large ({len(content)} chars > {VAULT_WRITE_MAX_CHARS})",
             }
-        off = self._surface_guard(path, allowed)
+        off = self._tool_face_guard(path, allowed, face or _FACE_HINTS.get(allowed[0], ""))
         if off:
             return off
         if not is_safe_relative(path):
@@ -661,6 +830,46 @@ class MindProvider(MemoryProvider):
             "detail": result.detail or f"{shown} 被写路径的守卫拒了",
         }
 
+    # -- 列自己名下有哪些笔记（agent_notes）-----------------------------
+
+    def _tool_agent_notes(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """**列**当前 Agent 名下的笔记——与屏上「相关笔记」同一份投影。
+
+        同一份投影＝同一套规则：笔记的 frontmatter ``belongs`` 里点了谁的名，
+        那一篇就算谁的（``plobi.mind/notes_view.py`` 是那一处真源，屏上与这里共用）。
+        纪律同屏上：只给标题、逻辑路径与字数，**不给正文**。
+        """
+        from plobi.mind.notes_view import agent_aliases, notes_for, scan_notes
+        from plobi.mind.paths import MindUnavailable, require_root
+
+        payload = args or {}
+        who = str(payload.get("agent") or self._agent_identity or "").strip()
+        if not who:
+            return {
+                "success": False,
+                "error": "不知道要列谁的笔记：这一枚工具要一个 Agent 名",
+            }
+        try:
+            root = require_root(self._mind_root)
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+        try:
+            scan = scan_notes(root)
+        except OSError as exc:
+            return {"success": False, "error": str(exc)}
+        aliases = _agent_note_aliases(who)
+        matched = notes_for(scan, aliases)
+        return {
+            "success": True,
+            "agent": who,
+            "aliases": list(aliases),
+            "notes": [
+                {"path": note.path, "title": note.title, "chars": note.chars}
+                for note in matched
+            ],
+            "totals": {"scanned": scan.scanned, "matched": len(matched)},
+        }
+
     # -- 档案本体的字段级编辑（dossier_write）--------------------------
 
     def _tool_dossier_write(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -669,8 +878,11 @@ class MindProvider(MemoryProvider):
         走 :func:`plobi.mind.dossier_profile.update_profile`：只改点名的几格、文件里
         我们不认识的键原样留着（只增不改）、落盘原子（临时文件 ＋ ``os.replace``）。
 
-        **不过 L1 那道闸**：这道手是给 Agent 自己维护档案用的（``surface_write`` 是
-        整份文件覆盖，那把手的闸门照旧——闸开着才落盘，闸关着进待批）。
+        **不过 L1 那道闸**：这道手是给 Agent 自己维护档案用的（别的写手是
+        整份文件覆盖，那几把手的闸门照旧——闸开着才落盘，闸关着进待批）。
+
+        档案目录里的**另一个文件**（当日清单 ``tasks.json``）走 ``content`` 那一路：
+        整份覆盖，闸门与别的写手一样。
 
         校验全在**落盘前**：路径形状、文件可解析、字段形状；有一条不合法就报错，
         盘上那一份**一个字节都不动**。
@@ -697,12 +909,30 @@ class MindProvider(MemoryProvider):
 
         if shown:
             logical = _to_logical(shown)
+            content = payload.get("content")
+            if isinstance(content, str) and content.strip():
+                # 档案目录里的**另一个文件**（当日清单 ``tasks.json``）：整份覆盖，
+                # 走别的写手那条闸（旧那把通吃的 ``surface_write`` 有这个能力，
+                # 按种类拆开之后不许丢）。档案本体自己不走这一路——它只吃字段。
+                if DOSSIER_PATH_PATTERN.match(logical):
+                    return {
+                        "success": False,
+                        "path": logical,
+                        "error": (
+                            "档案本体（dossier.json）只走字段级那一路：给 goal／status／stages／"
+                            "log_append，别整份覆盖。"
+                        ),
+                    }
+                return self._tool_write(
+                    {"path": shown, "content": content},
+                    (DOSSIER_PREFIX,),
+                )
             if not DOSSIER_PATH_PATTERN.match(logical):
                 return {
                     "success": False,
                     "error": (
                         f"{shown} 不是档案本体：只认 "
-                        "Surface/dossiers/<类>/<名>/dossier.json 这一种形状。"
+                        "Dossiers/<类>/<名>/dossier.json 这一种形状。"
                     ),
                 }
             if not is_safe_relative(logical):
