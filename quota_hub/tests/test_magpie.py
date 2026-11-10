@@ -23,7 +23,7 @@ import json
 import httpx
 import pytest
 
-from quota_hub.providers.apps.magpie import MagpieProvider, MagpieProviderLeg
+from quota_hub.providers.apps.magpie import MagpieProvider, MagpieProviderLeg, their_list
 
 
 def _provider(http, **extra):
@@ -285,3 +285,113 @@ def test_the_cards_exist_even_when_magpie_is_not_running():
     signed, reason = leg.signed_in()
     assert signed is False
     assert "Magpie" in reason, reason
+
+
+# --- their roster ---------------------------------------------------------
+#
+# magpie has **no** HTTP endpoint for its provider list (that was measured:
+# /api/providers, /v1/providers, /api/plugins all answer 404), and
+# `plugin list --json` answers `providers: null` unless their plugin host is
+# up. So the roster is read from their own files: the host's table on disk
+# first, their printed table as the fallback.
+
+
+def test_their_roster_is_read_from_their_own_table(tmp_path, monkeypatch):
+    """The plugin host writes the roster next to the rest of its data."""
+    data = tmp_path / "magpie"
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "plugin-providers.json").write_text(
+        json.dumps([
+            {"id": "workbuddy", "name": "WorkBuddy", "signedIn": False},
+            {"id": "opencode-zen-free", "name": "OpenCode Zen Free", "signedIn": True},
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    prov = _provider(_http({}))
+    assert prov._their_provider_ids() == {"workbuddy", "opencode-zen-free"}
+
+
+def test_an_empty_roster_is_not_a_verdict(tmp_path, monkeypatch):
+    """A host that has not loaded yet must not take every card away.
+
+    The card list is our table; their roster only says whether a vendor is
+    still theirs. A file we can read but that says nothing is not the same as
+    "they have no providers" — it is "we do not know".
+    """
+    data = tmp_path / "magpie"
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "plugin-providers.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(MagpieProvider, "_binary", lambda self: None)
+    prov = _provider(_http({}))
+    assert prov._their_provider_ids() is None
+
+
+def test_their_printed_table_is_the_fallback(tmp_path, monkeypatch):
+    """Their CLI prints one line per provider; their host's logs share the stream."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    seen: dict = {}
+
+    def fake_cli(binary, env=None, timeout=120.0):
+        seen["binary"] = binary
+        return {"workbuddy-ai", "grok"}
+
+    monkeypatch.setattr(their_list, "cli_provider_ids", fake_cli)
+    monkeypatch.setattr(MagpieProvider, "_binary", lambda self: "magpie-cli.exe")
+    prov = _provider(_http({}))
+    assert prov._their_provider_ids() == {"workbuddy-ai", "grok"}
+    assert seen["binary"] == "magpie-cli.exe"
+
+
+def test_their_printed_table_is_read_by_shape():
+    """Only the rows with their shape are read — a name may carry brackets."""
+    text = "\n".join([
+        "2026/11/10 plugin: host starts with no proxy NO_PROXY=localhost",
+        "  workbuddy-ai (WorkBuddy AI, 16 models)  not signed in · magpie plugin login workbuddy-ai",
+        "  opencode-zen-free (OpenCode Zen Free, 11 models)  signed in",
+        "  grok (Grok (SuperGrok), 1 models)  not signed in · magpie plugin login grok",
+        "  kiro (Kiro, 1 model)  not signed in · magpie plugin login kiro",
+        "  @magpie-community/opencode-workbuddy-auth@latest  on",
+    ])
+    assert their_list.parse_cli_table(text) == {
+        "workbuddy-ai",
+        "opencode-zen-free",
+        "grok",
+        "kiro",
+    }
+
+
+def test_a_vendor_magpie_no_longer_has_loses_its_card():
+    """Their roster decides whether a card is still worth showing.
+
+    Not the other way round: a provider they added gets no card until somebody
+    claims it (see the test above), and a provider they dropped takes its card
+    with it.
+    """
+    prov = _provider(_http({}))
+    prov._their_provider_ids = lambda: {"workbuddy", "opencode-zen-free"}
+    specs = asyncio.run(prov.provider_specs())
+    present = {s["id"]: s["present"] for s in specs}
+    assert present["workbuddy"] is True
+    assert present["qoder"] is False, "magpie has no qoder on this machine"
+
+
+def test_our_table_claims_every_vendor_it_names():
+    """Every row of our table is a card, and every row is well formed."""
+    prov = _provider(_http({}))
+    table = prov._our_table()
+    assert table, "our table is the card list — it cannot be empty"
+
+    seen: set[str] = set()
+    for key, row in table.items():
+        upstream = str(row.get("upstream") or key)
+        assert upstream not in seen, f"{upstream} is claimed twice"
+        seen.add(upstream)
+        assert str(row.get("name") or "").strip(), f"{key} has no name on screen"
+        assert row.get("card") is True, f"{key} is claimed but has no card"
+        assert str(row.get("login") or "") in {"oauth", "api"}, f"{key} has no way in"
+
+    assert "workbuddy" in table and "workbuddy-ai" in table, "国内版与国际版是两张卡"
+    assert table["workbuddy"]["name"] == "WorkBuddy"
+    assert table["workbuddy-ai"]["name"] == "WorkBuddy AI"

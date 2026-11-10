@@ -14,6 +14,11 @@
 #
 # 一行一家：`upstream` 是发给他们时用的 id，`name` 是屏上读的名字，`card` 说要不要在
 # 「订阅额度」里出这张卡，`login` 说我们怎么登它（走 magpie 的 `plugin login`）。
+#
+# 下面这张清单 = 2026-11-10 实测 magpie 自己报出来的 provider 全集（22 家，读自它
+# 自己的 `plugin-providers.json`）：装了插件的都在这儿，我们逐个认领，于是卡片跟着
+# 它的列表走（用户 11-09 20:3x：「你的卡片列表可以按它的列表来维护了」）。
+# 新增一家 ⇒ 在这里加一行；它改名 ⇒ 只改 `upstream` 那一格。
 
 providers:
   workbuddy:
@@ -36,3 +41,119 @@ providers:
     name: OpenCode Zen Free
     card: true
     login: api
+
+  # ── Qoder 家族（他们一个插件签四个 provider）────────────────────────────────
+  qoder:
+    upstream: qoder
+    name: Qoder
+    card: true
+    login: oauth
+
+  qoder-cn:
+    upstream: qoder-cn
+    name: Qoder CN
+    card: true
+    login: oauth
+
+  qwenwork:
+    upstream: qwenwork
+    name: QwenWork
+    card: true
+    login: oauth
+
+  qwenwork-enterprise:
+    upstream: qwenwork-enterprise
+    name: QwenWork 企业版
+    card: true
+    login: oauth
+
+  # ── 其余社区插件 ───────────────────────────────────────────────────────────
+  kiro:
+    upstream: kiro
+    name: Kiro
+    card: true
+    login: oauth
+
+  cline:
+    upstream: cline
+    name: Cline
+    card: true
+    login: oauth
+
+  github-copilot:
+    upstream: github-copilot
+    name: GitHub Copilot
+    card: true
+    login: oauth
+
+  cursor:
+    upstream: cursor
+    name: Cursor
+    card: true
+    login: oauth
+
+  agy-cli:
+    upstream: agy-cli
+    name: Antigravity CLI
+    card: true
+    login: oauth
+
+  devin:
+    upstream: devin
+    name: Devin
+    card: true
+    login: oauth
+
+  grok:
+    upstream: grok
+    name: Grok
+    card: true
+    login: oauth
+
+  trae-cn:
+    upstream: trae-cn
+    name: Trae CN
+    card: true
+    login: oauth
+
+  trae-global:
+    upstream: trae-global
+    name: Trae Global
+    card: true
+    login: oauth
+
+  mimo-app:
+    upstream: mimo-app
+    name: Xiaomi MiMo
+    card: true
+    login: oauth
+
+  minimax-code:
+    upstream: minimax-code
+    name: MiniMax Code
+    card: true
+    login: oauth
+
+  minimax-code-global:
+    upstream: minimax-code-global
+    name: MiniMax Code (Global)
+    card: true
+    login: oauth
+
+  joycode:
+    upstream: joycode
+    name: JoyCode
+    card: true
+    login: oauth
+
+  tabbit:
+    upstream: tabbit
+    name: Tabbit
+    card: true
+    login: oauth
+
+  zcode:
+    upstream: zcode
+    name: ZCode
+    card: true
+    login: oauth

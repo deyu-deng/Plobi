@@ -39,6 +39,7 @@ from typing import Any
 import httpx
 
 from ...base import Account, Capabilities, Credential, Provider, UpstreamError
+from . import their_list
 
 #: Where magpie keeps its settings; the port is in there. Their docs: the file is
 #: ``~/.config/magpie/settings.json`` — "the same path under the user's folder on
@@ -270,12 +271,14 @@ class MagpieProvider(Provider):
         return None
 
     # --- the provider list -------------------------------------------------
-    #: Their CLI is the only place that knows which providers this machine has:
-    #: the HTTP surface serves models and turns, while the provider list (names,
-    #: login methods, which account) lives in the plugin host the CLI drives.
-    #: So we ask the CLI, read-only, and cache it for a few seconds.
-    PLUGIN_LIST_ARGS = ("plugin", "list", "--json")
-    PLUGIN_LIST_TTL_SECONDS = 20.0
+    #: Their HTTP surface has **no** endpoint for the provider list — it serves
+    #: models and turns, and nothing else about the roster. The roster lives in
+    #: the plugin host, and it reaches us two ways: the host's own table on disk
+    #: (`plugin-providers.json`, see `their_list`) and the CLI that prints it.
+    #: The file is cheap and read first; the CLI boots their plugin host, so it
+    #: is the fallback and it is trusted for much longer.
+    THEIR_IDS_TTL_SECONDS = 60.0
+    THEIR_IDS_CLI_TTL_SECONDS = 600.0
 
     def _binary(self) -> str | None:
         """Where magpie's own CLI is, if we can find it.
@@ -348,38 +351,62 @@ class MagpieProvider(Provider):
         return table
 
     def _their_provider_ids(self) -> set[str] | None:
-        """The provider ids magpie reports today, or None when we cannot ask."""
+        """The provider ids magpie has today, or None when we cannot ask.
+
+        Their own table first: the plugin host writes ``plugin-providers.json``
+        next to the rest of its data, and we already know that directory (the
+        desktop pins ``XDG_CONFIG_HOME`` to our own volume). Their CLI is the
+        fallback — it boots their plugin host, which is slow, and a plugin that
+        cannot load can stop it from printing the table at all.
+
+        ``None`` means "we could not ask" and it is a real answer: the cards
+        then stay, because our table decides the card list and their roster
+        only says whether a vendor is still theirs.
+        """
         cached = getattr(self, "_their_ids_cache", None)
-        if cached is not None:
+        now = time.time()
+        if cached is not None and now - cached[1] < self.THEIR_IDS_TTL_SECONDS:
             return cached[0]
-        ids = self._their_ids_via_cli()
-        self._their_ids_cache = (ids,)
+        ids = self._their_ids_from_their_table()
+        if ids is None:
+            ids = self._their_ids_via_cli()
+        self._their_ids_cache = (ids, now)
         return ids
 
-    def _their_ids_via_cli(self) -> set[str] | None:
-        """Run their CLI once and read the provider ids out of it."""
-        binary = self._binary()
-        if not binary:
+    def _their_ids_from_their_table(self) -> set[str] | None:
+        """The ids in the plugin host's own table, or None when there is none."""
+        table = their_list.read_provider_table(self._config_root())
+        if table is None:
             return None
-        try:
-            import subprocess  # sync call in a sync helper
-
-            out = subprocess.run(
-                [binary, *self.PLUGIN_LIST_ARGS],
-                capture_output=True,
-                timeout=20.0,
-                env={**os.environ, "DO_NOT_TRACK": "1"},
-            )
-            payload = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
-        except Exception:
-            return None
-        ids: set[str] = set()
-        for entry in (payload or {}).get("providers") or []:
-            if isinstance(entry, dict):
-                pid = str(entry.get("id") or "").strip()
-                if pid:
-                    ids.add(pid)
+        ids = their_list.ids_from_table(table)
+        # An empty table is "we read it and it says nothing" — not "they have
+        # no providers". A machine whose plugin host has not loaded yet must
+        # not lose every card.
         return ids or None
+
+    def _their_ids_via_cli(self) -> set[str] | None:
+        """Run their CLI once and read the provider ids out of its table.
+
+        Their CLI prints one line per provider — ``workbuddy-ai (WorkBuddy AI,
+        16 models)  not signed in`` — and their host's logs share the stream,
+        so only the lines with that shape are read. (``plugin list --json``
+        answers ``providers: null`` unless the host is up, which is exactly
+        when we need it.)
+        """
+        cached = getattr(self, "_their_cli_ids_cache", None)
+        now = time.time()
+        if cached is not None and now - cached[1] < self.THEIR_IDS_CLI_TTL_SECONDS:
+            return cached[0]
+        binary = self._binary()
+        ids = None
+        if binary:
+            ids = their_list.cli_provider_ids(
+                binary,
+                env={**os.environ, "DO_NOT_TRACK": "1"},
+                timeout=120.0,
+            )
+        self._their_cli_ids_cache = (ids, now)
+        return ids
 
     def unclaimed_providers(self) -> list[dict]:
         """Providers magpie has that our table does not claim — nobody's business yet.
@@ -510,6 +537,19 @@ class MagpieProvider(Provider):
         body["stream"] = stream
         return body
 
+    @staticmethod
+    def _not_served(status: int, oai_req: dict) -> UpstreamError | None:
+        """magpie answers 404 for a model it does not serve.
+
+        Folding that into an empty stream is how a model id that no longer
+        exists looks like an upstream fault ("Provider returned an empty stream
+        with no finish_reason"). Say the truth instead: the model is not there.
+        """
+        if status == 404:
+            model = str(oai_req.get("model") or "")
+            return UpstreamError(404, f"magpie: no such model: {model}", retryable=False)
+        return None
+
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         body = self._body(oai_req, stream=False)
         res = await self.http.post(
@@ -518,7 +558,7 @@ class MagpieProvider(Provider):
             json=body,
             timeout=self.timeout,
         )
-        err = self._classify_http(res.status_code)
+        err = self._classify_http(res.status_code) or self._not_served(res.status_code, oai_req)
         if err is not None:
             raise err
         try:
@@ -543,7 +583,7 @@ class MagpieProvider(Provider):
             json=body,
             timeout=self.timeout,
         ) as res:
-            err = self._classify_http(res.status_code)
+            err = self._classify_http(res.status_code) or self._not_served(res.status_code, oai_req)
             if err is not None:
                 raise err
             async for line in res.aiter_lines():

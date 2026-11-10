@@ -101,21 +101,30 @@ def test_no_store_means_no_card_and_no_pretending(tmp_path, monkeypatch):
         async with _http({}) as http:
             prov = OpencodeApiProvider({"base_url": BASE}, http)
             assert prov.present() is False
-            assert prov.credential_health() == (False, "no_desktop_credential")
+            # No store and no key ⇒ the same verdict as "no key": nothing to serve.
+            assert prov.credential_health() == (False, "credential_missing")
             assert await prov.discover_accounts() == []
             assert prov.served_models == ()
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_an_expired_local_credential_is_reported_as_expired(tmp_path, monkeypatch):
-    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path, expires_in=-60))
+def test_without_a_key_this_lane_is_not_configured(tmp_path, monkeypatch):
+    """没有 key ⇒ 这条腿什么都不服务，卡片也不该是绿的。
+
+    2026-11-09 全量迁移：免费池归 magpie 了（`opencode-zen-free` 是它的一条腿），
+    走 http 只有付费 key 能通；OpenCode 客户端自己的会话对我们没用。在这张卡上还说
+    「已连接」，就是给一张答不出话的卡摆绿灯（用户 11-09 18:4x：「OpenCode Zen
+    我又没有填Key。怎么会出现在这里呢？」）。
+    """
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
 
     async def _go():
         async with _http({"/v1/models": _models("big-pickle")}) as http:
             prov = OpencodeApiProvider({"base_url": BASE}, http)
-            assert prov.credential_health() == (False, "credential_expired")
+            assert prov.credential_health() == (False, "credential_missing")
             assert await prov.discover_accounts() == []
+            assert prov.served_models == (), prov.served_models
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
@@ -196,28 +205,22 @@ def test_an_unknown_expiry_is_still_a_present_credential(tmp_path, monkeypatch, 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_a_store_credential_is_believed_until_the_upstream_says_otherwise(tmp_path, monkeypatch):
-    """2026-10-28 read one answer and concluded "no subscription".
+def test_the_clients_own_session_is_not_a_route_for_us(tmp_path, monkeypatch):
+    """客户端登录了 ≠ 我们这条路能通。
 
-    Re-measured 2026-10-31 on the same account with the right lane and the right identity
-    shapes: a region-restricted model answers `403 RegionError` - which proves the gate does
-    read his identity - while the free pool answers `429` with `retry-after`. That is a
-    bucket that refills, not a purchase he lacks, so the credential is believed and the
-    upstream is allowed to overturn it (see the next test).
+    2026-10-28 那次读到的「没订阅」与 10-31 的复测（403 RegionError 说明闸门确实在
+    读身份、免费池给 429＋retry-after）说的是**免费池走 http**那条路；那条路今天归
+    magpie 了（`opencode-zen-free` 是它的一条腿）。我们这条腿现在只认付费 key ⇒
+    客户端自己的会话只说明「客户端装着」，不说明「我们能服务」。
     """
     monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
 
     async def _go():
         async with _http({"/v1/models": _models("big-pickle", "beam-free")}) as http:
             prov = OpencodeApiProvider({"base_url": BASE}, http)
-            assert prov.present() is True
-            assert prov.credential_health() == (True, "ok")
-            accounts = await prov.discover_accounts()
-            assert accounts, "a real credential yields an account"
-            # 11-09: a membership is a credential, not a route. The free pool is
-            # reachable only through the OpenCode client's own service (the
-            # `opencode_free` leg); from this lane the bare face answers 429.
-            # So until a key is configured this leg names nothing.
+            assert prov.present() is True, "the client is installed — that is not our lane"
+            assert prov.credential_health() == (False, "credential_missing")
+            assert await prov.discover_accounts() == []
             assert prov.served_models == (), prov.served_models
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
@@ -235,7 +238,7 @@ def test_a_spent_free_bucket_cools_down_by_exactly_what_upstream_asked_for(tmp_p
     async def _go():
         async with _http({"/v1/models": _models("big-pickle"),
                           "/v1/chat/completions": refusal}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             accounts = await prov.discover_accounts()
             with pytest.raises(UpstreamError) as caught:
                 await prov.chat(accounts[0], {"model": "opencode_api/big-pickle",
@@ -272,7 +275,7 @@ def test_a_spent_free_bucket_is_still_spent_after_a_restart(tmp_path, monkeypatc
     async def _go():
         async with _http({"/v1/models": _models("big-pickle"),
                           "/v1/chat/completions": refusal}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             accounts = await prov.discover_accounts()
             with pytest.raises(UpstreamError):
                 await prov.chat(accounts[0], {"model": "opencode_api/big-pickle",
@@ -286,7 +289,7 @@ def test_a_spent_free_bucket_is_still_spent_after_a_restart(tmp_path, monkeypatc
 
         # …a restart: a brand-new provider instance, nothing in memory.
         async with _http({"/v1/models": _models("big-pickle")}) as http:
-            fresh = OpencodeApiProvider({"base_url": BASE}, http)
+            fresh = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             assert fresh.credential_health() == (False, "quota_exhausted"), (
                 "the leg is still spent after a restart")
             wait = fresh.quota_retry_after()
@@ -425,7 +428,7 @@ def test_an_insufficient_funds_answer_ends_the_leg_instead_of_per_model_strikes(
     async def _go():
         async with _http({"/v1/models": _models("claude-opus-5-5"),
                           "/v1/chat/completions": unpaid}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             accounts = await prov.discover_accounts()
             with pytest.raises(UpstreamError) as caught:
                 await prov.chat(accounts[0], {"model": "opencode_api/claude-opus-5-5",

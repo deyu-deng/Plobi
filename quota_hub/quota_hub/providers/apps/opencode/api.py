@@ -296,36 +296,26 @@ class OpencodeApiProvider(Provider):
 
     def _credential_state(self) -> tuple[bool, str, dict[str, Any] | None]:
         data = read_credential()
-        if self.api_key:
-            # The operator plugged a Zen/Go key: that is a subscription we can bill.
-            return True, "ok", data or {"access": self.api_key}
-        if data is None:
-            return False, "no_desktop_credential", None
-        expires = data.get("expires")
-        if isinstance(expires, (int, float)) and expires > 0:
-            # OpenCode stores milliseconds; normalise without trusting the unit.
-            seconds = float(expires) / 1000.0 if expires > 1e11 else float(expires)
-            if seconds <= time.time():
-                return False, "credential_expired", data
-        if not str(data.get("access") or data.get("access_token") or ""):
-            return False, "no_desktop_credential", None
-        # Measured 2026-10-31 on this account: the free lane answers per *bucket*, not per
-        # subscription - a region-restricted model gives `403 RegionError` (which proves the
-        # gate is reading his identity), while the free pool gives `429 FreeUsageLimitError`
-        # with `retry-after: 38690` (~10.7 h). Saying "要付费订阅" for a bucket that refills
-        # on its own sends him to buy something he does not need; say what is spent instead,
-        # and for how long.
+        # Two things the **key** lane runs into as well, so they come first: the
+        # allowance is spent (wait for it) and the account has no funds.
         blocked = max(
             float(self._free_blocked_until or 0.0),
             time.time() + self.cooldown_remaining(),
         )
         if blocked > time.time():
             return False, "quota_exhausted", data
-        # An account-level "no funds" answer outranks "live" until a turn proves otherwise;
-        # the wording already exists in all four languages (这条渠道要付费订阅或一个 API key).
         if self._no_wallet:
             return False, "no_subscription", data
-        return True, "ok", data
+        if self.api_key:
+            # The operator plugged a Zen/Go key: that is a subscription we can bill.
+            return True, "ok", data or {"access": self.api_key}
+        # No key ⇒ this lane has nothing to serve. The free pool belongs to magpie
+        # now (全量迁移，2026-11-09: `opencode-zen-free` 是它的一条腿), and the paid
+        # lane needs a key. The OpenCode client's own session is of no use to us:
+        # over HTTP only a key works. Reporting "已连接" here put a green switch on
+        # a card that cannot answer a single turn (用户 11-09 18:4x：「OpenCode Zen
+        # 我又没有填Key。怎么会出现在这里呢？」).
+        return False, "credential_missing", data
 
     def credential_health(self) -> tuple[bool, str]:
         live, reason, _ = self._credential_state()

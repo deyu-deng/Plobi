@@ -10802,7 +10802,13 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   const aigwDir = resolveAigwDir()
 
   if (appId === 'workbuddy') {
-    return authWorkbuddy()
+    // WorkBuddy is magpie's provider now (2026-11-09 全量迁移): the hub runs
+    // `magpie plugin login workbuddy`, magpie opens the browser, and the
+    // provider's models show up in the catalogue afterwards. Asking the hub
+    // "do you already serve a WorkBuddy channel?" first was a dead end — the
+    // channel is what the sign-in *creates*, so demanding it up front made
+    // this button fail for every provider that was not signed in yet.
+    return authViaHub(appId)
   }
   if (appId === 'cursor') {
     if (!aigwDir) {
@@ -10942,36 +10948,6 @@ async function authAntigravity(aigwDir: string): Promise<{
   }
 
   return finishGatewayAuth('antigravity', configPath, extraEnv)
-}
-
-// Workbuddy: rides on the product quota hub (:8000), which already serves the real
-// Workbuddy catalog (its `config.yaml` spawns the local CodeBuddy CLI). This is the
-// single catalog source (裁定 46) — the app does NOT start a second per-app gateway
-// or copy a model list here. The hub is brought up by the boot sidecar, so a manual
-// "Connect" only needs to re-derive its catalog and hand the coordinates (including
-// the hub's api key) back to the renderer.
-async function authWorkbuddy(): Promise<{
-  ok: boolean
-  baseUrl?: string
-  apiKey?: string
-  models?: string[]
-  code?: string
-  installHint?: string
-  error?: string
-}> {
-  const apps = await discoverProductQuotaApps()
-  const workbuddy = apps.find(app => app.id === 'workbuddy')
-
-  if (!workbuddy || workbuddy.models.length === 0) {
-    return {
-      ok: false,
-      code: 'WORKBUDDY_NOT_FOUND',
-      installHint: '本地额度网关当前没有 Workbuddy 渠道。请确认 Workbuddy 已安装并登录，稍后网关会自动带出它的额度。',
-      error: 'The local quota hub is not serving a Workbuddy channel yet.'
-    }
-  }
-
-  return { ok: true, baseUrl: workbuddy.baseUrl, apiKey: workbuddy.apiKey, models: workbuddy.models }
 }
 
 // Cursor: no OAuth — it rides on the user's already-logged-in Cursor session
