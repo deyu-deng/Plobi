@@ -228,6 +228,11 @@ _LONG_HANDLERS = frozenset(
         # the WS read loop and causing false "needs setup" (#50005 family).
         "setup.runtime_check",
         "setup.status",
+        # Both magpie import RPCs spawn the CLI (``accounts --json``, a tree
+        # copy of a plugin directory), so inline they would hold the reader
+        # thread while the wizard waits on its own answer.
+        "magpie.import_apply",
+        "magpie.import_scan",
         "session.branch",
         "session.compress",
         "session.list",
@@ -11660,6 +11665,43 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"provider_configured": bool(_has_any_provider_configured())})
     except Exception as e:
         return _err(rid, 5016, str(e))
+
+
+@method("magpie.import_scan")
+def _(rid, params: dict) -> dict:
+    """What this machine's existing agent setup could give us.
+
+    Read-only. The onboarding picker and Settings both call this to decide
+    whether to show "import what is already on this machine" at all — an offer
+    that leads to an empty directory is worse than no offer.
+    """
+    try:
+        from plobi_cli import magpie_import
+
+        return _ok(rid, magpie_import.scan())
+    except Exception as e:
+        return _err(rid, 5017, str(e))
+
+
+@method("magpie.import_apply")
+def _(rid, params: dict) -> dict:
+    """Copy that configuration into our own magpie data directory.
+
+    Writes only under ``$PLOBI_HOME/magpie``; the source is read, never moved
+    and never signed out. Returns the readiness verdict afterwards so the
+    caller can leave the wizard in one round trip instead of three.
+    """
+    try:
+        from plobi_cli import magpie_import
+        from plobi_cli.main import _has_any_provider_configured
+
+        source = str(params.get("source") or "").strip() or None
+        result = magpie_import.apply(source)
+        result["subscription"] = bool(magpie_import.has_usable_subscription())
+        result["provider_configured"] = bool(_has_any_provider_configured())
+        return _ok(rid, result)
+    except Exception as e:
+        return _err(rid, 5017, str(e))
 
 
 @method("setup.runtime_check")
