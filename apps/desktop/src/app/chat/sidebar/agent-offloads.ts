@@ -25,6 +25,9 @@ export type OffloadRoundReply = {
   reply?: string
   reply_status?: string
   reply_to?: string
+  /** 派发前那张预授权票（后端在 offloads 行上顺带补 ticket_status）。 */
+  ticket_id?: string
+  ticket_status?: string
 }
 
 export type OffloadRoundWithReply = OffloadRound & OffloadRoundReply

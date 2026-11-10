@@ -106,6 +106,17 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
             return {"experts": [], "reason": "状态库里没有会话表"}
 
         live = _live_by_child_session()
+        # 派工票状态只读一次（独立 sqlite，不碰共享总账）：左栏那枚徽标要能
+        # 看出这趟活是「在跑 / 已完成 / 已撤销」，而不是再发一轮请求。
+        ticket_status: dict[str, str] = {}
+        try:
+            from plobi.delegation.tickets import TicketLedger
+
+            ticket_status = {
+                t.id: t.status for t in TicketLedger().list_tickets(limit=1000)
+            }
+        except Exception:
+            pass
         experts: list[dict[str, Any]] = []
         for sid, parent, started, ended, messages, tools, model in rows:
             sid = str(sid)
@@ -116,6 +127,7 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
             if not role:
                 continue
             record = live.get(sid) or {}
+            ticket_id = str(sidecar.get("ticket_id") or "").strip()
             experts.append({
                 "goal": str(sidecar.get("goal") or "").strip() or _first_user_text(con, sid),
                 "id": sid,
@@ -125,6 +137,8 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
                 "started_at": float(started or 0),
                 "role": role,
                 "status": "running" if record else "done",
+                "ticket_id": ticket_id,
+                "ticket_status": ticket_status.get(ticket_id, ""),
                 "tool_calls": int(record.get("tool_count") or tools or 0),
             })
     finally:

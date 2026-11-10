@@ -9,6 +9,8 @@ export type ExpertRun = {
   role?: string
   started_at: number
   status: 'done' | 'running'
+  ticket_id?: string
+  ticket_status?: string
   tool_calls: number
 }
 

@@ -1303,6 +1303,10 @@ export interface Translations {
     noAgentSelected: string
     /** 档案入口（对话界面右上角那一枚图标）的名字。 */
     agentDossier: string
+    /** 档案旁边那一枚「待放行」图标的名字。 */
+    pendingTickets: string
+    pendingTicketsEmpty: string
+    pendingTicketsFailed: string
     /** 档案卡片里那一段折叠的标题：属于这个 Agent 的笔记。 */
     notesSection: string
     /** 档案卡（对话卡右侧那条长卡）的分段标题。 */
@@ -1842,6 +1846,11 @@ export interface Translations {
     offloadsLoading: string
     offloadsEmpty: string
     offloadsReply: string
+    ticketApprove: string
+    ticketIgnore: string
+    ticketRevoke: string
+    ticketScope: string
+    ticketPolicy: string
     offloadsCredits: string
     externalSessionsLoading: string
     externalSessionsEmpty: string

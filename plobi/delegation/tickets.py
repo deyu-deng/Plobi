@@ -287,7 +287,9 @@ class TicketLedger:
         refs = {
             "event_type": str(event_type or "")[:80],
             "delivery_id": str(delivery_id or "")[:120],
+            "prompt": str(prompt or "")[:4000],
             "prompt_excerpt": str(prompt or "")[:120],
+            "route": str(route or "")[:120],
             "reason": str(reason or "")[:120],
         }
         ticket = self.open_ticket(
@@ -309,7 +311,8 @@ class TicketLedger:
         return _row_to_ticket(row) if row is not None else None
 
     def list_tickets(
-        self, *, status: str = "", parent_agent: str = "", limit: int = 100
+        self, *, status: str = "", parent_agent: str = "", leg: str = "",
+        limit: int = 100,
     ) -> list[Ticket]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -319,6 +322,9 @@ class TicketLedger:
         if parent_agent:
             clauses.append("parent_agent = ?")
             params.append(parent_agent)
+        if leg:
+            clauses.append("leg = ?")
+            params.append(leg)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(max(1, int(limit)))
         with self._connect() as conn:

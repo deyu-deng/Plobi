@@ -1,8 +1,6 @@
 import { useStore } from '@nanostores/react'
 
 import { $consoleAgents } from '@/app/console/store/agents'
-import { Button } from '@/components/ui/button'
-import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { $dossierPanelVisible, toggleDossierPanel } from '@/store/layout'
@@ -12,14 +10,16 @@ import { secretaryShellLabel } from '../desktop-controller-utils'
 
 import { cardDragProps } from './card-drag'
 import { CardEdgeControlButtons, type CardEdgeControls } from './card-edge-controls'
-
-const TOP_BAR_BUTTON =
-  'grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+import { PendingTicketsButton } from './pending-tickets'
+import { TopBarIconButton } from './top-bar-icon-button'
 
 /**
  * 对话卡自己的抬头（用户 10-31：对话界面太空，顶栏像 Qoder 一样显示当前 Agent 名）。
  * 左边是当前这摊的名字，右边是右栏开关——收起来的按钮住在卡里，不再跳回顶栏。
  * 名字那一块同时是这张卡的拖动把手：拖到右栏卡上两张互换（开关本身不参与拖动）。
+ *
+ * 右上角两枚图标（档案 / 待放行）共用 ``TopBarIconButton`` 一个组件，
+ * 用户 11-10：「在它的图标旁边加一个图标，和档案一个形态，复用一个组件」。
  */
 export function ChatTopBar({
   edgeControls,
@@ -57,18 +57,13 @@ export function ChatTopBar({
         <span className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground">{name}</span>
       </div>
       <div className="ml-auto flex shrink-0 items-center">
-        <Button
-          aria-label={t.surface.agentDossier}
-          aria-pressed={dossierVisible}
-          className={TOP_BAR_BUTTON}
+        <TopBarIconButton
+          icon="book"
+          label={t.surface.agentDossier}
           onClick={() => toggleDossierPanel()}
-          size="icon-xs"
-          title={t.surface.agentDossier}
-          type="button"
-          variant="ghost"
-        >
-          <Codicon name="book" size="0.85rem" />
-        </Button>
+          pressed={dossierVisible}
+        />
+        <PendingTicketsButton />
         <CardEdgeControlButtons controls={edgeControls ?? {}} />
       </div>
     </div>

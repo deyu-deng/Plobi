@@ -2438,6 +2438,45 @@ def _expert_body(task: Dict[str, Any]) -> str:
     return body_of(key, goal) if key else goal
 
 
+def _open_expert_tickets(task_list, parent_agent, top_role) -> list[str]:
+    """L2→L3 专家腿的**派发前**预授权票（裁定 215；用户 11-10 拍板直接 active）。
+
+    一任务一票，与外包腿 ``tools/offload_tools.py:390-409`` 同形。授权层只存
+    关联键，不复制任务账／会话账字段；它是旁路，读不出来或写不进去都**不许**
+    挡住派工，所以异常只记 debug、回空列表。
+    """
+    ticket_ids: list[str] = []
+    try:
+        from plobi.delegation.tickets import ACTIVE as _TICKET_ACTIVE
+        from plobi.delegation.tickets import TicketLedger as _TicketLedger
+
+        ledger = _TicketLedger()
+        parent = str(
+            getattr(parent_agent, "agent_id", "")
+            or getattr(parent_agent, "name", "")
+            or "l1"
+        ).strip()
+        for task in task_list:
+            ticket_ids.append(
+                ledger.open_ticket(
+                    parent_agent=parent,
+                    leg="expert",
+                    goal=str(task.get("goal") or "")[:120],
+                    scope={
+                        "allowed_capabilities": ["delegate"],
+                        "expert": str(task.get("expert") or "").strip().lower(),
+                        "role": str(task.get("role") or top_role or ""),
+                    },
+                    triggered_by="delegate_task",
+                    status=_TICKET_ACTIVE,
+                ).id
+            )
+    except Exception:
+        logger.debug("delegate_task: ticket ledger unavailable", exc_info=True)
+        return []
+    return ticket_ids
+
+
 def delegate_task(
     goal: Optional[str] = None,
     context: Optional[str] = None,
@@ -2564,6 +2603,9 @@ def delegate_task(
 
     if not task_list:
         return tool_error("No tasks provided.")
+
+    # 派发前预授权票（校验全过才开；早返回的那些失败不留垃圾终态票）。
+    _ticket_ids = _open_expert_tickets(task_list, parent_agent, top_role)
 
     # Validate each task has a goal
     for i, task in enumerate(task_list):
@@ -2891,7 +2933,18 @@ def delegate_task(
         total_duration = round(time.monotonic() - overall_start, 2)
 
         # 给每条结果带上它自己的子会话号：左栏「专家」那一格/角色侧记都靠它。
+        # 同时把派发前那张预授权票落终态、把票号挂进结果与角色侧记，
+        # 这样左栏徽标点开能回查到**这一跳**的固化授权。
         from plobi.delegation.expert_roles import record_role
+
+        _finish_ledger = None
+        if _ticket_ids:
+            try:
+                from plobi.delegation.tickets import TicketLedger as _TicketLedger
+
+                _finish_ledger = _TicketLedger()
+            except Exception:
+                logger.debug("delegate_task: ticket ledger unavailable on finish", exc_info=True)
 
         for entry in results:
             index = entry.get("task_index")
@@ -2904,13 +2957,29 @@ def delegate_task(
                 child_session_id = ""
             if child_session_id:
                 entry.setdefault("child_session_id", child_session_id)
+
+            ticket_id = _ticket_ids[index] if 0 <= index < len(_ticket_ids) else ""
+            if ticket_id:
+                entry.setdefault("ticket_id", ticket_id)
+                if _finish_ledger is not None:
+                    status = str(entry.get("status") or "").strip().lower()
+                    ok = status not in {"error", "interrupted", "timeout"} and not bool(entry.get("error"))
+                    try:
+                        _finish_ledger.finish(
+                            ticket_id, ok=ok,
+                            refs={"child_session_id": child_session_id} if child_session_id else None,
+                        )
+                    except Exception:
+                        logger.debug("delegate_task: could not finish ticket", exc_info=True)
+
             task = task_list[index] if index < len(task_list) else {}
             role = str(task.get("expert") or "").strip().lower()
             if role and child_session_id:
                 # 侧记里写**实际用的模型**：左栏要能看出这个专家跟 L2 不是同一个脑子。
                 child = children[index][2]
                 used_model = str(getattr(child, "model", "") or "").strip() or str(task.get("model") or "").strip()
-                record_role(child_session_id, role, _expert_body(task), model=used_model or None)
+                record_role(child_session_id, role, _expert_body(task),
+                            model=used_model or None, ticket_id=ticket_id)
 
         return {
             "results": results,

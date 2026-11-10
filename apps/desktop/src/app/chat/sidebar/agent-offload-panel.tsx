@@ -14,6 +14,7 @@ import { EXPERT_ROLES, latestRun, runsOfRole } from './expert-roles'
 import { unreadableSources, vendorLabel } from './external-sessions'
 import { ExternalSessionRow, useExternalSessions } from './external-sessions-panel'
 import { VendorBrandBlock } from './offload-vendor-icon'
+import { TicketBadge } from './ticket-badge'
 
 /**
  * 点进一个 L2 时，左栏中段可以切到这一格：**这一摊的活派给了谁**。
@@ -332,7 +333,10 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
       title={title}
       type="button"
     >
-      <span className="truncate text-[0.8125rem] leading-none text-(--ui-text-secondary)">{round.brief || round.cwd || '—'}</span>
+      <span className="flex w-full items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] leading-none text-(--ui-text-secondary)">{round.brief || round.cwd || '—'}</span>
+        <TicketBadge status={round.ticket_status} ticketId={round.ticket_id} />
+      </span>
       {round.reply && (
         <span className="line-clamp-3 text-[0.7rem] leading-snug text-(--ui-text-secondary)">
           {c.offloadsReply}

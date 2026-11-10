@@ -1614,6 +1614,17 @@ def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
         reason = ""
     newest_first = sorted(matched, key=lambda r: str(r.get("ts") or ""), reverse=True)
     picked = newest_first[:max(0, int(limit))]
+    # 派工票状态顺带补进每一行：抽屉里那枚徽标不必再单独发一轮请求。
+    try:
+        from plobi.delegation.tickets import TicketLedger
+
+        _by_id = {t.id: t.status for t in TicketLedger().list_tickets(limit=1000)}
+        for _row in picked:
+            _tid = str(_row.get("ticket_id") or "").strip()
+            if _tid:
+                _row["ticket_status"] = _by_id.get(_tid, "")
+    except Exception:
+        pass
     amount, cost_status = total_usd(picked)
 
     return {
@@ -1634,6 +1645,92 @@ async def agent_offloads_route(agent_id: str, limit: int = 20):
     if payload is None:
         return _error(404, f"agent {agent_id!r} is not registered")
     return {"ok": True, "data": payload}
+
+
+# ── 派工授权账（WP-L3-TICKET-MANDATE）：桌面右上那枚图标与 L3 行内徽标 ──
+
+@router.get("/tickets", name="dispatch_tickets")
+async def dispatch_tickets_route(status: str = "observed", leg: str = "", limit: int = 100):
+    """GET /api/tickets — 授权账读侧。默认只给待放行的票。"""
+    from plobi.delegation.tickets import VALID_STATUSES, TicketLedger
+
+    if status and status not in VALID_STATUSES:
+        return _error(400, f"unknown ticket status: {status!r}")
+    rows = await run_in_threadpool(
+        lambda: TicketLedger().list_tickets(status=status, leg=leg, limit=limit)
+    )
+    return {"ok": True, "data": {"tickets": [t.as_dict() for t in rows]}}
+
+
+@router.get("/tickets/{ticket_id}", name="dispatch_ticket")
+async def dispatch_ticket_route(ticket_id: str):
+    """GET /api/tickets/:id — 一张票的固化授权（scope / policy / 关联键）。"""
+    from plobi.delegation.tickets import TicketLedger
+
+    ticket = await run_in_threadpool(TicketLedger().get, ticket_id)
+    if ticket is None:
+        return _error(404, f"ticket {ticket_id!r} not found")
+    return {"ok": True, "data": {"ticket": ticket.as_dict()}}
+
+
+@router.post("/tickets/{ticket_id}/activate", name="dispatch_ticket_activate")
+async def dispatch_ticket_activate_route(ticket_id: str):
+    """人点「放行」：先把这条活送进你那一屏，才把票从 observed 翻成 active。
+
+    顺序刻意反过来——送不出去就不激活，免得屏上出现一张「已放行但什么也没
+    发生」的票。送进去的只是一条消息（既有 ``plobi_user_inbox`` 形状），
+    由 L1 下一轮接手；这里不伪造一次后台 Agent 执行。
+    """
+    from plobi.delegation.tickets import OBSERVED, TicketLedger
+    from plobi_user_inbox import append_user_message
+
+    ledger = TicketLedger()
+    ticket = await run_in_threadpool(ledger.get, ticket_id)
+    if ticket is None:
+        return _error(404, f"ticket {ticket_id!r} not found")
+    if ticket.status != OBSERVED or ticket.leg != "trigger":
+        return _error(409, "只有待放行的外部事件票能在这里放行")
+
+    prompt = str(ticket.refs.get("prompt") or ticket.refs.get("prompt_excerpt") or "")
+    body = prompt or f"{ticket.triggered_by}: {ticket.goal}"
+    label = str(ticket.refs.get("route") or ticket.triggered_by or "trigger")
+    session_id, message_id, deliver_error = await run_in_threadpool(
+        lambda: append_user_message(body, asked_by=f"ticket:{ticket_id}", label=label)
+    )
+    if deliver_error or not message_id:
+        return _error(502, f"送不进你那一屏：{deliver_error or 'no message id'}")
+    if not await run_in_threadpool(ledger.activate, ticket_id):
+        return _error(409, "这张票已经不是待放行状态")
+    updated = await run_in_threadpool(ledger.get, ticket_id)
+    return {
+        "ok": True,
+        "data": {
+            "ticket": updated.as_dict() if updated else None,
+            "delivered_to": session_id,
+            "message_id": message_id,
+        },
+    }
+
+
+@router.post("/tickets/{ticket_id}/revoke", name="dispatch_ticket_revoke")
+async def dispatch_ticket_revoke_route(ticket_id: str, request: Request):
+    """人点「忽略」或详情里的「撤销」：终态只由这一扇门写。"""
+    from plobi.delegation.tickets import TERMINAL, TicketLedger
+
+    ledger = TicketLedger()
+    ticket = await run_in_threadpool(ledger.get, ticket_id)
+    if ticket is None:
+        return _error(404, f"ticket {ticket_id!r} not found")
+    if ticket.status in TERMINAL:
+        return _error(409, "已结束的票不用撤销")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    reason = str((body or {}).get("reason") or "from desktop")[:120]
+    await run_in_threadpool(lambda: ledger.revoke(ticket_id, reason=reason))
+    updated = await run_in_threadpool(ledger.get, ticket_id)
+    return {"ok": True, "data": {"ticket": updated.as_dict() if updated else None}}
 
 
 @router.get("/offload/agents", name="offload_agents")

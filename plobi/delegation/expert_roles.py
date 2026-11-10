@@ -177,7 +177,8 @@ def save_role_model(key: str, model: Optional[str]) -> dict[str, str]:
     return current
 
 
-def record_role(child_session_id: str, role: str, goal: str, model: Optional[str] = None) -> None:
+def record_role(child_session_id: str, role: str, goal: str, model: Optional[str] = None,
+               ticket_id: str = "") -> None:
     sid = str(child_session_id or "").strip()
     if not sid or role not in ROLES:
         return
@@ -190,6 +191,9 @@ def record_role(child_session_id: str, role: str, goal: str, model: Optional[str
     # 这一趟实际用的模型：左栏要能看出「这个专家跟 L2 不是同一个脑子」。
     if model:
         payload["model"] = str(model)
+    # 派发前那张预授权票的 id：左栏徽标与详情按它回查授权范围。
+    if ticket_id:
+        payload["ticket_id"] = str(ticket_id)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

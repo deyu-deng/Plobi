@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { ExpertRoleSpec } from './expert-roles'
 import { elapsedText, getAgentExperts } from './expert-runs'
 import type { ExpertRun, ExpertRunsData } from './expert-runs'
+import { TicketBadge } from './ticket-badge'
 
 /**
  * L2 派出去的临时专家（WP-L3-EXPERTS，用户 10-28 口径）。
@@ -78,6 +79,7 @@ export function ExpertRoleRow({
 }) {
   const { t } = useI18n()
   const running = runs.find(run => run.status === 'running')
+  const ticketRun = runs.find(run => run.ticket_id)
   const idle = runs.length === 0
 
   return (
@@ -98,6 +100,9 @@ export function ExpertRoleRow({
       <span className="min-w-0 flex-1 truncate">{t.console[role.labelKey]}</span>
       {runs.length > 1 ? (
         <span className="shrink-0 text-[0.68rem] font-medium text-(--ui-text-quaternary)">{runs.length}</span>
+      ) : null}
+      {ticketRun ? (
+        <TicketBadge status={ticketRun.ticket_status} ticketId={ticketRun.ticket_id} />
       ) : null}
       {running ? (
         <span
