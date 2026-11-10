@@ -570,14 +570,17 @@ def test_two_clicks_do_not_start_two_logins(tmp_path, monkeypatch):
     assert first is second
 
 
-def test_the_card_list_is_what_we_still_maintain_and_magpies_own(monkeypatch):
-    """The card list follows **what we still run** — and magpie's own provider list.
+def test_the_card_list_is_what_we_still_run_and_magpies_own(monkeypatch):
+    """The card list follows **what we can actually serve** — and magpie's provider list.
 
     2026-11-09: the subscription legs we maintained are retired (magpie keeps the
     vendor adapters now), so their cards go with them: a card for a leg we no
     longer run can only say 「未在网关启用」, which is noise on the user's screen.
-    What stays is what only we have (marvis) and the Zen key lane (the user's own
-    key, 归 Keys/Account) — plus the cards magpie's provider list grows.
+    2026-11-10: **Marvis 的两张卡也下去了** —— 这台机器上**它没有 CLI**（CLI 那条腿
+    根本起不来），GUI 那条是「没有 CLI 也没有 API、只靠 Windows UI 自动化」的脆弱腿，
+    我们从没跑通（用户 11-10：「Marvis 没有 CLI。你都没有跑通。你怎么就上屏了呢？」）。
+    没跑通的东西不上屏。剩下的是 Zen 付费 key 那条（用户自己的 key，归 Keys/Account）
+    —— 加上 magpie 的 provider 列表长出来的那些。
     """
     from quota_hub.providers.apps.marvis.cli import MarvisCliProvider
 
@@ -589,14 +592,17 @@ def test_the_card_list_is_what_we_still_maintain_and_magpies_own(monkeypatch):
 
     monkeypatch.setattr(MarvisCliProvider, "_binary_present", lambda self: False)
     rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
-    assert "marvis_cli" in rows, "a leg we still maintain keeps its card"
     assert "opencode_api" in rows, "the Zen key lane keeps its card"
-    for retired in ("codex_cli", "qoder", "workbuddy", "kiro_cli", "opencode_free"):
+    for retired in (
+        "codex_cli",
+        "qoder",
+        "workbuddy",
+        "kiro_cli",
+        "opencode_free",
+        "marvis_cli",
+        "marvis_gui",
+    ):
         assert retired not in rows, "a leg we no longer run keeps no card: %s" % retired
-
-    monkeypatch.setattr(MarvisCliProvider, "_binary_present", lambda self: True)
-    rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
-    assert rows["marvis_cli"]["installed"] is True
 
 
 def test_a_login_only_target_without_its_cli_is_still_listed_as_not_installed(monkeypatch):

@@ -160,8 +160,11 @@ providers:
     # GUI left empty on purpose in safe profile (opt-in via config.example).
     gui: {}
 
+  # 2026-11-10：Marvis 的腿**默认关着，也没有卡**（用户 11-10：「Marvis 没有 CLI。
+  # 你都没有跑通。你怎么就上屏了呢？」）——「没跑通的东西不上屏」。等它真有 CLI、
+  # 我们真跑通了，再连卡一起开。
   marvis_cli:
-    enabled: true
+    enabled: false
     binary: openmarvis
     prompt_flag: "-p"
     model_flag: "--model"

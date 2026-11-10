@@ -258,6 +258,19 @@ describe('Subscriptions cards are the hub catalog', () => {
     expect(screen.getAllByRole('button', { name: 'Set up' })).toHaveLength(1)
   })
 
+  it('订阅额度那屏不等 API 密钥那一屏的数据：卡片清单来自网关，不该被密钥页的慢请求卡住', async () => {
+    // 2026-11-10 现场：后端在挨个校验各家凭据（Copilot / Google 在这台都探不到），
+    // `/api/env` 30 秒必超时 ⇒ `if (!vars) return <LoadingState/>` 把整页变成一个
+    // 转圈，连订阅额度那屏的卡片都出不来（用户：「还是这样」）。卡片清单来自**网关**，
+    // 与密钥页的数据没有依赖 ⇒ 那道闸不能挡在它前面。
+    getEnvVars.mockImplementation(() => new Promise(() => {}))
+    shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+
+    await renderSubscriptions()
+
+    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+  })
+
   it('offers `+` for a signed-out software and a switch for one already in use', async () => {
     shell([authRow('antigravity'), authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
     frame('workbuddy', { models: ['hy3'] })

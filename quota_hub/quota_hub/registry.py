@@ -158,7 +158,8 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 # `install.command` 只在包名确定时填写：写不准的命令比没有命令更坏，没有就退到
 # 「打开官方页面」，绝不猜一个装不上的包名。
 ADAPTED_APPS: dict[str, dict] = {
-    # 11-09：订阅那一半的卡片**跟着 Magpie 的 provider 列表走**（它加一个插件我们这边多一张卡，它撤一个我们这边少一张）——这张表只留我们自己还维护的：marvis 两条 ＋ Zen 付费 key 那条（用户自己的 key，归 Keys/Account）。已退场的腿（antigravity／qoder／workbuddy／kiro／cline／codex／claude code／cursor／gemini）在这里也不再留卡片：留着的卡只会说「未在网关启用」，那是用户看得见的一句废话。
+    # 11-09：订阅那一半的卡片**跟着 Magpie 的 provider 列表走**（它加一个插件我们这边多一张卡，它撤一个我们这边少一张）——这张表只留我们自己还维护的：Zen 付费 key 那条（用户自己的 key，归 Keys/Account）。已退场的腿（antigravity／qoder／workbuddy／kiro／cline／codex／claude code／cursor／gemini）在这里也不再留卡片：留着的卡只会说「未在网关启用」，那是用户看得见的一句废话。
+    # 11-10：**Marvis 的两张卡也下去了**（用户 11-10：「Marvis 没有 CLI。你都没有跑通。你怎么就上屏了呢？」）：这台机器上**它没有 CLI**，`marvis_cli` 那条腿根本起不来；`marvis_gui` 是「没有 CLI 也没有 API、只靠 Windows UI 自动化」的脆弱腿，我们从没跑通。**没跑通的东西不上屏**——适配器与配置段留着（`config.example.yaml`／`profiles/safe.yaml` 里已默认关掉），等它真有 CLI、我们真跑通了，再连卡一起开。
     # 11-09：Free 那张卡换了实现 —— 现在是 **http 腿**（走 OpenCode 客户端自带的本地
     # 服务，见 providers/apps/opencode/free.py），不再是 11-02 移出额度栏的 CLI spawn
     # 形态。腿 id 是 opencode_free；副标题沿用现成的 i18n 键 opencode_cli（那四语
@@ -170,22 +171,6 @@ ADAPTED_APPS: dict[str, dict] = {
         "probe": {"probe": "credential"},
         "download": "https://opencode.ai/auth",
         "intro_key": "opencode_api",
-    },
-    "marvis_cli": {
-        "name": "Marvis CLI",
-        "kind": "cli",
-        "login": "cli-auth",
-        "probe": {"probe": "cli", "binary": "openmarvis"},
-        "download": None,
-        "intro_key": "marvis_cli",
-    },
-    "marvis_gui": {
-        "name": "Marvis",
-        "kind": "desktop-app",
-        "login": "local-session",
-        "probe": {"probe": "desktop", "paths": ["Marvis", "Tencent Marvis"]},
-        "download": "https://marvis.qq.com/",
-        "intro_key": "marvis_gui",
     },
 }
 

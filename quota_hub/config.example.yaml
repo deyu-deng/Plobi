@@ -337,8 +337,12 @@ providers:
   #
   # NOTE: Tencent consumer Marvis (marvis.qq.com) is a native GUI app with NO CLI
   # and NO inbound API — it cannot use this provider. Use a GUI-automation adapter.
+  #
+  # 2026-11-10：这两条 Marvis 的腿**默认关着，也没有卡**（用户 11-10：「Marvis 没有
+  # CLI。你都没有跑通。你怎么就上屏了呢？」）。适配器留着，但「没跑通的东西不上屏」
+  # —— 等它真有 CLI、我们真跑通了，再连卡一起开。
   marvis_cli:
-    enabled: true
+    enabled: false
     binary: openmarvis              # e.g. openmarvis | marvis | agy-style binary
     interpreter: null               # set to "python" only if `binary` is a script
     prompt_flag: "-p"

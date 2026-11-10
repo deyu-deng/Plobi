@@ -901,6 +901,16 @@ export function ProvidersSettings({
     }
   }
 
+  // Subscriptions is its own pillar — render it directly, independent of the
+  // Account / API-key split below **and** independent of the API-keys data
+  // (`vars`): the card list comes from the hub, while `vars` comes from the
+  // backend, which on a slow network spends 30 s probing every provider's
+  // credential. A slow `vars` must not turn the card list into a spinner
+  // (2026-11-10 现场：屏幕上只剩一个转圈，卡片一张都没有).
+  if (view === 'desktop') {
+    return <SubscriptionsView onOpenNetwork={() => onOpenSettingsView?.('network')} />
+  }
+
   if (!vars) {
     return <LoadingState label={t.settings.providers.loading} />
   }
@@ -909,12 +919,6 @@ export function ProvidersSettings({
   // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
   // providers there's nothing for the "Accounts" view to show, so fall to keys.
   const showApiKeys = view === 'keys' || !hasOauth
-
-  // Subscriptions is its own pillar — render it directly, independent of the
-  // Account / API-key split below.
-  if (view === 'desktop') {
-    return <SubscriptionsView onOpenNetwork={() => onOpenSettingsView?.('network')} />
-  }
 
   const keyGroups = buildProviderKeyGroups(vars)
 
