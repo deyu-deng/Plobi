@@ -239,6 +239,28 @@ async def test_the_turn_goes_out_under_our_own_key_name():
 # "does this provider still exist".
 
 
+def test_the_login_command_gets_a_real_terminal():
+    """magpie 的登录是**交互式菜单**——它先问「用哪一种方式登录」。
+
+    没有终端时它读到 EOF 就退（实测 2026-11-10 17:0x：用户点 `+` 的那次，会话的
+    detail 就是菜单尾巴「3. WorkBuddy API key；>」，状态 failed）⇒ 点 `+` 变成一次
+    注定失败的登录。authflow 有一条现成的路（`tty` ⇒ `cmd /c start "" /wait`），
+    它给那个子进程一个**真控制台**，`isatty()` 为真，菜单能走完，浏览器由 magpie 开。
+    """
+    prov = _provider(_http({}))
+    leg = MagpieProviderLeg(
+        {"base_url": "http://127.0.0.1:3425"},
+        prov.http,
+        {"id": "workbuddy", "upstream": "workbuddy", "name": "WorkBuddy"},
+        umbrella=prov,
+    )
+    plan = leg.login_plan()
+
+    assert plan["kind"] == "cli_login"
+    assert plan["argv"] == ["plugin", "login", "workbuddy"]
+    assert plan.get("tty") is True, "没有终端的交互式登录必然失败"
+
+
 def test_the_card_list_is_our_table_not_their_json():
     prov = _provider(_http({}))
     prov._their_provider_ids = lambda: {"workbuddy", "opencode-zen-free", "brand-new-one"}

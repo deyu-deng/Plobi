@@ -810,7 +810,11 @@ export function ProvidersSettings({
   view
 }: ProvidersSettingsProps) {
   const { t } = useI18n()
-  const { rowProps, vars } = useEnvCredentials()
+  // The key data is only for the Accounts / API-keys views. The Subscriptions
+  // pillar shows the hub's card list and never a key ⇒ it must not drag that
+  // read in (it costs the backend a credential probe per provider, and its
+  // failure is a toast nobody can act on).
+  const { rowProps, vars } = useEnvCredentials({ enabled: view !== 'desktop' })
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   const [disconnecting, setDisconnecting] = useState<null | string>(null)

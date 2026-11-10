@@ -271,6 +271,19 @@ describe('Subscriptions cards are the hub catalog', () => {
     expect(await screen.findByText('CodeBuddy')).toBeTruthy()
   })
 
+  it('订阅额度那屏不去拉 API 密钥那份数据：那一屏自己用不到它', async () => {
+    // 密钥那份数据在后端要挨个校验各家凭据（这台机器上 30 秒都回不来），订阅额度
+    // 这屏**根本不用它** ⇒ 不该在打开这一屏时顺手去拉（拉了就是一条「API keys
+    // failed to load」的噪音 toast，还占着一条连接）。
+    getEnvVars.mockClear()
+    shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+
+    await renderSubscriptions()
+
+    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(getEnvVars).not.toHaveBeenCalled()
+  })
+
   it('offers `+` for a signed-out software and a switch for one already in use', async () => {
     shell([authRow('antigravity'), authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
     frame('workbuddy', { models: ['hy3'] })

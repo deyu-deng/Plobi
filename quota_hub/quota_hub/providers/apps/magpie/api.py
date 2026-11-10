@@ -669,6 +669,14 @@ class MagpieProviderLeg(MagpieProvider):
         says so. What runs behind it is magpie's own `plugin login`, which opens
         the browser itself (that is where the account is signed in — the same
         credential the provider's own app would hold).
+
+        **`tty` is load-bearing**: their login is an **interactive menu**（先问
+        「用哪一种方式登录」）⇒ run without a terminal it reads EOF and exits at
+        once (measured 2026-11-10: that session's detail was the menu's tail
+        「3. WorkBuddy API key；>」 and the state was `failed`) ⇒ clicking `+`
+        would be a login guaranteed to fail. `tty` makes the hub give it a real
+        console (`cmd /c start "" /wait`), where the menu can be walked and
+        magpie opens the browser.
         """
         binary = ""
         umbrella = self.umbrella
@@ -679,6 +687,7 @@ class MagpieProviderLeg(MagpieProvider):
             "name": self.display_name,
             "binary": binary,
             "argv": ["plugin", "login", self.upstream_id],
+            "tty": True,
             "reason": f"它的登录在 Magpie 那边 {self.display_name}",
         }
 

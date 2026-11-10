@@ -41,10 +41,11 @@ export function SettingsCategoryHeading({ count, icon: Icon, title }: CategoryHe
 // Owns the env-var fetch + the edit/reveal/save/delete lifecycle so multiple
 // credential pages (Providers, Keys) share one source of truth and one set of
 // mutation handlers instead of duplicating the plumbing.
-export function useEnvCredentials(): UseEnvCredentials {
+export function useEnvCredentials(options: { enabled?: boolean } = {}): UseEnvCredentials {
   const { t } = useI18n()
   const credentials = t.settings.credentials
   const toolsets = t.settings.toolsets
+  const enabled = options.enabled !== false
   const [vars, setVars] = useState<Record<string, EnvVarInfo> | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [revealed, setRevealed] = useState<Record<string, string>>({})
@@ -61,6 +62,15 @@ export function useEnvCredentials(): UseEnvCredentials {
   }, [])
 
   useEffect(() => {
+    // A view that does not show a single key must not ask for them: the read
+    // costs the backend a credential probe per provider (30 s and a timeout on
+    // this machine), and its failure is a toast the user cannot act on
+    // (2026-11-10: the Subscriptions screen raised 「API keys failed to load」
+    // although it shows no key at all).
+    if (!enabled) {
+      return
+    }
+
     let cancelled = false
 
     void (async () => {
@@ -77,7 +87,7 @@ export function useEnvCredentials(): UseEnvCredentials {
 
     return () => void (cancelled = true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount; copy is stable
-  }, [])
+  }, [enabled])
 
   function patchVar(key: string, patch: Partial<Pick<EnvVarInfo, 'is_set' | 'redacted_value'>>) {
     setVars(c => (c ? { ...c, [key]: { ...c[key], ...patch } } : c))
