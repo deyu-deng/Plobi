@@ -154,6 +154,19 @@ def register(ctx) -> None:
             emoji=emoji,
         )
 
+    # 裁定 216：ticket_report 是**旁路状态通道**，不是第三枚嘴——它不向任何
+    # Agent 传提示词，只更新自己那张授权票的六态。因此不挂
+    # check_channel_available（名册里一条可发的人都没有时，票仍可能来自
+    # webhook 或 L2→L3，状态照样要能报）。裁定 183 的两枚嘴一个字没动。
+    ctx.register_tool(
+        name=CH.TICKET_REPORT_SCHEMA["name"],
+        toolset="channel",
+        schema=CH.TICKET_REPORT_SCHEMA,
+        handler=CH.handle_ticket_report,
+        description=CH.TICKET_REPORT_SCHEMA["description"],
+        emoji="\u2713",
+    )
+
     for name, toolset, area, action, description, props, required in _DOMAIN_TOOLS:
         ctx.register_tool(
             name=name,

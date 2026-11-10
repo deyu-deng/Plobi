@@ -35,12 +35,25 @@ WAKE_LOG = "channel-wake.log"
 _WAKE_DIRNAME = "channel-wake"
 
 
-def wake_prompt(sender: str) -> str:
-    """唤醒时补的那一句。**不重述消息内容**——它就在那一屏最上面。"""
+def wake_prompt(sender: str, ticket_id: str = "") -> str:
+    """唤醒时补的那一句。**不重述消息内容**——它就在那一屏最上面。
+
+    裁定 216：把这一跳的票号交给被唤醒的那一轮，它才有得汇报。`ticket_report`
+    是旁路状态通道（不是第三枚嘴），所以这里只是告诉它票号，不重述消息、
+    不改它该干什么。
+    """
+    ticket_line = ""
+    if ticket_id:
+        ticket_line = (
+            f"这一趟的授权票号是 `{ticket_id}`。做完用 "
+            f'`ticket_report(ticket_id="{ticket_id}", state="ready", note="…")` 报一声；'
+            "卡住报 blocked、要等人报 waiting，别只在聊天里说说就算了。\n"
+        )
     return (
         f"【{sender} 刚给你发了一条消息，就在这一屏最上面那条（以「[来自 {sender} · 时间]」开头）。】\n"
         "它就等于用户亲手发给你的一条消息：去读它，按它说的做，做完用一两句话讲清你做了什么、卡在哪儿。\n"
-        "如果这件事需要反过来问他，就用 `ask` 问一次，别用 `say`——`say` 不会把他叫醒。"
+        + ticket_line
+        + "如果这件事需要反过来问他，就用 `ask` 问一次，别用 `say`——`say` 不会把他叫醒。"
     )
 
 
@@ -119,8 +132,12 @@ def _rehold_round(marker, *, agent_name: str, pid: int, holder: str) -> None:
         logger.warning("say: round lock 没改成子进程 pid（不影响这一趟）", exc_info=True)
 
 
-def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
-    """投递之后让那个 Agent 自己开始干。返回 ``(起没起得来, 一句说明)``。"""
+def wake_agent(entry, session_id: str, *, sender: str,
+               ticket_id: str = "") -> tuple[bool, str]:
+    """投递之后让那个 Agent 自己开始干。返回 ``(起没起得来, 一句说明)``。
+
+    ``ticket_id`` 由裁定 216 的 router 票带进来，只进唤醒提示词，不改命令形状。
+    """
     if os.environ.get("PLOBI_WAKE") == "1":
         return False, "这一轮本身就是被唤醒的，不再往下叫醒（防止互相叫醒的死循环）。"
 
@@ -142,7 +159,7 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
     try:
         argv, env, cwd = AA.build_child_command(
             entry,
-            wake_prompt(sender),
+            wake_prompt(sender, ticket_id),
             asked_by=f"say:{sender}",
             resume_session=(session_id or "").strip() or None,
         )

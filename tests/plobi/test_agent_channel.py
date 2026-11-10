@@ -39,6 +39,12 @@ def CH():
     return importlib.import_module(f"{pkg_name}.channel")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_ticket_db(monkeypatch, tmp_path):
+    """裁定 216 之后 say/ask 会开授权票；这一档「不写真家」的承诺要继续成立。"""
+    monkeypatch.setenv("PLOBI_TICKET_DB", str(tmp_path / "tickets.db"))
+
+
 class _FakeSessionDB:
     """只收本模块用到的方法；把每次调用记下来供断言。
 

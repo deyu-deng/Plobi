@@ -21,6 +21,24 @@
 
 `ask` 的执行沿用 ``plobi-north-star/agent_ask.py`` 那条已经在生产上跑通的 spawn 路子
 （子进程 + 子进程自己的会话 + 超时预算）；本模块不再复制一份调度器。
+
+**裁定 216 补的一层（协议，不是第三枚嘴）**：每一跳派工在投递成功后自动开一张
+``leg="router"`` 授权票（`tickets.record_router`），`say`/`ask` 返回值带
+``ticket_id``／``thread_id`` / ``ticket_status``。这是**架构保证**，不需要模型在
+提示词里声明「我在派工」——分工不该交给提示词（DeepSeek 4/5 vs 5/5）。
+
+三件不能混：
+1. 消息面**仍然只有 say / ask 两枚嘴**，``parts`` 依旧只放文本与文件指针，
+   裁定 183 第 5 条「副作用不由发起方指定」一字未动。
+2. ``ticket_report`` **不是嘴**：它不向任何 Agent 传提示词，只更新自己那张票的
+   六态状态（progress/waiting/ready/blocked/failed/dropped）。裁定 183 管的是
+   「Agent 之间传提示词的嘴」，旁路状态通道不在它的适用范围内。
+3. 授权层是**旁路**：读不出来、写不进去都只记 debug，不许挡住说话。
+   但票一旦创建且被撤销/限权，``wake`` 前会查 ``executable``／``allows``，
+   让「可撤销、可限权」在执行层真生效，而不只停在账本里。
+
+``reply_to`` 顺带从「引用单条消息」长成 **Thread 续接**：拿它找回上一张票并继承
+``thread_id``；那张票若已撤销，新票同样不可执行。
 """
 
 from __future__ import annotations
@@ -115,10 +133,98 @@ ASK_SCHEMA = {
                 "type": "integer",
                 "description": "最多等多少秒；不给就按那一行的实测预算。",
             },
+            "reply_to": {
+                "type": "string",
+                "description": (
+                    "续接哪一件事——填上一次 `say`/`ask` 返回值里的 `message_id`。"
+                    "填了就归到同一条 thread、同一份授权范围；不填就是新开一件。"
+                ),
+            },
         },
         "required": ["to", "parts"],
     },
 }
+
+#: 旁路状态回执（裁定 216）。**不是第三枚嘴**：不向任何 Agent 传提示词，
+#: 只更新自己那张授权票的结构化状态。裁定 183 管的是「Agent 之间说话的嘴」，
+#: 这一枚不在它的适用范围内；``parts`` 里也永远不会出现 ``state``/``intent``。
+TICKET_REPORT_SCHEMA = {
+    "name": "ticket_report",
+    "description": (
+        "汇报你这一趟活干到哪了——只更新你自己那张授权票的状态，不是给别人发消息。\n"
+        "`ticket_id` 填派给你那件事的票号（`say`/`ask` 的返回值里有，唤醒时也会告诉你）。\n"
+        "`state` 六选一：progress 正在推进 / waiting 在等人或等外部 / ready 做完了 / "
+        "blocked 卡住了 / failed 做砸了 / dropped 这件事不用做了。\n"
+        "「是否在等人」按这个字段算，不从自由文本里猜。ready、failed、dropped 会同时"
+        "把票推到终态；前三种不改票的生命周期，可以连着报。\n"
+        "要把话说给别人听，仍然用 `say`；要现在的回答，用 `ask`。这一枚只管状态。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "ticket_id": {"type": "string", "description": "这一趟活的授权票号。"},
+            "state": {
+                "type": "string",
+                "enum": ["progress", "waiting", "ready", "blocked", "failed", "dropped"],
+                "description": "六态之一。",
+            },
+            "note": {"type": "string", "description": "一句话说明（可选），别贴长文。"},
+        },
+        "required": ["ticket_id", "state"],
+    },
+}
+
+
+# ── 每一跳的授权票（裁定 216：跳无关，不是执行边界专用）──────────────────
+
+
+def _router_ticket(
+    sender: str, entry, mode: str, text: str, *,
+    session_id: str = "", message_id: str = "", reply_to: str = "",
+):
+    """投递成功后开一张 router 票。**授权层是旁路**：坏了不许挡住说话。"""
+    try:
+        from plobi.delegation.tickets import TicketLedger
+
+        return TicketLedger().record_router(
+            sender=sender,
+            recipient=entry.name,
+            mode=mode,
+            goal=text,
+            session_id=session_id,
+            message_id=message_id,
+            reply_to=reply_to,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("say/ask: router ticket unavailable", exc_info=True)
+        return None
+
+
+def _ticket_fields(ticket) -> dict:
+    if ticket is None:
+        return {}
+    return {
+        "ticket_id": ticket.id,
+        "thread_id": str(ticket.refs.get("thread_id") or ""),
+        "ticket_status": ticket.status,
+    }
+
+
+def _round_allowed(ticket, capability: str = "say") -> tuple[bool, str]:
+    """撤销／限权在**执行层**生效：票不许跑，就不替收件人起那一轮。
+
+    消息本身照旧投递（话已经说到了），只是不再自动开工／不再等回答。这才让
+    Mandate 的「后续消息不能改权限」不停在账本里。
+    """
+    if ticket is None:
+        return True, ""
+    if ticket.status == "revoked":
+        return False, f"授权票 {ticket.id} 已撤销，话已送到但不替它起一轮。"
+    if not ticket.executable:
+        return False, f"授权票 {ticket.id} 当前状态 {ticket.status} 不可执行。"
+    if not ticket.allows(capability):
+        return False, f"授权票 {ticket.id} 的范围里没有 {capability}，不许起这一轮。"
+    return True, ""
 
 
 # ── 收件人 ────────────────────────────────────────────────────────────────
@@ -367,6 +473,7 @@ def handle_say(args: dict, **kwargs) -> str:
         if parts_error:
             return _result(False, error=parts_error)
         return _deliver_to_user(text, sender=sender)
+    reply_to = str(args.get("reply_to") or "")
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
@@ -377,11 +484,25 @@ def handle_say(args: dict, **kwargs) -> str:
                 error=f"「{entry.name}」就是你自己——别发给自己，这条永远不会有回音。要交给用户就用 `to=用户`。",
             )
         session_id, message_id = _deliver(
-            entry, text, sender=sender, reply_to=str(args.get("reply_to") or "")
+            entry, text, sender=sender, reply_to=reply_to
         )
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"say 失败：{exc}")
-    woke, wake_note = WK.wake_agent(entry, session_id, sender=sender)
+
+    # 裁定 216：这一跳自动开授权票（架构保证，不靠模型声明「我在派工」）。
+    ticket = _router_ticket(
+        sender, entry, "say", text,
+        session_id=session_id, message_id=message_id, reply_to=reply_to,
+    )
+    allowed, blocked_note = _round_allowed(ticket)
+    if allowed:
+        woke, wake_note = WK.wake_agent(
+            entry, session_id, sender=sender,
+            ticket_id=ticket.id if ticket is not None else "",
+        )
+    else:
+        woke, wake_note = False, blocked_note
+    fields = _ticket_fields(ticket)
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
@@ -394,11 +515,12 @@ def handle_say(args: dict, **kwargs) -> str:
         "message_id": message_id,
         "woke": woke,
         "wake": wake_note,
+        **fields,
     })
     return _result(
         True, mode="say", trace_id=trace_id, to=entry.name,
         session_id=session_id, message_id=message_id,
-        deliverer=sender, woke=woke, wakeNote=wake_note,
+        deliverer=sender, woke=woke, wakeNote=wake_note, **fields,
     )
 
 
@@ -445,6 +567,18 @@ def handle_ask(args: dict, **kwargs) -> str:
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"ask 失败：{exc}")
 
+    # 裁定 216：ask 也是一跳，同样在起子进程之前开授权票。ask 是同步问答，
+    # 子进程才把问话写进那一屏，所以这里拿不到 message_id——Thread 续接以
+    # say 返回的 message_id 为准（见 SAY_SCHEMA.reply_to）。
+    reply_to = str(args.get("reply_to") or "")
+    ticket = _router_ticket(
+        sender, entry, "ask", text, session_id=session_id, reply_to=reply_to
+    )
+    allowed, blocked_note = _round_allowed(ticket, "ask")
+    if not allowed:
+        return _result(False, error=blocked_note, to=entry.name,
+                       session_id=session_id, **_ticket_fields(ticket))
+
     started = time.time()
     answer, failure = "", None
     try:
@@ -476,6 +610,21 @@ def handle_ask(args: dict, **kwargs) -> str:
         if not landed:
             _session, delivered_id = _deliver(entry, text, sender=sender)
 
+    fields = _ticket_fields(ticket)
+    if ticket is not None:
+        ok = failure is None
+        try:
+            from plobi.delegation.tickets import TicketLedger
+
+            TicketLedger().report_state(
+                ticket.id, "ready" if ok else "failed",
+                note=answer[:200] or str(failure or "")[:200],
+                reporter=entry.name,
+            )
+        except Exception:  # noqa: BLE001 - 授权层是旁路，不许把答上来的话弄丢
+            logger.debug("ask: ticket report unavailable", exc_info=True)
+        fields["ticket_status"] = "done" if ok else "failed"
+
     _trace({
         "kind": "ask",
         "trace_id": uuid.uuid4().hex[:12],
@@ -487,11 +636,41 @@ def handle_ask(args: dict, **kwargs) -> str:
         "message_id": delivered_id,
         "waited_seconds": round(time.time() - started, 2),
         "answer": answer[:_PART_MAX_CHARS],
+        **fields,
     })
     if failure is not None:
         return _result(False, delivered=bool(delivered_id), to=entry.name,
-                       session_id=session_id, **failure)
-    return _result(True, mode="ask", to=entry.name, session_id=session_id, answer=answer)
+                       session_id=session_id, **fields, **failure)
+    return _result(True, mode="ask", to=entry.name, session_id=session_id,
+                   answer=answer, **fields)
+
+
+def handle_ticket_report(args: dict, **kwargs) -> str:
+    """旁路状态回执：只改自己那张票，**不向任何 Agent 发提示词**（裁定 216）。"""
+    args = args if isinstance(args, dict) else {}
+    ticket_id = str(args.get("ticket_id") or "").strip()
+    state = str(args.get("state") or "").strip().lower()
+    if not ticket_id:
+        return _result(False, error="没给票号（`ticket_id` 不能空）。")
+    try:
+        from plobi.delegation.tickets import REPORT_STATES, TicketLedger
+
+        ledger = TicketLedger()
+    except Exception as exc:  # noqa: BLE001
+        return _result(False, error=f"授权层读不出来：{exc}")
+    if state not in REPORT_STATES:
+        return _result(False, error=f"不认识的状态 {state!r}。", states=sorted(REPORT_STATES))
+    if ledger.get(ticket_id) is None:
+        return _result(False, error=f"找不到授权票 {ticket_id}。")
+    reporter = current_agent_name(kwargs.get("session_id") or "")
+    note = str(args.get("note") or "")[:500]
+    if not ledger.report_state(ticket_id, state, note=note, reporter=reporter):
+        return _result(False, error=f"状态没写进去（票 {ticket_id}）。")
+    ticket = ledger.get(ticket_id)
+    return _result(
+        True, mode="ticket_report", ticket_id=ticket_id, state=state,
+        ticket_status=ticket.status if ticket else "", reporter=reporter,
+    )
 
 
 def check_channel_available() -> bool:

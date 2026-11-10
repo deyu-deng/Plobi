@@ -156,8 +156,10 @@ class _FakeDB:
         return "m1"
 
 
-def test_handle_say_hands_the_new_session_to_the_waker(CH, monkeypatch):
+def test_handle_say_hands_the_new_session_to_the_waker(CH, monkeypatch, tmp_path):
     """跨模块那一行：唤醒拿到的必须是刚投递的那一屏，不是随便一条。"""
+    # 裁定 216 之后 say 会开授权票：这里指到 tmp，别写真家。
+    monkeypatch.setenv("PLOBI_TICKET_DB", str(tmp_path / "tickets.db"))
     db = _FakeDB()
     monkeypatch.setattr(CH, "_session_db", lambda: db)
     monkeypatch.setattr(CH, "_trace", lambda record: None)
@@ -173,7 +175,7 @@ def test_handle_say_hands_the_new_session_to_the_waker(CH, monkeypatch):
     monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "一句话", None))
     seen: list[tuple] = []
 
-    def _fake_wake(e, sid, sender):
+    def _fake_wake(e, sid, sender, **kwargs):
         seen.append((e.name, sid))
         return True, "ok"
 
@@ -186,14 +188,15 @@ def test_handle_say_hands_the_new_session_to_the_waker(CH, monkeypatch):
     assert seen == [("agenda", "sess-window")], "唤醒必须拿到刚投递的那一屏"
 
 
-def test_a_failed_wake_does_not_turn_say_into_an_error(CH, monkeypatch):
+def test_a_failed_wake_does_not_turn_say_into_an_error(CH, monkeypatch, tmp_path):
     from plobi.agents.registry import AgentEntry
 
+    monkeypatch.setenv("PLOBI_TICKET_DB", str(tmp_path / "tickets.db"))
     entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
     monkeypatch.setattr(CH, "_session_db", lambda: _FakeDB())
     monkeypatch.setattr(CH, "_trace", lambda record: None)
     monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "一句话", None))
-    monkeypatch.setattr(CH.WK, "wake_agent", lambda e, sid, sender: (False, "叫不醒它：没家"))
+    monkeypatch.setattr(CH.WK, "wake_agent", lambda e, sid, sender, **kw: (False, "叫不醒它：没家"))
 
     out = json.loads(CH.handle_say({"to": "agenda", "parts": ["一句话"]}))
 

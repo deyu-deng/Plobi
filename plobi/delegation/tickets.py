@@ -1,4 +1,9 @@
-"""L2 → L3 派工的**授权层**（Ticket / Mandate，WP-L3-TICKET-MANDATE）。
+"""每一跳派工的**授权层**（Ticket / Mandate，WP-L3-TICKET-MANDATE）。
+
+裁定 216：Ticket / Mandate 是**跳无关**的协议，不是「执行边界专用」。L1→L2
+（两个 Router 之间）、L2→L3（Router→Worker）、外部事件→Router 都用同一张表，
+靠 ``leg`` 区分；所以 ``record_router`` 与 ``record_trigger`` / ``record_offload``
+是同一份协议的三个实例。判据是**这条边谁持有授权、谁接单**，不是节点在第几层。
 
 这一层只回答一件事：*这一跳允许谁、以什么范围、干到什么时候*。它不是第五套任务账——
 任务账（``kanban.db``）、会话账（``state.db`` 的 ``sessions``）、外包流水
@@ -42,6 +47,14 @@ REVOKED = "revoked"
 TERMINAL = frozenset({DONE, FAILED, REVOKED})
 VALID_STATUSES = frozenset({OBSERVED, ACTIVE, DONE, FAILED, REVOKED})
 
+#: Worker 汇报的六种结构化状态（裁定 216）。「是否在等人」由字段判断，
+#: 不从自由文本里猜；progress/waiting/blocked 不改票的生命周期，
+#: ready→done、failed→failed、dropped→revoked。
+REPORT_STATES = frozenset({
+    "progress", "waiting", "ready", "blocked", "failed", "dropped",
+})
+TERMINAL_REPORTS = frozenset({"ready", "failed", "dropped"})
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tickets (
     id             TEXT PRIMARY KEY,
@@ -59,6 +72,16 @@ CREATE TABLE IF NOT EXISTS tickets (
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_parent ON tickets(parent_agent, created_at DESC);
+CREATE TABLE IF NOT EXISTS ticket_reports (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id  TEXT NOT NULL,
+    state      TEXT NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    reporter   TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_reports_ticket
+    ON ticket_reports(ticket_id, created_at DESC);
 """
 
 
@@ -303,6 +326,83 @@ class TicketLedger:
         )
         return ticket.id
 
+    def record_router(
+        self,
+        *,
+        sender: str,
+        recipient: str,
+        mode: str,
+        goal: str = "",
+        session_id: str = "",
+        message_id: str = "",
+        reply_to: str = "",
+    ) -> Ticket:
+        """Router→Router 那一跳的**派发前**预授权票（裁定 216）。
+
+        与专家腿／外包腿同形：人或域 Router 主动调 `say`/`ask` = 已放行，
+        直接 ``ACTIVE``；票只负责留痕、限权与可撤销。授权层读写失败由调用方
+        旁路，绝不能挡住说话这条路。
+
+        ``reply_to`` 从「引用单条消息」升级为 **Thread 续接**：拿它找回上一张
+        票，继承同一个 ``thread_id``；若那张票已被撤销，新票同样开成 ``REVOKED``
+        ——这就是 Mandate 的「后续消息不增加权限」在代码里的样子。
+        """
+        prior = self.find_by_ref("message_id", reply_to) if reply_to else None
+        thread_id = str((prior.refs.get("thread_id") if prior else "") or "").strip()
+        if not thread_id:
+            thread_id = "thr_" + uuid.uuid4().hex[:12]
+        refs = {
+            "recipient": str(recipient or ""),
+            "mode": str(mode or ""),
+            "thread_id": thread_id,
+            "session_id": str(session_id or ""),
+            "message_id": str(message_id or ""),
+            "reply_to": str(reply_to or ""),
+        }
+        if prior is not None:
+            refs["inherited_from"] = prior.id
+        ticket = self.open_ticket(
+            parent_agent=str(sender or ""),
+            leg="router",
+            goal=str(goal or "")[:120],
+            scope={
+                "allowed_capabilities": ["say", "ask", "delegate"],
+                "recipient": str(recipient or ""),
+            },
+            triggered_by=f"{mode}:router",
+            refs={k: v for k, v in refs.items() if v},
+            status=ACTIVE,
+        )
+        if prior is not None and prior.status == REVOKED:
+            self.revoke(ticket.id, reason=f"thread {thread_id} was revoked")
+            ticket = self.get(ticket.id) or ticket
+        return ticket
+
+    def report_state(
+        self, ticket_id: str, state: str, *, note: str = "", reporter: str = ""
+    ) -> bool:
+        """结构化六态汇报；终态同时推进票的生命周期。"""
+        state = str(state or "").strip().lower()
+        if state not in REPORT_STATES:
+            return False
+        ticket = self.get(ticket_id)
+        if ticket is None:
+            return False
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO ticket_reports (ticket_id, state, note, reporter, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (ticket_id, state, str(note or "")[:500],
+                 str(reporter or "")[:120], time.time()),
+            )
+        if state == "ready":
+            self.finish(ticket_id, ok=True)
+        elif state == "failed":
+            self.finish(ticket_id, ok=False)
+        elif state == "dropped":
+            self.revoke(ticket_id, reason=str(note or "worker dropped the ticket")[:300])
+        return True
+
     # -- read ----------------------------------------------------------
 
     def get(self, ticket_id: str) -> Optional[Ticket]:
@@ -333,6 +433,50 @@ class TicketLedger:
                 params,
             ).fetchall()
         return [_row_to_ticket(row) for row in rows]
+
+    def find_by_ref(self, key: str, value: str) -> Optional[Ticket]:
+        """按 ``refs`` 里的关联键找回最近那张票（Thread 续接用）。
+
+        优先走 SQLite 的 ``json_extract``；某些精简构建没有 JSON1 时退化成
+        内存里扫最近 500 张票——宁可慢一点，也不把整张表拉进上下文。
+        """
+        key = str(key or "").strip()
+        value = str(value or "").strip()
+        if not key or not value or not key.replace("_", "").isalnum():
+            return None
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT * FROM tickets WHERE json_extract(refs_json, ?) = ? "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (f"$.{key}", value),
+                ).fetchone()
+            if row is not None:
+                return _row_to_ticket(row)
+        except sqlite3.Error:
+            logger.debug("ticket json_extract unavailable, falling back", exc_info=True)
+        for ticket in self.list_tickets(limit=500):
+            if str(ticket.refs.get(key) or "") == value:
+                return ticket
+        return None
+
+    def latest_report(self, ticket_id: str) -> Optional[dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM ticket_reports WHERE ticket_id = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (ticket_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_reports(self, ticket_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM ticket_reports WHERE ticket_id = ? "
+                "ORDER BY created_at ASC, id ASC LIMIT ?",
+                (ticket_id, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def is_executable(self, ticket_id: str) -> bool:
         ticket = self.get(ticket_id)
