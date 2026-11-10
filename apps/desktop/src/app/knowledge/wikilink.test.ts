@@ -70,20 +70,20 @@ describe('findWikiLinks', () => {
 
 describe('buildNoteLinkIndex', () => {
   const notes = [
-    { path: 'Surface/notes/工具/Modeling/Creo.md', title: 'Creo Parametric' },
-    { path: 'Surface/notes/数学/微积分.md', title: '微积分' }
+    { path: 'Notes/工具/Modeling/Creo.md', title: 'Creo Parametric' },
+    { path: 'Notes/数学/微积分.md', title: '微积分' }
   ]
 
   it('matches by file stem', () => {
     const index = buildNoteLinkIndex(notes)
     expect(resolveWikiNote({ target: 'Creo' } as never, index)?.path).toBe(
-      'Surface/notes/工具/Modeling/Creo.md'
+      'Notes/工具/Modeling/Creo.md'
     )
   })
 
   it('matches by title', () => {
     const index = buildNoteLinkIndex(notes)
-    expect(resolveWikiNote({ target: '微积分' } as never, index)?.path).toBe('Surface/notes/数学/微积分.md')
+    expect(resolveWikiNote({ target: '微积分' } as never, index)?.path).toBe('Notes/数学/微积分.md')
   })
 
   it('is case insensitive', () => {

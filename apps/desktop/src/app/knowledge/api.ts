@@ -1,6 +1,6 @@
 import { unwrapEnvelope } from '@/lib/api-envelope'
 
-export const NOTES_PREFIX = 'Surface/notes/'
+export const NOTES_PREFIX = 'Notes/'
 
 export interface NoteMeta {
   path: string

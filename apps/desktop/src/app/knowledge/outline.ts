@@ -1,4 +1,4 @@
-export const NOTES_PREFIX = 'Surface/notes/'
+export const NOTES_PREFIX = 'Notes/'
 
 /**
  * 长笔记的骨架解析与目录树。
@@ -73,7 +73,7 @@ export function parseOutline(markdown: string): OutlineItem[] {
   return items
 }
 
-/** 从 `Surface/notes/数学/常微分方程基础.md` 反推「学科 → 子类 → 书」的层级。 */
+/** 从 `Notes/数学/常微分方程基础.md` 反推「学科 → 子类 → 书」的层级。 */
 export function buildNoteTree<T extends { path: string; title: string }>(notes: T[]): NoteTree<T> {
   const folders: NoteTreeNode<T>[] = []
   const loose: T[] = []

@@ -12,8 +12,8 @@ import { NoteMarkdown, makeLinkIndex } from './note-markdown'
  * ③ 库里没有的目标被标成「未创建」，点不动
  */
 const NOTES = [
-  { path: 'Surface/notes/工具/Modeling/Creo.md', title: 'Creo Parametric' },
-  { path: 'Surface/notes/数学/微积分.md', title: '微积分' }
+  { path: 'Notes/工具/Modeling/Creo.md', title: 'Creo Parametric' },
+  { path: 'Notes/数学/微积分.md', title: '微积分' }
 ]
 
 describe('NoteMarkdown wikilink', () => {

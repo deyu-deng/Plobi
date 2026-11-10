@@ -4,7 +4,7 @@ import { unwrapEnvelope } from '@/lib/api-envelope'
  * 档案「进度」那一份按日清单的读侧。
  *
  * 真源是档案目录下的 `tasks.json`（与 `plan.md`／`progress.md` 同目录）——**不在库里**：
- * 人（这里）在屏上勾，后端改写那个文件；Agent 用 `surface_write` 改**同一个**文件。
+ * 人（这里）在屏上勾，后端改写那个文件；Agent 用 `dossier_write` 改**同一个**文件。
  * 两边共用一处真源 ⇒ 谁标的都能看见。
  *
  * 这层只吐 JSON 键与值：屏上文案由前端翻（屏幕文案纪律：机器词不许上屏）。

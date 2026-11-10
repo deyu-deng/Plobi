@@ -616,7 +616,7 @@ export const api = {
   /** 登记一条 Agent（旧 createAgent）。
    *
    *  新契约的 ``POST /api/agents`` **要 id + category**，语义是「登记一条项目型
-   *  L2」，会在 Mind 的 ``Surface/dossiers/projects/<id>`` 建三件套——脑仓不可达
+   *  L2」，会在 Mind 的 ``Dossiers/projects/<id>`` 建三件套——脑仓不可达
    *  时整次创建失败（R-013 扩写），这是与旧 profile 创建最大的行为差别。
    *
    *  旧 profile 那套 ``clone_from`` / ``clone_all`` / ``no_skills`` / ``keep_skills``

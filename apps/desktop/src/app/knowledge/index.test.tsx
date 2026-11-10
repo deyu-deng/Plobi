@@ -46,7 +46,7 @@ const CHAPTERS =
   '---\ntitle: 微积分笔记\n---\n\n## 第1章 极限\n\n极限与连续。\n\n### 1.1 数列极限\n\n定义。\n\n## 第2章 导数\n\n变化率。\n\n```md\n# 这是代码块里的示例，不该进目录\n```\n'
 
 const NOTE: NoteMeta = {
-  path: 'Surface/notes/数学/微积分.md',
+  path: 'Notes/数学/微积分.md',
   title: '微积分笔记',
   topic: '数学',
   tags: ['math'],
@@ -57,7 +57,7 @@ const NOTE: NoteMeta = {
 }
 
 const DRAWING: NoteMeta = {
-  path: 'Surface/notes/工具/Design/工程图学.md',
+  path: 'Notes/工具/Design/工程图学.md',
   title: '工程图学',
   topic: '工具',
   tags: [],
@@ -144,7 +144,7 @@ describe('KnowledgeView', () => {
   it('never puts the logical path on screen', async () => {
     renderView()
     await screen.findByTestId('markdown')
-    expect(screen.queryByText(/Surface\/notes\//)).toBeNull()
+    expect(screen.queryByText(/Notes\//)).toBeNull()
     expect(screen.queryByText(/surface 档案/)).toBeNull()
   })
 
@@ -152,7 +152,7 @@ describe('KnowledgeView', () => {
     renderView()
     await screen.findByTestId('markdown')
     fireEvent.click(screen.getByText('工程图学'))
-    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Surface/notes/工具/Design/工程图学.md'))
+    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Notes/工具/Design/工程图学.md'))
     expect(fetchNotes).toHaveBeenCalledTimes(1)
   })
 
@@ -226,7 +226,7 @@ describe('KnowledgeView', () => {
     renderView()
     await screen.findByTestId('markdown')
     fireEvent.click(screen.getByText('工程图学'))
-    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Surface/notes/工具/Design/工程图学.md'))
+    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Notes/工具/Design/工程图学.md'))
 
     const tabs = await screen.findByTestId('note-tabs')
     expect(within(tabs).getAllByRole('tab').length).toBe(2)
@@ -256,7 +256,7 @@ describe('KnowledgeView', () => {
     // 树里也有同名笔记，断言限定到切换器内部。
     await waitFor(() => expect(within(switcher).getByText('工程图学')).toBeTruthy())
     fireEvent.click(within(switcher).getByText('工程图学'))
-    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Surface/notes/工具/Design/工程图学.md'))
+    await waitFor(() => expect(fetchNote).toHaveBeenCalledWith('Notes/工具/Design/工程图学.md'))
   })
 
   it('shows a hover preview with the note excerpt', async () => {
