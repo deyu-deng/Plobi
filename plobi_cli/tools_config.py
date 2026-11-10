@@ -2090,6 +2090,53 @@ def _toolset_has_keys(
     return all(get_env_value(var) for var, _ in requirements)
 
 
+def _toolset_provider_available(
+    ts_key: str,
+    prov: dict,
+    config: dict = None,
+    *,
+    force_fresh: bool = False,
+) -> bool:
+    """Return True when this provider's backend can actually run right now.
+
+    "This row needs no API key" is not "this backend works". The DuckDuckGo
+    row needs no key but needs the ``ddgs`` package; the Nous row needs a
+    login; the xAI row needs credentials. The Tools screen used to call all
+    of them "Ready" because it only looked at the key column — so the switch
+    said Ready while ``web_search`` never made it into the model's tool table
+    (11-10 实测：DuckDuckGo / xAI / Nous 三行都写着 Ready，Agent 手上却没有
+    ``web_search``)。
+
+    Answer with a real probe where one exists; categories without a probe
+    keep the old key-based answer.
+    """
+    if config is None:
+        config = load_config()
+
+    managed = prov.get("managed_nous_feature")
+    if managed:
+        try:
+            features = get_nous_subscription_features(config, force_fresh=force_fresh)
+            feature = features.features.get(managed)
+            return bool(feature and (feature.available or feature.managed_by_nous))
+        except Exception:
+            return False
+
+    backend = str(prov.get("web_backend") or "").strip().lower()
+    if backend:
+        try:
+            from tools.web_tools import _is_backend_available
+
+            return bool(_is_backend_available(backend))
+        except Exception:
+            pass
+
+    env_vars = prov.get("env_vars") or []
+    if not env_vars:
+        return True
+    return all(get_env_value(e["key"]) for e in env_vars)
+
+
 # ─── Menu Helpers ─────────────────────────────────────────────────────────────
 
 def _prompt_choice(question: str, choices: list, default: int = 0) -> int:

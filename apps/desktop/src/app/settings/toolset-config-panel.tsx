@@ -41,6 +41,14 @@ interface ToolsetConfigPanelProps {
 const MODEL_CATALOG_TOOLSETS = new Set(['image_gen', 'video_gen'])
 
 function providerConfigured(provider: ToolProvider, envState: Record<string, boolean>): boolean {
+  // The backend's own probe wins when it has one: "this row needs no API key"
+  // is not "this backend runs" (the DuckDuckGo row needs no key but needs the
+  // ddgs package, and the Nous row needs a login). Older backends send no
+  // probe, so fall back to the key column.
+  if (typeof provider.available === 'boolean') {
+    return provider.available
+  }
+
   if (provider.env_vars.length === 0) {
     return true
   }

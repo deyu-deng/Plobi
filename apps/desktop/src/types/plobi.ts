@@ -892,6 +892,10 @@ export interface ToolsetInfo {
   configured: boolean
   description: string
   enabled: boolean
+  /** This toolset's tools would actually reach the model right now (its own
+   *  gate passed). NOT the same as `enabled` (the switch). Absent on older
+   *  backends. */
+  available?: boolean
   label: string
   name: string
   tools: string[]
@@ -915,6 +919,10 @@ export interface ToolProvider {
   /** True when this is the provider currently written to config (mirrors the
    *  CLI `plobi tools` active-provider detection). */
   is_active: boolean
+  /** This backend can actually run right now (its own probe passed). A row
+   *  that needs no API key can still be false — e.g. DuckDuckGo needs the
+   *  `ddgs` package. Absent on older backends. */
+  available?: boolean
 }
 
 export interface ToolsetConfig {

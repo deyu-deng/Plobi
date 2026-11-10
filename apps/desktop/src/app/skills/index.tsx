@@ -488,18 +488,18 @@ export function SkillsView({
   }
 
   async function handleToggleToolset(toolset: ToolsetInfo, enabled: boolean) {
+    // Only `enabled` is optimistic here. `available` is the backend's own
+    // answer to "do these tools really reach the model" — mirroring the
+    // switch into it would put the lie back (11-10 实测).
     setToolsets(
-      current =>
-        current?.map(row => (row.name === toolset.name ? { ...row, enabled, available: enabled } : row)) ?? current
+      current => current?.map(row => (row.name === toolset.name ? { ...row, enabled } : row)) ?? current
     )
 
     try {
       await toggleToolset(toolset.name, enabled)
     } catch (err) {
       setToolsets(
-        current =>
-          current?.map(row => (row.name === toolset.name ? { ...row, enabled: !enabled, available: !enabled } : row)) ??
-          current
+        current => current?.map(row => (row.name === toolset.name ? { ...row, enabled: !enabled } : row)) ?? current
       )
       notifyError(err, t.skills.failedToUpdate(toolsetDisplayLabel(toolset)))
     }
@@ -525,7 +525,7 @@ export function SkillsView({
 
       for (const row of toolsetTargets) {
         await toggleToolset(row.name, enabled)
-        setToolsets(cur => cur?.map(r => (r.name === row.name ? { ...r, enabled, available: enabled } : r)) ?? cur)
+        setToolsets(cur => cur?.map(r => (r.name === row.name ? { ...r, enabled } : r)) ?? cur)
         done += 1
       }
 

@@ -14273,6 +14273,28 @@ async def update_skill_content(body: SkillContentUpdate):
     return result
 
 
+def _toolset_really_available(ts_key: str) -> bool:
+    """True when this toolset's tools would actually reach the model.
+
+    Runs the toolset's own ``check_fn`` — the very gate that decides whether
+    ``web_search`` lands in the model's tool table. "The switch is on" is a
+    different question from "this works", and the Tools screen used to answer
+    the first one on behalf of the second (11-10 实测：Web Search 那一档开着
+    "2 tools"，Agent 手上却没有这个工具 —— 凭据闸没过，工具压根没进表)。
+    """
+    try:
+        from tools.registry import registry
+
+        mapping = registry.get_tool_to_toolset_map()
+        if not any(toolset == ts_key for toolset in mapping.values()):
+            # Nothing registers under this key (a plugin-provided toolset whose
+            # tools register elsewhere) — there is no gate to run.
+            return True
+        return bool(registry.is_toolset_available(ts_key))
+    except Exception:
+        return True
+
+
 @app.get("/api/tools/toolsets")
 async def get_toolsets(profile: Optional[str] = None, agent: Optional[str] = None):
     from plobi_cli.tools_config import (
@@ -14317,7 +14339,9 @@ async def get_toolsets(profile: Optional[str] = None, agent: Optional[str] = Non
             "label": gui_toolset_label(label),
             "description": desc,
             "enabled": is_enabled,
-            "available": is_enabled,
+            # NOT a mirror of the switch: this asks the toolset's own gate
+            # whether its tools would really reach the model.
+            "available": _toolset_really_available(name),
             "configured": _toolset_has_keys(name, config),
             "tools": tools,
         })
@@ -14398,6 +14422,7 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
         TOOL_CATEGORIES,
         _get_effective_configurable_toolsets,
         _is_provider_active,
+        _toolset_provider_available,
         _visible_providers,
     )
     from plobi_cli.config import get_env_value
@@ -14438,6 +14463,13 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
                     "post_setup": prov.get("post_setup"),
                     "requires_nous_auth": bool(prov.get("requires_nous_auth")),
                     "is_active": is_active,
+                    # "Ready" on the screen has to mean "this backend runs
+                    # right now", not "this row needs no key" (11-10 实测：
+                    # DuckDuckGo 没装 ddgs 也写着 Ready，而 Agent 手上并没有
+                    # web_search)。
+                    "available": _toolset_provider_available(
+                        name, prov, config, force_fresh=True
+                    ),
                 })
     return {
         "name": name,

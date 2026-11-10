@@ -1052,6 +1052,10 @@ class TestToolsConfigEndpoints:
         row = rows[0]
         for k in ("name", "label", "enabled", "configured", "tools"):
             assert k in row
+        # ``available`` 答的是「这一档现在真能用吗」——不是开关的镜像。
+        # 11-10 实测：Web Search 那一档开着「2 tools」，Agent 手上却没有这个
+        # 工具（凭据闸没过，工具压根没进表）。
+        assert isinstance(row["available"], bool)
 
     def test_toolset_config_provider_matrix(self):
         # `web` has a TOOL_CATEGORIES entry → providers list populated.
@@ -1060,6 +1064,11 @@ class TestToolsConfigEndpoints:
         body = r.json()
         assert body["has_category"] is True
         assert isinstance(body["providers"], list)
+        # Every provider row carries its own verdict: "this backend runs right
+        # now" (11-10 实测：DuckDuckGo 那一行不要密钥却被写成就绪，而 ddgs
+        # 没装 ⇒ Agent 手上没有 web_search)。
+        for prov in body["providers"]:
+            assert isinstance(prov["available"], bool)
 
     def test_unknown_toolset_config_400(self):
         r = self.client.get("/api/tools/toolsets/not_a_toolset/config")

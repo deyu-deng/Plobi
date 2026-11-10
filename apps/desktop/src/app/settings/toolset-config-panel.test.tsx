@@ -315,6 +315,61 @@ describe('ToolsetConfigPanel', () => {
     expect(getActionStatus).not.toHaveBeenCalled()
   })
 
+  it('marks a provider Ready only when its backend can actually run', async () => {
+    // 11-10 实测：DuckDuckGo 那一行「不需要 API 密钥」就被写成「就绪」，可
+    // ddgs 包没装 ⇒ web_search 根本没进 Agent 的工具表。后端给的
+    // `available` 是真探针，屏上必须听它的。
+    getToolsetConfig.mockResolvedValue(
+      config({
+        name: 'web',
+        active_provider: null,
+        providers: [
+          {
+            name: 'DuckDuckGo (ddgs)',
+            badge: 'free · no key · search only',
+            tag: 'Search via the ddgs Python package',
+            env_vars: [],
+            post_setup: 'ddgs',
+            requires_nous_auth: false,
+            is_active: false,
+            available: false
+          },
+          {
+            name: 'Exa',
+            badge: 'paid',
+            tag: 'Search',
+            env_vars: [
+              { key: 'EXA_API_KEY', prompt: 'Exa API key', url: 'https://x', default: null, is_set: true }
+            ],
+            post_setup: null,
+            requires_nous_auth: false,
+            is_active: false,
+            available: true
+          }
+        ]
+      })
+    )
+
+    const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+    render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="web" />)
+
+    await screen.findByText('DuckDuckGo (ddgs)')
+    // Only the backend that can really run gets the pill.
+    expect(screen.getAllByText('Ready')).toHaveLength(1)
+  })
+
+  it('keeps the key-column answer when the backend sends no probe', async () => {
+    // Older backends send no `available` field — the key column still decides.
+    getToolsetConfig.mockResolvedValue(config())
+
+    const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+    render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="tts" />)
+
+    await screen.findByText('Microsoft Edge TTS')
+    // Edge TTS needs no key → Ready; ElevenLabs has no key set → not Ready.
+    expect(screen.getAllByText('Ready')).toHaveLength(1)
+  })
+
   it('surfaces a non-zero exit code from the setup process', async () => {
     getToolsetConfig.mockResolvedValue(
       config({
