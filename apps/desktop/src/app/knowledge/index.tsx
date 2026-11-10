@@ -35,12 +35,15 @@ function NoteRow({
   active,
   note,
   onPreview,
+  onPreviewEnd,
   onSelect
 }: {
   active: boolean
   note: NoteMeta
   /** 悬停时回调（带上指针位置，预览卡片要跟着指针走）。 */
   onPreview?: (note: NoteMeta, position: { x: number; y: number }) => void
+  /** 指针离开这一行——预览卡片该自己走掉了。 */
+  onPreviewEnd?: () => void
   onSelect: () => void
 }) {
   return (
@@ -55,6 +58,7 @@ function NoteRow({
         const rect = event.currentTarget.getBoundingClientRect()
         onPreview?.(note, { x: rect.right + 8, y: Math.min(rect.top, window.innerHeight - 220) })
       }}
+      onMouseLeave={onPreviewEnd}
       type="button"
     >
       <span className={cn('min-w-0 truncate text-[0.72rem]', active && 'font-medium')}>{note.title}</span>
@@ -84,9 +88,11 @@ export function KnowledgeView() {
   const [openTabs, setOpenTabs] = useState<string[]>([])
   // 快速切换器（mod+o）
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  // 悬浮预览：当前悬停的笔记 + 指针位置
-  const [hovered, setHovered] = useState<NoteMeta | null>(null)
-  const [hoveredPreview, setHoveredPreview] = useState<{ x: number; y: number } | null>(null)
+  // 悬浮预览：卡片看的是哪一篇（hoverNote）、指针在哪（hoverPos）、
+  // 指针此刻还在不在树行上（rowHover）——最后这一格是「卡片会自己走掉」的开关。
+  const [hoverNote, setHoverNote] = useState<NoteMeta | null>(null)
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
+  const [rowHover, setRowHover] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -129,8 +135,19 @@ export function KnowledgeView() {
 
   // 悬停目录树的一篇：记下它和指针位置（预览卡片跟着指针走）。
   const previewNote = useCallback((note: NoteMeta, position: { x: number; y: number }) => {
-    setHovered(note)
-    setHoveredPreview(position)
+    setHoverNote(note)
+    setHoverPos(position)
+    setRowHover(true)
+  }, [])
+
+  // 指针离开那一行：卡片自己会收起（留一小段宽限，指针才挪得到卡片上）。
+  const endPreview = useCallback(() => setRowHover(false), [])
+
+  // 卡片自己收起（Esc／移开／点「打开」之后）：这一格清干净。
+  const closePreview = useCallback(() => {
+    setHoverNote(null)
+    setHoverPos(null)
+    setRowHover(false)
   }, [])
 
   function selectNote(path: string) {
@@ -319,7 +336,13 @@ export function KnowledgeView() {
             {node.folders.map(child => renderFolder(child, depth + 1))}
             {node.notes.map(note => (
               <div key={note.path} style={{ paddingLeft: (depth + 1) * 10 + 12 }}>
-                <NoteRow active={note.path === selected} note={note} onPreview={previewNote} onSelect={() => selectNote(note.path)} />
+                <NoteRow
+                  active={note.path === selected}
+                  note={note}
+                  onPreview={previewNote}
+                  onPreviewEnd={endPreview}
+                  onSelect={() => selectNote(note.path)}
+                />
               </div>
             ))}
           </>
@@ -402,7 +425,14 @@ export function KnowledgeView() {
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
             {tree.folders.map(node => renderFolder(node, 0))}
             {tree.loose.map(note => (
-              <NoteRow active={note.path === selected} key={note.path} note={note} onPreview={previewNote} onSelect={() => selectNote(note.path)} />
+              <NoteRow
+                active={note.path === selected}
+                key={note.path}
+                note={note}
+                onPreview={previewNote}
+                onPreviewEnd={endPreview}
+                onSelect={() => selectNote(note.path)}
+              />
             ))}
             {newParent !== null && (
               <div className="mt-2 flex items-center gap-1 px-1">
@@ -553,18 +583,15 @@ export function KnowledgeView() {
         open={switcherOpen}
       />
 
-      {/* 悬浮预览：停在目录树的一篇上，浮出正文开头 */}
-      {hovered && hoveredPreview && (
-        <div className="fixed z-40" style={{ left: hoveredPreview.x, top: hoveredPreview.y }}>
+      {/* 悬浮预览：停在目录树的一篇上，浮出正文开头；指针一走它就自己收掉。 */}
+      {hoverNote && hoverPos && (
+        <div className="fixed z-40" style={{ left: hoverPos.x, top: hoverPos.y }}>
           <HoverPreview
-            active
-            onOpen={() => {
-              selectNote(hovered.path)
-              setHovered(null)
-              setHoveredPreview(null)
-            }}
-            text={hovered.excerpt}
-            title={hovered.title}
+            active={rowHover}
+            onClose={closePreview}
+            onOpen={() => selectNote(hoverNote.path)}
+            text={hoverNote.excerpt}
+            title={hoverNote.title}
           />
         </div>
       )}

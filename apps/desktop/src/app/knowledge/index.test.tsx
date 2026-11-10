@@ -269,4 +269,49 @@ describe('KnowledgeView', () => {
     const preview = await waitFor(() => screen.getByTestId('note-hover-preview'), { timeout: 1500 })
     expect(preview.textContent).toContain('工程图学')
   })
+
+  it('closes the hover preview once the pointer leaves the row', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    // 树里那一行（预览卡片上也是这个标题，所以限定在树里找）。
+    const row = within(screen.getByTestId('note-tree')).getByText('工程图学')
+    fireEvent.mouseOver(row)
+    await waitFor(() => expect(screen.getByTestId('note-hover-preview')).toBeTruthy(), { timeout: 1500 })
+
+    // 指针移开：它得自己收起来，不许赖在屏上。
+    fireEvent.mouseOut(row)
+    await waitFor(() => expect(screen.queryByTestId('note-hover-preview')).toBeNull(), { timeout: 1500 })
+  })
+
+  it('keeps the preview while the pointer sits on the card, and drops it when the pointer leaves', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    const row = within(screen.getByTestId('note-tree')).getByText('工程图学')
+    fireEvent.mouseOver(row)
+    const preview = await waitFor(() => screen.getByTestId('note-hover-preview'), { timeout: 1500 })
+
+    // 指针从树行挪到卡片上：这一段不许把它晃没了（否则永远点不到）。
+    fireEvent.mouseOut(row)
+    fireEvent.mouseOver(preview)
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(screen.queryByTestId('note-hover-preview')).toBeTruthy()
+
+    // 指针再挪开：它就收。
+    fireEvent.mouseOut(preview)
+    await waitFor(() => expect(screen.queryByTestId('note-hover-preview')).toBeNull(), { timeout: 1500 })
+  })
+
+  it('closes the hover preview with Escape', async () => {
+    renderView()
+    await screen.findByTestId('markdown')
+
+    const row = within(screen.getByTestId('note-tree')).getByText('工程图学')
+    fireEvent.mouseOver(row)
+    await waitFor(() => expect(screen.getByTestId('note-hover-preview')).toBeTruthy(), { timeout: 1500 })
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('note-hover-preview')).toBeNull(), { timeout: 1500 })
+  })
 })
