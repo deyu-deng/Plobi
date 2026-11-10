@@ -227,10 +227,25 @@ def build_models_payload(
     # was offering 58 — and the switches the hub itself calls "connected"
     # changed nothing in the picker.
     if not any(str(row.get("slug", "")).lower() == QUOTA_HUB_SLUG for row in rows):
-        hub_row = _quota_hub_row()
+        hub_row, hub_selectable = _quota_hub_row(ctx.current_provider)
 
         if hub_row is not None:
             rows.append(hub_row)
+    else:
+        hub_selectable = []
+
+    # --- The default selection, when the config expresses none ---
+    # 用户 11-10 拍板：存着的默认模型清空，**让后端自己挑**一条网关那批可选 id 里
+    # 的第一条。挑的是「可选」不是「在等」——等恢复的那条是标灰的，拿它当默认等于
+    # 开局就红。
+    #
+    # 挑的判据是**网关自己的可选清单**，不是目录里那一行带了多少个模型：目录里
+    # 那一行可能是完整清单（连不可选的那些也在），而「可选」才是能真跑起来的那批。
+    effective_model = ctx.current_model
+    if not effective_model and (ctx.current_provider or "").strip().lower() == QUOTA_HUB_SLUG:
+        selectable = hub_selectable or _hub_selectable_ids()
+        if selectable:
+            effective_model = selectable[0]
 
     # --- Deduplicate: remove models from aggregators that overlap with
     # user-defined providers.  When a local proxy (e.g. litellm-proxy)
@@ -290,9 +305,31 @@ def build_models_payload(
 
     return {
         "providers": rows,
-        "model": ctx.current_model,
+        "model": effective_model,
         "provider": ctx.current_provider,
     }
+
+
+def _hub_selectable_ids() -> list[str]:
+    """The ids the hub says are **selectable** right now.
+
+    The hub's own filter (``/v1/models?selectable=1``) is the one that answers
+    "may this actually serve a turn" — a leg whose credential expired or that
+    cannot bring a tool call back is still LISTED in the plain catalogue, and
+    picking one of those is a guaranteed failure.
+
+    Empty when the hub does not answer: an unreachable hub must never be
+    reported as "you have no models".
+    """
+    try:
+        from plobi.agents.registry import aigw_api_key, aigw_base_url
+        from plobi_cli.models import hub_selectable_model_ids
+
+        ids = hub_selectable_model_ids(aigw_api_key(), aigw_base_url())
+    except Exception:  # noqa: BLE001 — a missing piece means "no answer", not a crash
+        return []
+
+    return list(ids or [])
 
 
 #: Plobi 侧上下文预算档（用户 11-08 20:4x 拍板：厂商卖菜单就用厂商的；厂商只有一档
@@ -835,7 +872,7 @@ def _apply_pricing(
                 row["unavailable_models"] = []
 
 
-def _quota_hub_row() -> dict | None:
+def _quota_hub_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
     """The quota hub's own catalog row — the carrier every hub-backed pick joins against.
 
     The hub is not one of the user's configured providers: it is this machine's own
@@ -851,19 +888,20 @@ def _quota_hub_row() -> dict | None:
     payload carried no hub row at all, so the desktop reported "This channel is not
     currently offered by the gateway" for a gateway that was offering 58.
 
-    ``None`` when the hub does not answer: an unreachable hub must never be reported
-    as "you have no models" — the same rule the hub's own frame follows.
+    Returns ``(row, selectable_ids)``.  The two lists are not the same: the row also
+    carries the models that are only *waiting* (greyed out), and the default pick
+    (the "no preference" branch in :func:`build_models_payload`) must not land on
+    one of those.
+
+    ``(None, [])`` when the hub does not answer: an unreachable hub must never be
+    reported as "you have no models" — the same rule the hub's own frame follows.
     """
-    try:
-        from plobi.agents.registry import aigw_api_key, aigw_base_url
-        from plobi_cli.models import hub_selectable_model_ids, hub_waiting_models
+    selectable = _hub_selectable_ids()
 
-        ids = hub_selectable_model_ids(aigw_api_key(), aigw_base_url())
-    except Exception:  # noqa: BLE001 — a missing piece means "no row", not a crash
-        return None
+    if not selectable:
+        return None, []
 
-    if not ids:
-        return None
+    ids = list(selectable)
 
     # The models of a leg that is only *waiting* (a spent bucket that refills on its
     # own) belong in this row too — greyed out, with the time left on them (user,
@@ -891,21 +929,24 @@ def _quota_hub_row() -> dict | None:
     except Exception:  # noqa: BLE001 — the label is cosmetic, the row is not
         name = "订阅额度"
 
-    return {
-        "slug": QUOTA_HUB_SLUG,
-        "name": name,
-        "is_current": False,
-        "is_user_defined": False,
-        "models": list(ids),
-        "total_models": len(ids),
-        "source": "quota-hub",
-        # The hub answered with a usable catalogue, so this row carries a working
-        # credential.  Without it the renderer's own filter drops the row
-        # (``authenticated === false``) and the whole subscription leg disappears
-        # again — the very bug this row exists to fix.
-        "authenticated": True,
-        "auth_type": "api_key",
-    }
+    return (
+        {
+            "slug": QUOTA_HUB_SLUG,
+            "name": name,
+            "is_current": (current_provider or "").strip().lower() == QUOTA_HUB_SLUG,
+            "is_user_defined": False,
+            "models": list(ids),
+            "total_models": len(ids),
+            "source": "quota-hub",
+            # The hub answered with a usable catalogue, so this row carries a working
+            # credential.  Without it the renderer's own filter drops the row
+            # (``authenticated === false``) and the whole subscription leg disappears
+            # again — the very bug this row exists to fix.
+            "authenticated": True,
+            "auth_type": "api_key",
+        },
+        selectable,
+    )
 
 
 def _moa_provider_row(current_provider: str = "") -> dict | None:

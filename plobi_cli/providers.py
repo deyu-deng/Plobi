@@ -422,6 +422,22 @@ TRANSPORT_TO_API_MODE: Dict[str, str] = {
     "bedrock_converse": "bedrock_converse",
 }
 
+#: The same four wire protocols, read the other way round.  A plugin profile
+#: declares ``api_mode``; a :class:`ProviderDef` carries ``transport``.  Both
+#: tables are one map seen from either side — a new protocol has to be added to
+#: both, not to one of them.
+API_MODE_TO_TRANSPORT: Dict[str, str] = {
+    api_mode: transport for transport, api_mode in TRANSPORT_TO_API_MODE.items()
+}
+
+
+#: Names the CONFIG layer owns (``providers:`` / ``custom_providers:`` in
+#: config.yaml).  The plugin registry carries a ``custom`` profile too, but
+#: that one is a TEMPLATE — no endpoint, no key — and answering with it from
+#: the provider lookup would shadow the user's own configured endpoint: the
+#: config branches in :func:`resolve_provider_full` run AFTER this one.
+_CONFIG_LAYER_NAMES: frozenset[str] = frozenset({"custom", "local"})
+
 
 # -- Helper functions ---------------------------------------------------------
 
@@ -435,12 +451,84 @@ def normalize_provider(name: str) -> str:
     return ALIASES.get(key, key)
 
 
+def _plugin_provider_def(canonical: str) -> Optional[ProviderDef]:
+    """ProviderDef for a provider that exists only as a plugin profile.
+
+    The plugin registry (``providers/`` — every ``plugins/model-providers/*``
+    calls ``register_provider``) is the OTHER half of provider identity, and
+    the two halves used to answer differently: ``plobi_cli.auth`` read the
+    plugin registry, this module read only models.dev + the overlays.  A
+    provider that lived in one of them was invisible to the other.
+
+    ``aigw`` — the local quota hub — is the case that bites today: it is
+    registered by ``plugins/model-providers/aigw`` and by nothing else, so
+    ``--provider aigw`` answered *"Unknown provider 'aigw'"* while the model
+    picker's rows all carry that very slug (裁定 45.4 keeps the word off the
+    screen; the routing value is still the hub's).  Every hub-backed pick
+    therefore died at the switch step — the row was there, the pick was not.
+
+    A profile with neither an endpoint nor a key env var is a template, not a
+    provider (``custom`` is the only one), and stays unresolvable on purpose.
+
+    The credential layer is imported FIRST, deliberately: it is the module
+    that turns plugin profiles into a credential registry, and it does that at
+    import time.  Triggering plugin discovery from here would run it half-way
+    — the registry would come up without the plugin providers — so the import
+    order keeps discovery in one well-defined place.
+    """
+    if canonical in _CONFIG_LAYER_NAMES:
+        return None
+
+    try:
+        import plobi_cli.auth  # noqa: F401  — see the docstring: import order matters
+        from providers import get_provider_profile
+    except Exception:  # noqa: BLE001 — a missing plugin layer means "no such provider"
+        return None
+
+    try:
+        profile = get_provider_profile(canonical)
+    except Exception:  # noqa: BLE001 — same: a broken plugin must not break the lookup
+        return None
+
+    if profile is None:
+        return None
+
+    env_vars = tuple(getattr(profile, "env_vars", ()) or ())
+    key_vars = tuple(v for v in env_vars if not (v.endswith("_URL") or v.endswith("_BASE_URL")))
+    url_var = next((v for v in env_vars if v.endswith("_URL") or v.endswith("_BASE_URL")), "")
+    base_url = str(getattr(profile, "base_url", "") or "")
+
+    if not base_url and not key_vars:
+        # A template: nothing to route to, so it is not a provider.
+        return None
+
+    return ProviderDef(
+        id=canonical,
+        name=str(getattr(profile, "display_name", "") or "") or canonical,
+        transport=API_MODE_TO_TRANSPORT.get(
+            str(getattr(profile, "api_mode", "") or ""), "openai_chat"
+        ),
+        api_key_env_vars=key_vars or env_vars,
+        base_url=base_url,
+        base_url_env_var=url_var,
+        # The plugin registry has no aggregator flag.  Saying True here would
+        # put the row through the picker dedup (``is_routing_aggregator``),
+        # which strips models that a user's own proxy happens to share a name
+        # with — for the hub that would gut the subscription leg.
+        is_aggregator=False,
+        auth_type=str(getattr(profile, "auth_type", "") or "api_key"),
+        doc=str(getattr(profile, "description", "") or ""),
+        source="plugin",
+    )
+
+
 def get_provider(name: str) -> Optional[ProviderDef]:
     """Look up a built-in provider by id or alias.
 
     Resolution order:
       1. Plobi overlays (for providers not in models.dev: nous, openai-codex, etc.)
       2. models.dev catalog + Plobi overlay
+      3. the plugin registry (a provider that only a plugin registers)
 
     User-defined providers from config.yaml (``providers:`` / ``custom_providers:``)
     are resolved by :func:`resolve_provider_full`, which layers ``resolve_user_provider``
@@ -501,6 +589,12 @@ def get_provider(name: str) -> Optional[ProviderDef]:
             auth_type=overlay.auth_type,
             source="plobi",
         )
+
+    # Last source: a provider that only a plugin registers.  Everything above
+    # wins, so no provider that already resolved changes its answer.
+    plugin_def = _plugin_provider_def(canonical)
+    if plugin_def is not None:
+        return plugin_def
 
     return None
 
