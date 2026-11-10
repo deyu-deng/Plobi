@@ -119,6 +119,70 @@ export function checkDistBuilt(distDir) {
   return { ok: true }
 }
 
+/**
+ * The magpie binary that ships beside the app (`build/magpie/`).
+ *
+ * Same disease as the backend binaries, one step worse: this one is *downloaded*
+ * by `scripts/fetch-magpie.mjs`, so its absence (offline build, failed fetch) is
+ * invisible until the packaged app offers a vendor layer that cannot start. And
+ * because the pin used to carry only a Windows asset, a macOS build happily
+ * packaged a **Windows PE** named `magpie-cli` — present, plausible, unrunnable.
+ * So this checks three things: it is here, it is big enough to be the real thing,
+ * and its magic bytes belong to the platform we are packaging for.
+ */
+export function requiredMagpieBinary(platform = process.platform) {
+  const name = platform === "win32" ? "magpie-cli.exe" : "magpie-cli"
+  return {
+    rel: join("magpie", name),
+    label: "magpie vendor layer (subscription legs behind the gateway)",
+    build: "npm run fetch:magpie",
+    why: "without it the quota gateway has no vendor providers at all, and every subscription card goes dark",
+  }
+}
+
+/** Do these 4 magic bytes belong to an executable this platform can run? */
+export function magicMatchesPlatform(magic, platform = process.platform) {
+  if (platform === "win32") return magic.startsWith("MZ")
+  if (platform === "linux") return magic === "\x7fELF"
+  if (platform === "darwin") {
+    // Mach-O 64/32, both endiannesses, plus fat/universal binaries.
+    return ["\xcf\xfa\xed\xfe", "\xce\xfa\xed\xfe", "\xfe\xed\xfa\xcf", "\xca\xfe\xba\xbe"].some(m => magic.startsWith(m))
+  }
+  return true
+}
+
+export function checkMagpieBinary(buildDir, platform = process.platform) {
+  const item = requiredMagpieBinary(platform)
+  const full = join(buildDir, item.rel)
+  if (!existsSync(full)) {
+    return { ok: false, problems: [{ ...item, full, reason: "missing" }], error: `magpie binary missing from ${buildDir}: ${item.rel}` }
+  }
+  const size = statSync(full).size
+  const magic = readMagic(full)
+  if (!looksRunnable(magic)) {
+    return {
+      ok: false,
+      problems: [{ ...item, full, reason: `not a runnable binary (magic ${JSON.stringify(magic)})` }],
+      error: `magpie binary at ${full} is not an executable`,
+    }
+  }
+  if (!magicMatchesPlatform(magic, platform)) {
+    return {
+      ok: false,
+      problems: [{ ...item, full, reason: `built for another platform (magic ${JSON.stringify(magic)}, packaging for ${platform})` }],
+      error: `magpie binary at ${full} is not a ${platform} executable — the pin's asset for this platform is wrong`,
+    }
+  }
+  if (size <= 20 * 1024 * 1024) {
+    return {
+      ok: false,
+      problems: [{ ...item, full, reason: `too small to be the real binary (${(size / 1048576).toFixed(1)} MB)` }],
+      error: `magpie binary at ${full} is only ${(size / 1048576).toFixed(1)} MB — the pin fetched the wrong thing`,
+    }
+  }
+  return { ok: true, problems: [] }
+}
+
 function main() {
   const desktopRoot = resolve(import.meta.dirname, "..")
   const distDir = join(desktopRoot, "dist")
@@ -164,10 +228,35 @@ function main() {
   } else {
     console.log("✓ assert-dist-built: backend binary manifest present")
   }
+
+  // And the downloaded one. `npm run build` fetches it before this point; if the
+  // fetch failed (offline, 404, hash mismatch) packaging must not go on, because
+  // the package would look complete and behave like a vendored layer that is
+  // simply absent.
+  const magpie = checkMagpieBinary(join(desktopRoot, "build"), process.platform)
+  if (!magpie.ok) {
+    const skip = process.env.PLOBI_SKIP_MAGPIE_ASSERT === "1"
+    const lines = [
+      "",
+      `${skip ? "!" : "✗"} assert-dist-built: ${magpie.error}`,
+      ...magpie.problems.map(p => `    - ${p.rel}\n      what: ${p.label}\n      why:  ${p.why}\n      fix:  ${p.build}`),
+    ]
+    if (skip) {
+      console.warn(lines.join("\n"))
+      console.warn("  PLOBI_SKIP_MAGPIE_ASSERT=1 is set -- continuing anyway (the package WILL be degraded).\n")
+    } else {
+      console.error(lines.join("\n"))
+      console.error("  Emergency only (ships a knowingly degraded package):")
+      console.error("    PLOBI_SKIP_MAGPIE_ASSERT=1 npm run dist\n")
+      process.exit(1)
+    }
+  } else {
+    console.log("✓ assert-dist-built: magpie binary present and built for this platform")
+  }
 }
 
 if (isMain(import.meta.url)) {
   main()
 }
 
-export default { checkDistBuilt, checkBackendBinaries, requiredBackendBinaries }
+export default { checkDistBuilt, checkBackendBinaries, requiredBackendBinaries, checkMagpieBinary, requiredMagpieBinary }

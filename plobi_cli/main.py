@@ -885,6 +885,24 @@ def _relative_time(ts) -> str:
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
 
 
+def _has_magpie_subscription() -> bool:
+    """Whether a signed-in subscription can answer a message through magpie.
+
+    Kept separate from the env/auth checks below because it answers a different
+    question: not "is there an API key" but "is there an allowance this user
+    already pays for". Any failure (no binary, gateway not up yet, a hung
+    subprocess) means "no" — this is a readiness hint, never a hard gate.
+    """
+    try:
+        from plobi_cli.magpie_import import has_usable_subscription
+    except Exception:
+        return False
+    try:
+        return bool(has_usable_subscription())
+    except Exception:
+        return False
+
+
 def _has_any_provider_configured() -> bool:
     """Check if at least one inference provider is usable."""
     from plobi_cli.config import get_env_path, get_plobi_home, load_config
@@ -979,6 +997,13 @@ def _has_any_provider_configured() -> bool:
         cfg_api_key = (model_cfg.get("api_key") or "").strip()
         if cfg_provider or cfg_base_url or cfg_api_key:
             return True
+
+    # A signed-in subscription (Claude / ChatGPT / Gemini …) managed by the
+    # magpie copy we ship is a way to answer a message just like an API key is,
+    # so `I already pay for Claude` must not land the user in the setup wizard
+    # on every launch.
+    if _has_magpie_subscription():
+        return True
 
     # Check for Claude Code OAuth credentials (~/.claude/.credentials.json)
     # Only count these if Plobi has been explicitly configured — Claude Code

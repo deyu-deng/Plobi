@@ -2737,6 +2737,13 @@ export const zhHant = defineLocale({
     recommended: '建議',
     connected: '已連線',
     featuredPitch: '一個訂閱，300+ 前沿模型 — 執行 Plobi 的建議方式',
+    importExisting: '匯入本機既有的設定',
+    importExistingPitch: '本機已經登入過 Claude、ChatGPT、Gemini，或裝過 magpie？把既有的登入與外掛帶過來，不用重新登入。',
+    importExistingRunning: '正在匯入…',
+    importExistingDone: '已匯入本機設定',
+    importExistingNothing: '本機沒有找到可匯入的設定',
+    importExistingFailed: '匯入失敗，請稍後再試',
+    importExistingNoSubscription: '設定已帶過來，但沒偵測到訂閱額度 —— 可能需要在設定裡重新登入一次。',
     openRouterPitch: '一個金鑰，數百個模型 — 穩定的預設選擇',
     apiKeyOptions: {
       fireworks: { short: '直接模型 API', description: '直接存取 Fireworks AI 託管的模型。' },

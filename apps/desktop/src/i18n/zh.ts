@@ -3060,6 +3060,13 @@ export const zh: Translations = {
     recommended: '推荐',
     connected: '已连接',
     featuredPitch: '一个订阅，300+ 前沿模型 — 运行 Plobi 的推荐方式',
+    importExisting: '导入本机已有的配置',
+    importExistingPitch: '本机已经登录过 Claude、ChatGPT、Gemini，或者装过 magpie？把已有的登录与插件带过来，不用重新登录。',
+    importExistingRunning: '正在导入…',
+    importExistingDone: '已导入本机配置',
+    importExistingNothing: '本机没有找到可导入的配置',
+    importExistingFailed: '导入失败，请稍后再试',
+    importExistingNoSubscription: '配置已带过来，但没检测到订阅额度 —— 可能需要在设置里重新登录一次。',
     openRouterPitch: '一个密钥，数百个模型 — 稳妥的默认选择',
     apiKeyOptions: {
       fireworks: { short: '直接模型 API', description: '直接访问 Fireworks AI 托管的模型。' },

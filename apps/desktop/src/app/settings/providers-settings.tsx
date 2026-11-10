@@ -30,6 +30,7 @@ import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
 import { ConfigCard } from './config-card'
 import { ConnectionControl } from './connection-control'
+import { gatewayRequester, MagpieImportRow } from './magpie-import-row'
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
@@ -982,6 +983,10 @@ export function ProvidersSettings({
 
   return (
     <SettingsContent>
+      {/* 引导页那枚入口的常驻版：当时点了「稍后」的人，后来还会回到这一页。 */}
+      <div className="grid gap-3">
+        <MagpieImportRow onImported={() => void refreshOAuthProviders()} requestGateway={gatewayRequester} />
+      </div>
       <OAuthPicker
         disconnecting={disconnecting}
         onDisconnect={provider => void handleDisconnect(provider)}

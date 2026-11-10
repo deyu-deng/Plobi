@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { MagpieImportRow } from '@/app/settings/magpie-import-row'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Input } from '@/components/ui/input'
@@ -459,6 +460,8 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   return (
     <div className="grid gap-2">
       <div className="grid max-h-[60dvh] gap-2 overflow-y-auto p-1">
+        {/* 本机已经付过钱的人不该再登录一遍：有可导入的配置就先摆出来。 */}
+        <MagpieImportRow onImported={() => void refreshOnboarding(ctx)} requestGateway={ctx.requestGateway} />
         {featured ? <FeaturedProviderRow onSelect={select} provider={featured} /> : null}
         {showRest ? (
           <>

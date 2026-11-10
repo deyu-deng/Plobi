@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
     get: () => ipcRenderer.invoke('plobi:profile:get'),
     set: name => ipcRenderer.invoke('plobi:profile:set', name)
   },
+  // 导入本机配置后让侧车重新读一遍插件/登录（magpie 只在启动时加载）。
+  restartMagpie: () => ipcRenderer.invoke('plobi:magpie:restart'),
   api: request => ipcRenderer.invoke('plobi:api', request),
   notify: payload => ipcRenderer.invoke('plobi:notify', payload),
   requestMicrophoneAccess: () => ipcRenderer.invoke('plobi:requestMicrophoneAccess'),

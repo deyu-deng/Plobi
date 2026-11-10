@@ -29,10 +29,8 @@ still keep stay as the fallback for the vendors they serve.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import shutil
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -44,10 +42,16 @@ from ...base import Account, Capabilities, Credential, Provider, UpstreamError
 
 #: Where magpie keeps its settings; the port is in there. Their docs: the file is
 #: ``~/.config/magpie/settings.json`` — "the same path under the user's folder on
-#: Windows" — and ``$XDG_CONFIG_HOME/magpie`` when that is set.
-SETTINGS_DIR = Path(".config") / "magpie"
+#: Windows" — and ``$XDG_CONFIG_HOME/magpie`` when that is set. Note the
+#: difference: with ``XDG_CONFIG_HOME`` set it is ``magpie`` directly under it,
+#: NOT ``.config/magpie`` under it. Getting this wrong is what made the desktop
+#: side write the port on the data volume while this side read the user's home.
+SETTINGS_DIR = "magpie"
 SETTINGS_FILE = "settings.json"
 DEFAULT_PORT = 3425
+#: The port the desktop pinned for the copy it started. When it is here, it wins:
+#: the sidecar has already made sure nothing else owns that port.
+PORT_ENV = "PLOBI_MAGPIE_PORT"
 #: The key we send. Their docs: "Send `magpie-<your-app-id>` … and every call is
 #: counted as `acme` in Usage, the Requests log and the routing rules".
 DEFAULT_KEY_NAME = "magpie-plobi"
@@ -87,13 +91,25 @@ class MagpieProvider(Provider):
         self._health: tuple[bool, str, float] | None = None
 
     # --- where the gateway is ---------------------------------------------
-    def _settings_path(self) -> Path:
+    def _config_root(self) -> Path:
         xdg = (os.environ.get("XDG_CONFIG_HOME") or "").strip()
-        root = Path(xdg) if xdg else Path.home() / ".config"
-        return root / SETTINGS_DIR / SETTINGS_FILE
+        return Path(xdg) if xdg else Path.home() / ".config"
+
+    def _settings_path(self) -> Path:
+        return self._config_root() / SETTINGS_DIR / SETTINGS_FILE
 
     def _port(self) -> int:
-        """The port magpie listens on, read from its own settings file."""
+        """The port magpie listens on.
+
+        Three sources, most authoritative first: the port the desktop pinned for
+        the copy it started (``PLOBI_MAGPIE_PORT``), then magpie's own settings
+        file — which the desktop writes for us anyway — then their default.
+        """
+        env_port = str(os.environ.get(PORT_ENV) or "").strip()
+        if env_port.isdigit():
+            port = int(env_port)
+            if 0 < port < 65536:
+                return port
         try:
             data = json.loads(self._settings_path().read_text(encoding="utf-8"))
         except Exception:
@@ -264,10 +280,14 @@ class MagpieProvider(Provider):
     def _binary(self) -> str | None:
         """Where magpie's own CLI is, if we can find it.
 
-        Order: the path the desktop handed us (``PLOBI_MAGPIE_BINARY`` — the copy
-        that ships inside the app, so both processes talk to the same one), then
-        what the config says, then the PATH, then our own home. Nothing here
-        guesses a version or downloads anything.
+        Two sources only: the path the desktop handed us (``PLOBI_MAGPIE_BINARY``
+        — the copy that ships inside the app, so both processes talk to the same
+        one), and an explicit ``binary`` in the config.
+
+        Deliberately **no PATH lookup**. Falling back to whatever ``magpie-cli``
+        the machine happens to have installed means running a stranger's copy:
+        its data directory, its port, its providers — and then reporting that
+        state as if it were ours. Missing means missing; the card says so.
         """
         env_path = str(os.environ.get("PLOBI_MAGPIE_BINARY") or "").strip()
         if env_path and Path(env_path).is_file():
@@ -275,18 +295,6 @@ class MagpieProvider(Provider):
         explicit = str(self.config.get("binary") or "").strip()
         if explicit and Path(explicit).is_file():
             return explicit
-        for name in ("magpie-cli", "magpie"):
-            found = shutil.which(name)
-            if found:
-                return found
-        home = os.environ.get("PLOBI_HOME") or ""
-        if home:
-            for candidate in (
-                Path(home) / "magpie" / "magpie-cli.exe",
-                Path(home) / "magpie" / "magpie-cli",
-            ):
-                if candidate.is_file():
-                    return str(candidate)
         return None
 
     async def provider_specs(self) -> list[dict]:
@@ -327,7 +335,7 @@ class MagpieProvider(Provider):
             return cached
         table: dict[str, dict] = {}
         try:
-            import yaml  # noqa: PLC0415 - optional at runtime, present in the venv
+            import yaml  # optional at runtime, present in the venv
 
             raw = yaml.safe_load(PROVIDERS_FILE.read_text(encoding="utf-8")) or {}
             for key, row in (raw.get("providers") or {}).items():
@@ -354,7 +362,7 @@ class MagpieProvider(Provider):
         if not binary:
             return None
         try:
-            import subprocess  # noqa: PLC0415 - sync call in a sync helper
+            import subprocess  # sync call in a sync helper
 
             out = subprocess.run(
                 [binary, *self.PLUGIN_LIST_ARGS],
@@ -376,7 +384,7 @@ class MagpieProvider(Provider):
     def unclaimed_providers(self) -> list[dict]:
         """Providers magpie has that our table does not claim — nobody's business yet.
 
-        They are reported (log line ＋ ``check_magpie_providers.py``) and they get
+        They are reported (log line + ``check_magpie_providers.py``) and they get
         **no card**: a provider we have not named must not show up on the user's
         screen just because somebody upstream added it.
         """
@@ -515,10 +523,10 @@ class MagpieProvider(Provider):
             raise err
         try:
             out = res.json()
-        except Exception:
+        except Exception as err:
             raise UpstreamError(
                 502, "magpie: the gateway answered with a body that is not JSON", retryable=True
-            )
+            ) from err
         if not isinstance(out, dict):
             raise UpstreamError(
                 502, "magpie: the gateway answered with a body that is not an object", retryable=True
@@ -631,7 +639,7 @@ class MagpieProviderLeg(MagpieProvider):
             "name": self.display_name,
             "binary": binary,
             "argv": ["plugin", "login", self.upstream_id],
-            "reason": f"它的登录在 Magpie 那边（{self.display_name}）",
+            "reason": f"它的登录在 Magpie 那边 {self.display_name}",
         }
 
     def signed_in(self) -> tuple[bool, str]:

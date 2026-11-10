@@ -4,7 +4,13 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { checkDistBuilt, checkBackendBinaries, requiredBackendBinaries } from '../scripts/assert-dist-built.mjs'
+import {
+  checkDistBuilt,
+  checkBackendBinaries,
+  checkMagpieBinary,
+  requiredBackendBinaries,
+  requiredMagpieBinary
+} from '../scripts/assert-dist-built.mjs'
 
 function makeDist(extra) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-assert-dist-'))
@@ -145,6 +151,89 @@ test('checkBackendBinaries expects no extension off Windows', () => {
   try {
     assert.equal(checkBackendBinaries(backendDir, 'linux').ok, true)
     assert.match(requiredBackendBinaries('linux')[0].rel, /bin[\\/]chatlog$/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+// The magpie binary is *downloaded* by fetch-magpie.mjs, so nothing upstream of
+// packaging would notice a failed fetch: the package would simply offer a vendor
+// layer that cannot start. And the pin used to carry only a Windows asset, so a
+// macOS build packaged a Windows PE — present, plausible, unrunnable.
+function makeMagpie(platform, write) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-assert-magpie-'))
+  const buildDir = path.join(tempRoot, 'build')
+  const rel = requiredMagpieBinary(platform).rel
+  const full = path.join(buildDir, rel)
+  fs.mkdirSync(path.dirname(full), { recursive: true })
+  if (write) write(full)
+  return { tempRoot, buildDir }
+}
+
+// 21 MB: over the "is this really the 70 MB binary" floor, cheap enough to write.
+function writeFakeMagpie(full, magic) {
+  const buf = Buffer.alloc(21 * 1024 * 1024)
+  buf.write(magic, 0, 'latin1')
+  fs.writeFileSync(full, buf)
+}
+
+test('checkMagpieBinary passes for a Windows build with a real PE beside it', () => {
+  const { tempRoot, buildDir } = makeMagpie('win32', full => writeFakeMagpie(full, 'MZ'))
+  try {
+    assert.deepEqual(checkMagpieBinary(buildDir, 'win32'), { ok: true, problems: [] })
+    assert.match(requiredMagpieBinary('win32').rel, /magpie[\\/]magpie-cli\.exe$/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('checkMagpieBinary fails when the fetch never ran', () => {
+  const { tempRoot, buildDir } = makeMagpie('win32', null)
+  try {
+    const result = checkMagpieBinary(buildDir, 'win32')
+    assert.equal(result.ok, false)
+    assert.equal(result.problems[0].reason, 'missing')
+    assert.match(result.error, /magpie binary missing/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('checkMagpieBinary fails a macOS build that downloaded the Windows asset', () => {
+  // The exact bug the per-platform pin exists to stop: the file is named for
+  // this platform (`magpie-cli`) but its bytes are a Windows PE.
+  const { tempRoot, buildDir } = makeMagpie('darwin', full => writeFakeMagpie(full, 'MZ'))
+  try {
+    const result = checkMagpieBinary(buildDir, 'darwin')
+    assert.equal(result.ok, false)
+    assert.match(result.problems[0].reason, /built for another platform/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('checkMagpieBinary fails a truncated download instead of trusting its name', () => {
+  const { tempRoot, buildDir } = makeMagpie('linux', full => writeFakeMagpie(full, '\x7fELF'))
+  try {
+    // 21 MB is the pass case; a 4 MB stub is what a cut-off fetch leaves behind.
+    // It keeps the header (so it is not caught earlier as "not an executable")
+    // and is caught only by the size floor.
+    const stub = Buffer.alloc(4 * 1024 * 1024)
+    stub.write('\x7fELF', 0, 'latin1')
+    fs.writeFileSync(path.join(buildDir, requiredMagpieBinary('linux').rel), stub)
+    const result = checkMagpieBinary(buildDir, 'linux')
+    assert.equal(result.ok, false)
+    assert.match(result.problems[0].reason, /too small/)
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('checkMagpieBinary accepts the macOS Mach-O build with no extension', () => {
+  const { tempRoot, buildDir } = makeMagpie('darwin', full => writeFakeMagpie(full, '\xcf\xfa\xed\xfe'))
+  try {
+    assert.deepEqual(checkMagpieBinary(buildDir, 'darwin'), { ok: true, problems: [] })
+    assert.match(requiredMagpieBinary('darwin').rel, /magpie[\\/]magpie-cli$/)
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true })
   }

@@ -46,11 +46,23 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def read_pin(path: Path = PIN_PATH) -> dict[str, Any]:
-    """The one pin: which version of magpie we ship, and its hash."""
+    """The one pin: which version of magpie we ship, and its hash per platform.
+
+    ``assets`` carries one line per platform (``windows-x64``, ``darwin-arm64``,
+    …). Every line must name an asset and its sha256 — a platform we ship without
+    a hash is a platform we install unverified, which is the thing this file
+    exists to prevent.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
-    for key in ("repo", "version", "asset", "sha256", "url"):
+    for key in ("repo", "version", "assets"):
         if not data.get(key):
             raise ValueError(f"pin is missing {key!r}: {path}")
+    assets = data.get("assets")
+    if not isinstance(assets, dict) or not assets:
+        raise ValueError(f"pin has no platform assets: {path}")
+    for platform, entry in assets.items():
+        if not isinstance(entry, dict) or not entry.get("asset") or not entry.get("sha256"):
+            raise ValueError(f"pin's {platform!r} line is missing asset/sha256: {path}")
     return data
 
 
@@ -104,23 +116,36 @@ def digest_of(asset: dict[str, Any]) -> str:
 def bump(pin: dict[str, Any], release: dict[str, Any]) -> dict[str, Any]:
     """The pin as it should read once we ship the release the API just described.
 
-    Raises when the release does not carry the hash we need: a binary without a
-    hash cannot be checked at install time, and an unverified binary is exactly
-    what the pin exists to prevent.
+    Every platform line is bumped together — one release, one version, all the
+    binaries — and the whole bump is refused when *any* line cannot be verified.
+    A release that carries five platforms but no hash for the sixth would leave us
+    shipping one unverified binary, which is exactly what the pin prevents.
     """
-    asset = asset_of(release, str(pin.get("asset") or ""))
-    if asset is None:
-        raise ValueError(f"the release has no asset named {pin.get('asset')!r}")
-    sha = digest_of(asset)
-    if not _HEX64.match(sha):
-        raise ValueError(f"the release asset carries no usable sha256 ({asset.get('digest')!r})")
     version = str(release.get("tag_name") or "").strip()
     if not version:
         raise ValueError("the release carries no tag_name")
+
+    bumped: dict[str, Any] = {}
+    for platform, entry in dict(pin.get("assets") or {}).items():
+        name = str(entry.get("asset") or "")
+        asset = asset_of(release, name)
+        if asset is None:
+            raise ValueError(f"the release has no asset named {name!r} ({platform})")
+        sha = digest_of(asset)
+        if not _HEX64.match(sha):
+            raise ValueError(f"the {platform} asset carries no usable sha256 ({asset.get('digest')!r})")
+        bumped[platform] = {
+            "asset": name,
+            "sha256": sha,
+            "url": str(
+                asset.get("browser_download_url")
+                or f"https://github.com/{pin['repo']}/releases/download/{version}/{name}"
+            ),
+        }
+
     out = dict(pin)
     out["version"] = version
-    out["sha256"] = sha
-    out["url"] = str(asset.get("browser_download_url") or f"https://github.com/{pin['repo']}/releases/download/{version}/{pin['asset']}")
+    out["assets"] = bumped
     out["checked_at"] = str(release.get("published_at") or "")[:10] or pin.get("checked_at", "")
     return out
 
@@ -163,7 +188,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"refusing to bump the pin: {exc}", file=sys.stderr)
             return EXIT_CANNOT_TELL
         pin_path.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(f"pinned {out['version']} (sha256 {out['sha256'][:12]}…)")
+        hashes = ", ".join(f"{p}={a['sha256'][:12]}…" for p, a in out["assets"].items())
+        print(f"pinned {out['version']} ({hashes})")
         return EXIT_UP_TO_DATE
 
     if newer:

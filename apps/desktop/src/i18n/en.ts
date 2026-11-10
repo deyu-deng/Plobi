@@ -2936,6 +2936,13 @@ export const en: Translations = {
     recommended: 'Recommended',
     connected: 'Connected',
     featuredPitch: 'One subscription, 300+ frontier models — the recommended way to run Plobi',
+    importExisting: 'Import what this machine already has',
+    importExistingPitch: 'Already signed in to Claude, ChatGPT or Gemini here — or running your own magpie? Bring those sign-ins and plugins over instead of signing in again.',
+    importExistingRunning: 'Importing…',
+    importExistingDone: 'Imported your local configuration',
+    importExistingNothing: 'Nothing to import was found on this machine',
+    importExistingFailed: 'Import failed — please try again',
+    importExistingNoSubscription: 'Configuration came over, but no subscription allowance was found. You may need to sign in once in Settings.',
     openRouterPitch: 'One key, hundreds of models — a solid default',
     apiKeyOptions: {
       fireworks: {

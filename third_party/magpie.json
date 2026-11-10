@@ -3,9 +3,38 @@
   "repo": "yetone/magpie",
   "license": "MIT",
   "version": "v0.1.3403",
-  "asset": "magpie-cli-windows-amd64.exe",
-  "sha256": "6e65b7d3f2a282e6c60b059016c7001607142bf96aa4b068214b75e2965fc121",
-  "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-windows-amd64.exe",
+  "assets": {
+    "windows-x64": {
+      "asset": "magpie-cli-windows-amd64.exe",
+      "sha256": "6e65b7d3f2a282e6c60b059016c7001607142bf96aa4b068214b75e2965fc121",
+      "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-windows-amd64.exe"
+    },
+    "windows-arm64": {
+      "asset": "magpie-cli-windows-arm64.exe",
+      "sha256": "4ad022a0be1610169fe77e4885e3301c3bc380ddf1741ca0ffd08f45eeada47e",
+      "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-windows-arm64.exe"
+    },
+    "darwin-x64": {
+      "asset": "magpie-cli-darwin-amd64",
+      "sha256": "c77bdc6f5f8687900e6993eee4dfe7161628b2f0a632a70c6d36b5f68c54909b",
+      "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-darwin-amd64"
+    },
+    "darwin-arm64": {
+      "asset": "magpie-cli-darwin-arm64",
+      "sha256": "af8e5d21b788c43002256e41f8fdd7b0f99e19f9da7d63456ec316cf9e8bbe8c",
+      "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-darwin-arm64"
+    },
+    "linux-x64": {
+      "asset": "magpie-cli-linux-amd64",
+      "sha256": "e3ff8fa268754aa27f73ffb355c9940e184fc161b31ba416e110d19f23ef6fff",
+      "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-linux-amd64"
+    },
+    "linux-arm64": {
+      "asset": "magpie-cli-linux-arm64",
+      "sha256": "23053dd89865c9060280013ad46819202fd90e87db3b966a90b2d1963c2a520a",
+      "url": "https://github.com/yetone/magpie/releases/download/v0.1.3403/magpie-cli-linux-arm64"
+    }
+  },
   "checked_at": "2026-11-09",
-  "note": "magpie 是我们的厂商那一层（MIT）。这个文件是**唯一一份钉子**：发行包里的本体、打包脚本、机器人，都从这儿读版本与 sha256。机器人（scripts/plobi/check_magpie_release.py + .github/workflows/magpie-release-watch.yml）盯着上游发布，有新版就开 PR 升这里——不自动合、不自动发版。"
+  "note": "magpie 是我们的厂商那一层（MIT）。这个文件是**唯一一份钉子**：发行包里的本体、打包脚本、机器人，都从这儿读版本与 sha256。每个平台一行（windows/darwin/linux × x64/arm64），按 process.platform + process.arch 取自己那一行——曾经只有 windows 一行，而取件脚本只按平台改名不改地址，mac 上打出来的是一个 Windows PE。机器人（scripts/plobi/check_magpie_release.py + .github/workflows/magpie-release-watch.yml）盯着上游发布，有新版就把所有平台一起升这里——不自动合、不自动发版。"
 }

@@ -2809,6 +2809,13 @@ export const ja = defineLocale({
     recommended: '推奨',
     connected: '接続済み',
     featuredPitch: '1 つのサブスクリプションで 300 以上の最先端モデル — Plobi を実行するための推奨方法',
+    importExisting: 'このパソコンにある設定を取り込む',
+    importExistingPitch: 'このパソコンで Claude / ChatGPT / Gemini にログイン済み、または magpie を自分で入れている場合は、そのログインとプラグインを引き継げます。',
+    importExistingRunning: '取り込み中…',
+    importExistingDone: 'このパソコンの設定を取り込みました',
+    importExistingNothing: '取り込める設定が見つかりませんでした',
+    importExistingFailed: '取り込みに失敗しました。もう一度お試しください',
+    importExistingNoSubscription: '設定は引き継ぎましたが、サブスクリプションの残量が見つかりません。設定でもう一度ログインが必要かもしれません。',
     openRouterPitch: '1 つのキーで数百のモデル — 堅実なデフォルト',
     apiKeyOptions: {
       fireworks: {

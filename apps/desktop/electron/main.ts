@@ -43,7 +43,7 @@ import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './
 import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
-import { ensureMagpieSidecar, stopMagpieSidecar } from './magpie-sidecar'
+import { ensureMagpieSidecar, magpieEnv, restartMagpieSidecar, stopMagpieSidecar } from './magpie-sidecar'
 import {
   buildHiddenHandoffLauncher,
   buildWindowsRestartHandoff,
@@ -10435,8 +10435,8 @@ async function startAigwGateway(
   // magpie is the vendor layer behind the subscription legs: the gateway reads
   // its provider list and its model catalogue, so it has to be up before we ask
   // it anything — and the gateway must talk to the same copy we start.
-  const magpie = ensureMagpieSidecar(PLOBI_HOME)
-  const env = { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), QUOTA_HUB_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...(magpie.binary ? { PLOBI_MAGPIE_BINARY: magpie.binary } : {}), ...extraEnv }
+  const magpie = await ensureMagpieSidecar(PLOBI_HOME)
+  const env = { ...magpieEnv(PLOBI_HOME, magpie.port), PLOBI_HOME, ...resolveSystemProxyEnv(), QUOTA_HUB_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...(magpie.binary ? { PLOBI_MAGPIE_BINARY: magpie.binary } : {}), ...extraEnv }
   const baseUrl = `http://127.0.0.1:${opts.port}/v1`
 
   let child: ReturnType<typeof spawn>
@@ -11268,6 +11268,17 @@ ipcMain.handle('plobi:profile:set', async (_event, name) => {
   // 进程不用动、窗口不用 reload——顺带把「切一下分身就整窗闪一下」也去掉了。
   // `active-profile.json` 现在纯粹是 renderer 侧的 UI 状态（跨重启记住选中）。
   return { profile: next }
+})
+
+// 导入本机配置后重启侧车：magpie 只在启动时读插件与登录信息，不重启的话
+// 用户走完引导面对的仍是一个没有 provider 的网关，看起来就像导入失败了。
+ipcMain.handle('plobi:magpie:restart', async () => {
+  try {
+    const sidecar = await restartMagpieSidecar(PLOBI_HOME)
+    return { started: sidecar.started, port: sidecar.port, reason: sidecar.reason ?? null }
+  } catch (err) {
+    return { started: false, port: null, reason: String(err) }
+  }
 })
 
 ipcMain.on('plobi:previewShortcutActive', (_event, active) => {

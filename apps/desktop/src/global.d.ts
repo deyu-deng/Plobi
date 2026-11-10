@@ -25,6 +25,10 @@ declare global {
       // reaper spares it while its chat is active.
       touchBackend: (profile?: string | null) => Promise<{ ok: boolean }>
       getGatewayWsUrl: (profile?: null | string) => Promise<string>
+      // Restart the bundled magpie sidecar so it re-reads plugins and sign-ins.
+      // Used after importing this machine's existing configuration: magpie only
+      // reads them at boot, so without this the import looks like it did nothing.
+      restartMagpie: () => Promise<{ port: null | number; reason: null | string; started: boolean }>
       // Open (or focus) a standalone OS window for a single chat session so
       // the user can work with multiple chats side by side. Returns ok:false
       // with an error code when the sessionId is empty/invalid. `watch` opens

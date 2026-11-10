@@ -2504,6 +2504,13 @@ export interface Translations {
     recommended: string
     connected: string
     featuredPitch: string
+    importExisting: string
+    importExistingPitch: string
+    importExistingRunning: string
+    importExistingDone: string
+    importExistingNothing: string
+    importExistingFailed: string
+    importExistingNoSubscription: string
     openRouterPitch: string
     apiKeyOptions: Record<string, { short: string; description: string }>
     backToSignIn: string
