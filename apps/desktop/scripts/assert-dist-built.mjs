@@ -13,6 +13,7 @@
 // inherits it. It fails loud and early instead of shipping a broken bundle.
 // See issues #39484 (renderer blank page) and #41327 / #39472 (dashboard 404).
 
+import { createHash } from "node:crypto"
 import { existsSync, statSync, readdirSync, openSync, readSync, closeSync, readFileSync } from "fs"
 import { join, resolve } from "path"
 import { isMain } from "./utils.mjs"
@@ -211,6 +212,116 @@ export function checkMagpieBinary(buildDir, platform = process.platform) {
   return { ok: true, problems: [] }
 }
 
+/**
+ * The magpie **plugin set** that ships beside the app (`build/magpie-plugins/`).
+ *
+ * The binary is the vendor layer; the plugins are the vendor adapters it loads.
+ * Without them a fresh install has a magpie with **no providers at all** —
+ * measured 2026-11-10: the host boots on an empty data directory, publishes an
+ * empty provider roster, and every one of the 22 subscription cards reads
+ * "not installed" with no login method to point at.
+ *
+ * So this checks four things: the set is here, its manifest names the plugins,
+ * every tarball it names is present **and hashes to what the pin says**, and
+ * the roster it ships carries no per-machine login state (a checked-in file is
+ * not a trusted one, and somebody's sign-in state has no business inside an
+ * installer).
+ */
+export function requiredMagpiePluginSet() {
+  return {
+    rel: join("magpie-plugins", "version.json"),
+    label: "magpie plugin set (the vendor adapters behind the subscription cards)",
+    build: "npm run fetch:magpie-plugins",
+    why: "without it a fresh install has no vendor providers at all, and every subscription card reads 'not installed'",
+  }
+}
+
+/** Per-machine state that must never travel inside the installer. */
+const ROSTER_STATE_KEYS = ["signedIn", "authType", "accountId", "accounts"]
+
+export function checkMagpiePluginSet(buildDir) {
+  const item = requiredMagpiePluginSet()
+  const problems = []
+
+  const markerFile = join(buildDir, item.rel)
+  if (!existsSync(markerFile)) {
+    return {
+      ok: false,
+      problems: [{ ...item, full: markerFile, reason: "missing" }],
+      error: `magpie plugin set missing from ${buildDir}: ${item.rel}`,
+    }
+  }
+
+  let manifest = null
+  try {
+    manifest = JSON.parse(readFileSync(join(buildDir, "magpie-plugins", "manifest.json"), "utf8"))
+  } catch {
+    return {
+      ok: false,
+      problems: [{ ...item, full: markerFile, reason: "manifest.json missing or unreadable" }],
+      error: `magpie plugin set in ${buildDir} has no manifest.json — the runtime cannot tell which plugins it ships`,
+    }
+  }
+
+  const plugins = (manifest && manifest.plugins) || []
+  if (!Array.isArray(plugins) || plugins.length === 0) {
+    return {
+      ok: false,
+      problems: [{ ...item, full: markerFile, reason: "the manifest lists no plugins" }],
+      error: `magpie plugin set in ${buildDir} lists no plugins — the fetch script did not fill it`,
+    }
+  }
+
+  for (const entry of plugins) {
+    const tarball = join(buildDir, "magpie-plugins", "plugins", "dist", entry.tarball || "")
+    if (!entry.tarball || !existsSync(tarball)) {
+      problems.push({ ...item, full: tarball, reason: `${entry.spec}: tarball missing` })
+      continue
+    }
+    const digest = createHash("sha256").update(readFileSync(tarball)).digest("hex")
+    if (entry.sha256 && digest.toLowerCase() !== String(entry.sha256).toLowerCase()) {
+      problems.push({ ...item, full: tarball, reason: `${entry.spec}: tarball does not match the pin's sha256` })
+    }
+  }
+
+  const rosterFile = join(buildDir, "magpie-plugins", "plugin-providers.json")
+  if (!existsSync(rosterFile)) {
+    problems.push({ ...item, full: rosterFile, reason: "the provider roster is missing" })
+  } else {
+    let roster = null
+    try {
+      roster = JSON.parse(readFileSync(rosterFile, "utf8"))
+    } catch {
+      roster = null
+    }
+    if (!Array.isArray(roster) || roster.length === 0) {
+      problems.push({ ...item, full: rosterFile, reason: "the provider roster is empty or unreadable" })
+    } else {
+      for (const row of roster) {
+        const leaked = ROSTER_STATE_KEYS.filter(key => key in (row || {}))
+        if (leaked.length) {
+          problems.push({
+            ...item,
+            full: rosterFile,
+            reason: `the roster carries per-machine state (${leaked.join(", ")}) — that is somebody's sign-in state`,
+          })
+          break
+        }
+      }
+    }
+  }
+
+  if (problems.length) {
+    return {
+      ok: false,
+      problems,
+      error: `magpie plugin set in ${buildDir} is incomplete (${problems.length} problem(s))`,
+    }
+  }
+
+  return { ok: true, problems: [] }
+}
+
 function main() {
   const desktopRoot = resolve(import.meta.dirname, "..")
   const distDir = join(desktopRoot, "dist")
@@ -281,10 +392,33 @@ function main() {
   } else {
     console.log("✓ assert-dist-built: magpie binary present and built for this platform")
   }
+
+  // And the plugin set beside it: without the vendor adapters the binary is a
+  // vendor layer with no providers at all.
+  const pluginSet = checkMagpiePluginSet(join(desktopRoot, "build"))
+  if (!pluginSet.ok) {
+    const skip = process.env.PLOBI_SKIP_MAGPIE_ASSERT === "1"
+    const lines = [
+      "",
+      `${skip ? "!" : "✗"} assert-dist-built: ${pluginSet.error}`,
+      ...pluginSet.problems.map(p => `    - ${p.rel}\n      what: ${p.label}\n      why:  ${p.why}\n      fix:  ${p.build}`),
+    ]
+    if (skip) {
+      console.warn(lines.join("\n"))
+      console.warn("  PLOBI_SKIP_MAGPIE_ASSERT=1 is set -- continuing anyway (the package WILL be degraded).\n")
+    } else {
+      console.error(lines.join("\n"))
+      console.error("  Emergency only (ships a knowingly degraded package):")
+      console.error("    PLOBI_SKIP_MAGPIE_ASSERT=1 npm run dist\n")
+      process.exit(1)
+    }
+  } else {
+    console.log("✓ assert-dist-built: magpie plugin set present, hashed and free of sign-in state")
+  }
 }
 
 if (isMain(import.meta.url)) {
   main()
 }
 
-export default { checkDistBuilt, checkBackendBinaries, requiredBackendBinaries, checkMagpieBinary, requiredMagpieBinary }
+export default { checkDistBuilt, checkBackendBinaries, requiredBackendBinaries, checkMagpieBinary, requiredMagpieBinary, checkMagpiePluginSet, requiredMagpiePluginSet }

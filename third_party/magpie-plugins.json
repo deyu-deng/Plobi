@@ -1,0 +1,162 @@
+{
+ "name": "magpie-plugins",
+ "set_version": "2026.11.10-1",
+ "magpie": "v0.1.3403",
+ "plugins": [
+  {
+   "spec": "@magpie-community/opencode-workbuddy-auth",
+   "version": "0.2.26",
+   "sha256": "e89f81cb155632ebfb6bfc2cae480dd54d5764e09be0ae021e8139912fc1354c",
+   "source": "npm",
+   "tarball": "opencode-workbuddy-auth-0.2.26.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-zen-free-auth",
+   "version": "0.1.27",
+   "sha256": "ec399d3068976797367151351d24432cec9ee446df63157ff4eff42cf7ef7d09",
+   "source": "npm",
+   "tarball": "opencode-zen-free-auth-0.1.27.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-qoder-auth",
+   "version": "0.2.65",
+   "sha256": "61f82670281e9ee0e45600c5c5a14caa541b8bce50d6faa712a7e923edebce1b",
+   "source": "npm",
+   "tarball": "opencode-qoder-auth-0.2.65.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-kiro-auth",
+   "version": "0.1.36",
+   "sha256": "ae801b7e8e500ab6f168688e42900c04cce4dcf0f36bc557d102b43282fec4c1",
+   "source": "npm",
+   "tarball": "opencode-kiro-auth-0.1.36.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-cline-auth",
+   "version": "0.1.14",
+   "sha256": "68152cf615bc2c2feda906553b7158e77cf19182a90082a70c5243f78e2e2159",
+   "source": "npm",
+   "tarball": "opencode-cline-auth-0.1.14.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-copilot-auth",
+   "version": "0.1.2",
+   "sha256": "2cb64b123ef760b3495522120d58fcc88ad8dc1853d9a9b81b31446f61d1661f",
+   "source": "marketplace",
+   "tarball": "magpie-community-opencode-copilot-auth-0.1.2.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-cursor-auth",
+   "version": "0.2.44",
+   "sha256": "29244dfbd56196d2924f236d1aebca1fe430efb50f54ef2385bb12d74cd34021",
+   "source": "npm",
+   "tarball": "opencode-cursor-auth-0.2.44.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-agy-cli-auth",
+   "version": "0.1.3",
+   "sha256": "34582297d6ed14c8f484ab3b9612bd56437b7b56b8c3fd9fa0e7e3dffa580849",
+   "source": "marketplace",
+   "tarball": "magpie-community-opencode-agy-cli-auth-0.1.3.tgz"
+  },
+  {
+   "spec": "@magpie-community/middleware-antigravity-cloak",
+   "version": "0.1.2",
+   "sha256": "b8c669cc21b917c5cf64e09101d7be30edb3376593bc60f6e842f35427c9b3e1",
+   "source": "marketplace",
+   "tarball": "magpie-community-middleware-antigravity-cloak-0.1.2.tgz"
+  },
+  {
+   "spec": "opencode-gemini-auth",
+   "version": "2.0.1",
+   "sha256": "cd226d0a4944e12baefcc14e6de9878eae6559fd96ca4ea86781264c144d1096",
+   "source": "npm",
+   "tarball": "opencode-gemini-auth-2.0.1.tgz"
+  },
+  {
+   "spec": "codex",
+   "version": "0.2.3",
+   "sha256": "faca1b1da265d4373d235d4fb31657c16fb22e55fa40df99829405bd8536c0de",
+   "source": "npm",
+   "tarball": "codex-0.2.3.tgz",
+   "off": true
+  },
+  {
+   "spec": "claude-code",
+   "version": "1.0.0",
+   "sha256": "7339ec791b68e7266733e6d213cca122b61a5d1fce764fbf66864eb5e0df4cd3",
+   "source": "npm",
+   "tarball": "claude-code-1.0.0.tgz",
+   "off": true
+  },
+  {
+   "spec": "@magpie-community/opencode-devin-auth",
+   "version": "0.1.37",
+   "sha256": "56ffdd59238277774318140de097f13c7b85db60b29c4e55697f2a3614c30e75",
+   "source": "npm",
+   "tarball": "opencode-devin-auth-0.1.37.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-grok-auth",
+   "version": "0.2.6",
+   "sha256": "492c0c53409cd41a6bc30f7d29bad32245c9e00031ad832408be1c641589ad8b",
+   "source": "npm",
+   "tarball": "opencode-grok-auth-0.2.6.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-trae-auth",
+   "version": "0.2.33",
+   "sha256": "8935126c7dc4f3a94664b3a9916383396bd157d9b36eb0688090b44e5cbe6cbb",
+   "source": "npm",
+   "tarball": "opencode-trae-auth-0.2.33.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-mimo-auth",
+   "version": "0.1.10",
+   "sha256": "e17141579a4edb25148beb560b7dfbf6f8dfe37cbd754eb7cac8e97f20d9bf1c",
+   "source": "npm",
+   "tarball": "opencode-mimo-auth-0.1.10.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-minimax-auth",
+   "version": "0.2.3",
+   "sha256": "787ae5505193fe657e527c112e310711ce9a1a8137aafdc242877a9ff86e4dad",
+   "source": "npm",
+   "tarball": "opencode-minimax-auth-0.2.3.tgz"
+  },
+  {
+   "spec": "@magpie-community/agent-kimi-desktop",
+   "version": "0.1.6",
+   "sha256": "83020afdcbc35686f44f4be76f56a7a390ba82c1dd98c7fc3415c115e7181e6c",
+   "source": "marketplace",
+   "tarball": "magpie-community-agent-kimi-desktop-0.1.6.tgz",
+   "off": true
+  },
+  {
+   "spec": "@magpie-community/opencode-joycode-auth",
+   "version": "0.2.7",
+   "sha256": "978e6d8a205d96e305d7d1fe51fdb62b35771630aa8fddbe9fe512cb742a6ea6",
+   "source": "marketplace",
+   "tarball": "magpie-community-opencode-joycode-auth-0.2.7.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-tabbit-auth",
+   "version": "0.1.3",
+   "sha256": "9beb7a996451a3b8358b498bd12a87a3e368f5a695c480778896e5ce37211d06",
+   "source": "marketplace",
+   "tarball": "magpie-community-opencode-tabbit-auth-0.1.3.tgz"
+  },
+  {
+   "spec": "@magpie-community/opencode-zcode-auth",
+   "version": "0.1.57",
+   "sha256": "13f5e693a7e4caec5c7ba2823048299968b2e0679c4ccfcb6793e953b03f0026",
+   "source": "npm",
+   "tarball": "opencode-zcode-auth-0.1.57.tgz"
+  }
+ ],
+ "roster": {
+  "file": "roster.json",
+  "sha256": "469f84195f5efbab5e13231c5049bdb7fdcb83f8ba7216d158a39742c40019c9"
+ },
+ "note": "插件集这一份钉子：`third_party/magpie.json` 钉的是本体（magpie-cli），这里钉的是**它那 21 个插件**——版本＋sha256＋tarball。每一份 tarball 都**进仓**（third_party/magpie-plugins/tarballs/），所以打包不联网；`source` 记的是**出处**（15 个来自公开 npm，6 个来自他们自己的市场），不是取件的地方——要换版本由 `scripts/plobi/refresh_magpie_plugins.py` 从一台活着的 magpie 重生成。`set_version` 是插件集自己的版本，与 magpie 的版本**分开演进**：本体可以单独更新（随包那份是地板，运行期 magpie 更新后插件集不回落），插件集自己涨版本时也不必等本体。`roster` 是他们的 provider 名册，**洗掉了登录态**（signedIn／accountId／accounts 那些是某台机器的状态，不许随包）。"
+}

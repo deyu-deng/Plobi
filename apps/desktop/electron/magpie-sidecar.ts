@@ -40,7 +40,8 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { clearCurrent, markBad, resolveUpdatedBuild } from './magpie-channel'
+import { clearCurrent, markBad, packagedBuild, resolveUpdatedBuild } from './magpie-channel'
+import { seedMagpiePlugins } from './magpie-plugins'
 
 /**
  * Where this module lives. The electron main is bundled as **ESM**
@@ -355,6 +356,25 @@ export async function ensureMagpieSidecar(plobiHome: string): Promise<MagpieSide
   const updated = resolveUpdatedBuild(plobiHome)
 
   fs.mkdirSync(magpieDataDir(plobiHome), { recursive: true })
+
+  // The plugin set, before magpie boots: a machine with no plugins has no
+  // providers at all (measured 2026-11-10 — the host publishes an empty
+  // roster), and every subscription card then reads "not installed". The rule
+  // is one line and it is the same rule the binary follows: **seed only into a
+  // data directory that has no plugin set, never over one that does.** A magpie
+  // that was updated on its own keeps the plugins it manages.
+  const runningVersion = updated?.version || packagedBuild()?.version || ''
+  try {
+    const seeded = seedMagpiePlugins(plobiHome, { runningMagpieVersion: runningVersion })
+    if (seeded.seeded) {
+      logLine(plobiHome, `magpie: ${seeded.reason}`)
+    }
+  } catch (err) {
+    // A missing plugin set is a degraded vendor layer, not a reason to refuse
+    // to start: magpie still boots, and the user can install the plugins from
+    // its own marketplace.
+    logLine(plobiHome, `magpie: could not seed the plugin set: ${String(err)}`)
+  }
 
   // 1. A port we used before, when it is still ours to take.
   let port = await (async () => {
