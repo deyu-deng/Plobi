@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageSearchShell } from '@/app/page-search-shell'
+import { PageLoader } from '@/components/page-loader'
 import { Pane, PaneMain, PaneShell } from '@/components/pane-shell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,17 +10,16 @@ import { Codicon } from '@/components/ui/codicon'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Textarea } from '@/components/ui/textarea'
-import { PageLoader } from '@/components/page-loader'
 import { translateNow, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { notifyError } from '@/store/notifications'
 
 import { deleteNote, fetchNote, fetchNotes, NOTES_PREFIX, renameNote, saveNote } from './api'
 import type { NoteMeta } from './api'
+import { NoteEditor } from './editor'
 import { HoverPreview } from './hover-preview'
+import { jumpToAnchor, makeLinkIndex, NoteMarkdown } from './note-markdown'
 import { noteBaseDir } from './note-media'
-import { NoteMarkdown, jumpToAnchor, makeLinkIndex } from './note-markdown'
 import { buildNoteTree, noteTemplate, parseOutline } from './outline'
 import type { NoteTreeNode } from './outline'
 import { NoteSwitcher, useNoteSwitcherEscape, useNoteSwitcherHotkey } from './switcher'
@@ -203,6 +203,8 @@ export function KnowledgeView() {
   const [base, setBase] = useState('')
   const [isNew, setIsNew] = useState(false)
   const [saving, setSaving] = useState(false)
+  /** 保存的同步闸：`saving` 是 state，两下 `Ctrl+S` 会一起穿过去。 */
+  const savingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [newParent, setNewParent] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
@@ -431,7 +433,13 @@ export function KnowledgeView() {
   }
 
   async function save() {
-    if (!selected || saving) return
+    // ⚠️ 两个入口会同时按保存：编辑器自己的 `Ctrl+S` 键位，**和**窗口那一层的
+    // 全局 `Ctrl+S`（焦点在右栏大纲时也要能存，Obsidian 就是全局的）。
+    // `saving` 是 state，异步更新 ⇒ 两下会一起穿过去 ⇒ 这里用一个**同步**的闸。
+    if (!selected || savingRef.current) {
+      return
+    }
+    savingRef.current = true
     setSaving(true)
     setError(null)
     try {
@@ -444,6 +452,7 @@ export function KnowledgeView() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -547,18 +556,12 @@ export function KnowledgeView() {
   const noteBody = (() => {
     if (editing && view === 'source') {
       return (
-        <Textarea
-          aria-label={v.source}
-          className="min-h-0 flex-1 resize-none font-mono text-[0.78rem] leading-6"
-          onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => {
-            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-              event.preventDefault()
-              saveRef.current()
-            }
-          }}
-          spellCheck={false}
-          value={draft}
+        <NoteEditor
+          initialValue={draft}
+          key={selected}
+          label={v.source}
+          onChange={setDraft}
+          onSave={() => void save()}
         />
       )
     }

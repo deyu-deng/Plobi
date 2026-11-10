@@ -1,4 +1,4 @@
-import { type ComponentProps, type ElementType, type FC, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, createContext, type ElementType, type FC, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import remarkGfm from 'remark-gfm'
 import { Streamdown } from 'streamdown'
 
@@ -72,9 +72,12 @@ const NOTE_REMARK_PLUGINS = [remarkGfm, remarkNoteImages, remarkWikilink]
 function tagged<T extends keyof typeof TAG_CLASSES>(Tag: T) {
   const Component = (({ className, ...rest }: ComponentProps<T>) => {
     const Element = Tag as ElementType
+
     return <Element className={cn(TAG_CLASSES[Tag], className)} {...rest} />
   }) as FC<ComponentProps<T>>
+
   Component.displayName = `NoteMd.${Tag}`
+
   return Component
 }
 
@@ -123,14 +126,16 @@ interface WikiLinkPayload {
 
 /** 从 href 里解出 wikilink 的元数据；不是 wikilink 就返回 null。 */
 function parseWikiHref(href: string | undefined): WikiLinkPayload | null {
-  if (!href || !href.startsWith(WIKI_SCHEME)) return null
+  if (!href || !href.startsWith(WIKI_SCHEME)) {return null}
 
   const body = href.slice(WIKI_SCHEME.length)
   const separator = body.indexOf(':')
-  if (separator < 0) return null
+
+  if (separator < 0) {return null}
 
   const kind = body.slice(0, separator)
-  if (kind !== 'note' && kind !== 'anchor' && kind !== 'embed') return null
+
+  if (kind !== 'note' && kind !== 'anchor' && kind !== 'embed') {return null}
 
   const rest = body.slice(separator + 1)
   const anchorAt = rest.indexOf('#')
@@ -145,8 +150,18 @@ export { wikiHref } from './remark-wikilink'
 
 const LINK_BASE =
   'mx-0.5 cursor-pointer rounded px-0.5 align-baseline underline decoration-dotted underline-offset-4 transition-colors'
+
 const LINK_LIVE = 'text-(--ui-text-secondary) decoration-(--ui-text-secondary)/40 hover:text-foreground hover:decoration-foreground/60'
 const LINK_BROKEN = 'cursor-default text-(--ui-text-tertiary) decoration-(--ui-text-tertiary)/35'
+
+/**
+ * 这一篇的「图片落点上下文」：库根与笔记目录。
+ *
+ * 走 context 而不是闭包：渲染组件是 `useMemo` 里造的，闭包会把外面那两格
+ * 变成「外层作用域的值」，eslint 的 react-hooks 规则不认它们当依赖
+ * （而且真出问题时也难查）。context 一给，两边都干净。
+ */
+const NoteAssetContext = createContext<{ assetRoot?: string; baseDir?: string }>({})
 
 export interface NoteMarkdownProps {
   className?: string
@@ -178,11 +193,12 @@ export function NoteMarkdown({
 
   useEffect(() => {
     const root = ref.current
-    if (!root) return
+
+    if (!root) {return}
     // Streamdown 内部按块渲染，靠组件调用顺序猜 id 不稳；渲染完按 DOM 顺序对齐，
     // 与 parseOutline 用的同一份解析结果逐一对上。
     root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6').forEach((element, i) => {
-      if (outline[i]) element.id = outline[i].id
+      if (outline[i]) {element.id = outline[i].id}
     })
   }, [clean, outline])
 
@@ -197,6 +213,7 @@ export function NoteMarkdown({
      * 读不到就**照实说**：落回一枚带文件名的占位，不拿碎图标糊过去。
      */
     const NoteImage = ({ alt, target, width }: { alt?: string; target: string; width?: string }) => {
+      const { assetRoot, baseDir } = useContext(NoteAssetContext)
       const [dataUrl, setDataUrl] = useState<string | null>(null)
       const [missing, setMissing] = useState(false)
       const remote = isRemoteAsset(target)
@@ -215,7 +232,8 @@ export function NoteMarkdown({
         setMissing(false)
 
         void loadNoteAssetDataUrl(assetRoot, baseDir, target).then(url => {
-          if (!alive) return
+          if (!alive) {return}
+
           if (url) {
             setDataUrl(url)
           } else {
@@ -280,6 +298,7 @@ export function NoteMarkdown({
             </a>
           )
         }
+
         return (
           <ExternalLink className={cn('decoration-current/20', className)} href={href} showExternalIcon={false}>
             {children}
@@ -355,32 +374,39 @@ export function NoteMarkdown({
       thead: tagged('thead'),
       ul: tagged('ul')
     }
-  }, [assetRoot, baseDir, linkIndex, onOpenAnchor, onOpenNote])
+  }, [linkIndex, onOpenAnchor, onOpenNote])
+
+  const assets = useMemo(() => ({ assetRoot, baseDir }), [assetRoot, baseDir])
 
   return (
-    <div ref={ref} className={cn('max-w-full text-foreground wrap-anywhere', className)}>
-      <Streamdown
-        components={components}
-        controls={false}
-        mode="static"
-        parseIncompleteMarkdown={false}
-        plugins={NOTE_PLUGINS}
-        remarkPlugins={NOTE_REMARK_PLUGINS}
-      >
-        {clean}
-      </Streamdown>
+    <div className={cn('max-w-full text-foreground wrap-anywhere', className)} ref={ref}>
+      <NoteAssetContext.Provider value={assets}>
+        <Streamdown
+          components={components}
+          controls={false}
+          mode="static"
+          parseIncompleteMarkdown={false}
+          plugins={NOTE_PLUGINS}
+          remarkPlugins={NOTE_REMARK_PLUGINS}
+        >
+          {clean}
+        </Streamdown>
+      </NoteAssetContext.Provider>
     </div>
   )
 }
 
 /** 从渲染好的容器里找锚点并滚过去（同文件 wikilink 的落点）。 */
 export function jumpToAnchor(container: HTMLElement | null, anchor: string): boolean {
-  if (!container) return false
+  if (!container) {return false}
   const found = findAnchor(container, anchor)
-  if (!found) return false
+
+  if (!found) {return false}
   const element = document.getElementById(found.id)
-  if (!element) return false
+
+  if (!element) {return false}
   element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
   return true
 }
 

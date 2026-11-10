@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,6 +23,7 @@ const deleteNote = vi.fn()
 
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api')
+
   return {
     ...actual,
     deleteNote: (...args: unknown[]) => deleteNote(...args),
@@ -36,6 +37,7 @@ vi.mock('./api', async () => {
 vi.mock('./note-markdown', async () => {
   const actual = await vi.importActual<typeof import('./note-markdown')>('./note-markdown')
   const { stripFrontmatter } = await vi.importActual<typeof import('./outline')>('./outline')
+
   return {
     ...actual,
     // 只把渲染换掉，解析与跳转的接线（makeLinkIndex / jumpToAnchor）留真的——
@@ -44,7 +46,22 @@ vi.mock('./note-markdown', async () => {
   }
 })
 
+import { noteEditorView } from './editor'
+
 import { KnowledgeView } from './index'
+
+/**
+ * 编辑器是 CodeMirror（不是 textarea）⇒ 改正文要走编辑器实例。
+ * jsdom 里没有真键盘，测的是**改动 → onChange → 保存**这条链路。
+ */
+async function findEditor() {
+  const host = await screen.findByTestId('note-editor')
+  const view = noteEditorView(host)
+
+  if (!view) {throw new Error('编辑器还没挂上')}
+
+  return view
+}
 
 const CHAPTERS =
   '---\ntitle: 微积分笔记\n---\n\n## 第1章 极限\n\n极限与连续。\n\n### 1.1 数列极限\n\n定义。\n\n## 第2章 导数\n\n变化率。\n\n```md\n# 这是代码块里的示例，不该进目录\n```\n'
@@ -84,6 +101,7 @@ const LIBRARY: NotesLibrary = {
 
 function renderView() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/knowledge']}>
@@ -113,6 +131,7 @@ beforeEach(() => {
   })
   fetchNote.mockImplementation((path: string) => {
     const note = [NOTE, DRAWING].find(row => row.path === path) as NoteMeta
+
     return Promise.resolve({
       path,
       fsPath: `X:/${path}`,
@@ -186,9 +205,11 @@ describe('KnowledgeView', () => {
     await screen.findByTestId('markdown')
     fireEvent.click(screen.getByText('Edit'))
 
-    const editor = await screen.findByLabelText('Source')
-    expect((editor as HTMLTextAreaElement).value).toContain('## 第1章 极限')
-    fireEvent.change(editor, { target: { value: `${CHAPTERS}\n新写的一段。` } })
+    const view = await findEditor()
+    expect(view.state.doc.toString()).toContain('## 第1章 极限')
+    act(() => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: `${CHAPTERS}\n新写的一段。` } })
+    })
     fireEvent.click(screen.getByText('Save'))
 
     await waitFor(() =>
@@ -204,8 +225,10 @@ describe('KnowledgeView', () => {
     renderView()
     await screen.findByTestId('markdown')
     fireEvent.click(screen.getByText('Edit'))
-    const editor = await screen.findByLabelText('Source')
-    fireEvent.change(editor, { target: { value: '## 新章节\n\n预览内容' } })
+    const view = await findEditor()
+    act(() => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '## 新章节\n\n预览内容' } })
+    })
     fireEvent.click(screen.getByText('Preview'))
     expect((await screen.findByTestId('markdown')).textContent).toContain('预览内容')
   })
@@ -218,8 +241,8 @@ describe('KnowledgeView', () => {
     fireEvent.change(nameInput, { target: { value: '线性代数' } })
     fireEvent.click(screen.getByText('Create'))
 
-    const editor = await screen.findByLabelText('Source')
-    expect((editor as HTMLTextAreaElement).value).toContain('belongs: []')
+    const view = await findEditor()
+    expect(view.state.doc.toString()).toContain('belongs: []')
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() =>
       expect(saveNote).toHaveBeenCalledWith(
