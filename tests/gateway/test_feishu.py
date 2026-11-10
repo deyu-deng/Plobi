@@ -12,13 +12,41 @@ from types import SimpleNamespace
 from typing import Dict
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+
 from gateway.platforms.base import ProcessingOutcome
+from plobi_constants import reset_plobi_home_override, set_plobi_home_override
 
 try:
     import lark_oapi
     _HAS_LARK_OAPI = True
 except ImportError:
     _HAS_LARK_OAPI = False
+
+
+@pytest.fixture(autouse=True)
+def _scoped_plobi_home(tmp_path):
+    """每个测试一个**临时家**。
+
+    为什么需要这一格（11-10 量过：这档 117 条红，全是同一句
+    ``RuntimeError: Could not determine home directory``）：
+
+    * 这一档有 114 处 ``@patch.dict(os.environ, …, clear=True)``——它要的是
+      「配置只从环境来」，于是把**整个环境**清掉；``clear=True`` 连
+      ``LOCALAPPDATA``／``USERPROFILE`` 一起带走，
+      ``get_plobi_home()`` 于是落到 ``Path.home()``（``plobi_constants._get_platform_default_plobi_home``）
+      那条 ``RuntimeError`` 上。114 处逐个改不现实，也改不完（下一处新增的又会漏）。
+    * 改用**上下文局部**的家覆盖（``plobi_constants.set_plobi_home_override``）：
+      它不在 ``os.environ`` 里 ⇒ 清空环境带不走它 ⇒ 一处夹具盖住全档 108 处构造。
+    * 顺带把第二件事也做对：适配器构造时会把去重状态文件落到
+      ``get_plobi_home() / "feishu_seen_message_ids.json"``——不给临时家的话，
+      这一档会往**真产品家**里写测试产物。
+    """
+    token = set_plobi_home_override(str(tmp_path))
+    try:
+        yield
+    finally:
+        reset_plobi_home_override(token)
 
 
 class _FakeRequestContent:
@@ -5120,3 +5148,21 @@ class TestChatLockEviction(unittest.TestCase):
                 held.release()
 
         asyncio.run(_run())
+
+
+@patch.dict(os.environ, {
+    "FEISHU_APP_ID": "cli_app",
+    "FEISHU_APP_SECRET": "secret_app",
+}, clear=True)
+def test_the_adapter_needs_no_machine_home(tmp_path):
+    """家目录找不到时也不许抛 —— 11-10 那 117 条红就是这一件事。
+
+    反向钉法：把环境整个清掉（机器的家因此不存在），适配器照样构造得出来，
+    而且它的去重状态文件落在**这一条测试的临时家**里，不落真产品家。
+    """
+    from gateway.config import PlatformConfig
+    from plugins.platforms.feishu.adapter import FeishuAdapter
+
+    adapter = FeishuAdapter(PlatformConfig())
+
+    assert adapter._dedup_state_path.parent == tmp_path
