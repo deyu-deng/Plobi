@@ -4429,35 +4429,68 @@ class TestNewEndpoints:
         resp = self.client.get("/api/tools/toolsets")
 
         assert resp.status_code == 200
-        assert resp.json() == [
-            {
-                "name": "web",
-                "label": "Web Search & Scraping",
-                "description": "web_search, web_extract",
-                "enabled": True,
-                "available": True,
-                "configured": False,
-                "tools": ["web_extract", "web_search"],
-            },
-            {
-                "name": "skills",
-                "label": "Skills",
-                "description": "list, view, manage",
-                "enabled": True,
-                "available": True,
-                "configured": True,
-                "tools": ["skill_view", "skills_list"],
-            },
-            {
-                "name": "memory",
-                "label": "Memory",
-                "description": "persistent memory across sessions",
-                "enabled": False,
-                "available": False,
-                "configured": True,
-                "tools": ["memory_read"],
-            },
-        ]
+        rows = {r["name"]: r for r in resp.json()}
+        assert list(rows) == ["web", "skills", "memory"]
+        # `available` is the toolset's own gate answer, NOT the switch's
+        # mirror (11-10: the old field answered "is the switch on" and the
+        # screen called that "ready"). So it must not be asserted against a
+        # hardcoded value — that value is the live probe's, and it differs
+        # per machine (ddgs installed or not). What is asserted here is the
+        # shape: `enabled` stays the switch, `configured` stays the key
+        # column, and `available` is a boolean of its own.
+        assert rows["web"]["enabled"] is True
+        assert rows["web"]["configured"] is False
+        assert rows["web"]["tools"] == ["web_extract", "web_search"]
+        assert isinstance(rows["web"]["available"], bool)
+        assert rows["skills"]["enabled"] is True
+        assert rows["skills"]["configured"] is True
+        assert rows["memory"]["enabled"] is False
+        assert rows["memory"]["configured"] is True
+        assert isinstance(rows["memory"]["available"], bool)
+
+    def test_toolsets_available_is_the_probe_answer_not_the_switch_mirror(self, monkeypatch):
+        """`available` answers "would these tools reach the model", so a
+        toolset whose switch is off can still be available — and one whose
+        switch is on can still be unavailable (11-10 实测：开关开着、凭据闸
+        没过 ⇒ Agent 手上没有这个工具，屏上却写着就绪)."""
+        import plobi_cli.tools_config as tools_config
+        import plobi_cli.web_server as web_server
+        import toolsets as toolsets_module
+
+        monkeypatch.setattr(
+            tools_config,
+            "_get_effective_configurable_toolsets",
+            lambda: [("web", "🔍 Web Search & Scraping", "web_search, web_extract")],
+        )
+        monkeypatch.setattr(
+            tools_config,
+            "_get_platform_tools",
+            lambda config, platform, include_default_mcp_servers=False: {"web"},
+        )
+        monkeypatch.setattr(tools_config, "_toolset_has_keys", lambda ts_key, config=None: True)
+        monkeypatch.setattr(
+            toolsets_module,
+            "resolve_toolset",
+            lambda name: {"web": ["web_search", "web_extract"]}[name],
+        )
+        monkeypatch.setattr(web_server, "load_config", lambda: {"platform_toolsets": {"cli": ["web"]}})
+        # The switch is on, but this toolset's own gate says no.
+        monkeypatch.setattr(web_server, "_toolset_really_available", lambda ts_key: False)
+
+        row = {r["name"]: r for r in self.client.get("/api/tools/toolsets").json()}["web"]
+        assert row["enabled"] is True
+        assert row["available"] is False
+
+        # The switch is off, but the gate says yes.
+        monkeypatch.setattr(web_server, "_toolset_really_available", lambda ts_key: True)
+        monkeypatch.setattr(
+            tools_config,
+            "_get_platform_tools",
+            lambda config, platform, include_default_mcp_servers=False: set(),
+        )
+        row = {r["name"]: r for r in self.client.get("/api/tools/toolsets").json()}["web"]
+        assert row["enabled"] is False
+        assert row["available"] is True
 
     def test_toggle_toolset_enable_disable(self):
         """PUT /api/tools/toolsets/{name} round-trips through config and the list view."""

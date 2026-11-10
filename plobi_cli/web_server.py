@@ -14287,12 +14287,14 @@ def _toolset_really_available(ts_key: str) -> bool:
 
         mapping = registry.get_tool_to_toolset_map()
         if not any(toolset == ts_key for toolset in mapping.values()):
-            # Nothing registers under this key (a plugin-provided toolset whose
-            # tools register elsewhere) — there is no gate to run.
-            return True
+            # Nothing registers under this key. That is not "no gate to run,
+            # so assume fine" — it means this toolset contributes no tool to
+            # the model's table at all, so nothing can reach the model
+            # (11-10 实测：memory 那一档注册表里没有工具 ⇒ available=False）。
+            return False
         return bool(registry.is_toolset_available(ts_key))
     except Exception:
-        return True
+        return False
 
 
 @app.get("/api/tools/toolsets")
