@@ -52,6 +52,14 @@ from plobi_cli.cli_output import (  # noqa: E402 — late import block
     prompt as _prompt,
 )
 
+# The tool categories owned by the memory provider (the human side:
+# notes / diary / dossiers, and the brain's own pages).  Their tools are
+# injected by the provider at agent init rather than registered in the
+# tool registry, so they are not part of any platform composite's tool
+# universe.  Kept in sync with
+# ``agent/memory_manager.py::_PROVIDER_TOOL_TOOLSET``.
+_PROVIDER_TOOL_CATEGORIES = ("surface", "mind")
+
 # ─── Toolset Registry ─────────────────────────────────────────────────────────
 
 # Toolsets shown in the configurator, grouped for display.
@@ -72,6 +80,7 @@ CONFIGURABLE_TOOLSETS = [
     ("skills",          "📚 Skills",                    "list, view, manage"),
     ("todo",            "📋 Task Planning",             "todo"),
     ("memory",          "💾 Memory",                    "persistent memory across sessions"),
+    ("surface",         "📓 Notes, Diary & Dossiers",   "the human side: notes, diary, dossiers"),
     ("context_engine",  "🧩 Context Engine",            "runtime tools from the active context engine"),
     ("session_search",  "🔎 Session Search",            "search past conversations"),
     ("clarify",         "❓ Clarifying Questions",      "clarify"),
@@ -1700,6 +1709,36 @@ def _get_platform_tools(
     plugin_ts_keys = _get_plugin_toolset_keys()
     platform_default_keys = {p["default_toolset"] for p in PLATFORMS.values()}
 
+    # Read the global hard-suppression list up front: the provider tool
+    # categories below need it (a category the user globally disabled must
+    # not be re-enabled by the default-on path).
+    _agent_cfg = config.get("agent") or {}
+    agent_cfg_disabled = [str(ts) for ts in (_agent_cfg.get("disabled_toolsets") or [])]
+
+    # Which provider categories did the user explicitly turn off?  A
+    # provider category is absent from ``platform_toolsets.<platform>``
+    # both when the user never saved the Tools page and when the user
+    # saved it with that row unchecked.  ``known_provider_toolsets``
+    # records which provider categories were ON the last time the user
+    # saved the page, so "never saved" (default ON) and "saved it off"
+    # (leave it off) are distinguishable.  Same shape as
+    # ``known_plugin_toolsets`` right below.
+    _known_provider = config.get("known_provider_toolsets") or {}
+    if not isinstance(_known_provider, dict):
+        _known_provider = {}
+    _provider_saved = _known_provider.get(platform)
+    _provider_saved = set(_provider_saved) if isinstance(_provider_saved, (list, tuple, set)) else None
+    _saved_platform_list = platform_toolsets.get(platform)
+    _saved_platform_list = (
+        {str(ts) for ts in _saved_platform_list}
+        if isinstance(_saved_platform_list, list) else None
+    )
+    _provider_known_off = set()
+    if _provider_saved is not None and _saved_platform_list is not None:
+        for _pc in _PROVIDER_TOOL_CATEGORIES:
+            if _pc in _provider_saved and _pc not in _saved_platform_list:
+                _provider_known_off.add(_pc)
+
     # If the saved list contains any configurable keys directly, the user
     # has explicitly configured this platform — use direct membership.
     # This avoids the subset-inference bug where composite toolsets like
@@ -1815,6 +1854,30 @@ def _get_platform_tools(
         )
         enabled_toolsets -= default_off
 
+    # Provider tool categories (the human side: notes / diary / dossiers).
+    # These tools are NOT registry tools — they are injected by the memory
+    # provider at agent init — so the recovery loop below can never see them
+    # (its test is "tools ⊆ platform composite tool universe", and the
+    # provider tools are not in that universe).  Before this, the
+    # ``surface`` category existed in ``toolsets.py`` but was unreachable:
+    # the desktop session's enabled_toolsets never contained it, so the
+    # per-category gate in agent/memory_manager.py filtered all seven
+    # note/diary/dossier tools out of the agent's tool table (WP-SURFACE-
+    # TOOLSET-GATE; the same disease WP-TOOLSET-INBOUND-2 fixed for the
+    # ``mind`` category).  The category is enabled here unless the user
+    # turned it off, so the gate can be closed as well as opened.
+    for _provider_cat in _PROVIDER_TOOL_CATEGORIES:
+        if _provider_cat in enabled_toolsets:
+            continue
+        if _provider_cat in agent_cfg_disabled:
+            continue
+        # The user saved this platform's Tools page and left this
+        # category off ⇒ that is a decision, not a missing entry.  Only
+        # default it ON while the user has never saved the page.
+        if _provider_cat in _provider_known_off:
+            continue
+        enabled_toolsets.add(_provider_cat)
+
     # Recover non-configurable platform toolsets (e.g. discord, feishu_doc,
     # feishu_drive).  These are part of the platform's default composite but
     # absent from CONFIGURABLE_TOOLSETS, so they can't appear in the TUI
@@ -1928,8 +1991,7 @@ def _get_platform_tools(
     # globally suppress specific toolsets (e.g. "memory") across all
     # platforms without per-platform toolset configuration.  This runs
     # last so it overrides everything above.
-    agent_cfg = config.get("agent") or {}
-    disabled_toolsets = agent_cfg.get("disabled_toolsets") or []
+    disabled_toolsets = agent_cfg_disabled
     if disabled_toolsets:
         disabled_set = {str(ts) for ts in disabled_toolsets}
         enabled_toolsets -= disabled_set
@@ -2008,6 +2070,17 @@ def _save_platform_tools(config: dict, platform: str, enabled_toolset_keys: Set[
 
     # Merge preserved entries with new enabled toolsets
     config["platform_toolsets"][platform] = sorted(enabled_toolset_keys | preserved_entries)
+
+    # Record that the user has expressed a preference about the provider
+    # categories for this platform — whether they left them ON or OFF.
+    # The on/off state itself lives in ``platform_toolsets.<platform>``;
+    # this key only records "the user has had a say".  Recording only the
+    # ON ones would make "saved it off" indistinguishable from "never
+    # saved", and the category would spring back to ON (WP-SURFACE-
+    # TOOLSET-GATE).
+    if not isinstance(config.get("known_provider_toolsets"), dict):
+        config["known_provider_toolsets"] = {}
+    config["known_provider_toolsets"][platform] = sorted(_PROVIDER_TOOL_CATEGORIES)
 
     # Track which plugin toolsets are "known" for this platform so we can
     # distinguish "new plugin, default enabled" from "user disabled it".

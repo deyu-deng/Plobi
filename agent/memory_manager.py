@@ -113,6 +113,8 @@ def resolve_memory_provider_name(configured: object) -> str:
 _PROVIDER_TOOL_TOOLSET = {
     "note_read": "surface",
     "note_write": "surface",
+    "note_rename": "surface",
+    "note_delete": "surface",
     "diary_read": "surface",
     "diary_write": "surface",
     "dossier_read": "surface",

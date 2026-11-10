@@ -271,6 +271,8 @@ TOOLSETS = {
         "tools": [
             "note_read",
             "note_write",
+            "note_rename",
+            "note_delete",
             "diary_read",
             "diary_write",
             "dossier_read",
