@@ -235,9 +235,12 @@ class TestTheLedgerItself:
         同名覆盖一次，设置面那句"这条信源还活着吗"就变成"到点没"——两个不同的问题共用
         一个键，是这一层最容易犯也最难查的错。
         """
-        fake_sources(SourceSpec("wechat", CAPS, category="site"))
+        # 假样本不许借用真信源的名字：`fake_sources` 收尾会 `unregister` 自己登记的 id，
+        # 借了 `wechat` 就等于把真那条从注册表里删掉——同进程里余下的测试全会报
+        # `UnknownSource: 'wechat'`（11-11 那批红灯就是这么来的：单跑绿、整批红）。
+        fake_sources(SourceSpec("half_built_site", CAPS, category="site"))
 
-        env = cadence.cadence_env("wechat")
+        env = cadence.cadence_env("half_built_site")
 
         assert "state" not in env and env["cadence_state"] == "per_round"
 

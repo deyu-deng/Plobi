@@ -440,3 +440,32 @@ class TestCommonLayerCarriesNoSourceNameBranch:
             if self.FORBIDDEN.search(line)
         ]
         assert hits == [], f"公共层按信源名字分支了（判据 4 要的是读能力位）：{hits}"
+
+
+class TestABuiltinSourceCannotBeWithdrawn:
+    """随代码走的那几条撤不掉——这一格是 11-11 那批红灯的护栏。
+
+    病状：有别的用例拿真信源的名字当假样本（`fake_sources(SourceSpec("wechat", ...))`），
+    收尾时 `unregister("wechat")` 一撤，同进程余下的用例全报 `UnknownSource: 'wechat'`。
+    单跑绿、整批红，而报错的地方离原因隔了好几个文件。根子在"撤了不会回来"：内置包的
+    顶层 `register()` 只在第一次 import 时跑过一次，`refresh_discovery()` 也不会把模块
+    重新执行一遍。所以这里当场拒绝，不让一次误撤静默留到进程结束。
+    """
+
+    def test_withdrawing_a_builtin_one_is_refused(self) -> None:
+        builtin = sorted(registry._BUILTIN_SOURCE_IDS)
+
+        if not builtin:
+            pytest.skip("这个环境里没有内置信源可撤")
+
+        with pytest.raises(ValueError, match="内置信源"):
+            registry.unregister(builtin[0])
+
+        assert builtin[0] in registry.source_ids(), "拒绝之后它必须还在表里"
+
+    def test_the_builtin_ids_are_read_from_the_packages_not_hardcoded(self) -> None:
+        """内置那一档是发现时从各包顶层 `SPEC` 抄的，不是注册表里第二次手写的名单。"""
+        discovered = set(registry.source_ids()) - set(registry.external_source_ids())
+
+        assert set(registry._BUILTIN_SOURCE_IDS) <= discovered, "内置那一档必须都在表里"
+        assert set(registry._BUILTIN_SOURCE_IDS) & set(registry.external_source_ids()) == set()

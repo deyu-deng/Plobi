@@ -427,11 +427,20 @@ def register(spec: SourceSpec, *, replace: bool = False) -> SourceSpec:
 
 
 def unregister(source_id: str) -> None:
-    """测试与"这一档撤了"的出口——不存在就报错，不静默。"""
+    """测试与"这一档撤了"的出口——不存在就报错，不静默。
+
+    内置信源**撤不掉**：它们随代码走，撤下去也不会再回来（见 `_BUILTIN_SOURCE_IDS`），
+    于是"少了一条"会一直少到进程重启，而报错的地方离真正的原因隔了几十个用例。
+    要停用一条内置信源请走 `sources.yaml` 的 `enabled`，那是配置，不是删表。
+    """
     ensure_discovered()
 
     if source_id not in _SPECS:
         raise UnknownSource(source_id)
+    if source_id in _BUILTIN_SOURCE_IDS:
+        raise ValueError(
+            f"{source_id} 是随代码走的内置信源，撤不掉；要停用请把它在 sources.yaml 里关掉"
+        )
     del _SPECS[source_id]
 
 
@@ -591,6 +600,12 @@ class CollectorDiscoveryError(RuntimeError):
 
 _discovered = False
 
+#: 随代码走的那几条（发现时从各包顶层 ``SPEC`` 抄下来的 id）。与 `_EXTERNAL_SOURCE_IDS`
+#: 相对：那边是"装上来 / 卸下去"的，这边是"撤了也回不来"的——内置包的顶层 ``register()``
+#: 只在第一次 ``import`` 时跑过一次，事后 `unregister()` 抹掉，`refresh_discovery()` 也不会
+#: 把它变回来（模块在 `sys.modules` 里躺着，不会被重新执行）。
+_BUILTIN_SOURCE_IDS: set[str] = set()
+
 
 def _discover_builtin() -> list[tuple[str, str]]:
     """导入每个内置采集器包，让它顶层的 ``SPEC`` 把自己登记进来。"""
@@ -612,6 +627,13 @@ def _discover_builtin() -> list[tuple[str, str]]:
             # 不是采集器包（公共层的一个子包）。**不报错**：发现认的是"有没有 SPEC"，
             # 不是"目录长得像不像"。
             continue
+
+        declared = getattr(module, BUILTIN_SPEC_ATTRIBUTE, None)
+        builtin_id = getattr(declared, "source_id", None)
+        if builtin_id:
+            # 记下"这条是随代码走的"。`unregister()` 拿这个集合当护栏：内置那条撤不掉，
+            # 撤了它也不会在下一次发现里回来（模块已缓存，`import` 不会重跑顶层 `register`）。
+            _BUILTIN_SOURCE_IDS.add(str(builtin_id))
 
     return failures
 
