@@ -1,14 +1,40 @@
-"""Regression tests for dashboard profile-scoped skills/toolsets management.
+"""Dashboard skills / toolsets —— 一张全局名单 ＋ 每 Agent 一份黑名单。
 
-"Set as active" on the Profiles page only flips the sticky ``active_profile``
-file (future CLI/gateway runs) — it never retargets the running dashboard
-process. Before the ``profile`` parameter existed, toggling a skill after
-"activating" a profile silently wrote into the dashboard's own config.
-These tests pin the new behavior: reads and writes land in the REQUESTED
-profile's PLOBI_HOME, and the dashboard's own profile stays untouched.
+**这一族的世界换过一次**（裁 42／166／178 乙案／192 ＋ 用户 10-25「不保留了」）：
+家目录退休之后**不再有「一家一个分身」的家**。技能资产只有**一张全局名单**
+（顶层家那一份 ``skills/``），「这个 Agent 关掉了哪些」落在**名册那一行的黑名单**
+（``AgentEntry.disabled_skills`` / ``disabled_toolsets``）——全局表一个字不动，
+行黑名单只做减法（2026-10-19 起的形状；见 ``web_server._agent_tool_row``）。
+
+这一档钉的就是这个形状：
+
+  ① 名单是**全局**的：带 profile 的读与不带 profile 的读看到**同一批技能**；
+  ② 开关是**每 Agent** 的：带 profile 的写落**名册那一行**，全局表不动；
+  ③ 作用域认不出 ⇒ 404，且**不落盘**；
+  ④ 作用域用完，模块全局变量必须还原。
+
+（改这一档之前，它钉的是老世界：每个 profile 一个分身家、技能清单各看各的、
+开关只改分身那一份——那套形状 10-24 搬走、10-27 删净，早就不存在了。）
 """
 import pytest
 import yaml
+
+
+def _seed_agent(home, name):
+    """名册上落一行 Agent —— 身份＝名册那一行（裁 192），不是家目录。"""
+    from plobi.agents.registry import AgentEntry, AgentRegistry
+
+    registry = AgentRegistry(home / "plobi" / "projects.yaml")
+    registry.upsert(AgentEntry(name=name, role="l2_project"))
+    registry.save()
+    return registry
+
+
+def _roster_entry(home, name):
+    """名册上那一行（重新读盘，不拿缓存）。"""
+    from plobi.agents.registry import AgentRegistry
+
+    return AgentRegistry.load(home / "plobi" / "projects.yaml").get(name)
 
 
 def _write_skill(skills_dir, name, description="test skill"):
@@ -21,28 +47,19 @@ def _write_skill(skills_dir, name, description="test skill"):
 
 
 @pytest.fixture
-def isolated_profiles(tmp_path, monkeypatch, _isolate_plobi_home):
-    """Isolated default home + one named profile, each with its own skills."""
+def shared_home(tmp_path, monkeypatch, _isolate_plobi_home):
+    """**一份**共享家（配置 / 技能只有一份）＋ 名册上一行 Agent。"""
     from plobi_constants import get_plobi_home
-    from plobi_cli import agent_identity as profiles
 
-    default_home = get_plobi_home()
-    profiles_root = default_home / "profiles"
-    worker_home = profiles_root / "worker_alpha"
-    for home in (default_home, worker_home):
-        (home / "skills").mkdir(parents=True, exist_ok=True)
-        (home / "config.yaml").write_text("{}\n", encoding="utf-8")
-
-    _write_skill(default_home / "skills", "dashboard-skill")
-    _write_skill(worker_home / "skills", "worker-skill")
-
-    monkeypatch.setattr(profiles, "_get_default_plobi_home", lambda: default_home)
-    monkeypatch.setattr(profiles, "_get_profiles_root", lambda: profiles_root)
-    return {"default": default_home, "worker_alpha": worker_home}
+    home = get_plobi_home()
+    (home / "skills").mkdir(parents=True, exist_ok=True)
+    (home / "config.yaml").write_text("{}\n", encoding="utf-8")
+    _seed_agent(home, "worker_alpha")
+    return {"home": home}
 
 
 @pytest.fixture
-def client(monkeypatch, isolated_profiles):
+def client(monkeypatch, shared_home):
     try:
         from starlette.testclient import TestClient
     except ImportError:
@@ -62,24 +79,49 @@ def _load_cfg(home):
     return yaml.safe_load((home / "config.yaml").read_text()) or {}
 
 
-class TestProfileScopedSkills:
-    def test_skills_list_scopes_to_requested_profile(self, client, isolated_profiles):
-        resp = client.get("/api/skills", params={"profile": "worker_alpha"})
-        assert resp.status_code == 200
-        names = {s["name"] for s in resp.json()}
-        assert "worker-skill" in names
-        assert "dashboard-skill" not in names
+def _skills_by_name(payload):
+    return {s["name"]: s for s in payload}
+
+
+class TestSkillsRead:
+    def test_skills_list_with_profile_is_the_same_global_list(
+        self, client, shared_home
+    ):
+        """① 名单是全局的：带 profile 不换名单。"""
+        home = shared_home["home"]
+        _write_skill(home / "skills", "dashboard-skill")
+        _write_skill(home / "skills", "worker-skill")
+
+        scoped = client.get("/api/skills", params={"profile": "worker_alpha"})
+        assert scoped.status_code == 200
+        unscoped = client.get("/api/skills")
+        assert unscoped.status_code == 200
+
+        assert set(_skills_by_name(scoped.json())) == set(
+            _skills_by_name(unscoped.json())
+        )
+        assert "worker-skill" in _skills_by_name(scoped.json())
 
     def test_skills_list_without_profile_uses_dashboard_home(
-        self, client, isolated_profiles
+        self, client, shared_home
     ):
+        home = shared_home["home"]
+        _write_skill(home / "skills", "dashboard-skill")
+
         resp = client.get("/api/skills")
         assert resp.status_code == 200
         names = {s["name"] for s in resp.json()}
         assert "dashboard-skill" in names
-        assert "worker-skill" not in names
 
-    def test_toggle_writes_into_target_profile_only(self, client, isolated_profiles):
+
+class TestSkillsToggle:
+    def test_toggle_writes_the_agent_roster_row_only(
+        self, client, shared_home
+    ):
+        """② 开关是每 Agent 的：落名册那一行，**全局表一个字不动**。"""
+        home = shared_home["home"]
+        _write_skill(home / "skills", "worker-skill")
+
         resp = client.put(
             "/api/skills/toggle",
             json={"name": "worker-skill", "enabled": False, "profile": "worker_alpha"},
@@ -87,15 +129,30 @@ class TestProfileScopedSkills:
         assert resp.status_code == 200
         assert resp.json() == {"ok": True, "name": "worker-skill", "enabled": False}
 
-        worker_cfg = _load_cfg(isolated_profiles["worker_alpha"])
-        assert "worker-skill" in worker_cfg.get("skills", {}).get("disabled", [])
-        # The dashboard's own config must stay untouched — this was the bug.
-        default_cfg = _load_cfg(isolated_profiles["default"])
-        assert "worker-skill" not in default_cfg.get("skills", {}).get("disabled", [])
+        # 名册那一行记着这一项
+        entry = _roster_entry(home, "worker_alpha")
+        assert "worker-skill" in [s.casefold() for s in entry.disabled_skills]
 
-    def test_toggle_reenable_round_trip(self, client, isolated_profiles):
+        # 全局表没被碰
+        global_cfg = _load_cfg(home)
+        assert "worker-skill" not in (global_cfg.get("skills", {}) or {}).get(
+            "disabled", []
+        )
+
+        # 读面：带这个 Agent 时它是关的，不带时它照旧开着
+        scoped = _skills_by_name(
+            client.get("/api/skills", params={"profile": "worker_alpha"}).json()
+        )
+        assert scoped["worker-skill"]["enabled"] is False
+        unscoped = _skills_by_name(client.get("/api/skills").json())
+        assert unscoped["worker-skill"]["enabled"] is True
+
+    def test_toggle_reenable_round_trip(self, client, shared_home):
+        home = shared_home["home"]
+        _write_skill(home / "skills", "worker-skill")
+
         for enabled in (False, True):
-            client.put(
+            resp = client.put(
                 "/api/skills/toggle",
                 json={
                     "name": "worker-skill",
@@ -103,20 +160,35 @@ class TestProfileScopedSkills:
                     "profile": "worker_alpha",
                 },
             )
-        worker_cfg = _load_cfg(isolated_profiles["worker_alpha"])
-        assert "worker-skill" not in worker_cfg.get("skills", {}).get("disabled", [])
+            assert resp.status_code == 200
 
-    def test_unknown_profile_returns_404(self, client, isolated_profiles):
-        resp = client.get("/api/skills", params={"profile": "no_such_profile"})
+        entry = _roster_entry(home, "worker_alpha")
+        assert "worker-skill" not in [s.casefold() for s in entry.disabled_skills]
+
+    def test_unknown_profile_returns_404_and_writes_nothing(
+        self, client, shared_home
+    ):
+        """③ 认不出的作用域 ⇒ 404，**且一个字都不落盘**。"""
+        home = shared_home["home"]
+        _write_skill(home / "skills", "worker-skill")
+        before = _load_cfg(home)
+
+        resp = client.put(
+            "/api/skills/toggle",
+            json={"name": "worker-skill", "enabled": False, "profile": "ghost"},
+        )
         assert resp.status_code == 404
+        assert _load_cfg(home) == before
 
-    def test_invalid_profile_name_returns_400(self, client, isolated_profiles):
-        resp = client.get("/api/skills", params={"profile": "Bad Name!"})
+    def test_invalid_profile_name_returns_400(self, client, shared_home):
+        resp = client.put(
+            "/api/skills/toggle",
+            json={"name": "worker-skill", "enabled": False, "profile": "Bad Name!"},
+        )
         assert resp.status_code == 400
 
-    def test_scope_restores_module_globals(self, client, isolated_profiles):
-        """The SKILLS_DIR swap is per-request; the module global must be
-        restored even after a scoped call (cron-style locked swap)."""
+    def test_scope_restores_module_globals(self, client, shared_home):
+        """④ 作用域用完，模块全局变量必须还原。"""
         import tools.skills_tool as skills_tool
 
         before = skills_tool.SKILLS_DIR
@@ -124,28 +196,45 @@ class TestProfileScopedSkills:
         assert skills_tool.SKILLS_DIR == before
 
 
-class TestProfileScopedToolsets:
-    def test_toolset_toggle_scopes_to_profile(self, client, isolated_profiles):
+class TestToolsetToggle:
+    def test_toolset_toggle_writes_the_agent_roster_row_only(
+        self, client, shared_home
+    ):
+        """② 的工具集那一面：全局白名单不动，翻的是这个 Agent 的黑名单。"""
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
+            "platform_toolsets:\n  cli:\n    - x_search\n", encoding="utf-8"
+        )
+
         resp = client.put(
             "/api/tools/toolsets/x_search",
-            json={"enabled": True, "profile": "worker_alpha"},
+            json={"enabled": False, "profile": "worker_alpha"},
         )
         assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "name": "x_search", "enabled": False}
 
-        worker_cfg = _load_cfg(isolated_profiles["worker_alpha"])
-        assert "x_search" in worker_cfg.get("platform_toolsets", {}).get("cli", [])
-        default_cfg = _load_cfg(isolated_profiles["default"])
-        assert "x_search" not in default_cfg.get("platform_toolsets", {}).get("cli", [])
+        entry = _roster_entry(home, "worker_alpha")
+        assert "x_search" in [t.casefold() for t in entry.disabled_toolsets]
 
-        listing = client.get(
-            "/api/tools/toolsets", params={"profile": "worker_alpha"}
-        ).json()
-        assert {t["name"]: t for t in listing}["x_search"]["enabled"] is True
-        # Unscoped listing reflects the dashboard's own (untouched) config.
-        listing = client.get("/api/tools/toolsets").json()
-        assert {t["name"]: t for t in listing}["x_search"]["enabled"] is False
+        # 全局白名单没被碰
+        global_cfg = _load_cfg(home)
+        assert "x_search" in (global_cfg.get("platform_toolsets", {}) or {}).get(
+            "cli", []
+        )
 
-    def test_toolset_toggle_unknown_profile_404(self, client, isolated_profiles):
+        scoped = {
+            t["name"]: t
+            for t in client.get(
+                "/api/tools/toolsets", params={"profile": "worker_alpha"}
+            ).json()
+        }
+        assert scoped["x_search"]["enabled"] is False
+        unscoped = {
+            t["name"]: t for t in client.get("/api/tools/toolsets").json()
+        }
+        assert unscoped["x_search"]["enabled"] is True
+
+    def test_toolset_toggle_unknown_profile_404(self, client, shared_home):
         resp = client.put(
             "/api/tools/toolsets/x_search",
             json={"enabled": True, "profile": "ghost"},
@@ -155,11 +244,9 @@ class TestProfileScopedToolsets:
 
 class TestProfileScopedHubActions:
     def test_hub_install_spawns_with_profile_flag(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
-        """Hub installs must go through a fresh ``plobi -p <profile>``
-        subprocess — the in-process scope can't reach skills_hub's
-        import-time SKILLS_DIR binding."""
+        """Hub 装技能走子进程——身份是**进程级**的（``-p``），不受家退休影响。"""
         import plobi_cli.web_server as web_server
 
         calls = []
@@ -185,7 +272,7 @@ class TestProfileScopedHubActions:
         ]
 
     def test_hub_install_without_profile_keeps_legacy_argv(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
         import plobi_cli.web_server as web_server
 
@@ -205,7 +292,7 @@ class TestProfileScopedHubActions:
         assert resp.status_code == 200
         assert calls == [["skills", "install", "official/demo", "--yes"]]
 
-    def test_hub_install_unknown_profile_404(self, client, isolated_profiles):
+    def test_hub_install_unknown_profile_404(self, client, shared_home):
         resp = client.post(
             "/api/skills/hub/install",
             json={"identifier": "official/demo", "profile": "ghost"},

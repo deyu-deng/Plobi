@@ -1,36 +1,50 @@
-"""Regression tests for the machine-dashboard multi-profile unification.
+"""The machine dashboard's multi-profile unification —— **一份家**，身份是进程级的。
 
-The dashboard is ONE machine-level management surface: config, env, MCP,
-model, and chat-PTY endpoints accept an optional ``profile`` so the global
-profile switcher can target any profile's PLOBI_HOME. These tests pin:
-reads/writes land in the REQUESTED profile, the dashboard's own profile
-stays untouched, and the chat PTY env is scoped via PLOBI_HOME.
+**世界换过一次**（裁 42／166／178 乙案／192 ＋ 用户 10-25「不保留了」）：家目录退休
+之后**不再有「一家一个分身」的家**。配置 / 凭据 / MCP 表 / 技能都只有**一份**，
+「这个 Agent 是谁」是**名册那一行**（身份）＋ **进程级**的 ``-p``（落点），
+不是一份文件。
+
+这一档钉的就是这个形状：
+
+  ① 配置 / 凭据 / MCP 表：带 profile 与不带 profile 落在**同一个**文件；
+  ② 读与写**对称**——带 profile 的读看见的就是带 profile 的写写下去的那份；
+  ③ 作用域认不出 ⇒ 404，**且一个字都不落盘**；
+  ④ 进程级身份还在：spawn 类动作照旧带 ``-p <profile>``；PTY 子进程**不**把家
+     钉到分身（裁定 180：一个后端一个库）。
+
+（改这一档之前，它钉的是老世界：每个 profile 一个分身家、写只落分身那份、
+读只看见分身那份——那套形状 10-24 搬走、10-27 删净，早就不存在了。）
 """
 import pytest
 import yaml
 
 
+def _seed_agent(home, name):
+    """名册上落一行 Agent —— 身份＝名册那一行（裁 192），不是家目录。"""
+    from plobi.agents.registry import AgentEntry, AgentRegistry
+
+    registry = AgentRegistry(home / "plobi" / "projects.yaml")
+    registry.upsert(AgentEntry(name=name, role="l2_project"))
+    registry.save()
+    return registry
+
+
 @pytest.fixture
-def isolated_profiles(tmp_path, monkeypatch, _isolate_plobi_home):
-    """Isolated default home + one named profile, each with config + .env."""
+def shared_home(tmp_path, monkeypatch, _isolate_plobi_home):
+    """**一份**共享家（配置 / .env / MCP 表只有一份）＋ 名册上一行 Agent。"""
     from plobi_constants import get_plobi_home
-    from plobi_cli import agent_identity as profiles
 
-    default_home = get_plobi_home()
-    profiles_root = default_home / "profiles"
-    worker_home = profiles_root / "worker_beta"
-    for home in (default_home, worker_home):
-        home.mkdir(parents=True, exist_ok=True)
-        (home / "config.yaml").write_text("{}\n", encoding="utf-8")
-    (worker_home / ".env").write_text("", encoding="utf-8")
-
-    monkeypatch.setattr(profiles, "_get_default_plobi_home", lambda: default_home)
-    monkeypatch.setattr(profiles, "_get_profiles_root", lambda: profiles_root)
-    return {"default": default_home, "worker_beta": worker_home}
+    home = get_plobi_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.yaml").write_text("{}\n", encoding="utf-8")
+    (home / ".env").write_text("", encoding="utf-8")
+    _seed_agent(home, "worker_beta")
+    return {"home": home}
 
 
 @pytest.fixture
-def client(monkeypatch, isolated_profiles):
+def client(monkeypatch, shared_home):
     try:
         from starlette.testclient import TestClient
     except ImportError:
@@ -51,37 +65,48 @@ def _cfg(home):
 
 
 class TestProfileScopedConfig:
-    def test_config_put_lands_in_target_profile_only(self, client, isolated_profiles):
+    def test_config_put_with_profile_lands_in_the_one_shared_config(
+        self, client, shared_home
+    ):
+        """① 带 profile 的写落**那一份** config.yaml。"""
+        home = shared_home["home"]
         resp = client.put(
             "/api/config",
             json={"config": {"timezone": "Mars/Olympus"}, "profile": "worker_beta"},
         )
         assert resp.status_code == 200
-        assert _cfg(isolated_profiles["worker_beta"]).get("timezone") == "Mars/Olympus"
-        assert _cfg(isolated_profiles["default"]).get("timezone") != "Mars/Olympus"
+        assert _cfg(home).get("timezone") == "Mars/Olympus"
 
-    def test_config_get_reads_target_profile(self, client, isolated_profiles):
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+        # 不带 profile 的读看见的也是它——同一份文件
+        unscoped = client.get("/api/config")
+        assert unscoped.json().get("timezone") == "Mars/Olympus"
+
+    def test_config_get_with_profile_reads_the_one_shared_config(
+        self, client, shared_home
+    ):
+        """② 读与写对称：带 profile 的读看见的就是那一份。"""
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "timezone: Venus/Cloud\n", encoding="utf-8"
         )
         resp = client.get("/api/config", params={"profile": "worker_beta"})
         assert resp.status_code == 200
         assert resp.json().get("timezone") == "Venus/Cloud"
-        # Unscoped read sees the dashboard's own config.
-        resp = client.get("/api/config")
-        assert resp.json().get("timezone") != "Venus/Cloud"
 
-    def test_config_query_param_equivalent_to_body(self, client, isolated_profiles):
+        unscoped = client.get("/api/config")
+        assert unscoped.json().get("timezone") == "Venus/Cloud"
+
+    def test_config_query_param_equivalent_to_body(self, client, shared_home):
         """The SPA's fetchJSON injects ?profile= — must scope like body.profile."""
+        home = shared_home["home"]
         resp = client.put(
             "/api/config?profile=worker_beta",
             json={"config": {"timezone": "Pluto/Far"}},
         )
         assert resp.status_code == 200
-        assert _cfg(isolated_profiles["worker_beta"]).get("timezone") == "Pluto/Far"
-        assert _cfg(isolated_profiles["default"]).get("timezone") != "Pluto/Far"
+        assert _cfg(home).get("timezone") == "Pluto/Far"
 
-    def test_config_raw_round_trip_scoped(self, client, isolated_profiles):
+    def test_config_raw_round_trip_scoped(self, client, shared_home):
         resp = client.put(
             "/api/config/raw",
             json={"yaml_text": "timezone: Io/Volcano\n", "profile": "worker_beta"},
@@ -89,62 +114,72 @@ class TestProfileScopedConfig:
         assert resp.status_code == 200
         resp = client.get("/api/config/raw", params={"profile": "worker_beta"})
         assert "Io/Volcano" in resp.json()["yaml"]
-        resp = client.get("/api/config/raw")
-        assert "Io/Volcano" not in resp.json()["yaml"]
 
-    def test_config_raw_path_reflects_requested_profile(self, client, isolated_profiles):
+    def test_config_raw_path_points_at_the_one_shared_config(
+        self, client, shared_home
+    ):
         """The Config page header shows /api/config/raw's ``path`` — it must
-        point at the SWITCHED profile's config.yaml, not the dashboard's own
-        (the stale-path bug reported after the profile unification launch)."""
+        point at the ONE config.yaml, whichever profile is selected (家退休
+        之后只有一份；那个「指向另一个分身的路径」的老 bug 已经没有对应现实）。"""
+        home = shared_home["home"]
         resp = client.get("/api/config/raw", params={"profile": "worker_beta"})
         assert resp.status_code == 200
-        assert resp.json()["path"] == str(isolated_profiles["worker_beta"] / "config.yaml")
+        assert resp.json()["path"] == str(home / "config.yaml")
         resp = client.get("/api/config/raw")
-        assert resp.json()["path"] == str(isolated_profiles["default"] / "config.yaml")
+        assert resp.json()["path"] == str(home / "config.yaml")
 
-    def test_unknown_profile_404(self, client, isolated_profiles):
-        resp = client.get("/api/config", params={"profile": "ghost"})
+    def test_unknown_profile_404_and_writes_nothing(self, client, shared_home):
+        """③ 认不出的作用域 ⇒ 404，**且一个字都不落盘**。"""
+        home = shared_home["home"]
+        before = (home / "config.yaml").read_text(encoding="utf-8")
+
+        resp = client.put(
+            "/api/config",
+            json={"config": {"timezone": "Mars/Olympus"}, "profile": "ghost"},
+        )
         assert resp.status_code == 404
+        assert (home / "config.yaml").read_text(encoding="utf-8") == before
 
 
 class TestProfileScopedEnv:
-    def test_env_set_lands_in_target_profile_only(self, client, isolated_profiles):
+    def test_env_set_lands_in_the_one_shared_env(self, client, shared_home):
+        home = shared_home["home"]
         resp = client.put(
             "/api/env",
             json={"key": "FAL_KEY", "value": "test-fal-123", "profile": "worker_beta"},
         )
         assert resp.status_code == 200
-        worker_env = (isolated_profiles["worker_beta"] / ".env").read_text()
-        assert "test-fal-123" in worker_env
-        default_env_path = isolated_profiles["default"] / ".env"
-        if default_env_path.exists():
-            assert "test-fal-123" not in default_env_path.read_text()
+        assert "test-fal-123" in (home / ".env").read_text()
 
-    def test_env_list_reads_target_profile(self, client, isolated_profiles):
-        (isolated_profiles["worker_beta"] / ".env").write_text(
-            "FAL_KEY=worker-only-value\n", encoding="utf-8"
-        )
-        resp = client.get("/api/env", params={"profile": "worker_beta"})
-        assert resp.status_code == 200
-        assert resp.json()["FAL_KEY"]["is_set"] is True
-        resp = client.get("/api/env")
-        assert resp.json()["FAL_KEY"]["is_set"] is False
+    def test_env_list_reads_the_one_shared_env(self, client, shared_home):
+        home = shared_home["home"]
+        (home / ".env").write_text("FAL_KEY=worker-only-value\n", encoding="utf-8")
 
-    def test_env_delete_scoped(self, client, isolated_profiles):
-        (isolated_profiles["worker_beta"] / ".env").write_text(
-            "FAL_KEY=doomed\n", encoding="utf-8"
-        )
+        scoped = client.get("/api/env", params={"profile": "worker_beta"})
+        assert scoped.status_code == 200
+        assert scoped.json()["FAL_KEY"]["is_set"] is True
+
+        unscoped = client.get("/api/env")
+        assert unscoped.json()["FAL_KEY"]["is_set"] is True
+
+    def test_env_delete_scoped(self, client, shared_home):
+        home = shared_home["home"]
+        (home / ".env").write_text("FAL_KEY=doomed\n", encoding="utf-8")
         resp = client.request(
             "DELETE",
             "/api/env",
             json={"key": "FAL_KEY", "profile": "worker_beta"},
         )
         assert resp.status_code == 200
-        assert "doomed" not in (isolated_profiles["worker_beta"] / ".env").read_text()
+        assert "doomed" not in (home / ".env").read_text()
 
 
 class TestProfileScopedMcp:
-    def test_mcp_add_and_list_scoped(self, client, isolated_profiles):
+    def test_mcp_add_and_list_land_in_the_one_global_table(
+        self, client, shared_home
+    ):
+        """MCP 服务器是一张**全局表**（家退休之后只有一份）。"""
+        home = shared_home["home"]
         resp = client.post(
             "/api/mcp/servers",
             json={"name": "scoped-srv", "url": "http://localhost:1234/sse",
@@ -152,17 +187,16 @@ class TestProfileScopedMcp:
         )
         assert resp.status_code == 200
 
-        worker_cfg = _cfg(isolated_profiles["worker_beta"])
-        assert "scoped-srv" in worker_cfg.get("mcp_servers", {})
-        assert "scoped-srv" not in _cfg(isolated_profiles["default"]).get("mcp_servers", {})
+        assert "scoped-srv" in _cfg(home).get("mcp_servers", {})
 
         listing = client.get("/api/mcp/servers", params={"profile": "worker_beta"}).json()
         assert any(s["name"] == "scoped-srv" for s in listing["servers"])
         listing = client.get("/api/mcp/servers").json()
-        assert not any(s["name"] == "scoped-srv" for s in listing["servers"])
+        assert any(s["name"] == "scoped-srv" for s in listing["servers"])
 
-    def test_mcp_enabled_toggle_scoped(self, client, isolated_profiles):
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+    def test_mcp_enabled_toggle_scoped(self, client, shared_home):
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "mcp_servers:\n  srv1:\n    url: http://x/sse\n", encoding="utf-8"
         )
         resp = client.put(
@@ -170,11 +204,10 @@ class TestProfileScopedMcp:
             json={"enabled": False, "profile": "worker_beta"},
         )
         assert resp.status_code == 200
-        worker_cfg = _cfg(isolated_profiles["worker_beta"])
-        assert worker_cfg["mcp_servers"]["srv1"]["enabled"] is False
+        assert _cfg(home)["mcp_servers"]["srv1"]["enabled"] is False
 
-    def test_mcp_probe_runs_inside_profile_scope(
-        self, client, isolated_profiles, monkeypatch
+    def test_mcp_probe_runs_inside_the_shared_home(
+        self, client, shared_home, monkeypatch
     ):
         """The test-server probe must execute with the selected profile's
         scope active so env-placeholder expansion reads the profile's .env,
@@ -182,7 +215,8 @@ class TestProfileScopedMcp:
         import plobi_cli.mcp_config as mcp_config
         from plobi_constants import get_plobi_home
 
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "mcp_servers:\n  probe-srv:\n    url: http://x/sse\n",
             encoding="utf-8",
         )
@@ -198,16 +232,17 @@ class TestProfileScopedMcp:
         )
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-        assert seen["home"] == str(isolated_profiles["worker_beta"])
+        assert seen["home"] == str(home)
 
     def test_mcp_test_oauth_server_without_token_is_not_ok(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
         """An `auth: oauth` server that serves tools/list anonymously must not
         false-green: a successful probe with no token on disk reports needs-auth."""
         import plobi_cli.mcp_config as mcp_config
 
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "mcp_servers:\n  oauth-srv:\n    url: http://x/sse\n    auth: oauth\n",
             encoding="utf-8",
         )
@@ -233,20 +268,22 @@ class TestProfileScopedMcp:
         )
         assert resp.json()["ok"] is True
 
-    def test_mcp_remove_scoped(self, client, isolated_profiles):
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+    def test_mcp_remove_scoped(self, client, shared_home):
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "mcp_servers:\n  srv2:\n    url: http://x/sse\n", encoding="utf-8"
         )
-        # Removing from the DASHBOARD's profile must 404 (srv2 lives in worker).
-        resp = client.delete("/api/mcp/servers/srv2")
-        assert resp.status_code == 404
+        # 一张全局表 ⇒ 带不带 profile 说的是同一件事（家退休之后没有「分身那张表」）
         resp = client.delete("/api/mcp/servers/srv2", params={"profile": "worker_beta"})
         assert resp.status_code == 200
-        assert "srv2" not in _cfg(isolated_profiles["worker_beta"]).get("mcp_servers", {})
+        assert "srv2" not in _cfg(home).get("mcp_servers", {})
 
 
 class TestProfileScopedModel:
-    def test_model_set_main_scoped(self, client, isolated_profiles):
+    def test_model_set_with_profile_lands_in_the_one_shared_config(
+        self, client, shared_home
+    ):
+        home = shared_home["home"]
         resp = client.post(
             "/api/model/set",
             json={
@@ -258,23 +295,21 @@ class TestProfileScopedModel:
             },
         )
         assert resp.status_code == 200
-        worker_cfg = _cfg(isolated_profiles["worker_beta"])
-        model_cfg = worker_cfg.get("model", {})
+        model_cfg = _cfg(home).get("model", {})
         assert isinstance(model_cfg, dict)
         assert model_cfg.get("provider") == "openrouter"
-        default_model = _cfg(isolated_profiles["default"]).get("model", {})
-        if isinstance(default_model, dict):
-            assert default_model.get("default") != "test/model-1"
 
-    def test_auxiliary_read_scoped_matches_write_target(
-        self, client, isolated_profiles
+    def test_auxiliary_read_matches_write_in_the_one_shared_config(
+        self, client, shared_home
     ):
-        """Reads and writes must scope symmetrically: an aux pin written to
-        the worker profile must show up ONLY in the worker-scoped read.
+        """Reads and writes must be symmetric: an aux pin written to the
+        config must show up in BOTH the scoped and the unscoped read — they
+        are the same file now.
         (Regression: /api/model/auxiliary used to read unscoped while
         /api/model/set wrote scoped — the Models page displayed the
         dashboard profile's pins while editing the selected profile's.)"""
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "auxiliary:\n  vision:\n    provider: openrouter\n"
             "    model: worker/vision-pin\n",
             encoding="utf-8",
@@ -284,39 +319,42 @@ class TestProfileScopedModel:
         vision = next(t for t in resp.json()["tasks"] if t["task"] == "vision")
         assert vision["model"] == "worker/vision-pin"
 
-        # Unscoped read = the dashboard's own profile, which has no pin.
+        # Unscoped read = the same one file.
         resp = client.get("/api/model/auxiliary")
         assert resp.status_code == 200
         vision = next(t for t in resp.json()["tasks"] if t["task"] == "vision")
-        assert vision["model"] != "worker/vision-pin"
+        assert vision["model"] == "worker/vision-pin"
 
-    def test_auxiliary_unknown_profile_404(self, client, isolated_profiles):
+    def test_auxiliary_unknown_profile_404(self, client, shared_home):
         resp = client.get("/api/model/auxiliary", params={"profile": "ghost"})
         assert resp.status_code == 404
 
-    def test_model_options_scoped_to_profile(self, client, isolated_profiles):
-        """The Models picker must read the SAME profile model/set writes —
-        current model/provider in the payload come from the scoped config."""
-        (isolated_profiles["worker_beta"] / "config.yaml").write_text(
+    def test_model_options_with_profile_reads_the_one_shared_config(
+        self, client, shared_home
+    ):
+        """The Models picker must read the SAME config /api/model/set writes —
+        current model/provider in the payload come from that config."""
+        home = shared_home["home"]
+        (home / "config.yaml").write_text(
             "model:\n  provider: openrouter\n  default: worker/current-pin\n",
             encoding="utf-8",
         )
         resp = client.get("/api/model/options", params={"profile": "worker_beta"})
         assert resp.status_code == 200
         body = resp.json()
-        # The payload carries the current selection somewhere stable; assert
-        # the worker pin appears in the scoped response and not the unscoped.
         assert "worker/current-pin" in resp.text
         resp = client.get("/api/model/options")
         assert resp.status_code == 200
-        assert "worker/current-pin" not in resp.text
+        assert "worker/current-pin" in resp.text
         assert isinstance(body, dict)
 
-    def test_model_options_unknown_profile_404(self, client, isolated_profiles):
+    def test_model_options_unknown_profile_404(self, client, shared_home):
         resp = client.get("/api/model/options", params={"profile": "ghost"})
         assert resp.status_code == 404
 
-    def test_model_options_hides_unconfigured_providers_by_default(self, client, monkeypatch):
+    def test_model_options_hides_unconfigured_providers_by_default(
+        self, client, monkeypatch
+    ):
         calls = []
 
         monkeypatch.setattr(
@@ -346,20 +384,20 @@ class TestProfileScopedModel:
         assert resp.status_code == 200
         assert calls[-1]["include_unconfigured"] is True
 
-    def test_model_info_unknown_profile_404(self, client, isolated_profiles):
+    def test_model_info_unknown_profile_404(self, client, shared_home):
         """Regression: the broad except used to convert the 404 into a 200
         with empty model info ("no model set" — silently wrong)."""
         resp = client.get("/api/model/info", params={"profile": "ghost"})
         assert resp.status_code == 404
 
-    def test_mcp_catalog_unknown_profile_404(self, client, isolated_profiles):
+    def test_mcp_catalog_unknown_profile_404(self, client, shared_home):
         resp = client.get("/api/mcp/catalog", params={"profile": "ghost"})
         assert resp.status_code == 404
 
 
 class TestProfileScopedPostSetup:
     def test_post_setup_spawns_with_profile_flag(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
         """Post-setup runs in a -p scoped subprocess so hooks that read
         config / write per-profile state see the same PLOBI_HOME the rest
@@ -390,7 +428,7 @@ class TestProfileScopedPostSetup:
         ]
 
     def test_post_setup_without_profile_keeps_legacy_argv(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
         import plobi_cli.web_server as web_server
 
@@ -418,7 +456,7 @@ class TestProfileScopedPostSetup:
 
 class TestProfileScopedGateway:
     def test_lifecycle_spawns_with_profile_flag(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
         import plobi_cli.web_server as web_server
 
@@ -445,12 +483,13 @@ class TestProfileScopedGateway:
             (["-p", "worker_beta", "gateway", "restart"], "gateway-restart"),
         ]
 
-    def test_status_reads_requested_profile_home(
-        self, client, isolated_profiles, monkeypatch
+    def test_status_reads_the_one_shared_home(
+        self, client, shared_home, monkeypatch
     ):
         import plobi_cli.web_server as web_server
         from plobi_constants import get_plobi_home
 
+        home = shared_home["home"]
         seen_homes = []
 
         def fake_get_running_pid():
@@ -471,19 +510,19 @@ class TestProfileScopedGateway:
         resp = client.get("/api/status", params={"profile": "worker_beta"})
 
         assert resp.status_code == 200
-        assert seen_homes[0] == str(isolated_profiles["worker_beta"])
-        assert resp.json()["plobi_home"] == str(isolated_profiles["worker_beta"])
+        assert seen_homes[0] == str(home)
+        assert resp.json()["plobi_home"] == str(home)
 
     def test_status_uses_runtime_pid_when_profile_pid_file_is_missing(
-        self, client, isolated_profiles, monkeypatch
+        self, client, shared_home, monkeypatch
     ):
         import plobi_cli.web_server as web_server
 
-        worker_home = isolated_profiles["worker_beta"]
-        (worker_home / ".env").write_text(
+        home = shared_home["home"]
+        (home / ".env").write_text(
             "TELEGRAM_BOT_TOKEN=worker-token\n", encoding="utf-8"
         )
-        (worker_home / "config.yaml").write_text(
+        (home / "config.yaml").write_text(
             yaml.safe_dump({"platforms": {"telegram": {"enabled": True}}}),
             encoding="utf-8",
         )
@@ -522,12 +561,13 @@ class TestProfileScopedGateway:
 
 
 class TestProfileScopedTelegramOnboarding:
-    def test_apply_writes_target_profile_and_restarts_target(
-        self, client, isolated_profiles, monkeypatch
+    def test_apply_writes_the_one_shared_env_and_restarts_the_target(
+        self, client, shared_home, monkeypatch
     ):
         import time
         import plobi_cli.web_server as web_server
 
+        home = shared_home["home"]
         with web_server._telegram_onboarding_lock:
             web_server._telegram_onboarding_pairings.clear()
             web_server._telegram_onboarding_pairings["pair-worker"] = (
@@ -562,25 +602,21 @@ class TestProfileScopedTelegramOnboarding:
 
         assert resp.status_code == 200
         assert resp.json()["restart_started"] is True
+        # 身份是**进程级**的：重启照旧带 -p
         assert calls == [
             (["-p", "worker_beta", "gateway", "restart"], "gateway-restart")
         ]
 
-        worker_env = (isolated_profiles["worker_beta"] / ".env").read_text()
-        assert "TELEGRAM_BOT_TOKEN=123456:SECRET" in worker_env
-        assert "TELEGRAM_ALLOWED_USERS=123456789" in worker_env
-        default_env_path = isolated_profiles["default"] / ".env"
-        if default_env_path.exists():
-            assert "TELEGRAM_BOT_TOKEN" not in default_env_path.read_text()
+        env_text = (home / ".env").read_text()
+        assert "TELEGRAM_BOT_TOKEN=123456:SECRET" in env_text
+        assert "TELEGRAM_ALLOWED_USERS=123456789" in env_text
 
-        worker_cfg = _cfg(isolated_profiles["worker_beta"])
-        default_cfg = _cfg(isolated_profiles["default"])
-        assert worker_cfg["platforms"]["telegram"]["enabled"] is True
-        assert default_cfg.get("platforms", {}).get("telegram", {}).get("enabled") is not True
+        cfg = _cfg(home)
+        assert cfg["platforms"]["telegram"]["enabled"] is True
 
 
 class TestProfileScopedChatPty:
-    def test_chat_argv_no_longer_pins_plobi_home(self, isolated_profiles, monkeypatch):
+    def test_chat_argv_no_longer_pins_plobi_home(self, shared_home, monkeypatch):
         """裁定 180：一个后端一个库——PTY 子进程的家不再钉到那个分身的家。
 
         「这个聊天属于哪个 Agent」是**请求属性**（RPC 的 profile →
@@ -597,10 +633,12 @@ class TestProfileScopedChatPty:
         )
         argv, cwd, env = web_server._resolve_chat_argv(profile="worker_beta")
         assert env is not None
-        assert env.get("PLOBI_HOME") != str(isolated_profiles["worker_beta"])
+        # 家只有一份 ⇒ 带 profile 与不带 profile 的 PTY 子进程落在**同一个**家
+        unscoped_env = web_server._resolve_chat_argv()[2]
+        assert env.get("PLOBI_HOME") == unscoped_env.get("PLOBI_HOME")
 
     def test_chat_argv_profile_attaches_in_process_gateway(
-        self, isolated_profiles, monkeypatch
+        self, shared_home, monkeypatch
     ):
         """单后端后一个网关：profile 聊天也 attach dashboard 的 in-process 网关。
 
@@ -625,7 +663,7 @@ class TestProfileScopedChatPty:
         if "PLOBI_TUI_GATEWAY_URL" in unscoped_env:
             assert env["PLOBI_TUI_GATEWAY_URL"] == unscoped_env["PLOBI_TUI_GATEWAY_URL"]
 
-    def test_chat_argv_unscoped_keeps_legacy_env(self, isolated_profiles, monkeypatch):
+    def test_chat_argv_unscoped_keeps_legacy_env(self, shared_home, monkeypatch):
         import plobi_cli.web_server as web_server
 
         monkeypatch.setattr(
@@ -635,9 +673,10 @@ class TestProfileScopedChatPty:
         )
         argv, cwd, env = web_server._resolve_chat_argv()
         assert env is not None
-        assert env.get("PLOBI_HOME") != str(isolated_profiles["worker_beta"])
+        scoped_env = web_server._resolve_chat_argv(profile="worker_beta")[2]
+        assert env.get("PLOBI_HOME") == scoped_env.get("PLOBI_HOME")
 
-    def test_chat_argv_unknown_profile_raises(self, isolated_profiles, monkeypatch):
+    def test_chat_argv_unknown_profile_raises(self, shared_home, monkeypatch):
         import plobi_cli.web_server as web_server
 
         monkeypatch.setattr(
