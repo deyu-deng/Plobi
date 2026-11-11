@@ -14,9 +14,12 @@ class _FakeSessionDB:
 
     closed = False
 
-    def search_sessions_by_id(self, query, limit=20, include_archived=True):
+    def search_sessions_by_id(self, query, limit=20, include_archived=True, agent_id=None):
         assert query == "20260603"
         assert include_archived is True
+        # 缺口 B 之后这一支单库、按**行级** `agent_id` 圈（`None` = 全库，
+        # `''` = L1 那一格，其余 = 名册 name）。这一档不传作用域 ⇒ L1 那一格。
+        assert agent_id == ""
         return [
             {
                 "id": "20260603_090200_exact",
@@ -27,7 +30,7 @@ class _FakeSessionDB:
             }
         ]
 
-    def search_messages(self, query, limit=20):
+    def search_messages(self, query, limit=20, agent_id=None):
         assert query == "20260603*"
         return [
             {

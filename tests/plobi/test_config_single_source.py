@@ -45,6 +45,9 @@ def root(tmp_path, monkeypatch):
     monkeypatch.setenv("PLOBI_HOME", str(base))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(base / "plobi" / "projects.yaml"))
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
+    # 身份通道（裁定 180 的行级身份）：每个测试自己给，夹具只保证**起跑时是干净的**
+    # ——否则上一条留下的身份会串到下一条（那一格是「顶层那一份」，没有身份）。
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
     _write_roster(base, {})
     _clear()
     yield base
@@ -75,8 +78,20 @@ def _row(profile: str, **extra) -> dict:
 
 
 def _effective(home_dir: Path) -> dict:
-    """那个家**运行时实际读到的**那份配置（解析函数由被测代码自己出，不手拼）。"""
+    """那个家**运行时实际读到的**那份配置（解析函数由被测代码自己出，不手拼）。
+
+    **身份怎么给**（裁定 180：身份＝行级 ``PLOBI_AGENT_ID``，不再看家住哪儿）：
+    家在 ``profiles/<name>/`` 下 ⇒ 这一趟就是「以 ``<name>`` 这个 Agent 的身份读」。
+    以前那套是靠家目录推身份（``_active_agent_profile_name`` 看家住在不在 ``profiles/``
+    底下），B 刀之后家不再承载任何东西、那条判据已经退役 ⇒ 只把 ``PLOBI_HOME`` 指进
+    一个分身家**不再等于**「我是这个 Agent」，覆盖也就叠不上来（这一档从 11-10 起
+    4 条红的根因）。
+    """
     os.environ["PLOBI_HOME"] = str(home_dir)
+    if home_dir.parent.name == "profiles":
+        os.environ["PLOBI_AGENT_ID"] = home_dir.name
+    else:
+        os.environ.pop("PLOBI_AGENT_ID", None)
     _clear()
     return cfg.load_config()
 
@@ -128,9 +143,11 @@ def test_the_top_level_home_still_reads_its_own_file(root):
 def test_one_configured_model_reaches_every_agent(root):
     """ADR-0013 完成定义第 1 条的前半：顶层配那一次 ⇒ 每个分身解析到同一个值。"""
     _write_roster(root, {
-        "agenda": _row("l2-agenda", role="l2_agenda", name="agenda"),
-        "aura": _row("l2-aura"),
-        "kit": _row("l2-kit"),
+        # **行键＝身份**（2026-11-05「profile 连根拔」之后）：行内那两格
+        # ``name`` / ``profile`` 读盘时被忽略，所以身份只能落在键上。
+        "l2-agenda": _row("l2-agenda", role="l2_agenda"),
+        "l2-aura": _row("l2-aura"),
+        "l2-kit": _row("l2-kit"),
     })
 
     values = [_effective_model(root / "profiles" / p) for p in ("l2-agenda", "l2-aura", "l2-kit")]
@@ -146,17 +163,17 @@ def test_a_roster_override_moves_only_that_agent(root):
     本身就在造复印件。
     """
     _write_roster(root, {
-        "agenda": _row("l2-agenda", role="l2_agenda", name="agenda"),
-        "aura": _row("l2-aura"),
-        "kit": _row("l2-kit"),
+        "l2-agenda": _row("l2-agenda", role="l2_agenda"),
+        "l2-aura": _row("l2-aura"),
+        "l2-kit": _row("l2-kit"),
     })
     homes = {p: root / "profiles" / p for p in ("l2-agenda", "l2-aura", "l2-kit")}
     before = {p: _effective_model(h) for p, h in homes.items()}
     assert len({repr(v) for v in before.values()}) == 1, before  # 起点：三家同一个值
 
     rows = yaml.safe_load(Path(os.environ["PLOBI_PROJECTS_CONFIG"]).read_text(encoding="utf-8"))
-    rows["agents"]["aura"]["provider"] = "zhipu"
-    rows["agents"]["aura"]["model"] = "glm-4.x"
+    rows["agents"]["l2-aura"]["provider"] = "zhipu"
+    rows["agents"]["l2-aura"]["model"] = "glm-4.x"
     _write_roster(root, rows["agents"])
 
     after = {p: _effective_model(h) for p, h in homes.items()}
@@ -174,8 +191,8 @@ def test_two_agents_with_overrides_do_not_fold_into_one_role_route(root):
     各的模型」若走 ``router()`` 就会双双变成同一个值——这条就是不让那一步回潮。
     """
     _write_roster(root, {
-        "aura": _row("l2-aura", provider="moonshot", model="kimi-a"),
-        "kit": _row("l2-kit", provider="zhipu", model="glm-b"),
+        "l2-aura": _row("l2-aura", provider="moonshot", model="kimi-a"),
+        "l2-kit": _row("l2-kit", provider="zhipu", model="glm-b"),
     })
 
     aura = _effective_model(root / "profiles" / "l2-aura")
@@ -199,7 +216,7 @@ def test_an_unresolvable_provider_override_is_not_applied(root, caplog):
         resolve_provider(ghost)
     assert excinfo.value.code == "invalid_provider"
 
-    _write_roster(root, {"aura": _row("l2-aura", provider=ghost, model="a-model")})
+    _write_roster(root, {"l2-aura": _row("l2-aura", provider=ghost, model="a-model")})
 
     with caplog.at_level(logging.WARNING, logger="plobi.agents.registry"):
         model = _effective_model(root / "profiles" / "l2-aura")
@@ -220,14 +237,14 @@ def test_editing_the_roster_takes_effect_without_restarting(root):
     mtime 自然把缓存顶掉；改成读时叠之后，**名册那份签名**必须进签名，否则
     「给这个 Agent 换个模型」要等后端重启才看得见。
     """
-    _write_roster(root, {"aura": _row("l2-aura", provider="moonshot", model="kimi-k3")})
+    _write_roster(root, {"l2-aura": _row("l2-aura", provider="moonshot", model="kimi-k3")})
     home = root / "profiles" / "l2-aura"
     os.environ["PLOBI_HOME"] = str(home)
     _clear()
     assert cfg.load_config()["model"]["default"] == "kimi-k3"
 
     rows = yaml.safe_load(Path(os.environ["PLOBI_PROJECTS_CONFIG"]).read_text(encoding="utf-8"))
-    rows["agents"]["aura"]["model"] = "kimi-k9"
+    rows["agents"]["l2-aura"]["model"] = "kimi-k9"
     _write_roster(root, rows["agents"])
 
     assert cfg.load_config()["model"]["default"] == "kimi-k9"  # 这一句没清缓存
