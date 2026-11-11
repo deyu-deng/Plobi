@@ -231,7 +231,7 @@ import {
   MIN_WIDTH as WINDOW_MIN_WIDTH
 } from './window-state'
 import { readWindowsRegistryString, readWindowsUserEnvVar } from './windows-user-env'
-import { resolveDataRoot, resolveElectronUserDataRoot } from './data-root'
+import { directoryUsable, resolveDataRoot, resolveElectronUserDataRoot } from './data-root'
 import { isPackagedInstallPath as isPackagedInstallPathUnderRoots } from './workspace-cwd'
 import { readWslWindowsClipboardImage } from './wsl-clipboard-image'
 
@@ -451,7 +451,11 @@ const DATA_ROOT = resolveDataRoot({
   devHomeEnv: IS_PACKAGED ? '' : process.env.PLOBI_DEV_HOME || '',
   installRecordedDir: readInstallerRecordedDataDir(),
   localAppData: process.env.LOCALAPPDATA || '',
-  home: app.getPath('home')
+  home: app.getPath('home'),
+  // 数据目录可能被选在移动硬盘/副盘上（安装器允许手打路径）。那块盘不在这台
+  // 机器上时，旧行为会拿一格不存在的路径去首启 mkdir，当场 ENOENT 把启动掐死。
+  // 探针只读不建：摸不到就退下一档，退到哪一档由 source 报出来。
+  isDirUsable: directoryUsable
 })
 
 const PLOBI_HOME = normalizePlobiHomeRoot(DATA_ROOT.root)
@@ -461,6 +465,14 @@ const PLOBI_HOME = normalizePlobiHomeRoot(DATA_ROOT.root)
 // this process is the packaged app or the dev tree.
 try {
   console.log(`[plobi] PLOBI_HOME=${PLOBI_HOME} (source=${DATA_ROOT.source}, packaged=${IS_PACKAGED})`)
+  if (DATA_ROOT.source.endsWith('-unusable')) {
+    // 说得具体一点：默认格都摸不到时启动还会继续，但数据会落在别处——不吭声
+    // 的改道比崩溃更难查（用户以为"我的会话丢了"）。
+    console.warn(
+      `[plobi] data directory fell back to ${PLOBI_HOME} (source=${DATA_ROOT.source}) — ` +
+        'the preferred location is not reachable right now (drive missing or not writable)'
+    )
+  }
 } catch {
   // A missing stdout must never take the app down.
 }
@@ -12527,7 +12539,9 @@ ipcMain.handle('plobi:updates:release-install', async () => {
   })
 
   const dest = path.join(os.tmpdir(), asset.name)
-  const downloaded = await downloadAsset(asset.browser_download_url, dest)
+  // 带上 `asset.size`：下载器据此判断"这份是不是已经下完的那份"（复用而不是
+  // 重拉 400 MB），也在收尾时对尺寸，别把半截包递进安装器。
+  const downloaded = await downloadAsset(asset.browser_download_url, dest, undefined, asset.size)
 
   if (!downloaded) {
     emitUpdateProgress({ stage: 'error', message: '下载新版安装包失败。', percent: null })
