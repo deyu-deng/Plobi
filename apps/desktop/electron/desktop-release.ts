@@ -373,16 +373,61 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
  *
  * `--noproxy '*'` fallback included for the same reason as the API call:
  * the egress proxy may be down while the direct route still works.
+ *
+ * 这个函数扛的是"整包 400 MB+"的现实（`toolchain` + `wheelhouse` 都在包里）：
+ *
+ *   - **下完的不重下**：目标文件名固定（`os.tmpdir()/<asset>`)），所以用户点了
+ *     更新、安装被占着文件挡回来、再点一次，不该从零再来一遍；
+ *   - **断了接着下**：先试 `curl -C -`，服务器不给 Range（返回 200）时 curl 自己
+ *     会报错，这时把半截文件删掉再走一次全量——宁可重来，也不要把半截文件当成品；
+ *   - **尺寸对不上就是没下成**：CDN 的 HTML 错误页、被掐断的流，尺寸都和
+ *     `size` 对不上，凭空返回 true 会让后面的安装器起不来。
  */
-export async function downloadAsset(url: string, dest: string, timeoutMs = 30 * 60 * 1000): Promise<boolean> {
-  const attempts: string[][] = [
-    ['--location', '--fail'],
-    ['--location', '--fail', '--noproxy', '*']
-  ]
+export async function downloadAsset(
+  url: string,
+  dest: string,
+  timeoutMs = 30 * 60 * 1000,
+  expectedSize = 0
+): Promise<boolean> {
+  const sizeOf = (): number => {
+    try {
+      return fs.statSync(dest).size
+    } catch {
+      return -1
+    }
+  }
+  const drop = (): void => {
+    try {
+      fs.unlinkSync(dest)
+    } catch {
+      /* already gone */
+    }
+  }
 
-  for (const extra of attempts) {
-    const ok = await new Promise<boolean>((resolve) => {
-      const child = spawn(curlBinary(), [...extra, '--retry', '3', '--retry-delay', '5', '-o', dest, url], {
+  // 上一轮已经拉完的那一个：直接收货。
+  if (expectedSize > 0 && isCompleteDownload(sizeOf(), expectedSize)) {
+    return true
+  }
+
+  let partial = sizeOf()
+  if (partial > 0 && expectedSize > 0 && partial > expectedSize) {
+    // 比官方尺寸还大 ⇒ 一定是坏的（旧文件 / 合并错），别拿它当断点。
+    drop()
+    partial = -1
+  }
+
+  for (const attempt of planDownloadAttempts({ hasPartial: partial > 0 })) {
+    const args: string[] = ['--location', '--fail']
+    if (!attempt.direct) {
+      args.push('--noproxy', '*')
+    }
+    if (attempt.resume) {
+      args.push('-C', '-')
+    }
+    args.push('--retry', '3', '--retry-delay', '5', '-o', dest, url)
+
+    const code = await new Promise<number>((resolve) => {
+      const child = spawn(curlBinary(), args, {
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'ignore']
       })
@@ -397,20 +442,65 @@ export async function downloadAsset(url: string, dest: string, timeoutMs = 30 * 
 
       child.on('error', () => {
         clearTimeout(timer)
-        resolve(false)
+        resolve(-1)
       })
-      child.on('close', (code) => {
+      child.on('close', (exitCode) => {
         clearTimeout(timer)
-        resolve(code === 0)
+        resolve(typeof exitCode === 'number' ? exitCode : -1)
       })
     })
 
-    if (ok && fs.existsSync(dest)) {
+    const got = sizeOf()
+    const complete = expectedSize > 0 ? isCompleteDownload(got, expectedSize) : got > 0
+    if (code === 0 && complete) {
       return true
+    }
+
+    if (attempt.resume) {
+      // 续传没成：残留下的半截文件会让下一次全量写进同一个文件，先清掉。
+      drop()
     }
   }
 
   return false
+}
+
+/** 一次下载尝试的形状：用不用断点、走不走代理。顺序即优先级。 */
+export interface DownloadAttempt {
+  /** `curl -C -`：从已有文件的末尾接着写。 */
+  resume: boolean
+  /** 直连（`--noproxy '*'`）；false 表示先按系统代理走。 */
+  direct: boolean
+}
+
+/**
+ * 下载尝试的顺序：**能续就先续**（省的是几百 MB 的流量），续不动再全量；
+ * 每一档都留一次绕开代理的机会（egress 代理挂了但直连还通是常态）。
+ */
+export function planDownloadAttempts(opts: { hasPartial: boolean }): DownloadAttempt[] {
+  const tail: DownloadAttempt[] = [
+    { resume: false, direct: true },
+    { resume: false, direct: false }
+  ]
+  return opts.hasPartial
+    ? [{ resume: true, direct: true }, { resume: true, direct: false }, ...tail]
+    : tail
+}
+
+/**
+ * 「这份文件是不是官方那一份」——只有尺寸能对上才算。
+ *
+ * `expectedSize <= 0`（release 里没给 size，或旧资产）时无从比对，交给调用方按
+ * "文件非空"处理：宁可宽松，也不要因为一个缺失的字段把正常下载判死。
+ */
+export function isCompleteDownload(actualSize: number, expectedSize: number): boolean {
+  if (actualSize <= 0) {
+    return false
+  }
+  if (expectedSize <= 0) {
+    return true
+  }
+  return actualSize === expectedSize
 }
 
 /**

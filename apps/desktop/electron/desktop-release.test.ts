@@ -15,8 +15,10 @@ import {
   canSelfUpdate,
   compareVersions,
   createReleaseLookup,
+  isCompleteDownload,
   parseReleaseTag,
   pickInstallerAsset,
+  planDownloadAttempts,
   writeUpdateHelper
 } from './desktop-release'
 
@@ -349,3 +351,44 @@ test('concurrent lookups share one request', async () => {
 
   assert.equal(calls, 1)
 })
+
+// ── 整包下载：复用 / 续传 / 尺寸对账（2026-11-10）──────────────────────────
+// 安装包是 400 MB 级别（toolchain + wheelhouse 都在里面）。用户点了更新、安装被
+// 占着的文件挡回来、再点一次，如果每次都从零拉一遍，这个体积就是纯粹的痛。
+// 下面钉住的是"能省就省、但绝不把半截包当成品"。
+
+test('已经有半截文件时才敢用断点续传', () => {
+  const fresh = planDownloadAttempts({ hasPartial: false })
+  assert.equal(fresh.length, 2)
+  assert.ok(fresh.every(a => a.resume === false), '空空如也时 -C - 无从接起')
+
+  const partial = planDownloadAttempts({ hasPartial: true })
+  assert.equal(partial.length, 4)
+  // 先续（省流量），续不动再全量；每一档都留一次绕代理的机会。
+  assert.deepEqual(
+    partial.map(a => [a.resume, a.direct]),
+    [
+      [true, true],
+      [true, false],
+      [false, true],
+      [false, false]
+    ]
+  )
+})
+
+test('尺寸对不上就是没下成 —— 别把 CDN 的错误页递进安装器', () => {
+  assert.equal(isCompleteDownload(421 * 1024 * 1024, 421 * 1024 * 1024), true)
+  // 半截流
+  assert.equal(isCompleteDownload(1024, 421 * 1024 * 1024), false)
+  // 比官方还大（旧文件残留 / 续传拼错）
+  assert.equal(isCompleteDownload(500 * 1024 * 1024, 421 * 1024 * 1024), false)
+  // 文件根本不在
+  assert.equal(isCompleteDownload(-1, 421 * 1024 * 1024), false)
+  assert.equal(isCompleteDownload(0, 421 * 1024 * 1024), false)
+})
+
+test('发布里没给 size 时只要求文件非空 —— 不能因为缺字段把正常下载判死', () => {
+  assert.equal(isCompleteDownload(123, 0), true)
+  assert.equal(isCompleteDownload(0, 0), false)
+})
+
