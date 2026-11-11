@@ -98,6 +98,14 @@ export function chatlogLedgerRow(answer: CollectorAnswer): { level: LedgerLevel;
     return { level: 'ready', body: '微信消息采集服务已就绪' }
   }
 
+  // 开关关着（`sources.yaml`: `wechat.enabled: false`）—— 第四档，不是四种病之一。
+  // 11-11 装机版在这一档上弹了「Service fault · 微信消息采集」：boot 无条件来问健康，
+  // 不健康就去拉起 sidecar，拉不起来落红。开关关着的时候人根本没开始，红牌是冤枉他
+  // （用户 11-05 原话「相关的采集腿也不要反复报错了」）。句子逐字用服务端那句。
+  if (answer.state === 'disabled') {
+    return { level: 'deferred', body: answer.note ?? '微信信源未启用，不采集' }
+  }
+
   if (ATTEMPTED_STATES.has(answer.state)) {
     if (!answer.note) {
       // 状态认得、句子没送到——这是接线坏了，宁可可红也不替它编一句。

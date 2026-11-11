@@ -149,7 +149,25 @@ class ChatlogPipeline:
 
         以前不健康只回 "chatlog unreachable (/health failed)"——四种完全不同的原因
         （没 Go / 没产物 / 没密钥 / 没在听）在面上是同一句话，判据 8 要的就是拆开它。
+
+        **先问用户开没开这一条**（2026-11-11）：`sources.yaml` 里 `wechat.enabled: false`
+        时，这一格答 `disabled` 而不是报那四种病。用户 11-05 就说过「用户没有配置微信。
+        就不采集。相关的采集腿也不要反复报错了」；11-11 他又在装机版上看到
+        「Service fault · WeChat message collector」——因为桌面 boot 无条件来问一次健康，
+        而不健康就被拿去拉起 sidecar，拉不起来就落红。开关关着的时候，「没打开」不是
+        「坏了」：这里给一个第四态，桌面据此**不 spawn、不弹红**。
         """
+        from plobi.collectors import sources_config
+
+        enabled, origin = sources_config.effective_enabled("wechat")
+        if not enabled:
+            return {
+                "ok": False,
+                "detail": f"微信信源没有打开（sources.yaml：{origin}），不采集，也不报故障。",
+                "state": "disabled",
+                "binary": None,
+            }
+
         ok = chatlog_is_healthy(self.client)
         binary = sidecar.resolved_binary()
         if ok:
