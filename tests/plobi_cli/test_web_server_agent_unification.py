@@ -280,9 +280,16 @@ class TestProfileScopedMcp:
 
 
 class TestProfileScopedModel:
-    def test_model_set_with_profile_lands_in_the_one_shared_config(
+    def test_model_set_with_profile_lands_on_the_agent_roster_row(
         self, client, shared_home
     ):
+        """**模型槽是「一份家」的唯一例外**（`WP-MODEL-AGENT-SCOPE`）。
+
+        配置只有一份，但「给某个 Agent 单独选一个模型」有个专属的落点：
+        **名册那一行的覆盖**（读时叠：名册行 → 顶层 → 出厂默认）。
+        所以带 profile 的主模型写落名册行，那一份共享配置一个字不动。
+        细节判据在 `tests/plobi_cli/test_model_set_per_agent.py`。
+        """
         home = shared_home["home"]
         resp = client.post(
             "/api/model/set",
@@ -292,6 +299,31 @@ class TestProfileScopedModel:
                 "model": "test/model-1",
                 "confirm_expensive_model": True,
                 "profile": "worker_beta",
+            },
+        )
+        assert resp.status_code == 200
+
+        from plobi.agents.registry import AgentRegistry
+
+        row = AgentRegistry.load(home / "plobi" / "projects.yaml").get("worker_beta")
+        assert row.provider == "openrouter"
+        assert row.model == "test/model-1"
+
+        # 共享那一份没被碰
+        assert not _cfg(home).get("model")
+
+    def test_model_set_without_profile_lands_in_the_one_shared_config(
+        self, client, shared_home
+    ):
+        """没有作用域 ⇒ 写那唯一一份（那才是「这台机器的主模型」）。"""
+        home = shared_home["home"]
+        resp = client.post(
+            "/api/model/set",
+            json={
+                "scope": "main",
+                "provider": "openrouter",
+                "model": "test/model-1",
+                "confirm_expensive_model": True,
             },
         )
         assert resp.status_code == 200

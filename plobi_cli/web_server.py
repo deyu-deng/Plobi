@@ -6093,7 +6093,18 @@ async def set_model_assignment(body: ModelAssignment, profile: Optional[str] = N
                 }
 
         def _apply_assignment():
-            with _profile_scope(body.profile or profile):
+            target = (body.profile or profile or "").strip()
+            # 家退休之后配置只有一份 ⇒「给某个 Agent 单独选模型」的落点是**名册那一行**
+            # 的覆盖，不是那唯一一份 `config.yaml`（写那儿 = 所有 Agent 一起变，
+            # 这正是桌面 Models 屏切了 Agent 还是全员跟着换的原因）。
+            # 名册行只放得下 provider + model；自定义端点（base_url / api_key）是
+            # **这台机器**的，名册行没地方放 ⇒ 那种情况仍旧走共享那一份，
+            # 不假装它是 per-agent 的。
+            if scope == "main" and not base_url and not api_key:
+                row = _agent_roster_name(target)
+                if row:
+                    return _apply_main_model_per_agent(row, provider, model)
+            with _profile_scope(target):
                 return _apply_model_assignment_sync(
                     scope, provider, model, task, base_url, api_key
                 )
@@ -6104,6 +6115,59 @@ async def set_model_assignment(body: ModelAssignment, profile: Optional[str] = N
     except Exception:
         _log.exception("POST /api/model/set failed")
         raise HTTPException(status_code=500, detail="Failed to save model assignment")
+
+
+def _agent_roster_name(target: str) -> str:
+    """这个作用域是不是名册上的一个 L2 Agent；是 ⇒ 给它的**名册 name**。
+
+    空作用域 / 查无此行 ⇒ 空串（不是 Agent ⇒ 落回那唯一一份共享配置）。
+
+    `default` 与 L1 秘书那一行**故意不算**：总秘书的主模型就是**这台机器**的主模型
+    （它没有"自己那一份"这回事），把它路由到名册行会让"换秘书的模型"变成
+    "只换总秘书的模型"，而总秘书本来就是 L1。
+    """
+    raw = str(target or "").strip()
+    if not raw or raw.casefold() == "default":
+        return ""
+    try:
+        from plobi.agents.registry import L1_SECRETARY_ROLE, entry_for_profile
+        from plobi_cli.agent_identity import normalize_profile_name
+
+        canon = normalize_profile_name(raw)
+    except Exception:
+        return ""
+    try:
+        entry = entry_for_profile(canon)
+    except Exception:
+        return ""
+    if entry is None:
+        return ""
+    if str(getattr(entry, "role", "") or "") == L1_SECRETARY_ROLE:
+        return ""
+    return entry.name
+
+
+def _apply_main_model_per_agent(identity: str, provider: str, model: str) -> dict:
+    """主模型写**这个 Agent 的名册行**（覆盖），不写那唯一一份共享配置。
+
+    写侧与读侧同一句：名册行覆盖 → 顶层 → 出厂默认（裁 42.2／166 ADR-0013）。
+    写共享那一份 = 全员一起变，这正是这条路以前做的事。
+    """
+    try:
+        _write_profile_model(identity, provider, model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "scope": "main",
+        "provider": provider,
+        "model": model,
+        "base_url": "",
+        # 这两条是**这台机器**那一层的副作用（Nous 自动路由、自定义端点登记），
+        # 一次 per-agent 的写不该改它们 ⇒ per-agent 这条路上它们是空的。
+        "gateway_tools": [],
+        "stale_aux": [],
+    }
 
 
 def _apply_model_assignment_sync(
