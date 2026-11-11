@@ -1276,6 +1276,14 @@ export interface Translations {
     readOnly: string
     updated: string
     outline: string
+    /** 右栏那五块（Obsidian 的右栏工作区）。 */
+    backlinks: string
+    outgoingLinks: string
+    tags: string
+    properties: string
+    bookmarks: string
+    bookmark: string
+    unbookmark: string
     /** 快速切换笔记（mod+o）。 */
     quickSwitch: string
     edit: string

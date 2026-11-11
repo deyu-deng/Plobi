@@ -38,6 +38,19 @@ export interface NoteSaveResult {
   detail: string
 }
 
+/**
+ * 全库的链接图。
+ *
+ * `links` 里能解析上的目标是**逻辑路径**（`Notes/…`），解析不上的留原样（屏上标成
+ * 「未创建」）；`backlinks` 只收真的指向某一篇的链接。
+ */
+export interface NoteLinkGraph {
+  backlinks: Record<string, string[]>
+  links: Record<string, string[]>
+  titles: Record<string, string>
+  totals: { links: number; notes: number }
+}
+
 /** 改一篇笔记的名字之后的样子：旧路径、新路径、连带动了哪几篇。 */
 export interface NoteRenameResult {
   path: string
@@ -67,6 +80,16 @@ export async function fetchNote(path: string): Promise<NotePage> {
     timeoutMs: TIMEOUT_MS
   })
   return unwrapEnvelope<NotePage>(payload, 'note')
+}
+
+/**
+ * 全库的链接图（出链面板与反向链接面板的数据源）。
+ *
+ * 一次给全：反向链接要的是**全库**的关系，前端一次只读一篇正文算不出来。
+ */
+export async function fetchNoteLinks(): Promise<NoteLinkGraph> {
+  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/surface/notes/links', timeoutMs: TIMEOUT_MS })
+  return unwrapEnvelope<NoteLinkGraph>(payload, 'note links')
 }
 
 /**

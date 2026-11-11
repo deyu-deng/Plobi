@@ -17,6 +17,7 @@ import type { NoteMeta, NotesLibrary } from './api'
 
 const fetchNotes = vi.fn()
 const fetchNote = vi.fn()
+const fetchNoteLinks = vi.fn()
 const saveNote = vi.fn()
 const renameNote = vi.fn()
 const deleteNote = vi.fn()
@@ -29,6 +30,7 @@ vi.mock('./api', async () => {
     deleteNote: (...args: unknown[]) => deleteNote(...args),
     fetchNotes: () => fetchNotes(),
     fetchNote: (path: string) => fetchNote(path),
+    fetchNoteLinks: () => fetchNoteLinks(),
     renameNote: (...args: unknown[]) => renameNote(...args),
     saveNote: (...args: unknown[]) => saveNote(...args)
   }
@@ -114,10 +116,12 @@ function renderView() {
 beforeEach(() => {
   fetchNotes.mockReset()
   fetchNote.mockReset()
+  fetchNoteLinks.mockReset()
   saveNote.mockReset()
   renameNote.mockReset()
   deleteNote.mockReset()
   fetchNotes.mockResolvedValue(LIBRARY)
+  fetchNoteLinks.mockResolvedValue({ backlinks: {}, links: {}, titles: {}, totals: { links: 0, notes: 0 } })
   renameNote.mockResolvedValue({ path: NOTE.path, new_path: 'Notes/数学/线性代数.md', changed: true })
   deleteNote.mockResolvedValue({ path: NOTE.path, trash: 'X:/trash/微积分.md' })
   saveNote.mockResolvedValue({

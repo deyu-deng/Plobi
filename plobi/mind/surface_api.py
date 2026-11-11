@@ -318,6 +318,22 @@ async def search_surface_notes(q: str = Query(..., min_length=1)):
         return _error(503, f"search unavailable: {exc}")
 
 
+@router.get("/surface/notes/links")
+async def get_surface_note_links():
+    """全库的链接图：每篇的出链（出链面板）与谁链到了它（反向链接面板）。
+
+    一次给全：反向链接要的是**全库**的关系，前端一次只读一篇正文，算不出来。
+    """
+    from plobi.mind.notes_links import build_link_graph
+
+    try:
+        data = await run_in_threadpool(build_link_graph)
+    except Exception as exc:
+        return _unavailable("notes links", exc)
+
+    return {"ok": True, "data": data}
+
+
 @router.get("/surface/notes/content")
 async def get_surface_note(path: str = Query(..., min_length=1)):
     from plobi.mind.notes_library import read_note

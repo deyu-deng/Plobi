@@ -14,18 +14,21 @@ import { translateNow, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { notifyError } from '@/store/notifications'
 
-import { deleteNote, fetchNote, fetchNotes, NOTES_PREFIX, renameNote, saveNote } from './api'
+import { deleteNote, fetchNote, fetchNoteLinks, fetchNotes, NOTES_PREFIX, renameNote, saveNote } from './api'
 import type { NoteMeta } from './api'
+import { readBookmarks, toggleBookmark } from './bookmarks'
 import { NoteEditor } from './editor'
 import { HoverPreview } from './hover-preview'
 import { jumpToAnchor, makeLinkIndex, NoteMarkdown } from './note-markdown'
 import { noteBaseDir } from './note-media'
 import { buildNoteTree, noteTemplate, parseOutline } from './outline'
 import type { NoteTreeNode } from './outline'
+import { NotePanels } from './panels'
 import { NoteSwitcher, useNoteSwitcherEscape, useNoteSwitcherHotkey } from './switcher'
 import { NoteTabs } from './tabs'
 
-function matches(note: NoteMeta, needle: string): boolean {
+function matches(note: NoteMeta, needle: string, tag: string | null): boolean {
+  if (tag && !(note.tags ?? []).includes(tag)) return false
   if (!needle) return true
   return [note.title, note.excerpt, note.topic, ...note.tags].join('\n').toLowerCase().includes(needle.toLowerCase())
 }
@@ -196,6 +199,10 @@ export function KnowledgeView() {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  /** 右栏「标签」面板点一下 ⇒ 左栏按这个标签筛。 */
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  /** 书签（落在本机，不进笔记仓）。 */
+  const [bookmarks, setBookmarks] = useState<string[]>([])
 
   const [editing, setEditing] = useState(false)
   const [view, setView] = useState<'source' | 'preview'>('source')
@@ -229,6 +236,8 @@ export function KnowledgeView() {
   const bodyRef = useRef<HTMLDivElement>(null)
   const library = useQuery({ queryKey: ['surface-notes'], queryFn: fetchNotes, staleTime: 0 })
   const notes = library.data?.notes ?? []
+  /** 全库的链接图（反向链接面板要它）：一次给全，不用前端一篇篇拉正文。 */
+  const graph = useQuery({ queryKey: ['surface-note-links'], queryFn: fetchNoteLinks, staleTime: 0 })
   const page = useQuery({
     queryKey: ['surface-note', selected],
     queryFn: () => fetchNote(selected as string),
@@ -236,7 +245,17 @@ export function KnowledgeView() {
     staleTime: 0
   })
 
-  const visible = useMemo(() => notes.filter(note => matches(note, query.trim())), [notes, query])
+  // 书签：第一次进来时从本机读一份（落在 localStorage，不进笔记仓）。
+  useEffect(() => {
+    setBookmarks(readBookmarks())
+  }, [])
+
+  function toggleCurrentBookmark() {
+    if (!selected) return
+    setBookmarks(toggleBookmark(selected))
+  }
+
+  const visible = useMemo(() => notes.filter(note => matches(note, query.trim(), tagFilter)), [notes, query, tagFilter])
   const tree = useMemo(() => buildNoteTree(visible), [visible])
   const searching = query.trim().length > 0
 
@@ -249,6 +268,12 @@ export function KnowledgeView() {
       return
     }
 
+    // 按标签筛的时候**不换当前读的那篇**（Obsidian 筛文件列表时不带走正在读的
+    // 笔记）；否则一点标签，正文就跳到别的篇去了。
+    if (tagFilter) {
+      return
+    }
+
     if (isNew || (selected && visible.some(note => note.path === selected))) {
       return
     }
@@ -257,7 +282,7 @@ export function KnowledgeView() {
     setSelected(first)
     // 初始那一格也开成标签——Obsidian 的手感：打开过的笔记就留在标签栏上。
     if (first) setOpenTabs(previous => (previous.includes(first) ? previous : [...previous, first]))
-  }, [isNew, pendingPath, selected, visible])
+  }, [isNew, pendingPath, selected, tagFilter, visible])
 
   const activeNote = notes.find(note => note.path === selected) ?? null
   const sourceText = editing ? draft : (page.data?.text ?? '')
@@ -588,7 +613,25 @@ export function KnowledgeView() {
     return (
       <article className="space-y-4">
         <header className="space-y-2">
-          <h1 className="text-lg font-semibold leading-tight">{activeNote?.title ?? ''}</h1>
+          <div className="flex items-start gap-2">
+            <h1 className="flex-1 text-lg font-semibold leading-tight">{activeNote?.title ?? ''}</h1>
+            {selected && (
+              <button
+                aria-label={bookmarks.includes(selected) ? v.unbookmark : v.bookmark}
+                aria-pressed={bookmarks.includes(selected)}
+                className={cn(
+                  'shrink-0 rounded px-1 text-[0.8rem] leading-none transition-colors',
+                  bookmarks.includes(selected)
+                    ? 'text-(--ui-text-tertiary) hover:text-foreground'
+                    : 'text-(--ui-text-tertiary)/50 hover:text-(--ui-text-secondary)'
+                )}
+                onClick={toggleCurrentBookmark}
+                type="button"
+              >
+                {bookmarks.includes(selected) ? '★' : '☆'}
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap items-center gap-1.5 text-[0.66rem] text-muted-foreground/70">
             {activeNote && <Badge variant="outline">{activeNote.topic}</Badge>}
             {activeNote?.tags.slice(0, 4).map(tag => <span key={tag}>#{tag}</span>)}
@@ -720,7 +763,18 @@ export function KnowledgeView() {
 
       <Pane id="notes-outline" minWidth={140} resizable side="right" width="13rem">
         <aside className="h-full overflow-y-auto px-2 py-3" data-testid="note-outline">
-                <div className="mb-2 px-1.5 text-[0.62rem] text-muted-foreground/60">{v.outline}</div>
+          <NotePanels
+            bookmarks={bookmarks}
+            current={activeNote ? { path: activeNote.path, title: activeNote.title } : null}
+            graph={graph.data ?? null}
+            linkIndex={linkIndex}
+            notes={notes}
+            onFilterTag={tag => setTagFilter(current => (current === tag ? null : tag))}
+            onOpenNote={path => openNoteRef.current(path)}
+            onToggleBookmark={path => setBookmarks(toggleBookmark(path))}
+            text={sourceText}
+          />
+          <div className="mb-2 px-1.5 text-[0.62rem] text-muted-foreground/60">{v.outline}</div>
                 {outline.length === 0 ? (
                   <div className="px-1.5 text-[0.62rem] text-muted-foreground/40">—</div>
                 ) : (

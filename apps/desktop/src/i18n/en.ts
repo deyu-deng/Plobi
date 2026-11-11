@@ -1441,6 +1441,13 @@ export const en: Translations = {
     readOnly: 'Read-only',
     updated: 'Updated',
     outline: 'Outline',
+    backlinks: 'Backlinks',
+    outgoingLinks: 'Outgoing links',
+    tags: 'Tags',
+    properties: 'Properties',
+    bookmarks: 'Bookmarks',
+    bookmark: 'Bookmark',
+    unbookmark: 'Remove bookmark',
 
     quickSwitch: 'Jump to a note',
 
