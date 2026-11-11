@@ -569,6 +569,7 @@ def test_complete_retry_with_corrected_created_cards_succeeds(worker_env):
     # Create a real child via the tool so it gets the worker-profile
     # attribution the gate trusts.
     child = json.loads(kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "real child", "assignee": "peer",
     }))
     assert child["ok"]
@@ -961,6 +962,7 @@ def test_comment_schema_omits_author_override():
 def test_create_happy_path(worker_env):
     from tools import kanban_tools as kt
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "child task",
         "assignee": "peer",
         "parents": [worker_env],
@@ -998,7 +1000,7 @@ def test_create_inherits_worker_dir_workspace(monkeypatch, worker_env):
         conn.close()
     monkeypatch.setenv("PLOBI_KANBAN_TASK", self_tid)
 
-    d = json.loads(kt._handle_create({"title": "follow-up", "assignee": "peer"}))
+    d = json.loads(kt._handle_create({"body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）", "title": "follow-up", "assignee": "peer"}))
     assert d["ok"] is True
     conn = kb.connect()
     try:
@@ -1026,6 +1028,7 @@ def test_create_explicit_workspace_beats_inheritance(monkeypatch, worker_env):
     monkeypatch.setenv("PLOBI_KANBAN_TASK", self_tid)
 
     d = json.loads(kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "scratch child", "assignee": "peer",
         "workspace_kind": "scratch",
     }))
@@ -1045,7 +1048,7 @@ def test_create_no_worker_task_stays_scratch(monkeypatch, worker_env):
     from plobi_cli import kanban_db as kb
 
     monkeypatch.delenv("PLOBI_KANBAN_TASK", raising=False)
-    d = json.loads(kt._handle_create({"title": "orch child", "assignee": "peer"}))
+    d = json.loads(kt._handle_create({"body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）", "title": "orch child", "assignee": "peer"}))
     assert d["ok"] is True
     conn = kb.connect()
     try:
@@ -1065,6 +1068,7 @@ def test_create_stamps_session_id_from_env(monkeypatch, worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "from chat",
         "assignee": "peer",
         "parents": [worker_env],
@@ -1088,6 +1092,7 @@ def test_create_session_id_arg_overrides_env(monkeypatch, worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "explicit override",
         "assignee": "peer",
         "parents": [worker_env],
@@ -1111,6 +1116,7 @@ def test_create_session_id_absent_when_env_unset(monkeypatch, worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "no session",
         "assignee": "peer",
         "parents": [worker_env],
@@ -1128,7 +1134,7 @@ def test_create_session_id_absent_when_env_unset(monkeypatch, worker_env):
 def test_create_rejects_no_title(worker_env):
     from tools import kanban_tools as kt
     assert json.loads(kt._handle_create({"assignee": "x"})).get("error")
-    assert json.loads(kt._handle_create({"title": "   ", "assignee": "x"})).get("error")
+    assert json.loads(kt._handle_create({"body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）", "title": "   ", "assignee": "x"})).get("error")
 
 
 def test_create_rejects_no_assignee(worker_env):
@@ -1138,7 +1144,7 @@ def test_create_rejects_no_assignee(worker_env):
 
 def test_create_rejects_non_list_parents(worker_env):
     from tools import kanban_tools as kt
-    out = kt._handle_create({"title": "t", "assignee": "a", "parents": 42})
+    out = kt._handle_create({"body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）", "title": "t", "assignee": "a", "parents": 42})
     assert json.loads(out).get("error")
 
 
@@ -1146,6 +1152,7 @@ def test_create_parses_triage_string_false(worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "not triage",
         "assignee": "peer",
         "triage": "false",
@@ -1164,6 +1171,7 @@ def test_create_parses_triage_string_true(worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "needs triage",
         "assignee": "peer",
         "triage": "true",
@@ -1181,6 +1189,7 @@ def test_create_parses_triage_string_true(worker_env):
 def test_create_rejects_bad_triage(worker_env):
     from tools import kanban_tools as kt
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "bad triage",
         "assignee": "peer",
         "triage": "sometimes",
@@ -1192,6 +1201,7 @@ def test_create_accepts_string_parent(worker_env):
     """Convenience: a single parent id as string is coerced to [id]."""
     from tools import kanban_tools as kt
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "t", "assignee": "a", "parents": worker_env,
     })
     assert json.loads(out)["ok"]
@@ -1202,6 +1212,7 @@ def test_create_accepts_skills_list(worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "skilled",
         "assignee": "linguist",
         "skills": ["translation", "github-code-review"],
@@ -1218,6 +1229,7 @@ def test_create_accepts_skills_string(worker_env):
     from tools import kanban_tools as kt
     from plobi_cli import kanban_db as kb
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "one-skill",
         "assignee": "a",
         "skills": "translation",
@@ -1233,6 +1245,7 @@ def test_create_rejects_non_list_skills(worker_env):
     """skills: 42 must be rejected, not silently dropped."""
     from tools import kanban_tools as kt
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "t", "assignee": "a", "skills": 42,
     })
     assert json.loads(out).get("error")
@@ -1329,6 +1342,7 @@ def test_worker_lifecycle_through_tools(worker_env):
 
     # 4. spawn a child task for follow-up
     child_out = json.loads(kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "write integration test",
         "assignee": "qa",
         "parents": [worker_env],
@@ -1757,6 +1771,7 @@ def test_board_param_routes_create_to_alt_board(multi_board_env):
     from tools import kanban_tools as kt
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "alt-only",
         "assignee": "worker",
         "board": "alt",
@@ -1818,6 +1833,7 @@ def test_board_param_routes_assign_via_create_to_alt(multi_board_env):
     from tools import kanban_tools as kt
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "alt-assigned",
         "assignee": "linguist",
         "board": "alt",
@@ -2085,6 +2101,7 @@ def test_create_subscribes_gateway_session(monkeypatch, worker_env):
     monkeypatch.setenv("PLOBI_SESSION_USER_ID", "user-9")
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "auto-sub gateway",
         "assignee": "peer",
     })
@@ -2116,6 +2133,7 @@ def test_create_subscribes_tui_session_via_session_key(monkeypatch, worker_env):
     monkeypatch.delenv("PLOBI_SESSION_ID", raising=False)
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "auto-sub tui",
         "assignee": "peer",
     })
@@ -2140,6 +2158,7 @@ def test_create_does_not_subscribe_in_cli_session(monkeypatch, worker_env):
     monkeypatch.delenv("PLOBI_SESSION_ID", raising=False)
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "no sub cli",
         "assignee": "peer",
     })
@@ -2169,6 +2188,7 @@ def test_create_respects_auto_subscribe_on_create_false(monkeypatch, worker_env,
 
     from tools import kanban_tools as kt
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "no sub gated",
         "assignee": "peer",
     })
@@ -2190,6 +2210,7 @@ def test_create_partial_session_context_no_subscribe(monkeypatch, worker_env):
     monkeypatch.delenv("PLOBI_SESSION_ID", raising=False)
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "no sub partial",
         "assignee": "peer",
     })
@@ -2215,6 +2236,7 @@ def test_maybe_auto_subscribe_swallows_add_notify_sub_failure(monkeypatch, worke
     monkeypatch.setattr(kb, "add_notify_sub", _boom)
 
     out = kt._handle_create({
+        "body": "测试用最小规格正文（验收：调用方拿到 ok 与 task_id）",
         "title": "auto-sub tolerates add_notify_sub failure",
         "assignee": "peer",
     })
