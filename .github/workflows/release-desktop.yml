@@ -332,9 +332,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
+      # 只取安装包 artifact（plobi-win / plobi-mac / plobi-linux）。
+      # 此前不带 pattern 地把全部 artifact 收进 artifacts/，于是 chatlog job 的
+      # 产物（chatlog-windows / chatlog-macos / chatlog-linux）也一并挂上了
+      # release，资产里因此多出一个裸 chatlog 和 chatlog.exe。它们只是 build
+      # 阶段的输入：已经由 collect-backend-bundle 打进 backend bundle，
+      # 随安装包分发，不该单独出现在 release 资产里。
+      - name: Download installers
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
+          pattern: plobi-*
           path: artifacts
           merge-multiple: true
 
