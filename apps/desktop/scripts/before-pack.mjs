@@ -62,6 +62,7 @@ import { existsSync, rmSync } from 'node:fs'
 import { Arch } from 'electron-builder'
 import path from 'node:path'
 import { stageNodePty } from './stage-native-deps.mjs'
+import { scrubBuildJunk } from './build-junk.mjs'
 import stageEgressAssets from './stage-egress-assets.mjs'
 
 export function cleanStaleAppOutDir(appOutDir) {
@@ -101,13 +102,27 @@ function resolveEgressSrc(projectDir) {
 
 export default async function beforePack(context) {
   const appOutDir = context && context.appOutDir
+  const projectDir =
+    (context && (context.appDir || context.projectDir)) ||
+    (context && context.packager && context.packager.projectDir) ||
+    process.cwd()
+
+  // 打包垃圾（下载中的侧车、pyc 缓存）先剔掉，别让构建机上跑过的运行期副产物进包。
+  // 放在最前面：后面几步 stage 进来的东西都还在，清理只看 build/。
+  try {
+    const { removed, freedBytes } = scrubBuildJunk(path.join(projectDir, 'build'))
+    if (removed.length > 0) {
+      const names = removed.map((item) => path.relative(projectDir, item.path)).join('、')
+      console.log(`[before-pack] 剔掉打包垃圾 ${names}（省 ${(freedBytes / 1048576).toFixed(1)} MB）`)
+    }
+  } catch (err) {
+    console.warn(`[before-pack] build junk scrub did not run (${err.message}); continuing`)
+  }
 
   // 随包分发（用户 10-12 拍「随包全带」，裁定 134 规定不进仓）：从 PLOBI_EGRESS_SRC 投放三件套。
   // 缺源不炸构建——但会在包里留 MISSING.txt，运行期的 `plobi network status` 照实说"这版没带"，
   // 而不是让人从一台挂住的引擎现场倒推。
   try {
-    const projectDir = (context && (context.appDir || context.projectDir)) ||
-      (context && context.packager && context.packager.projectDir) || process.cwd()
     const srcDir = resolveEgressSrc(projectDir)
     const plan = await stageEgressAssets({ srcDir, destDir: path.join(projectDir, 'build', 'egress') })
 

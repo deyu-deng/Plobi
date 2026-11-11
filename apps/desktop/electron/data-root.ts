@@ -23,7 +23,11 @@
  *    开发态从此在一格新地方从零长，两边同时开着也抢不到同一把锁。
  */
 
+import fs from 'node:fs'
 import path from 'node:path'
+
+/** 「这一格现在摸得到吗」——注入进来，`resolveDataRoot` 自己仍然不碰盘。 */
+export type DirProbe = (dir: string) => boolean
 
 /** 数据目录从哪一档判定出来的——写进日志，出问题时一眼看出被谁带偏了。 */
 export type DataRootSource =
@@ -35,6 +39,19 @@ export type DataRootSource =
   | 'default-dev'
   /** 候选路径与安装记录同址 ⇒ 判定为安装器写进来的污染，已忽略并回落开发默认。 */
   | 'default-dev-polluted'
+  /**
+   * 首选的几档**摸不到**（盘符不在、目录不可写，典型是安装时选了移动硬盘
+   * `E:\` 而这台机器上现在没有 E 盘），于是退到下一档。后缀说明"是哪一档
+   * 被跳过了"，`:根本落点` 仍是 `root` 本身——启动日志里一眼看出为什么
+   * 没落在用户当初选的那一格。
+   */
+  | 'explicit-env-unusable'
+  | 'install-record-unusable'
+  | 'dev-home-env-unusable'
+  | 'home-env-unusable'
+  /** 连默认格都摸不到：仍返回它（不静默改道），让上层把话说清楚。 */
+  | 'default-packaged-unusable'
+  | 'default-dev-unusable'
 
 export interface DataRootResolution {
   /** 绝对路径，已归一化。 */
@@ -64,6 +81,16 @@ export interface DataRootInput {
   localAppData?: string | null
   /** 用户主目录，最后兜底。 */
   home: string
+  /**
+   * 某一格现在摸不摸得到（盘符不在 / 目录不可写）。**不传 = 全部当作摸得到**，
+   * 于是既有调用点与既有单测的语义一点不变；只有进程启动那一路会传真探针
+   * （:func:`directoryUsable`）。
+   *
+   * 为什么必须有这一档：安装时把数据目录选在移动硬盘或副盘（`E:\PlobiData`），
+   * 换台机器/盘没插时旧行为会拿这一格去首启 `mkdir`，当场 ENOENT 把启动掐死，
+   * 而正确做法是退回默认格继续跑（并让日志说出退到了哪一档）。
+   */
+  isDirUsable?: DirProbe
 }
 
 /** 空串 / 纯空白 / 只有一个分隔符，都当没写。 */
@@ -115,19 +142,38 @@ export function resolveDataRoot(input: DataRootInput): DataRootResolution {
   const devDefault = defaultBase ? path.join(defaultBase, 'Plobi-Dev') : 'Plobi-Dev'
   const packagedDefault = defaultBase ? path.join(defaultBase, 'Plobi') : 'Plobi'
 
+  // 没注入探针 ⇒ 每一格都算摸得到（纯函数语义不变）。注入之后，摸不到的那一档
+  // 就让位给下一档，并把"谁让的位"写进 source。
+  const usable = (dir: string): boolean => (input.isDirUsable ? input.isDirUsable(dir) : true)
+
   // ① 显式注入的那一格，两份都认——调试、CI、以及安装器首次拉起都走这条。
   const explicit = normalize(clean(input.explicitDir))
   if (explicit) {
-    return { root: explicit, source: 'explicit-env' }
+    if (usable(explicit)) {
+      return { root: explicit, source: 'explicit-env' }
+    }
+    // 显式那一格摸不到时**不换道**：它是有人拿参数指定的（CI、快捷方式、安装器
+    // 首启），默默改到 `%LOCALAPPDATA%` 会把产物写到没人看的地方。照样返回。
+    return { root: explicit, source: 'explicit-env-unusable' }
   }
 
   if (input.isPackaged) {
     // ② 装机版只认安装时选的那一格，然后才是自己的默认格。
     const recorded = normalize(clean(input.installRecordedDir))
     if (recorded) {
-      return { root: recorded, source: 'install-record' }
+      if (usable(recorded)) {
+        return { root: recorded, source: 'install-record' }
+      }
+      // 装载时选的那块盘不在了：退默认格，但别让这件事静默——source 说清楚。
+      return {
+        root: packagedDefault,
+        source: usable(packagedDefault) ? 'install-record-unusable' : 'default-packaged-unusable'
+      }
     }
-    return { root: packagedDefault, source: 'default-packaged' }
+    return {
+      root: packagedDefault,
+      source: usable(packagedDefault) ? 'default-packaged' : 'default-packaged-unusable'
+    }
   }
 
   // ③ 开发态：`PLOBI_DEV_HOME` 优先，其次 `PLOBI_HOME`，最后 `Plobi-Dev`。
@@ -140,20 +186,83 @@ export function resolveDataRoot(input: DataRootInput): DataRootResolution {
   // 开发态下一次登录就继承到它 ⇒ 开发态直接读写玩家数据。这里认出来就不认它。
   const polluted = (candidate: string): boolean => Boolean(recorded) && sameDir(candidate, recorded)
 
+  const devDefaultUsable = (): DataRootSource =>
+    usable(devDefault) ? 'default-dev' : 'default-dev-unusable'
+
   if (fromDev) {
     if (polluted(fromDev)) {
       return { root: devDefault, source: 'default-dev-polluted' }
     }
-    return { root: fromDev, source: 'dev-home-env' }
+    if (usable(fromDev)) {
+      return { root: fromDev, source: 'dev-home-env' }
+    }
+    // 这台机器上开发态的门牌指向一块不存在的盘（换机、盘拔了）：退回默认格，
+    // 而不是拿一格不存在的地方去首启 mkdir。
+    if (fromHome && !polluted(fromHome) && usable(fromHome)) {
+      return { root: fromHome, source: 'dev-home-env-unusable' }
+    }
+    return {
+      root: devDefault,
+      source: usable(devDefault) ? 'dev-home-env-unusable' : devDefaultUsable()
+    }
   }
 
   if (fromHome) {
     if (polluted(fromHome)) {
       return { root: devDefault, source: 'default-dev-polluted' }
     }
-    return { root: fromHome, source: 'home-env' }
+    if (usable(fromHome)) {
+      return { root: fromHome, source: 'home-env' }
+    }
+    return {
+      root: devDefault,
+      source: usable(devDefault) ? 'home-env-unusable' : devDefaultUsable()
+    }
   }
-  return { root: devDefault, source: 'default-dev' }
+  return { root: devDefault, source: devDefaultUsable() }
+}
+
+/**
+ * 默认探针：这一格**现在**能不能拿来放数据。
+ *
+ * 判据只有两条，都是"能不能把它建出来"的最小前提：
+ *
+ *   1. 已经存在 ⇒ 必须是目录（同名文件占位也算摸不到）；
+ *   2. 不存在 ⇒ 往上找最近的已存在祖先，它必须是目录。Windows 上盘符不存在时
+ *      `path.dirname` 会收敛到 `E:\` 自身不再前进，这里就是那个"到此为止"。
+ *
+ * 只读不建：探测阶段就去 `mkdir` 会在用户拒绝的那一档留下空壳目录，下次启动
+ * 又被它认成"摸得到"。创建留给真正要用这格的代码，失败由那一层的 try/catch 说话。
+ */
+export function directoryUsable(dir: string): boolean {
+  const target = normalize(clean(dir))
+  if (!target) {
+    return false
+  }
+  try {
+    if (fs.existsSync(target)) {
+      return fs.statSync(target).isDirectory()
+    }
+  } catch {
+    return false
+  }
+
+  let probe = path.dirname(target)
+  for (;;) {
+    try {
+      if (fs.existsSync(probe)) {
+        return fs.statSync(probe).isDirectory()
+      }
+    } catch {
+      return false
+    }
+    const parent = path.dirname(probe)
+    if (parent === probe) {
+      // 走到根都不是目录 ⇒ 这块盘/这个根不存在。
+      return false
+    }
+    probe = parent
+  }
 }
 
 /**

@@ -8,10 +8,17 @@
  */
 
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { resolveDataRoot, resolveElectronUserDataRoot, dataRootLayout } from './data-root'
+import {
+  directoryUsable,
+  resolveDataRoot,
+  resolveElectronUserDataRoot,
+  dataRootLayout
+} from './data-root'
 
 const LOCAL = path.resolve(path.sep === '\\' ? 'D:\\Data\\AppData' : '/data/appdata')
 const HOME = path.resolve(path.sep === '\\' ? 'C:\\Users\\tester' : '/home/tester')
@@ -193,3 +200,102 @@ test('装机版：永不读 PLOBI_DEV_HOME —— 那是开发态的钥匙', () 
   assert.equal(withoutRecord.source, 'default-packaged')
   assert.equal(withoutRecord.root, path.join(LOCAL, 'Plobi'))
 })
+
+// ── 数据目录摸不到时的回退（2026-11-10）────────────────────────────────────
+// 安装器允许把数据目录手打到副盘/移动硬盘（`E:\PlobiData`）。那块盘不在这台
+// 机器上时，旧行为会拿一格不存在的地方去首启 mkdir ⇒ ENOENT 把启动掐死。
+// 现在：候选摸不到就让位给下一档，source 说清楚"谁让的位"。
+
+const UNREACHABLE = path.resolve(path.sep === '\\' ? 'E:\\PlobiData' : '/mnt/absent/PlobiData')
+const only = (allowed: string[]) => (dir: string) => allowed.some((a) => path.resolve(a) === path.resolve(dir))
+
+test('装机版：选的数据目录那块盘不在了 ⇒ 退默认格，source 指出原因', () => {
+  const got = resolveDataRoot({
+    isPackaged: true,
+    installRecordedDir: UNREACHABLE,
+    localAppData: LOCAL,
+    home: HOME,
+    isDirUsable: only([path.join(LOCAL, 'Plobi')])
+  })
+  assert.equal(got.root, path.join(LOCAL, 'Plobi'))
+  assert.equal(got.source, 'install-record-unusable')
+})
+
+test('装机版：录的那一格与默认格都摸不到 ⇒ 仍返回默认格但标记为不可用', () => {
+  const got = resolveDataRoot({
+    isPackaged: true,
+    installRecordedDir: UNREACHABLE,
+    localAppData: LOCAL,
+    home: HOME,
+    isDirUsable: () => false
+  })
+  assert.equal(got.root, path.join(LOCAL, 'Plobi'))
+  assert.equal(got.source, 'default-packaged-unusable')
+})
+
+test('显式注入的目录摸不到时**不换道** —— 那是有人拿参数指定的', () => {
+  const pinned = path.resolve(path.sep === '\\' ? 'Z:\\ci-home' : '/absent/ci-home')
+  const got = resolveDataRoot({
+    isPackaged: true,
+    explicitDir: pinned,
+    installRecordedDir: RECORDED,
+    localAppData: LOCAL,
+    home: HOME,
+    isDirUsable: () => false
+  })
+  assert.equal(got.root, pinned)
+  assert.equal(got.source, 'explicit-env-unusable')
+})
+
+test('开发态：PLOBI_HOME 指到不存在的盘 ⇒ 回落 Plobi-Dev', () => {
+  const got = resolveDataRoot({
+    isPackaged: false,
+    homeEnv: UNREACHABLE,
+    localAppData: LOCAL,
+    home: HOME,
+    isDirUsable: only([path.join(LOCAL, 'Plobi-Dev')])
+  })
+  assert.equal(got.root, path.join(LOCAL, 'Plobi-Dev'))
+  assert.equal(got.source, 'home-env-unusable')
+})
+
+test('开发态：PLOBI_DEV_HOME 摸不到但 PLOBI_HOME 摸得到 ⇒ 用后者并标记原因', () => {
+  const got = resolveDataRoot({
+    isPackaged: false,
+    devHomeEnv: UNREACHABLE,
+    homeEnv: DEV_HOME,
+    localAppData: LOCAL,
+    home: HOME,
+    isDirUsable: only([DEV_HOME])
+  })
+  assert.equal(got.root, DEV_HOME)
+  assert.equal(got.source, 'dev-home-env-unusable')
+})
+
+test('探针存在时，能用的那一档仍按原优先级胜出（不因探测改变老行为）', () => {
+  const got = resolveDataRoot({
+    isPackaged: true,
+    installRecordedDir: RECORDED,
+    localAppData: LOCAL,
+    home: HOME,
+    isDirUsable: only([RECORDED])
+  })
+  assert.equal(got.root, RECORDED)
+  assert.equal(got.source, 'install-record')
+})
+
+test('directoryUsable：真目录算能用，不存在的子目录建在真目录下也算能用', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-data-root-'))
+  try {
+    assert.equal(directoryUsable(base), true)
+    assert.equal(directoryUsable(path.join(base, 'plobi-agent', 'venv')), true)
+    // 同名文件占位 ⇒ 不是目录 ⇒ 摸不到（往里 mkdir 会 EEXIST/ENOTDIR）。
+    const blocker = path.join(base, 'blocked')
+    fs.writeFileSync(blocker, '')
+    assert.equal(directoryUsable(blocker), false)
+    assert.equal(directoryUsable(path.join(blocker, 'child')), false)
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true })
+  }
+})
+
