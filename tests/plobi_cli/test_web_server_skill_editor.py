@@ -33,7 +33,12 @@ def _write_skill(skills_dir, name):
 
 @pytest.fixture
 def isolated_profiles(tmp_path, monkeypatch, _isolate_plobi_home):
-    """Isolated default home + one named profile, each with its own skills."""
+    """**一份**共享家（技能只有一份）＋ 一个能解析的作用域。
+
+    家目录退休之后不再有「一家一个分身」的家：技能资产只有**一张全局名单**
+    （顶层家那一份 ``skills/``）。这一档夹具以前造两个家各放各的技能，
+    钉的是老世界。
+    """
     from plobi_constants import get_plobi_home
     from plobi_cli import agent_identity as profiles
 
@@ -44,8 +49,9 @@ def isolated_profiles(tmp_path, monkeypatch, _isolate_plobi_home):
         (home / "skills").mkdir(parents=True, exist_ok=True)
         (home / "config.yaml").write_text("{}\n", encoding="utf-8")
 
+    # 技能只有**那一份**：两个名字都在共享家的 skills/ 下。
     _write_skill(default_home / "skills", "dashboard-skill")
-    _write_skill(worker_home / "skills", "worker-skill")
+    _write_skill(default_home / "skills", "worker-skill")
 
     monkeypatch.setattr(profiles, "_get_default_plobi_home", lambda: default_home)
     monkeypatch.setattr(profiles, "_get_profiles_root", lambda: profiles_root)
@@ -79,13 +85,24 @@ class TestSkillContent:
         assert "Do the thing." in data["content"]
 
     def test_get_content_scopes_to_profile(self, client, isolated_profiles):
+        """技能是**共享**的那一份 ⇒ 带不带 profile 看得见同一批。
+
+        作用域那一格仍然是真的：认不出的作用域照旧 404（写得出、读得到、也拒得掉）。
+        """
         resp = client.get(
             "/api/skills/content",
             params={"name": "worker-skill", "profile": "worker_alpha"},
         )
         assert resp.status_code == 200
-        # ...and the worker skill is invisible without the profile param.
+        # 家只有一份 ⇒ 不带 profile 也看得见同一个技能（老世界那套「不带就看不见」没了）。
         resp = client.get("/api/skills/content", params={"name": "worker-skill"})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "worker-skill"
+        # 作用域认不出 ⇒ 404（这一格还是真的）
+        resp = client.get(
+            "/api/skills/content",
+            params={"name": "worker-skill", "profile": "ghost"},
+        )
         assert resp.status_code == 404
 
     def test_get_content_unknown_skill_404(self, client, isolated_profiles):
@@ -120,6 +137,11 @@ class TestSkillCreate:
         ).exists()
 
     def test_create_scopes_to_profile(self, client, isolated_profiles):
+        """带 profile 的新建，落在**那一份**技能目录里（家只有一份，没有第二个落点）。
+
+        以前这一格钉的是「分身家那一份、dashboard 自己那一份不受影响」——那是老世界
+        （每个 profile 一个分身家）的形状。
+        """
         resp = client.post(
             "/api/skills",
             json={
@@ -130,11 +152,7 @@ class TestSkillCreate:
         )
         assert resp.status_code == 200
         assert (
-            isolated_profiles["worker_alpha"] / "skills" / "worker-new" / "SKILL.md"
-        ).exists()
-        # Dashboard's own skills dir stays clean.
-        assert not (
-            isolated_profiles["default"] / "skills" / "worker-new"
+            isolated_profiles["default"] / "skills" / "worker-new" / "SKILL.md"
         ).exists()
 
     def test_create_rejects_missing_frontmatter(self, client, isolated_profiles):

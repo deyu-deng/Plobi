@@ -158,7 +158,9 @@ def test_oauth_provider_status_uses_profile_query(tmp_path, monkeypatch):
     resp = client.get("/api/providers/oauth?profile=coder", headers=HEADERS)
 
     assert resp.status_code == 200, resp.text
-    assert observed_homes == [profile_home]
+    # 家只有一份 ⇒ 带 profile 的读落**共享根**（`tmp_path`），不是那个分身家
+    # （家目录退休之后 `identity_home()` 恒等于共享根，裁 42／178 乙案）。
+    assert observed_homes == [tmp_path]
 
 
 def test_oauth_start_stores_profile_for_background_completion(tmp_path, monkeypatch):
@@ -335,7 +337,8 @@ def test_codex_dashboard_worker_persists_inside_session_profile(tmp_path, monkey
         ws._codex_full_login_worker(sid)
 
         assert ws._oauth_sessions[sid]["status"] == "approved"
-        assert saved_homes == [profile_home]
+        # 凭据落在**那一份**家（共享根），不是那个分身家——家目录退休之后只有一份。
+        assert saved_homes == [tmp_path]
     finally:
         ws._oauth_sessions.pop(sid, None)
 
