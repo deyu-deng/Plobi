@@ -14,5 +14,5 @@ from ...gui import GuiProvider
 
 class WorkbuddyGuiProvider(GuiProvider):
     name = "workbuddy_gui"
-    display_name = "Workbuddy"
+    display_name = "WorkBuddy"
     served_models: tuple[str, ...] = ()

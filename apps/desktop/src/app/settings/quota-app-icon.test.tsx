@@ -11,7 +11,7 @@ import { QuotaAppIcon } from './quota-app-icon'
  */
 describe('QuotaAppIcon', () => {
   it('draws the brand glyph for a leg that has one', () => {
-    const { container } = render(<QuotaAppIcon id="workbuddy" name="CodeBuddy" />)
+    const { container } = render(<QuotaAppIcon id="workbuddy" name="WorkBuddy" />)
 
     expect(container.querySelector('svg')).toBeTruthy()
     // simple-icons ships an unconditional <title> whose default is the brand name.

@@ -87,6 +87,11 @@ const QUOTA_ICONS: Record<string, QuotaIconSpec> = {
   'qwenwork-enterprise': { Icon: SiQwen, color: '#6950EF' },
   'trae-cn': { Icon: SiTrae, color: '#32F08C' },
   'trae-global': { Icon: SiTrae, color: '#32F08C' },
+  // WorkBuddy 停在②：11-11 试过 www.workbuddy.cn / www.workbuddy.ai 的
+  // `favicon.svg` `favicon.ico` `favicon-32x32.png` `apple-touch-icon.png` `logo.svg`，
+  // 六个地址全 404（站点根路由一并不存在，返回的是路由器的 JSON 404），
+  // 拿不到官方标志文件。它是和 CodeBuddy 同一个账号体系的姊妹产品，
+  // 暂时借 CodeBuddy 的字形与品牌蓝——不自己画一枚假 logo 替它认领身份。
   workbuddy: { Icon: SiCodebuddy, color: '#0052D9' },
   'workbuddy-ai': { Icon: SiCodebuddy, color: '#0052D9' },
   workbuddy_api: { Icon: SiCodebuddy, color: '#0052D9' },

@@ -93,11 +93,11 @@ describe('buildLoginCards', () => {
 
   it('a local-session leg has no click: the credential lives next door', () => {
     const [card] = buildLoginCards([
-      row({ id: 'workbuddy', kind: 'local_session', live: true, name: 'CodeBuddy' })
+      row({ id: 'workbuddy', kind: 'local_session', live: true, name: 'WorkBuddy' })
     ])
 
     expect(card.connectable).toBe(false)
-    expect(card.intro).toBe('CodeBuddy 订阅额度')
+    expect(card.intro).toBe('WorkBuddy 订阅额度')
   })
 
   it('keeps "we did not wire it" off the body and on the control', () => {

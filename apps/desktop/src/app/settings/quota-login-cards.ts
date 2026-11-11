@@ -148,9 +148,12 @@ export const QUOTA_CARD_INTRO_FALLBACKS: Record<string, string> = {
   opencode_cli: 'OpenCode 免费额度',
   qoder: 'Qoder 订阅额度',
   qwen_cli: 'Qwen Code 免费额度',
-  workbuddy: 'CodeBuddy 订阅额度',
-  workbuddy_api: 'CodeBuddy 订阅额度',
-  workbuddy_cli: 'CodeBuddy 命令行额度'
+  // 11-11：这三条写的是 CodeBuddy，而腿背后那个产品叫 WorkBuddy（magpie 的 provider
+  // 名、`providers.yaml` 的 `name`、四语 `cardIntros.workbuddy` 都是 WorkBuddy）——
+  // 同一条腿两个名字，用户认不出自己配的是哪一家。产品名以 WorkBuddy 为准。
+  workbuddy: 'WorkBuddy 订阅额度',
+  workbuddy_api: 'WorkBuddy 订阅额度',
+  workbuddy_cli: 'WorkBuddy 命令行额度'
 }
 
 /**

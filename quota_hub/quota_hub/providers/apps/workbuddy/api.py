@@ -87,10 +87,13 @@ def _flatten_oai(parts) -> str:
 
 class WorkbuddyApiProvider(Provider):
     name = "workbuddy_api"
-    display_name = "CodeBuddy"
+    # 11-11：这条腿背后那个产品叫 WorkBuddy。以前写 CodeBuddy，而屏上的卡名、
+    # 四语 `cardIntros`、magpie 的 provider 名（`providers.yaml`）都已经是
+    # WorkBuddy——同一条腿两个名字，用户认不出自己配的是哪一家。以 WorkBuddy 为准。
+    display_name = "WorkBuddy"
 
     def present(self) -> bool:
-        """Present only if the local CodeBuddy session (or a configured key) exists.
+        """Present only if the local WorkBuddy session (or a configured key) exists.
 
         This leg rides software the user already installed; with neither a session nor
         a key there is nothing here to show a card for, and nothing to download.
@@ -100,13 +103,13 @@ class WorkbuddyApiProvider(Provider):
     def login_plan(self) -> dict:
         """No sign-in of ours to do: this leg reads the desktop app's own local session.
 
-        The user already signed into CodeBuddy over there. Telling him to "connect" here
+        The user already signed into WorkBuddy over there. Telling him to "connect" here
         would be a lie about where the credential lives, so the honest answer is
         "already signed in next door" — and if that session is gone, the verdict that
         says so is `credential_health()`, not a broken button.
         """
         return {"kind": "local_session", "name": self.display_name,
-                "reason": "它用的是 CodeBuddy 桌面端自己的登录，Plobi 这边不用再登一次"}
+                "reason": "它用的是 WorkBuddy 桌面端自己的登录，Plobi 这边不用再登一次"}
     # Own-key HTTP passthrough: tools only if upstream dialect supports them.
     default_capabilities = Capabilities(
         stream=True,
@@ -175,7 +178,7 @@ class WorkbuddyApiProvider(Provider):
         return Account(
             id=a.get("id", f"codebuddy-store-{i}"),
             provider=self.name,
-            label=a.get("label", "CodeBuddy desktop store"),
+            label=a.get("label", "WorkBuddy desktop store"),
             cred=Credential(
                 access_token=access,
                 refresh_token=refresh,
@@ -281,7 +284,7 @@ class WorkbuddyApiProvider(Provider):
             if not acc.cred.access_token:
                 raise UpstreamError(
                     401,
-                    "workbuddy_api: no CodeBuddy desktop credential — open the desktop app "
+                    "workbuddy_api: no WorkBuddy desktop credential — open the WorkBuddy desktop app "
                     "and sign in once",
                     reauth=True,
                 )

@@ -197,7 +197,7 @@ const authRow = (id: string, over: Partial<AuthCatalogRow> = {}): AuthCatalogRow
   live: false,
   name:
     id === 'workbuddy'
-      ? 'CodeBuddy'
+      ? 'WorkBuddy'
       : id === 'qwen-cli'
         ? 'Qwen Code'
         : id === 'gemini_api'
@@ -250,7 +250,7 @@ describe('Subscriptions cards are the hub catalog', () => {
 
     await renderSubscriptions()
 
-    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(await screen.findByText('WorkBuddy')).toBeTruthy()
     expect(screen.getByText('Antigravity')).toBeTruthy()
     // The invariant, not a snapshot: a row never carries two controls, and a software
     // the hub did not list never appears at all.
@@ -268,7 +268,7 @@ describe('Subscriptions cards are the hub catalog', () => {
 
     await renderSubscriptions()
 
-    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(await screen.findByText('WorkBuddy')).toBeTruthy()
   })
 
   it('订阅额度那屏不去拉 API 密钥那份数据：那一屏自己用不到它', async () => {
@@ -280,7 +280,7 @@ describe('Subscriptions cards are the hub catalog', () => {
 
     await renderSubscriptions()
 
-    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(await screen.findByText('WorkBuddy')).toBeTruthy()
     expect(getEnvVars).not.toHaveBeenCalled()
   })
 
@@ -422,7 +422,7 @@ describe('Subscriptions cards are the hub catalog', () => {
   })
 
   it('does not offer a sign-in for a leg whose credential lives in another app', async () => {
-    // CodeBuddy's credential is CodeBuddy's own session (kind `local_session`), so
+    // WorkBuddy's credential is WorkBuddy's own session (kind `local_session`), so
     // Plobi has no sign-in to run: the reason line says where to go, and the row
     // must not grow a button that could only fail.
     shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
@@ -430,7 +430,7 @@ describe('Subscriptions cards are the hub catalog', () => {
 
     await renderSubscriptions()
 
-    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(await screen.findByText('WorkBuddy')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull()
   })
 
@@ -445,7 +445,7 @@ describe('Subscriptions cards are the hub catalog', () => {
 
     await renderSubscriptions()
 
-    expect(screen.queryByText('CodeBuddy')).toBeNull()
+    expect(screen.queryByText('WorkBuddy')).toBeNull()
     expect(screen.queryByText('Antigravity')).toBeNull()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
     expect(screen.queryAllByRole('button', { name: 'Set up' })).toHaveLength(0)
@@ -517,7 +517,7 @@ describe('Subscriptions switch', () => {
     return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
   }
 
-  /** The cards render in catalog order: Antigravity's `+`, then CodeBuddy's switch. */
+  /** The cards render in catalog order: Antigravity's `+`, then WorkBuddy's switch. */
   function codeBuddySwitch() {
     return screen.getAllByRole('switch')[0] as HTMLElement
   }
@@ -568,7 +568,7 @@ describe('Subscriptions switch', () => {
 
     const asked = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? ''
 
-    expect(asked).toContain('CodeBuddy')
+    expect(asked).toContain('WorkBuddy')
     // Signing out of the app is a different button, somewhere else. This copy has
     // to draw the line itself, or the user reads the switch as "log me out".
     expect(asked).toContain('does not sign you out')
@@ -700,10 +700,10 @@ describe('providers screen: shape is the truth (2026-11-08)', () => {
 
     expect(await screen.findByText('Antigravity')).toBeTruthy()
 
-    fireEvent.change(screen.getByPlaceholderText('Search providers…'), { target: { value: 'codebuddy' } })
+    fireEvent.change(screen.getByPlaceholderText('Search providers…'), { target: { value: 'workbuddy' } })
 
     await waitFor(() => expect(screen.queryByText('Antigravity')).toBeNull())
-    expect(screen.getByText('CodeBuddy')).toBeTruthy()
+    expect(screen.getByText('WorkBuddy')).toBeTruthy()
   })
 
   it('the keys tab puts its rows in one card, like the other settings pages', async () => {
