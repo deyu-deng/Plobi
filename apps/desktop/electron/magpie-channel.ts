@@ -408,14 +408,36 @@ async function fetchText(
   }
 }
 
-/** Download `url` to `dest`, proxy first then direct, `Accept` tuned for assets. */
+/** Download `url` to `dest`, proxy first then direct, `Accept` tuned for assets.
+ *
+ * Two things this had to learn on 2026-11-11, from a real failed self-update on the
+ * installed 0.3.1: `~/Plobi/magpie-runtime/bin/` held `v0.1.3754.95795.part` at 27 MB
+ * and `v0.1.3754.99039.part` at 5 MB out of 74 MB, both written at the same minute,
+ * and **not one line** in any log said so. So:
+ *
+ * 1. **A stall must fail, not hang.** `--max-time` alone let a quiet CDN connection
+ *    eat the whole 30-minute budget; `--speed-limit/--speed-time` turns "no bytes
+ *    for a minute" into a real exit code we can see and retry.
+ * 2. **Resume instead of restart.** `-C -` picks up whatever is already in `dest`,
+ *    so a retry costs the tail of the file, not all 74 MB again. That is why the
+ *    caller's temp name is now stable per version (no pid) — a pid-suffixed name
+ *    guaranteed a resume could never find its own bytes.
+ */
 async function downloadTo(url: string, dest: string, timeoutMs = 30 * 60_000): Promise<void> {
   const base = [
     '-sS',
     '-L',
     '--fail',
+    '--connect-timeout',
+    '20',
     '--max-time',
     String(Math.ceil(timeoutMs / 1000)),
+    '--speed-limit',
+    '20480',
+    '--speed-time',
+    '60',
+    '-C',
+    '-',
     '-H',
     'Accept: application/octet-stream',
     '-o',
@@ -423,11 +445,25 @@ async function downloadTo(url: string, dest: string, timeoutMs = 30 * 60_000): P
     url
   ]
 
-  try {
-    await curl(base, timeoutMs)
-  } catch {
-    await curl([...base.slice(0, -1), '--noproxy', '*', url], timeoutMs)
+  const routes = [base, [...base.slice(0, -1), '--noproxy', '*', url]]
+  let last: unknown = null
+
+  // Three rounds, alternating proxy → direct. A flaky local proxy is the common
+  // failure here; the direct run is the recovery, and a resumed second attempt
+  // is cheap enough that one bad minute should not cost the user an update.
+  for (let round = 0; round < 3; round += 1) {
+    for (const args of routes) {
+      try {
+        await curl(args, timeoutMs)
+
+        return
+      } catch (error) {
+        last = error
+      }
+    }
   }
+
+  throw last instanceof Error ? last : new Error(String(last))
 }
 
 /**
