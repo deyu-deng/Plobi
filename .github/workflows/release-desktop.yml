@@ -363,5 +363,27 @@ jobs:
           printf '挂到 release 的文件 (%d 个):\n' "${#assets[@]}"
           printf '  %s\n' "${assets[@]}"
 
-          # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
-          gh release create "$TAG" --generate-notes --title "$TAG" "${assets[@]}"
+          # 正文的真源在仓里（docs/plobi/releases/README.md）。此前这一步一律用
+          # --generate-notes，发出去的是 GitHub 按提交标题凑的英文清单，与 v0.3.0
+          # 为止各版的版面对不上；v0.3.1 又因为 Windows 腿红而整条 publish 被 skip、
+          # 最后是手工传包手工写正文，版面进一步漂移（2026-11-11）。
+          # 有仓内正文就用它，并把英文版作为附件挂上（正文顶部那行互跳链接指的就是
+          # 这个资产名，gh 以文件名为资产名，两边必须一致）。没有才回退到旧行为。
+          notes_file="docs/plobi/releases/${TAG}.md"
+          notes_en="docs/plobi/releases/Plobi-${TAG#v}-release-notes.en.md"
+
+          if [ -f "$notes_file" ]; then
+            printf '正文取自 %s\n' "$notes_file"
+            if [ -f "$notes_en" ]; then
+              assets+=("$notes_en")
+              printf '英文附件: %s\n' "$notes_en"
+            else
+              echo "::warning::${notes_en} 不存在，正文里的 English 链接将是 404"
+            fi
+            # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
+            gh release create "$TAG" --title "$TAG" --notes-file "$notes_file" "${assets[@]}"
+          else
+            echo "::warning::${notes_file} 不存在，回退到 --generate-notes（版面将与历史版本不同）"
+            # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
+            gh release create "$TAG" --generate-notes --title "$TAG" "${assets[@]}"
+          fi

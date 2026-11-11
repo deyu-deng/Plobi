@@ -8,3 +8,11 @@ web/package-lock.json linguist-generated=true
 Dockerfile  text eol=lf
 *.dockerfile text eol=lf
 docker/entrypoint.sh text eol=lf
+
+# Hash-pinned build inputs. Their sha256 is recorded in third_party/*.json and
+# verified at build time, so the bytes on disk must be identical on every
+# platform. Without this, a Windows checkout converts LF to CRLF and the hash
+# no longer matches the pin -- the Windows packaging job dies in
+# fetch-magpie-plugins with "the roster does not match the pin's sha256" while
+# macOS and Linux pass (run 42980989943, 2026-11-11).
+third_party/magpie-plugins/roster.json text eol=lf

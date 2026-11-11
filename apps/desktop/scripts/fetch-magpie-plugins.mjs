@@ -145,11 +145,19 @@ export async function fetchPluginSet({
 
   // The roster: read from the repo (it is ours, checked in), hash-checked
   // against the pin, and written out under magpie's own file name.
+  //
+  // Line endings are normalised to LF before hashing. The pin records the hash
+  // of the LF bytes; a Windows checkout is the only thing that ever hands us
+  // CRLF, and that used to fail the whole Windows packaging job with "the
+  // roster does not match the pin's sha256" while macOS and Linux passed (run
+  // 42980989943, 2026-11-11). .gitattributes pins this file to LF as well --
+  // this is the belt to that pair of braces, so a checkout made before that
+  // rule existed (or with core.autocrlf forced) still builds.
   const rosterSource = path.join(repoRootDir, VENDOR_REL, 'roster.json')
   if (!fs.existsSync(rosterSource)) {
     problems.push(`the roster is missing (${rosterSource})`)
   } else {
-    const raw = fs.readFileSync(rosterSource, 'utf8')
+    const raw = fs.readFileSync(rosterSource, 'utf8').replace(/\r\n/g, '\n')
     const digest = sha256Bytes(Buffer.from(raw, 'utf8'))
     const expected = thePin.roster && thePin.roster.sha256
     if (expected && digest.toLowerCase() !== String(expected).toLowerCase()) {

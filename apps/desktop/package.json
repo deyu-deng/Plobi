@@ -306,7 +306,7 @@
     },
     "linux": {
       "category": "Development",
-      "maintainer": "Nous Research <support@nousresearch.com>",
+      "maintainer": "Turtlelet <3288979284@qq.com>",
       "synopsis": "Native desktop shell for Plobi Agent.",
       "target": [
         "AppImage",
