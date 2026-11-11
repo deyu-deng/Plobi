@@ -2,7 +2,7 @@
 import { render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { NoteMarkdown, makeLinkIndex } from './note-markdown'
+import { makeLinkIndex, NoteMarkdown } from './note-markdown'
 
 /**
  * wikilink 必须**真渲染**出来才算数——mock 测不出 remark 插件有没有生效、
@@ -28,6 +28,7 @@ describe('NoteMarkdown wikilink', () => {
     const { container } = render(
       <NoteMarkdown linkIndex={makeLinkIndex(NOTES)} text="[[微积分|微积分笔记]]" />
     )
+
     await waitFor(() => expect(container.querySelector('button')).toBeTruthy())
     expect(container.querySelector('button')?.textContent).toBe('微积分笔记')
   })
@@ -81,6 +82,7 @@ describe('NoteMarkdown 渲染层', () => {
     const original = holder.plobiDesktop
 
     holder.plobiDesktop = { readFileDataUrl }
+
     restoreBridge = () => {
       holder.plobiDesktop = original
     }

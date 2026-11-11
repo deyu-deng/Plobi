@@ -25,8 +25,9 @@ export function remarkNoteImages() {
     visit(tree as never, 'image', (node: { url?: string }) => {
       const url = node.url
 
-      if (!url || isRemoteAsset(url)) return
-      if (url.startsWith('streamdown:')) return
+      if (!url || isRemoteAsset(url)) {return}
+
+      if (url.startsWith('streamdown:')) {return}
 
       node.url = `streamdown:${encodeAssetTarget(url)}`
     })

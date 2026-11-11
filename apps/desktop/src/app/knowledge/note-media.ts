@@ -70,7 +70,7 @@ export function decodeAssetTarget(encoded: string): string {
  * 不是本地引用（外链、别的方案）⇒ 返回 `null`，交给浏览器自己处理。
  */
 export function decodeAssetSrc(src: string | undefined): string | null {
-  if (!src || !src.startsWith(ASSET_SCHEME)) return null
+  if (!src || !src.startsWith(ASSET_SCHEME)) {return null}
 
   try {
     return decodeAssetTarget(src.slice(ASSET_SCHEME.length))
@@ -124,11 +124,14 @@ export function joinRelative(base: string, relative: string): string {
   const out = [...segments]
 
   for (const segment of splitPath(relative).segments) {
-    if (segment === '.') continue
+    if (segment === '.') {continue}
+
     if (segment === '..') {
-      if (out.length > floor) out.pop()
+      if (out.length > floor) {out.pop()}
+
       continue
     }
+
     out.push(segment)
   }
 
@@ -140,17 +143,17 @@ export function isInsideRoot(root: string, candidate: string): boolean {
   const rootPath = joinPath(splitPath(root).root, splitPath(root).segments).toLowerCase()
   const candidatePath = joinPath(splitPath(candidate).root, splitPath(candidate).segments).toLowerCase()
 
-  if (!rootPath) return false
+  if (!rootPath) {return false}
 
   return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}/`)
 }
 
 /** 一篇笔记自己的目录（它的 `fsPath` 的上一层）。 */
 export function noteBaseDir(fsPath: string | undefined): string | undefined {
-  if (!fsPath) return undefined
+  if (!fsPath) {return undefined}
   const { root, segments } = splitPath(fsPath)
 
-  if (segments.length < 2) return undefined
+  if (segments.length < 2) {return undefined}
 
   return joinPath(root, segments.slice(0, -1))
 }
@@ -164,14 +167,16 @@ export function noteBaseDir(fsPath: string | undefined): string | undefined {
 export function assetCandidates(rootDir: string | undefined, baseDir: string | undefined, target: string): string[] {
   const cleaned = target.split(/[?#]/)[0].trim()
 
-  if (!cleaned) return []
+  if (!cleaned) {return []}
 
   const out: string[] = []
 
   const push = (path: string | undefined) => {
-    if (!path) return
-    if (rootDir && !isInsideRoot(rootDir, path)) return
-    if (!out.includes(path)) out.push(path)
+    if (!path) {return}
+
+    if (rootDir && !isInsideRoot(rootDir, path)) {return}
+
+    if (!out.includes(path)) {out.push(path)}
   }
 
   if (isAbsolutePath(cleaned)) {
@@ -202,22 +207,23 @@ const DATA_URL_CACHE_LIMIT = 64
 async function readDataUrl(path: string): Promise<string | null> {
   const cached = dataUrlCache.get(path)
 
-  if (cached !== undefined) return cached
+  if (cached !== undefined) {return cached}
 
   const bridge = window.plobiDesktop
 
-  if (!bridge?.readFileDataUrl) return null
+  if (!bridge?.readFileDataUrl) {return null}
 
   try {
     const dataUrl = await bridge.readFileDataUrl(path)
 
-    if (!dataUrl) return null
+    if (!dataUrl) {return null}
 
     if (dataUrlCache.size >= DATA_URL_CACHE_LIMIT) {
       const oldest = dataUrlCache.keys().next().value
 
-      if (oldest !== undefined) dataUrlCache.delete(oldest)
+      if (oldest !== undefined) {dataUrlCache.delete(oldest)}
     }
+
     dataUrlCache.set(path, dataUrl)
 
     return dataUrl
@@ -242,7 +248,7 @@ export async function loadNoteAssetDataUrl(
   for (const candidate of assetCandidates(rootDir, baseDir, target)) {
     const dataUrl = await readDataUrl(candidate)
 
-    if (dataUrl) return dataUrl
+    if (dataUrl) {return dataUrl}
   }
 
   return null
