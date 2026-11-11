@@ -60,10 +60,28 @@ def test_aigw_base_url_points_at_the_local_gateway():
 
 
 def test_aigw_key_env_vars_are_existing_ones():
-    """No new PLOBI_* var was invented for this provider."""
+    """No new PLOBI_* var was invented for this provider.
+
+    清单与顺序的**唯一**定义点在 :data:`plobi.agents.registry.AIGW_KEY_ENV_VARS`
+    （WP-AIGW-CRED-SOURCE / 裁定 81）——这里断言的是"插件用的就是那一份"，
+    不是再抄一遍顺序：抄一遍就会有第二个真相，网关那边加一个 ``QUOTA_HUB_API_KEY``
+    之后这条就变成一条只证明自己过时的红灯。
+    """
+    from plobi.agents.registry import AIGW_KEY_ENV_VARS, AIGW_URL_ENV_VARS
+
     cfg = PROVIDER_REGISTRY["aigw"]
-    assert cfg.api_key_env_vars == ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY")
-    assert cfg.base_url_env_var == "PLOBI_AIGW_URL"
+    assert cfg.api_key_env_vars == AIGW_KEY_ENV_VARS
+    # 唯一的新变量只能是本插件自己的那把（``PLOBI_`` 前缀），其余必须是上游既有的。
+    assert {v for v in cfg.api_key_env_vars if v.startswith("PLOBI_")} == {
+        "PLOBI_QUOTA_AIGW_KEY"
+    }
+    # 端点变量同理：``PROVIDER_REGISTRY`` 是从 ``env_vars`` 里挑出第一个 ``*_URL``
+    # 落成 ``base_url_env_var``（见 plobi_cli/auth.py 的自动注册段），所以这里只能
+    # 断言"它就是 registry 那份清单的首位"。写死 ``PLOBI_AIGW_URL`` 的那版后来变成
+    # 了一条只证明自己过时的红灯——桌面端把 ``PLOBI_QUOTA_HUB_URL`` 提到首位之后，
+    # 解析出来的就是它，而两处行为都对。
+    assert cfg.base_url_env_var == AIGW_URL_ENV_VARS[0]
+    assert cfg.base_url_env_var in AIGW_URL_ENV_VARS
 
 
 def test_aigw_declares_no_aliases():

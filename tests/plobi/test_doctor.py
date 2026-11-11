@@ -76,7 +76,8 @@ def test_chatlog_down_while_registry_off_is_deferred_with_todays_reason(monkeypa
 
     assert row["color"] == D.DEFERRED
     assert "unreachable" in row["detail"]
-    assert "怎么回到绿：" in row["detail"]
+    # 文案 11-11 改成「如何手动启动：」——deferred 那一半现在明说「不是故障、无需手动」。
+    assert "如何手动启动：" in row["detail"]
     assert "R-047" not in row["detail"]
     assert D.worst_exit([row]) == 0
 

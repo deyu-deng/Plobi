@@ -470,15 +470,23 @@ class TestRegistryDeclaresMeasuredBitsOnly:
         """
         assert registry.require("zju", "authoritative_replace") is True
 
-    def test_zju_is_registered_and_now_has_an_executor(self) -> None:
+    def test_zju_is_registered_and_now_has_an_executor(self, monkeypatch, tmp_path) -> None:
         """这一格 10-15 翻过一次：从前记 False 的理由是"没有触发方"，现在执行方补上了。
 
         旧读数不许留在钉子里 —— 但它讲的那件事仍然是规矩：**光有开关不算在采**，
         所以两条分开钉：开关（用户 2026-10-15 13:0x 拍的"每天自动采，新条目进待确认"）
         与构造入口（`SourceSpec.builder`，缺它 `sweep` 会报 `no_builder` 而不是静默）。
+
+        2026-10-24 起 `collecting_sources()` 读的是**用户翻过的那颗开关**（生效值），
+        代码里那份 `SourceSpec.collecting` 默认值不再是答案——所以这里得照着用户的手
+        把开关点开，再问「在采吗」。家要隔离到 tmp，否则会写进真机的 sources 配置。
         """
+        from plobi.collectors import sources_config
+
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
         assert "zju" in registry.source_ids()
-        assert "zju" in registry.collecting_sources(), "开关这一格现在是被点过的读数，不是默认值"
+        assert sources_config.set_enabled("zju", True) is True
+        assert sources_config.effective_enabled("zju")[0] is True, "开关点开了，生效值就得是开"
         assert callable(registry.spec("zju").builder), "点了开关却构造不出采集器 = 仍然不会在采"
 
 
