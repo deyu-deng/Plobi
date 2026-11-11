@@ -140,16 +140,16 @@ export function AboutSettings() {
           <p className="mt-1 text-xs text-muted-foreground">
             {version?.appVersion ? a.version(version.appVersion) : a.versionUnavailable}
           </p>
-          {/* ONE product version.  The shell and the backend ship together, so
-              showing a second line ("Backend v0.3.0") made one product look
-              like two (user 11-07: 「就应该显示一个版本号」).  The backend's
-              number appears ONLY when it genuinely differs from the shell's —
-              that mismatch is a real defect worth saying out loud. */}
-          {version?.backendVersion && version.backendVersion !== version.appVersion ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t.shell.statusbar.backendVersion(version.backendVersion)}
-            </p>
-          ) : null}
+          {/* ONE product version, and only one — ever.  The shell and the backend
+              ship in the same installer, so there is nothing for a second line to
+              tell the user except "these two numbers disagree", which on 2026-11-11
+              they did: a 0.3.1 app printed 「后端 v0.3.0」 because
+              `resolveBackendVersion()` read the stale bootstrap clone in PLOBI_HOME
+              instead of the `resources/backend` the app actually runs.  Two numbers
+              for one product is the defect; the fix is to stop printing the second
+              one (user 11-07 and again 11-11: 「只显示一个版本号」).  A genuine
+              shell/backend mismatch is a packaging bug — it belongs in the log, not
+              on a panel that asks the user to adjudicate it. */}
         </div>
       </div>
 
