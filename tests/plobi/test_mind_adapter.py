@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 from datetime import datetime
+import json
 import logging
 from pathlib import Path
 
@@ -46,23 +47,52 @@ MIND_MOD = _load_provider_module()
 
 @pytest.fixture()
 def surface(tmp_path, monkeypatch):
-    """临时 Mind surface：persona + 大写 Plobi 项目（当前写入位）。"""
-    root = tmp_path / "Mind"
+    """临时脑 + 假人读面：画像在脑里，档案在人读面的 ``dossiers/``。
+
+    11-09／11-10 两刀之后布局变了，夹具必须跟着走，否则测的是一个**已经不存在的
+    形状**（旧夹具把 ``profile.md`` 与 ``plan.md`` 都塞在 ``<脑>/Surface`` 下，
+    产品永远读不到，却因为断的也是那个幽灵路径而全绿）：
+
+    * 脑**扁平**：``<脑>/persona/profile.md``、``<脑>/wiki/…``（不再有 ``Mind/`` 那一层）；
+    * 人读面按种类分家：``<人读面>/dossiers/projects/<名>/dossier.json``（档案本体，
+      ``plan.md``／``progress.md`` 已退休）；
+    * 两根指针都钉到临时库：脑仓门禁只认旧名 ``SURFACE_ROOT``（没有就按「脑的兄弟
+      ``vault/``」找），产品认 ``HUMAN_ROOT`` 优先——只钉一个就会两边各走各的。
+    """
+    root = tmp_path / "mind"
     (root / "persona").mkdir(parents=True)
-    (root / "Surface" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
-    # 详版画像在脑里（用户 10-24：surface 不进记忆系统；USER.md 是精简版）
+    # 详版画像在脑里（用户 10-24：人读面不进记忆系统；USER.md 是精简版）
     (root / "persona" / "profile.md").write_text(
         "我是小龟，浙大本科生。", encoding="utf-8"
     )
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text(
-        "# Plobi\n北极星：人只负责审核和提想法。", encoding="utf-8"
+
+    human = tmp_path / "vault"
+    project = human / "dossiers" / "projects" / "Plobi"
+    project.mkdir(parents=True)
+    (project / "dossier.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "agent": "Plobi",
+                "title": "Plobi",
+                "category": "projects",
+                "goal": "北极星：人只负责审核和提想法。",
+                "status": "M1 推进中，Wave B 完成。",
+                "stages": [
+                    {"id": "s1", "title": "Wave B", "detail": "", "done": True},
+                ],
+                "registry": {"project": "Plobi", "state": "active"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
     )
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text(
-        "M1 推进中，Wave B 完成。", encoding="utf-8"
-    )
+
+    monkeypatch.setenv("HUMAN_ROOT", str(human))
+    monkeypatch.setenv("SURFACE_ROOT", str(human))
     # mind_sync/MindWriter 走 plobi.mind.paths.resolve_root（env 优先）——
-    # 必须指到临时 surface，否则会解析到真实仓库的 mind/ 并写进去。
+    # 必须指到临时脑，否则会解析到真实仓库的 mind/ 并写进去。
     monkeypatch.setenv("MIND_ROOT", str(root))
     monkeypatch.setattr(MIND_MOD, "_resolve_root", lambda: root)
     return root
@@ -76,15 +106,22 @@ def provider():
 # ── 接缝 1：读——召回带画像摘要 ───────────────────────────────────────────────
 
 
-def test_prefetch_includes_profile_summary(surface, provider, caplog):
+def test_prefetch_includes_project_briefs_and_defers_persona(surface, provider, caplog):
+    """prefetch 带**档案**进上下文，画像交给 ``USER PROFILE`` 段（审计 P4 防双份）。
+
+    11-09 那一刀之后 ``prefetch`` 走 ``include_persona=False``：画像正本已经由稳定
+    记忆段整段给进系统提示，这里再抄一遍就是同一段话出现两次。所以这里断的是
+    「项目档案进来了」＋「画像正文没重复进来」。
+    """
     with caplog.at_level(logging.INFO, logger=MIND_MOD.__name__):
         result = provider.prefetch("随便问点什么")
     assert "[Mind 画像]" in result
-    assert "我是小龟" in result
     assert "### 项目 Plobi" in result
+    assert "北极星：人只负责审核和提想法。" in result
     assert "M1 推进中" in result
-    # 验收 2：画像读取路径生效，日志可证
-    assert any("prefetch includes profile summary" in r.message for r in caplog.records)
+    assert "我是小龟" not in result  # 画像由 USER PROFILE 段负责，这里不重复
+    # 验收 2：档案读取路径生效，日志可证
+    assert any("prefetch includes project briefs" in r.message for r in caplog.records)
 
 
 def test_prefetch_profile_read_failure_is_non_fatal(surface, provider, caplog, monkeypatch):
@@ -106,14 +143,42 @@ def test_prefetch_without_surface_returns_empty(provider, monkeypatch):
 
 
 def test_profile_block_is_bounded(tmp_path, monkeypatch):
-    root = tmp_path / "Mind"
-    (root / "Surface" / "meta").mkdir(parents=True)
-    (root / "Surface" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
+    """两段都截断（画像 800 字、档案 excerpt 有上限）——窄切不许淹上下文。
+
+    夹具照现核造：画像在脑里 ``persona/profile.md``，档案是人读面的 ``dossier.json``。
+    旧版往 ``<脑>/Surface/meta/Persona.md`` 写，产品早就改成读不到那个位置，于是这条
+    用例断言的是一个空字符串——正好挡住「读错路径也绿」的那类假绿。
+    """
+    root = tmp_path / "mind"
+    (root / "persona").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
-    (root / "Surface" / "meta" / "Persona.md").write_text("p" * 5000, encoding="utf-8")
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("q" * 5000, encoding="utf-8")
+    (root / "persona" / "profile.md").write_text("p" * 5000, encoding="utf-8")
+
+    human = tmp_path / "vault"
+    project = human / "dossiers" / "projects" / "Plobi"
+    project.mkdir(parents=True)
+    (project / "dossier.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "agent": "Plobi",
+                "title": "Plobi",
+                "category": "projects",
+                "goal": "q" * 5000,
+                "status": "",
+                "stages": [],
+                "registry": {"project": "Plobi"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HUMAN_ROOT", str(human))
+    monkeypatch.setenv("SURFACE_ROOT", str(human))
+
     block = MIND_MOD._profile_block(root)
-    assert len(block) < 3000  # 每段 800 截断，窄切不淹上下文
+    assert block  # 两段都真读到了东西，不是空串
+    assert len(block) < 3000  # 每段截断，窄切不淹上下文
     assert "…" in block
 
 
@@ -142,21 +207,18 @@ def agenda_env(tmp_path, monkeypatch):
     return db
 
 
-def test_sync_turn_publishes_daily_agenda_once(surface, agenda_env, provider):
+def test_sync_turn_no_longer_publishes_the_daily_agenda(surface, agenda_env, provider):
+    """10-29 用户把「每轮排一张每日摘要」那条自动腿裁了，别悄悄接回来。
+
+    原话：「每日摘要是干什么用的。我都没有定义过。」——那份计划没人点头，却每开一个
+    新进程／新一天就再排一张，待确认层堆到 22 张。于是 ``sync_turn`` 成了**有意的
+    空操作**；真要出那一份得由人显式叫 ``publish_project_daily_summary``。
+    """
     provider.initialize("sess-1")
 
     provider.sync_turn("今天有什么安排？", "今天 10 点有组会汇报。")
 
-    daily = surface / "wiki" / "daily"
-    files = list(daily.glob("*.md"))
-    assert len(files) == 1  # 当日一个文件
-    content = files[0].read_text(encoding="utf-8")
-    assert "组会汇报" in content  # 内容与 agenda.db 一致（daily_summary 渲染）
-
-    # 同一天第二轮流不再重写（幂等，不制造 git 噪音）
-    mtime = files[0].stat().st_mtime_ns
-    provider.sync_turn("第二轮流", "好的。")
-    assert files[0].stat().st_mtime_ns == mtime
+    assert not (surface / "wiki" / "daily").exists()
 
 
 def test_sync_turn_skips_non_primary_context(surface, agenda_env):
@@ -166,49 +228,62 @@ def test_sync_turn_skips_non_primary_context(surface, agenda_env):
     assert not (surface / "wiki" / "daily").exists()
 
 
-def test_sync_turn_write_failure_never_blocks_turn(
-    surface, agenda_env, provider, caplog, monkeypatch
-):
-    """验收 3（故障注入）：写路径炸掉 → 主对话不受阻，仅告警。"""
-    provider.initialize("sess-1")
+class _RaisingWriter:
+    """写盘必炸的写者（鸭子类型：``publish_*`` 只用到 ``available`` 与 ``write_one``）。"""
 
-    import plobi.agenda.mind_sync as mind_sync_mod
+    available = True
 
-    def boom(*args, **kwargs):
+    def write_one(self, *args, **kwargs):
         raise RuntimeError("mind surface locked")
 
-    monkeypatch.setattr(mind_sync_mod, "publish_project_daily_summary", boom)
-    with caplog.at_level(logging.WARNING, logger=MIND_MOD.__name__):
-        provider.sync_turn("你好", "在的。")  # 不抛异常即通过
-    assert any("daily agenda summary failed" in r.message for r in caplog.records)
+
+class _RefusingWriter:
+    """写服务软失败（``ok=False``，例如锁被占／白名单外）。"""
+
+    available = True
+
+    def write_one(self, *args, **kwargs):
+        from plobi.mind.writer import WriteResult
+
+        return WriteResult(
+            ok=False, written=[], skipped=["x"], detail="mind unavailable"
+        )
 
 
-def test_sync_turn_writer_soft_failure_is_warning_only(
-    surface, agenda_env, provider, caplog, monkeypatch
+def test_explicit_daily_summary_never_raises_on_write_failure(
+    surface, agenda_env, caplog
 ):
-    """写服务返回 ok=False（surface 不可用等）→ 同样只告警。"""
-    provider.initialize("sess-1")
+    """人显式叫它时写盘炸掉 → 返回 ``ok=False`` 并告警，绝不向上抛（WP-L1-BUDGET §3）。
 
+    这条腿现在只有人显式叫才跑，但「不许把主回合拖下水」那条红线不变，所以故障注入
+    从 ``sync_turn`` 挪到这里再钉一遍。
+    """
     import plobi.agenda.mind_sync as mind_sync_mod
-    from plobi.mind.writer import WriteResult
 
-    monkeypatch.setattr(
-        mind_sync_mod,
-        "publish_project_daily_summary",
-        lambda **kw: WriteResult(ok=False, written=[], skipped=["x"], detail="mind unavailable"),
-    )
-    with caplog.at_level(logging.WARNING, logger=MIND_MOD.__name__):
-        provider.sync_turn("你好", "在的。")
+    with caplog.at_level(logging.WARNING, logger=mind_sync_mod.__name__):
+        result = mind_sync_mod.publish_project_daily_summary(writer=_RaisingWriter())
+
+    assert result.ok is False
+    assert any("skipped" in r.message for r in caplog.records)
+
+
+def test_explicit_daily_summary_soft_failure_is_warning_only(surface, agenda_env, caplog):
+    """写服务返回 ``ok=False``（人读面不可用等）→ 同样只告警。"""
+    import plobi.agenda.mind_sync as mind_sync_mod
+
+    with caplog.at_level(logging.WARNING, logger=mind_sync_mod.__name__):
+        result = mind_sync_mod.publish_project_daily_summary(writer=_RefusingWriter())
+
+    assert result.ok is False
     assert any("not written" in r.message for r in caplog.records)
 
 
-def test_sync_turn_publishes_agenda_and_writes_no_chat_material(
-    surface, agenda_env, provider, monkeypatch
-):
-    """裁定 198：``sync_turn`` 不再往脑里落第二份聊天原文，每日摘要那条腿照旧要落。
+def test_sync_turn_writes_nothing_at_all(surface, agenda_env, provider, monkeypatch):
+    """裁定 198 ＋ 10-29：这一趟既不落聊天原文，也不再排每日摘要——**一次写都没有**。
 
-    钉两件事：① 这一趟**没有任何一次写**的路径里带 ``raw``（原料区作废，写者归零）；
-    ② 日程摘要照旧发布（会话正本是单库 ``state.db``，不是脑里那份拷贝）。
+    会话正本是单库 ``state.db``（裁定 180 行级归属），脑里不该收第二份拷贝；每日摘要
+    那条自动腿由人显式叫才跑。两条都关掉之后，``sync_turn`` 应当连一次 ``write_one``
+    都不发生——这条断言就是那个「零」的守门人。
     """
     provider.initialize("sess-1")
 
@@ -224,8 +299,7 @@ def test_sync_turn_publishes_agenda_and_writes_no_chat_material(
     monkeypatch.setattr(writer_mod.MindWriter, "write_one", spy_write_one)
     provider.sync_turn("你好", "在的。")
 
-    assert not [rel for rel in written if "raw" in rel.split("/")], written
-    assert (surface / "wiki" / "daily").is_dir()
+    assert written == []
 
 
 def test_publish_project_daily_summary_is_safe_and_idempotent(surface, agenda_env, tmp_path):

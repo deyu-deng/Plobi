@@ -115,7 +115,9 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     # askable 是 R-072 嘴的判据，navigable 是桌面点击的判据（两回事，见
     # registry.agent_navigability 的 docstring）。
     assert set(row) == {
-        "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+        # 11-05（profile 连根拔）：行**不再带 profile**——运行时 slug 由 name 派生，
+        # 前端与总账只认 name 这一种身份（裁定 192）。
+        "id", "name", "status", "model", "todayCalls", "category", "mindSubtree",
         # 11-05（用户）：名册 role 随行透出——L1 与五类 L2 分开标、但地位平等，
         # 前端靠它认出「这一行是 L1 自己」，不再拿 profile 反查。
         "role",
@@ -134,7 +136,8 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert row["status"] == "idle"  # no L3 children in flight
     assert row["model"] == "aigw/workbuddy/deepseek-chat"  # ADR-0011 default route
     assert row["todayCalls"] == 0
-    assert row["profile"] == "l2-agenda"
+    # profile 连根拔（11-05）：行上连键都不许再有——谁把它加回来这里就红。
+    assert "profile" not in row
     # 日程秘书走 secretary_ask，所以 askable=false——但左栏完全点得动。
     # 这正是 askable 与 navigable 必须分成两个字段的原因。
     assert row["askable"] is False
@@ -213,7 +216,6 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     response = client.post(
         "/api/agents", json={"id": "plobi-code", "category": "projects"}
     )
-    print("PROBE-BODY:", response.status_code, response.text[:400])
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
@@ -222,8 +224,9 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     # 2026-10-19 起行上带三份 per-agent 工具黑名单（全局真源 + per-agent 开关）；
     # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（测试这条契约债一并收）；
     # askable/navigable 是 R-072 的两把判据（嘴 / 点击）。
+    # 11-05（profile 连根拔）：行不再带 profile 那一格。
     assert set(body["data"]) == {
-        "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+        "id", "name", "status", "model", "todayCalls", "category", "mindSubtree",
         # 11-05（用户）：名册 role 随行透出——L1 与五类 L2 分开标、但地位平等，
         # 前端靠它认出「这一行是 L1 自己」，不再拿 profile 反查。
         "role",
@@ -758,6 +761,11 @@ def test_quota_summary_today_usd_follows_request_identity(client, _isolated_stat
     header 带身份（profile 名），``todayUsd`` 按反查出的名册 name 聚合该
     agent 会话的 usage（裁定 180 行级归属）。回归面 = 不带身份时看 L1
     （agent_id 空串）那份——与「agent 空 = L1」同口径。
+
+    身份写法的口径（2026-11-05 之后）：``profile:`` 键在 ``AgentEntry`` 里
+    降级为**派生**，一个 Agent 的身份就是它名册行的 ``name``（这行是
+    ``physics``）；``l2-physics`` 这类旧家名不再作身份键，认不出即「不圈」
+    ——末条断言把这件事钉成显式的，而不是让它悄悄落进 L1 那一格。
     """
     monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
     register(
@@ -775,13 +783,20 @@ def test_quota_summary_today_usd_follows_request_identity(client, _isolated_stat
     )
 
     body = client.get(
-        "/api/quota/summary", headers={"X-Plobi-Agent": "l2-physics"}
+        "/api/quota/summary", headers={"X-Plobi-Agent": "physics"}
     ).json()
     assert body["data"]["todayUsd"] == 0.25
 
     # 不带身份 = L1（agent_id 空串）那份，不是全表、不是主后端那份
     plain = client.get("/api/quota/summary").json()
     assert plain["data"]["todayUsd"] == 1.0
+
+    # 旧家名已不是身份键：认不出 → 不圈（全表）。**不是**悄悄落到 L1 那一格
+    # ——两种错（认成全局 / 认成秘书）里，前者至少看得出来。
+    legacy = client.get(
+        "/api/quota/summary", headers={"X-Plobi-Agent": "l2-physics"}
+    ).json()
+    assert legacy["data"]["todayUsd"] == 1.25
 
 
 def test_quota_summary_query_profile_is_remote_fallback(client, _isolated_state, monkeypatch, tmp_path):
@@ -801,7 +816,7 @@ def test_quota_summary_query_profile_is_remote_fallback(client, _isolated_state,
         [("s-l1", "", 1.0, 5), ("s-physics", "physics", 0.4, 1)],
     )
 
-    body = client.get("/api/quota/summary?profile=l2-physics").json()
+    body = client.get("/api/quota/summary?profile=physics").json()
     assert body["data"]["todayUsd"] == 0.4
 
 
@@ -810,18 +825,23 @@ def test_agent_id_for_profile_maps_roster_rows(_isolated_state):
     register(
         _isolated_state,
         agenda=AGENDA,
-        physics={"role": "l2_project", "profile": "l2-physics"},
+        physics={"role": "l2_project"},
         secretary=SECRETARY,
     )
-    assert console_router._agent_id_for_profile("l2-agenda") == "agenda"
-    assert console_router._agent_id_for_profile("l2-physics") == "physics"
     assert console_router._agent_id_for_profile("agenda") == "agenda"
     assert console_router._agent_id_for_profile("physics") == "physics"
-    # 裁定 180：秘书在总账里的归属键是**空串**。名册里的 L1 行（slug 恰好叫 master）
+    # 11-05（profile 连根拔）：身份写法只剩两种——名册 name，以及**表里登记过的**
+    # 运行时 slug（这只口不认大小写变体，也不认未登记的 ``l2-<name>``）。
+    assert console_router._agent_id_for_profile("l2-agenda") == "agenda"
+    assert console_router._agent_id_for_profile("l2-physics") is None
+    assert console_router._agent_id_for_profile("Agenda") is None
+    # 裁定 180：秘书在总账里的归属键是**空串**。名册里的 L1 行（slug 是 default）
     # 是同一格的另一种写法——把它翻成 `secretary` 就等于圈出 0 行（11-05 那次
     # 「我和总秘书的对话又消失了」）。
-    assert console_router._agent_id_for_profile("master") == ""
     assert console_router._agent_id_for_profile("secretary") == ""
+    assert console_router._agent_id_for_profile("default") == ""
+    # 旧家名 ``master`` 随 profile 一起退役：认不出 ⇒ 不圈，而不是当 L1。
+    assert console_router._agent_id_for_profile("master") is None
     assert console_router._agent_id_for_profile("") == ""
     # 全局与"没带身份"是两件事
     assert console_router._agent_id_for_profile("all") is None
@@ -1297,7 +1317,7 @@ class TestOffloadResume:
         out = console_router.resume_external_session("codebuddy", "ffffffff-1111-2222-333344445555")
 
         assert out["ok"] is False and out["status"] == 409
-        assert "不是我们记过的那个" in out["error"]
+        assert "未找到对应的任务记录" in out["error"]
 
     def test_a_row_without_a_recorded_folder_is_refused(self, monkeypatch):
         _no_spawn(monkeypatch)

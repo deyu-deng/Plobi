@@ -149,5 +149,5 @@ def test_spawn_result_carries_no_profile_dir_and_no_dash_p(home):
     assert "profile_dir" not in result
     assert "-p" not in result["command"]
     assert result["command"] == "plobi chat"
-    assert result["profile"] == "l2-agenda"
+    assert "profile" not in result, "profile 概念不该回到返回值里"
     assert result["name"] == "agenda"

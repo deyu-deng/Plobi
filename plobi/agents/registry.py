@@ -1671,7 +1671,11 @@ def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[Agen
     """
     alive = [e for e in entries if not e.archived]
 
-    by_slug = [e for e in alive if (e.profile_name or "").casefold() == want]
+    # 两侧都要 casefold（11-11 修）：只折名册那一侧时，``Ⅱ`` 这类字符会把它自己折成
+    # ``ii`` 而查询串原样不动，于是「按 name 查」对这类名字永远不命中——课表那几行
+    # 正是这种名字（``大学物理（甲）Ⅱ``）。这一格是身份查找，折一半等于没折。
+    probe = (want or "").strip().casefold()
+    by_slug = [e for e in alive if (e.profile_name or "").casefold() == probe]
     if len(by_slug) == 1:
         return by_slug[0]
     if len(by_slug) > 1:
@@ -1679,7 +1683,7 @@ def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[Agen
     # C 刀：``PLOBI_AGENT_ID`` 带的是**名册 name**（裁定 180 的身份），不一定是
     # profile 名——一行可以 ``name: Stithy`` 而 ``profile: l2-stithy``。老形状
     # （家在 profiles/ 下）走上面那段；新形状（共享层 + AGENT_ID）走这段。
-    by_name = [e for e in alive if e.name.casefold() == want]
+    by_name = [e for e in alive if e.name.casefold() == probe]
     if len(by_name) == 1:
         return by_name[0]
     return None

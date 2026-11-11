@@ -36,6 +36,11 @@ def homes(tmp_path, monkeypatch):
     monkeypatch.setenv("AGY_HOME", str(tmp_path / "agy-home"))
     monkeypatch.setenv("OPENCODE_HOME", str(opencode))
     monkeypatch.setenv("PLOBI_HOME", str(home))
+    # 这台机器 11-11 真装了 opencode（真家那本库里有 62 条真会话）。``opencode_db()``
+    # 的规矩是「取第一个**存在**的候选」，假家只给目录不给库时它会一路落到平台默认真家，
+    # 于是真会话串进这一档的读数（三条用例一起红）。把「库在哪」这一根直接钉在假家里：
+    # 假家没有库文件 → 这一家照旧当「没装」跳过。
+    monkeypatch.setattr(es, "opencode_db", lambda: opencode / "opencode.db")
     es._ALL_CACHE.update({"at": 0.0, "rows": []})
     es._META_CACHE.clear()
 
@@ -643,10 +648,16 @@ def test_an_opencode_session_without_a_question_still_shows_up_under_its_own_nam
     assert rows["ses_empty01"]["title"] == "空跑"
 
 
-def test_the_opencode_library_path_follows_the_machine_instead_of_a_fixed_folder(homes, monkeypatch, tmp_path):
-    """**路径不许写死**（用户 11-09：「每个用户安装的应用的位置可是不一样的」）。"""
+def test_the_opencode_library_path_follows_the_machine_instead_of_a_fixed_folder(tmp_path, monkeypatch):
+    """**路径不许写死**（用户 11-09：「每个用户安装的应用的位置可是不一样的」）。
+
+    注意这一档**不能**用 ``homes`` 夹具：那个夹具把 ``opencode_db`` 本身钉住了，而这里
+    要验的正是「它按环境自己找」。另外 ``opencode_db()`` 取的是**第一个存在的**候选，
+    所以每个候选都得把库文件真造出来，否则会一路落到平台默认上（本机真装着 opencode）。
+    """
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
+    (elsewhere / "opencode.db").write_bytes(b"")
     monkeypatch.setenv("OPENCODE_HOME", str(elsewhere))
 
     assert es.opencode_db() == elsewhere / "opencode.db"
@@ -654,6 +665,7 @@ def test_the_opencode_library_path_follows_the_machine_instead_of_a_fixed_folder
     monkeypatch.delenv("OPENCODE_HOME", raising=False)
     xdg = tmp_path / "xdg"
     (xdg / "opencode").mkdir(parents=True)
+    (xdg / "opencode" / "opencode.db").write_bytes(b"")
     monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
 
     assert es.opencode_db() == xdg / "opencode" / "opencode.db"

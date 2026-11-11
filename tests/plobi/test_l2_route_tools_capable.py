@@ -52,14 +52,15 @@ def test_the_provider_bound_to_the_fenshen_prefix_can_carry_tools():
 
 
 def test_the_hubs_model_list_for_that_key_stays_under_one_prefix():
-    """网关那份清单里属于 `workbuddy` 的模型，必须都在 `WORKBUDDY_PREFIX` 之下。
+    """网关那份清单里若是静态列了模型，就必须都在 `WORKBUDDY_PREFIX` 之下。
 
-    `pick_workbuddy_model()` 是按前缀挑的：混进别的前缀（例如退役过的 `workbuddy_api/*`）就会让
-    分身拿到一条与 tools 判据不同源的腿，而这条测试正是那件事的警报。
+    11-11：`pick_workbuddy_model()` 随裁定 183 退役之后，这份清单可以整段不写——
+    `config.yaml` 那段现在就是这么写的（名单由 `refresh_models` 向上游现读，见文件头
+    第 9-10 行）。所以"空清单"不再算红；这里只守形状：**一旦有人在 `workbuddy` 名下
+    静态列模型，就得同一个前缀**，否则按前缀挑的那只手会漏。
     """
     models = _hub_models_for_key(_KEY)
 
-    assert models, f"quota_hub/config.yaml 里 providers.{_KEY}.models 空了——那 L2 没有可选模型"
     strays = [m for m in models if not m.startswith(WORKBUDDY_PREFIX)]
 
     assert not strays, f"这些模型挂在 {_KEY} 名下却不在 {WORKBUDDY_PREFIX} 前缀里，前缀挑选会漏掉它们：{strays}"

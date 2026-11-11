@@ -38,7 +38,7 @@ def test_a_locked_db_degrades_one_row_instead_of_the_whole_list(stub_common, mon
 
     assert row["id"] == "aura", "这一行必须还在——锁的是读数，不是这个 Agent"
     assert row["todayCalls"] == 0, "读不到就按 0 说，别让整张单子 500"
-    assert row["profile"] == "aura"
+    assert "profile" not in row, "profile 概念不该回到行上"
 
 
 def test_a_non_lock_sql_error_still_raises(stub_common, monkeypatch):

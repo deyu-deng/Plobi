@@ -285,7 +285,9 @@ def test_the_model_confirmer_resolves_what_the_heuristic_refused(tmp_path):
     after = with_model.run_once()
 
     assert after.unresolved == 0
-    assert after.created, "the model-confirmed entry should have landed as pending"
+    # 11-11 口径：模型确认先落一条占位、再把时间回填，所以这一条可能记在 `updated`
+    # 而不是 `created`。要钉的是"落了待确认条目"，不是它走哪个格子。
+    assert after.pending_ids, "the model-confirmed entry should have landed as pending"
 
 
 class _StaticClient:

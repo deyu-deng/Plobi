@@ -15,7 +15,7 @@ import pytest
 
 from plobi.mind import paths as mind_paths
 
-POINTER_ENV = ("SURFACE_ROOT", "MIND_ROOT", "PLOBI_HOME")
+POINTER_ENV = ("SURFACE_ROOT", "HUMAN_ROOT", "MIND_ROOT", "PLOBI_HOME")
 
 
 @pytest.fixture()
@@ -27,7 +27,7 @@ def home(tmp_path, monkeypatch):
     (data / "mind").mkdir(parents=True)
     monkeypatch.setenv("PLOBI_HOME", str(data))
     # 注册表那份钉在测试里一律当没有（这台机器上它本来也没有）。
-    monkeypatch.setattr(mind_paths, "_pinned_surface_root", lambda: None)
+    monkeypatch.setattr(mind_paths, "_pinned_human_root", lambda: None)
     return data
 
 

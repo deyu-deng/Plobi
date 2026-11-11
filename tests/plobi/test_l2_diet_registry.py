@@ -69,10 +69,13 @@ def test_profile_home_is_still_the_fallback(monkeypatch, tmp_path):
 
 
 def test_lookup_matches_the_registry_name_not_only_the_profile_name():
-    """AGENT_ID 带的是名册 name。非 ASCII 名的 slug 与 name 毫无关系——
-    靠 slug 桶认不出来时，还得有 name 桶兜着（2026-11-05 两轮唯一命中）。"""
+    """AGENT_ID 带的是名册 name，查找就得按 name 命中。
+
+    2026-11-11：`profile` 概念退役（身份＝名册 name），查找侧那个「先按运行时 slug 桶
+    认一次」的分支随之删掉——slug 只还是它派生出来的活动名，不再是查找键。所以这一条
+    从前钉的「slug 桶也要命中」已经作废，留 name 桶这一半。
+    """
     entries = [_entry(name="大学物理（甲）Ⅱ", role="l2_project", category="courses")]
-    assert _entry_for_profile_in(entries, "l2-course-physics-a2") is entries[0]  # slug 桶
     assert _entry_for_profile_in(entries, "大学物理（甲）Ⅱ") is entries[0]  # name 桶
 
 

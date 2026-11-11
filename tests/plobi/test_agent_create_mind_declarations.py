@@ -196,6 +196,14 @@ def make_brain(tmp_path, monkeypatch, isolated_registry, brain_generator):
     """造假脑仓并把 MIND_ROOT 指过去，返回那份隔离名册。"""
 
     def _make(*, disk: list[str], declared: list[str] | None = None) -> Path:
+        # 假人读面要和门禁解析到**同一格**（11-11 修）：脑仓 verifier 只认旧名
+        # ``SURFACE_ROOT``（没有就按「脑的兄弟 ``vault/``」找），而产品侧认
+        # ``HUMAN_ROOT`` 优先。谁都不钉时两边各走各的——门禁去 ``<tmp>/vault`` 找、
+        # 我们往产品解析出的数据家里写，于是必红一条 BLOCKER，
+        # 把要验的那条声明纪律整个淹掉。两个名字都钉到同一个假库。
+        human = tmp_path / "vault"
+        monkeypatch.setenv("SURFACE_ROOT", str(human))
+        monkeypatch.setenv("HUMAN_ROOT", str(human))
         root = build_brain(
             tmp_path / "mind", disk=disk, declared=declared, generator=brain_generator[1]
         )
@@ -315,7 +323,11 @@ def test_a_new_project_lands_in_both_declarations_and_the_gate_passes(
     # 名册那一行也确实落了盘（不是只活在内存里）。
     assert AgentRegistry.load(isolated_registry.path).get("orbit") is not None
     # 三件套在、且改动只发生在应有的地方（临时根里没留下写锁一类的残骸）。
-    assert (paths.real_target(PROJECTS_RELATIVE, root) / "Orbit" / "plan.md").is_file()
+    # 两件套（11-09 WP-DOSSIER-SHAPE：``plan.md``／``progress.md`` 退休，档案本体是
+    # ``dossier.json``）——断的是「树真的落到盘上」，不再钉已退役的文件名。
+    orbit = paths.real_target(PROJECTS_RELATIVE, root) / "Orbit"
+    assert (orbit / "dossier.json").is_file()
+    assert (orbit / "research.md").is_file()
     assert not (root / ".plobi-mind.lock").exists()
 
 
@@ -542,16 +554,16 @@ def test_a_research_agent_does_not_enter_the_projects_declaration(
 
     assert response.status_code == 200, response.json()
 
-    # 树落在 research 那一格。
-    research = paths.real_target("Surface/dossiers/research", root)
-    assert (research / "SRTP" / "plan.md").is_file()
+    # 树落在 research 那一格（人读面 11-10 已按种类分家：逻辑头 ``Dossiers``）。
+    research = paths.real_target("Dossiers/research", root)
+    assert (research / "SRTP" / "dossier.json").is_file()
 
     # §1 那行、INDEX.md 与 projects 那一格：一个字节都没动（这份声明不管 research）。
     assert snapshot(root) == before
 
     # 名册那一行记的是**树上真实那一格**，不是品类默认的那一格。
     entry = live_registry().get("srtp")
-    assert entry is not None and entry.mind_subtree == "Surface/dossiers/research/SRTP"
+    assert entry is not None and entry.mind_subtree == "Dossiers/research/SRTP"
 
 
 # --------------------------------------------------------------------------- #
@@ -593,7 +605,7 @@ def test_every_creatable_category_can_be_created(
 
     # Mind 树只给那两类。
     assert projects is not None and projects.mind_subtree.startswith(f"{PROJECTS_RELATIVE}/")
-    assert research is not None and research.mind_subtree.startswith("Surface/dossiers/research/")
+    assert research is not None and research.mind_subtree.startswith("Dossiers/research/")
     assert courses is not None and courses.mind_subtree == ""
     assert butler is not None and butler.mind_subtree == ""
 

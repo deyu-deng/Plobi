@@ -138,8 +138,13 @@ def _spawned_home(reg, name: str, home: Path) -> Path:
     """
     result = reg.spawn(name)
     assert "profile_dir" not in result, "spawn 又在返回值里泄露家路径了"
+    # B 刀之后连 ``profile`` 这个键都没了（裁定 42：profile 概念退役），家目录名只能
+    # 按名册名走同一条派生规则自己算。
+    from plobi.agents.registry import derive_runtime_slug
+
+    slug = derive_runtime_slug(name) or name
     # 注意：本档的 ``l2_home`` **已经是** ``<tmp>/.plobi``（见 fixture），别再多套一层。
-    profile_dir = home / "profiles" / result["profile"]
+    profile_dir = home / "profiles" / slug
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "plobi").mkdir(exist_ok=True)
     (profile_dir / ".no-bundled-skills").write_text("", encoding="utf-8")

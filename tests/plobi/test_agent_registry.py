@@ -638,13 +638,19 @@ _UNRESOLVABLE_PROVIDER = "no-such-provider-gate-check"
 
 
 def _resolvable_provider_name() -> str:
-    """从底座那个权威自己的注册表里取一个它认的名字（不写死 provider 名单）。"""
+    """从底座那个权威自己的注册表里取一个它认的名字（不写死 provider 名单）。
+
+    注册表里既有规范名也有**别名**（``aci`` 解出来是 ``actual``）。测试要的是「名册行
+    写这个名字，闸门照样解得出来」，所以挑第一个**自反**的名字——直接拿排序后的第一个
+    键会把别名当成闸门坏了（2026-11-11 这条就是这么红的）。
+    """
     from plobi_cli.auth import PROVIDER_REGISTRY, resolve_provider
 
     assert PROVIDER_REGISTRY, "底座注册表为空 —— 闸门无从验证"
-    name = sorted(PROVIDER_REGISTRY)[0]
-    assert resolve_provider(name) == name
-    return name
+    for name in sorted(PROVIDER_REGISTRY):
+        if resolve_provider(name) == name:
+            return name
+    raise AssertionError("注册表里没有一个自反的 provider 名 —— 闸门无从验证")
 
 
 def _slug_of(result: dict) -> str:
