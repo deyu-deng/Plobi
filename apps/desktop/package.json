@@ -217,6 +217,30 @@
         "to": "icon.ico"
       },
       {
+        "from": "assets/icon-linux.png",
+        "to": "icon-linux.png"
+      },
+      {
+        "from": "assets/icon-macos.png",
+        "to": "icon-macos.png"
+      },
+      {
+        "from": "assets/trayTemplate.png",
+        "to": "trayTemplate.png"
+      },
+      {
+        "from": "assets/trayTemplate@2x.png",
+        "to": "trayTemplate@2x.png"
+      },
+      {
+        "from": "assets/trayTemplateBadge.png",
+        "to": "trayTemplateBadge.png"
+      },
+      {
+        "from": "assets/trayTemplateBadge@2x.png",
+        "to": "trayTemplateBadge@2x.png"
+      },
+      {
         "from": "build/egress",
         "to": "egress"
       },
@@ -297,6 +321,7 @@
       ]
     },
     "win": {
+      "icon": "assets/icon.ico",
       "legalTrademarks": "Plobi",
       "target": [
         "nsis",
@@ -306,6 +331,7 @@
     },
     "linux": {
       "category": "Development",
+      "icon": "assets/icon-linux.png",
       "maintainer": "Turtlelet <3288979284@qq.com>",
       "synopsis": "Native desktop shell for Plobi Agent.",
       "target": [

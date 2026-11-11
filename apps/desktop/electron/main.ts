@@ -192,7 +192,7 @@ import {
 } from './session-windows'
 import { registerGenOffice } from './genoffice'
 import { nativeOverlayWidth as computeNativeOverlayWidth, macTitleBarOverlayHeight } from './titlebar-overlay-width'
-import { appIconPaths } from './app-icon-paths'
+import { appIconPaths, type TrayIconKind, trayIconPaths } from './app-icon-paths'
 import { resolveAppUserModelId, resolveNotificationActivation } from './app-identity'
 import { resolveBehindCount, shouldCountCommits } from './update-count'
 import { readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
@@ -623,7 +623,7 @@ const WINDOW_BUTTON_POSITION = {
 // It's only the pre-layout fallback — the renderer measures the exact overlay
 // width live via the Window Controls Overlay API.
 const APP_ICON_PATHS = appIconPaths({
-  isWindows: IS_WINDOWS,
+  platform: process.platform,
   appRoot: APP_ROOT,
   resourcesPath: process.resourcesPath,
   unpackedRoot: unpackedPathFor(APP_ROOT),
@@ -8491,6 +8491,18 @@ function applyEgressBadge() {
   egressBadgeTone = tone
 
   try {
+    // macOS：换图，不画点。template 语义下彩色角标根本不该出现（系统只认黑色与
+    // alpha），所以「异常」由 badge 变体那枚黑点表达，颜色区分让给菜单与 tooltip。
+    if (IS_MAC) {
+      const image = trayTemplateImage(tone === 'off' ? 'base' : 'badge')
+
+      if (image) {
+        tray.setImage(image)
+
+        return
+      }
+    }
+
     const image = trayIconImage()
     const { width, height } = image.getSize()
 
@@ -8579,7 +8591,46 @@ function refreshTrayMenu() {
 // 16px is what the Windows notification area actually paints; the app icon is
 // 180px+, so downscale explicitly. A missing icon must never take the app down
 // — an empty image still gives a working (if invisible) tray.
+const TRAY_ICON_INPUTS = {
+  appRoot: APP_ROOT,
+  resourcesPath: process.resourcesPath,
+  join: path.join
+}
+
+/**
+ * macOS 菜单栏只吃 template image：纯黑 + alpha、透明底、18×18pt，亮/暗色由系统
+ * 自带的反相管线负责。喂彩色满幅的应用图标，结果就是用户 11-11 截图里那一格——
+ * 一块带底色的方块，比旁边 Wi-Fi、电池、放大镜都大一圈、也花一圈。
+ */
+function trayTemplateImage(kind: TrayIconKind) {
+  const iconPath = trayIconPaths(TRAY_ICON_INPUTS, kind).find(fileExists)
+
+  if (!iconPath) {
+    return null
+  }
+
+  const image = nativeImage.createFromPath(iconPath)
+
+  if (image.isEmpty()) {
+    return null
+  }
+
+  // 显式设 template：不靠文件名后缀撞运气，重绘回来的 image 也走同一套反相。
+  image.setTemplateImage(true)
+
+  return image
+}
+
 function trayIconImage() {
+  // macOS 优先走模板剪影；模板图万一缺失，宁可落到旧逻辑显出图标，也不让托盘空掉。
+  if (IS_MAC) {
+    const template = trayTemplateImage('base')
+
+    if (template) {
+      return template
+    }
+  }
+
   try {
     const iconPath = getAppIconPath()
 
@@ -8688,7 +8739,14 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
   if (IS_MAC) {
     mainWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
 
-    if (icon) {
+    // macOS dock icon ownership (2026-11-11): a packaged build already carries
+    // its icon in `Contents/Info.plist` (`CFBundleIconFile` → icon.icns), and
+    // that is the artwork macOS has been showing — until this line replaced it
+    // with `apple-touch-icon.png`, an iOS-style full-bleed 180px square with no
+    // transparent margin. The dock then rendered a hard square that matched
+    // nothing else in the dock. So: only the dev host (Electron.app, which has
+    // no Plobi icon of its own) gets setIcon, and it gets the padded variant.
+    if (icon && !app.isPackaged) {
       app.dock?.setIcon(icon)
     }
   }
@@ -11410,6 +11468,11 @@ ipcMain.handle('plobi:magpie:update:apply', async () => {
         reason: sidecar.reason ?? (sidecar.started ? null : '新版本已下载，但没能起起来，已退回包内版本')
       }
     } catch (err) {
+      // The reason used to die here: it went back to the renderer once and nowhere
+      // else, which is why a failed 74 MB self-update on 2026-11-11 left two `.part`
+      // files and zero log lines. Desktop.log is where red rows point people.
+      rememberLog(`[magpie] update failed: ${err instanceof Error ? err.message : String(err)}`)
+
       return { ok: false, version: null, started: false, port: null, reason: String(err) }
     } finally {
       magpieUpdateInFlight = null
@@ -12617,10 +12680,23 @@ function resolvePlobiVersion() {
 // shell's number under the shell's label.
 function resolveBackendVersion(): string | null {
   try {
-    const root = resolveUpdateRoot()
-    const initPath = path.join(root, 'plobi_cli', '__init__.py')
+    // Which backend is actually RUNNING, not which clone happens to sit in
+    // PLOBI_HOME. `resolvePlobiBackend()` prefers `resources/backend` in a
+    // packaged build (rung 2), but this used to read `resolveUpdateRoot()` —
+    // the bootstrap clone — so a 0.3.1 app reported 「后端 v0.3.0」 from a
+    // directory nothing was running (2026-11-11).
+    const candidates = [
+      IS_PACKAGED ? path.join(process.resourcesPath, 'backend') : null,
+      resolveUpdateRoot()
+    ].filter(Boolean) as string[]
 
-    if (fileExists(initPath)) {
+    for (const root of candidates) {
+      const initPath = path.join(root, 'plobi_cli', '__init__.py')
+
+      if (!fileExists(initPath)) {
+        continue
+      }
+
       const raw = fs.readFileSync(initPath, 'utf8')
       const match = raw.match(/__version__\s*=\s*["']([^"']+)["']/)
 
