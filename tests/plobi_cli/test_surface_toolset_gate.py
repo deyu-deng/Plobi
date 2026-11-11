@@ -220,3 +220,34 @@ def test_provider_categories_do_not_depend_on_a_plugin_being_loaded():
     got = _provider_tools_for(enabled)
     assert SURFACE_TOOLS.issubset(got)
     assert "mind_read" in got and "mind_write" in got
+
+
+# ── 判据⑦（自动化护栏）：桌面会话真走的那条路也算 surface ──────────────────
+
+
+def test_the_desktop_gateway_path_also_enables_the_surface_category(monkeypatch):
+    """桌面会话真正走的是 ``tui_gateway/server.py::_load_enabled_toolsets``。
+
+    11-11 端到端复验抓到的：上面那些用例走的是 ``_get_platform_tools``，
+    而桌面会话实际先过 ``_load_enabled_toolsets`` —— 两条路不是一回事
+    （那一条会读环境变量、coding posture、config，再落到 ``_get_platform_tools``）。
+    只验后者，真机上照样可能拿不到那九把 ⇒ 这里把前者也钉住。
+    """
+    monkeypatch.delenv("PLOBI_TUI_TOOLSETS", raising=False)
+    # coding posture（focus 模式）会整份替换门类清单 ⇒ 强制走 fallback 那条，
+    # 与用户没开 focus 时的桌面行为一致。
+    import agent.coding_context as cc
+
+    monkeypatch.setattr(cc, "coding_selection", lambda **kwargs: None)
+
+    from tui_gateway.server import _load_enabled_toolsets
+
+    enabled = set(_load_enabled_toolsets() or [])
+    assert "surface" in enabled, (
+        "桌面会话真路径算出的 enabled_toolsets 里没有 surface ⇒ "
+        "provider 的笔记工具在真机上还是进不了会话"
+    )
+    got = _provider_tools_for(sorted(enabled))
+    assert SURFACE_TOOLS.issubset(got), (
+        f"后端真路径下 surface 系工具没全进表，缺：{sorted(SURFACE_TOOLS - got)}"
+    )
