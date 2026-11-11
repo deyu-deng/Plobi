@@ -9,6 +9,8 @@ import {
   findKnownOverviewSession,
   findLatestSessionForProfile,
   forgetL1MainSession,
+  l2IdentityKey,
+  l2NotNavigable,
   pickL1MainSession,
   pickL1Mouth,
   profileListHasMaster,
@@ -364,5 +366,42 @@ describe('archiveL1BypassSessions', () => {
 
     await expect(archiveL1BypassSessions([], archive)).resolves.toEqual({ archived: 0, failed: [] })
     expect(archive).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * WP-L2-MOUTH-RESUME：L2 的身份键与「不可点」判据。
+ *
+ * 钉的是**回归**：`5fbafaa1`（`WP-PROFILE-CANCEL`，11-06 21:07）把名册响应里那一格
+ * `profile` 删掉了，桌面总控那三处读它的地方没跟着改 ⇒ 身份取到恒空串 ⇒ 每个 L2
+ * 都落进「数据条目」分支、永远开一张空草稿、**从不 resume** ⇒ 对话一换界面就消失
+ * （用户 11-10 23:02 报）。
+ */
+describe('l2IdentityKey', () => {
+  it('身份键是名册那一行的 name（中文课名也认）', () => {
+    expect(l2IdentityKey({ id: '大学物理（甲）Ⅱ' }, '大学物理（甲）Ⅱ')).toBe('大学物理（甲）Ⅱ')
+    expect(l2IdentityKey({ id: 'Aura' }, 'Aura')).toBe('Aura')
+  })
+
+  it('名册响应里那一格 profile 不再参与身份（11-06 起后端不给）', () => {
+    const row = { id: 'Aura', profile: 'aura' }
+
+    expect(l2IdentityKey(row, 'Aura')).toBe('Aura')
+  })
+
+  it('名册缓存里还没有这一行时，回路由上那个 id（同名册行）', () => {
+    expect(l2IdentityKey(undefined, 'agenda')).toBe('agenda')
+  })
+})
+
+describe('l2NotNavigable', () => {
+  it('后端说不可点（navigable=false）⇒ 那是数据条目，不给它起后端', () => {
+    expect(l2NotNavigable({ id: 'course-row', navigable: false })).toBe(true)
+  })
+
+  it('可点 / 缺这一格（老响应）⇒ 照旧绑', () => {
+    expect(l2NotNavigable({ id: 'aura', navigable: true })).toBe(false)
+    expect(l2NotNavigable({ id: 'aura' })).toBe(false)
+    expect(l2NotNavigable(undefined)).toBe(false)
   })
 })

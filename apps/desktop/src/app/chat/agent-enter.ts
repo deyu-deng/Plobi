@@ -68,7 +68,6 @@ export function showsTransition(phase: AgentEnterPhase): boolean {
 export interface EnterAgentRow {
   id?: string
   name?: string
-  profile?: string
 }
 
 /**
@@ -77,15 +76,19 @@ export interface EnterAgentRow {
  * 名册里查得到就用它的名字；查不到回 `null` —— 调用方因此**必须**走中性那一句，
  * 而不是把 `l2-agenda` 这类目录名打在屏幕上（左栏早就按 WP-UI-NO-INTERNALS 改成简称，
  * 遮罩这一格当时漏了，`WP-RAIL-AGENT-EQUAL` 一起收掉）。
+ *
+ * 匹配键是**名册 name**（那一行的 `id`）：身份键就它一个（裁定 178 乙案「名册行即
+ * 身份」）。名册响应里那一格 `profile` 11-06 起后端不再给（`5fbafaa1`），拿它匹配
+ * 等于永远匹配不上 ⇒ 遮罩层拿不到名字。
  */
-export function swapLabel(agents: readonly EnterAgentRow[], profile: null | string): null | string {
-  const key = (profile || '').trim().toLowerCase()
+export function swapLabel(agents: readonly EnterAgentRow[], identity: null | string): null | string {
+  const key = (identity || '').trim().toLowerCase()
 
   if (!key) {
     return null
   }
 
-  const hit = agents.find(agent => (agent.profile || '').trim().toLowerCase() === key)
+  const hit = agents.find(agent => (agent.id || '').trim().toLowerCase() === key)
 
   return (hit?.name || '').trim() || null
 }

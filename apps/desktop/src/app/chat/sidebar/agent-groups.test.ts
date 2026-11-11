@@ -108,8 +108,8 @@ describe('agentNameSet / isL1SessionProfile', () => {
 })
 
 describe('isNavigableAgent', () => {
-  it('lets a real 分身 through — it has a profile to bind', () => {
-    expect(isNavigableAgent(agent({ id: 'nymo', name: 'Nymo', profile: 'nymo' }))).toBe(true)
+  it('lets a real 分身 through', () => {
+    expect(isNavigableAgent(agent({ id: 'nymo', name: 'Nymo' }))).toBe(true)
   })
 
   it('refuses a data row — because the backend says so, not because a profile is missing', () => {
@@ -122,22 +122,22 @@ describe('isNavigableAgent', () => {
     expect(isNavigableAgent(agent({ id: '电工电子学', name: '电工电子学' }))).toBe(true)
   })
 
-  it('R-072: backend navigable=false wins even when a profile name exists', () => {
-    // 课程行（heal 后 role=l2_course）与保留名行（Plobi/l2-plobi）都有 profile 名，
-    // 但后端 navigability 说点了必然 spawn 失败 —— 行必须不可点。
-    expect(isNavigableAgent(agent({ id: 'c', name: '电工电子学', profile: 'l2-course-ee', navigable: false }))).toBe(false)
-    expect(isNavigableAgent(agent({ id: 'p', name: 'Plobi', profile: 'l2-plobi', navigable: false }))).toBe(false)
+  it('R-072: backend navigable=false wins', () => {
+    // 课程行（heal 后 role=l2_course）与保留名行（Plobi）后端说点了必然 spawn
+    // 失败 —— 行必须不可点。
+    expect(isNavigableAgent(agent({ id: 'c', name: '电工电子学', navigable: false }))).toBe(false)
+    expect(isNavigableAgent(agent({ id: 'p', name: 'Plobi', navigable: false }))).toBe(false)
   })
 
-  it('R-072: backend navigable=true opens the row regardless of profile spelling', () => {
-    expect(isNavigableAgent(agent({ id: 'a', name: 'Aura', profile: 'aura', navigable: true }))).toBe(true)
+  it('R-072: backend navigable=true opens the row', () => {
+    expect(isNavigableAgent(agent({ id: 'a', name: 'Aura', navigable: true }))).toBe(true)
   })
 
   it('R-072: navigable is independent of askable — the agenda row is both', () => {
     // agenda 走 secretary_ask（askable=false）但左栏完全点得动（navigable=true）。
     // 把 askable 当点击判据的那一版把日程秘书也变成了不可点——这就是两个字段
     // 必须分开的理由。
-    expect(isNavigableAgent(agent({ id: 'agenda', name: '日程秘书', profile: 'l2-agenda', askable: false, navigable: true }))).toBe(true)
+    expect(isNavigableAgent(agent({ id: 'agenda', name: '日程秘书', askable: false, navigable: true }))).toBe(true)
   })
 
   it('absent navigable means clickable — a missing field is not a verdict', () => {

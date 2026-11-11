@@ -5,6 +5,46 @@ import { normalizeProfileKey } from '@/store/scope'
 
 import type { ShellLevel } from './routes'
 
+/**
+ * L2 那一行在名册里的样子（`console/types.ts::Agent` 的一个子集）。
+ *
+ * 身份键取名册 name（名册行即身份，裁定 178 乙案＋裁定 180 单库 `sessions.agent_id`
+ * ＋`WP-AGENT-SINGLE-GATEWAY` §3.4「身份是请求属性」）。
+ */
+export interface L2RosterRow {
+  id?: string
+  name?: string
+  navigable?: boolean
+}
+
+/**
+ * L2 的身份键：**名册那一行的 name**。
+ *
+ * 2026-11-05 起（裁 178 乙案「名册行即身份」＋裁 180「单库 ＋ `sessions.agent_id`
+ * ＝名册 name」＋SINGLE-GATEWAY §3.4「身份是请求属性，不是进程属性」）：桌面把它随
+ * 请求带下去（REST 走 `X-Plobi-Agent` 头、非 ASCII 退到 `?profile=`；WS 走
+ * `session.create` 的 `profile` 参数），后端按名册行解析，落到 `sessions.agent_id`。
+ *
+ * ⚠️ **不许再从名册响应里那一格 `profile` 取身份**：它 11-06 已经被
+ * `5fbafaa1`（`WP-PROFILE-CANCEL`）从响应里删掉了 ⇒ 取到的是恒空串 ⇒ 每个 L2 都
+ * 落进「数据条目」分支、永远开一张空草稿、**从不 resume** ⇒ 对话一换界面就消失
+ * （用户 11-10 23:02 报）。那个派生 slug（`derive_runtime_slug` ＋
+ * `runtime_slugs.yaml`）在后端，桌面算不出来，也不需要——名册行自己的 `id` 就是它。
+ */
+export function l2IdentityKey(row: L2RosterRow | undefined, agentId: string): string {
+  return (row?.id ?? '').trim() || (agentId ?? '').trim()
+}
+
+/**
+ * 这一行点进去会不会必然失败：判据只有后端那一格 `navigable`（R-072）。
+ *
+ * 「数据条目」（没有运行时可绑的那种行）不该给它起后端、也不许替它编一个家 ⇒ 走
+ * 与「绑不上」同一条既有路径：留在原地、开一张新草稿，不排任何重试。
+ */
+export function l2NotNavigable(row: L2RosterRow | undefined): boolean {
+  return Boolean(row && row.navigable === false)
+}
+
 // Cheap signature compare so a poll only swaps the atom (and re-renders the
 // sidebar) when the visible rows actually changed.
 export function sameCronSignature(a: SessionInfo[], b: SessionInfo[]): boolean {

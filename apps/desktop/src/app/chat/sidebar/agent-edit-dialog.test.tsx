@@ -81,7 +81,6 @@ const agent: Agent = {
   category: 'projects',
   id: 'aura',
   name: 'Aura',
-  profile: 'l2-aura',
   status: 'idle'
 } as Agent
 

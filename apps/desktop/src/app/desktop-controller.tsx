@@ -104,6 +104,8 @@ import { $consoleAgents, refreshConsoleAgents } from './console/store/agents'
 import {
   bindL1GatewayIfMasterExists,
   findKnownOverviewSession,
+  l2IdentityKey,
+  l2NotNavigable,
   pickL1Mouth,
   readL1MainSessionId,
   resolveL1HomeProfile,
@@ -1484,9 +1486,12 @@ export function DesktopController() {
           // After L2 the live gateway is often still on the agent profile.
           // Resolve back to the L1 home (remembered default/custom) before
           // picking the mainline — otherwise the center keeps the L2 chat.
+          // L2 的作用域键是**名册 name**（身份键那一族），不是名册响应里那一格
+          // `profile`——它 11-06 起后端不再给（`5fbafaa1`）⇒ 恒空 ⇒ 这一份集合会
+          // 恒空 ⇒ 「当前在跟哪个 Agent 说话」判不出来 ⇒ L1 归位判据失灵。
           const agentProfiles = $consoleAgents
             .get()
-            .map(agent => normalizeProfileKey((agent.profile || '').trim()))
+            .map(agent => (agent.id || '').trim())
             .filter(Boolean)
 
           profileForSessions = resolveL1HomeProfile({
@@ -1550,15 +1555,17 @@ export function DesktopController() {
 
       $agentEnter.set(beginEntering(rosterRow?.name || rosterRow?.id || ''))
 
-      // 名册里这一行没有 profile ⇒ 它是**数据记录**（`l2_course`，裁定 40：课是数据不是分身），
-      // 不是"一个还没连上的分身"。以前这里回退成 agentId，等于替它造一个 profile 名，
-      // 主进程真会去起 `plobi -p <那个名字>`：ASCII 名退 1（Profile does not exist）、
-      // 非 ASCII 名被 CLI 的 -p 预扫丢掉退 2，五门课各自一场重启循环
-      // （2026-10-13 现核 desktop.log 单「电工电子学」2767 行 failed）。
-      // 注册表那一半已改成数据角色一律回空串（plobi/agents/registry.py::profile_name）；
-      // 这一半是**客户端不许自己抄一条回退**（裁定 94 同族）。
-      let profile =
-        $consoleAgents.get().find(agent => agent.id === agentId)?.profile?.trim() ?? ''
+      // 身份 = 名册那一行的 name（裁定 178 乙案「名册行即身份」＋裁定 180「单库 ＋
+      // `sessions.agent_id` ＝名册 name」＋SINGLE-GATEWAY §3.4「身份是请求属性，不是
+      // 进程属性」）：桌面把它随请求带下去，后端按名册行解析，落到 `sessions.agent_id`。
+      //
+      // ⚠️ 以前这里取的是名册响应里那一格 `profile`：11-06 已被 `5fbafaa1`
+      // （`WP-PROFILE-CANCEL`）从响应里删掉了 ⇒ 取到的是**恒空串** ⇒ 下面那道
+      // 「没有 profile ⇒ 数据条目」的门**恒真** ⇒ 每个 L2 都开一张空草稿、
+      // **从不 resume 自己那条会话** ⇒ 对话一换界面就消失（用户 11-10 23:02 报）。
+      // 派生 slug（`derive_runtime_slug` ＋ `runtime_slugs.yaml`）在后端，桌面算不出来
+      // 也不需要——名册行自己的 `id` 就是那个身份键。
+      const identity = l2IdentityKey(rosterRow, agentId)
 
       let sessionId = ''
       let overviewFailed = false
@@ -1575,7 +1582,6 @@ export function DesktopController() {
         }
 
         sessionId = overview.sessionId?.trim() || ''
-        profile = overview.agent.profile?.trim() || profile
         agentProjectPath = (overview.projectPath ?? '').trim()
       } catch {
         // Offline / mock miss — still try the registry-default profile name.
@@ -1598,23 +1604,23 @@ export function DesktopController() {
         return
       }
 
-      // The agent's profile is registry-authoritative: it names a pool backend
-      // the Electron main process lazily spawns/reuses (typically on a
-      // non-default port, not the primary's). Do NOT gate the bind on
-      // `$profiles` (the user-facing list from GET /api/profiles) — agent-pool
-      // profiles are never in that list, so the old gate silently skipped the
-      // bind and the first L2 message's `session.create` landed on the PRIMARY
-      // backend instead of the agent's, leaving `profiles/<agent>/state.db`
-      // empty and the agent log with no rounds (the `/agent/simulation` "send
-      // swallowed" bug: transcript shows nothing because the turn never reached
-      // the agent's dispatch). Bind unconditionally; the registry is the source
-      // of truth for which profiles exist.
+      // The agent's identity is registry-authoritative: it names WHICH agent this
+      // screen talks to (row-level `sessions.agent_id`, 裁定 180). The desktop
+      // carries it as a request attribute (`X-Plobi-Agent` / `?profile=` for REST,
+      // `session.create`'s `profile` param for WS) — one backend serves every
+      // agent (SINGLE-GATEWAY §3.3/§3.5). Do NOT gate the bind on `$profiles`
+      // (the user-facing list from GET /api/profiles): agent identities are never
+      // in that list, so the old gate silently skipped the bind and the first L2
+      // message landed on the PRIMARY backend instead of the agent's. Bind
+      // unconditionally; the registry is the source of truth.
       const previousProfile = $scopeAgent.get()
 
-      // 数据条目：不绑后端、不替它编一个家。走与"绑不上"同一条既有路径——
-      // 留在原地、开一张新草稿，不排任何重试。区别只在过渡那句说什么：
-      // 概览取不到要说"后端没答上"，取到了而这本来就没后端要说中性那句。
-      if (!profile) {
+      // 「点进去会不会必然失败」这一格判据只有后端那一格 `navigable`（R-072）：
+      // 没有运行时可绑的那种行（课程数据条目／保留名／已归档）⇒ 不给它起后端、
+      // 不替它编一个家。走与「绑不上」同一条既有路径——留在原地、开一张新草稿，
+      // 不排任何重试。区别只在过渡那句说什么：概览取不到要说"后端没答上"，
+      // 取到了而这一行本来就没后端，要说中性那句。
+      if (l2NotNavigable(rosterRow)) {
         if (overviewFailed) {
           $agentEnter.set(enterFailure('no-overview'))
         } else {
@@ -1629,19 +1635,19 @@ export function DesktopController() {
         return
       }
 
-      // Refresh L1 home from the profile we're leaving when it is still an L1
-      // profile; keep the remembered home when hopping L2→L2 (agent→agent).
+      // Refresh L1 home from the scope we're leaving when it is still an L1
+      // scope; keep the remembered home when hopping L2→L2 (agent→agent).
       l1GatewayProfileRef.current = resolveL1HomeProfile({
         activeProfile: previousProfile,
         agentProfiles: $consoleAgents
           .get()
-          .map(agent => normalizeProfileKey((agent.profile || '').trim()))
+          .map(agent => (agent.id || '').trim())
           .filter(Boolean),
         rememberedHome: l1GatewayProfileRef.current
       })
 
       try {
-        await ensureGatewayProfile(profile)
+        await ensureGatewayProfile(identity)
       } catch {
         $agentEnter.set(enterFailure('spawn'))
         await ensureGatewayProfile(previousProfile).catch(() => undefined)
@@ -1698,6 +1704,13 @@ export function DesktopController() {
 
       if (cancelled) {
         return
+      }
+
+      // 概览取不到 ⇒ 后端没答上「这个 Agent 该显示哪条会话」⇒ 说真话，别装成
+      // 「它还没有对话」。旧形状里这句被数据条目那道门带着走，而那道门 11-06
+      // 之后恒真 ⇒ 这句话跟着一起不显示了（用户只看到一张空草稿）。
+      if (overviewFailed) {
+        $agentEnter.set(enterFailure('no-overview'))
       }
 
       prepareFreshDraftInPlace()

@@ -44,9 +44,9 @@ describe('进 L2 的过渡节点', () => {
     expect(unknown.reasonKey).toBeNull()
     expect(unknown.detail).toContain('没记到')
 
-    const agents = [{ id: 'agenda', name: '日程秘书', profile: 'l2-agenda' }]
+    const agents = [{ id: 'agenda', name: '日程秘书' }]
 
-    expect(swapLabel(agents, 'L2-AGENDA')).toBe('日程秘书')      // 大小写不敏感
+    expect(swapLabel(agents, 'AGENDA')).toBe('日程秘书')          // 大小写不敏感
     expect(swapLabel(agents, 'l2-course-eet-b')).toBeNull()      // 查不到 ⇒ null，交给中性那句
     expect(swapLabel(agents, null)).toBeNull()
   })

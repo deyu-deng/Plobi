@@ -90,6 +90,20 @@ export interface Agent {
    * without the field fold into `butler` on the client.
    */
   category?: string
+  /**
+   * 身份键 = 这一行的 `id`（名册 name）。
+   *
+   * 11-05 起（裁 178 乙案「名册行即身份」＋裁 180 单库 `sessions.agent_id`）：桌面进
+   * 一个 L2 要 resume 它自己那条会话，靠的是这个身份键随请求带下去（REST 走
+   * `X-Plobi-Agent` 头／非 ASCII 退到 `?profile=`，WS 走 `session.create` 的
+   * `profile` 参数），后端按名册行解析。
+   *
+   * ⚠️ 曾经还有一格 `profile`（家名／派生 slug）：后端 11-06 把它从响应里删掉了
+   * （`5fbafaa1`），桌面那几处读它的地方没跟着改 ⇒ 身份恒空 ⇒ 每个 L2 都开一张
+   * 空草稿、从不 resume ⇒ 对话一换界面就消失（用户 11-10 23:02 报，
+   * `WP-L2-MOUTH-RESUME`）。那一格**不再声明**——留一个恒空的字段就是下一次复发
+   * 的入口。
+   */
   id: string
   /**
    * 名册 role（用户 11-05：L1 也进名册，和五类 L2 分开标、地位平等）。
@@ -136,12 +150,6 @@ export interface Agent {
    * 左栏据此在 Agent 行上转那条 `arc-border` 光条。
    */
   working?: boolean
-  /**
-   * Plobi profile this agent chats under (`registry.profile_name`). The
-   * desktop switches the live gateway onto this profile when entering L2 so
-   * L1/L2 transcripts stay isolated (ARCH-RULINGS 裁定 1/3).
-   */
-  profile?: string
   status: AgentStatus
   todayCalls: number
   /**
