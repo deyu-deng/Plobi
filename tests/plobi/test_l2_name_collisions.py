@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def _load_agent_ask():
-    """Load ``plugins/plobi-north-star/agent_ask.py`` by file path.
+    """Load ``plugins/plobi-core/agent_ask.py`` by file path.
 
     The directory name is hyphenated, so it can't be imported by dotted name;
     ``resolve_target`` / ``_collapse_same_home`` are the pure functions this
@@ -31,7 +31,7 @@ def _load_agent_ask():
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(
-        name, REPO / "plugins" / "plobi-north-star" / "agent_ask.py"
+        name, REPO / "plugins" / "plobi-core" / "agent_ask.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

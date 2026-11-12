@@ -141,17 +141,17 @@ def test_own_family_with_own_prefix_is_green(tmp_path: Path) -> None:
 
 def test_directory_family_and_glob_families_are_covered(tmp_path: Path) -> None:
     """目录族 / `dir/**` 族同样算认领范围（与 Docs 版 _covered 同一口径）。"""
-    repo = _repo(tmp_path, {"plugins/plobi-north-star/channel.py": "x\n",
+    repo = _repo(tmp_path, {"plugins/plobi-core/channel.py": "x\n",
                            "docs/arch/notes.md": "y\n"})
     reg = _register(
         tmp_path,
         HEADER
         + _row("WP-ALPHA", "`Code/scripts/check_claim_scope.py`")
-        + _row("WP-DIR", "`Code/plugins/plobi-north-star/`")
+        + _row("WP-DIR", "`Code/plugins/plobi-core/`")
         + _row("WP-GLOB", "`Code/docs/arch/**`"),
     )
 
-    _stage(repo, "plugins/plobi-north-star/channel.py")
+    _stage(repo, "plugins/plobi-core/channel.py")
     dir_case = _run(repo, reg, WP_COMMIT="[WP-ALPHA] 越界")
     assert dir_case.returncode != 0 and "WP-DIR" in dir_case.stderr, dir_case.stderr
 

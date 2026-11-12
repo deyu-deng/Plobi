@@ -78,6 +78,22 @@ class PluginToolOverrideError(PermissionError):
 
 logger = logging.getLogger(__name__)
 
+# 裁定 217：插件标识符 plobi-north-star → plobi-core。存量用户 config 的
+# ``plugins.enabled`` / ``disabled`` 里仍可能写着旧键，加载器在这里把它折成
+# 现行键，**不回写用户配置**（安装位只读，见 dev-workflow.md 附录 A §3.7）。
+# HTTP 路由键 /api/plugins/plobi-north-star/* 也按同样理由保留，不改挂载处。
+_LEGACY_PLUGIN_KEYS = {
+    "plobi-north-star": "plobi-core",
+    "plobi_north_star": "plobi_core",
+}
+
+
+def _normalize_plugin_keys(values):
+    """把 config 里的旧插件键折算成现行键；None 保持 None（opt-in 语义）。"""
+    if values is None:
+        return None
+    return {_LEGACY_PLUGIN_KEYS.get(str(v), str(v)) for v in values}
+
 
 # ---------------------------------------------------------------------------
 # Plugin developer debug logging
@@ -1385,8 +1401,8 @@ class PluginManager:
         # winner. Keys are path-derived (``image_gen/openai``,
         # ``disk-cleanup``) so ``tts/openai`` and ``image_gen/openai``
         # don't collide even when both manifests say ``name: openai``.
-        disabled = _get_disabled_plugins()
-        enabled = _get_enabled_plugins()  # None = opt-in default (nothing enabled)
+        disabled = _normalize_plugin_keys(_get_disabled_plugins())
+        enabled = _normalize_plugin_keys(_get_enabled_plugins())  # None = opt-in default
         winners: Dict[str, PluginManifest] = {}
         for manifest in manifests:
             winners[manifest.key or manifest.name] = manifest
@@ -2466,7 +2482,7 @@ def get_plugin_toolsets() -> List[tuple]:
         plugin = toolset_plugin.get(ts_key)
         label = f"🔌 {ts_key.replace('_', ' ').title()}"
         # 这一格的简介先问 ``toolsets.py`` 里这个 toolset 自己那句——插件清单的
-        # 简介是**整包**的（plobi-north-star 一句 "runtime: Master helpers…"），
+        # 简介是**整包**的（plobi-core 一句 "runtime: Master helpers…"），
         # 拿它填每一格会让 ``channel`` / ``edge`` / ``ops`` 长成一模一样，面板上
         # 就再也读不出「这一格现在是什么」。清单只在 toolset 自己没有描述时兜底。
         desc = ""

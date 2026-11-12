@@ -3,7 +3,7 @@
 Nothing in here owns a task or writes an event. ``plobi_cli.kanban_db`` already
 is the task kernel — ``tasks`` (identity), ``task_runs`` (each attempt), and the
 append-only ``task_events`` table the dispatcher writes as it works, which
-``plugins/plobi-north-star`` (L1's four narrow tools) already sit on too. This
+``plugins/plobi-core`` (L1's four narrow tools) already sit on too. This
 module only *projects* those kernel events onto the five stable classes the
 handset is promised, and serves them read-only.
 

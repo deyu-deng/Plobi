@@ -1,6 +1,6 @@
 """North Star HTTP API for the desktop / dashboard frontend.
 
-Mounted at ``/api/plugins/plobi-north-star/`` by Plobi dashboard plugin
+Mounted at ``/api/plugins/plobi-core/`` by Plobi dashboard plugin
 discovery. Auth uses the same session-token middleware as all
 ``/api/plugins/*`` routes.
 
@@ -95,9 +95,9 @@ class OpsBody(BaseModel):
 async def health():
     return {
         "ok": True,
-        "module": "plobi-north-star",
+        "module": "plobi-core",
         "public": ["task", "compute", "preview", "ops"],
-        "docs": "docs/plobi/north_star/API.md",
+        "docs": "plugins/plobi-core/README.md",
     }
 
 

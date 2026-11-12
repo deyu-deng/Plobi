@@ -20,7 +20,7 @@ from tools import memory_tool as mt
 # 出厂上限（裁 156 点名的两个数）。这两个常量在这里只用于**造压力**，
 # 真值一律从 DEFAULT_CONFIG / 被测代码的解析函数取（不许拿字面数字当判据）。
 TEMPLATE = (Path(__file__).resolve().parents[2]
-            / "plugins" / "plobi-north-star" / "l1_profile_template.yaml")
+            / "plugins" / "plobi-core" / "l1_profile_template.yaml")
 
 
 @pytest.fixture()

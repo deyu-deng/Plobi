@@ -270,7 +270,7 @@ _MAX_TOOL_WORKERS = 8
 # this never reaches a strict OpenAI-compatible gateway.
 #: 谁发起的这条问（`messages.asked_by`）。设它的人只有两个：
 #: 桌面/TUI 后端启动时写 `owner`（那个进程里进来的问就是人打的），
-#: 以及 L1 问自己分身时给子进程写 `l1:<会话号>`（`plugins/plobi-north-star/agent_ask.py`）。
+#: 以及 L1 问自己分身时给子进程写 `l1:<会话号>`（`plugins/plobi-core/agent_ask.py`）。
 #: cron、消息网关等一律不写 ⇒ NULL，界面显式说"这条没记发起方"——**不拿 owner 当默认**，
 #: 那是把猜测显示成事实（用户 10-13 拍的那格）。
 ASKED_BY_ENV = "PLOBI_ASKED_BY"

@@ -21,7 +21,7 @@ import types
 
 import pytest
 
-LIB = pathlib.Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star" / "lib"
+LIB = pathlib.Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "lib"
 _PKG = "plobi_ns_lib_under_test"
 
 #: 契约原文：``Docs/specs/risk-and-gates.md`` §RiskLevel 那张表的第一列

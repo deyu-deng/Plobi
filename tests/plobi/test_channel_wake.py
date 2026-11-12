@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-PLUGIN_DIR = REPO / "plugins" / "plobi-north-star"
+PLUGIN_DIR = REPO / "plugins" / "plobi-core"
 
 
 @pytest.fixture(scope="module")

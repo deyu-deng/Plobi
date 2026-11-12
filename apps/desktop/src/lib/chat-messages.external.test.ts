@@ -43,7 +43,7 @@ describe('externalSenderOf', () => {
   })
 
   it('认得「代问」那一行的正文前缀（两列都没到界面时也不署成主人自己）', () => {
-    // `plugins/plobi-north-star/agent_ask.py:393` 发的第一行就是 `【{asker}代问】`。
+    // `plugins/plobi-core/agent_ask.py:393` 发的第一行就是 `【{asker}代问】`。
     expect(externalSenderOf(undefined, undefined, '【plobi代问】\n提问人：plobi')).toEqual({
       kind: 'agent',
       name: 'plobi'

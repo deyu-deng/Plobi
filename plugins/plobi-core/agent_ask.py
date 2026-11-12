@@ -40,7 +40,7 @@ proves in production, not a new mechanism:
 
 Footprint: **it is no longer a tool of its own.** 裁定 183 折掉了
 ``plobi_agent_ask`` 那枚嘴，只留 ``say`` / ``ask`` 两枚原子——本模块现在是
-``ask`` 的**内壳**：``plugins/plobi-north-star/channel.py::handle_ask`` 判完收件人
+``ask`` 的**内壳**：``plugins/plobi-core/channel.py::handle_ask`` 判完收件人
 与那一屏会话之后调 :func:`handle_agent_ask` 起子进程，schema 由
 ``channel.ASK_SCHEMA`` 下发。所以这里不再有 ``check_fn``、不再注册 toolset，
 也没有任何一条路能让模型直接按名字叫它。
@@ -65,7 +65,7 @@ from tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
 
-PLUGIN_KEY = "plobi-north-star"
+PLUGIN_KEY = "plobi-core"
 
 #: 「谁能被当面问」的判据**不在这里**——那是名册的事，一份在
 #: ``plobi.agents.registry.agent_askability``（角色 / 归档 / profile 名 / 家在不在
@@ -75,7 +75,7 @@ PLUGIN_KEY = "plobi-north-star"
 #: 挡的是**角色**，不是名字（裁定 69）。
 
 #: Bounded wait for the child. ``timeout_seconds`` is a ``config.yaml`` knob
-#: (``plugins.entries.plobi-north-star.agent_ask.timeout_seconds``) — behavioural
+#: (``plugins.entries.plobi-core.agent_ask.timeout_seconds``) — behavioural
 #: settings go there, never in ``.env`` or a new ``PLOBI_*`` var. The ceiling is
 #: code-only on purpose: a bad value must not park the secretary indefinitely.
 DEFAULT_TIMEOUT_SECONDS = 180.0
@@ -213,7 +213,7 @@ def budget_for(entry, *, configured: Optional[float] = None) -> Budget:
     """这一问给多少秒：慢分身不再被快分身的那个全局数掩掉（R-072 复现的成因）。
 
     口径 26（裁定 143）守死在这里——配置读数**只有**调用方自己那一个旋钮
-    ``plugins.entries.plobi-north-star.agent_ask.timeout_seconds``（:func:`timeout_seconds`），
+    ``plugins.entries.plobi-core.agent_ask.timeout_seconds``（:func:`timeout_seconds`），
     不读被问分身的那份 config。历史耗时走的是本工具取答案本来就要开的那只只读探针
     （:func:`_child_state_db` + :func:`_query_rows`），不新增第二条进别人家的路。
     """

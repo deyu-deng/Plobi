@@ -32,7 +32,7 @@ Scope discipline (裁定 21.1, and the task's 禁止 list):
 
 The hook returns ``{"action": "rewrite", "text": ...}`` — the same shape the
 existing ``pre_gateway_dispatch`` rewrite precedent uses (see
-``plugins/plobi-north-star/__init__.py::_on_pre_gateway_dispatch``).
+``plugins/plobi-core/__init__.py::_on_pre_gateway_dispatch``).
 """
 
 from __future__ import annotations

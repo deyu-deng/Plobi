@@ -1,13 +1,13 @@
 # WP-L1-BUDGET — L1 总秘书（default profile）运行时预算模板
 #
 # 这是仓库内唯一的 "L1 默认 profile 模板"：被
-# ``plugins/plobi-north-star/l1_budget.py`` 引用，也是
+# ``plugins/plobi-core/l1_budget.py`` 引用，也是
 # ``tests/plobi/test_l1_budget.py::test_compression_threshold_in_default_profile_template``
 # 的解析对象。
 #
 # 不要把 PLOBI_HOME 下的运行时 config.yaml 当作交付物（任务书禁令）。
 # 也不要改 ``agent/context_compressor.py`` 的默认 ``threshold_percent=0.50``——
-# L1 的覆盖只对 default profile + plobi_north_star 工具集启用时生效，
+# L1 的覆盖只对 default profile + plobi_core 工具集启用时生效，
 # 其它 profile / 工具集仍走 0.50 默认值。
 #
 # 模型窗口与触发换算（参考）：

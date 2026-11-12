@@ -338,10 +338,10 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
         # sessions. Without this in-line call, the long-lived 9-5 L1
         # session never re-tightens its compressor (and keeps its
         # post-finalize curator count over budget). Idempotent + no-op
-        # for L2 / non-default profiles. See plugins/plobi-north-star/
+        # for L2 / non-default profiles. See plugins/plobi-core/
         # l1_budget.py::apply_l1_budget.
         try:
-            from plobi_plugins.plobi_north_star.l1_budget import (
+            from plobi_plugins.plobi_core.l1_budget import (
                 apply_l1_budget as _apply_l1_budget,
             )
             _apply_l1_budget(agent)
@@ -415,7 +415,7 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
     # Plugin hook: on_session_start — fired once when a brand-new
     # session is created (not on continuation).  Plugins can use this
     # to initialise session-scoped state (e.g. warm a memory cache).
-    # WP-L1-BUDGET: also pass ``agent=`` so ``plugins/plobi-north-star/
+    # WP-L1-BUDGET: also pass ``agent=`` so ``plugins/plobi-core/
     # l1_budget.py`` can tighten the L1 default-profile knobs in-place.
     # Existing handlers accept ``**kwargs`` so the new kwarg is
     # backwards-compatible.
@@ -534,7 +534,7 @@ def _l1_identity_is_stale(agent, prompt: str) -> bool:
     impl = _l1_default_check_cache["impl"]
     if impl is None:
         try:
-            from plobi_plugins.plobi_north_star.l1_budget import (
+            from plobi_plugins.plobi_core.l1_budget import (
                 is_l1_default_profile,
             )
             impl = is_l1_default_profile

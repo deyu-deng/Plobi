@@ -327,7 +327,7 @@ def test_say_delivers_into_the_session_the_desktop_opens(mixed_ledger):
     import sys
     import types
 
-    plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star"
+    plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-core"
     pkg_name = "plobi_test_say_landing_ns_pkg"
     if pkg_name not in sys.modules:
         spec = importlib.util.spec_from_file_location(

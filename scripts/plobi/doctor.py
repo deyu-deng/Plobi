@@ -40,10 +40,12 @@ AIGW_CONFIG_CANDIDATES = (
 CHATLOG_HEALTH_PATHS = ("/health", "/api/v1/health")
 DEFAULT_CHATLOG_URL = "http://127.0.0.1:5030"
 DEFAULT_AIGW_PORT = 8000
-NORTH_STAR = "plobi_north_star"
+NORTH_STAR = "plobi_core"
 #: Plugin *manifest* name — the key ``plugins.enabled`` lists, distinct from the
 #: toolset name above (the two differ by ``-`` vs ``_`` and are easy to swap).
-NORTH_STAR_PLUGIN = "plobi-north-star"
+NORTH_STAR_PLUGIN = "plobi-core"
+#: 裁定 217：存量 config 里写的是旧键，检查时同样认（不改用户配置）。
+LEGACY_NORTH_STAR_PLUGIN = "plobi-north-star"
 
 GREEN, YELLOW, RED = "green", "yellow", "red"
 
@@ -1066,7 +1068,9 @@ def _toolsets_from_config(cfg: dict) -> set[str]:
     plugins = cfg.get("plugins") or {}
     if isinstance(plugins, dict):
         enabled = plugins.get("enabled") or []
-        if isinstance(enabled, list) and NORTH_STAR_PLUGIN in enabled:
+        if isinstance(enabled, list) and (
+            NORTH_STAR_PLUGIN in enabled or LEGACY_NORTH_STAR_PLUGIN in enabled
+        ):
             found.add(NORTH_STAR)
     return found
 
@@ -1100,7 +1104,7 @@ def check_north_star(home: Path | None = None) -> dict[str, Any]:
     elif NORTH_STAR in names:
         color, extra = YELLOW, "toolset on, SOUL routing block missing"
     else:
-        color, extra = RED, "plobi_north_star not in toolsets/cli/gateway"
+        color, extra = RED, "plobi_core not in toolsets/cli/gateway"
     return {
         "id": "north_star",
         "color": color,
@@ -1113,7 +1117,7 @@ def _authored_l1_toolsets(cfg: dict) -> set[str]:
     """Toolset names this profile's config actually lists (no defaults merged in).
 
     Deliberately *not* :func:`_toolsets_from_config`: that one infers
-    ``plobi_north_star`` from ``plugins.enabled`` because it asks "would the
+    ``plobi_core`` from ``plugins.enabled`` because it asks "would the
     toolset be visible". This asks "is what landed on disk the narrow L1 list",
     and an inference would grade its own homework.
     """

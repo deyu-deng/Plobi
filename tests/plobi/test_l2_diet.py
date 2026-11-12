@@ -46,10 +46,10 @@ def test_mid_narrow_keeps_memory_when_the_profile_carries_it():
 
     out = mid_narrow_toolset_names(["memory", "web", "file"])
     assert "memory" in out
-    # 其它 L1_MID_TOOLSETS 应当被补齐（包括 plobi_north_star + clarify）。
+    # 其它 L1_MID_TOOLSETS 应当被补齐（包括 plobi_core + clarify）。
     assert "web" in out
     assert "file" in out
-    assert "plobi_north_star" in out
+    assert "plobi_core" in out
     assert "clarify" in out
 
 
@@ -82,7 +82,7 @@ def test_mid_narrow_drops_plobi_cli_composite():
     out = mid_narrow_toolset_names(["plobi-cli", "web"])
     assert "plobi-cli" not in out
     assert "web" in out
-    assert "plobi_north_star" in out
+    assert "plobi_core" in out
 
 
 def test_mid_narrow_default_when_input_empty():
@@ -181,14 +181,14 @@ def test_apply_l2_project_diet_preserves_allowed_toolsets(tmp_path):
     profile_dir = tmp_path / "l2-nuclide"
     _write_config(
         profile_dir,
-        top=["file", "web", "skills", "todo", "clarify", "delegation", "plobi_north_star"],
+        top=["file", "web", "skills", "todo", "clarify", "delegation", "plobi_core"],
     )
 
     # 没东西要删 → 第二次返回 False（idempotent）。
     assert apply_l2_project_diet(profile_dir) is False
 
     cfg = _read_toolsets(profile_dir)
-    for allowed in ("file", "web", "skills", "todo", "clarify", "delegation", "plobi_north_star"):
+    for allowed in ("file", "web", "skills", "todo", "clarify", "delegation", "plobi_core"):
         assert allowed in cfg["toolsets"]
 
 

@@ -52,28 +52,28 @@ def _load_conversation_loop():
 
 
 def _load_l1_budget():
-    """``plugins/plobi-north-star/l1_budget.py`` —— 拿真实的 ``is_l1_default_profile``。"""
-    name = "plobi_plugins.plobi_north_star.l1_budget"
+    """``plugins/plobi-core/l1_budget.py`` —— 拿真实的 ``is_l1_default_profile``。"""
+    name = "plobi_plugins.plobi_core.l1_budget"
     if name in sys.modules:
         return sys.modules[name]
     if "plobi_plugins" not in sys.modules:
         ns = types.ModuleType("plobi_plugins")
         ns.__path__ = []
         sys.modules["plobi_plugins"] = ns
-    parent_name = "plobi_plugins.plobi_north_star"
+    parent_name = "plobi_plugins.plobi_core"
     if parent_name not in sys.modules:
         parent_mod = types.ModuleType(parent_name)
         parent_mod.__path__ = [
             str(
                 Path(__file__).resolve().parents[2]
-                / "plugins" / "plobi-north-star"
+                / "plugins" / "plobi-core"
             )
         ]
         parent_mod.__package__ = "plobi_plugins"
         sys.modules[parent_name] = parent_mod
     l1_path = (
         Path(__file__).resolve().parents[2]
-        / "plugins" / "plobi-north-star" / "l1_budget.py"
+        / "plugins" / "plobi-core" / "l1_budget.py"
     )
     spec = importlib.util.spec_from_file_location(name, l1_path)
     assert spec and spec.loader
@@ -245,9 +245,9 @@ def test_real_l1_default_profile_triggers_stale_for_old_prompt(cl, l1_budget):
     # 清掉 cache 让真实 is_l1_default_profile 走一遍。
     cl._l1_default_check_cache["impl"] = None
 
-    # Agent with default profile + plobi_north_star toolset → 真 L1。
+    # Agent with default profile + plobi_core toolset → 真 L1。
     agent = _Agent(profile="default")
-    agent.enabled_toolsets = {"plobi_north_star"}
+    agent.enabled_toolsets = {"plobi_core"}
 
     old_prompt = _make_prompt(
         "deepseek-chat",
@@ -264,7 +264,7 @@ def test_real_l2_agent_is_not_affected_by_identity_rule(cl, l1_budget):
 
     # L2 agent — profile 不是 default。
     agent = _Agent(profile="l2-Prism")
-    agent.enabled_toolsets = {"plobi_north_star"}  # 不影响 L1 判定
+    agent.enabled_toolsets = {"plobi_core"}  # 不影响 L1 判定
 
     old_prompt = _make_prompt(
         "deepseek-chat",

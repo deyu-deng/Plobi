@@ -1,7 +1,7 @@
 {
   "name": "plobi-north-star",
   "label": "Plobi",
-  "description": "North Star board + preview bus HTTP API (FE/BE separated; deep module façade)",
+  "description": "Plobi core board + preview bus HTTP API (route key kept for compatibility)",
   "icon": "Compass",
   "version": "0.2.0",
   "tab": {

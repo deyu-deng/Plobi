@@ -1,11 +1,11 @@
 """WP-L1-BUDGET — L1 总秘书"这期完了"不再 40 秒空转 + 10 万 token 提前切。
 
-P0-1: ``plugins/plobi-north-star/l1_budget.py::on_session_start`` 在 L1
+P0-1: ``plugins/plobi-core/l1_budget.py::on_session_start`` 在 L1
        default profile 上把 ``_memory_nudge_interval`` / ``_skill_nudge_interval``
        置 0，间接关掉 ``agent/turn_finalizer.py`` 末尾的
        ``_spawn_background_review`` 调用。L2/L3 / 自定义 profile 不被误伤。
 
-P0-2: ``plugins/plobi-north-star/l1_profile_template.yaml`` 是仓库内唯一
+P0-2: ``plugins/plobi-core/l1_profile_template.yaml`` 是仓库内唯一
        L1 默认 profile 模板（任务书 §2 的"profile/config 模板"），显式写
        ``context.compressor.threshold_percent: 0.35``。hook 在运行时同步把
        ``agent.context_compressor.threshold_percent`` 改成 0.35 并重算
@@ -50,18 +50,18 @@ from plobi.agenda.service import AgendaService
 
 
 def _plugin_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star"
+    return Path(__file__).resolve().parents[2] / "plugins" / "plobi-core"
 
 
 def _load_l1_budget():
-    """Load ``plugins/plobi-north-star/l1_budget.py`` directly.
+    """Load ``plugins/plobi-core/l1_budget.py`` directly.
 
     ``l1_budget.py`` is a leaf module (only stdlib imports) so we don't have
     to spin up the full plugin package — which would pull in
     ``hard_route`` / ``tools`` / ``channel`` and fail in tests where
     the rest of the plugin isn't on sys.path.
     """
-    name = "plobi_plugins.plobi_north_star.l1_budget"
+    name = "plobi_plugins.plobi_core.l1_budget"
     if name in sys.modules:
         return sys.modules[name]
     if "plobi_plugins" not in sys.modules:
@@ -70,7 +70,7 @@ def _load_l1_budget():
         sys.modules["plobi_plugins"] = ns
     # Fake parent package so the leaf module's relative-import resolution
     # (none today, but defensive) finds a package — no parent __init__ exec.
-    parent_name = "plobi_plugins.plobi_north_star"
+    parent_name = "plobi_plugins.plobi_core"
     if parent_name not in sys.modules:
         parent_mod = types.ModuleType(parent_name)
         parent_mod.__path__ = [str(_plugin_dir())]  # type: ignore[attr-defined]
@@ -151,7 +151,7 @@ def test_north_star_hook_disables_memory_nudge_for_l1(l1_budget):
     """L1 default profile + north-star toolset → memory & skill nudges → 0."""
     agent = _FakeAgent(
         profile="default",
-        enabled_toolsets={"plobi_north_star", "memory", "skills"},
+        enabled_toolsets={"plobi_core", "memory", "skills"},
         valid_tool_names={"memory", "skill_manage", "plobi_master_status"},
         memory_nudge=10,
         skill_nudge=10,
@@ -190,7 +190,7 @@ def test_north_star_hook_does_not_touch_l2(l1_budget):
     )
     custom_profile_agent = _FakeAgent(
         profile="default",
-        enabled_toolsets={"memory", "skills"},  # 不含 plobi_north_star
+        enabled_toolsets={"memory", "skills"},  # 不含 plobi_core
         valid_tool_names={"memory", "skill_manage"},
         memory_nudge=7,
         skill_nudge=14,
@@ -216,7 +216,7 @@ def test_north_star_hook_handles_missing_agent_gracefully(l1_budget):
 
 
 def _template_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star" / "l1_profile_template.yaml"
+    return Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "l1_profile_template.yaml"
 
 
 def _load_l1_template() -> dict:
@@ -275,7 +275,7 @@ def test_tighten_uses_the_declared_value_when_it_is_tighter(l1_budget):
     compressor._configured_threshold_percent = 0.25
     agent = _FakeAgent(
         profile="default",
-        enabled_toolsets={"plobi_north_star"},
+        enabled_toolsets={"plobi_core"},
         valid_tool_names={"memory"},
         compressor=compressor,
     )
@@ -291,7 +291,7 @@ def test_tighten_never_lets_the_config_loosen_past_the_ceiling(l1_budget):
     compressor._configured_threshold_percent = 0.50
     agent = _FakeAgent(
         profile="default",
-        enabled_toolsets={"plobi_north_star"},
+        enabled_toolsets={"plobi_core"},
         valid_tool_names={"memory"},
         compressor=compressor,
     )
@@ -305,7 +305,7 @@ def test_north_star_hook_tightens_compressor_for_l1(l1_budget):
     compressor = _FakeCompressor(context_length=200_000, max_tokens=None)
     agent = _FakeAgent(
         profile="default",
-        enabled_toolsets={"plobi_north_star", "memory"},
+        enabled_toolsets={"plobi_core", "memory"},
         valid_tool_names={"memory", "plobi_master_status"},
         compressor=compressor,
     )
@@ -340,7 +340,7 @@ def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(l1_
     compressor._configured_threshold_percent = template_threshold
     agent = _FakeAgent(
         profile="default",
-        enabled_toolsets={"plobi_north_star"},
+        enabled_toolsets={"plobi_core"},
         valid_tool_names={"memory"},
         compressor=compressor,
     )
@@ -393,7 +393,7 @@ def test_l1_template_opens_l0_and_keeps_the_curator_off():
 
 @pytest.fixture()
 def l1_home(tmp_path, monkeypatch):
-    """一个从未启用过 plobi-north-star 的 default profile 家目录。"""
+    """一个从未启用过 plobi-core 的 default profile 家目录。"""
     home = tmp_path / ".plobi"
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -447,12 +447,12 @@ def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):
     ensure_l1_secretary_form()
 
     written = _loaded_yaml(l1_home / "config.yaml")
-    assert "plobi-north-star" in written["plugins"]["enabled"]
+    assert "plobi-core" in written["plugins"]["enabled"]
     assert written["toolsets"] == list(L1_MID_TOOLSETS)
     for platform in ("cli", "gateway"):
         listed = written["platform_toolsets"][platform]
         assert not set(listed) & L1_DROP_TOOLSETS, f"{platform} keeps worker tools: {listed}"
-        assert "plobi_north_star" in listed
+        assert "plobi_core" in listed
 
 
 def test_l1_secretary_form_keeps_the_keys_the_user_wrote(l1_home):
@@ -534,7 +534,7 @@ class TestApplyL1BudgetEveryTurn:
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
             profile="default",
-            enabled_toolsets={"plobi_north_star", "memory"},
+            enabled_toolsets={"plobi_core", "memory"},
             valid_tool_names={"ask"},
             compressor=compressor,
         )
@@ -567,7 +567,7 @@ class TestApplyL1BudgetEveryTurn:
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
             profile="default",
-            enabled_toolsets={"plobi_north_star"},
+            enabled_toolsets={"plobi_core"},
             valid_tool_names={"ask"},
             compressor=compressor,
         )
@@ -590,7 +590,7 @@ class TestApplyL1BudgetEveryTurn:
 
         monkeypatch.setattr(l1_budget, "apply_l1_budget", spy)
 
-        # L2-agenda profile + 不含 plobi_north_star toolset
+        # L2-agenda profile + 不含 plobi_core toolset
         agent = _FakeAgent(
             profile="l2-agenda",
             enabled_toolsets={"agenda", "kanban", "memory"},
@@ -610,7 +610,7 @@ class TestApplyL1BudgetEveryTurn:
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
             profile="default",
-            enabled_toolsets={"plobi_north_star", "memory"},
+            enabled_toolsets={"plobi_core", "memory"},
             valid_tool_names={"ask"},
             compressor=compressor,
         )
@@ -653,7 +653,7 @@ class TestRestoreOrBuildCallsApply:
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
             profile="default",
-            enabled_toolsets={"plobi_north_star"},
+            enabled_toolsets={"plobi_core"},
             valid_tool_names={"ask"},
             compressor=compressor,
         )
@@ -662,7 +662,7 @@ class TestRestoreOrBuildCallsApply:
         # 模拟 production init_agent 末尾的调用
         agent2 = _FakeAgent(
             profile="default",
-            enabled_toolsets={"plobi_north_star"},
+            enabled_toolsets={"plobi_core"},
             valid_tool_names={"ask"},
             compressor=_FakeCompressor(context_length=128_000),
         )

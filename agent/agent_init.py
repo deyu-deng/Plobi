@@ -2146,9 +2146,9 @@ def init_agent(
     # the 9-5 L1 conversation (and any continuation turn) tightens the
     # compressor + zeros the curator nudges every turn, not just session
     # open. Idempotent and a no-op for L2 / non-default profiles. See
-    # ``plugins/plobi-north-star/l1_budget.py::apply_l1_budget``.
+    # ``plugins/plobi-core/l1_budget.py::apply_l1_budget``.
     try:
-        from plobi_plugins.plobi_north_star.l1_budget import (
+        from plobi_plugins.plobi_core.l1_budget import (
             apply_l1_budget as _apply_l1_budget_init,
         )
         _apply_l1_budget_init(agent)

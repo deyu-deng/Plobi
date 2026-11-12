@@ -305,7 +305,7 @@ def test_soul_has_routing_block_missing():
 
 def test_check_north_star_old_html_fence(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
-        "toolsets:\n  - plobi_north_star\n", encoding="utf-8"
+        "toolsets:\n  - plobi_core\n", encoding="utf-8"
     )
     (tmp_path / "SOUL.md").write_text("<!-- PLOBI_L1_SECRETARY_ROUTING -->\n", encoding="utf-8")
     row = D.check_north_star(tmp_path)
@@ -314,7 +314,7 @@ def test_check_north_star_old_html_fence(tmp_path: Path):
 
 def test_check_north_star_new_colon_fence(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
-        "toolsets:\n  - plobi_north_star\n", encoding="utf-8"
+        "toolsets:\n  - plobi_core\n", encoding="utf-8"
     )
     (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
     row = D.check_north_star(tmp_path)
@@ -323,9 +323,9 @@ def test_check_north_star_new_colon_fence(tmp_path: Path):
 
 def test_check_l1_secretary_form_green(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
-        "plugins:\n  enabled:\n    - plobi-north-star\n"
-        "toolsets:\n  - web\n  - clarify\n  - plobi_north_star\n"
-        "platform_toolsets:\n  cli:\n    - plobi_north_star\n  gateway:\n    - clarify\n",
+        "plugins:\n  enabled:\n    - plobi-core\n"
+        "toolsets:\n  - web\n  - clarify\n  - plobi_core\n"
+        "platform_toolsets:\n  cli:\n    - plobi_core\n  gateway:\n    - clarify\n",
         encoding="utf-8",
     )
     (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
@@ -337,8 +337,8 @@ def test_check_l1_secretary_form_green(tmp_path: Path):
 def test_check_l1_secretary_form_names_which_question_failed(tmp_path: Path):
     """三问三答：`terminal` 还在名单里就只能否掉窄名单那一条，另外两条照实说 yes。"""
     (tmp_path / "config.yaml").write_text(
-        "plugins:\n  enabled:\n    - plobi-north-star\n"
-        "toolsets:\n  - terminal\n  - plobi_north_star\n",
+        "plugins:\n  enabled:\n    - plobi-core\n"
+        "toolsets:\n  - terminal\n  - plobi_core\n",
         encoding="utf-8",
     )
     (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")

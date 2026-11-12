@@ -19,7 +19,7 @@
 **消息落在哪**：接收方自己那个会话（``PLOBI_STATE_HOME/state.db``），最新一个；没有就开一个
 ``source="agent_message"`` 的。桌面里那个 Agent 的聊天就是它，不另起界面。
 
-`ask` 的执行沿用 ``plobi-north-star/agent_ask.py`` 那条已经在生产上跑通的 spawn 路子
+`ask` 的执行沿用 ``plobi-core/agent_ask.py`` 那条已经在生产上跑通的 spawn 路子
 （子进程 + 子进程自己的会话 + 超时预算）；本模块不再复制一份调度器。
 
 **裁定 216 补的一层（协议，不是第三枚嘴）**：每一跳派工在投递成功后自动开一张

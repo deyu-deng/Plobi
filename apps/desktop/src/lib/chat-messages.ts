@@ -93,7 +93,7 @@ export function externalSenderOf(
     return { kind: 'agent', name: '' }
   }
 
-  // 秘书（或别家）代问的那一行：`plugins/plobi-north-star/agent_ask.py` 发的第一行是
+  // 秘书（或别家）代问的那一行：`plugins/plobi-core/agent_ask.py` 发的第一行是
   // `【{asker}代问】`。两列都没到界面时（刚进来的那一趟），这是屏上唯一一份"这条不是
   // 主人自己打的"的证据——用户 11-04 指着截图问的正是它被署成了自己。
   const relayed = /^【(.{1,40}?)代问】/.exec(body)

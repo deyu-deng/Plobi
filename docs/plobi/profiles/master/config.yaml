@@ -1,7 +1,7 @@
 # Plobi L1 (secretary) knobs — merge into the **active/default** profile
 # Copy relevant keys into $PLOBI_HOME/config.yaml (usually the default profile).
 # Do NOT run `plobi profile create master` (ARCH-RULINGS 2026-09-04 裁定 6).
-# L1 is the current activity profile; open toolset plobi_north_star there.
+# L1 is the current activity profile; open toolset plobi_core there.
 # Register as the resident L1 via: plobi plobi agents register secretary
 #   --role l1_secretary --profile default --provider moonshot --model kimi-k3
 #   (or copy docs/plobi/profiles/projects.yaml to $PLOBI_HOME/plobi/projects.yaml)
@@ -52,7 +52,7 @@ platform_toolsets:
     - todo
     - clarify
     - delegation
-    - plobi_north_star
+    - plobi_core
   gateway:
     - web
     - file
@@ -61,14 +61,14 @@ platform_toolsets:
     - todo
     - clarify
     - delegation
-    - plobi_north_star
+    - plobi_core
 
 plugins:
-  # Standalone plugins are opt-in — this profile must enable North Star.
+  # Standalone plugins are opt-in — this profile must enable plobi-core.
   enabled:
-    - plobi-north-star
+    - plobi-core
   entries:
-    plobi-north-star:
+    plobi-core:
       enabled: true
 
 # Approvals: human closes high-risk; night mode respects the risk queue.

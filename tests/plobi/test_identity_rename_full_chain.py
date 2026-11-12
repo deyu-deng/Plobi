@@ -30,7 +30,7 @@ import pytest
 from plobi_cli import agent_identity as profiles_mod
 
 REPO = Path(__file__).resolve().parents[2]
-PLUGIN_DIR = REPO / "plugins" / "plobi-north-star"
+PLUGIN_DIR = REPO / "plugins" / "plobi-core"
 
 ROSTER_YAML = (
     "agents:\n"

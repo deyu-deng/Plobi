@@ -25,7 +25,7 @@ import pytest
 # Fixtures / loaders
 # --------------------------------------------------------------------------
 
-_PLUGIN_NAME = "plobi_plugins.plobi_north_star"
+_PLUGIN_NAME = "plobi_plugins.plobi_core"
 
 
 def _load_plugin():
@@ -38,7 +38,7 @@ def _load_plugin():
         namespace.__path__ = []  # type: ignore[attr-defined]
         sys.modules["plobi_plugins"] = namespace
 
-    plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star"
+    plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-core"
     spec = importlib.util.spec_from_file_location(
         _PLUGIN_NAME,
         plugin_dir / "__init__.py",

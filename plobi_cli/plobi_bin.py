@@ -3,7 +3,7 @@
 Shared public helper. Two callers need the exact same recipe:
 
 * ``plobi_cli.kanban_db`` — the dispatcher spawns profile workers.
-* ``plugins/plobi-north-star/agent_ask.py`` — the L1 secretary asks a project
+* ``plugins/plobi-core/agent_ask.py`` — the L1 secretary asks a project
   分身 by running it as a subprocess (裁定 50.4).
 
 Both used to want one implementation; ``kanban_db`` carried it privately.

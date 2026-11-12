@@ -1,9 +1,10 @@
 /**
- * Frontend client for North Star HTTP API.
+ * Frontend client for the Plobi core plugin HTTP API.
  * FE/BE separation: do not import Python lib; call dashboard plugin routes.
  *
- * Base path: /api/plugins/plobi-north-star
- * Contract: docs/plobi/north_star/API.md
+ * Base path: /api/plugins/plobi-north-star — 裁定 217 有意保留的旧路由键，
+ * 插件本身已改名 plobi-core；改这个常量会断掉已发布路由，别手贱。
+ * Contract: plugins/plobi-core/README.md
  */
 
 export type PlobiArea = 'task' | 'compute' | 'preview' | 'ops'

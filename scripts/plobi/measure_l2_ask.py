@@ -33,7 +33,7 @@ _QUESTION = "这个项目现在什么情况？请用你的工具真去看一眼�
 def _load_agent_ask():
     """被量对象自己就是这条腿，所以用它自己的 resolve/compose/build/timeout，不另写一份。"""
     spec = importlib.util.spec_from_file_location(
-        "agent_ask", str(REPO / "plugins" / "plobi-north-star" / "agent_ask.py"))
+        "agent_ask", str(REPO / "plugins" / "plobi-core" / "agent_ask.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

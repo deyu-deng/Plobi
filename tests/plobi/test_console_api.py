@@ -1027,7 +1027,7 @@ def test_startup_puts_the_default_home_into_l1_secretary_shape(
 ):
     """Boot flips a never-opted-in home into L1 秘书形态, in place, with no new profile.
 
-    ``plobi-north-star`` is a bundled plugin and therefore opt-in, and the only
+    ``plobi-core`` is a bundled plugin and therefore opt-in, and the only
     code that narrowed L1 / wrote its SOUL fence ran from that plugin's
     ``register()`` — so the shape was unreachable on exactly the machines that
     needed it (measured: L1 called ``terminal`` and never dispatched). The
@@ -1051,7 +1051,7 @@ def test_startup_puts_the_default_home_into_l1_secretary_shape(
     # 裁定 211：首装只有一个 L1、零 L2 —— 名册里一行都没有。
     assert [row["id"] for row in rows] == []
     cfg = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
-    assert "plobi-north-star" in cfg["plugins"]["enabled"]
+    assert "plobi-core" in cfg["plugins"]["enabled"]
     assert cfg["toolsets"] == list(L1_MID_TOOLSETS)
     assert "terminal" not in cfg["platform_toolsets"]["cli"]
     assert (home / "SOUL.md").read_text(encoding="utf-8").count(L1_SOUL_BEGIN) == 1

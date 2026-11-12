@@ -40,7 +40,7 @@ def mirror_enqueue_to_kanban(rec: "TaskRecord") -> Optional[str]:
                 conn,
                 title=rec.goal[:200] or rec.id,
                 body=body,
-                created_by="plobi-north-star",
+                created_by="plobi-core",
                 workspace_kind="scratch",
                 triage=triage,
                 idempotency_key=f"plobi:{rec.id}",

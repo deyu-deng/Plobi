@@ -1181,7 +1181,7 @@ class AgentRegistry:
             "role": entry.role,
             # **没有 profile_dir**：名册加一行不再落一个家（B 刀）。
             # command 也不再带 `-p`——那是已判废的形状（裁定 42），身份靠
-            # `PLOBI_AGENT_ID`（见 `plugins/plobi-north-star/agent_ask.build_child_command`）。
+            # `PLOBI_AGENT_ID`（见 `plugins/plobi-core/agent_ask.build_child_command`）。
             "command": "plobi chat",
             "routing_ok": True,
         }
@@ -2426,7 +2426,7 @@ def aigw_api_key() -> str:
     return gateway_declared_api_key() or AIGW_DEV_DEFAULT_API_KEY
 
 
-MASTER_TOOLSET_NAME = "plobi_north_star"
+MASTER_TOOLSET_NAME = "plobi_core"
 
 # WP-BE-9 / 裁定 12：L1 中收（可逆）。拿掉 terminal / 跑命令类 / 会话搜索；
 # clarify 保留。改 platform_toolsets 列表即可加回，不删插件代码。
@@ -2490,7 +2490,7 @@ _SOUL_BOILERPLATE_HEADS = (
 L1_SOUL_TEMPLATE_PATH = (
     Path(__file__).resolve().parents[2]
     / "plugins"
-    / "plobi-north-star"
+    / "plobi-core"
     / "l1_soul_template.md"
 )
 
@@ -3330,7 +3330,7 @@ def ensure_l2_identity_soul(
 #: agent, and the plugin that would have persisted these knobs never loaded
 #: because the plugin itself was the thing missing.
 L1_PROFILE_TEMPLATE_PATH = (
-    Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star" / "l1_profile_template.yaml"
+    Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "l1_profile_template.yaml"
 )
 
 
@@ -3358,7 +3358,7 @@ def _merge_l1_profile_template(config: dict) -> bool:
 
 
 def _enable_north_star_plugin(config: dict) -> bool:
-    """List ``plobi-north-star`` in ``plugins.enabled`` (+ its entry) — opt-in flipped on."""
+    """List ``plobi-core`` in ``plugins.enabled`` (+ its entry) — opt-in flipped on."""
     plugins = config.get("plugins")
     if not isinstance(plugins, dict):
         plugins = {}
@@ -3367,17 +3367,17 @@ def _enable_north_star_plugin(config: dict) -> bool:
     if not isinstance(enabled, list):
         enabled = []
         plugins["enabled"] = enabled
-    changed = "plobi-north-star" not in enabled
+    changed = "plobi-core" not in enabled
     if changed:
-        enabled.append("plobi-north-star")
+        enabled.append("plobi-core")
     entries = plugins.get("entries")
     if not isinstance(entries, dict):
         entries = {}
         plugins["entries"] = entries
-    entry = entries.get("plobi-north-star")
+    entry = entries.get("plobi-core")
     if not isinstance(entry, dict):
         entry = {}
-        entries["plobi-north-star"] = entry
+        entries["plobi-core"] = entry
     if not entry.get("enabled"):
         entry["enabled"] = True
         changed = True
@@ -3428,7 +3428,7 @@ def refresh_l2_identity_souls() -> int:
 def ensure_l1_secretary_form() -> bool:
     """Give the **default profile** its L1 secretary shape, inside its own home.
 
-    Boot-time bootstrap for a chicken-and-egg: ``plobi-north-star`` is a bundled
+    Boot-time bootstrap for a chicken-and-egg: ``plobi-core`` is a bundled
     plugin and therefore opt-in, so a home that never listed it runs no
     ``register()`` — and ``register()`` is the only thing that ever narrowed L1's
     toolsets, applied the profile template, or wrote the SOUL fence. Such a
@@ -3461,7 +3461,7 @@ def ensure_l1_secretary_form() -> bool:
 
 
 def ensure_north_star_toolset(*, save: bool = True) -> dict:
-    """Open ``plobi_north_star`` on the **active** profile (usually default).
+    """Open ``plobi_core`` on the **active** profile (usually default).
 
     Does not create a ``master`` profile (裁定 6). WP-BE-9 also mid-narrows
     L1 toolsets (drop terminal / session_search / command runners) and upserts
@@ -3483,7 +3483,7 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
         # 前任何 profile 只要启用本插件就被永久盖成总秘书（l2-agenda 那份 --clone
         # 的 SOUL 就是已经发作的实例）。非 default profile 不仅要跳过写入，还要把
         # 已经印上去的 L1 合同纠掉。判据与
-        # ``plugins/plobi-north-star/l1_budget.py:115 is_l1_default_profile()``
+        # ``plugins/plobi-core/l1_budget.py:115 is_l1_default_profile()``
         # 同源（get_active_profile_name() == L1_PROFILE_NAME），只是没有 agent 实例。
         from plobi_cli.agent_identity import get_active_profile_name
 

@@ -13,10 +13,10 @@ P0-2: 把 L1 的压缩触发阈值从默认 0.50 拉到 0.35，让一条 L1 桌�
        的 44s timeout。**不动** ``ContextCompressor`` 默认值；运行时
        覆盖 ``agent.context_compressor.threshold_percent`` 并重算
        ``threshold_tokens``。profile/config 模板值落
-       ``plugins/plobi-north-star/l1_profile_template.yaml``，便于人工
+       ``plugins/plobi-core/l1_profile_template.yaml``，便于人工
        审计与 ``tests/plobi/test_l1_budget.py`` 断言。
 
-判定 L1：**profile name 是 ``default``** 且 **plobi_north_star 工具集启用**。
+判定 L1：**profile name 是 ``default``** 且 **plobi_core 工具集启用**。
 L2-agenda / L3 通常有自己的 plobi profile（不在 ``default``），自然不会被误伤。
 
 钩子位置：``on_session_start`` —— brand-new 会话创建后第一回合开头跑一次。
@@ -38,15 +38,15 @@ logger = logging.getLogger(__name__)
 
 #: L1 总秘书压缩阈值的**上限**（任务书 §2：6–8 万 token 前切开）。
 #: 0.50 → 200K ctx 上 ~100K 触发；0.35 → ~70K 触发。
-#: 真源是 ``plugins/plobi-north-star/l1_profile_template.yaml`` 的
+#: 真源是 ``plugins/plobi-core/l1_profile_template.yaml`` 的
 #: ``compression.threshold``（那条路径 ``agent/agent_init.py`` 才会读）；这个常量只在
 #: 配置缺席时兜底，并且充当"声明值不许更松"的天花板——``_tighten_compressor`` 取两者较小值。
 #: 不要与 ``ContextCompressor`` 默认 ``threshold_percent=0.50`` 混用。
 L1_COMPRESSION_THRESHOLD: float = 0.35
 
 #: L1 总秘书在 default profile 上对外暴露的工具集名。
-#: 与 ``plugins/plobi-north-star/__init__.py::TOOLSET`` 同名。
-L1_TOOLSET: str = "plobi_north_star"
+#: 与 ``plugins/plobi-core/__init__.py::TOOLSET`` 同名。
+L1_TOOLSET: str = "plobi_core"
 
 #: L1 默认 profile 名。``plobi_cli.agent_identity.get_active_profile_name`` 在
 #: ``PLOBI_HOME`` 是 ``~/.plobi`` 或 ``~/.plobi/profiles/default/`` 时
@@ -75,8 +75,8 @@ def _as_iter(value: Any) -> Iterable[Any]:
     return ()
 
 
-def _has_plobi_north_star(agent: Any) -> bool:
-    """True when ``plobi_north_star`` appears in toolsets OR valid_tool_names.
+def _has_plobi_core(agent: Any) -> bool:
+    """True when ``plobi_core`` appears in toolsets OR valid_tool_names.
 
     两条判定取或：前者是 ``enabled_toolsets`` 显式声明（更准），后者是
     ``valid_tool_names`` 实际暴露的工具集合（兜底——某些 spawn 路径会
@@ -94,8 +94,8 @@ def _has_plobi_north_star(agent: Any) -> bool:
                 continue
             if key == L1_TOOLSET:
                 return True
-            # 兼容 toolsets 写成 "plobi-north-star" 或 "plobi_master" 的别名
-            if key in {"plobi-north-star", "plobi_master"}:
+            # 兼容 toolsets 写成旧插件名 / 旧总秘书名的别名（裁定 217）
+            if key in {"plobi-core", "plobi-north-star", "plobi_master"}:
                 return True
     return False
 
@@ -128,7 +128,7 @@ def is_l1_default_profile(agent: Any) -> bool:
     if profile != L1_PROFILE_NAME:
         return False
 
-    return _has_plobi_north_star(agent)
+    return _has_plobi_core(agent)
 
 
 # ---------------------------------------------------------------------------

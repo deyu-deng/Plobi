@@ -167,7 +167,7 @@ _last_init_error_lock = threading.Lock()
 # ── 「这个 Agent 的会话」判据里的来源黑名单 ─────────────────────────────
 #
 # 一份判据、三处消费（缺口 B 之后不许各判一次）：
-#   ① `say` 投递落哪个会话（plugins/plobi-north-star/channel.py）
+#   ① `say` 投递落哪个会话（plugins/plobi-core/channel.py）
 #   ② console overview 的 `sessionId`（plobi/console/router.py）
 #   ③ 桌面侧栏在 Agent 作用域列哪些会话（/api/profiles/sessions）
 # 三者只要有一个用不同的圈定，消息就会落进一个「永远点不回来」的会话里

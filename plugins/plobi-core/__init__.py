@@ -1,7 +1,7 @@
 """Plobi North Star plugin — deep edge module (narrow public surface).
 
 Public agent tool: ``plobi`` (area + action).
-Public HTTP: ``/api/plugins/plobi-north-star/*`` (dashboard plugin_api).
+Public HTTP: ``/api/plugins/plobi-core/*`` (dashboard plugin_api).
 Internals live under ``lib/`` and must not be imported by Electron/UI code.
 """
 
@@ -16,7 +16,7 @@ from . import tools as T
 
 logger = logging.getLogger(__name__)
 
-TOOLSET = "plobi_north_star"
+TOOLSET = "plobi_core"
 
 # ── Agent 之间的两枚原子工具（裁定 183）────────────────────────────────
 # 旧的那 7 枚带 intent/action 枚举的嘴（plobi_secretary_ask、plobi_checkin_respond、
@@ -141,7 +141,7 @@ _DOMAIN_EMOJI = {"task": "📋", "edge": "🛰", "ops": "🧭", "mind": "🎓"}
 def register(ctx) -> None:
     # say / ask 不挂任何开关：名册里一条可发的人都没有时，check_channel_available
     # 让它们的 schema 根本不下发（Footprint Ladder rung 3，零足迹）。
-    # 10-31：它们从 plobi_north_star 挪进自己的 channel 门类——「跟另一个 Agent
+    # 10-31：它们从 plobi_core 挪进自己的 channel 门类——「跟另一个 Agent
     # 说话」是一件独立的事，不该和边缘能力挤在一个筐里。
     for name, schema, handler, description, emoji in _CHANNEL_TOOLS:
         ctx.register_tool(
@@ -182,7 +182,7 @@ def register(ctx) -> None:
 
         ensure_north_star_toolset()
     except Exception:
-        logger.debug("plobi-north-star: toolset ensure on active profile skipped", exc_info=True)
+        logger.debug("plobi-core: toolset ensure on active profile skipped", exc_info=True)
     ctx.register_hook("pre_gateway_dispatch", _on_pre_gateway_dispatch)
     # WP-BE-13 / 裁定 21.1: pin §8.2's two frozen L1 utterances onto the
     # ``ask`` atom at the GUI/dashboard user-turn boundary (裁定 183 换了嘴：
@@ -195,7 +195,7 @@ def register(ctx) -> None:
     from . import l1_budget as _l1b
     ctx.register_hook("on_session_start", _l1b.on_session_start)
     logger.info(
-        "plobi-north-star: registered deep tool 'plobi' + the say/ask channel "
+        "plobi-core: registered deep tool 'plobi' + the say/ask channel "
         "tools (裁定 183 折掉了 plobi_secretary_ask / plobi_agent_ask / "
         "plobi_master_*，别再照旧名报数) + gateway hook "
         "+ §8.2 hard route"

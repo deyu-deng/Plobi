@@ -10,7 +10,7 @@
 
 这里钉四件事：
 
-1. L1 的 SOUL 合同有**模板文件**那一份真源（``plugins/plobi-north-star/l1_soul_template.md``），
+1. L1 的 SOUL 合同有**模板文件**那一份真源（``plugins/plobi-core/l1_soul_template.md``），
    运行时不打补丁：改口令就改这个文件，``L1_SOUL_BLOCK`` 是它的读数。
 2. 模板里写着「名单从哪来、什么时候问谁、怎么问、问不到怎么说」。
 3. 日程秘书 ``agenda`` 与其他 L2 地位平等（裁定 69），模板不许把它当万事入口。
