@@ -1,4 +1,4 @@
-import { type ComponentProps, createContext, type ElementType, type FC, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, createContext, type ElementType, type FC, memo, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import remarkGfm from 'remark-gfm'
 import { Streamdown } from 'streamdown'
 
@@ -178,7 +178,7 @@ export interface NoteMarkdownProps {
   text: string
 }
 
-export function NoteMarkdown({
+function NoteMarkdownImpl({
   assetRoot,
   baseDir,
   className,
@@ -414,3 +414,14 @@ export function jumpToAnchor(container: HTMLElement | null, anchor: string): boo
 export function makeLinkIndex(notes: { path: string; title: string }[]): NoteLinkIndex {
   return buildNoteLinkIndex(notes)
 }
+
+/**
+ * 对外导出的渲染器。
+ *
+ * 包一层 `memo` 不是洁癖——笔记正文动辄十几万 DOM 节点，父组件那边
+ * 一滚动就 `setActiveHeading`，一重渲染就把整棵正文 diff 一遍，滚动
+ * 帧耗时直接冲到 45～70ms。这里只认 props 的浅比较：只要调用方把
+ * 回调与索引都按住不动（见 `knowledge/index.tsx` 的 `onOpenAnchor`／
+ * `onOpenNote`），滚动就再也不会碰到正文。
+ */
+export const NoteMarkdown = memo(NoteMarkdownImpl)

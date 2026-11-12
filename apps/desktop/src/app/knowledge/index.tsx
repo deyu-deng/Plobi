@@ -370,6 +370,22 @@ export function KnowledgeView() {
   const openNoteRef = useRef(openNote)
   openNoteRef.current = openNote
 
+  /**
+   * 给正文字典的稳定回调。
+   *
+   * 别写内联箭头：`NoteMarkdown` 的 `components` 是 `useMemo([linkIndex,
+   * onOpenAnchor, onOpenNote])`，内联箭头每次渲染都是新地址，`useMemo`
+   * 每次都失效，于是整棵 Markdown 的组件类型全换新，正文 DOM 卸载重挂。
+   * 地址按住不动，正文才可能被 `memo` 挡住——滚动只动大纲，不动正文。
+   */
+  const handleOpenAnchor = useCallback((anchor: string) => openAnchorRef.current(anchor), [])
+  const handleOpenNote = useCallback((path: string) => openNoteRef.current(path), [])
+
+  // 标题的「内容坐标」缓存：滚动时只查这张表，不再挨个碰布局。
+  const headingTopsRef = useRef<{ id: string; top: number }[]>([])
+  const scrollTopRef = useRef(0)
+  const scrollFrameRef = useRef(0)
+
   useNoteSwitcherHotkey(switcherOpen, setSwitcherOpen)
   useNoteSwitcherEscape(switcherOpen, () => setSwitcherOpen(false))
 
@@ -515,18 +531,98 @@ export function KnowledgeView() {
     setActiveHeading(id)
   }
 
+  /**
+   * 滚动时定「当前读到哪个标题」。
+   *
+   * 老写法是每个 scroll 事件把 `outline` 全过一遍，每个标题一次
+   * `getBoundingClientRect()`——一篇两百 KB 的笔记有近两百个标题、
+   * 十几万 DOM 节点，实测每帧 45～70ms，掉到 15fps，长任务堆成山
+   * （5 秒滚动里 55 个长任务、累计 4.4s）。滚动是高频事件，不能干
+   * 这种活。
+   *
+   * 现在：滚动只记 `scrollTop`，被 `requestAnimationFrame` 合成成一帧
+   * 一次；标题位置来自 `headingTopsRef` 里预先算好的内容坐标，查表
+   * 用二分，全程不碰布局。
+   */
   function onScroll(event: UIEvent<HTMLDivElement>) {
-    const container = event.currentTarget
-    const line = container.getBoundingClientRect().top + 24
-    let current: string | null = null
-    for (const item of outline) {
-      const element = document.getElementById(item.id)
-      if (!element) continue
-      if (element.getBoundingClientRect().top <= line) current = item.id
-      else break
-    }
-    setActiveHeading(current)
+    scrollTopRef.current = event.currentTarget.scrollTop
+
+    if (scrollFrameRef.current) {return}
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = 0
+      const list = headingTopsRef.current
+      const line = scrollTopRef.current + 24
+      let current: string | null = null
+      let low = 0
+      let high = list.length - 1
+
+      while (low <= high) {
+        const middle = (low + high) >> 1
+
+        if (list[middle].top <= line) {
+          current = list[middle].id
+          low = middle + 1
+        } else {
+          high = middle - 1
+        }
+      }
+
+      setActiveHeading(previous => (previous === current ? previous : current))
+    })
   }
+
+  /**
+   * 重建标题的内容坐标表。
+   *
+   * 只在「换篇／正文变了／容器或正文尺寸变了」时算一次：这时候量
+   * 布局是应当付的钱，滚动手上就只剩查表。用 `ResizeObserver` 而不
+   * 是滚动时重算，是因为真正会挪动标题的只有图片落地、窗口变宽、
+   * 正文换掉这几件事。
+   */
+  useEffect(() => {
+    const container = scrollRef.current
+
+    if (!container) {return}
+
+    const rebuild = () => {
+      // 容器内容原点的视口坐标：滚到哪都不影响它，减掉就能换算成内容坐标。
+      const origin = container.getBoundingClientRect().top - container.scrollTop
+      const list: { id: string; top: number }[] = []
+
+      for (const item of outline) {
+        const element = document.getElementById(item.id)
+
+        if (!element) {continue}
+        list.push({ id: item.id, top: element.getBoundingClientRect().top - origin })
+      }
+
+      // 二分查表要求按位置升序：文档顺序一般就是视觉顺序，但不假定它。
+      list.sort((left, right) => left.top - right.top)
+      headingTopsRef.current = list
+    }
+
+    rebuild()
+
+    // jsdom 里没有 ResizeObserver：拿不到就只在挂载时量一次，测试环境不至于炸。
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(rebuild)
+
+    if (observer) {
+      observer.observe(container)
+
+      if (container.firstElementChild) {observer.observe(container.firstElementChild)}
+    }
+
+    return () => {
+      observer?.disconnect()
+      headingTopsRef.current = []
+    }
+  }, [outline, selected, editing, view])
+
+  // 卸载时把还挂着的这一帧掐掉，别让回调打到已经下来的组件上。
+  useEffect(() => () => {
+    if (scrollFrameRef.current) {window.cancelAnimationFrame(scrollFrameRef.current)}
+  }, [])
 
   const renderFolder = (node: NoteTreeNode<NoteMeta>, depth: number): ReactNode => {
     const open = searching || !collapsed.has(node.key)
@@ -596,8 +692,8 @@ export function KnowledgeView() {
           assetRoot={assetRoot}
           baseDir={baseDir}
           linkIndex={linkIndex}
-          onOpenAnchor={anchor => openAnchorRef.current(anchor)}
-          onOpenNote={path => openNoteRef.current(path)}
+          onOpenAnchor={handleOpenAnchor}
+          onOpenNote={handleOpenNote}
           text={draft}
         />
       )
@@ -644,8 +740,8 @@ export function KnowledgeView() {
           assetRoot={assetRoot}
           baseDir={baseDir}
           linkIndex={linkIndex}
-          onOpenAnchor={anchor => openAnchorRef.current(anchor)}
-          onOpenNote={path => openNoteRef.current(path)}
+          onOpenAnchor={handleOpenAnchor}
+          onOpenNote={handleOpenNote}
           text={sourceText}
         />
       </article>
@@ -770,7 +866,7 @@ export function KnowledgeView() {
             linkIndex={linkIndex}
             notes={notes}
             onFilterTag={tag => setTagFilter(current => (current === tag ? null : tag))}
-            onOpenNote={path => openNoteRef.current(path)}
+            onOpenNote={handleOpenNote}
             onToggleBookmark={path => setBookmarks(toggleBookmark(path))}
             text={sourceText}
           />
