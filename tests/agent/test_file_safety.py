@@ -10,6 +10,7 @@ import pytest
 
 from agent.file_safety import (
     _BLOCKED_PROJECT_ENV_BASENAMES,
+    _resolve_active_agent_name,
     get_read_block_error,
 )
 
@@ -159,3 +160,40 @@ class TestCombinedGuards:
             error = get_read_block_error(str(cache))
             assert error is not None
             assert "internal Plobi cache" in error
+
+
+# ---------------------------------------------------------------------------
+# 这一轮是谁（WP-AGENT-NAME-UNIFY，用户 11-12 22:32）
+# ---------------------------------------------------------------------------
+
+
+class TestActiveAgentName:
+    """这一轮是谁：进程 env → 会话级 → 老路兜底。
+
+    桌面的 L2 会话里 ``agent_id`` 走的是**会话 ContextVar**（不是进程 env）⇒
+    这一只原来只看 env ⇒ 恒回 ``"default"`` ⇒ 提示词那一行从头到尾不报名字 ⇒
+    Agent 只能去猜（用户 11-12 22:32 那张截图：它猜了 ``default``）。
+    """
+
+    def test_process_env_wins(self, monkeypatch):
+        monkeypatch.setenv("PLOBI_AGENT_ID", "aura")
+
+        assert _resolve_active_agent_name() == "aura"
+
+    def test_falls_back_to_the_session_context(self, monkeypatch):
+        monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+        monkeypatch.setattr(
+            "gateway.session_context.get_session_env",
+            lambda name: "大学物理（甲）II" if name == "PLOBI_AGENT_ID" else "",
+        )
+
+        assert _resolve_active_agent_name() == "大学物理（甲）II"
+
+    def test_default_when_neither_is_set(self, monkeypatch):
+        monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+        monkeypatch.setattr("gateway.session_context.get_session_env", lambda name: "")
+        monkeypatch.setattr(
+            "agent.file_safety._resolve_active_profile_name", lambda: "default"
+        )
+
+        assert _resolve_active_agent_name() == "default"

@@ -99,3 +99,51 @@ class TestCodingContextBlock:
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=[], platform="cli")
         assert "coding agent" not in _stable_prompt(agent)
+
+
+class TestActiveAgentLine:
+    """提示词那一行报的是**用户命名的名字**（WP-AGENT-NAME-UNIFY）。
+
+    用户 11-12 22:32 截图：「**这个 ii 和 default 是什么**」——Agent 照着提示词说话，
+    提示词给机器键，机器键就会出现在它的话里与它写的笔记 ``belongs`` 里。
+    """
+
+    def test_reports_the_display_name_from_the_roster(self, monkeypatch):
+        monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+        monkeypatch.setattr(
+            "agent.file_safety._resolve_active_agent_name", lambda: "ii"
+        )
+
+        class _Reg:
+            def get(self, key):
+                if key == "ii":
+                    return SimpleNamespace(display_name="大物物理（甲）II")
+
+                return None
+
+        monkeypatch.setattr(
+            "plobi.agents.registry.load_registry", lambda *a, **k: _Reg()
+        )
+
+        stable = _stable_prompt(_make_agent())
+
+        assert "Active agent: 大物物理（甲）II" in stable
+        assert "Active agent: ii" not in stable
+
+    def test_falls_back_to_the_agent_id_when_the_row_has_no_display_name(self, monkeypatch):
+        monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+        monkeypatch.setattr(
+            "agent.file_safety._resolve_active_agent_name", lambda: "aura"
+        )
+
+        class _Reg:
+            def get(self, key):
+                return SimpleNamespace(display_name="") if key == "aura" else None
+
+        monkeypatch.setattr(
+            "plobi.agents.registry.load_registry", lambda *a, **k: _Reg()
+        )
+
+        stable = _stable_prompt(_make_agent())
+
+        assert "Active agent: aura" in stable

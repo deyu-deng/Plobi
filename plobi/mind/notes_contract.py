@@ -72,14 +72,28 @@ def _as_list(value: Any) -> list[str]:
 
 
 def _registered_names() -> set[str]:
-    """名册里活着的那些 Agent 名（小写比）。拿不到名册时返回空集 = 不卡名字。"""
+    """名册里活着的那些 Agent 名（小写比）：**显示名**与机器键（``agent_id``）都算。
+
+    可见面用**用户命名的那个名字**（用户 11-12 22:32：「我明明设置的文字
+    『大学物理（甲）II』怎么机器记录的是 ii」）⇒ Agent 照着自己被告知的名字写
+    ``belongs``，这道闸就得认它；机器键**继续认**（存量那几篇靠它，改了契约它们
+    就找不到了）。
+
+    拿不到名册时返回空集 = 不卡名字。
+    """
     try:
         from .agent_dossier import load_entries
 
         _path, entries = load_entries()
     except Exception:
         return set()
-    return {str(entry.name).lower() for entry in entries}
+    names: set[str] = set()
+    for entry in entries:
+        for value in (getattr(entry, "name", ""), getattr(entry, "display_name", "")):
+            text = str(value or "").strip()
+            if text:
+                names.add(text.lower())
+    return names
 
 
 def _heading_lines(body: str) -> list[str]:

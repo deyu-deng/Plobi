@@ -184,3 +184,36 @@ def test_agent_notes_propagates_unconfigured_brain(monkeypatch):
 
     with pytest.raises(BrainNotConfigured):
         router.agent_notes("srtp")
+
+
+# ── 名字那一族（WP-AGENT-NAME-UNIFY，用户 11-12 22:32）───────────────────────
+#
+# 可见面一律用**用户命名的名字**（名册行的 display_name）；机器键（agent_id）
+# 继续认——存量那几篇笔记写的就是机器键，契约一改它们就找不到了。
+
+
+def test_agent_aliases_lead_with_the_display_name_and_keep_the_agent_id():
+    entry = _entry("ii", subtree="Surface/dossiers/courses/大学物理（甲）II")
+    entry.display_name = "大物物理（甲）II"
+
+    aliases = agent_aliases(entry)
+
+    assert aliases[0] == "大物物理（甲）II"
+    assert "ii" in aliases
+    assert "大学物理（甲）II" in aliases
+
+
+def test_agent_aliases_without_a_display_name_still_work():
+    entry = _entry("aura")
+
+    assert agent_aliases(entry) == ("aura",)
+
+
+def test_known_names_counts_the_display_name_as_a_live_name(surface):
+    entry = _entry("ii")
+    entry.display_name = "大物物理（甲）II"
+
+    names = known_names(surface, [entry])
+
+    assert "大物物理（甲）II" in names
+    assert "ii" in names

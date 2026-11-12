@@ -155,3 +155,63 @@ def test_note_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monke
     assert result["success"] is False
     assert result["problems"]
     assert not (notes / "拉普拉斯.md").exists()
+
+
+# ── 名字那一族（WP-AGENT-NAME-UNIFY，用户 11-12 22:32）───────────────────────
+#
+# 可见面一律用**用户命名的名字**：Agent 照着自己被告知的名字写 ``belongs``，
+# 那道闸就得认它（用户 11-12 22:32 那三篇待批准的笔记就是这么写歪的）。
+
+DISPLAY_ROSTER = textwrap.dedent(
+    """
+    version: 1
+    agents:
+      ii:
+        role: l2_project
+        category: courses
+        display_name: 大物物理（甲）II
+    """
+).lstrip()
+
+DISPLAY_NOTE = textwrap.dedent(
+    """\
+    ---
+    title: 电磁学
+    tags: [物理]
+    belongs: [大物物理（甲）II]
+    ---
+
+    # 电磁学
+
+    一段正文。
+    """
+)
+
+
+def test_accepts_the_display_name_the_user_gave(tmp_path, monkeypatch):
+    mind = tmp_path / "mind"
+    surface = tmp_path / "surface"
+    (mind / "wiki").mkdir(parents=True)
+    (surface / "notes" / "物理").mkdir(parents=True)
+    (tmp_path / "projects.yaml").write_text(DISPLAY_ROSTER, encoding="utf-8")
+    monkeypatch.setenv("MIND_ROOT", str(mind))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
+
+    assert validate_note("Notes/物理/电磁学.md", DISPLAY_NOTE, surface / "notes") == []
+
+
+def test_the_agent_id_still_passes_the_same_gate(tmp_path, monkeypatch):
+    """向后兼容：机器键（agent_id）继续认——存量那几篇靠它。"""
+    mind = tmp_path / "mind"
+    surface = tmp_path / "surface"
+    (mind / "wiki").mkdir(parents=True)
+    (surface / "notes" / "物理").mkdir(parents=True)
+    (tmp_path / "projects.yaml").write_text(DISPLAY_ROSTER, encoding="utf-8")
+    monkeypatch.setenv("MIND_ROOT", str(mind))
+    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
+
+    by_id = DISPLAY_NOTE.replace("belongs: [大物物理（甲）II]", "belongs: [ii]")
+
+    assert validate_note("Notes/物理/电磁学.md", by_id, surface / "notes") == []

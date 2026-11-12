@@ -144,6 +144,27 @@ def _tui_embedded_pane_clarifier(hint: str) -> str:
     return hint + _TUI_EMBEDDED_PANE_CLARIFIER
 
 
+def _roster_display_name(agent_id: str) -> str:
+    """名册那一行的**显示名**（用户命名的那个）；查不到就回 `agent_id`。
+
+    可见面一律用它：Agent 照着提示词自称，提示词给 `agent_id`，`agent_id` 就会出现在
+    它的话里与它写的笔记 ``belongs`` 里（用户 11-12 22:32 报的那两个机器词：
+    ``ii`` 与 ``default``）。显示名取不到时退 `agent_id`——那是机器面，至少还认得出
+    是哪一行。
+    """
+    key = str(agent_id or "").strip()
+    if not key:
+        return ""
+    try:
+        from plobi.agents.registry import load_registry
+
+        entry = load_registry().get(key)
+    except Exception:
+        return key
+    display = str(getattr(entry, "display_name", "") or "").strip() if entry else ""
+    return display or key
+
+
 def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) -> Dict[str, str]:
     """Assemble the system prompt as three ordered parts.
 
@@ -396,6 +417,11 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     # 改问守卫那一只新口：先看 ``PLOBI_AGENT_ID``（名册那一行），家名只当兜底。
     # See file_safety._resolve_active_agent_name + classify_cross_profile_target
     # for the matching tool-side guard.
+    #
+    # 2026-11-12（用户 11-12 22:32 截图「**这个 ii 和 default 是什么**」）：报的那一串
+    # 必须是**用户命名的名字**（名册行的 display_name），不是 `agent_id`、也不是那一格
+    # 作用域键（``default``）—— Agent 照着提示词说话，提示词给机器键，机器键就会
+    # 出现在它的嘴里与它写的笔记 ``belongs`` 里。
     try:
         from agent.file_safety import _resolve_active_agent_name
         active_profile = _resolve_active_agent_name()
@@ -412,7 +438,7 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         )
     else:
         stable_parts.append(
-            f"Active agent: {active_profile} (a row in the roster). Plobi "
+            f"Active agent: {_roster_display_name(active_profile)} (a row in the roster). Plobi "
             f"keeps ONE shared home (~/.plobi/): skills/, plugins/ and cron/ "
             f"are a single shared copy that every agent uses — there are no "
             f"per-agent home directories any more. This agent's own few "

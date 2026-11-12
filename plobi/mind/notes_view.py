@@ -146,11 +146,19 @@ def scan_notes(root: Path) -> Scan:
 def agent_aliases(entry: Any) -> tuple[str, ...]:
     """Names a note may use to say it belongs to this agent.
 
-    The agent's own name plus the last segment of its Mind subtree (that is the
-    project's registered name), so ``belongs: SRTP`` matches an agent named
-    ``srtp`` hanging ``Dossiers/research/SRTP``.
+    **显示名（用户命名的那个）在第一位**——可见面一律用它：笔记的 ``belongs`` 是
+    屏上要读的字，也是 Agent 照着写的字。机器键（`agent_id`）与脑树末段**继续认**
+    （向后兼容：存量那几篇写的是 `agent_id`，契约一改它们就找不到了）。
+
+    2026-11-12（用户 11-12 22:32 截图「**我明明设置的文字『大学物理（甲）II』怎么机器
+    记录的是 ii**」）：以前这一格只给 [`agent_id`, 脑树末段] ⇒ 契约只认机器键 ⇒ Agent
+    写的 ``belongs: [ii]``，屏上读到的也是那两个字。
     """
-    candidates = [getattr(entry, "name", "") or ""]
+    candidates = []
+    display = str(getattr(entry, "display_name", "") or "").strip()
+    if display:
+        candidates.append(display)
+    candidates.append(getattr(entry, "name", "") or "")
     subtree = str(getattr(entry, "mind_subtree", "") or "").strip("/")
     if subtree:
         candidates.append(subtree.rsplit("/", 1)[-1])
@@ -166,8 +174,21 @@ OWNER_TREE_ROOTS = TREE_ROOT_RELATIVES
 
 
 def known_names(root: Path, entries: Iterable[Any]) -> tuple[str, ...]:
-    """Registered owners: every live agent plus every project tree in the brain."""
-    names = [entry.name for entry in entries if getattr(entry, "name", "")]
+    """Registered owners: every live agent (显示名 **与** `agent_id`) plus every project tree.
+
+    显示名也要算成「活着的名字」——那是**可见面**上的那个字：写笔记那道校验
+    （``notes_contract``）拿这一份判「这个名字认不认得」，只给 `agent_id` 的话，
+    Agent 照着自己被告知的名字写 ``belongs`` 就会被拒（用户 11-12 22:32 那三篇
+    待批准的笔记就是这么写歪的）。
+    """
+    names: list[str] = []
+    for entry in entries:
+        name = getattr(entry, "name", "")
+        if name:
+            names.append(name)
+        display = getattr(entry, "display_name", "")
+        if display:
+            names.append(display)
     for relative in OWNER_TREE_ROOTS:
         base = real_target(relative, root)
         if base.is_dir():

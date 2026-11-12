@@ -386,13 +386,27 @@ def _resolve_active_profile_name() -> str:
 
 
 def _resolve_active_agent_name() -> str:
-    """这个会话**是谁**：先问 ``PLOBI_AGENT_ID``（名册那一行），再回家名那条老路。
+    """这一轮**是谁**：先问 `agent_id`（进程 env → 会话级），再回家名那条老路。
 
     家退休之后「活跃身份」不再由 ``PLOBI_HOME`` 落在哪一具家里决定（裁 180／192：
-    身份＝名册那一行，运行时由 ``PLOBI_AGENT_ID`` 带着；桌面与 ``build_child_command``
+    `agent_id`＝名册那一行，运行时由 ``PLOBI_AGENT_ID`` 带着；桌面与 ``build_child_command``
     都放它）。老装机／``-p <家名>`` 那条路还在，所以留着兜底，不是主路。
+
+    2026-11-12（用户 11-12 22:32 截图「**这个 ii 和 default 是什么**」）：这一只原来
+    **只看进程 env** ⇒ 桌面开的 L2 会话里 `agent_id` 走的是**会话 ContextVar**
+    （``gateway.session_context``）⇒ 恒回 ``"default"`` ⇒ 提示词那一行从头到尾
+    不报这一轮是谁 ⇒ Agent 只能去猜（它猜了 ``default``，那是 L1 那一格的作用域键，
+    不是人也不是 Agent）⇒ 它写的笔记 ``belongs`` 也只好写机器键（``ii``）。
+    ⇒ 这里补问会话级：**两处都问，才认得出自己**。
     """
     rid = str(os.environ.get("PLOBI_AGENT_ID") or "").strip()
+    if not rid:
+        try:
+            from gateway.session_context import get_session_env
+
+            rid = str(get_session_env("PLOBI_AGENT_ID") or "").strip()
+        except Exception:
+            rid = ""
     if rid and rid.casefold() != "default":
         return rid
     return _resolve_active_profile_name()

@@ -29,13 +29,45 @@ export type AgentCategory = (typeof AGENT_CATEGORY_VALUES)[number]
 export const DEFAULT_AGENT_CATEGORY: AgentCategory = 'projects'
 
 /**
- * Registry id / default profile slug from the typed name: lowercase +
- * hyphens. Empty (e.g. CJK-only) gets a dirty timestamped fallback so the
- * POST still has a non-empty id. Preserved from the previous inline
- * `agentIdFromName` in the sidebar.
+ * 名字的短哈希（FNV-1a，base36 四位）：**同一个名字永远同一个 id** ⇒ 重名交给
+ * 后端那道闸去说（用户 11-12 22:32：以前空名字落的是时间戳，同一个名字能建出
+ * 两行）。
+ */
+function shortHash(value: string): string {
+  let hash = 0x811c9dc5
+
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+
+  return hash.toString(36).slice(0, 4).padStart(4, '0')
+}
+
+/**
+ * 新建 Agent 的 **`agent_id`**（机器键）：从用户命名的那个名字派生，ASCII、稳定。
+ *
+ * ⚠️ 中文名会被 `slug()` 整段删掉 ——「大学物理（甲）II」只剩两个 ASCII 的 I ⇒
+ * 「ii」。那是**删剩的残渣**：看不出是什么，两门只差中文的课还会撞成同一个键
+ * （用户 11-12 22:32：「我明明设置的文字『大学物理（甲）II』怎么机器记录的是 ii」）。
+ * ⇒ 名字里有非 ASCII 字符时补一段**名字的短哈希**：既不再是残渣，也不会撞。
+ * 纯 ASCII 的名字照旧（'My Project' → 'my-project'）。
+ *
+ * 可见面一律用**用户命名的名字**（`display_name`），`agent_id` 只活在机器面。
  */
 export function agentIdFromName(name: string): string {
-  return slug(name).replace(/-+$/g, '') || `l2-${Date.now()}`
+  const trimmed = name.trim()
+  const base = slug(trimmed).replace(/-+$/g, '')
+
+  if (!base) {
+    return `l2-${shortHash(trimmed)}`
+  }
+
+  if (/[^\x00-\x7f]/.test(trimmed)) {
+    return `${base}-${shortHash(trimmed)}`
+  }
+
+  return base
 }
 
 /**

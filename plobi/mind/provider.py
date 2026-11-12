@@ -139,21 +139,42 @@ _FACE_HINTS = {
 }
 
 
+def _roster_entry_for(name: str) -> Any | None:
+    """名册里那一行：**显示名**（用户命名的那个）或 `agent_id` 都认。
+
+    2026-11-12（用户 11-12 22:32 截图「**我明明设置的文字『大学物理（甲）II』怎么机器
+    记录的是 ii**」）：可见面一律用**名字**，机器面用 `agent_id` ⇒ 这一只两样都认，
+    谁叫得出来都给同一行。
+    """
+    wanted = (name or "").strip()
+    if not wanted:
+        return None
+    try:
+        from plobi.mind.agent_dossier import _find, load_entries
+
+        _path, entries = load_entries()
+    except Exception:  # noqa: BLE001 - 名册读不到就只按名字认
+        return None
+    entry = _find(entries, wanted)
+    if entry is not None:
+        return entry
+    folded = wanted.casefold()
+    for candidate in entries:
+        display = str(getattr(candidate, "display_name", "") or "").strip()
+        if display and display.casefold() == folded:
+            return candidate
+    return None
+
+
 def _agent_note_aliases(name: str) -> tuple[str, ...]:
-    """这个 Agent 认领笔记时可能用的那几个名字（名册那一行的 ``mind_subtree`` 末段也算）。
+    """这个 Agent 认领笔记时可能用的那几个名字（**显示名**在前，`agent_id` 与脑树末段也算）。
 
     与屏上**同一只口**：``plobi.mind.notes_view.agent_aliases`` 是那处真源，
     这里只负责把名字换成名册里那一行（换了就查得到 ``mind_subtree``）。
     """
     from plobi.mind.notes_view import agent_aliases
 
-    try:
-        from plobi.mind.agent_dossier import _find, load_entries
-
-        _path, entries = load_entries()
-        entry = _find(entries, name)
-    except Exception:  # noqa: BLE001 - 名册读不到就只按名字认
-        entry = None
+    entry = _roster_entry_for(name)
     if entry is None:
         return (name,)
     return agent_aliases(entry)
@@ -707,7 +728,8 @@ class MindProvider(MemoryProvider):
                         "agent": {
                             "type": "string",
                             "description": (
-                                "Which agent's notes to list. Leave it out for your own."
+                                "Whose notes to list — by **name** (the name the user gave "
+                                "that agent). Leave it out to list your own."
                             ),
                         }
                     },
@@ -963,11 +985,21 @@ class MindProvider(MemoryProvider):
         from plobi.mind.paths import MindUnavailable, require_root
 
         payload = args or {}
-        who = str(payload.get("agent") or self._agent_identity or "").strip()
+        raw = str(payload.get("agent") or "").strip()
+        who = raw or str(self._agent_identity or "").strip()
         if not who:
             return {
                 "success": False,
-                "error": "不知道要列谁的笔记：这一枚工具要一个 Agent 名",
+                "error": "不知道要列谁的笔记：这一枚工具要一个 Agent 名（不给参数就是列你自己的）。",
+            }
+        # **模型自己填**的名字要在名册里认得出来——否则它会拿一个自己猜的词来问
+        # （用户 11-12 22:32 那一轮它猜的是 `default`，那是 L1 那一格的作用域键，
+        # 不是人也不是 Agent），答「0 篇」还会被它当成「库是空的」。
+        # 不给参数（列自己的）不设这道门：会话身份本来就不一定在名册里。
+        if raw and _roster_entry_for(raw) is None:
+            return {
+                "success": False,
+                "error": f"名册里没有叫「{raw}」的 Agent。不给参数就是列你自己的笔记。",
             }
         try:
             root = require_root(self._mind_root)
@@ -979,10 +1011,12 @@ class MindProvider(MemoryProvider):
             return {"success": False, "error": str(exc)}
         aliases = _agent_note_aliases(who)
         matched = notes_for(scan, aliases)
+        entry = _roster_entry_for(who)
+        display = str(getattr(entry, "display_name", "") or "").strip() if entry else ""
         return {
             "success": True,
-            "agent": who,
-            "aliases": list(aliases),
+            # 回给模型的是**名字**（用户命名的那个），不是机器键——可见面一律用它。
+            "agent": display or who,
             "notes": [
                 {"path": note.path, "title": note.title, "chars": note.chars}
                 for note in matched

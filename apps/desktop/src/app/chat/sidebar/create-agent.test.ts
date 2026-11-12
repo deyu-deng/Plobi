@@ -18,9 +18,30 @@ describe('agentIdFromName', () => {
     expect(agentIdFromName('plobi Code')).toBe('plobi-code')
   })
 
-  it('falls back to an l2- timestamped slug for empty/CJK-only input', () => {
+  it('falls back to an l2- prefixed id for empty/CJK-only input', () => {
     expect(agentIdFromName('').startsWith('l2-')).toBe(true)
     expect(agentIdFromName('   ').startsWith('l2-')).toBe(true)
+  })
+
+  // WP-AGENT-NAME-UNIFY（用户 11-12 22:32：「我明明设置的文字『大学物理（甲）II』
+  // 怎么机器记录的是 ii」）：slug 会把中文整段删掉，只剩两个 ASCII 的 I ⇒ 那
+  // 是「删剩的残渣」，看不出是什么，两门只差中文的课还会撞成同一个键。
+  it('gives a Chinese name a short hash instead of the leftover letters', () => {
+    const a = agentIdFromName('大学物理（甲）II')
+    const b = agentIdFromName('大学物理（乙）II')
+
+    expect(a).not.toBe('ii')
+    expect(a.startsWith('ii-')).toBe(true)
+    expect(a).not.toBe(b)
+  })
+
+  it('gives the same name the same id every time (a clash is the backend’s call)', () => {
+    expect(agentIdFromName('大学物理（甲）II')).toBe(agentIdFromName('大学物理（甲）II'))
+  })
+
+  it('leaves a pure ASCII name alone', () => {
+    expect(agentIdFromName('My Project')).toBe('my-project')
+    expect(agentIdFromName('Aura')).toBe('aura')
   })
 })
 
