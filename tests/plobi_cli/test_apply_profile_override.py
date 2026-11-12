@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 
 def _run_apply_profile_override(
@@ -37,6 +39,14 @@ def _run_apply_profile_override(
         (plobi_root / "profiles" / active_profile).mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    # 2026-11-12: `_apply_profile_override` 读的是 `get_default_plobi_root()`，它在
+    # Windows 上返回 %LOCALAPPDATA%\plobi（还会读 HKCU\Software\Plobi\DataDir），
+    # 光 patch `Path.home` 在这台机器上不生效，于是「PLOBI_HOME 未设 + active_profile」
+    # 这条最经典的路径在 Windows 上恒为 None、测试必红。把根钉到 tmp_path 之后，
+    # 两种平台测的是同一段逻辑。
+    import plobi_constants
+
+    monkeypatch.setattr(plobi_constants, "get_default_plobi_root", lambda: plobi_root, raising=False)
     if plobi_home is not None:
         monkeypatch.setenv("PLOBI_HOME", plobi_home)
     else:
@@ -125,6 +135,10 @@ class TestApplyProfileOverridePlobiHomeGuard:
         assert result is not None
         assert "coder" in result
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="Windows 没有 pwd / geteuid / SUDO_USER，sudo 语义不存在",
+    )
     def test_sudo_explicit_profile_resolves_invoking_users_profile(self, tmp_path, monkeypatch):
         """sudo elias ... should resolve `-p elias` under SUDO_USER, not root."""
         root_home = tmp_path / "root"
@@ -316,8 +330,18 @@ class TestSupervisedChildIgnoresStickyProfile:
         monkeypatch.setenv("PLOBI_S6_SUPERVISED_CHILD", "1")
         monkeypatch.setattr(sys, "argv", ["plobi", "-p", "coder", "gateway", "run"])
 
-        from plobi_cli.main import _apply_profile_override
-        _apply_profile_override()
+        # 2026-11-12: 显式 `-p` 折回共享根之后，身份只认名册那一行（裁定 180/192），
+        # 名册里没有 coder 就 sys.exit(1)。这条用例验的是「supervised 子进程里显式
+        # -p 压过粘性 active_profile」，不是名册校验，所以把身份查询桩掉。
+        import plobi_cli.agent_identity as _identity
+        import plobi_cli.main as _main
+
+        # Windows 上 get_profile_dir() 落在 %LOCALAPPDATA%\plobi\profiles，跟这条用例
+        # 造的 tmp_path/.plobi/profiles 不是一棵树，_fold_to_shared_root 会判定"家不在"
+        # 而折回共享根。把家钉到 tmp_path 之后，两种平台测的是同一段逻辑。
+        monkeypatch.setattr(_identity, "get_profile_dir", lambda name: plobi_root / "profiles" / name)
+        monkeypatch.setattr(_main, "_agent_id_for_profile", lambda name: name)
+        _main._apply_profile_override()
 
         result = os.environ.get("PLOBI_HOME")
         assert result is not None

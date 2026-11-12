@@ -12,6 +12,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import {
+  assetApiUrl,
   canSelfUpdate,
   compareVersions,
   createReleaseLookup,
@@ -19,6 +20,8 @@ import {
   parseReleaseTag,
   pickInstallerAsset,
   planDownloadAttempts,
+  planDownloadSources,
+  updateMirrorPrefix,
   writeUpdateHelper
 } from './desktop-release'
 
@@ -390,5 +393,76 @@ test('尺寸对不上就是没下成 —— 别把 CDN 的错误页递进安装�
 test('发布里没给 size 时只要求文件非空 —— 不能因为缺字段把正常下载判死', () => {
   assert.equal(isCompleteDownload(123, 0), true)
   assert.equal(isCompleteDownload(0, 0), false)
+})
+
+// ── 下载通道：镜像 → 资产 API → 原地址（2026-11-11）────────────────────────
+// 起因很具体：这台机器上 `github.com:443` 三次全超时（一次 21 s），而
+// `browser_download_url` 正躺在那个域名上，所以 0.3.0 点更新必然死在第一跳。
+// 同一网络里 `api.github.com` 是通的，`releases/assets/<id>` 会 302 到 CDN。
+// 下面钉住的是"按什么顺序去试、以及试的时候必须带哪个头"。
+
+const WIN_ASSET = {
+  name: 'Plobi-0.3.1-win-x64.exe',
+  browser_download_url: 'https://github.com/deyu-deng/Plobi/releases/download/v0.3.1/Plobi-0.3.1-win-x64.exe',
+  size: 423390375,
+  id: 735208332,
+  apiUrl: 'https://api.github.com/repos/deyu-deng/Plobi/releases/assets/735208332'
+}
+
+test('没配镜像时：先资产 API，再原始地址', () => {
+  const plan = planDownloadSources(WIN_ASSET, '')
+  assert.deepEqual(plan.map(s => s.label), ['api', 'direct'])
+  assert.equal(plan[0].url, WIN_ASSET.apiUrl)
+  // 不带这个头 GitHub 会回资产元数据 JSON，400 MB 安装包当场变成一段 `{`。
+  assert.deepEqual(plan[0].headers, ['--header', 'Accept: application/octet-stream'])
+  // 原始地址那条不该带任何额外头。
+  assert.deepEqual(plan[1].headers, [])
+})
+
+test('配了镜像就排第一，且自动补末尾斜杠', () => {
+  assert.equal(updateMirrorPrefix(), '', '默认不启用镜像')
+  const plan = planDownloadSources(WIN_ASSET, 'https://ghfast.top/')
+  assert.deepEqual(plan.map(s => s.label), ['mirror', 'api', 'direct'])
+  assert.equal(plan[0].url, `https://ghfast.top/${WIN_ASSET.browser_download_url}`)
+})
+
+test('资产没有 id 也没有 url 时绝不去拼一条没有 id 的 API 地址', () => {
+  const bare = { ...WIN_ASSET, id: 0, apiUrl: '' }
+  assert.equal(assetApiUrl(bare), '')
+  const plan = planDownloadSources(bare, '')
+  assert.deepEqual(plan.map(s => s.label), ['direct'])
+})
+
+test('只有 id 没有 url 时按 id 现拼资产 API 地址', () => {
+  const byId = { ...WIN_ASSET, apiUrl: '' }
+  assert.equal(byId.id, 735208332)
+  assert.equal(
+    assetApiUrl(byId),
+    'https://api.github.com/repos/deyu-deng/Plobi/releases/assets/735208332'
+  )
+})
+
+test('release payload 里的 id / url 要一路传到下载源', async () => {
+  const payload = {
+    tag_name: 'v0.3.1',
+    html_url: 'https://github.com/deyu-deng/Plobi/releases/tag/v0.3.1',
+    assets: [
+      {
+        id: 735208332,
+        name: WIN_ASSET.name,
+        size: WIN_ASSET.size,
+        browser_download_url: WIN_ASSET.browser_download_url,
+        url: WIN_ASSET.apiUrl
+      }
+    ]
+  }
+
+  const lookup = createReleaseLookup(async () => ({ status: 200, body: JSON.stringify(payload) }))
+  const { release: hit } = await lookup.lookup()
+
+  assert.ok(hit)
+  assert.equal(hit!.assets[0].id, 735208332)
+  assert.equal(hit!.assets[0].apiUrl, WIN_ASSET.apiUrl)
+  assert.equal(planDownloadSources(hit!.assets[0], '')[0].url, WIN_ASSET.apiUrl)
 })
 

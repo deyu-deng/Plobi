@@ -246,3 +246,67 @@ def test_banner_no_pip_warning_on_git_install(tmp_path):
         out = buf.getvalue()
 
     assert "officially" not in out
+
+
+# --- bundled desktop install (the Electron package) -------------------------
+#
+# A bundled install (resources/backend + resources/install-stamp.json) has no
+# .git and no .install_method, so before this it fell through to "pip": the
+# startup banner called a perfectly supported install deprecated, and the
+# suggested `pip install --upgrade plobi-agent` would have installed a second
+# copy into site-packages that silently shadows the bundled one.
+
+
+def _write_stamp(tmp_path, payload):
+    (tmp_path / "install-stamp.json").write_text(payload, encoding="utf-8")
+
+
+def test_bundled_install_detected_from_install_stamp(tmp_path):
+    root = tmp_path / "backend"
+    root.mkdir()
+    _write_stamp(tmp_path, '{"branch": "v0.3.1", "commit": "deadbeef", "source": "ci"}')
+    with patch("plobi_cli.config.get_managed_system", return_value=None), patch("plobi_cli.config.get_plobi_home", return_value=tmp_path):
+        from plobi_cli.config import detect_install_method
+        assert detect_install_method(project_root=root) == "bundled"
+
+
+def test_bundled_install_detected_from_wheelhouse_payload(tmp_path):
+    root = tmp_path / "backend"
+    root.mkdir()
+    (root / "requirements.txt").write_text("anyio==4.0.0\n", encoding="utf-8")
+    (tmp_path / "wheelhouse").mkdir()
+    with patch("plobi_cli.config.get_managed_system", return_value=None), patch("plobi_cli.config.get_plobi_home", return_value=tmp_path):
+        from plobi_cli.config import detect_install_method
+        assert detect_install_method(project_root=root) == "bundled"
+
+
+def test_bare_pyproject_is_still_pip(tmp_path):
+    """A source checkout / pip install must keep reporting pip."""
+    root = tmp_path / "backend"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname = \"plobi-agent\"\n", encoding="utf-8")
+    with patch("plobi_cli.config.get_managed_system", return_value=None), patch("plobi_cli.config.get_plobi_home", return_value=tmp_path):
+        from plobi_cli.config import detect_install_method
+        assert detect_install_method(project_root=root) == "pip"
+
+
+def test_corrupt_install_stamp_does_not_crash_detection(tmp_path):
+    root = tmp_path / "backend"
+    root.mkdir()
+    _write_stamp(tmp_path, "{not json")
+    with patch("plobi_cli.config.get_managed_system", return_value=None), patch("plobi_cli.config.get_plobi_home", return_value=tmp_path):
+        from plobi_cli.config import detect_install_method
+        assert detect_install_method(project_root=root) == "pip"
+
+
+def test_bundled_install_is_not_flagged_unsupported():
+    from plobi_cli.config import is_unsupported_install_method
+    assert is_unsupported_install_method("bundled") is False
+
+
+def test_bundled_update_command_points_at_the_desktop_app():
+    """Never hand a bundled install a pip command: it would shadow itself."""
+    from plobi_cli.config import recommended_update_command_for_method
+    cmd = recommended_update_command_for_method("bundled")
+    assert "pip" not in cmd
+    assert "desktop" in cmd.lower()

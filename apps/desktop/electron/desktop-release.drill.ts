@@ -29,7 +29,9 @@ console.log(`PICKED: ${asset ? asset.name : '(none for this platform)'} (${asset
 
 if (asset) {
   const dest = path.join(os.tmpdir(), 'drill-' + asset.name)
-  const ok = await downloadAsset(asset.browser_download_url, dest)
+  // 整份资产传进去，别只给 browser_download_url：那个域名（github.com）在部分
+  // 网络里是死的，走资产 API + 镜像回退才是用户点按钮时真正经过的路径。
+  const ok = await downloadAsset(asset, dest, undefined, asset.size, (line) => console.log(`  ${line}`))
   const size = ok ? fs.statSync(dest).size : 0
   console.log(`DOWNLOAD: ${ok ? 'ok' : 'FAILED'} → ${dest} (${(size / 1048576).toFixed(1)} MB)`)
 

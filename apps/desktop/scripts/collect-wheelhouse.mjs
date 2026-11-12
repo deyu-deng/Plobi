@@ -171,6 +171,61 @@ function downloadWheels() {
     // install time rather than breaking the build that produces the package.
     say('WARNING: wheel download did not complete; the install will resolve from PyPI')
   }
+
+  downloadBuildBackend()
+}
+
+/**
+ * The build backend is NOT part of the exported requirements.
+ *
+ * `uv export --no-emit-project` drops the project itself, and with it the
+ * [build-system] requires — so the wheelhouse used to arrive without
+ * setuptools/wheel. install.ps1 finishes with
+ * `uv pip install --no-deps --no-build-isolation -e .`, which then has no
+ * backend to call: it fails, and because that failure only downgrades the
+ * "plobi.exe exists" nicety, the backend kept running the *previous*
+ * version's files while every version string in the UI said the new one.
+ * Measured 2026-11-12: install tree stamped 0.3.1, venv site-packages held a
+ * physical plobi-agent-0.3.0 copy, and no .pth/editable finder existed.
+ *
+ * Downloaded without --require-hashes (these pins live in pyproject.toml, not
+ * in the hashed requirements file) and through execFileSync without a shell,
+ * so a pin like `setuptools>=77.0,<83` cannot be eaten by cmd.exe as `<`
+ * redirection.
+ */
+function downloadBuildBackend() {
+  const requires = readBuildRequires()
+  if (requires.length === 0) {
+    say('WARNING: no [build-system] requires found; editable install will need a network')
+    return
+  }
+  const argv = [
+    '-m', 'pip', 'download',
+    '--only-binary=:all:',
+    '--python-version', PYTHON_VERSION,
+    ...requires,
+    '-d', WHEELHOUSE,
+  ]
+  say(`$ python ${argv.join(' ')}`)
+  try {
+    execFileSync('python', argv, { cwd: REPO_ROOT, stdio: 'inherit' })
+  } catch {
+    say('WARNING: build backend download failed; editable install will need a network')
+  }
+}
+
+/** Read the `requires = [...]` list out of the root pyproject.toml [build-system]. */
+function readBuildRequires() {
+  try {
+    const text = fs.readFileSync(path.join(REPO_ROOT, 'pyproject.toml'), 'utf8')
+    const block = text.match(/\[build-system\]([\s\S]*?)(\n\[|$)/)
+    if (!block) return []
+    const list = block[1].match(/requires\s*=\s*\[([\s\S]*?)\]/)
+    if (!list) return []
+    return [...list[1].matchAll(/["']([^"']+)["']/g)].map(m => m[1])
+  } catch {
+    return []
+  }
 }
 
 function main() {

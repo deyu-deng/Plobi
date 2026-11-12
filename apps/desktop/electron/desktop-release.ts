@@ -26,6 +26,10 @@ export interface ReleaseAsset {
   name: string
   browser_download_url: string
   size: number
+  /** `assets[].id`：走资产 API 下载时要拼进地址。0 表示 payload 没给。 */
+  id?: number
+  /** `assets[].url`：`https://api.github.com/repos/<owner>/<repo>/releases/assets/<id>`。 */
+  apiUrl?: string
 }
 
 export interface ReleaseInfo {
@@ -255,7 +259,11 @@ function parseReleasePayload(body: string): { release: ReleaseInfo | null; reaso
     .map((asset: any) => ({
       name: String(asset.name),
       browser_download_url: String(asset.browser_download_url),
-      size: Number(asset.size) || 0
+      size: Number(asset.size) || 0,
+      // 这两个是「绕开 github.com 下载」的全部凭据：有 id 就能走
+      // `api.github.com/repos/.../releases/assets/<id>`，那条链路在本机实测是通的。
+      id: Number(asset.id) || 0,
+      apiUrl: typeof asset.url === 'string' ? asset.url : ''
     }))
 
   return {
@@ -369,6 +377,80 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
 }
 
 /**
+ * 「可配镜像」：一个前缀，拼在官方下载地址前面。
+ *
+ * `PLOBI_UPDATE_MIRROR=https://ghfast.top/` ⇒
+ * `https://ghfast.top/https://github.com/.../Plobi-0.3.1-win-x64.exe`。
+ * 留空（默认）＝不启用。镜像只是**排在第一个去试**，它挂了就往下走，
+ * 不会因为镜像不可用而让更新整体失败。
+ */
+export function updateMirrorPrefix(): string {
+  const raw = String(process.env.PLOBI_UPDATE_MIRROR || '').trim()
+
+  if (!raw) {
+    return ''
+  }
+
+  return raw.endsWith('/') ? raw : `${raw}/`
+}
+
+/** 资产 API 地址：payload 给了 `assets[].url` 就用它，否则按 id 现拼。 */
+export function assetApiUrl(asset: ReleaseAsset): string {
+  if (asset.apiUrl) {
+    return asset.apiUrl
+  }
+
+  return asset.id && asset.id > 0
+    ? `https://api.github.com/repos/deyu-deng/Plobi/releases/assets/${asset.id}`
+    : ''
+}
+
+/** 一条下载源：地址 + 额外的 curl 头 + 日志里用来认出它的名字。 */
+export interface DownloadSource {
+  url: string
+  headers: string[]
+  label: 'mirror' | 'api' | 'direct'
+}
+
+/**
+ * 下载源的顺序：**镜像 → 资产 API → 原始地址**。
+ *
+ * 为什么中间那条不是 `browser_download_url`（2026-11-11 本机实测）：
+ *
+ *   - `github.com` 在部分网络下 443 直接连不上（3 发 3 超时，一次 21 s），而
+ *     `browser_download_url` 正好在这个域名上 ⇒ 老写法就是必失败；
+ *   - `api.github.com` 同一网络是通的（1.3 s），
+ *     `GET /releases/assets/<id>` 带 `Accept: application/octet-stream` 会 302 到
+ *     `release-assets.githubusercontent.com`，那条 CDN 也通；
+ *   - 不带那个头的话 GitHub 回的是**资产元数据 JSON**而不是文件字节，400 MB
+ *     安装包会当场变成一段 `{`，尺寸校验必挂（magpie 通道踩过同一个坑）。
+ *
+ * 顺序上把镜像放第一是因为它在这个网络里最快（实测 3.3 MB/s，资产 API 那条
+ * 0.03 MB/s）；不放心的网络把它留空即可，行为退回「API → 原地址」。
+ */
+export function planDownloadSources(
+  asset: ReleaseAsset,
+  mirrorPrefix: string = updateMirrorPrefix()
+): DownloadSource[] {
+  const out: DownloadSource[] = []
+  const api = assetApiUrl(asset)
+
+  if (mirrorPrefix && asset.browser_download_url) {
+    out.push({ url: `${mirrorPrefix}${asset.browser_download_url}`, headers: [], label: 'mirror' })
+  }
+
+  if (api) {
+    out.push({ url: api, headers: ['--header', 'Accept: application/octet-stream'], label: 'api' })
+  }
+
+  if (asset.browser_download_url) {
+    out.push({ url: asset.browser_download_url, headers: [], label: 'direct' })
+  }
+
+  return out
+}
+
+/**
  * Download an asset to `dest`. Returns true on success.
  *
  * `--noproxy '*'` fallback included for the same reason as the API call:
@@ -384,11 +466,27 @@ export async function fetchLatestRelease(): Promise<ReleaseInfo | null> {
  *     `size` 对不上，凭空返回 true 会让后面的安装器起不来。
  */
 export async function downloadAsset(
-  url: string,
+  urlOrAsset: string | ReleaseAsset,
   dest: string,
   timeoutMs = 30 * 60 * 1000,
-  expectedSize = 0
+  expectedSize = 0,
+  onLog?: (line: string) => void
 ): Promise<boolean> {
+  // 传字符串＝只认这一个地址（老调用点、脚手架仍可用）；传资产则按
+  // `planDownloadSources` 排出来的 镜像 → 资产 API → 原地址 依次去试。
+  const sources: DownloadSource[] =
+    typeof urlOrAsset === 'string'
+      ? [{ url: urlOrAsset, headers: [], label: 'direct' }]
+      : planDownloadSources(urlOrAsset)
+
+  const log = (line: string): void => {
+    try {
+      onLog?.(line)
+    } catch {
+      /* 日志写不进去也必须让下载继续 */
+    }
+  }
+
   const sizeOf = (): number => {
     try {
       return fs.statSync(dest).size
@@ -396,6 +494,7 @@ export async function downloadAsset(
       return -1
     }
   }
+
   const drop = (): void => {
     try {
       fs.unlinkSync(dest)
@@ -404,32 +503,35 @@ export async function downloadAsset(
     }
   }
 
-  // 上一轮已经拉完的那一个：直接收货。
-  if (expectedSize > 0 && isCompleteDownload(sizeOf(), expectedSize)) {
-    return true
-  }
+  /** 跑一次 curl，把退出码和 stderr 尾巴一起带回来。 */
+  const runCurl = (source: DownloadSource, attempt: DownloadAttempt): Promise<{ code: number; stderr: string }> =>
+    new Promise((resolve) => {
+      const args: string[] = ['--location', '--fail']
 
-  let partial = sizeOf()
-  if (partial > 0 && expectedSize > 0 && partial > expectedSize) {
-    // 比官方尺寸还大 ⇒ 一定是坏的（旧文件 / 合并错），别拿它当断点。
-    drop()
-    partial = -1
-  }
+      if (!attempt.direct) {
+        args.push('--noproxy', '*')
+      }
 
-  for (const attempt of planDownloadAttempts({ hasPartial: partial > 0 })) {
-    const args: string[] = ['--location', '--fail']
-    if (!attempt.direct) {
-      args.push('--noproxy', '*')
-    }
-    if (attempt.resume) {
-      args.push('-C', '-')
-    }
-    args.push('--retry', '3', '--retry-delay', '5', '-o', dest, url)
+      if (attempt.resume) {
+        args.push('-C', '-')
+      }
 
-    const code = await new Promise<number>((resolve) => {
+      args.push(...source.headers)
+      // `--retry-all-errors`：`--retry` 默认只重试它认为是"瞬时"的那几类，
+      // (28) 连接超时、(56) 连接被重置都不在名单里——可这俩恰恰是本机的常态，
+      // 结果就是重试形同虚设，一次超时直接宣告失败。显式要求「什么都重试」。
+      args.push('--retry', '3', '--retry-delay', '5', '--retry-all-errors', '-o', dest, source.url)
+
       const child = spawn(curlBinary(), args, {
         windowsHide: true,
-        stdio: ['ignore', 'ignore', 'ignore']
+        // stderr 必须收下来：curl 的 (28)/(35)/(56) 全写在那一行里。0.3.0 把它
+        // 丢进 `ignore`，于是用户和我都只看到一句「下载新版安装包失败。」。
+        stdio: ['ignore', 'ignore', 'pipe']
+      })
+
+      let stderr = ''
+      child.stderr?.on('data', (chunk) => {
+        stderr = (stderr + String(chunk)).slice(-600)
       })
 
       const timer = setTimeout(() => {
@@ -440,25 +542,58 @@ export async function downloadAsset(
         }
       }, timeoutMs)
 
-      child.on('error', () => {
+      child.on('error', (err: Error) => {
         clearTimeout(timer)
-        resolve(-1)
+        resolve({ code: -1, stderr: `spawn ${curlBinary()}: ${err.message}` })
       })
       child.on('close', (exitCode) => {
         clearTimeout(timer)
-        resolve(typeof exitCode === 'number' ? exitCode : -1)
+        resolve({ code: typeof exitCode === 'number' ? exitCode : -1, stderr })
       })
     })
 
-    const got = sizeOf()
-    const complete = expectedSize > 0 ? isCompleteDownload(got, expectedSize) : got > 0
-    if (code === 0 && complete) {
-      return true
+  // 上一轮已经拉完的那一个：直接收货。
+  if (expectedSize > 0 && isCompleteDownload(sizeOf(), expectedSize)) {
+    log(`[updates] download: 复用已下载的安装包 ${dest}`)
+
+    return true
+  }
+
+  for (const source of sources) {
+    let partial = sizeOf()
+
+    if (partial > 0 && expectedSize > 0 && partial > expectedSize) {
+      // 比官方尺寸还大 ⇒ 一定是坏的（旧文件 / 合并错），别拿它当断点。
+      drop()
+      partial = -1
     }
 
-    if (attempt.resume) {
-      // 续传没成：残留下的半截文件会让下一次全量写进同一个文件，先清掉。
-      drop()
+    for (const attempt of planDownloadAttempts({ hasPartial: partial > 0 })) {
+      const { code, stderr } = await runCurl(source, attempt)
+      const got = sizeOf()
+      const complete = expectedSize > 0 ? isCompleteDownload(got, expectedSize) : got > 0
+
+      if (code === 0 && complete) {
+        log(`[updates] download: ok source=${source.label} resume=${attempt.resume} bytes=${got}`)
+
+        return true
+      }
+
+      const detail = stderr.trim().replace(/\s+/g, ' ')
+      log(
+        `[updates] download: fail source=${source.label} resume=${attempt.resume} ` +
+          `proxy=${attempt.direct ? 'off' : 'on'} exit=${code} bytes=${got}/${expectedSize || '?'}` +
+          (detail ? ` stderr=${detail}` : '')
+      )
+
+      if (attempt.resume) {
+        // 续传没成：残留下的半截文件会让下一次全量写进同一个文件，先清掉。
+        drop()
+      }
+
+      // 换下一个尝试档时不再把这半截当断点：上面已经清过，这里只是让下一次
+      // 循环重新 stat 一次，别拿着上一档的尺寸做判断。
+      partial = -1
     }
   }
 
@@ -482,6 +617,7 @@ export function planDownloadAttempts(opts: { hasPartial: boolean }): DownloadAtt
     { resume: false, direct: true },
     { resume: false, direct: false }
   ]
+
   return opts.hasPartial
     ? [{ resume: true, direct: true }, { resume: true, direct: false }, ...tail]
     : tail
@@ -497,9 +633,11 @@ export function isCompleteDownload(actualSize: number, expectedSize: number): bo
   if (actualSize <= 0) {
     return false
   }
+
   if (expectedSize <= 0) {
     return true
   }
+
   return actualSize === expectedSize
 }
 

@@ -3597,6 +3597,10 @@ function isBootstrapComplete() {
     return false
   }
 
+  // The 7-char floor exists to reject truncated / garbage SHAs. A bundled
+  // install legitimately has no SHA at all and writes the synthetic 'bundled'
+  // (7 chars) -- accept it. Rejecting null/'' is what sent 0.3.0 installs into
+  // an endless bootstrap loop, so treat "missing" as "unknown", not "broken".
   if (typeof marker.pinnedCommit !== 'string' || marker.pinnedCommit.length < 7) {
     return false
   }
@@ -3616,7 +3620,17 @@ function writeBootstrapMarker(payload) {
 
   const merged = {
     schemaVersion: BOOTSTRAP_MARKER_SCHEMA_VERSION,
-    pinnedCommit: payload.pinnedCommit || null,
+    // 2026-11-11 FIX: a bundled install (no git checkout, no -Commit pin) has
+    // no real commit to record. The old `|| null` produced a marker that
+    // isBootstrapComplete() ALWAYS rejected -- the validator requires
+    // pinnedCommit to be a string of >= 7 chars, so null / '' never passed.
+    // Every boot then re-judged "no Plobi install found", fell through to the
+    // PATH lookup for `plobi`, and when that missed it re-ran the entire
+    // bootstrap -- whose venv stage `taskkill /IM plobi.exe` matched the
+    // desktop shell's own image name and killed it (the 0.3.0 setup crash).
+    // 'bundled' is a deliberate synthetic, schema-valid attestation: the marker
+    // says "install.ps1 completed in this install dir", NOT "HEAD is <sha>".
+    pinnedCommit: payload.pinnedCommit || 'bundled',
     pinnedBranch: payload.pinnedBranch || null,
     completedAt: new Date().toISOString(),
     desktopVersion: app.getVersion()
@@ -3791,13 +3805,18 @@ function writeDefaultProjectDir(dir) {
 }
 
 function createPythonBackend(root, label, backendArgs, options: any = {}) {
-  const { python } = resolveBackendPython(root)
+  // `runtimeRoot`：解释器与 venv 去哪里找，默认就是代码根。安装包例外 ——
+  // `resources/backend` 只有源码树 + requirements.txt + wheelhouse，没有 venv
+  // （见 scripts/collect-backend-bundle.mjs），所以必须借 bootstrap 树的解释器，
+  // 但 PYTHONPATH 仍然以代码根打头，跑的必须是随包的那份代码。
+  const runtimeRoot = options.runtimeRoot || root
+  const { python } = resolveBackendPython(runtimeRoot, runtimeRoot === root ? [] : [runtimeRoot])
 
   if (!python) {
     return null
   }
 
-  const venvRoot = path.join(root, 'venv')
+  const venvRoot = path.join(runtimeRoot, 'venv')
   const venvPython = getVenvPython(venvRoot)
   const command = IS_WINDOWS && fileExists(venvPython) ? venvPython : python
 
@@ -3880,6 +3899,29 @@ function resolvePlobiBackend(backendArgs) {
 
       if (backend) {
         return backend
+      }
+
+      // 安装包不带 venv（只有源码树 + requirements.txt + wheelhouse），所以上面
+      // 那次必然返回 null —— 这一档等于死代码：后端一路回落到 PLOBI_HOME 里那份
+      // bootstrap 克隆，于是「升级安装包」只换了外壳，跑的仍是老克隆里的 Python
+      // 源码，随包修好的 bug 永远到不了运行中的后端（2026-11-12 实测 desktop.log
+      // 每次启动都打 `packaged backend ... has no usable interpreter`）。
+      // 这里借 bootstrap 树的解释器与 site-packages，代码仍以 packagedRoot 打头。
+      const borrowed = createPythonBackend(
+        packagedRoot,
+        `Plobi bundled at ${packagedRoot} (runtime borrowed from ${ACTIVE_PLOBI_ROOT})`,
+        backendArgs,
+        { runtimeRoot: ACTIVE_PLOBI_ROOT }
+      )
+
+      if (borrowed) {
+        // 借来的解释器必须真的能从随包这棵树里 import 出 plobi_cli（依赖版本
+        // 对得上），否则宁可让下面的回落接住，也不要起一个 import 就死的后端。
+        if (canImportPlobiCli(borrowed.command, { cwd: packagedRoot })) {
+          return borrowed
+        }
+
+        rememberLog(`[backend] packaged backend at ${packagedRoot} cannot import plobi_cli through ${borrowed.command}; falling through`)
       }
 
       rememberLog(`[backend] packaged backend at ${packagedRoot} has no usable interpreter; falling through`)
@@ -12604,7 +12646,13 @@ ipcMain.handle('plobi:updates:release-install', async () => {
   const dest = path.join(os.tmpdir(), asset.name)
   // 带上 `asset.size`：下载器据此判断"这份是不是已经下完的那份"（复用而不是
   // 重拉 400 MB），也在收尾时对尺寸，别把半截包递进安装器。
-  const downloaded = await downloadAsset(asset.browser_download_url, dest, undefined, asset.size)
+  //
+  // 传**整个资产**而不是 `browser_download_url`：那个地址在 `github.com` 上，
+  // 本机这个域名 443 直接连不上。下载器会自己按「镜像 → 资产 API（会 302 到
+  // CDN）→ 原地址」逐条去试，并把 curl 的失败原因写进日志——所以把
+  // `rememberLog` 一起递进去，出问题时日志里能看到 (28)/(56)，而不是只有
+  // 「下载失败」四个字。
+  const downloaded = await downloadAsset(asset, dest, undefined, asset.size, rememberLog)
 
   if (!downloaded) {
     emitUpdateProgress({ stage: 'error', message: '下载新版安装包失败。', percent: null })

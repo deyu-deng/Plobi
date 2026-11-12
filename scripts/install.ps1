@@ -1949,7 +1949,26 @@ function Install-Venv {
                 Write-Warn "Could not enumerate gateway scheduled tasks: $($_.Exception.Message)"
             }
             # The launcher CLI (plobi.exe) plus its child tree.
-            & taskkill /F /T /IM plobi.exe /FI "PID ne $myPid" 2>$null | Out-Null
+            #
+            # Matched by EXECUTABLE PATH, never by image name. taskkill /IM does
+            # a case-INSENSITIVE name match, so `/IM plobi.exe` also hit the
+            # Desktop shell `D:\Software\Plobi\Plobi.exe` that spawned this
+            # installer (only the powershell PID was excluded via /FI). With /T
+            # that killed the installer's own parent, the user's window vanished
+            # and the venv stage died mid-install -- the 0.3.0 "setup flashes
+            # and closes" bug. Path prefix also keeps a system/global python
+            # named plobi.exe outside this venv untouched.
+            $venvPrefixForKill = [System.IO.Path]::GetFullPath((Join-Path $InstallDir "venv")).TrimEnd('\') + '\'
+            try {
+                Get-CimInstance Win32_Process -Filter "Name = 'plobi.exe'" -ErrorAction Stop |
+                    Where-Object { $_.ProcessId -ne $myPid -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($venvPrefixForKill, [System.StringComparison]::OrdinalIgnoreCase) } |
+                    ForEach-Object {
+                        Write-Info "  stopping launcher PID $($_.ProcessId) ($($_.ExecutablePath))"
+                        & taskkill /F /T /PID $_.ProcessId 2>$null | Out-Null
+                    }
+            } catch {
+                Write-Warn "Could not enumerate plobi launcher processes: $($_.Exception.Message)"
+            }
             # taskkill /IM plobi.exe is NOT enough: the gateway/agent that a
             # scheduled task or watchdog autostarts runs as
             # `pythonw.exe -m plobi_cli.main gateway run` straight out of
@@ -2160,6 +2179,36 @@ function Install-Dependencies {
                 # Skip the rest of the tiered cascade -- we already have a
                 # complete, hash-verified install.
                 $skipPipFallback = $true
+
+                # 2026-11-11 FIX：上面那段理由说「项目本体不需要装，桌面端用
+                # `python -m plobi_cli.main` + PYTHONPATH 启动」——但那条路要
+                # isBootstrapComplete() 为真才走得到，而 bundled 安装写不出合法
+                # marker（见 Write-BootstrapMarker 的修复前逻辑），桌面端实际
+                # 是靠「PATH 里有没有 plobi.exe」来认「已安装」的。venv 里没有
+                # plobi.exe ⇒ 认不出 ⇒ 每次启动重跑 bootstrap ⇒ venv 阶段的
+                # taskkill 把宿主外壳一起杀掉（0.3.0 setup 闪退）。
+                # 因此这里补生成项目本体的入口：--no-deps 复用上面装好的依赖，
+                # --no-build-isolation + --offline 保证不联网。失败不阻断安装：
+                # `python -m plobi_cli.main` 仍然可用，只是少一层 PATH 兜底。
+                Write-Info "Generating the venv CLI entry point (plobi.exe) ..."
+                # 构建后端不在 requirements.txt 里：`uv export --no-emit-project` 把
+                # [build-system] requires 一起丢掉了，所以 wheelhouse 只装了依赖时，
+                # 下面这条 -e .（--no-build-isolation）找不到 setuptools 就直接失败。
+                # 原来这条失败只降级成一句 Warn，于是「安装树是 0.3.1、venv 里跑着的
+                # 还是 0.3.0 实体拷贝」这种版本撕裂可以一路静默到用户面前
+                # （2026-11-12 实测：site-packages 里有 plobi_agent-0.3.0.dist-info，
+                # 一个 .pth 都没有，界面和后端报的版本却各不相同）。先离线补装后端。
+                $buildBackendMissing = $false
+                Invoke-NativeWithRelaxedErrorAction { & $UvCmd pip install --no-index --find-links $Wheelhouse --python $venvPythonExe "setuptools>=77.0,<83" "wheel" }
+                if ($LASTEXITCODE -ne 0) { $buildBackendMissing = $true }
+                Invoke-NativeWithRelaxedErrorAction { & $UvCmd pip install --no-deps --no-build-isolation --offline --python $venvPythonExe -e . }
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "venv CLI entry point ready (venv\Scripts\plobi.exe)"
+                } elseif ($buildBackendMissing) {
+                    Write-Warn "Could not generate the venv CLI entry point: the wheelhouse has no build backend (setuptools/wheel), so 'pip install -e .' cannot run. The desktop will rely on 'python -m plobi_cli.main', and the backend will keep running whatever copy is already in site-packages."
+                } else {
+                    Write-Warn "Could not generate the venv CLI entry point; the desktop will rely on 'python -m plobi_cli.main'."
+                }
             } else {
                 Write-Warn "Bundled wheelhouse install failed (incomplete wheelhouse?), falling back to PyPI resolve..."
                 $skipPipFallback = $false
@@ -2619,9 +2668,10 @@ function Write-BootstrapMarker {
     }
 
     # Resolve the pinned commit: explicit -Commit wins, otherwise read
-    # the checkout's HEAD via git. If git can't run, leave commit empty
-    # and the marker will fail desktop validation (pinnedCommit.length
-    # >= 7) — better to be invalid than wrong.
+    # the checkout's HEAD via git. When neither is available (the normal
+    # bundled / in-app-update case: resources\backend is a COPY, there is
+    # no git repo and no -Commit), the marker still has to be written in
+    # a form the desktop accepts -- see the synthetic fallback below.
     $pinnedCommit = $Commit
     if (-not $pinnedCommit) {
         # PS 5.1 doesn't support the ?. null-conditional operator, so
@@ -2636,12 +2686,25 @@ function Write-BootstrapMarker {
                     $pinnedCommit = $resolved.Trim()
                 }
             } catch {
-                # Ignore — pinnedCommit stays empty, marker stays invalid,
-                # desktop falls through to its legacy bootstrap path.
+                # Ignore — the synthetic 'bundled' fallback below keeps the
+                # marker schema-valid; we just cannot claim a specific commit.
             } finally {
                 Pop-Location
             }
         }
+    }
+
+    # 2026-11-11 FIX（0.3.0 setup 闪退的根因）：bundled 安装走的是
+    # 「resources\backend 是拷贝、没有 git、也没传 -Commit」这条正常路径，
+    # 旧逻辑在这里留空，导致 marker 永远过不了桌面端的
+    # isBootstrapComplete()（要求 pinnedCommit >= 7 字符）——于是每次启动
+    # 都判定「没装过」，回落到 PATH 里找 plobi；PATH 找不到就重跑整套
+    # bootstrap，而 venv 阶段的 `taskkill /IM plobi.exe` 会把宿主外壳
+    # （同名 plobi.exe）连同进程树一起杀掉，表现就是「进 setup 做一半闪退」。
+    # 写一个 schema 合法的合成值：marker 只声明「install.ps1 在本目录跑完
+    # 过」，不声明「HEAD 是某个 commit」，所以合成值不算撒谎。
+    if (-not $pinnedCommit) {
+        $pinnedCommit = "bundled"
     }
 
     $pinnedBranch = $Branch

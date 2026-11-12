@@ -387,8 +387,36 @@ def _install_method_project_root(project_root: Optional[Path] = None) -> Path:
     return Path(__file__).parent.parent.resolve()
 
 
+def _looks_like_bundled_install(root: Path) -> bool:
+    """Whether ``root`` is the ``resources/backend`` tree of the desktop package.
+
+    Two independent tells, either is enough:
+
+    1. ``<root>/../install-stamp.json`` — written by ``collect-backend-bundle``
+       at packaging time, sits next to (never inside) the backend tree.
+    2. ``<root>/../wheelhouse`` plus a pinned ``requirements.txt`` inside the
+       tree — the offline install payload only the packaged build carries.
+
+    Deliberately does NOT treat a bare ``pyproject.toml`` as a tell: every
+    source checkout and every pip install has one, and a false positive here
+    would hide the pip deprecation notice from actual pip installs.
+    """
+    try:
+        stamp = root.parent / "install-stamp.json"
+        if stamp.is_file():
+            payload = json.loads(stamp.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                return True
+    except (OSError, ValueError):
+        pass
+    try:
+        return (root.parent / "wheelhouse").is_dir() and (root / "requirements.txt").is_file()
+    except OSError:
+        return False
+
+
 def detect_install_method(project_root: Optional[Path] = None) -> str:
-    """Detect how Plobi was installed: 'docker', 'nixos', 'homebrew', 'git', or 'pip'.
+    """Detect how Plobi was installed: 'docker', 'nixos', 'homebrew', 'git', 'bundled', or 'pip'.
 
     Resolution order:
     1. Code-scoped stamp ``<install tree>/.install_method`` (next to the
@@ -473,6 +501,15 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
                 return "git"
         except OSError:
             pass
+    # detect the bundled desktop install (the Electron package ships this very
+    # tree as resources/backend and stamps resources/install-stamp.json).
+    # Without this branch a bundled install looks exactly like a hand-rolled
+    # "pip" install: no .git, no .install_method. That mislabel is not cosmetic
+    # — it prints the pip/homebrew deprecation notice at startup and hands the
+    # user a `pip install -U` command that would install a *second* copy into
+    # site-packages, silently shadowing the bundled one.
+    if _looks_like_bundled_install(root):
+        return "bundled"
     return "pip"
 
 
@@ -543,6 +580,13 @@ def recommended_update_command_for_method(method: str) -> str:
         return "brew upgrade plobi-agent"
     if method == "docker":
         return "docker pull nousresearch/hermes-agent:latest"
+    if method == "bundled":
+        # The bundled build is upgraded by the desktop shell (downloads the next
+        # installer and relaunches it), never by a package manager: a `pip -U`
+        # here would install a second copy into site-packages and shadow the
+        # bundled one, which is how an install ends up reporting a version it is
+        # not actually running.
+        return "upgrade from the Plobi desktop app (Settings -> Update)"
     if method == "pip":
         if is_uv_tool_install():
             return "uv tool upgrade plobi-agent"
