@@ -47,6 +47,12 @@ from agent.egress.rules import Table, load_table
 PROBE_URL = "http://www.gstatic.com/generate_204"
 PROBE_EXPECTED = 204
 
+#: 表里没有 ``engine.mixed_port`` 时的说明。这条会原样出现在 ``plobi network status``、
+#: 托盘提示和设置页里，是用户最需要读懂的一句话之一（11-11 的安装包正是这个状态：
+#: 节点、规则、接管都在，engine 段只剩 tun.enabled），所以写中文并点名配置项，
+#: 而不是让人对着 ``no listen port declared`` 猜字段该怎么填。
+NO_PORT_NOTE = "表里没写监听端口（network.egress.engine.mixed_port），引擎没有前门可探"
+
 STATE_BASENAME = "plobi-engine.json"
 RUNTIME_BASENAME = "runtime"
 
@@ -177,7 +183,7 @@ def _probe_once(
     """
     proxy = f"http://127.0.0.1:{port}"
     if port <= 0:
-        return UNKNOWN, "no listen port declared (network.egress.engine.mixed_port)"
+        return UNKNOWN, NO_PORT_NOTE
 
     opener = urllib.request.build_opener(
         urllib.request.ProxyHandler({"http": proxy, "https": proxy})
@@ -203,7 +209,7 @@ def probe_engine(port: int, *, url: str = PROBE_URL, timeout: float = PROBE_TIME
     because a probe timed out would take the product down with it.
     """
     if port <= 0:
-        return False, "no listen port declared (network.egress.engine.mixed_port)"
+        return False, NO_PORT_NOTE
     verdict, detail = _probe_once(port, url=url, timeout=timeout)
     return verdict == UP, detail
 

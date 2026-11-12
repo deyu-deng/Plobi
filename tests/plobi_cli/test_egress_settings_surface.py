@@ -11,8 +11,14 @@ import pytest
 import yaml
 
 from agent.egress import rules as egress
+from agent.egress.mihomo_config import compile_config
 from agent.egress.rules import EgressConfigError, parse_table
-from plobi_cli.egress_config import replace_egress, validate_egress
+from plobi_cli.egress_config import (
+    DEFAULT_MIXED_PORT,
+    DEFAULT_NAMESERVERS,
+    replace_egress,
+    validate_egress,
+)
 
 _VALID = {
     "force_ipv4": False,
@@ -414,7 +420,13 @@ def test_put_refuses_an_empty_draft_that_would_delete_every_member(monkeypatch):
 
     monkeypatch.setattr(_rules, "load_table", lambda *a, **k: _Seen())
     written: list = []
-    monkeypatch.setattr(egress_config, "replace_egress", lambda block: (written.append(block), (True, []))[1])
+    # ``**kwargs`` 只为接住 ``notes=``：这个用例钉的是「空草稿在写盘前就被拒」，
+    # 与补齐说明无关，不必替它断言补齐内容。
+    monkeypatch.setattr(
+        egress_config,
+        "replace_egress",
+        lambda block, **kwargs: (written.append(block), (True, []))[1],
+    )
     monkeypatch.setattr(ws, "_reload_egress_engine", lambda: {"state": "off", "detail": "", "probe": ""})
 
     empty = {"egress": {"system_proxy": {"enabled": False}}}
@@ -530,3 +542,82 @@ def test_a_save_does_not_take_over_a_machine_that_never_asked(monkeypatch):
 
     assert out["state"] == "running-ours", out
     assert calls == [], "没在用系统代理的机器，保存一次出口不该被接管"
+
+
+#: 11-11 那个安装包里 config.yaml 的形状：46 个节点、兜底规则、接管亮着，而 engine 段
+#: 只剩界面里那一格 ``tun.enabled`` —— mixed_port 与 dns 都不在。面板整块保存一次，
+#: 这两格就被抹掉一次。
+_PANE_DRAFT = {
+    "egress": {
+        "nodes": {
+            "东京-01": {
+                "type": "ss",
+                "server": "node.example.com",
+                "port": 8388,
+                "cipher": "aes-128-gcm",
+                "password": "secret",
+            }
+        },
+        "rules": [{"match": "*", "via": "proxy:东京-01"}],
+        "engine": {"tun": {"enabled": False}},
+        "system_proxy": {"enabled": True},
+    }
+}
+
+
+def test_a_pane_save_does_not_strip_the_engine_block(tmp_path, monkeypatch):
+    """The pane only sends the fields it draws; everything else must survive the save."""
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text("model: test/model\n", encoding="utf-8")
+
+    notes: list[str] = []
+    ok, issues = replace_egress(_PANE_DRAFT, notes=notes)
+    assert ok, issues
+
+    on_disk = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    engine = on_disk["network"]["egress"]["engine"]
+
+    # 系统代理要的入口、按名字寻址要的解析器，都在——点保存点得越勤，以前是越残。
+    assert engine["mixed_port"] == DEFAULT_MIXED_PORT
+    assert engine["dns"]["nameserver"] == list(DEFAULT_NAMESERVERS)
+    # 面板画的那一格没被改写
+    assert engine["tun"]["enabled"] is False
+    # 表已经把流量交给引擎了，授权位不能继续默认关着
+    assert engine["enabled"] is True
+    # 补了什么必须说出来，不许静默改写别人的文件
+    assert len(notes) >= 3, notes
+
+    # 判据是「编译得动」，不是「字典好看」
+    rendered = compile_config(egress.parse_table(on_disk["network"]["egress"]))
+    assert f"mixed-port: {DEFAULT_MIXED_PORT}" in rendered
+
+
+def test_a_complete_pane_draft_is_left_alone_and_says_nothing(tmp_path, monkeypatch):
+    """Never re-decide a table somebody already completed，也别把没补的说成补了。"""
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text("model: test/model\n", encoding="utf-8")
+
+    complete = {
+        "egress": {
+            "nodes": {"东京-01": dict(_PANE_DRAFT["egress"]["nodes"]["东京-01"])},
+            "rules": [{"match": "*", "via": "proxy:东京-01"}],
+            "engine": {
+                "enabled": False,
+                "mixed_port": 7897,
+                "dns": {"enable": True, "nameserver": ["192.168.1.1"]},
+            },
+        }
+    }
+
+    notes: list[str] = []
+    ok, issues = replace_egress(complete, notes=notes)
+    assert ok, issues
+
+    on_disk = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    engine = on_disk["network"]["egress"]["engine"]
+    assert engine["mixed_port"] == 7897        # 用户自己选的端口不被改回默认
+    assert engine["dns"]["nameserver"] == ["192.168.1.1"]
+    # 「保持关闭」钉语义而不是钉键：落盘时 ``enabled: false`` 会被当成默认值略去，
+    # 缺键与 false 在解析后是同一件事，测试该看解析结果。
+    assert egress.parse_table(on_disk["network"]["egress"]).engine_enabled is False
+    assert notes == [], notes

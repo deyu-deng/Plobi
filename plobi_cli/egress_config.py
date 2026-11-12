@@ -510,7 +510,9 @@ def set_system_proxy(desired: bool) -> tuple[bool, list[str]]:
     return replace_egress(network)
 
 
-def replace_egress(network_block: Any, *, force: bool = False) -> tuple[bool, list[str]]:
+def replace_egress(
+    network_block: Any, *, force: bool = False, notes: list[str] | None = None
+) -> tuple[bool, list[str]]:
     """Set the whole ``network`` section (empty/None removes it), then re-read it.
 
     Returns ``(ok, issues)``; nothing is written when issues is non-empty, so a
@@ -519,7 +521,30 @@ def replace_egress(network_block: Any, *, force: bool = False) -> tuple[bool, li
     The wipe check lives here rather than at the caller because this is the only
     writer: a pane, the CLI, a switch action or a future surface all land in the same
     gate, and "we only check on HTTP" is how 11-03 lost the whole table.
+
+    11-12: 补齐也放在这里，理由与上面那条一模一样，只是方向相反 —— 订阅导入那条路
+    （:func:`apply_imported_table`）一直有 ``seed_engine_defaults``，而设置页整块保存
+    这条路没有，于是「界面里没有的字段」在每次点保存时被抹掉一次：``engine.mixed_port``
+    （系统代理要的入口）和 ``engine.dns``（按名字寻址的节点要的解析器）一起消失，剩下
+    的 ``engine`` 只有界面里那一格 ``tun.enabled``。量到的样子就是 11-11 那个安装包里的
+    config.yaml：节点 46 个、规则有兜底、接管亮着，engine 段只剩 ``tun.enabled: false``，
+    引擎因此没有前门可开 —— 用户点保存点得越勤，配置反而越残。
+
+    补齐只填空缺，不覆盖已有的值，并且 ``notes`` 会拿到「补了什么」的逐条说明，由上层
+    决定是回给界面还是打进日志；不留静默改写。
     """
+    if isinstance(network_block, dict) and network_block:
+        # seed 收的是 **egress 块**，不是整个 network 块（它自己 get("nodes") 就是这个层级）；
+        # 直接把 network 块塞进去会因为它取不到 nodes/groups/proxies 而当场判断「没有出口可
+        # 指」并原样返回 —— 看着补了，其实一格没动。导入那趟（apply_imported_table）传的也是
+        # egress 块，这里跟它对齐。
+        egress_block = network_block.get("egress")
+        if isinstance(egress_block, dict) and egress_block:
+            seeded, seed_notes = seed_engine_defaults(egress_block)
+            network_block = {**network_block, "egress": seeded}
+            if notes is not None:
+                notes.extend(seed_notes)
+
     ok, issues = validate_egress(network_block)
     if not ok:
         return False, issues

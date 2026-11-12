@@ -15052,13 +15052,16 @@ async def put_network_egress(body: NetworkEgressUpdate, profile: Optional[str] =
                    f"多半是面板没读到当前的表。确认要清空就带 force: true 再来，"
                    f"或者先用 `plobi network status` 看一眼表还在不在",
         )
+    seed_notes: list[str] = []
     with _profile_scope(body.profile or profile):
-        ok, issues = replace_egress(body.network)
+        ok, issues = replace_egress(body.network, notes=seed_notes)
     if not ok:
         raise HTTPException(status_code=400, detail="; ".join(issues))
     with _profile_scope(body.profile or profile):
         engine_answer = _reload_egress_engine()
-    return {"ok": True, "engine": engine_answer}
+    # 面板送来的表只带它有的格子；补了什么要当场说出来，否则「保存成功但引擎还是
+    # 起不来」会变成下一次要重新排查一遍的账（口径：不静默改写别人的文件）。
+    return {"ok": True, "engine": engine_answer, "seeded": seed_notes}
 
 
 @app.get("/api/network/status")

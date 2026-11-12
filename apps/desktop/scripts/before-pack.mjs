@@ -58,12 +58,12 @@
  *   - electronPlatformName: 'win32' | 'darwin' | 'linux'
  *   - arch:                 Arch enum (0=ia32, 1=x64, 2=armv7l, 3=arm64, 4=universal)
  */
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { Arch } from 'electron-builder'
 import path from 'node:path'
 import { stageNodePty } from './stage-native-deps.mjs'
 import { scrubBuildJunk } from './build-junk.mjs'
-import stageEgressAssets from './stage-egress-assets.mjs'
+import stageEgressAssets, { EGRESS_ASSETS } from './stage-egress-assets.mjs'
 
 export function cleanStaleAppOutDir(appOutDir) {
   if (!appOutDir || typeof appOutDir !== 'string') {
@@ -86,18 +86,74 @@ export function cleanStaleAppOutDir(appOutDir) {
  * 结果 before-pack 只传了 destDir，stage 拿到的 srcDir 永远是空串，包里只剩 MISSING.txt。
  * 这里给出显式回退；真找不到时返回空串，让 stage 照实报 missing，不假装带上了。
  */
-function resolveEgressSrc(projectDir) {
-  const repoRoot = path.resolve(projectDir, '..', '..')
-  const candidates = [
-    process.env.PLOBI_EGRESS_SRC,
-    path.join(repoRoot, '.egress-src', 'ship'),
-    path.join(repoRoot, '.egress-src'),
-    path.join(projectDir, '.egress-src', 'ship')
-  ]
-  for (const dir of candidates) {
-    if (dir && existsSync(dir)) return dir
+export function resolveEgressSrc(projectDir) {
+  const explicit = process.env.PLOBI_EGRESS_SRC
+  if (explicit) {
+    // 显式给了就是显式给了：不再往下猜。指错了要立刻看得出来，而不是被后面的
+    // 回退链悄悄救回来 —— 那会让人以为 PLOBI_EGRESS_SRC 生效了。
+    return existsSync(explicit) ? explicit : ''
+  }
+
+  // 11-12: 不再写死 `../..`。以前只有一个层级假设（apps/desktop → 仓根），一旦
+  // projectDir 落到别的层（monorepo 里改了 appDir、从 release/ 或另一个 checkout
+  // 里打包、electron-builder 换了 config 入口），回退链就整体落空 —— 四个候选全都
+  // 不存在，stage 拿到空串，包里只剩一张 MISSING.txt，而构建照样成功。11-11 19:00
+  // 那个安装包就是这么来的（hook 已是修好的版本，包里却四项全缺）。
+  // 现在改成从 projectDir 逐级向上找，层数不再是正确性的前提。
+  for (const dir of egressCandidates(projectDir)) {
+    // 「目录在」不等于「东西在」。一个空的 `.egress-src`（建过、后来又清过，或者别人
+    // 机器上只留了壳）会让回退链在这里停下，把后面的候选全部挡掉，结果与完全没找到
+    // 一模一样地缺四件套。所以命中条件是：这两层里确实认得到随包资产的名字。
+    if (existsSync(dir) && holdsEgressAssets(dir)) return dir
   }
   return ''
+}
+
+/** 从 `projectDir` 起逐级向上，列出所有会被当作源目录的路径（近的在前）。 */
+export function egressCandidates(projectDir) {
+  const roots = []
+  let cursor = path.resolve(projectDir)
+  for (let depth = 0; depth < 6; depth += 1) {
+    roots.push(cursor)
+    const parent = path.dirname(cursor)
+    if (parent === cursor) break
+    cursor = parent
+  }
+  const candidates = []
+  for (const root of roots) {
+    candidates.push(path.join(root, '.egress-src', 'ship'))
+    candidates.push(path.join(root, '.egress-src'))
+  }
+  return candidates
+}
+
+/** 给缺源告警用：把候选路径压成一行可读的样子，不用人再去翻代码推层级。 */
+function describeEgressCandidates(projectDir) {
+  const explicit = process.env.PLOBI_EGRESS_SRC
+  if (explicit) return [`PLOBI_EGRESS_SRC=${explicit}${existsSync(explicit) ? '' : '（不存在）'}`]
+  return egressCandidates(projectDir)
+}
+
+/** `dir` 里（最多两层）能否看到随包资产的真名 —— 只认名字，不读 61MB 的内容。 */
+function holdsEgressAssets(dir) {
+  const wanted = new Set(EGRESS_ASSETS.map((asset) => asset.name.toLowerCase()))
+  const stack = [{ dir, depth: 0 }]
+  while (stack.length > 0) {
+    const { dir: current, depth } = stack.pop()
+    let entries
+    try {
+      entries = readdirSync(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && wanted.has(entry.name.toLowerCase())) return true
+      if (entry.isDirectory() && depth < 2) {
+        stack.push({ dir: path.join(current, entry.name), depth: depth + 1 })
+      }
+    }
+  }
+  return false
 }
 
 export default async function beforePack(context) {
@@ -129,7 +185,14 @@ export default async function beforePack(context) {
     if (!plan.missing.length) {
       console.log(`[before-pack] 随包带上路由引擎：${plan.copy.map((item) => item.name).join('、')}`)
     } else {
-      console.warn(`[before-pack] 随包仍缺路由引擎：${plan.missing.join('、')}（源：${srcDir || '未找到'}）`)
+      // 缺源时把「从哪儿找起、找到哪一层」一起打出来。11-11 那次包里四项全缺，日志里
+      // 只有「源：未找到」一句，等于要人从零复现一遍 hook 的推导过程 —— 这行成本最低。
+      console.warn(
+        `[before-pack] 随包仍缺路由引擎：${plan.missing.join('、')}\n` +
+          `  找过的起点：${projectDir}\n` +
+          `  找过的地方：${describeEgressCandidates(projectDir).join('、')}\n` +
+          `  想指定源：PLOBI_EGRESS_SRC=<含 ${EGRESS_ASSETS.map((asset) => asset.name).join('/')} 的目录>`
+      )
     }
   } catch (err) {
     console.warn(`[before-pack] egress asset staging did not run (${err.message}); the app will report the engine as not shipped`)
