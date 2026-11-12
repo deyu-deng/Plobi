@@ -135,6 +135,55 @@ const ProcessNotificationNote: FC<{ text: string }> = ({ text }) => {
   )
 }
 
+/**
+ * 「最后一条 user 是谁」与「我是第几条 user」——两个**只跟转录有关**的答案。
+ *
+ * 原来每条用户气泡都自己把**整段转录**扫一遍（一个从尾往前找、一个从头数），
+ * 于是代价是 O(气泡数 × 转录长度)：一条 330 行的会话有 150 个气泡 ⇒ 一次
+ * 重渲染要走五万次比较，而这五万次每次重渲染都要重走一遍。
+ *
+ * 这两个答案只跟**转录本身**有关 ⇒ 按转录数组的身份缓存一份，所有气泡共用：
+ * 一次转录变更走一遍 O(转录长度)，不是每条气泡各走一遍。WeakMap ⇒ 转录换掉
+ * 之后旧的那份自然回收，不留单例状态。
+ */
+export type UserOrdinals = {
+  latestUserId: string | null
+  ordinalById: Map<string, number>
+}
+
+const userOrdinalsCache = new WeakMap<object, UserOrdinals>()
+
+export function userOrdinalsFor(messages: readonly { id?: string; role?: string }[]): UserOrdinals {
+  const cached = userOrdinalsCache.get(messages)
+
+  if (cached) {
+    return cached
+  }
+
+  const ordinalById = new Map<string, number>()
+  let latestUserId: string | null = null
+  let ordinal = 0
+
+  for (const message of messages) {
+    if (message.role !== 'user') {
+      continue
+    }
+
+    if (message.id) {
+      ordinalById.set(message.id, ordinal)
+      latestUserId = message.id
+    }
+
+    ordinal += 1
+  }
+
+  const result: UserOrdinals = { latestUserId, ordinalById }
+
+  userOrdinalsCache.set(messages, result)
+
+  return result
+}
+
 export const UserMessage: FC<{
   onCancel?: () => Promise<void> | void
   onRequestRestoreConfirm?: (messageId: string, target: RestoreMessageTarget) => void
@@ -152,34 +201,12 @@ export const UserMessage: FC<{
   // transcript down mid-view.
   const canEdit = useAuiState(s => s.thread.capabilities.edit)
 
-  const latestUserId = useAuiState(s => {
-    for (let i = s.thread.messages.length - 1; i >= 0; i--) {
-      const message = s.thread.messages[i] as { id?: string; role?: string }
-
-      if (message.role === 'user') {
-        return message.id ?? null
-      }
-    }
-
-    return null
-  })
+  const latestUserId = useAuiState(s => userOrdinalsFor(s.thread.messages).latestUserId)
 
   const runtimeUserOrdinal = useAuiState(s => {
-    let ordinal = 0
+    const ordinals = userOrdinalsFor(s.thread.messages)
 
-    for (const message of s.thread.messages) {
-      if (message.role !== 'user') {
-        continue
-      }
-
-      if (message.id === s.message.id) {
-        return ordinal
-      }
-
-      ordinal += 1
-    }
-
-    return null
+    return ordinals.ordinalById.get(s.message.id) ?? null
   })
 
   const attachmentRefs = useAuiState(s => {

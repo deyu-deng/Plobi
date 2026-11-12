@@ -335,26 +335,44 @@ export function Loader({
     const phaseOffset = Math.random()
     particleRefs.current.length = config.particleCount
 
+    // 那条底衬曲线是 220+ 个点拼出来的字符串。每帧重算 = 每帧一条几 KB 的新
+    // 字符串（GC 压力与内存增长都从这儿冒出来）。它只随「呼吸」慢慢变 ⇒ 按步长
+    // 量化之后再重建：曲线会 stepping 一点点（它自己 opacity 才 0.1，看不出来），
+    // 重建次数从每秒 60 次降到个位数。粒子照旧跟着精确值走，画面不变。
+    const PATH_SCALE_STEP = 1 / 48
+    let lastPathScale = Number.NaN
+
     const render = (now: number) => {
-      const time = now - startedAt
-      const progress = ((time + phaseOffset * config.durationMs) % config.durationMs) / config.durationMs
-      const detailScale = detailScaleFor(time, config, phaseOffset)
-      const rotation = rotationFor(time, config, phaseOffset)
+      // 整个文档都看不见的时候（窗口最小化、应用藏起来）就别再改 DOM：这份动画
+      // 是纯装饰，没人会看见，但改写照样把渲染进程喂饱——装机版现场就是渲染
+      // 进程常驻一个多核、内存一路涨。
+      if (document.visibilityState !== 'hidden') {
+        const time = now - startedAt
+        const progress = ((time + phaseOffset * config.durationMs) % config.durationMs) / config.durationMs
+        const detailScale = detailScaleFor(time, config, phaseOffset)
+        const rotation = rotationFor(time, config, phaseOffset)
 
-      groupRef.current?.setAttribute('transform', `rotate(${rotation} 50 50)`)
-      pathRef.current?.setAttribute('d', buildPath(config, detailScale, pathSteps))
+        groupRef.current?.setAttribute('transform', `rotate(${rotation} 50 50)`)
 
-      particleRefs.current.forEach((node, index) => {
-        if (!node) {
-          return
+        const pathScale = Math.round(detailScale / PATH_SCALE_STEP) * PATH_SCALE_STEP
+
+        if (pathScale !== lastPathScale) {
+          lastPathScale = pathScale
+          pathRef.current?.setAttribute('d', buildPath(config, pathScale, pathSteps))
         }
 
-        const particle = particleFor(config, index, progress, detailScale, strokeScale)
-        node.setAttribute('cx', particle.x.toFixed(2))
-        node.setAttribute('cy', particle.y.toFixed(2))
-        node.setAttribute('r', particle.radius.toFixed(2))
-        node.setAttribute('opacity', particle.opacity.toFixed(3))
-      })
+        particleRefs.current.forEach((node, index) => {
+          if (!node) {
+            return
+          }
+
+          const particle = particleFor(config, index, progress, detailScale, strokeScale)
+          node.setAttribute('cx', particle.x.toFixed(2))
+          node.setAttribute('cy', particle.y.toFixed(2))
+          node.setAttribute('r', particle.radius.toFixed(2))
+          node.setAttribute('opacity', particle.opacity.toFixed(3))
+        })
+      }
 
       animationFrame = window.requestAnimationFrame(render)
     }

@@ -48,18 +48,24 @@ export function ChatSwapOverlay({ profile }: { profile: string | null }) {
       role={failed ? 'alert' : undefined}
     >
       <div className="flex flex-col items-center gap-3">
-        {failed
-          ? null
-          : (
-              <Loader
-                aria-hidden="true"
-                className="size-10 text-primary/70"
-                pathSteps={220}
-                role="presentation"
-                strokeScale={0.72}
-                type="rose-curve"
-              />
-            )}
+        {/* 粒子那枚动画**只在真的在等**的时候才挂。
+            之前它是「只要不是 failed 就挂」——于是**每一张对话卡**（哪怕这一层
+            整体是 opacity-0 的）都常驻一条 requestAnimationFrame 循环：每帧重算
+            一条 220 步的 SVG 路径，并把 40 个粒子的 cx/cy/r/opacity 逐个改一遍
+            （实测约 1.7 万次/秒的 DOM 改写）。这层一盖上去，卡片那片区域就每帧
+            被重画 ⇒ 屏上「一直在闪」，渲染进程还常驻一个多核、内存一路涨
+            （用户 11-12 现场：装机版 0.3.1 渲染进程 114% CPU / 8.2 GB）。
+            现在只有 `busy`（真的在换 Agent / 在换网关）才挂它。 */}
+        {busy ? (
+          <Loader
+            aria-hidden="true"
+            className="size-10 text-primary/70"
+            pathSteps={220}
+            role="presentation"
+            strokeScale={0.72}
+            type="rose-curve"
+          />
+        ) : null}
         <span className="max-w-[22rem] text-center text-[0.8125rem] text-(--ui-text-tertiary)">{text}</span>
       </div>
     </div>
