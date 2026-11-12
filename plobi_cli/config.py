@@ -597,6 +597,70 @@ def recommended_update_command_for_method(method: str) -> str:
     return "plobi update"
 
 
+def plan_update_route(
+    project_root: Optional[Path] = None,
+    platform: Optional[str] = None,
+) -> str:
+    """How ``plobi update`` should proceed for this install.
+
+    Returns one of:
+
+    ``git``
+        A real checkout — pull it.
+    ``zip``
+        No ``.git`` on Windows: the historical "git file I/O is broken" repair
+        route, which overlays a GitHub source ZIP.
+    ``pip``
+        No ``.git`` off Windows, detected as a pip install — delegate to pip.
+    ``bundled``
+        The desktop installer's ``resources/backend`` tree. ``update`` must
+        refuse: the dependency set is pinned into the shipped ``wheelhouse``,
+        so overlaying a newer source ZIP without re-installing dependencies
+        leaves a tree that can no longer import, and installing from PyPI
+        would drop a *second* copy into site-packages.
+    ``reinstall``
+        Nothing usable — the CLI should tell the user to reinstall.
+
+    Pulled out of ``_cmd_update_impl`` so the branching is testable: the bug it
+    guards (bundled installs silently taking the ZIP-overlay route) is a pure
+    decision, not an I/O effect.
+    """
+    root = _install_method_project_root(project_root)
+    plat = platform if platform is not None else sys.platform
+
+    try:
+        if (root / ".git").exists():
+            return "git"
+    except OSError:
+        pass
+
+    method = detect_install_method(root)
+
+    if method == "bundled":
+        return "bundled"
+
+    if plat == "win32":
+        return "zip"
+
+    if method == "pip":
+        return "pip"
+
+    return "reinstall"
+
+
+def bundled_update_refusal_message() -> str:
+    """What to tell a bundled install that ran ``plobi update``."""
+    return (
+        "\u2717 This install came with the Plobi desktop installer "
+        "(bundled backend).\n"
+        "  `plobi update` cannot refresh it safely: its dependencies are pinned "
+        "in the shipped wheelhouse,\n"
+        "  so overlaying newer sources would leave a tree that cannot import.\n"
+        "  Update it by running the newer installer, or use the desktop app's "
+        "update check."
+    )
+
+
 def recommended_update_command() -> str:
     """Return the best update command for the current installation."""
     managed_cmd = get_managed_update_command()

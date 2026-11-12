@@ -9470,14 +9470,25 @@ def _cmd_update_impl(args, gateway_mode: bool):
     git_dir = PROJECT_ROOT / ".git"
 
     if not git_dir.exists():
-        if sys.platform == "win32":
+        # No .git: three different installs look identical here. Bundled
+        # (desktop installer) backends used to fall into the Windows ZIP-overlay
+        # repair route, which replaced their pinned sources with main HEAD while
+        # leaving the shipped wheelhouse untouched -- the next import then fails
+        # outright. Route on the detected install method instead of on platform.
+        from plobi_cli.config import bundled_update_refusal_message, plan_update_route
+
+        _update_route = plan_update_route(PROJECT_ROOT)
+
+        if _update_route == "bundled":
+            print(bundled_update_refusal_message())
+            sys.exit(1)
+
+        if _update_route == "zip":
             use_zip_update = True
+        elif _update_route == "pip":
+            _cmd_update_pip(args)
+            return
         else:
-            from plobi_cli.config import detect_install_method
-            method = detect_install_method(PROJECT_ROOT)
-            if method == "pip":
-                _cmd_update_pip(args)
-                return
             print("✗ Not a git repository. Please reinstall:")
             print(
                 "  curl -fsSL https://raw.githubusercontent.com/deyu-deng/Plobi/main/scripts/install.sh | bash"

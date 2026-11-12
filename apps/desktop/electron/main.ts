@@ -64,6 +64,7 @@ import {
 } from './tray-restart'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
+import { BOOTSTRAP_MARKER_SCHEMA_VERSION, evaluateBootstrapMarker } from './bootstrap-marker'
 import { runBootstrap } from './bootstrap-runner'
 import {
   chatlogLedgerRow,
@@ -510,7 +511,6 @@ const VENV_ROOT = path.join(ACTIVE_PLOBI_ROOT, 'venv')
 // so that deleting the checkout to start fresh also deletes the marker --
 // avoids the confusing "marker exists but checkout is gone" state.
 const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_PLOBI_ROOT, '.plobi-bootstrap-complete')
-const BOOTSTRAP_MARKER_SCHEMA_VERSION = 1
 
 const DESKTOP_CONNECTION_CONFIG_PATH = path.join(app.getPath('userData'), 'connection.json')
 const DESKTOP_UPDATE_CONFIG_PATH = path.join(app.getPath('userData'), 'updates.json')
@@ -3588,31 +3588,33 @@ function isActiveRuntimeUsable() {
 
 function isBootstrapComplete() {
   const marker = readBootstrapMarker()
+  // marker 缺失时不要白跑一次 canImportPlobiCli 探测（首启动是最常见的路径）。
+  const verdict = evaluateBootstrapMarker(marker, marker ? isActiveRuntimeUsable() : false)
 
-  if (!marker || typeof marker !== 'object') {
-    return false
+  if (verdict.needsRepair) {
+    // 0.3.0 / 0.3.1 的 bundled 装机写下的是 `pinnedCommit: null` —— 老校验从不放行
+    // 这种 marker，于是这些机器每次启动都跳过「已装可用」这一档，转去 PATH 里找
+    // `plobi`，找不到就重跑整段 bootstrap。「运行时可用」已经是安装能用的硬证据，
+    // 把凭证字段补成合法的合成值，别让它们每次开机都重装一遍。
+    try {
+      const repaired = writeBootstrapMarker({
+        pinnedBranch: typeof (marker as any)?.pinnedBranch === 'string' ? (marker as any).pinnedBranch : '',
+        pinnedCommit: ''
+      })
+
+      rememberLog(`[bootstrap] repaired marker (${verdict.reason}); pinnedCommit -> ${repaired.pinnedCommit}`)
+    } catch (err) {
+      rememberLog(`[bootstrap] could not repair marker: ${(err as Error).message}`)
+    }
+  } else if (!verdict.complete) {
+    rememberLog(`[bootstrap] not complete: ${verdict.reason}`)
   }
 
-  if (marker.schemaVersion !== BOOTSTRAP_MARKER_SCHEMA_VERSION) {
-    return false
-  }
-
-  // The 7-char floor exists to reject truncated / garbage SHAs. A bundled
-  // install legitimately has no SHA at all and writes the synthetic 'bundled'
-  // (7 chars) -- accept it. Rejecting null/'' is what sent 0.3.0 installs into
-  // an endless bootstrap loop, so treat "missing" as "unknown", not "broken".
-  if (typeof marker.pinnedCommit !== 'string' || marker.pinnedCommit.length < 7) {
-    return false
-  }
-
-  // We DELIBERATELY do NOT verify that the checkout is currently at the
-  // pinned commit -- users update via the in-app update path or `plobi
-  // update`, which moves HEAD legitimately. The marker just attests "we
-  // ran the bootstrap successfully at least once." We DO additionally require
-  // a runnable venv: an interrupted or split-home install can leave the marker
-  // + checkout without a venv, and trusting that spawns a dead backend
-  // ("gateway offline") instead of re-running bootstrap to repair it.
-  return isActiveRuntimeUsable()
+  // 注意：这里刻意**不**校验「当前 checkout 是否还停在 pinned commit」——用户通过
+  // 应用内更新或 `plobi update` 挪 HEAD 是合法的，marker 只声明「这台机器上成功
+  // 跑完过 bootstrap」。但必须额外要求 venv 真的能起来：中断安装 / 分家的 home 会
+  // 留下「有 marker、有源码、没 venv」的状态，信它等于起一个死后端。
+  return verdict.complete
 }
 
 function writeBootstrapMarker(payload) {
