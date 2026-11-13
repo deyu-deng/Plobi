@@ -58,7 +58,34 @@ from plobi_cli.cli_output import (  # noqa: E402 — late import block
 # tool registry, so they are not part of any platform composite's tool
 # universe.  Kept in sync with
 # ``agent/memory_manager.py::_PROVIDER_TOOL_TOOLSET``.
-_PROVIDER_TOOL_CATEGORIES = ("surface", "mind")
+#
+# 11-13：人读面那一族拆成 **一类一门类**（note / diary / dossier）——
+# 用户 11-13 原话「以后不要 surface 这个概念了。note 就放在 note 工具集里面。
+# 日记就放在 diary 工具集，dossier-read 就放在对应的 dossier 里面」。
+_PROVIDER_TOOL_CATEGORIES = ("note", "diary", "dossier", "mind")
+
+# 退役的门类 → 拆开后的那几格。存量用户在那一个开关上存过「开/关」，
+# 读的时候按这张表展开：旧的 ``surface`` 开 ⇒ 三格都开；旧的 ``surface`` 关 ⇒
+# 三格都关（**那是他显式关掉的**，不能因为改名就弹回来）。写回时保存的是新键
+# （``known_provider_toolsets`` 记的是新三格），所以迁移只发生一次。
+_LEGACY_PROVIDER_CATEGORIES = {"surface": ("note", "diary", "dossier")}
+
+
+def _expand_legacy_provider_categories(names):
+    """把退役门类**换成**拆开后的那几格（其余原样）。
+
+    是「换」不是「加」：旧键 ``surface`` 已经不在 TOOLSETS 里了，
+    留在清单里会让 ``resolve_toolset`` 拿到一个不存在的门类。
+    """
+    out = set()
+    for name in names or ():
+        key = str(name)
+        legacy = _LEGACY_PROVIDER_CATEGORIES.get(key)
+        if legacy is None:
+            out.add(key)
+        else:
+            out.update(legacy)
+    return out
 
 # ─── Toolset Registry ─────────────────────────────────────────────────────────
 
@@ -80,7 +107,9 @@ CONFIGURABLE_TOOLSETS = [
     ("skills",          "📚 Skills",                    "list, view, manage"),
     ("todo",            "📋 Task Planning",             "todo"),
     ("memory",          "💾 Memory",                    "persistent memory across sessions"),
-    ("surface",         "📓 Notes, Diary & Dossiers",   "the human side: notes, diary, dossiers"),
+    ("note",           "📓 Notes",                      "the human side's notes: read, write, rename, delete"),
+    ("diary",          "📔 Diary",                      "the human side's diary: one entry per day"),
+    ("dossier",        "🗂 Dossiers",                   "the human side's dossiers: an agent's record"),
     ("context_engine",  "🧩 Context Engine",            "runtime tools from the active context engine"),
     ("session_search",  "🔎 Session Search",            "search past conversations"),
     ("clarify",         "❓ Clarifying Questions",      "clarify"),
@@ -1673,6 +1702,10 @@ def _get_platform_tools(
 
     platform_toolsets = config.get("platform_toolsets") or {}
     toolset_names = platform_toolsets.get(platform)
+    if isinstance(toolset_names, list):
+        # 退役门类（``surface``）展开成拆开后的那几格：旧键已经不在 TOOLSETS 里，
+        # 留在清单里会让 ``resolve_toolset`` 拿到一个不存在的门类。
+        toolset_names = sorted(_expand_legacy_provider_categories(toolset_names))
     # Desktop (api_server) sessions follow the cli list when not explicitly
     # configured: the UI's global Tools toggles persist to
     # ``platform_toolsets.cli``, so without this the desktop injection would
@@ -1713,7 +1746,9 @@ def _get_platform_tools(
     # categories below need it (a category the user globally disabled must
     # not be re-enabled by the default-on path).
     _agent_cfg = config.get("agent") or {}
-    agent_cfg_disabled = [str(ts) for ts in (_agent_cfg.get("disabled_toolsets") or [])]
+    agent_cfg_disabled = sorted(
+        _expand_legacy_provider_categories(_agent_cfg.get("disabled_toolsets") or [])
+    )
 
     # Which provider categories did the user explicitly turn off?  A
     # provider category is absent from ``platform_toolsets.<platform>``
@@ -1727,10 +1762,13 @@ def _get_platform_tools(
     if not isinstance(_known_provider, dict):
         _known_provider = {}
     _provider_saved = _known_provider.get(platform)
-    _provider_saved = set(_provider_saved) if isinstance(_provider_saved, (list, tuple, set)) else None
+    _provider_saved = (
+        _expand_legacy_provider_categories(_provider_saved)
+        if isinstance(_provider_saved, (list, tuple, set)) else None
+    )
     _saved_platform_list = platform_toolsets.get(platform)
     _saved_platform_list = (
-        {str(ts) for ts in _saved_platform_list}
+        _expand_legacy_provider_categories(_saved_platform_list)
         if isinstance(_saved_platform_list, list) else None
     )
     _provider_known_off = set()
@@ -1858,14 +1896,14 @@ def _get_platform_tools(
     # These tools are NOT registry tools — they are injected by the memory
     # provider at agent init — so the recovery loop below can never see them
     # (its test is "tools ⊆ platform composite tool universe", and the
-    # provider tools are not in that universe).  Before this, the
-    # ``surface`` category existed in ``toolsets.py`` but was unreachable:
-    # the desktop session's enabled_toolsets never contained it, so the
-    # per-category gate in agent/memory_manager.py filtered all seven
-    # note/diary/dossier tools out of the agent's tool table (WP-SURFACE-
-    # TOOLSET-GATE; the same disease WP-TOOLSET-INBOUND-2 fixed for the
-    # ``mind`` category).  The category is enabled here unless the user
-    # turned it off, so the gate can be closed as well as opened.
+    # provider tools are not in that universe).  Before this, the provider
+    # categories existed in ``toolsets.py`` but were unreachable: the desktop
+    # session's enabled_toolsets never contained them, so the per-category
+    # gate in agent/memory_manager.py filtered the note/diary/dossier tools
+    # out of the agent's tool table (WP-SURFACE-TOOLSET-GATE; the same
+    # disease WP-TOOLSET-INBOUND-2 fixed for the ``mind`` category).
+    # Each category is enabled here unless the user turned it off, so the
+    # gate can be closed as well as opened.
     for _provider_cat in _PROVIDER_TOOL_CATEGORIES:
         if _provider_cat in enabled_toolsets:
             continue
@@ -1875,6 +1913,12 @@ def _get_platform_tools(
         # category off ⇒ that is a decision, not a missing entry.  Only
         # default it ON while the user has never saved the page.
         if _provider_cat in _provider_known_off:
+            continue
+        # 用户给这个平台存过一张**空的**清单 ⇒ 他把能勾的都取消了（TUI 上
+        # 「全不勾再存」就是这个样子）⇒ 这一格也在那张清单上，不在就是关着。
+        # 非空的清单里没提到它 ⇒ 他压根没见过这一行（provider 门类比清单晚来）
+        # ⇒ 仍旧默认开（WP-SURFACE-TOOLSET-GATE 那把的意图）。
+        if _saved_platform_list is not None and not _saved_platform_list:
             continue
         enabled_toolsets.add(_provider_cat)
 

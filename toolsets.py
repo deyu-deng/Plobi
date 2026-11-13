@@ -266,19 +266,30 @@ TOOLSETS = {
         "includes": []
     },
 
-    "surface": {
-        "description": "The human side: notes, diary, dossiers — one tool per kind, each with its own rules",
+    # 11-13（用户 11-13 原话「以后不要 surface 这个概念了」）：人读面那一族拆成
+    # **一类一门类**——笔记一把、日记一把、档案一把。拆的理由不是好看：这三样
+    # 的**规矩不一样**（笔记有硬契约、日记永不自动、档案只增不改），合成一个
+    # 门类就只有一个开关，用户没法只关日记。旧的 ``surface`` 门类退役（读存量
+    # 开关时按 ``_LEGACY_PROVIDER_CATEGORIES`` 展开，见 plobi_cli/tools_config.py）。
+    "note": {
+        "description": "The human side's notes: read, write, rename, delete — one note per call",
         "tools": [
             "note_read",
             "note_write",
             "note_rename",
             "note_delete",
-            "diary_read",
-            "diary_write",
-            "dossier_read",
-            "dossier_write",
             "agent_notes",
         ],
+        "includes": []
+    },
+    "diary": {
+        "description": "The human side's diary: one entry per day, never written automatically",
+        "tools": ["diary_read", "diary_write"],
+        "includes": []
+    },
+    "dossier": {
+        "description": "The human side's dossiers: an agent's record — read it, update it",
+        "tools": ["dossier_read", "dossier_write"],
         "includes": []
     },
 

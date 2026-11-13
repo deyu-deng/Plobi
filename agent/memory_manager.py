@@ -105,30 +105,33 @@ def resolve_memory_provider_name(configured: object) -> str:
     return name
 
 # 10-31（WP-TOOLSET-INBOUND-2）：memory-provider 的工具按门类归户。
-# 人读面那几把（note_*/diary_*/dossier_*/agent_notes）只碰人读面，mind_* 只碰脑面
-# （Mind/）——用户在 Tools 页可以分别开关，所以这里要一张 工具名 → 门类 的表来过滤。
+# 11-13（用户 11-13 原话「以后不要 surface 这个概念了」）：人读面那一族拆成
+# **一类一门类**——``note_*`` 归 note、``diary_*`` 归 diary、``dossier_*`` 归 dossier，
+# ``mind_*`` 归 mind。用户在 Tools 页可以分别开关。
 #
-# 门类 id 仍叫 ``surface``：它是 Tools 页上那个**开关的键**（用户在设置里存过），
-# 改名会把存量开关打回「全开」。退役的是那把通吃的 ``surface_read``／``surface_write``。
+# 拆开的理由不是好看：这三样的**规矩不一样**（笔记有硬契约、日记永不自动、
+# 档案只增不改），合成一个门类就只有一个开关，用户没法只关日记。
+# 旧的 ``surface`` 门类退役；存量用户在那三格上存过的开关，读的时候按
+# ``plobi_cli/tools_config.py::_LEGACY_PROVIDER_CATEGORIES`` 展开。
 _PROVIDER_TOOL_TOOLSET = {
-    "note_read": "surface",
-    "note_write": "surface",
-    "note_rename": "surface",
-    "note_delete": "surface",
-    "diary_read": "surface",
-    "diary_write": "surface",
-    "dossier_read": "surface",
-    "dossier_write": "surface",
-    "agent_notes": "surface",
+    "note_read": "note",
+    "note_write": "note",
+    "note_rename": "note",
+    "note_delete": "note",
+    "agent_notes": "note",
+    "diary_read": "diary",
+    "diary_write": "diary",
+    "dossier_read": "dossier",
+    "dossier_write": "dossier",
     "mind_read": "mind",
     "mind_write": "mind",
 }
 _PROVIDER_TOOLSETS = frozenset(_PROVIDER_TOOL_TOOLSET.values())
 
 # 任一门类命中就把 provider 工具放出来。``memory`` 是总开关（旧行为：开了它
-# 全部 provider 工具都下发）；``surface`` / ``mind`` 是新拆的两个细分门类。
-# 复合门类（如 ``plobi-acp``）解析出来的工具名里含 ``memory`` 也算命中。
-_GATE_TOOLSETS = ("memory", "surface", "mind")
+# 全部 provider 工具都下发）；``note`` / ``diary`` / ``dossier`` / ``mind`` 是拆开的
+# 细分门类。复合门类（如 ``plobi-acp``）解析出来的工具名里含 ``memory`` 也算命中。
+_GATE_TOOLSETS = ("memory", "note", "diary", "dossier", "mind")
 _GATE_TOOL_NAMES = ("memory", *_PROVIDER_TOOL_TOOLSET.keys())
 
 
