@@ -51,7 +51,7 @@ const TEXT_EXT = new Set(['.ts', '.tsx', '.css', '.html'])
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.vite'])
 
 /**
- * 已知欠账（**只准更少，不准更多**；落法见 `Docs/tasks/dead-token-tail-task.md`）：
+ * 已知欠账（**只准更少，不准更多**；落法见 `Docs/tasks/dead-accent-foreground-task.md`）：
  * · `--ui-accent-foreground`（4 处）＝ 日历那几处带 `, white` 的 fallback
  *   （CSS 的 `var(--x, white)` 在变量没定义时**取 fallback**，屏上是白的）
  *   ——门扫得到它们，但它们**照屏不病**，所以只留这一支。
