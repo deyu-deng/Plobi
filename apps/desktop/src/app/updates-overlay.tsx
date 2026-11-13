@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { writeClipboardText } from '@/components/ui/copy-button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { ErrorIcon, ErrorState } from '@/components/ui/error-state'
-import { Loader } from '@/components/ui/loader'
+import { TurtleLoader } from '@/components/ui/turtle-loader'
 import type { DesktopReleaseInfo, DesktopUpdateCommit, DesktopUpdateStage, DesktopUpdateStatus } from '@/global'
 import { useI18n } from '@/i18n'
 import { buildCommitChangelog, type CommitGroup } from '@/lib/commit-changelog'
@@ -191,7 +191,7 @@ function IdleView({
   if (!status && checking) {
     return (
       <CenteredStatus
-        icon={<Loader className="size-12" label={u.checking} type="lemniscate-bloom" />}
+        icon={<TurtleLoader label={u.checking} size="md" />}
         title={u.checking}
       />
     )
@@ -484,7 +484,7 @@ function ApplyingView({ apply, isBackend }: { apply: UpdateApplyState; isBackend
   return (
     <div className="grid gap-5 px-6 pb-6 pt-7">
       <div className="flex flex-col items-center gap-3 text-center">
-        <Loader className="size-16" label={label} type="lemniscate-bloom" />
+        <TurtleLoader label={label} size="lg" />
 
         <DialogTitle className="text-center text-xl">{label}</DialogTitle>
         <DialogDescription className="text-center text-sm">{body}</DialogDescription>

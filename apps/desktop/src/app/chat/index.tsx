@@ -508,7 +508,6 @@ export function ChatView({
             />
           )}
           <ChatDropOverlay kind={dragKind} />
-          <ChatSwapOverlay profile={gatewaySwapTarget} />
         </div>
 
         {/* Composer renders OUTSIDE the contain:[layout paint] wrapper above:
@@ -550,6 +549,13 @@ export function ChatView({
           </Suspense>
         )}
       </ChatRuntimeBoundary>
+      {/* 过渡层挂在**整张卡**的最外层，不是转录那一个容器里。
+          转录容器（上面那个 `contain-[layout_paint]` 的 div）**不含 composer**
+          ——composer 是它的兄弟节点，在 `ChatRuntimeBoundary` 里面另起一层。
+          挂在转录容器里就盖不住输入框，切换时旧正文还会从底下透出来
+          （用户 11-13 12:35：「应该是加载画面单独显示。而不是像现在这样
+          叠加在切换前的聊天界面。重叠在字上面很丑」）。 */}
+      <ChatSwapOverlay profile={gatewaySwapTarget} />
     </div>
   )
 }

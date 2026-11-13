@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react'
 
-import { Loader } from '@/components/ui/loader'
+import { TurtleLoader } from '@/components/ui/turtle-loader'
 import { cn } from '@/lib/utils'
 
 interface PageLoaderProps extends Omit<ComponentProps<'div'>, 'children'> {
@@ -21,13 +21,11 @@ export function PageLoader({
       className={cn('grid h-full place-items-center', className)}
       role={role}
     >
-      <Loader
+      <TurtleLoader
         aria-hidden="true"
-        className="size-10 text-primary/70"
-        pathSteps={220}
+        className="text-primary/70"
         role="presentation"
-        strokeScale={0.72}
-        type="rose-curve"
+        size="md"
       />
     </div>
   )

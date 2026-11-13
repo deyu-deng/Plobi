@@ -5,7 +5,7 @@ import { type FC, type ReactNode, useEffect, useState } from 'react'
 import { useElapsedSeconds } from '@/components/chat/activity-timer'
 import { ActivityTimerText } from '@/components/chat/activity-timer-text'
 import { Codicon } from '@/components/ui/codicon'
-import { Loader } from '@/components/ui/loader'
+import { TurtleLoader } from '@/components/ui/turtle-loader'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { $backgroundResume } from '@/store/background-delegation'
@@ -45,13 +45,11 @@ export const CenteredThreadSpinner: FC = () => {
       className="pointer-events-none absolute inset-0 z-1 grid place-items-center"
       role="status"
     >
-      <Loader
+      <TurtleLoader
         aria-hidden="true"
-        className="size-12 text-midground/70"
-        pathSteps={220}
+        className="text-midground/70"
         role="presentation"
-        strokeScale={0.72}
-        type="rose-curve"
+        size="md"
       />
     </div>
   )

@@ -2,7 +2,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import { Button } from '@/components/ui/button'
 import { KbdCombo } from '@/components/ui/kbd'
-import { Loader } from '@/components/ui/loader'
+import { TurtleLoader } from '@/components/ui/turtle-loader'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
@@ -44,12 +44,7 @@ export function TerminalInstance({ id, active, cwd, onAddSelectionToChat, revive
     >
       {status === 'starting' && (
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
-          <Loader
-            className="size-8 text-(--ui-text-tertiary)"
-            pathSteps={180}
-            strokeScale={0.68}
-            type="spiral-search"
-          />
+          <TurtleLoader className="text-(--ui-text-tertiary)" size="sm" />
         </div>
       )}
       {selection.trim() && (
