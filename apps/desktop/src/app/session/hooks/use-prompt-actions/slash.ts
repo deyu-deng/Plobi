@@ -1,5 +1,6 @@
 import { type MutableRefObject, useCallback } from 'react'
 
+import type { SubmitOutcome } from '@/app/chat/composer/types'
 import { getProfiles } from '@/plobi'
 import type { Translations } from '@/i18n'
 import { type ChatMessage } from '@/lib/chat-messages'
@@ -63,7 +64,7 @@ interface SlashCommandDeps {
   submitPromptText: (
     rawText: string,
     options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
-  ) => Promise<boolean>
+  ) => Promise<SubmitOutcome>
 }
 
 /** The /slash command dispatcher, extracted from usePromptActions. */
@@ -182,7 +183,24 @@ export function useSlashCommand(deps: SlashCommandDeps) {
             return
           }
 
-          await submitPromptText(message)
+          const outcome = await submitPromptText(message)
+
+          // A LOCAL refusal (the busy gate / the in-flight lock / a session
+          // switch mid-flight) means the message never left the box. Say so
+          // and hand the words back to the composer instead of dropping them —
+          // the same "nothing is lost" rule the composer path follows.
+          if (outcome === 'busy' || outcome === 'locked') {
+            renderSlashOutput('session busy — /interrupt the current turn before sending this command')
+            setComposerDraft(message)
+
+            return
+          }
+
+          if (outcome === 'drifted') {
+            setComposerDraft(message)
+
+            return
+          }
         }
 
         try {

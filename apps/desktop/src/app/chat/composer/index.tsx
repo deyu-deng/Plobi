@@ -183,6 +183,7 @@ export function ChatBar() {
     queueCurrentDraft,
     queueEdit,
     queuedPrompts,
+    queueText,
     sendQueuedNow,
     stepQueuedEdit
   } = useComposerQueue({
@@ -242,6 +243,7 @@ export function ChatBar() {
     onSubmit,
     queueCurrentDraft,
     queueEdit,
+    queueText,
     queuedPrompts,
     sessionId,
     setComposerText,

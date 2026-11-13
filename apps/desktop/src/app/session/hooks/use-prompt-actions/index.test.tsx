@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { SubmitOutcome } from '@/app/chat/composer/types'
 import { translateNow } from '@/i18n'
 import { textPart } from '@/lib/chat-messages'
 import { $composerAttachments, $composerDraft, type ComposerAttachment, setComposerDraft } from '@/store/composer'
@@ -51,7 +52,10 @@ interface HarnessHandle {
   cancelRun: () => Promise<void>
   restoreToMessage: (messageId: string, target?: { text?: string; userOrdinal?: number | null }) => Promise<void>
   steerPrompt: (text: string) => Promise<boolean>
-  submitText: (text: string, options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }) => Promise<boolean>
+  submitText: (
+    text: string,
+    options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
+  ) => Promise<SubmitOutcome>
 }
 
 function Harness({
@@ -611,7 +615,103 @@ describe('usePromptActions submit / queue drain semantics', () => {
 
     const accepted = await handle!.submitText('should be blocked')
 
-    expect(accepted).toBe(false)
+    // The gate names ITSELF now ('busy'), instead of wearing the gateway's
+    // rejection face ('false'). The composer used to read every `false` as
+    // "rejected" and put the words back in the box — so a message refused here
+    // vanished with no sound at all (user 11-13: 「输入后。发送不了了」).
+    // With the reason named, the composer queues it instead.
+    expect(accepted).toBe('busy')
+    expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
+  })
+
+  it('names the in-flight lock when a second submit lands while the first is still running', async () => {
+    // Same refusal family as the busy gate, but a different reason: the
+    // previous submit for this session still holds the lock. It must not be
+    // reported as a gateway rejection either — and the second send must NOT
+    // reach the gateway.
+    const busyRef = { current: false }
+
+    let releaseSubmit: () => void = () => {}
+
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'prompt.submit') {
+        await new Promise<void>(resolve => {
+          releaseSubmit = resolve
+        })
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness
+        busyRef={busyRef}
+        onReady={h => (handle = h)}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+      />
+    )
+
+    const first = handle!.submitText('first message')
+
+    await waitFor(() => expect(requestGateway.mock.calls.some(c => c[0] === 'prompt.submit')).toBe(true))
+
+    // The view cleared $busy (a session switch / a settled turn) while the
+    // first submit is still in flight ⇒ the busy gate lets the second one
+    // through and the per-session lock refuses it.
+    busyRef.current = false
+
+    const second = await handle!.submitText('second message')
+
+    expect(second).toBe('locked')
+    expect(requestGateway.mock.calls.filter(c => c[0] === 'prompt.submit')).toHaveLength(1)
+
+    releaseSubmit()
+    expect(await first).toBe(true)
+  })
+
+  it('names a drift when the user switched sessions mid-submit (no silent false)', async () => {
+    // The words belong to the session they were typed in. The composer needs
+    // to know this was a drift (not a gateway rejection) so it puts them back
+    // into THAT session's draft instead of into the one now on screen.
+    let releaseResume: () => void = () => {}
+    const selectedStoredSessionIdRef: MutableRefObject<string | null> = { current: 'stored-a' }
+    const activeSessionIdRef: MutableRefObject<string | null> = { current: null }
+
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'session.resume') {
+        await new Promise<void>(resolve => {
+          releaseResume = resolve
+        })
+
+        selectedStoredSessionIdRef.current = 'stored-b'
+
+        return { session_id: 'rt-b' } as never
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness
+        activeSessionId={null}
+        activeSessionIdRef={activeSessionIdRef}
+        onReady={h => (handle = h)}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+        selectedStoredSessionIdRef={selectedStoredSessionIdRef}
+        storedSessionId="stored-a"
+      />
+    )
+
+    const submitting = handle!.submitText('words typed in session A')
+
+    await waitFor(() => expect(requestGateway).toHaveBeenCalledWith('session.resume', expect.anything()))
+    releaseResume()
+
+    expect(await submitting).toBe('drifted')
     expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
   })
 })
@@ -1384,7 +1484,11 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     await waitFor(() => expect(calls.some(c => c.method === 'session.resume')).toBe(true))
     releaseResume()
 
-    expect(await submitting).toBe(false)
+    // 'drifted', not `false`: the composer has to be able to tell "the user
+    // switched sessions mid-flight" from "the gateway rejected it" — the words
+    // go back into session A's draft, not into session B's box (and not into
+    // B at all).
+    expect(await submitting).toBe('drifted')
     expect(calls.some(c => c.method === 'prompt.submit')).toBe(false)
     expect(calls.find(c => c.method === 'session.resume')?.params).toEqual({
       session_id: STORED_SESSION_A
@@ -1437,7 +1541,7 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     await waitFor(() => expect(calls.some(c => c.method === 'session.resume')).toBe(true))
     releaseResume()
 
-    expect(await submitting).toBe(false)
+    expect(await submitting).toBe('drifted')
     expect(submitAttempts).toBe(1)
     expect(calls.filter(c => c.method === 'prompt.submit')).toHaveLength(1)
     expect(calls.find(c => c.method === 'session.resume')?.params).toMatchObject({

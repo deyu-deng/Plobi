@@ -1,5 +1,6 @@
 import { type MutableRefObject, useCallback } from 'react'
 
+import type { SubmitOutcome } from '@/app/chat/composer/types'
 import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS } from '@/plobi'
 import type { Translations } from '@/i18n'
 import { type ChatMessage, textPart } from '@/lib/chat-messages'
@@ -75,7 +76,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
   } = deps
 
   return useCallback(
-    async (rawText: string, options?: SubmitTextOptions) => {
+    async (rawText: string, options?: SubmitTextOptions): Promise<SubmitOutcome> => {
       const visibleText = rawText.trim()
       const usingComposerAttachments = !options?.attachments
 
@@ -120,8 +121,19 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       // keeps the guard so a stray Enter mid-turn can't double-submit.
       const hasSendable = Boolean(visibleText || terminalContextBlocks || attachments.length || hasImage)
 
-      if (!hasSendable || (!options?.fromQueue && busyRef.current)) {
+      if (!hasSendable) {
         return false
+      }
+
+      // LOCAL refusal #1 — the session is running a turn. This is NOT the
+      // gateway saying no, and it must not look like it: the composer used to
+      // read every `false` as "rejected" and put the words back in the box, so
+      // a message refused here vanished with no sound (user 11-13:
+      // 「输入后，发送不了了」). Say which refusal it is — the composer queues
+      // the words instead, where the user can see them and they go out when
+      // the session frees up.
+      if (!options?.fromQueue && busyRef.current) {
+        return 'busy'
       }
 
       // Pin the session context for the whole async submit pipeline. Without
@@ -142,7 +154,10 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       const submitLockKey = startingStoredSessionId || startingActiveSessionId || '__pending_new__'
 
       if (_submitInFlight.has(submitLockKey)) {
-        return false
+        // LOCAL refusal #2 — the previous submit for this session still holds
+        // the lock. Same deal as the busy gate: name it, don't let the
+        // composer mistake it for a gateway rejection.
+        return 'locked'
       }
 
       _submitInFlight.add(submitLockKey)
@@ -225,11 +240,15 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         )
       }
 
-      const abortForSessionSwitch = (optimisticSessionId: null | string): false => {
+      const abortForSessionSwitch = (optimisticSessionId: null | string): 'drifted' => {
         dropOptimistic(optimisticSessionId)
         releaseBusy()
 
-        return false
+        // LOCAL refusal #3 — the user switched session/route while this
+        // submit was in flight. The words belong to the session they were
+        // typed in, so the composer puts them back into THAT session's draft
+        // (never into the one now on screen).
+        return 'drifted'
       }
 
       setMutableRef(busyRef, true)

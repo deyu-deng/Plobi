@@ -2,7 +2,7 @@ import type { AppendMessage, ThreadMessage } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
-import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS, transcribeAudio } from '@/plobi'
+import type { SubmitOutcome } from '@/app/chat/composer/types'
 import { useI18n } from '@/i18n'
 import { stripAnsi } from '@/lib/ansi'
 import { branchGroupForUser, type ChatMessage, chatMessageText, textPart } from '@/lib/chat-messages'
@@ -10,6 +10,7 @@ import { pathLabel, SLASH_COMMAND_RE } from '@/lib/chat-runtime'
 import { triggerHaptic } from '@/lib/haptics'
 import { setMutableRef } from '@/lib/mutable-ref'
 import { normalize } from '@/lib/text'
+import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS, transcribeAudio } from '@/plobi'
 import { clearClarifyRequest } from '@/store/clarify'
 import {
   $composerAttachments,
@@ -462,7 +463,7 @@ export function usePromptActions({
   })
 
   const submitText = useCallback(
-    async (rawText: string, options?: SubmitTextOptions) => {
+    async (rawText: string, options?: SubmitTextOptions): Promise<SubmitOutcome> => {
       const visibleText = rawText.trim()
       const attachments = options?.attachments ?? $composerAttachments.get()
 

@@ -193,6 +193,45 @@ export function useComposerQueue({
     return true
   }, [activeQueueSessionKey, attachments, attachmentsAtom, clearDraft, draftRef])
 
+  /**
+   * Enqueue a message the send path refused LOCALLY (the busy gate / the
+   * in-flight lock). Takes the text explicitly: the composer clears the draft
+   * before dispatching, so the queue can't read the words off the draft ref.
+   *
+   * These words must land in the queue, not back in the box — the old path put
+   * them back in the box and said nothing, so a message refused locally
+   * vanished without a sound (user 11-13: 「输入后。发送不了了」). In the queue
+   * panel the user SEES them, and they go out when the session frees up.
+   */
+  const queueText = useCallback(
+    (text: string, queuedAttachments: ComposerAttachment[]): boolean => {
+      if (!activeQueueSessionKey || (!text.trim() && queuedAttachments.length === 0)) {
+        return false
+      }
+
+      const quote = $quoteTarget.get()
+
+      const entry = enqueueQueuedPrompt(activeQueueSessionKey, {
+        text,
+        attachments: queuedAttachments,
+        ...(quote ? { replyTo: quote.id } : {})
+      })
+
+      if (!entry) {
+        return false
+      }
+
+      if (quote) {
+        clearQuoteTarget()
+      }
+
+      triggerHaptic('selection')
+
+      return true
+    },
+    [activeQueueSessionKey]
+  )
+
   // All queue drain paths share one lock + send-then-remove sequence.
   // `pickEntry` lets each caller choose head, by-id, or skip-edited.
   const runDrain = useCallback(
@@ -218,7 +257,11 @@ export function useComposerQueue({
           })
         )
 
-        if (accepted === false) {
+        // 只有 `true` 才算「发出去了」。`onSubmit` 现在会回一个有理由的拒绝
+        // （'busy' / 'locked' / 'drifted'），它们都是真值——按「非 false 即成功」
+        // 判会把**没发出去**的队列条目从队列里删掉 ⇒ 消息静默消失。
+        // 拒绝 ⇒ 条目留在队列里，等下一轮排空（退避计数照常走）。
+        if (accepted !== true) {
           return false
         }
 
@@ -362,6 +405,7 @@ export function useComposerQueue({
     queueCurrentDraft,
     queueEdit,
     queuedPrompts,
+    queueText,
     sendQueuedNow,
     stepQueuedEdit
   }

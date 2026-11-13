@@ -55,7 +55,7 @@ import { ChatSwapOverlay } from './chat-swap-overlay'
 import { ChatBar, ChatBarFallback } from './composer'
 import { requestComposerInsert, requestComposerInsertRefs } from './composer/focus'
 import { droppedFileInlineRefs, type SessionDragPayload, sessionInlineRef } from './composer/inline-refs'
-import type { ChatBarState } from './composer/types'
+import type { ChatBarState, SubmitOutcome } from './composer/types'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
@@ -84,7 +84,7 @@ interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
   onSubmit: (
     text: string,
     options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
-  ) => Promise<boolean> | boolean
+  ) => Promise<SubmitOutcome> | SubmitOutcome
   onThreadMessagesChange: (messages: readonly ThreadMessage[]) => void
   onEdit: (message: AppendMessage) => Promise<void>
   onReload: (parentId: string | null) => Promise<void>

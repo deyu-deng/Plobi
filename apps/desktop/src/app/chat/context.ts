@@ -5,7 +5,7 @@ import type { PlobiGateway } from '@/plobi'
 import type { ChatMessage } from '@/lib/chat-messages'
 import type { ComposerAttachment } from '@/store/composer'
 
-import type { ChatBarState } from './composer/types'
+import type { ChatBarState, SubmitOutcome } from './composer/types'
 import type { DroppedFile } from './hooks/use-composer-actions'
 
 /**
@@ -54,7 +54,7 @@ export interface ChatContextValue {
   onSubmit: (
     value: string,
     options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
-  ) => Promise<boolean> | boolean
+  ) => Promise<SubmitOutcome> | SubmitOutcome
   onTranscribeAudio?: (audio: Blob) => Promise<string>
 }
 
