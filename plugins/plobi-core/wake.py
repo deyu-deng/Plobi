@@ -86,13 +86,29 @@ def _safe_slug(name: str) -> str:
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
+    """这个 pid 现在还是个活进程吗？**只问，不投信号。**
+
+    Windows 上 `os.kill(pid, 0)` 不是无探活副作用的（bpo-14484）：它落到
+    `GenerateConsoleCtrlEvent(0, pid)`，给目标所在的整个控制台进程组发 Ctrl+C。
+    用到这里的后果有两条，都直接踩在护栏 2 上：活着的上一轮被判成死的（同一 Agent
+    并发两轮＝两份钱），以及同组的 pytest 主进程在 threading 等待里被打成
+    `KeyboardInterrupt`。判活只有一份真相，在 `plobi_round_lock.pid_alive`——cron
+    那一把锁用的也是它。
+    """
     try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+        import plobi_round_lock as RL
+
+        return RL.pid_alive(pid)
+    except Exception:  # noqa: BLE001 - 锁模块不在，不代表这条唤醒不能判活
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            return False
+        try:
+            os.kill(pid, 0)  # windows-footgun: ok — POSIX-only branch（Windows 已在上方 return）
+        except OSError:
+            return False
+        return True
 
 
 def _already_waking(marker: Path) -> bool:

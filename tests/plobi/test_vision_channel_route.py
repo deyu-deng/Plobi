@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import shutil
@@ -56,18 +57,43 @@ def _write_config(home: str, text: str) -> None:
         fp.write(text)
 
 
+_DROPPED_PREFIXES = (
+    "agent.auxiliary_client",
+    "agent.image_routing",
+    "tools.vision_tools",
+    "plobi_cli.config",
+)
+
+
 def _fresh_modules() -> None:
-    """Drop cached modules so each test reloads against the current env."""
-    for mod in list(sys.modules.keys()):
-        if mod.startswith(
-            (
-                "agent.auxiliary_client",
-                "agent.image_routing",
-                "tools.vision_tools",
-                "plobi_cli.config",
-            )
-        ):
-            del sys.modules[mod]
+    """Drop cached modules so each test reloads against the current env.
+
+    Popping ``sys.modules`` alone leaves the *parent package* holding an
+    attribute that points at the dropped object. The next
+    ``import tools.vision_tools`` then builds a second module object while
+    ``getattr(tools, "vision_tools")`` keeps handing out the first one. A
+    ``monkeypatch.setattr("tools.vision_tools.vision_analyze_tool", ...)``
+    resolves through the import system and lands on one copy, while
+    ``tui_gateway.server`` importing the name inside the function can land on
+    the other — the patch then does nothing and the *real* vision tool goes out
+    to the network. That is why
+    ``test_desktop_pre_describe_runs_on_the_session_leg`` only failed in the
+    full run: ``tests/plobi/test_delegation_guard.py`` imports this module via
+    its plugin before this file drops it, so a stale package attribute existed
+    to be picked up. Clear the attribute along with the entry.
+    """
+    for name in list(sys.modules):
+        if not name.startswith(_DROPPED_PREFIXES):
+            continue
+        dropped = sys.modules.pop(name, None)
+        parent_name, _, leaf = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None and getattr(parent, leaf, None) is dropped:
+            try:
+                delattr(parent, leaf)
+            except AttributeError:  # pragma: no cover - defensive
+                pass
+    importlib.invalidate_caches()
 
 
 # ---------------------------------------------------------------------------
