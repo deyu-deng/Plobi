@@ -49,7 +49,9 @@ function Segmented<T extends string>({
 }: {
   disabled?: boolean
   onChange: (next: T) => void
-  options: { label: string; value: T }[]
+  //: 整段禁用不够用的时候在这里按格禁：引擎关着时只有「接管」那一格没有意义，
+  //: TUN 那格反而正是把引擎开起来的入口，不能一起灰掉。
+  options: { disabled?: boolean; label: string; value: T }[]
   value: T | ''
 }) {
   return (
@@ -64,7 +66,7 @@ function Segmented<T extends string>({
           className={`min-w-0 flex-1 truncate whitespace-nowrap px-2 py-1.5 transition-colors disabled:cursor-default disabled:opacity-40 ${
             value === option.value ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
           }`}
-          disabled={disabled}
+          disabled={disabled || option.disabled}
           key={option.value}
           onClick={() => onChange(option.value)}
           title={option.label}
@@ -341,7 +343,9 @@ export function EgressPanel() {
                 onChange={transport => void flip(transport)}
                 options={[
                   { label: copy.transportTun, value: 'tun' },
-                  { label: copy.transportSystem, value: 'system' }
+                  //: 引擎关着（transport `off`）时这一格置灰，屏上不解释（用户 11-13 令）。
+                  //: 只灰这一格、不灰 TUN：TUN 是把引擎开起来的入口，灰掉就没路可走了。
+                  { disabled: ctl.transport === 'off', label: copy.transportSystem, value: 'system' }
                 ]}
                 value={ctl.transport}
               />

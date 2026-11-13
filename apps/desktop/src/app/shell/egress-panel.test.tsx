@@ -335,6 +335,27 @@ describe('左下底栏那一格', () => {
     expect(button.className).toContain('min-w-0')
     expect(button.className).toContain('truncate')
   })
+
+  it('引擎关着时接管那格点不动，TUN 那格照旧能把引擎开起来', async () => {
+    //: 用户 11-13 令：关的时候直接置灰，不摆任何解释。灰的是「系统代理接管」这一格 ——
+    //: 引擎没开就接管，等于把整机流量指向没人监听的端口；TUN 那格是开引擎的入口，不能灰。
+    getNetworkStatus.mockResolvedValue(
+      status({ switch: { exit: 'POOL', mode: 'rule', transport: 'off', vpn: false } })
+    )
+    render(<EgressPanel />)
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOn })).toBeTruthy())
+
+    const proxy = screen.getByRole('button', { name: copy.transportSystem }) as HTMLButtonElement
+    const tun = screen.getByRole('button', { name: copy.transportTun }) as HTMLButtonElement
+    expect(proxy.disabled).toBe(true)
+    expect(tun.disabled).toBe(false)
+
+    fireEvent.click(proxy)
+    expect(saveNetworkEgress).not.toHaveBeenCalled()
+
+    fireEvent.click(tun)
+    await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalled())
+  })
 })
 
 describe('机器原话不许顶在这一屏上', () => {
