@@ -1,9 +1,17 @@
-"""Retrieval over the Mind brain (keyword, offline-first).
+"""Retrieval over the Mind brain (deterministic, offline-first).
 
-What this does (P0 + the §12.7 第 3 条 upgrade):
+What this does (P0 + the §12.7 第 3 条 upgrade + WP-MIND-RECALL-FOUNDATION):
   - case-insensitive keyword grep over every ``.md`` file inside the **memory
     zones only** (``Mind/wiki/*``; the human side (``Notes/…`` and its siblings)
     deliberately left this list — user 2026-10-24/25「人读面不要进记忆系统」).
+  - score by deterministic **BM25** (``recall_bm25.py``) instead of raw term
+    counts: IDF + tf saturation + length normalisation, computed over the bounded
+    over-fetch pool. No model, no embedding, no network, byte-identical output
+    for the same input.
+  - pages marked ``status: superseded|rejected|deprecated|contested`` (or named
+    by another page's ``supersedes``) never enter context. This is the
+    invalidation half borrowed from claude-obsidian (§12.6) and is the ground
+    SAG's append-only index needs before it can be layered on top.
   - over-collect → score → de-duplicate by abstract → then fill the injection
     budget **tier by tier** (full / overview / abstract). A page that no longer
     fits its tier falls back to a smaller tier instead of being cut mid-sentence;
@@ -23,6 +31,7 @@ import re
 from pathlib import Path
 from typing import Dict, List
 
+from plobi.mind import recall_bm25
 from plobi.mind.paths import MEMORY_ZONES, real_target
 
 MAX_SNIPPET_CHARS = 1200
@@ -183,7 +192,8 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
 
     Scans the memory zones (:data:`plobi.mind.paths.MEMORY_ZONES` — the brain's
     ``Mind/wiki/*``; the human side (``Notes/…``) is not recalled), scores by
-    keyword occurrence, de-duplicates, and returns at most ``limit`` blocks whose
+    deterministic BM25, drops pages that have been superseded or rejected,
+    de-duplicates, and returns at most ``limit`` blocks whose
     combined length never exceeds :data:`MAX_TOTAL_CHARS`. Pages past
     :data:`FULL_DEPTH_SLOTS` come in as overviews; anything that stops fitting is
     demoted a tier rather than cut off.
@@ -213,21 +223,24 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
             except OSError:
                 continue
             low = text.lower()
-            score = sum(low.count(t) for t in terms)
-            if score == 0:
+            tf = {t: low.count(t) for t in terms}
+            if not any(tf.values()):
                 continue
+            meta, _body = _frontmatter_and_body(text)
             collected.append({
-                "score": score,
+                "tf": tf,
+                "doc_len": max(1, len(_TOKEN_RE.findall(low))),
+                "meta": meta,
                 "rel": f"{prefix}/{md.relative_to(base).as_posix()}",
                 "tiers": _tiers_for(text, terms),
             })
             if len(collected) >= overfetch:
                 # over-fetch a bounded multiple, then stop — a big grep must not
-                # turn recall into a full-tree read.
+                # turn recall into a full-tree read. BM25 statistics are computed
+                # on this bounded pool (see recall_bm25.py).
                 break
 
-    collected.sort(key=lambda h: (-h["score"], h["rel"]))
-    ranked = _dedupe_by_abstract(collected)[:limit]
+    ranked = _dedupe_by_abstract(recall_bm25.rank(collected, terms))[:limit]
 
     results: List[str] = []
     total = 0
