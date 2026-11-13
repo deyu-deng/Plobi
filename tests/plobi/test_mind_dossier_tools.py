@@ -135,6 +135,11 @@ def test_the_tools_are_atomic(roots):
         "mind_read",
         "mind_write",
         "agent_notes",
+        # 11-13：笔记那一族补三把细动作（列全库／看链接／改那几格属性）——
+        # 以前写侧只有「整篇覆写」，读侧只看得见自己名下那一份。
+        "note_list",
+        "note_links",
+        "note_set_property",
     ]
     for schema in schemas:
         # 裁定 185：不许用 action/mode/surface 这类选分支的参数把两件事塞进一枚工具——
@@ -158,6 +163,18 @@ def test_the_tools_are_atomic(roots):
             }
         elif name == "agent_notes":
             assert set(schema["parameters"]["properties"]) == {"agent"}
+        elif name == "note_list":
+            assert set(schema["parameters"]["properties"]) == {"agent"}
+        elif name == "note_links":
+            assert set(schema["parameters"]["properties"]) == {"path"}
+        elif name == "note_set_property":
+            # 改那几格属性：哪一篇 ＋ 要改哪几格（不给标题——标题就是那篇的名字）。
+            assert set(schema["parameters"]["properties"]) == {
+                "path",
+                "tags",
+                "belongs",
+                "relates",
+            }
         elif name == "note_rename":
             # 改名那把只收两个：哪一篇 ＋ 新名字（裁 185：一枚工具只干一件事）。
             assert set(schema["parameters"]["properties"]) == {"path", "name"}

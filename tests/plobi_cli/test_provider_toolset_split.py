@@ -32,6 +32,9 @@ NOTE_TOOLS = {
     "note_rename",
     "note_delete",
     "agent_notes",
+    "note_list",
+    "note_links",
+    "note_set_property",
 }
 DIARY_TOOLS = {"diary_read", "diary_write"}
 DOSSIER_TOOLS = {"dossier_read", "dossier_write"}

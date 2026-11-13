@@ -92,6 +92,16 @@ AGENT_NOTES_TOOL = "agent_notes"
 NOTE_RENAME_TOOL = "note_rename"
 NOTE_DELETE_TOOL = "note_delete"
 
+# 11-13（用户 11-13 22:1x「未免有些工具太简陋了呢？」）：补三把细动作，
+# 让笔记这一族不只剩下「整篇覆写」——那与 Agent 拿 terminal 改文件没有分别。
+# ① 列：整库（含公共知识 belongs: []）——以前 Agent 只看得见自己名下那一份，
+#    而 note_read 是**按路径**读的：没有清单就没有路径 ⇒ 公共知识那一块它是瞎的；
+# ② 链接：入链与出链——屏上有（``/api/surface/notes/links``），Agent 侧原来没有；
+# ③ 改属性：只改 frontmatter 那几格（tags / belongs / relates），正文一个字不动。
+NOTE_LIST_TOOL = "note_list"
+NOTE_LINKS_TOOL = "note_links"
+NOTE_SET_PROPERTY_TOOL = "note_set_property"
+
 # 每把工具**只碰一类**（逻辑前缀）。``Surface/…`` 那套旧写法 2026-11-13 停用，
 # 现在只认这几种逻辑头。
 NOTE_PREFIX = "Notes"
@@ -351,6 +361,107 @@ def _render_digest(messages: List[Dict[str, Any]]) -> str:
             lines.append("… (truncated)")
             break
     return "\n".join(lines)
+
+
+# ── 改 frontmatter 的那几格（正文一个字不动） ────────────────────────────────
+#
+# 这几格怎么写，**格式真相在 :mod:`plobi.mind.note_manage`**（frontmatter 的切法、
+# 标量的引号、行尾那句 ``# 备注`` 怎么办，都在那儿）——这里只借用它那几个小工具，
+# 不另开一份格式口径。
+
+_KEY_LINE_RE = re.compile(r"^([ \t]*)([A-Za-z_][\w-]*)([ \t]*:[ \t]*)(.*)$")
+
+
+def _yaml_flow_list(values) -> str:
+    """一行写完的 YAML 列表（``[数学, 物理]``）——引号交给 yaml 决定。"""
+    from plobi.mind.note_manage import _yaml_scalar
+
+    return "[" + ", ".join(_yaml_scalar(v) for v in values) + "]"
+
+
+def _rewrite_frontmatter_keys(block: str, changes: Dict[str, Any]) -> str:
+    """把 frontmatter 里指定的那几格换掉；其余行（含行尾备注）原样留着。"""
+    from plobi.mind.note_manage import (
+        _split_line_ending,
+        _split_yaml_comment,
+        _yaml_scalar,
+    )
+
+    lines = block.splitlines(keepends=True)
+
+    # 每一格占的行段：块式列表（值在行尾是空的）的续行归它
+    spans: Dict[str, tuple] = {}
+    index = 0
+    while index < len(lines):
+        content = lines[index].rstrip("\r\n")
+        match = _KEY_LINE_RE.match(content)
+        if not match:
+            index += 1
+            continue
+        key = match.group(2)
+        end = index + 1
+        if not match.group(4).strip():
+            while end < len(lines) and lines[end][:1] in (" ", "\t"):
+                end += 1
+        spans[key] = (index, end)
+        index = end
+
+    out: List[str] = []
+    index = 0
+    while index < len(lines):
+        content = lines[index].rstrip("\r\n")
+        match = _KEY_LINE_RE.match(content)
+        if not match or match.group(2) not in changes:
+            out.append(lines[index])
+            index += 1
+            continue
+        key = match.group(2)
+        start, end = spans[key]
+        _body, ending = _split_line_ending(lines[start])
+        _value, comment = _split_yaml_comment(match.group(4))
+        tail = (" " + comment) if comment else ""
+        value = changes[key]
+        rendered = (
+            _yaml_flow_list(value)
+            if isinstance(value, (list, tuple))
+            else _yaml_scalar(value)
+        )
+        out.append(f"{match.group(1)}{key}: {rendered}{tail}{ending}")
+        index = end  # 块式列表的续行一起吃掉
+    return "".join(out)
+
+
+def set_note_properties(
+    text: str,
+    *,
+    tags=None,
+    belongs=None,
+    relates=None,
+) -> str:
+    """改一篇笔记 frontmatter 的那几格，**正文一个字不动**。
+
+    为什么只这三格：**标题**就是那篇的名字（文件名与入链都跟它一起动）⇒ 改它是改名，
+    走 ``note_rename`` 那条路；这里管的是「这篇归谁、有哪些主题词、与谁相关」这三样
+    **身份元数据**。
+
+    行尾那句 ``# 备注`` 原样留着（那是用户自己写在那儿的话）；frontmatter 里没有的
+    那一格**不加**：不替用户造结构。
+    """
+    from plobi.mind.note_manage import _split_frontmatter
+
+    changes: Dict[str, Any] = {}
+    if tags is not None:
+        changes["tags"] = list(tags)
+    if belongs is not None:
+        changes["belongs"] = list(belongs)
+    if relates is not None:
+        changes["relates"] = list(relates)
+    if not changes:
+        return text
+    block, sep, body = _split_frontmatter(text)
+    if not sep:
+        return text
+    return "---" + _rewrite_frontmatter_keys(block, changes) + sep + body
 
 
 class MindProvider(MemoryProvider):
@@ -736,6 +847,93 @@ class MindProvider(MemoryProvider):
                     "required": [],
                 },
             },
+            {
+                "name": NOTE_LIST_TOOL,
+                "description": (
+                    "List the notes in the human-side library — **every** note, "
+                    "including the public ones (``belongs: []``) that belong to no "
+                    "agent. You get titles, logical paths and sizes, never note "
+                    "bodies. Use it to find out what exists before reading or "
+                    "writing one — ``note_read`` works by logical path, so without "
+                    "a list you can only reach notes whose path you already know. "
+                    "Pass ``agent`` to narrow it to one agent's notes instead."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {
+                            "type": "string",
+                            "description": (
+                                "Whose notes to list — by **name** (the name the user "
+                                "gave that agent). Leave it out to list the whole "
+                                "library."
+                            ),
+                        }
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": NOTE_LINKS_TOOL,
+                "description": (
+                    "Show how one note is wired into the library: the notes it "
+                    "links out to, and the notes that link back to it. Links to "
+                    "notes that do not exist yet are listed as they are written "
+                    "(the screen shows them as “not created”). Use it to see "
+                    "what a note touches before you rewrite or delete it; to read "
+                    "a note, use ``note_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path of the note, e.g. Notes/<topic>/<title>.md",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": NOTE_SET_PROPERTY_TOOL,
+                "description": (
+                    "Change a note's identity metadata — its ``tags``, who it "
+                    "``belongs`` to, which agents it ``relates`` to — **without "
+                    "rewriting the body**. The title is the note's name (the file "
+                    "name and every link into it move with it), so use "
+                    "``note_rename`` for that. The write goes through the same "
+                    "checks as ``note_write``: the note contract is re-checked and "
+                    "the trust gate decides whether it lands or waits for approval."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path of the note, e.g. Notes/<topic>/<title>.md",
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "The note's topic words (replaces the current ones).",
+                        },
+                        "belongs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "The agents this note belongs to — registered agent "
+                                "names, or ``[]`` for public knowledge."
+                            ),
+                        },
+                        "relates": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "The agents whose tasks use this note.",
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
         ]
 
     # -- model-facing dossier tools (WP-MIND-DOSSIER-WRITE) --------------
@@ -776,6 +974,12 @@ class MindProvider(MemoryProvider):
             return json.dumps(self._tool_dossier_write(args), ensure_ascii=False)
         if tool_name == AGENT_NOTES_TOOL:
             return json.dumps(self._tool_agent_notes(args), ensure_ascii=False)
+        if tool_name == NOTE_LIST_TOOL:
+            return json.dumps(self._tool_note_list(args), ensure_ascii=False)
+        if tool_name == NOTE_LINKS_TOOL:
+            return json.dumps(self._tool_note_links(args), ensure_ascii=False)
+        if tool_name == NOTE_SET_PROPERTY_TOOL:
+            return json.dumps(self._tool_note_set_property(args), ensure_ascii=False)
         if tool_name == MIND_READ_TOOL:
             return json.dumps(
                 self._tool_read(args, MEMORY_ZONES, _FACE_HINTS[MIND_FACE]), ensure_ascii=False
@@ -1023,6 +1227,163 @@ class MindProvider(MemoryProvider):
             ],
             "totals": {"scanned": scan.scanned, "matched": len(matched)},
         }
+
+    # -- 细动作：列全库 / 看链接 / 改那几格属性 ---------------------------
+
+    def _tool_note_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """列人读面那一库（默认**整库**，含公共知识）。
+
+        以前 Agent 只拿得到自己名下那一份（``agent_notes``），而 ``note_read``
+        是**按路径**读的 ⇒ 公共知识（``belongs: []``）那一块它连清单都没有，
+        更别说路径。这一把把整库的清单给它：标题、逻辑路径、字数、归属。
+        **正文一个字不给**（纪律同屏上）。
+        """
+        from plobi.mind.notes_view import notes_for, scan_notes
+        from plobi.mind.paths import MindUnavailable, require_root
+
+        payload = args or {}
+        raw = str(payload.get("agent") or "").strip()
+        if raw and _roster_entry_for(raw) is None:
+            return {
+                "success": False,
+                "error": f"名册里没有叫「{raw}」的 Agent。不给参数就是列整库。",
+            }
+        try:
+            root = require_root(self._mind_root)
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+        try:
+            scan = scan_notes(root)
+        except OSError as exc:
+            return {"success": False, "error": str(exc)}
+        if raw:
+            matched = notes_for(scan, _agent_note_aliases(raw))
+        else:
+            matched = scan.notes
+        return {
+            "success": True,
+            "scope": raw or "library",
+            "notes": [
+                {
+                    "path": note.path,
+                    "title": note.title,
+                    "chars": note.chars,
+                    "belongs": list(note.belongs),
+                }
+                for note in matched
+            ],
+            "totals": {
+                "scanned": scan.scanned,
+                "matched": len(matched),
+                "library": len(scan.notes),
+            },
+        }
+
+    def _tool_note_links(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """一篇笔记的入链与出链——屏上那一格（``/api/surface/notes/links``）的同一份真源。"""
+        from plobi.mind.notes_links import build_link_graph
+        from plobi.mind.paths import (
+            MindUnavailable,
+            is_safe_relative,
+            require_root,
+        )
+
+        shown = str((args or {}).get("path") or "").strip().replace("\\", "/")
+        path = _to_logical(shown)
+        if not path:
+            return {"success": False, "error": "path is required"}
+        off = self._tool_face_guard(path, (NOTE_PREFIX,), _FACE_HINTS[NOTE_PREFIX])
+        if off:
+            return off
+        if not is_safe_relative(path):
+            return {"success": False, "error": f"{shown} 不在可读写的面里"}
+        try:
+            root = require_root(self._mind_root)
+            graph = build_link_graph(root)
+        except (MindUnavailable, FileNotFoundError) as exc:
+            return {"success": False, "error": str(exc)}
+        outgoing = list(graph.get("links", {}).get(path, []))
+        backlinks = list(graph.get("backlinks", {}).get(path, []))
+        if path not in graph.get("titles", {}):
+            # 查不到的那一篇要**说清楚**——回一句「没有链接」会被读成「它没被引用过」。
+            return {"success": False, "error": f"{shown} 还不存在（路径要对）"}
+        return {
+            "success": True,
+            "path": shown,
+            "title": graph.get("titles", {}).get(path, ""),
+            "outgoing": outgoing,
+            "backlinks": backlinks,
+            "totals": {"outgoing": len(outgoing), "backlinks": len(backlinks)},
+        }
+
+    def _tool_note_set_property(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """改一篇笔记的身份元数据（tags / belongs / relates），**正文一个字不动**。
+
+        走 ``note_write`` 那条路（契约复验 ＋ 信任闸 ＋ 原子写，一样都不少）——
+        这一把只是**先算出新正文**再交出去，不另开一条写路。
+
+        标题不给改：**标题就是那篇的名字**（文件名与入链都跟它一起动）⇒ 那是改名，
+        走 ``note_rename``。
+        """
+        from plobi.mind.paths import (
+            MindUnavailable,
+            UnsafeMindPath,
+            is_safe_relative,
+            require_root,
+            safe_target,
+        )
+
+        payload = args or {}
+        shown = str(payload.get("path") or "").strip().replace("\\", "/")
+        path = _to_logical(shown)
+        if not path:
+            return {"success": False, "error": "path is required"}
+        if payload.get("title"):
+            return {
+                "success": False,
+                "error": (
+                    "标题就是那篇的名字（文件名与入链都跟它一起动）——"
+                    "改它用 note_rename；这里只改 tags／belongs／relates。"
+                ),
+            }
+        off = self._tool_face_guard(path, (NOTE_PREFIX,), _FACE_HINTS[NOTE_PREFIX])
+        if off:
+            return off
+        if not is_safe_relative(path):
+            return {"success": False, "error": f"{shown} 不在可读写的面里"}
+        changes: Dict[str, Any] = {}
+        for key in ("tags", "belongs", "relates"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                return {"success": False, "error": f"{key} 要是一个字符串的列表"}
+            changes[key] = [item.strip() for item in value if item.strip()]
+        if not changes:
+            return {
+                "success": False,
+                "error": "至少给一格：tags／belongs／relates。",
+            }
+        try:
+            root = require_root(self._mind_root)
+            target = safe_target(root, path)
+        except (MindUnavailable, UnsafeMindPath) as exc:
+            return {"success": False, "error": str(exc)}
+        if not target.is_file():
+            return {"success": False, "error": f"{shown} 还不存在"}
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return {"success": False, "error": str(exc)}
+        new_content = set_note_properties(text, **changes)
+        result = self._tool_write(
+            {"path": path, "content": new_content},
+            (NOTE_PREFIX,),
+            _FACE_HINTS[NOTE_PREFIX],
+        )
+        if isinstance(result, dict) and result.get("success"):
+            result["changed"] = sorted(changes)
+        return result
 
     # -- 档案本体的字段级编辑（dossier_write）--------------------------
 

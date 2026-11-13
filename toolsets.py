@@ -279,6 +279,9 @@ TOOLSETS = {
             "note_rename",
             "note_delete",
             "agent_notes",
+            "note_list",
+            "note_links",
+            "note_set_property",
         ],
         "includes": []
     },
