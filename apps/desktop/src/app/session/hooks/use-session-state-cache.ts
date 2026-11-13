@@ -121,6 +121,29 @@ export function useSessionStateCache({
     }
 
     const created = createClientSessionState(storedSessionId ?? null)
+
+    if (storedSessionId) {
+      // 同一场对话换了一个**运行时绑定**（重新接上：运行时被回收／后端重启／
+      // 发消息时那条「活着但没绑定」的续接路）⇒ 屏上那份转录必须跟着走。
+      //
+      // 不跟的后果（用户 11-13 12:44 实测）：新运行时的状态从**空**开始 ⇒ 视图
+      // 切到它的那一刻，缓存里那份空列表把屏上的历史整段换掉 ⇒ 几百条消息与
+      // 用户刚发的那一条一起消失，只剩 Agent 正在生成的那段回复。数据在库里
+      // （现核那场会话 352 条、用户那条 12:44:08 入库）——丢的只是界面。
+      //
+      // 只从**屏上那一份**继承：屏上这份属于谁，只有 `viewSessionIdRef` 知道
+      // （别的运行时的转录不能嫁到这一场对话上）。
+      const previousRuntimeId = runtimeIdByStoredSessionIdRef.current.get(storedSessionId)
+
+      if (previousRuntimeId && previousRuntimeId === viewSessionIdRef.current) {
+        const visible = $messages.get()
+
+        if (visible.length) {
+          created.messages = visible
+        }
+      }
+    }
+
     sessionStateByRuntimeIdRef.current.set(sessionId, created)
 
     if (storedSessionId) {

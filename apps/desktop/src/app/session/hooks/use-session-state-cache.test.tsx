@@ -319,3 +319,69 @@ describe('useSessionStateCache — cross-thread error isolation', () => {
     expect($messages.get().some(message => message.error === 'OpenRouter 403')).toBe(true)
   })
 })
+
+/**
+ * WP-L2-TRANSCRIPT-CARRY（用户 11-13 12:44 实测）：
+ * 同一场对话**换了一个运行时绑定**时，屏上那份转录必须跟着走。
+ *
+ * 丢的只是界面，数据在库里（现核那场会话 352 条消息、用户那条 12:44:08 入库）：
+ * 新运行时的状态从**空**开始 ⇒ 视图切到它的那一刻，缓存里那份空列表把屏上的
+ * 历史整段换掉 ⇒ 几百条消息与用户刚发的那一条一起消失，只剩 Agent 正在生成的
+ * 那段回复。
+ */
+describe('useSessionStateCache — 转录跟着运行时绑定走', () => {
+  afterEach(() => {
+    cleanup()
+    $messages.set([])
+  })
+
+  it('同一场对话换了运行时绑定 ⇒ 新运行时继承屏上那份转录', () => {
+    $messages.set([userMessage('user-a', '在吗'), assistantText('assistant-a', '在')])
+    let cache!: Cache
+    render(<ViewHarness activeSessionId="runtime-A" onReady={c => (cache = c)} />)
+
+    act(() => {
+      cache.ensureSessionState('runtime-A', 'stored-S')
+      cache.updateSessionState(
+        'runtime-A',
+        state => ({
+          ...state,
+          busy: false,
+          messages: [userMessage('user-a', '在吗'), assistantText('assistant-a', '在')]
+        }),
+        'stored-S'
+      )
+    })
+
+    expect($messages.get().map(message => message.id)).toEqual(['user-a', 'assistant-a'])
+
+    // 重新接上：同一场对话（stored-S）换了一个运行时绑定（运行时被回收／后端重启／
+    // 发消息时那条「活着但没绑定」的续接路）。
+    act(() => {
+      cache.ensureSessionState('runtime-B', 'stored-S')
+    })
+
+    const carried = cache.sessionStateByRuntimeIdRef.current.get('runtime-B')
+
+    expect(carried?.messages.map(message => message.id)).toEqual(['user-a', 'assistant-a'])
+  })
+
+  it('别的对话的转录不许嫁过来（屏上那一份属于谁，只有视图知道）', () => {
+    $messages.set([userMessage('user-x', '另一场对话')])
+    let cache!: Cache
+    render(<ViewHarness activeSessionId="runtime-A" onReady={c => (cache = c)} />)
+
+    act(() => {
+      cache.ensureSessionState('runtime-A', 'stored-S')
+    })
+
+    // 屏上是另一场对话的转录（runtime-A 并不是屏上那一份）⇒ 不许继承。
+    act(() => {
+      cache.ensureSessionState('runtime-B', 'stored-S')
+    })
+
+    const carried = cache.sessionStateByRuntimeIdRef.current.get('runtime-B')
+
+    expect(carried?.messages ?? []).toEqual([])
+  })
+})
