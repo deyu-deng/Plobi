@@ -1,19 +1,20 @@
-/* ── Turtle loader ─────────────────────────────────────────────────────────
+/* ── Loader (brand turtle) ────────────────────────────────────────────────
    品牌小乌龟沿一条跑道从左走到右，走到头转身走回来（循环；**不表达真实进度**）。
 
-   为什么是纯 CSS、不是 JS：上一刀 `WP-CHAT-CARD-FLICKER` 的病根正是那枚粒子
-   `Loader`——它每帧重算一条 220 步的 SVG 路径，并把 40 个粒子的 cx/cy/r/opacity
-   逐个改写（实测约 1.7 万次 DOM 改写/秒，窗口最小化时照改）。装饰动画**不该**
-   逐帧改 DOM：`transform` 走合成器，零 DOM 改写、零 JS，而且浏览器在窗口最小化
-   时自己会停掉合成器动画——那件事以前要手写 `document.visibilityState` 才办得到。
+   为什么是纯 CSS、不是 JS：上一刀 `WP-CHAT-CARD-FLICKER` 的病根正是**旧实现**
+   那枚粒子加载指示——它每帧重算一条 220 步的 SVG 路径，并把 40 个粒子的
+   cx/cy/r/opacity 逐个改写（实测约 1.7 万次 DOM 改写/秒，窗口最小化时照改）。
+   装饰动画**不该**逐帧改 DOM：`transform` 走合成器，零 DOM 改写、零 JS，而且浏览器
+   在窗口最小化时自己会停掉合成器动画——那件事以前要手写 `document.visibilityState`
+   才办得到。
 
    三层，各自有自己的 transform，互不打架：
-     .turtle-loader__rail   —— 跑道：一条静态的细线（currentColor 的弱色）
-     .turtle-loader__runner —— 位移层：宽 = 跑道宽，只做 translateX
-     .turtle-loader__turtle —— 龟：只做 scaleX（走到头转身时翻面）
+     .loader__rail    —— 跑道：一条静态的细线（currentColor 的弱色）
+     .loader__runner  —— 位移层：宽 = 跑道宽，只做 translateX
+     .loader__turtle  —— 龟：只做 scaleX（走到头转身时翻面）
    跑道在 runner **之下**（DOM 顺序在前），龟与它身后的拖尾在跑道**之上**。
 
-   行程怎么算的：`translateX(calc(100% - var(--turtle-size)))` —— 这里面的 100%
+   行程怎么算的：`translateX(calc(100% - var(--loader-size)))` —— 这里面的 100%
    是 **runner 自身宽度**（= 跑道宽），所以位移 = 跑道宽 − 龟宽 ⇒ 龟正好停在右端，
    不会有一半挂到跑道外面。
 
@@ -21,11 +22,11 @@
    读不出「在走」，只读得出「在抖」）⇒ 那一档不画跑道，乌龟原地轻轻起伏。
    形状统一（都是那只品牌龟），走法随可用空间而变。 */
 
-.turtle-loader {
-  --turtle-size: 18px;
-  --turtle-width: 9rem;
-  --turtle-cycle: 2.8s;
-  --turtle-rail: 3px;
+.loader {
+  --loader-size: 18px;
+  --loader-width: 9rem;
+  --loader-cycle: 2.8s;
+  --loader-rail: 3px;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
@@ -33,51 +34,51 @@
   color: inherit;
 }
 
-.turtle-loader__track {
+.loader__track {
   position: relative;
-  width: var(--turtle-width);
-  height: calc(var(--turtle-size) + var(--turtle-rail));
+  width: var(--loader-width);
+  height: calc(var(--loader-size) + var(--loader-rail));
 }
 
-.turtle-loader__rail {
+.loader__rail {
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  height: var(--turtle-rail);
+  height: var(--loader-rail);
   border-radius: 999px;
   background: color-mix(in srgb, currentColor 22%, transparent);
 }
 
-.turtle-loader__runner {
+.loader__runner {
   position: absolute;
   inset-block: 0;
   left: 0;
   width: 100%;
   will-change: transform;
-  animation: plobi-turtle-walk var(--turtle-cycle) ease-in-out infinite;
+  animation: plobi-turtle-walk var(--loader-cycle) ease-in-out infinite;
 }
 
 /* 乌龟身后那一小段亮痕：跟着一只走，读作「它正在跑道上跑」。 */
-.turtle-loader__trail {
+.loader__trail {
   position: absolute;
   left: 0;
   bottom: 0;
-  width: calc(var(--turtle-size) * 1.5);
-  height: var(--turtle-rail);
+  width: calc(var(--loader-size) * 1.5);
+  height: var(--loader-rail);
   border-radius: 999px;
   background: color-mix(in srgb, currentColor 42%, transparent);
 }
 
-.turtle-loader__turtle {
+.loader__turtle {
   position: absolute;
   left: 0;
-  bottom: var(--turtle-rail);
-  width: var(--turtle-size);
-  height: var(--turtle-size);
+  bottom: var(--loader-rail);
+  width: var(--loader-size);
+  height: var(--loader-size);
   color: currentColor;
   will-change: transform;
   /* 品牌龟侧影头朝**左**，所以朝右走的那半段是翻面（scaleX(-1)）。 */
-  animation: plobi-turtle-turn var(--turtle-cycle) ease-in-out infinite;
+  animation: plobi-turtle-turn var(--loader-cycle) ease-in-out infinite;
 }
 
 @keyframes plobi-turtle-walk {
@@ -85,7 +86,7 @@
     transform: translateX(0);
   }
   50% {
-    transform: translateX(calc(100% - var(--turtle-size)));
+    transform: translateX(calc(100% - var(--loader-size)));
   }
   100% {
     transform: translateX(0);
@@ -104,22 +105,22 @@
 }
 
 /* 紧凑档：没有跑道，乌龟原地起伏。 */
-.turtle-loader--dot .turtle-loader__track {
-  width: var(--turtle-size);
-  height: var(--turtle-size);
+.loader--dot .loader__track {
+  width: var(--loader-size);
+  height: var(--loader-size);
 }
 
-.turtle-loader--dot .turtle-loader__rail {
+.loader--dot .loader__rail {
   display: none;
 }
 
-.turtle-loader--dot .turtle-loader__runner {
+.loader--dot .loader__runner {
   animation: none;
 }
 
-.turtle-loader--dot .turtle-loader__turtle {
+.loader--dot .loader__turtle {
   bottom: 0;
-  animation: plobi-turtle-bob var(--turtle-cycle) ease-in-out infinite;
+  animation: plobi-turtle-bob var(--loader-cycle) ease-in-out infinite;
 }
 
 @keyframes plobi-turtle-bob {
@@ -134,8 +135,8 @@
 
 /* 系统说了「别动」就别动——不是改成「更短的动效」（与 `app/chat/thread-swap.ts` 同一口径）。 */
 @media (prefers-reduced-motion: reduce) {
-  .turtle-loader__runner,
-  .turtle-loader__turtle {
+  .loader__runner,
+  .loader__turtle {
     animation: none;
   }
 }

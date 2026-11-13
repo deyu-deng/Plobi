@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { PLOBI_MARK_PATH } from '@/components/plobi-glyphs'
 
-import { TurtleLoader } from './turtle-loader'
+import { Loader } from './loader'
 
 /**
  * 「加载态统一成品牌小乌龟沿进度条左→右」那一条的判据（用户 11-13 12:35）。
@@ -38,22 +38,22 @@ const stripComments = (source: string): string =>
 
 describe('小乌龟加载态', () => {
   it('画的是品牌龟那一条路径（不新画第二只龟）', () => {
-    const { container } = render(<TurtleLoader />)
+    const { container } = render(<Loader />)
 
     expect(container.querySelector('svg path')?.getAttribute('d')).toBe(PLOBI_MARK_PATH)
   })
 
   it('走位是 CSS：跑道／位移层／龟三层，组件里没有逐帧改 DOM 的那套东西', () => {
-    const { container } = render(<TurtleLoader />)
+    const { container } = render(<Loader />)
 
-    expect(container.querySelector('.turtle-loader__track')).not.toBeNull()
-    expect(container.querySelector('.turtle-loader__rail')).not.toBeNull()
-    expect(container.querySelector('.turtle-loader__runner')).not.toBeNull()
-    expect(container.querySelector('.turtle-loader__turtle')).not.toBeNull()
+    expect(container.querySelector('.loader__track')).not.toBeNull()
+    expect(container.querySelector('.loader__rail')).not.toBeNull()
+    expect(container.querySelector('.loader__runner')).not.toBeNull()
+    expect(container.querySelector('.loader__turtle')).not.toBeNull()
     // 旧的花加载器是几十个 <circle> 粒子；这一档一个都没有。
     expect(container.querySelector('svg circle')).toBeNull()
 
-    const source = stripComments(read('turtle-loader.tsx'))
+    const source = stripComments(read('loader.tsx'))
 
     expect(source, '加载态不许再逐帧改 DOM——那是上一刀那场「一直在闪」的病根').not.toMatch(
       /requestAnimationFrame|setAttribute/
@@ -61,26 +61,26 @@ describe('小乌龟加载态', () => {
   })
 
   it('走位与翻面写在 CSS 里，系统说「别动」时真的不动', () => {
-    const css = read('turtle-loader.css')
+    const css = read('loader.css')
 
     expect(css).toMatch(/@keyframes plobi-turtle-walk/)
     // 行程 = 跑道宽 − 龟宽 ⇒ 龟正好停在右端，不会有一半挂到跑道外面。
-    expect(css).toMatch(/translateX\(calc\(100% - var\(--turtle-size\)\)\)/)
+    expect(css).toMatch(/translateX\(calc\(100% - var\(--loader-size\)\)\)/)
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/)
   })
 
   it('尺寸档换的是龟身与跑道的大小', () => {
-    const { container } = render(<TurtleLoader size="lg" />)
-    const root = container.querySelector('.turtle-loader') as HTMLElement
+    const { container } = render(<Loader size="lg" />)
+    const root = container.querySelector('.loader') as HTMLElement
 
-    expect(root.style.getPropertyValue('--turtle-size')).toBe('24px')
-    expect(root.style.getPropertyValue('--turtle-width')).toBe('12rem')
+    expect(root.style.getPropertyValue('--loader-size')).toBe('24px')
+    expect(root.style.getPropertyValue('--loader-width')).toBe('12rem')
   })
 
   it('紧凑档不画跑道（格子只有十几二十像素，走不动）', () => {
-    const { container } = render(<TurtleLoader size="dot" />)
-    const root = container.querySelector('.turtle-loader')
+    const { container } = render(<Loader size="dot" />)
+    const root = container.querySelector('.loader')
 
-    expect(root?.classList.contains('turtle-loader--dot')).toBe(true)
+    expect(root?.classList.contains('loader--dot')).toBe(true)
   })
 })

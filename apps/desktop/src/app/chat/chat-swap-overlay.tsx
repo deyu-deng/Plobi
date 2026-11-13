@@ -3,7 +3,7 @@ import { useStore } from '@nanostores/react'
 import { showsTransition, swapLabel } from '@/app/chat/agent-enter'
 import { $agentEnter } from '@/app/chat/agent-enter-store'
 import { $consoleAgents } from '@/app/console/store/agents'
-import { TurtleLoader } from '@/components/ui/turtle-loader'
+import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
  * 底色是**独立的一层**，且只在真的在等／失败时渲染：若让它跟着外层那个
  * `opacity-0` 一起淡，空闲时整张卡会被糊成一片底色。
  *
- * 等待指示 = **品牌小乌龟沿一条跑道从左走到右**（`components/ui/turtle-loader`，
+ * 等待指示 = **品牌小乌龟沿一条跑道从左走到右**（`components/ui/loader`，
  * 主人 11-13 同一天拍的统一形状）。纯 CSS `transform` 走位，零逐帧 DOM 改写——
  * 上一刀 `WP-CHAT-CARD-FLICKER` 的病根正是那枚粒子 `Loader` 常驻一条 rAF 循环
  * （每帧重算 220 步路径 ＋ 改写 40 个粒子的属性，约 1.7 万次/秒）。
@@ -65,7 +65,7 @@ export function ChatSwapOverlay({ profile }: { profile: string | null }) {
         {/* 那枚乌龟**只在真的在等**的时候才挂：不在等的时候挂着它，就是一张
             对话卡常驻一条动画循环（上一刀那场「一直在闪」的病根）。 */}
         {busy ? (
-          <TurtleLoader aria-hidden="true" role="presentation" size="md" />
+          <Loader aria-hidden="true" role="presentation" size="md" />
         ) : null}
         <span className="max-w-[22rem] text-center text-[0.8125rem] text-(--ui-text-tertiary)">{text}</span>
       </div>

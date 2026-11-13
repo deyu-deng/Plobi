@@ -5,7 +5,7 @@ import { ModelPickerDialog } from '@/components/model-picker'
 import { Button } from '@/components/ui/button'
 import { ErrorIcon } from '@/components/ui/error-state'
 import { Input } from '@/components/ui/input'
-import { TurtleLoader } from '@/components/ui/turtle-loader'
+import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n'
 import { ExternalLink, Loader2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -342,7 +342,7 @@ export function DocsLink({ children, href }: { children: React.ReactNode; href: 
 export function Status({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2.5 py-1 text-sm text-muted-foreground" role="status">
-      <TurtleLoader size="sm" />
+      <Loader size="sm" />
       {children}
     </div>
   )
