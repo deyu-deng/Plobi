@@ -304,6 +304,13 @@ export function ChatView({
     !activeSessionId &&
     messagesEmpty
 
+  // 这份 intro 传进 `Thread` 的空态；每次新建对象会破掉下游 memo ⇒ 整条转录
+  // 重渲染一遍。按内容缓存。
+  const introProps = useMemo(
+    () => (showIntro ? { personality: introPersonality, seed: introSeed } : undefined),
+    [showIntro, introPersonality, introSeed]
+  )
+
   // Session is still loading if the route references a session we haven't
   // resumed yet. Once `activeSessionId` is set (runtime has resumed), the
   // session exists — even if it has zero messages (a brand-new routed
@@ -463,7 +470,7 @@ export function ChatView({
             clampToComposer={showChatBar}
             cwd={currentCwd}
             gateway={gateway}
-            intro={showIntro ? { personality: introPersonality, seed: introSeed } : undefined}
+            intro={introProps}
             loading={threadLoading}
             onBranchInNewChat={onBranchInNewChat}
             onCancel={onCancel}

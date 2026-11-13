@@ -26,7 +26,7 @@
 
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import { showsTransition } from '@/app/chat/agent-enter'
 import { $agentEnter } from '@/app/chat/agent-enter-store'
@@ -154,11 +154,19 @@ export function ChatSurface({
   // 字形与颜色取名册那一行——与左栏那一列同一份身份，这里再造一套就会两处漂。
   const rosterRow = scope.kind === 'agent' ? agents.find(agent => agent.id === scope.id) : undefined
 
-  const assistantSpeaker: ThreadSpeaker = {
-    color: rosterRow?.color,
-    icon: rosterRow?.icon,
-    name: secretaryShellLabel(scope.kind === 'agent' ? { l2: scope.id } : 'l1', t.console.chiefSecretary, agents)
-  }
+  // 署名对象必须**同一份**：`Thread` 用它算出消息组件的类型，身份一变 ⇒
+  // 整条转录被拆掉重挂（屏上就是「一直在闪」）。所以按名字/颜色/图标三个
+  // 原始值缓存，只有内容真变了才换一份新的。
+  const speakerName = secretaryShellLabel(
+    scope.kind === 'agent' ? { l2: scope.id } : 'l1',
+    t.console.chiefSecretary,
+    agents
+  )
+
+  const assistantSpeaker = useMemo<ThreadSpeaker>(
+    () => ({ color: rosterRow?.color, icon: rosterRow?.icon, name: speakerName }),
+    [rosterRow?.color, rosterRow?.icon, speakerName]
+  )
 
   const showEmpty =
     messagesEmpty && !busy && !showsTransition(enter) && !gatewaySwapTarget

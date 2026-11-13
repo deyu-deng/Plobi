@@ -14,8 +14,8 @@ import { UserEditComposer } from '@/components/assistant-ui/thread/user-edit-com
 import { UserMessage } from '@/components/assistant-ui/thread/user-message'
 import { Intro, type IntroProps } from '@/components/chat/intro'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import type { PlobiGateway } from '@/plobi'
 import { useI18n } from '@/i18n'
+import type { PlobiGateway } from '@/plobi'
 import { notifyError } from '@/store/notifications'
 
 type ThreadLoadingState = 'response' | 'session'
@@ -75,13 +75,29 @@ export const Thread: FC<{
     setRestoreConfirmTarget({ messageId, ...target })
   }, [])
 
+  // 消息组件的**身份**必须稳。
+  //
+  // assistant-ui 按组件类型决定这一条是「更新」还是「挂」——身份一变，React 就把
+  // 整条转录拆掉重挂。实测（开发态探针，160 条转录）：每来一次上层重渲染，
+  // 80 个气泡连同 Markdown 块、复制按钮、图标全部重建（上千个 DOM 节点），
+  // 一秒 2.7 次 ⇒ 屏上「一直在闪」，渲染进程常驻一个核、内存一路涨。
+  //
+  // 所以：会变的 prop 一律按**内容**进依赖——署名拆成名字/颜色/图标三个原始值，
+  // 组件本体只在内容真变了的时候才换身份。
+  const { color: speakerColor, icon: speakerIcon, name: speakerName } = assistantSpeaker ?? {}
+
+  const speaker = useMemo<ThreadSpeaker | undefined>(
+    () => (speakerName === undefined ? undefined : { color: speakerColor, icon: speakerIcon, name: speakerName }),
+    [speakerColor, speakerIcon, speakerName]
+  )
+
   const messageComponents = useMemo(
     () => ({
       AssistantMessage: () => (
         <AssistantMessage
           onBranchInNewChat={onBranchInNewChat}
           onDismissError={onDismissError}
-          speaker={assistantSpeaker}
+          speaker={speaker}
         />
       ),
       SystemMessage,
@@ -93,14 +109,25 @@ export const Thread: FC<{
         />
       )
     }),
-    [assistantSpeaker, cwd, gateway, onBranchInNewChat, onCancel, onDismissError, onRestoreToMessage, requestRestoreConfirm, sessionId]
+    [speaker, cwd, gateway, onBranchInNewChat, onCancel, onDismissError, onRestoreToMessage, requestRestoreConfirm, sessionId]
   )
 
-  const emptyPlaceholder = intro ? (
-    <div className="flex min-h-0 w-full flex-col items-center justify-center pt-[var(--composer-measured-height)]">
-      <Intro {...intro} />
-    </div>
-  ) : undefined
+  // 空态与加载指示同样要**同一份元素**：它们是 `ThreadMessageList`（memo）的 prop，
+  // 每次新建元素就把 memo 破掉，整条转录跟着重渲染一遍。
+  const emptyPlaceholder = useMemo(
+    () =>
+      intro ? (
+        <div className="flex min-h-0 w-full flex-col items-center justify-center pt-[var(--composer-measured-height)]">
+          <Intro {...intro} />
+        </div>
+      ) : undefined,
+    [intro]
+  )
+
+  const loadingIndicator = useMemo(
+    () => (loading === 'response' ? <ResponseLoadingIndicator /> : <BackgroundResumeNotice />),
+    [loading]
+  )
 
   return (
     <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
@@ -108,7 +135,7 @@ export const Thread: FC<{
         clampToComposer={clampToComposer}
         components={messageComponents}
         emptyPlaceholder={emptyPlaceholder}
-        loadingIndicator={loading === 'response' ? <ResponseLoadingIndicator /> : <BackgroundResumeNotice />}
+        loadingIndicator={loadingIndicator}
         sessionKey={sessionKey}
       />
       {loading === 'session' && <CenteredThreadSpinner />}
