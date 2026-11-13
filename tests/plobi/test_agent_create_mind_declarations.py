@@ -202,7 +202,6 @@ def make_brain(tmp_path, monkeypatch, isolated_registry, brain_generator):
         # 我们往产品解析出的数据家里写，于是必红一条 BLOCKER，
         # 把要验的那条声明纪律整个淹掉。两个名字都钉到同一个假库。
         human = tmp_path / "vault"
-        monkeypatch.setenv("SURFACE_ROOT", str(human))
         monkeypatch.setenv("HUMAN_ROOT", str(human))
         root = build_brain(
             tmp_path / "mind", disk=disk, declared=declared, generator=brain_generator[1]

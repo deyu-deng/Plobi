@@ -2,7 +2,7 @@
 
 The ruling is that ``Notes/…``／``Diary/…``／``Dossiers/…`` and ``Mind/…`` are
 *logical* paths: the human side moved to a sibling repository of its own
-(``HUMAN_ROOT``; the old ``SURFACE_ROOT`` is still accepted), while the brain gets
+(``HUMAN_ROOT``; the old ``SURFACE_ROOT`` was retired on 2026-11-13), while the brain gets
 flattened (``Mind/wiki`` → ``wiki``). This suite pins the resolver itself, the one
 guard that stops a writer from resurrecting ``<mind>/Surface`` inside the AI repo,
 and the notes view reading the real thing through the split.
@@ -21,6 +21,7 @@ import pytest
 from plobi.mind import paths
 from plobi.mind.notes_view import known_names, scan_notes
 from plobi.mind.paths import (
+    MindUnavailable,
     Roots,
     UnsafeMindPath,
     is_safe_relative,
@@ -30,7 +31,7 @@ from plobi.mind.paths import (
     safe_target,
 )
 
-# 新的逻辑前缀（按种类分家）与旧写法（**仍解析**，只是不再广告）。
+# 逻辑前缀按种类分家；旧写法 ``Surface/…`` 11-13 起不再解析（留着它专为反断言）。
 HUMAN_LOGICAL = "Notes"
 LEGACY_LOGICAL = "Surface/notes"
 MIND_LOGICAL = "Mind/wiki/concepts"
@@ -79,7 +80,7 @@ def test_unpinned_pointer_falls_back_to_the_data_home(mind, tmp_path, monkeypatc
     迁移脚本也扫不到东西。环境变量是**曾经的门牌**，不是运行的前提。
     """
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(home))
@@ -96,7 +97,7 @@ def test_pinned_pointer_moves_the_human_surface_out(mind, sibling_vault, monkeyp
 def test_flattened_brain_drops_the_loom_level(mind, monkeypatch):
     """The flag is the whole switch: False = 旧 Mind 壳，True = 平铺（现在是 True)."""
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     (mind / "Mind" / "wiki" / "concepts").mkdir(parents=True)
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", False)
     assert real_target(MIND_LOGICAL, mind) == mind / "Mind" / "wiki" / "concepts"
@@ -109,7 +110,7 @@ def test_an_empty_brain_is_not_mistaken_for_a_flattened_one(mind, monkeypatch):
     answers "flattened" for every test fake surface and every fresh clone, which
     would relocate AI-authored writes to the brain root without anyone deciding it."""
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", False)
     assert not (mind / "Mind").exists()
     assert real_target(MIND_LOGICAL, mind) == mind / "Mind" / "wiki" / "concepts"
@@ -160,7 +161,7 @@ def test_a_pointer_to_a_surface_not_built_yet_is_still_the_pointer(mind, sibling
 def test_no_env_at_all_falls_back_to_the_registry_pin(mind, sibling_vault, monkeypatch):
     """长驻进程在改钉之前起来 ⇒ env 里压根没有这一项 ⇒ 读注册表那份钉的。"""
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.setattr(paths, "_pinned_human_root", lambda: str(sibling_vault))
     assert resolve_roots(mind).human == sibling_vault
 
@@ -169,8 +170,9 @@ def test_base_for_does_not_touch_the_disk(mind, sibling_vault):
     split = Roots(mind=mind, human=sibling_vault)
     assert split.base_for("Dossiers/projects/Plobi") == sibling_vault
     assert split.base_for("Mind/raw") == mind
-    # 没钉时落回脑仓旁边的旧布局（物理目录名还是 ``Surface``）
-    assert Roots(mind=mind).base_for(HUMAN_LOGICAL) == mind / "Surface"
+    # 数据家算不出来 ⇒ 直接抛，绝不回落脑仓（脑里不放人读面）
+    with pytest.raises(MindUnavailable):
+        Roots(mind=mind).base_for(HUMAN_LOGICAL)
 
 
 # --- the writer's guard ------------------------------------------------------
@@ -182,7 +184,7 @@ def test_writer_never_recreates_the_old_surface_inside_the_brain(mind, tmp_path,
     那会把用户自己的笔记复制进 AI 仓：第二份、没有备份、还会在屏上读成「有两处」。
     """
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(home))
@@ -191,18 +193,23 @@ def test_writer_never_recreates_the_old_surface_inside_the_brain(mind, tmp_path,
     assert not (mind / "Surface").exists()
 
 
-def test_the_legacy_layout_is_still_written_when_it_is_there(mind, tmp_path, monkeypatch):
-    """老布局**还在** ⇒ 照旧认它（**不静默换家**）。
+def test_a_leftover_surface_inside_the_brain_is_never_written_to(
+    mind, tmp_path, monkeypatch
+):
+    """老布局**残留** ⇒ 也不认它（11-13 全清：那只是待搬的旧壳，不是家）。
 
-    装机态那一份的人读面就住在脑仓旁边的 ``Surface/`` 里（数据家的 ``notes``／``diary``
-    是指着它的 junction）——换家＝把用户自己的笔记挪到别处去，那是另一件事。
+    以前这一条写的是「还在就照旧认，不静默换家」；现在换家的动作由搬家脚本一次做完，
+    读侧不再替它留活口，写侧更不许往里添新文件。
     """
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: None)
     (mind / "Surface" / "notes").mkdir(parents=True)
-    assert safe_target(mind, "Notes/new.md", creating=True) == (
-        mind / "Surface" / "notes" / "new.md"
-    )
+    assert safe_target(mind, "Notes/new.md", creating=True) == home / "notes" / "new.md"
+    assert not (mind / "Surface" / "notes" / "new.md").exists()
 
 
 def test_writer_into_the_sibling_needs_no_existing_directory(mind, sibling_vault, monkeypatch):
@@ -235,7 +242,7 @@ def test_logical_target_names_the_zone_a_file_belongs_to(mind, sibling_vault, mo
 
 def test_logical_target_relabels_a_flattened_brain_path(mind, monkeypatch):
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", True)
     concept = mind / "wiki" / "concepts" / "srtp.md"
     concept.parent.mkdir(parents=True)
@@ -251,7 +258,7 @@ def test_first_file_in_an_absent_zone_is_still_inside_it(mind, monkeypatch):
     换一格还活着的区（wiki 的概念层）来钉它。
     """
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
     assert not (mind / "wiki" / "concepts").exists()
     assert logical_target(mind / "wiki" / "concepts" / "chat.md", mind) == (
         "Mind/wiki/concepts/chat.md"
@@ -420,39 +427,31 @@ def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
     assert _git(mind, "status", "--porcelain").strip() == ""
 
 
-# --- 兼容期：旧名与旧写法都还认 ------------------------------------------------
+# --- 旧名与旧写法已停用（11-13「全清，不留过渡态」） --------------------------
 
 
-def test_the_new_pointer_name_wins_over_the_old_one(mind, sibling_vault, tmp_path, monkeypatch):
-    """两个都钉着 ⇒ 认**新**的那个（用户改口的方向）。
-
-    兼容期的口径写死在这里，别处各写一套：``HUMAN_ROOT`` 优先，``SURFACE_ROOT`` 兜底。
-    """
-    other = tmp_path / "other-human-root"
-    other.mkdir()
-    monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
-    monkeypatch.setenv("SURFACE_ROOT", str(other))
-    assert resolve_roots(mind).human == sibling_vault
-
-
-def test_the_old_pointer_name_is_still_honoured(mind, sibling_vault, monkeypatch):
-    """只钉旧的 ``SURFACE_ROOT`` ⇒ 仍认它（兼容期：装机的旧件与旧脚本还在用那个名字）。"""
+def test_the_old_pointer_name_is_no_longer_read(mind, tmp_path, monkeypatch):
+    """只钉旧的 ``SURFACE_ROOT`` ⇒ **不认**（11-13 全清，旧指针名停用）。"""
     monkeypatch.delenv("HUMAN_ROOT", raising=False)
-    monkeypatch.setenv("SURFACE_ROOT", str(sibling_vault))
-    assert resolve_roots(mind).human == sibling_vault
-    assert real_target(HUMAN_LOGICAL, mind) == sibling_vault / "notes"
+    monkeypatch.setattr(paths, "_pinned_human_root", lambda: None)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "surface"))
+    assert resolve_roots(mind).human == home
+    assert real_target(HUMAN_LOGICAL, mind) == home / "notes"
 
 
-def test_the_old_logical_prefix_still_resolves_to_the_same_file(mind, sibling_vault, monkeypatch):
-    """旧写法 ``Surface/notes/…`` 与新写法 ``Notes/…`` 落到**同一个物理文件**。
+def test_the_old_logical_prefix_is_no_longer_translated(mind, sibling_vault, monkeypatch):
+    """旧写法 ``Surface/notes/…`` **不再**被翻译成 ``Notes/…``（11-13 全清）。
 
-    旧路不是错话——存量名册、存量 ``vault.db``、用户抄进对话框的路径都还在用。
+    存量路径得重新指认；它只会被当成脑内一格（``<mind>/Surface/notes``），既不在
+    安全表里，也不会指到用户的笔记上。
     """
     monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
-    assert real_target(LEGACY_LOGICAL, mind) == real_target(HUMAN_LOGICAL, mind)
-    assert real_target("Surface/diary/2026-11-10-Tuesday.md", mind) == (
+    assert is_safe_relative(LEGACY_LOGICAL + "/x.md") is False
+    assert real_target(LEGACY_LOGICAL, mind) != real_target(HUMAN_LOGICAL, mind)
+    assert real_target(LEGACY_LOGICAL, mind) == mind / LEGACY_LOGICAL
+    assert real_target("Surface/diary/2026-11-10-Tuesday.md", mind) != (
         sibling_vault / "diary" / "2026-11-10-Tuesday.md"
-    )
-    assert real_target("Surface/dossiers/projects/Aura/dossier.json", mind) == (
-        sibling_vault / "dossiers" / "projects" / "Aura" / "dossier.json"
     )

@@ -7,7 +7,7 @@
 三个表：
 
 1. **vault_notes** - 学科笔记元数据
-   - id: 主键 = path（Notes/...；旧写法 Surface/notes/... 也认）
+   - id: 主键 = path（``Notes/...``）
    - title, topic, tags JSONB, belongs JSONB, relates JSONB
    - updated, chars, excerpt
 
@@ -34,7 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from plobi.mind.paths import legacy_logical, normalize_logical
+from plobi.mind.paths import normalize_logical
 
 # --- Shared DB path (shared across profiles) ---------------------------
 
@@ -216,14 +216,11 @@ def _row_note(row) -> VaultNote:
 def upsert_note(note: VaultNote) -> None:
     """Insert or update a note record.
 
-    路径一律用**新写法**（``Notes/…``）。同一条笔记若在库里还留着旧写法（``Surface/notes/…``），
-    先把那一行删掉再插——否则重建之后同��篇笔记会**出现两次**（一次旧路径、一次新路径）。
+    路径一律用**种类写法**（``Notes/…``）。旧写法 ``Surface/notes/…`` 已随
+    2026-11-13 的清退停用，库里若有那种行由下一次重建覆盖。
     """
     conn = connect()
     try:
-        old = legacy_logical(note.path)
-        if old != note.path:
-            conn.execute("DELETE FROM vault_notes WHERE path = ?", (old,))
         cursor = conn.execute(
             """INSERT OR REPLACE INTO vault_notes 
                (path, title, topic, tags, belongs, relates, updated, chars, excerpt)
@@ -248,11 +245,11 @@ def delete_note(path: str) -> None:
 
 
 def get_note(path: str) -> Optional[VaultNote]:
-    """Get a note by path（新旧两种写法都查得到）。"""
+    """Get a note by path。"""
     conn = connect()
     try:
         row = None
-        for candidate in (normalize_logical(path), legacy_logical(path), path):
+        for candidate in (normalize_logical(path), path):
             row = conn.execute(
                 "SELECT * FROM vault_notes WHERE path = ?", (candidate,)
             ).fetchone()
@@ -268,8 +265,8 @@ def get_note(path: str) -> Optional[VaultNote]:
 def list_notes(topic: Optional[str] = None) -> List[VaultNote]:
     """List all notes, optionally filtered by topic.
 
-    路径按**新写法**回（``Notes/…``）：库里若还留着旧写法（``Surface/notes/…``），
-    屏上与模型看到的都是新写法——旧行只是还没被重建替换掉。
+    路径一律按**种类写法**回（``Notes/…``）：库里若还留着清退前的旧行，
+    下一次重建会把它换掉。
     """
     conn = connect()
     try:
@@ -400,95 +397,3 @@ def list_diaries(start_date: Optional[str] = None, end_date: Optional[str] = Non
         return [UserDiaryEntry(**dict(row)) for row in rows]
     finally:
         conn.close()
-
-
-# --- Migration utilities -------------------------------------------------
-
-def migrate_notes_from_filesystem(notes_root: Path) -> int:
-    """Scan filesystem and migrate notes to database. Returns count of migrated notes."""
-    from plobi.mind.notes_library import build_library as build_library_from_fs
-    
-    library = build_library_from_fs()
-    count = 0
-    for note_data in library["notes"]:
-        note = VaultNote(
-            path=note_data["path"],
-            title=note_data["title"],
-            topic=note_data.get("topic", ""),
-            tags=note_data.get("tags", []),
-            belongs=note_data.get("belongs", []),
-            relates=[],  # 暂时空着，后续从文件解析
-            updated=note_data.get("updated", ""),
-            chars=note_data.get("chars", 0),
-            excerpt=note_data.get("excerpt", "")
-        )
-        upsert_note(note)
-        count += 1
-    return count
-
-
-def migrate_dossiers_from_filesystem(mind_root: Path) -> int:
-    """Scan filesystem and migrate dossiers to database. Returns count of migrated dossiers.
-
-    真源是**档案本体**（``dossier.json``），这份迁移只把它的**元数据**搬进库当索引：
-    目标／现状／阶段／状态都在 ``profile_json`` 里；md 那一对退役之后不再有正文可搬。
-    """
-    from plobi.mind.agent_dossier import build_index as build_index_from_fs
-
-    index = build_index_from_fs()
-    count = 0
-    for agent_data in index["agents"]:
-        profile = {
-            "goal": agent_data.get("goal", ""),
-            "status": agent_data.get("summary", ""),
-            "state": agent_data.get("status", ""),
-            "stages": agent_data.get("stages", []),
-            "updated": agent_data.get("updated", ""),
-        }
-        dossier = AgentDossier(
-            agent_id=agent_data.get("id", ""),
-            milestones_total=agent_data.get("milestones", {}).get("total", 0),
-            milestones_done=agent_data.get("milestones", {}).get("done", 0),
-            work_path=agent_data.get("workPath", ""),
-            updated=agent_data.get("updated", ""),
-            profile_json=json.dumps(profile, ensure_ascii=False),
-        )
-        upsert_dossier(dossier)
-        count += 1
-    return count
-
-
-def migrate_diary_from_filesystem(diary_root: Path) -> int:
-    """Scan filesystem and migrate diary entries to database. Returns count of migrated entries."""
-    from plobi.mind.diary import list_entries as list_entries_from_fs, read_entry
-    
-    entries = list_entries_from_fs()
-    count = 0
-    for date, meta in entries.items():
-        try:
-            entry_data = read_entry(date)
-            entry = UserDiaryEntry(
-                date=date,
-                content=entry_data.get("text", "") if meta.get("exists") else "",
-                updated=meta.get("updated", "")
-            )
-            upsert_diary(entry)
-            count += 1
-        except Exception as e:
-            logger.warning(f"Failed to migrate diary entry {date}: {e}")
-    return count
-
-
-if __name__ == "__main__":
-    # Quick migration test
-    print("Migrating vault notes...")
-    n = migrate_notes_from_filesystem(Path(__file__).parent.parent.parent / "Surface" / "notes")
-    print(f"Migrated {n} notes")
-    
-    print("\nMigrating agent dossiers...")
-    n = migrate_dossiers_from_filesystem(Path(__file__).parent.parent.parent / "Mind")
-    print(f"Migrated {n} dossiers")
-    
-    print("\nMigrating diary entries...")
-    n = migrate_diary_from_filesystem(Path(__file__).parent.parent.parent / "Surface" / "diary" / "journal")
-    print(f"Migrated {n} diary entries")

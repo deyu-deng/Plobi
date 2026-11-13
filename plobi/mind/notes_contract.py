@@ -123,7 +123,7 @@ def validate_note(logical: str, content: str, notes_root: Path | None = None) ->
 
     ``notes_root`` 是 ``Notes`` 落到盘上的那一格；不传就自己解析一次。
 
-    旧写法 ``Surface/notes/…`` 也认（进来先归一），旧路不是错话。
+    ``Surface/notes/…`` 那套旧写法 2026-11-13 停用（归一已删，不再认）。
     """
     path = normalize_logical((logical or "").strip().replace("\\", "/"))
     if not path.startswith(NOTES_LOGICAL_ROOT + "/"):

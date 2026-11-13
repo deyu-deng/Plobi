@@ -38,7 +38,7 @@ ROSTER_YAML = (
     "    role: l2_project\n"
     "    profile: aura\n"
     "    category: projects\n"
-    "    mind_subtree: Surface/dossiers/projects/Aura\n"
+    "    mind_subtree: Dossiers/projects/Aura\n"
     "    description: 名册上的那一行\n"
     "  agenda:\n"
     "    role: l2_agenda\n"
@@ -81,7 +81,7 @@ def full_home(tmp_path, monkeypatch):
     surface = tmp_path / "surface"
     surface.mkdir(parents=True, exist_ok=True)
     (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
 
     from plobi_state import SessionDB, get_plobi_state_home
@@ -213,7 +213,7 @@ def test_rename_moves_every_identity_keyed_artifact(full_home):
     assert "belongs: AuraPrime" in note
     from plobi.agents.registry import load_registry
 
-    assert load_registry().agents["AuraPrime"].mind_subtree == "Surface/dossiers/projects/AuraPrime"
+    assert load_registry().agents["AuraPrime"].mind_subtree == "Dossiers/projects/AuraPrime"
     # config 那两格
     config_text = (full_home / "config.yaml").read_text(encoding="utf-8")
     assert "default_assignee: AuraPrime" in config_text

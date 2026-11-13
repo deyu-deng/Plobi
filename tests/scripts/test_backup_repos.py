@@ -27,7 +27,7 @@ SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "backup_rep
 
 def _child_env(**extra: str) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("GIT_") and k not in ("MIND_ROOT", "SURFACE_ROOT")}
+           if not k.startswith("GIT_") and k not in ("MIND_ROOT", "HUMAN_ROOT")}
     env.update(extra)
     return env
 
@@ -77,7 +77,7 @@ def _workspace(tmp_path: Path, *, with_mind: bool = True, mind_exists: bool = Tr
         mind = tmp_path / "mind-surface"
         if mind_exists:
             _repo(mind, "brain")
-            _repo(tmp_path / "surface-surface", "surface")
+            _repo(tmp_path / "human-home", "human")
         else:
             mind = tmp_path / "mind-surface-absent"
     return dst, mind
@@ -96,14 +96,14 @@ def _run(script: Path, dest: Path, env: dict[str, str]) -> subprocess.CompletedP
 def test_all_five_repos_produce_verified_bundles(tmp_path: Path) -> None:
     script, mind = _workspace(tmp_path)
     dest = tmp_path / "out"
-    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), SURFACE_ROOT=str(tmp_path / "surface-surface")))
+    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), HUMAN_ROOT=str(tmp_path / "human-home")))
 
     assert proc.returncode == 0, proc.stderr
     made = sorted(p.name for p in dest.glob("*.bundle"))
     assert len(made) == 5, made
-    for repo_name in ("code", "docs", "harmony", "mind", "surface"):
+    for repo_name in ("code", "docs", "harmony", "mind", "human"):
         assert any(f"-{repo_name}-" in n for n in made), made
-    for line in ("code", "docs", "harmony", "mind", "surface"):
+    for line in ("code", "docs", "harmony", "mind", "human"):
         assert f"ok   {line}:" in proc.stdout, proc.stdout
         assert "(verified)" in proc.stdout
 
@@ -134,7 +134,7 @@ def test_mind_root_unset_fails_loudly_and_names_the_brain(tmp_path: Path) -> Non
 def test_mind_root_set_but_directory_missing_is_distinct_from_unset(tmp_path: Path) -> None:
     script, mind = _workspace(tmp_path, mind_exists=False)
     dest = tmp_path / "out"
-    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), SURFACE_ROOT=str(tmp_path / "surface-surface")))
+    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), HUMAN_ROOT=str(tmp_path / "human-home")))
 
     assert proc.returncode != 0
     assert "mind: directory missing" in proc.stdout, proc.stdout
@@ -145,7 +145,7 @@ def test_mind_root_set_but_directory_missing_is_distinct_from_unset(tmp_path: Pa
 def test_repo_without_git_is_reported_not_silently_skipped(tmp_path: Path) -> None:
     script, mind = _workspace(tmp_path, docs_is_repo=False)
     dest = tmp_path / "out"
-    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), SURFACE_ROOT=str(tmp_path / "surface-surface")))
+    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), HUMAN_ROOT=str(tmp_path / "human-home")))
 
     assert proc.returncode != 0
     assert "docs: no .git" in proc.stdout, proc.stdout

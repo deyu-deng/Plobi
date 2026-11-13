@@ -114,19 +114,20 @@ def test_upsert_is_idempotent(db):
     assert vault.get_note("Notes/a.md").title == "A2"
 
 
-def test_the_old_logical_prefix_still_finds_the_note(db):
-    """旧写法 ``Surface/notes/…`` 仍查得到同一条（旧路不是错话）。
+def test_the_old_logical_prefix_no_longer_finds_the_note(db):
+    """旧写法 ``Surface/notes/…`` **查不到**了（2026-11-13 归一已删）。
 
-    库里的行用**新写法**；旧写法只作为查询的一路兜底。
+    库里只认 ``Notes/…`` 这种逻辑路径；``Surface/…`` 那层结构连同它的翻译一起停用，
+    留着半条兜底路就会让下一次重构再长出一次旧布局。
     """
     vault.upsert_note(
         vault.VaultNote(path="Notes/数学/微积分.md", title="微积分", topic="数学")
     )
-    legacy = vault.get_note("Surface/notes/数学/微积分.md")
-    assert legacy is not None
-    assert legacy.title == "微积分"
-    # 回给调用方的永远是新写法。
-    assert legacy.path == "Notes/数学/微积分.md"
+    assert vault.get_note("Surface/notes/数学/微积分.md") is None
+    # 新写法照旧查得到，回给调用方的也是它自己。
+    found = vault.get_note("Notes/数学/微积分.md")
+    assert found is not None and found.title == "微积分"
+    assert found.path == "Notes/数学/微积分.md"
 
 
 def test_dossier_roundtrip(db):
@@ -217,9 +218,13 @@ def _point_at_home(monkeypatch, home: Path):
     """把 ``real_target`` 与 ``vault_db_path`` 一起指到同一个家。
 
     两个必须同源——迁移脚本那道门就是查这一条：库与数据根不在同一家就拒绝跑。
+    ``HUMAN_ROOT`` 也得钉到同一个家：``migrate_vault_db.get_roots()`` 走的是
+    解析器那一梯（``Notes/…`` 落在人读面家里），不钉就会落到 conftest 的临时
+    ``PLOBI_HOME`` 上，于是扫到 0 条。
     """
     from plobi.mind import paths as paths_mod
 
+    monkeypatch.setenv("HUMAN_ROOT", str(home))
     monkeypatch.setattr(
         paths_mod,
         "real_target",
@@ -325,6 +330,7 @@ def test_missing_db_falls_back_to_filesystem(monkeypatch, tmp_path):
     from plobi.mind import surface_api
 
     surface = _make_surface(tmp_path)
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setattr(
         paths_mod, "real_target", lambda logical, root=None: surface / _physical(logical)
     )

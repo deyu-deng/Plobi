@@ -36,7 +36,7 @@ def vault(monkeypatch, tmp_path):
     (mind / "wiki").mkdir(parents=True)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
 
     return surface
 
@@ -87,7 +87,7 @@ def test_missing_notes_root_raises_instead_of_reporting_an_empty_graph(monkeypat
     (mind / "wiki").mkdir(parents=True)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "surface"))
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path / "surface"))
 
     with pytest.raises(FileNotFoundError):
         notes_links.build_link_graph()
@@ -121,7 +121,7 @@ def test_route_reports_unavailable_instead_of_an_empty_graph(monkeypatch, tmp_pa
     (mind / "wiki").mkdir(parents=True)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "surface"))
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path / "surface"))
 
     response = asyncio.run(surface_api.get_surface_note_links())
     body = response if isinstance(response, dict) else json.loads(response.body)

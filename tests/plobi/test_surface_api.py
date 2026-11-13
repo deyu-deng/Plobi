@@ -21,7 +21,7 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Surface/dossiers/projects/Aura
+        mind_subtree: Dossiers/projects/Aura
         project_path: D:/projects/Aura
       电工电子学:
         role: l2_course
@@ -51,7 +51,7 @@ def live(monkeypatch, tmp_path):
     )
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
     return tmp_path
 
@@ -137,7 +137,7 @@ def l1_scope_live(monkeypatch, tmp_path):
     ).lstrip()
     (tmp_path / "projects.yaml").write_text(roster, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
     return tmp_path
 
@@ -195,7 +195,7 @@ def _put(path, **body):
 
 def test_save_note_writes_exact_bytes_without_adding_a_newline(notes_live):
     text = "---\ntitle: 微积分\n---\n\n## 第1章 极限\n\n改过的正文"
-    response = _put("Surface/notes/数学/微积分.md", text=text)
+    response = _put("Notes/数学/微积分.md", text=text)
     assert response["ok"] is True
     assert response["data"]["created"] is False
     assert (notes_live / "微积分.md").read_text(encoding="utf-8") == text
@@ -203,7 +203,7 @@ def test_save_note_writes_exact_bytes_without_adding_a_newline(notes_live):
 
 def test_save_note_rejects_a_stale_base_with_409(notes_live):
     response = _put(
-        "Surface/notes/数学/微积分.md",
+        "Notes/数学/微积分.md",
         text="完全不同的新正文",
         base="---\ntitle: 微积分\n---\n\n## 第1章 极限\n\n我打开时看到的是旧的",
     )
@@ -213,24 +213,24 @@ def test_save_note_rejects_a_stale_base_with_409(notes_live):
 
 
 def test_create_makes_a_new_note_and_its_folder(notes_live):
-    response = _put("Surface/notes/物理/新的一章.md", text="# 新的一章\n", base="", create=True)
+    response = _put("Notes/物理/新的一章.md", text="# 新的一章\n", base="", create=True)
     assert response["ok"] is True
     assert response["data"]["created"] is True
     assert (notes_live.parent / "物理" / "新的一章.md").read_text(encoding="utf-8") == "# 新的一章\n"
 
 
 def test_saving_an_unknown_path_without_create_is_404_not_a_new_file(notes_live):
-    response = _put("Surface/notes/数学/拼错了.md", text="不该被静默新建")
+    response = _put("Notes/数学/拼错了.md", text="不该被静默新建")
     assert response.status_code == 404
     assert not (notes_live / "拼错了.md").exists()
 
 
 def test_save_note_refuses_escapes_and_non_markdown(notes_live):
     for bad in (
-        "Surface/notes/../../outside.md",
-        "Surface/diary/2026-11-04.md",
-        "Surface/notes/数学/微积分.txt",
-        "Surface/notes/.obsidian/workspace.md",
+        "Notes/../../outside.md",
+        "Diary/2026-11-04.md",
+        "Notes/数学/微积分.txt",
+        "Notes/.obsidian/workspace.md",
     ):
         response = _put(bad, text="x", create=True)
         assert response.status_code == 400, bad
@@ -238,7 +238,7 @@ def test_save_note_refuses_escapes_and_non_markdown(notes_live):
 
 
 def test_save_note_requires_a_text_string(notes_live):
-    response = _put("Surface/notes/数学/微积分.md", text=["不是字符串"])
+    response = _put("Notes/数学/微积分.md", text=["不是字符串"])
     assert response.status_code == 400
 
 
@@ -264,7 +264,7 @@ def test_http_roundtrip_binds_body_and_query(notes_live):
     app = FastAPI()
     app.include_router(router, prefix="/api")
     client = TestClient(app)
-    path = "Surface/notes/数学/微积分.md"
+    path = "Notes/数学/微积分.md"
     url = "/api/surface/notes/content?path=" + quote(path)
     original = notes_live.joinpath("微积分.md").read_text(encoding="utf-8")
 
@@ -287,7 +287,7 @@ def surface_gone(monkeypatch, tmp_path):
     mind = tmp_path / "mind"
     mind.mkdir()
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "surface-gone"))
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path / "surface-gone"))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
     return tmp_path
 
@@ -317,7 +317,7 @@ def test_root_gone_is_503_even_when_the_db_still_has_rows(surface_gone, monkeypa
     monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "vault.db"))
     vault.connect()
     vault.upsert_note(vault.VaultNote(
-        path="Surface/notes/数学/微积分.md", title="微积分", topic="数学",
+        path="Notes/数学/微积分.md", title="微积分", topic="数学",
         tags=[], belongs=[], updated="2026-11-08T00:00:00", chars=10, excerpt="",
     ))
 

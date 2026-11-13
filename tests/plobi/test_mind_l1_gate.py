@@ -24,7 +24,7 @@ def roots(tmp_path, monkeypatch):
     (surface / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     mind.mkdir()
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
     return mind, surface
 
@@ -120,5 +120,5 @@ def test_an_approved_plan_aimed_at_the_human_surface_is_still_refused(roots, tmp
 
     assert report.ok is False
     assert report.denied and "not-a-memory-zone" in report.denied[0].reason
-    assert not (Path(os.environ["SURFACE_ROOT"]) / "notes" / "ch01.md").exists()
+    assert not (Path(os.environ["HUMAN_ROOT"]) / "notes" / "ch01.md").exists()
     assert result.staged, "计划照旧出得来——被拒的是落点，不是那道闸"

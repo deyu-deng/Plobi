@@ -367,16 +367,16 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #     MindWriter's ``_git_toplevel`` guard then refuses to commit into it,
     #     which is exactly what we want in a test.
     fake_mind = tmp_path / "mind_vault"
-    (fake_mind / "Surface" / "dossiers" / "projects").mkdir(parents=True)
+    (fake_mind / "wiki").mkdir(parents=True)
     (fake_mind / "AGENTS.md").write_text("# Mind — fake surface for tests\n", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(fake_mind))
 
-    # 3d. Blank SURFACE_ROOT too. Since the 2026-10-14 split the human surface is a
-    #     sibling repo pinned in HKCU\Environment, so a test inheriting it would
-    #     resolve ``Surface/…`` to the user's REAL surface and write fake project trees
-    #     into it. Unset, the resolver answers ``<MIND_ROOT>/Surface`` — which is the
-    #     fake surface the three lines above just built.
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
+    # 3d. Blank HUMAN_ROOT too. The human side is its own home (2026-11-13: it lives in
+    #     the data home's top level and never inside the brain), so a test inheriting
+    #     the pin would resolve ``Notes/…`` to the user's REAL notes and write fake
+    #     trees into it. Unset, the resolver has no human side at all — tests that need
+    #     one pin it to their own tmp_path.
+    monkeypatch.delenv("HUMAN_ROOT", raising=False)
 
     # 3e. …and blind the **registry** copy of that pin, for the same reason.
     #     The resolver reads HKCU\Environment when the env var is absent or stale
@@ -387,7 +387,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     try:
         from plobi.mind import paths as _mind_paths
 
-        monkeypatch.setattr(_mind_paths, "_pinned_surface_root", lambda: None)
+        monkeypatch.setattr(_mind_paths, "_pinned_human_root", lambda: None)
     except Exception:  # pragma: no cover - the import must never break the suite
         pass
 

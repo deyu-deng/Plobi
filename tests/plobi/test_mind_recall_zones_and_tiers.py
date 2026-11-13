@@ -25,7 +25,7 @@ def brain(tmp_path, monkeypatch):
     (mind / "wiki" / "concepts").mkdir(parents=True)
     (surface / "notes").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     return mind, surface
 
 

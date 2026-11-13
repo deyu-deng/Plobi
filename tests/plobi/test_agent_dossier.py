@@ -24,12 +24,12 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Surface/dossiers/projects/Aura
+        mind_subtree: Dossiers/projects/Aura
         project_path: D:/projects/Aura
       SRTP:
         role: l2_research
         category: research
-        mind_subtree: Surface/dossiers/research/SRTP
+        mind_subtree: Dossiers/research/SRTP
         project_path: D:/Research/01-SRTP
       电工电子学:
         role: l2_course
@@ -38,7 +38,7 @@ ROSTER = textwrap.dedent(
       agenda:
         role: l1_secretary
         category: butler
-        mind_subtree: Surface/dossiers/butler
+        mind_subtree: Dossiers/butler
     """
 ).lstrip()
 
@@ -84,7 +84,7 @@ def roots(tmp_path, monkeypatch):
     (surface / "dossiers" / "research" / "SRTP").mkdir(parents=True)
     (surface / "dossiers" / "butler").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     roster = tmp_path / "projects.yaml"
     roster.write_text(ROSTER, encoding="utf-8")
     return tmp_path, surface, roster
@@ -106,7 +106,7 @@ def test_index_shape_and_categories(roots):
     assert [d["key"] for d in aura["docs"]] == ["research"]
     assert aura["docs"][0]["exists"] is True
     assert aura["categoryLabel"] == "项目"
-    assert aura["homeLabel"] == "Surface/dossiers/projects/Aura"
+    assert aura["homeLabel"] == "Dossiers/projects/Aura"
     assert aura["workPath"] == "D:/projects/Aura"
 
     srtp = by_name["SRTP"]

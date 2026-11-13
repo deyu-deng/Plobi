@@ -29,8 +29,8 @@ PROFILE: dict = {
     "别人的键": {"留着": True},
 }
 
-AURA = "Surface/dossiers/projects/Aura/dossier.json"
-SRTP = "Surface/dossiers/research/SRTP/dossier.json"
+AURA = "Dossiers/projects/Aura/dossier.json"
+SRTP = "Dossiers/research/SRTP/dossier.json"
 
 
 @pytest.fixture()
@@ -50,7 +50,7 @@ def roots(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     provider = MindProvider()
     provider.initialize("sess-dossier", agent_context="primary")
     return mind, surface, provider
@@ -120,9 +120,9 @@ def test_paths_that_are_not_dossier_records_are_refused(roots):
     _mind, _surface, provider = roots
 
     for path in (
-        "Surface/dossiers/projects/Aura/plan.md",
-        "Surface/dossiers/projects/Aura",
-        "Surface/notes/某篇.md",
+        "Dossiers/projects/Aura/plan.md",
+        "Dossiers/projects/Aura",
+        "Notes/某篇.md",
         "Mind/wiki/concepts/x.md",
     ):
         result = _call(provider, path=path, goal="x")

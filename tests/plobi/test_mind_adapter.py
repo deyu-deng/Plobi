@@ -90,7 +90,6 @@ def surface(tmp_path, monkeypatch):
     )
 
     monkeypatch.setenv("HUMAN_ROOT", str(human))
-    monkeypatch.setenv("SURFACE_ROOT", str(human))
     # mind_sync/MindWriter 走 plobi.mind.paths.resolve_root（env 优先）——
     # 必须指到临时脑，否则会解析到真实仓库的 mind/ 并写进去。
     monkeypatch.setenv("MIND_ROOT", str(root))
@@ -174,7 +173,6 @@ def test_profile_block_is_bounded(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     monkeypatch.setenv("HUMAN_ROOT", str(human))
-    monkeypatch.setenv("SURFACE_ROOT", str(human))
 
     block = MIND_MOD._profile_block(root)
     assert block  # 两段都真读到了东西，不是空串

@@ -39,7 +39,7 @@ def brain(tmp_path, monkeypatch):
     (mind / "wiki" / "meta" / "schema.json").write_text(
         json.dumps(_SCHEMA, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
     return mind, surface
 

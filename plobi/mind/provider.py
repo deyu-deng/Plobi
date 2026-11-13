@@ -21,9 +21,9 @@ Why core and not a plugin?
 
 Compliance boundary (CRITICAL — see plan §3/§5):
   Mind's git pre-commit verifier BLOCKS commits where:
-    (1) Surface/dossiers/projects top-level dir names != AGENTS.md §1 declaration, OR
+    (1) Dossiers/projects top-level dir names != AGENTS.md §1 declaration, OR
     (2) （技能已不在脑仓：2026-10-25 迁到 $PLOBI_HOME/skills，本条对脑不再适用）
-  **记忆**的读写只在 ``MEMORY_ZONES``（脑里的 ``Mind/wiki/*``）内——人读面 ``Surface/…``
+  **记忆**的读写只在 ``MEMORY_ZONES``（脑里的 ``Mind/wiki/*``）内——人读面 ``Notes/``／``Diary/``…
   不属于记忆系统（用户 10-24「surface 不要进记忆系统」、10-25「算越界」）。宽的那张
   ``SAFE_PREFIXES`` 只服务管道写入（课程笔记、名册登记），别把两者当同一张表。
   Writing outside either risks BLOCKING Mind's commits or polluting the brain.
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 # --- Compliance boundary -------------------------------------------------
 # Real writes MUST resolve under one of these relative prefixes (relative to
 # MIND_ROOT). These are the zones Mind's verifier does NOT block. Do not add
-# Surface/dossiers/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
+# Dossiers/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
 # own AGENTS.md declarations, which this plugin must never do automatically.
 # NOTE: the Plobi project zone is the official capitalised ``Plobi`` dir —
 # the lowercase ``plobi`` dir is a legacy Plobi archive and must never be
@@ -92,8 +92,8 @@ AGENT_NOTES_TOOL = "agent_notes"
 NOTE_RENAME_TOOL = "note_rename"
 NOTE_DELETE_TOOL = "note_delete"
 
-# 每把工具**只碰一类**（逻辑前缀；旧写法 ``Surface/…`` 进 paths 之前就归一成这些，
-# 所以模型写旧路径照样能用，只是回话里不再广告那个词）。
+# 每把工具**只碰一类**（逻辑前缀）。``Surface/…`` 那套旧写法 2026-11-13 停用，
+# 现在只认这几种逻辑头。
 NOTE_PREFIX = "Notes"
 DIARY_PREFIX = "Diary"
 DOSSIER_PREFIX = "Dossiers"
@@ -115,8 +115,8 @@ BRAIN_LOGICAL_PREFIX = "Mind/"
 def _to_logical(path: str) -> str:
     """模型说的路径 → 内部用的逻辑路径。
 
-    两处归一：``Mind/…`` 归成内部的 ``Mind/…``；旧的 ``Surface/notes/…`` 归成
-    ``Notes/…``（**旧路不是错话**，只是不再广告那个词）。
+    一处归一：``Mind/…`` 归成内部的 ``Mind/…``。``normalize_logical`` 只管斜杠与首尾，
+    ``Surface/notes/…`` 那套旧写法 2026-11-13 已删（不再翻案）。
     """
     text = str(path or "").replace("\\", "/").strip("/")
     if text.startswith(BRAIN_SPOKEN_PREFIX):
@@ -234,7 +234,7 @@ def _profile_block(root: Path, *, include_persona: bool = True, current: str = "
     """档案状态的窄切读取（无模型、纯文件）。
 
     来源：``<MIND_ROOT>/persona/profile.md``（详版画像；用户 10-24：画像不是 skill，
-    是脑的一部分）＋ ``Surface/dossiers/{projects,research}/<档案>/dossier.json``
+    是脑的一部分）＋ ``Dossiers/{projects,research}/<档案>/dossier.json``
     （**档案本体**：目标与现状）。
 
     **屏上与上下文同一份数据**：屏上那张卡显示的现状（``agent_dossier`` 的 ``summary``
@@ -1329,7 +1329,7 @@ class MindProvider(MemoryProvider):
           ``Mind/wiki/memory/<slug>.md``. surface 不进记忆系统（用户 10-24）。
         - 双重检查：既要落在**记忆区**（:func:`is_memory_zone` ⇒ ``MEMORY_ZONES``，
           前缀表里属于脑的那半），也要过管道闸 ``_is_safe``。所以一条指向
-          ``Surface/…`` 的记忆写入会被拒——尽管管道服务确实有正当理由往那儿写课程笔记。
+          ``Notes/`` 那类的记忆写入会被拒——尽管管道服务确实有正当理由往那儿写课程笔记。
 
         Triggered by MemoryManager.notify_memory_tool_write (verified caller
         at tool_executor.py:1301 / agent_runtime_helpers.py:2298).

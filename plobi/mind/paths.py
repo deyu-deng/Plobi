@@ -2,9 +2,8 @@
 
 Three rules from the North Star contract:
 
-- the human side's root is resolved from ``HUMAN_ROOT`` (the old name
-  ``SURFACE_ROOT`` is still accepted); **no drive letters in code**
-  (Docs/SPEC-FINAL.md, Mind path rule)
+- the human side's root is resolved from ``HUMAN_ROOT``; **no drive letters
+  in code** (Docs/SPEC-FINAL.md, Mind path rule)
 - writes stay inside the prefixes Mind's own verifier tolerates; creating a new
   ``Dossiers/projects/<x>`` or a skill under ``$PLOBI_HOME/skills`` would require editing Mind's
   AGENTS.md declarations, which no agent may do automatically
@@ -13,7 +12,6 @@ Three rules from the North Star contract:
   (ruling 2026-10-14, decisions.md in the brain). The human side may sit in a
   sibling repository, so a logical path is only meaningful together with the
   ``Roots`` pair below — never concatenate one onto a root by hand.
-  The old ``Surface/…`` spelling still resolves — it is not wrong, just old.
 """
 
 from __future__ import annotations
@@ -45,21 +43,9 @@ HUMAN_KINDS: dict[str, str] = {
     "Meta": "meta",
     "Inbox": "inbox",
 }
-# 物理名 → 逻辑头（归一时用；只认这一张，别处各写一套迟早分叉）。
-HUMAN_KIND_BY_DIR: dict[str, str] = {v: k for k, v in HUMAN_KINDS.items()}
-
-# 旧名（兼容期）：``Surface/notes/…`` 这类写法**仍解析**，只是不再广告。
-# 旧路不是错话——存量名册里写着 ``Surface/dossiers/projects/…``、用户自己抄进
-# 对话框的路径、装机版留下的脚本，都还在用；归一在 :func:`normalize_logical` 一处做。
-LEGACY_SURFACE_LOGICAL = "Surface"
-# 脑旁边的**旧物理布局**（老机器上人读面还在 ``<脑>/Surface`` 里）。物理名，
-# 与逻辑头同名但不是一回事——别拿它当逻辑前缀用。
-LEGACY_SURFACE_DIR = "Surface"
-
-# 人读面的根指针：**新名 ``HUMAN_ROOT`` 优先**，旧名 ``SURFACE_ROOT`` 仍认
-# （兼容期；两个都钉着时以新名为准——用户改口的方向）。
+# 人读面的根指针。只认 ``HUMAN_ROOT``：旧名 ``SURFACE_ROOT`` 的读侧兼容
+# 2026-11-13 一并停用（用户「全清，不留过渡态」）。
 HUMAN_ROOT_ENV = "HUMAN_ROOT"
-LEGACY_HUMAN_ROOT_ENV = "SURFACE_ROOT"
 
 SAFE_PREFIXES: tuple[str, ...] = (
     # 人读面上的产物（按种类分家，物理目录不变）：一个 Agent 的档案就是它自己那一格
@@ -89,8 +75,8 @@ SAFE_PREFIXES: tuple[str, ...] = (
 
 # 记忆系统的活动面 = 上面那张表里属于**脑**的那几格。
 #
-# ``SAFE_PREFIXES`` 比这一格宽，而且必须宽：课程分身往 ``Surface/notes/<课>/`` 写学科笔记、
-# 名册往 ``Surface/dossiers/research/<项目>`` 登记，那些是**人读面上的产物**，走同一个 MindWriter 的
+# ``SAFE_PREFIXES`` 比这一格宽，而且必须宽：课程分身往 ``Notes/<课>/`` 写学科笔记、
+# 名册往 ``Dossiers/research/<项目>`` 登记，那些是**人读面上的产物**，走同一个 MindWriter 的
 # 管道路由（裁定 72／126 的两仓拆分＋跨仓 git），不是记忆。
 # 用户 2026-10-24/25 两次判「surface 不要进记忆系统」「摘要往 surface 写算越界」，落到代码上
 # 就是这一格：记忆的**召回**与**记忆写入**只认 ``Mind/…``，从结构上派生、不另列一张会漂的表。
@@ -100,45 +86,19 @@ MEMORY_ZONES: tuple[str, ...] = tuple(
 
 
 def normalize_logical(logical: str) -> str:
-    """逻辑路径归一：旧写法 → 新写法（旧路不是错话，只是不再广告）。
+    """逻辑路径归一：反斜杠换正斜杠、去掉首尾斜杠。
 
-    ``Surface/notes/x.md`` ⇒ ``Notes/x.md``；``Surface/dossiers/…`` ⇒ ``Dossiers/…``。
-    认不出来的写法**原样返回**——``Surface/`` 下别的子目录仍旧按老布局解析，
-    不在这里猜它属于哪一类。
-
-    归一只在这一处做：旧名册里的 ``mind_subtree``、存量 ``vault.db`` 里的逻辑路径、
-    用户抄进对话框的旧写法，进 :func:`real_target` 之前都先过这一只。
+    2026-11-13 起**只做这两件事**：``Surface/…`` 那套旧写法连同它的解析分支
+    一起删了（用户「全清，不留过渡态」），所以这里不再替旧写法翻案——认不出的
+    写法原样返回，由 :func:`real_target` 当脑内路径处理，或由护栏拒掉。
     """
-    text = str(logical or "").replace("\\", "/").strip("/")
-    head, sep, rest = text.partition("/")
-    if head != LEGACY_SURFACE_LOGICAL or not rest:
-        return text
-    parts = rest.split("/", 1)
-    kind = HUMAN_KIND_BY_DIR.get(parts[0])
-    if kind is None:
-        return text
-    return kind if len(parts) == 1 else f"{kind}/{parts[1]}"
-
-
-def legacy_logical(logical: str) -> str:
-    """新写法 → 旧写法（``Notes/x`` ⇒ ``Surface/notes/x``）。
-
-    只在**读侧兜底**用：存量 ``vault.db`` 里的旧路径要能查到、也要在重建时被替换掉。
-    新写进库的一律用新写法——这一只不是第二套真源，只是把旧行认出来。
-    """
-    text = str(logical or "").replace("\\", "/").strip("/")
-    head, sep, rest = text.partition("/")
-    physical = HUMAN_KINDS.get(head)
-    if physical is None:
-        return text
-    tail = f"{LEGACY_SURFACE_LOGICAL}/{physical}"
-    return f"{tail}/{rest}" if sep else tail
+    return str(logical or "").replace("\\", "/").strip("/")
 
 
 def is_human_logical(logical: str) -> bool:
-    """这条逻辑路径落在人读面那一半（新的按种类，旧名也算）。"""
+    """这条逻辑路径落在人读面那一半（按种类）。"""
     head = str(logical or "").replace("\\", "/").strip("/").partition("/")[0]
-    return head in HUMAN_KINDS or head == LEGACY_SURFACE_LOGICAL
+    return head in HUMAN_KINDS
 
 
 def human_kind(logical: str) -> Optional[str]:
@@ -182,13 +142,13 @@ def is_memory_zone(logical: str) -> bool:
 AI_WRITE_ROOT = "Mind/wiki/daily"
 
 # Ruling 2026-10-14: the brain loses its ``Mind/`` level (flatten), and the human
-# surface leaves for ``SURFACE_ROOT``. The move commit flips this one line; until it
+# side leaves for ``HUMAN_ROOT``. The move commit flips this one line; until it
 # does, every logical ``Mind/…`` still resolves under ``<mind>/Mind``.
 #
 # Deliberately a declared flag, not "does ``<mind>/Mind`` exist": inferring it from
 # the disk answers "flattened" for any empty directory — every test fake surface and
 # every fresh clone — and would silently relocate AI writes to the brain root.
-# The surface half does not need a flag because ``SURFACE_ROOT`` is a positive pointer.
+# The human half does not need a flag because ``HUMAN_ROOT`` is a positive pointer.
 BRAIN_IS_FLATTENED = True
 
 
@@ -421,17 +381,26 @@ class Roots:
     human: Optional[Path] = None
 
     def base_for(self, logical: str) -> Path:
-        """The root a logical path is anchored to, without touching the disk."""
+        """The root a logical path is anchored to, without touching the disk.
+
+        人读面那半没有「落回脑里」这一档（2026-11-13 全清）：脑里只放脑的东西，
+        数据家算不出来＝配置错，宁可 raise 也不往脑里造第二份。
+        """
         head, _, _ = normalize_logical(logical).strip("/").partition("/")
-        if head in HUMAN_KINDS or head == LEGACY_SURFACE_LOGICAL:
-            return self.human if self.human is not None else self.mind / LEGACY_SURFACE_DIR
+        if head in HUMAN_KINDS:
+            if self.human is None:
+                raise MindUnavailable(
+                    "the human side has no home: data home unknown and "
+                    "HUMAN_ROOT unset (it never falls back into the brain)"
+                )
+            return self.human
         return self.mind
 
 
 def _pinned_human_root() -> Optional[str]:
     """Windows: 人读面那根指针在用户 env（HKCU\\Environment）里钉的那一份。
 
-    新名 ``HUMAN_ROOT`` 优先，旧名 ``SURFACE_ROOT`` 仍认（兼容期）。
+    只认 ``HUMAN_ROOT``（旧名 ``SURFACE_ROOT`` 的读侧兼容 2026-11-13 停用）。
     "
 
     ``setx``／``[Environment]::SetEnvironmentVariable`` 只对**之后启动**的进程生效。
@@ -453,11 +422,11 @@ def _pinned_human_root() -> Optional[str]:
         import winreg
 
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
-            for name in (HUMAN_ROOT_ENV, LEGACY_HUMAN_ROOT_ENV):
-                try:
-                    value, _ = winreg.QueryValueEx(key, name)
-                except FileNotFoundError:
-                    continue
+            try:
+                value, _ = winreg.QueryValueEx(key, HUMAN_ROOT_ENV)
+            except FileNotFoundError:
+                pass
+            else:
                 text = str(value or "").strip()
                 if text:
                     return text
@@ -467,15 +436,8 @@ def _pinned_human_root() -> Optional[str]:
 
 
 def _env_human_root() -> str:
-    """继承来的 env 里的那根指针：**新名 ``HUMAN_ROOT`` 优先**，旧名 ``SURFACE_ROOT`` 仍认。
-
-    两个都钉着时以新名为准——用户改口的方向。
-    """
-    for name in (HUMAN_ROOT_ENV, LEGACY_HUMAN_ROOT_ENV):
-        value = os.environ.get(name, "").strip()
-        if value:
-            return value
-    return ""
+    """继承来的 env 里的那根指针：只认 ``HUMAN_ROOT``。"""
+    return os.environ.get(HUMAN_ROOT_ENV, "").strip()
 
 
 def _human_pointer() -> Optional[Path]:
@@ -485,11 +447,11 @@ def _human_pointer() -> Optional[Path]:
 
     - env 指的目录还在 ⇒ 用 env（env 是当下的选择，用户可能故意临时指到别处）；
     - env 指的目录不在、注册表那份在 ⇒ env 是**继承来的陈旧值**，改读注册表
-      （这台机器上长驻进程的常态，见 :func:`_pinned_surface_root`）；
+      （这台机器上长驻进程的常态，见 :func:`_pinned_human_root`）；
     - env 指的目录不在、注册表也没钉或也一样 ⇒ 仍用 env。这条保住「指针先钉、
       表面后建」那条设计（新装时表面还没建出来，指针照样算数），也保住「不静默换家」。
 
-    返回 ``None`` = **压根没钉**（落哪儿由 :func:`_surface_root` 答）。
+    返回 ``None`` = **压根没钉**（落哪儿由 :func:`_human_root` 答）。
     """
     env = _env_human_root()
     pinned = _pinned_human_root()
@@ -510,33 +472,21 @@ def _human_pointer() -> Optional[Path]:
 
 
 def _human_root(mind: Path | str | None = None) -> Optional[Path]:
-    """人读面**落在哪儿**：钉住的地方 ⇒ 钉住的地方；没钉 ⇒ 脑旁边的老布局（若还在）
-    ⇒ **数据家本体**。
+    """人读面**落在哪儿**：钉住的地方 ⇒ 钉住的地方；没钉 ⇒ **数据家本体**。
 
     2026-11-08（用户 11-08 16:4x 拍的口径）：「**这个是我决定的。数据目录不是就一个就行了吗？
     而且不需要环境变量也可以运行呀。mind和日记还有笔记和档案都是用户的不过是用户指定数据目录下的
     不同文件夹而已。**」⇒ 没钉指针时，人读面就是**数据家本体**（``<家>/notes``／``<家>/diary``／
     ``<家>/dossiers``），脑在 ``<家>/mind``——**一个家，不靠环境变量**。
 
-    为什么还留着「老布局」那一档：有的机器（这台**装机态**那一份）人读面**已经**在
-    ``<脑>/Surface`` 里（数据家的 ``notes``／``diary`` 是指着它的 junction）——那就
-    **不静默换家**：它在那儿就还认它。换家＝把用户自己的笔记挪到别处去，那是另一件事。
-
-    开发态那一份的脑仓里**没有** ``Surface``（现核：``D:\\Data\\AppData\\Plobi-Dev\\mind``
-    下面是 ``wiki``／``persona``／``raw``／…）⇒ 它落到数据家本体，与用户说的那个形状一致。
+    2026-11-13（用户「全清，不留过渡态」）：``<脑>/Surface`` 那一档连同 ``Surface``
+    目录本身一起停用——脑里只有脑的东西（``wiki``／``persona``／``AGENTS.md``），
+    人读面一律落在数据家本体。存量机器的 ``Surface`` 由迁移搬走，代码这里不再认它。
     """
     pinned = _human_pointer()
     if pinned is not None:
         return pinned
 
-    brain = Path(mind) if mind is not None else resolve_root()
-    if brain is not None:
-        legacy = brain / LEGACY_SURFACE_DIR
-        try:
-            if legacy.is_dir():
-                return legacy
-        except OSError:
-            pass
     return _data_home()
 
 
@@ -544,32 +494,29 @@ def resolve_roots(explicit_mind: Path | str | None = None) -> Optional[Roots]:
     mind = resolve_root(explicit_mind)
     if mind is None:
         return None
-    # A pinned pointer that does not exist yet is still the pointer: the surface
-    # may be legitimately empty on a fresh setup, and silently falling back to
-    # ``<mind>/Surface`` would hand writers two different homes.  (The one
-    # exception is a pointer whose directory is *gone* while the registry pin is
-    # alive — that is a stale inherited value, not a fresh setup; see
-    # :func:`_surface_pointer`.)
+    # A pinned pointer that does not exist yet is still the pointer: the human
+    # side may be legitimately empty on a fresh setup.  There is no fallback
+    # into the brain any more (2026-11-13), so an unpinned machine resolves to
+    # the data home and never to a second, shadow copy.  (The one exception is
+    # a pointer whose directory is *gone* while the registry pin is alive —
+    # that is a stale inherited value; see :func:`_human_pointer`.)
     return Roots(mind=mind, human=_human_root(mind))
 
 
 def real_target(relative: str, root: Union[Path, Roots, None] = None) -> Path:
     """Map a logical Mind path onto wherever it physically lives right now.
 
-    Three layouts are live at once during the move, and all three must keep
-    working without a flag:
+    One layout only (2026-11-13「全清，不留过渡态」——``<mind>/Surface`` 那一种已删):
 
-    1. legacy — ``<mind>/Surface/notes``, ``<mind>/Mind/wiki``
-    2. surface split — ``<surface>/notes``, ``<mind>/Mind/wiki``
-    3. both done — ``<surface>/notes``, ``<mind>/wiki``
+    - human side — ``<HUMAN_ROOT>/notes``／``/diary``／``/dossiers``／…
+    - brain — ``<mind>/wiki`` (``BRAIN_IS_FLATTENED``)
 
     The human half is decided by ``HUMAN_ROOT`` (an env pointer, never a guess),
     so a write can only ever have one home. The brain half is decided by
     :data:`BRAIN_IS_FLATTENED`, flipped by the move commit itself.
 
-    逻辑头有两种写法：新的按**种类**（``Notes``／``Diary``／``Dossiers``／``Meta``／
-    ``Inbox``），旧的 ``Surface/…`` 仍解析——进这一只之前先过
-    :func:`normalize_logical`，所以旧路与新路落到**同一个物理文件**。
+    逻辑头只有**种类**一种写法（``Notes``／``Diary``／``Dossiers``／``Meta``／
+    ``Inbox``）。``Surface/…`` 那条旧路 2026-11-13 已删。
     """
     roots = _roots_or(root)
     cleaned = normalize_logical(Path(relative).as_posix().strip("/"))
@@ -580,9 +527,6 @@ def real_target(relative: str, root: Union[Path, Roots, None] = None) -> Path:
         base = roots.base_for(cleaned)
         kind_dir = HUMAN_KINDS[head]
         return base / kind_dir / tail if tail else base / kind_dir
-    if head == LEGACY_SURFACE_LOGICAL:
-        base = roots.base_for(cleaned)
-        return base / tail if tail else base
     if head == MIND_LOGICAL and BRAIN_IS_FLATTENED:
         return roots.mind / tail if tail else roots.mind
     return roots.mind / cleaned
@@ -660,9 +604,8 @@ def is_safe_relative(relative: str) -> bool:
     posix = normalize_logical(Path(relative).as_posix()).lstrip("./")
     if not posix or posix.startswith("..") or Path(posix).is_absolute():
         return False
-    # 逐段查 ``..``／空段：新前缀只有一层（``Notes``），光靠「前缀匹配」挡不住
-    # ``Notes/../../etc/passwd``——旧写法 ``Surface/notes/…`` 有两层，穿越路径压根
-    # 不以它开头，恰好被挡住了。换成新前缀后这条护栏就没了，得自己写死。
+    # 逐段查 ``..``／空段：前缀只有一层（``Notes``），光靠「前缀匹配」挡不住
+    # ``Notes/../../etc/passwd``（原先挡它的那层 ``Surface/`` 已删），得自己写死。
     if any(part in ("", ".", "..") for part in posix.split("/")):
         return False
     return any(posix == prefix or posix.startswith(prefix + "/") for prefix in SAFE_PREFIXES)
@@ -692,9 +635,7 @@ def safe_target(
     except ValueError as exc:  # symlink or traversal escape
         raise UnsafeMindPath(f"{relative!r} escapes its root") from exc
     if creating and roots.human is None and is_human_logical(logical):
-        if not (roots.mind / LEGACY_SURFACE_DIR).is_dir():
-            raise UnsafeMindPath(
-                f"{relative!r} would recreate {roots.mind / LEGACY_SURFACE_DIR} inside the brain repo; "
-                f"the human side has moved — point {HUMAN_ROOT_ENV} at it"
-            )
+        raise UnsafeMindPath(
+            f"{relative!r} has no human root; point {HUMAN_ROOT_ENV} at one"
+        )
     return target

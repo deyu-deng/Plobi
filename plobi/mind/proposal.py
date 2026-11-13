@@ -7,7 +7,7 @@ Two properties matter more than the feature itself:
 - **an approval is bound to the object it was granted against**. The approval hash
   covers the resolved roots (realpath + their own git toplevel + their HEAD), so a
   plan approved for one brain cannot be replayed onto a renamed or re-pointed
-  ``MIND_ROOT``/``SURFACE_ROOT``. Re-checked at apply time, not just at approve time.
+  ``MIND_ROOT``/``HUMAN_ROOT``. Re-checked at apply time, not just at approve time.
 - **each change carries the old bytes it expects to replace**. If the user edited
   the file meanwhile, the plan is stale and the write is refused rather than
   silently winning over a human.
@@ -134,12 +134,11 @@ def never_auto(logical: str, mode: str) -> str:
         return "unknown-mode"
     if low.endswith(".gitkeep"):
         return ""
-    if "/diary/" in low or low.startswith("diary/") or low.startswith("surface/diary"):
+    if "/diary/" in low or low.startswith("diary/"):
         return "rewrites-the-user's-own-record"
     if "/profile/" in low or "persona" in low:
         return "rewrites-the-persona"
-    if (low.startswith("dossiers/projects/mind")
-            or low.startswith("surface/dossiers/projects/mind")):
+    if low.startswith("dossiers/projects/mind"):
         return "deleted-project"
     return ""
 
@@ -208,8 +207,7 @@ def build_plan(changes: Iterable[Change], *, roots, categories: Optional[dict] =
 def category_of(logical: str) -> str:
     """Coarse class used by the trust ledger — derived from the path, never model-guessed."""
     low = logical.lower()
-    # 标记按**种类**写（``notes/``／``diary/``／…）：旧的 ``surface/notes/…`` 里也含
-    # ``notes/``，所以新旧两种写法都归到同一类——不用为旧名单列一条。
+    # 标记按**种类**写（``notes/``／``diary/``／…）：只有这一种写法，不用为旧写法留兼容条目。
     for marker, name in (("notes/", "notes"), ("diary/", "diary"),
                          ("meta/profile", "persona"), ("dossiers/projects", "project-docs"),
                          ("mind/raw", "digests"), ("mind/wiki", "wiki")):
@@ -268,8 +266,8 @@ def apply_plan(plan: Plan, *, approved: str, roots, writer=None,
     #
     # MEMORY_ZONES is enforced here, and it is not the same list as the plumbing
     # service's SAFE_PREFIXES: a human approving a plan must not be how the memory
-    # system ends up writing into the read-only-by-ruling human surface
-    # (``Surface/…``). User 2026-10-24「surface 不要进记忆系统」/ 10-25「算越界」.
+    # system ends up writing into the read-only-by-ruling human side
+    # (``Notes/``／``Diary/``…). User 2026-10-24「surface 不要进记忆系统」/ 10-25「算越界」.
     from plobi.mind.paths import is_memory_zone
 
     for change in plan.changes:

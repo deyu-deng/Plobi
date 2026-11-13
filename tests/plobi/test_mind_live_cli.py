@@ -42,7 +42,7 @@ def two_brain_repos(tmp_path, monkeypatch):
     _git(mind, "commit", "-m", "seed")
     _git(surface, "commit", "--allow-empty", "-m", "seed")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir(parents=True, exist_ok=True)
     return mind, surface

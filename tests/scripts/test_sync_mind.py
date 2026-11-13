@@ -21,7 +21,7 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "sync_mind.py"
 
 RC_OK, RC_DIVERGED, RC_NOT_BRAIN, RC_NO_REMOTE, RC_DIRTY = 0, 20, 21, 22, 23
 ENV = {
-    k: v for k, v in os.environ.items() if k not in ("MIND_ROOT", "SURFACE_ROOT")
+    k: v for k, v in os.environ.items() if k not in ("MIND_ROOT", "HUMAN_ROOT")
 }
 ENV.update(
     GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
@@ -183,7 +183,11 @@ def test_dirty_worktree_stops_both_legs_until_a_human_comes(brain, tmp_path):
     remote = subprocess.run(["git", "ls-remote", str(origin), "refs/heads/main"],
                             capture_output=True, text=True, env=ENV).stdout
     assert pushed in remote
+
+
+@pytest.mark.parametrize("case", ["unset", "not-a-repo", "enclosing-repo", "no-remote", "branchless"])
 def test_hard_boundaries_refuse(tmp_path, case, monkeypatch):
+    """四条硬边界各拒一次，退出码与留痕都要出声（裁定 72 的牙）。"""
     monkeypatch.delenv("MIND_ROOT", raising=False)
     if case == "unset":
         proc = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, text=True,

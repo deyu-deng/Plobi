@@ -56,7 +56,7 @@ def notes(tmp_path, monkeypatch):
     (surface / "dossiers" / "projects").mkdir(parents=True)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     return root
 
 
@@ -140,7 +140,7 @@ def test_missing_root_is_an_error_not_an_empty_list(tmp_path, monkeypatch):
     mind = tmp_path / "mind"
     mind.mkdir()
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(tmp_path / "nowhere"))
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path / "nowhere"))
 
     with pytest.raises(nl.MindUnavailable):
         nl.build_library()

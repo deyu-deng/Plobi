@@ -162,11 +162,11 @@ def test_home_for_agent_resolves_through_the_roster(tmp_path, monkeypatch):
     (mind / "wiki").mkdir(parents=True)
     (surface / "dossiers" / "projects" / "Aura").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     roster = tmp_path / "projects.yaml"
     roster.write_text(
         "version: 1\nagents:\n  Aura:\n    role: l2_project\n"
-        "    category: projects\n    mind_subtree: Surface/dossiers/projects/Aura\n",
+        "    category: projects\n    mind_subtree: Dossiers/projects/Aura\n",
         encoding="utf-8",
     )
 

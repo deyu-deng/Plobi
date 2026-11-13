@@ -44,8 +44,7 @@ def get_roots() -> Dict[str, Path]:
 
     **不许手拼字面路径**（``WP-VAULT-MIND-TWOROOT`` 的铁律：手拼路径的假读数正是那一族的成因）。
     一律走被测代码自己的解析函数 ``plobi.mind.paths.real_target``——它认得逻辑前缀
-    ``Notes/…``／``Dossiers/…``（旧写法 ``Surface/...`` 仍解析），并按
-    ``HUMAN_ROOT``（旧名 ``SURFACE_ROOT`` 仍认）／注册表／家目录的顺序解析。
+    ``Notes/…``／``Dossiers/…``，并按 ``HUMAN_ROOT``／注册表／家目录的顺序解析。
 
     旧版本这里写的是 ``home / "vault" / ...``，**那个目录在盘上不存在**（数据在
     ``$HUMAN_ROOT`` 本体的 ``notes/``／``dossiers/``／``diary/`` 底下），

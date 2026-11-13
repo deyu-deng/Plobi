@@ -22,11 +22,11 @@ ROSTER = textwrap.dedent(
       Aura:
         role: l2_project
         category: projects
-        mind_subtree: Surface/dossiers/projects/Aura
+        mind_subtree: Dossiers/projects/Aura
       secretary:
         role: l1_secretary
         display_name: 总秘书
-        mind_subtree: Surface/dossiers/butler/secretary
+        mind_subtree: Dossiers/butler/secretary
     """
 ).lstrip()
 
@@ -79,7 +79,7 @@ def live(monkeypatch, tmp_path):
     roster = tmp_path / "projects.yaml"
     roster.write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
     return tmp_path, surface
 

@@ -27,7 +27,7 @@ def client(tmp_path, monkeypatch):
     (mind / "wiki" / "daily").mkdir(parents=True)
     (surface / "dossiers" / "projects").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
     app = FastAPI()
     register_memory_pending_api(app)

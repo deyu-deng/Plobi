@@ -89,11 +89,15 @@ def test_every_dossier_home_is_now_writable(roots):
     assert is_safe_relative("Dossiers/courses/电工电子学/requirements.md") is True
 
 
-def test_the_old_logical_prefix_is_still_writable(roots):
-    """旧写法仍解析（旧路不是错话），但**回话里不再广告**那个词。"""
+def test_the_old_logical_prefix_is_no_longer_writable(roots):
+    """2026-11-13「全清，不留过渡态」：``Surface/…`` 这条旧写法连解析都不再认。
+
+    逻辑头只有种类一种写法。旧写法若还放行，等于把「两套布局并存」留在暗处，
+    下一次布局变更又得再猜一遍谁认谁。
+    """
     _mind, _vault, _provider = roots
-    assert is_safe_relative("Surface/dossiers/projects/Aura/dossier.json") is True
-    assert is_safe_relative("Surface/notes/某主题/某篇.md") is True
+    assert is_safe_relative("Surface/dossiers/projects/Aura/dossier.json") is False
+    assert is_safe_relative("Surface/notes/某主题/某篇.md") is False
 
 
 def test_widening_surface_does_not_widen_the_memory_surface(roots):

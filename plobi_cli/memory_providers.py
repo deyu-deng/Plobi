@@ -154,12 +154,12 @@ MIND = MemoryProvider(
             description="脑仓根目录。留空则用环境变量 MIND_ROOT；它决定画像与召回在不在。",
         ),
         ProviderField(
-            key="surface_root",
+            key="human_root",
             label="HUMAN_ROOT（人读面）",
             kind=KIND_TEXT,
-            # 新名优先，旧名仍认（兼容期）——两处都空才回落到数据家本体。
-            env_fallbacks=("HUMAN_ROOT", "SURFACE_ROOT"),
-            description="人读面（日记/笔记/档案）。留空则用环境变量 HUMAN_ROOT（旧名 SURFACE_ROOT 也认）。",
+            # 只认 HUMAN_ROOT（旧名 SURFACE_ROOT 的读侧兼容 2026-11-13 停用）；留空才回落到数据家本体。
+            env_fallbacks=("HUMAN_ROOT",),
+            description="人读面（日记/笔记/档案）。留空则用环境变量 HUMAN_ROOT。",
         ),
     ),
 )

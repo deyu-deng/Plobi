@@ -2,7 +2,7 @@
 
 用户 2026-10-06 的要求（R-013 扩写）：「每创建一个 project 类型的 L2 agent，mind 里面
 要自动创建对应的文件夹和相关文件。如果有出现重名的就直接禁止创建。」这里只负责「建」
-的那一半——照 ``Surface/dossiers/projects/`` 里活项目的形状生成目录 + 两件套；「禁止重名」的判据
+的那一半——照 ``Dossiers/projects/`` 里活项目的形状生成目录 + 两件套；「禁止重名」的判据
 在 :func:`plobi.agents.registry.registration_blocker`，两处不许各写一套。
 
 形状是抄来的，不是发明的（Mind ``AGENTS.md`` §4 场景二：按用户给定名称建目录，初始化
@@ -12,21 +12,21 @@
   目标／状况／阶段）＋ ``research.md``（调研文档）。``plan.md``／``progress.md``
   那一对退役了——「Plan现在占的位置太长了，本质还是md，没有UI设计」。
 * ``dossier.json`` 的 ``registry`` 那几格 = Mind 的 ``Mind/scripts/verifier.py`` 重生成
-  ``Surface/dossiers/projects/INDEX.md`` 时实际读的那几个（project / title / type / group / cloud /
+  ``Dossiers/projects/INDEX.md`` 时实际读的那几个（project / title / type / group / cloud /
   status / created / updated / tech / summary），它们仍在，只是住在结构化记录里。
 * ``cloud`` 写项目名本身、不写盘符——2026-09-28 那轮元数据修正（见 Nymo / Personal-Website
   的 ``progress.md`` 留痕）把设备事实从这一格里清出去了，新建的格子里不能再塞回去。
-* Mind ``AGENTS.md`` §5「Surface 禁止 AI 元注释」：生成体里不写「最后更新：」「来源：」。
+* Mind ``AGENTS.md`` §5「Dossiers 禁止 AI 元注释」：生成体里不写「最后更新：」「来源：」。
 
 本模块自己不碰的两样（同一次创建里由 :mod:`plobi.mind.project_declarations` 紧跟着办，
 Mind ``AGENTS.md`` §6「结构变更后必须更新本文件 §1」那条现在落到工具上）：
-``Surface/dossiers/projects/INDEX.md``（只由 Mind 自己的 ``verifier.py --fix-projects`` 生成，不另写一套）
+``Dossiers/projects/INDEX.md``（只由 Mind 自己的 ``verifier.py --fix-projects`` 生成，不另写一套）
 和 Mind ``AGENTS.md`` §1 的项目清单声明。少了这两步，脑仓自己的 verifier 会把这次立项判成
 BLOCKER（声明 ≠ 磁盘），用户在脑仓的下一次提交就被他自己装的 pre-commit 拦住。
 
 写入不走 :func:`plobi.mind.paths.safe_target`：那份前缀表管的是**AI 随笔**能落哪（memory
 adapter 只准往 Mind 消化区写字），这里落的是用户点「新建项目分身」时要求建的立项卡。
-约束换成两条更硬的：目标必须解析进 ``<SURFACE_ROOT>`` 那五个分类文件夹之一之内（防穿越），
+约束换成两条更硬的：目标必须解析进 ``<HUMAN_ROOT>`` 那五个分类文件夹之一之内（防穿越），
 已有文件一个字都不覆盖（重名走禁止，不走覆盖）。
 """
 

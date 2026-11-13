@@ -25,10 +25,9 @@ function pathModuleForPlatform(platform = process.platform) {
   return platform === 'win32' ? path.win32 : path.posix
 }
 
-// 人读面那根指针的两个名字：**新名 HUMAN_ROOT 优先**，旧名 SURFACE_ROOT 仍认
-// （兼容期——后端与装订件两套可能只认旧名）。两个都写进后端 env，**值必须一致**。
+// 人读面那根指针。只认 HUMAN_ROOT：旧名 SURFACE_ROOT 的读侧兼容 2026-11-13 停用
+// （「全清，不留过渡态」），后端 env 里也只写这一个名字。
 const HUMAN_ROOT_ENV = 'HUMAN_ROOT'
-const LEGACY_HUMAN_ROOT_ENV = 'SURFACE_ROOT'
 
 /** 第一个非空（去空白后）的候选值——指针按「新名优先、旧名兜底」取用的那一只。 */
 function firstNonEmpty(values: (string | null | undefined)[]): string {
@@ -219,11 +218,9 @@ export function resolveBrainSurfacePointers({
     out.MIND_ROOT = mind
   }
 
-  // 人读面那一格有两个名字：**新名 HUMAN_ROOT 优先**，旧名 SURFACE_ROOT 兜底
-  // （兼容期——两套件可能只认旧名）。两个名字写**同一个值**，否则后端按两个
-  // 名字解析出两个家。
+  // 人读面那一格只有一个名字：HUMAN_ROOT（旧名 2026-11-13 停用）。
   const human = resolvePointer({
-    names: [HUMAN_ROOT_ENV, LEGACY_HUMAN_ROOT_ENV],
+    names: [HUMAN_ROOT_ENV],
     currentEnv,
     platform,
     readEnvVar,
@@ -231,7 +228,6 @@ export function resolveBrainSurfacePointers({
   })
   if (human) {
     out[HUMAN_ROOT_ENV] = human
-    out[LEGACY_HUMAN_ROOT_ENV] = human
   }
 
   return out
@@ -298,33 +294,10 @@ function deriveBrainSurfacePointers({
 
   return {
     MIND_ROOT: pathModule.join(home, 'mind'),
-    HUMAN_ROOT: home,
-    SURFACE_ROOT: home
+    HUMAN_ROOT: home
   }
 }
 
-/**
- * 人读面那根指针的两个名字**必须同值**：只给了一个（老调用点显式传
- * `brainSurface` 时会那样）就补上另一个。两个值都在且不一致时以**新名**为准。
- *
- * 入参／返回都走 `any`：这份指针的形状本来就随调用点变（老调用点只给旧名），
- * 把它钉成 `Record<string, string>` 会把 `buildDesktopBackendEnv()` 的返回类型
- * 从 `any` 收窄成一个固定对象形状 ⇒ 调用点读 `env.MIND_ROOT`／`env.Path` 之类的
- * 键会变成编译错误。
- */
-function alignHumanRootNames(values: any): any {
-  const out: Record<string, string> = { ...values }
-  const human = firstNonEmpty([out[HUMAN_ROOT_ENV], out[LEGACY_HUMAN_ROOT_ENV]])
-
-  if (!human) {
-    return out
-  }
-
-  out[HUMAN_ROOT_ENV] = human
-  out[LEGACY_HUMAN_ROOT_ENV] = human
-
-  return out
-}
 
 function buildDesktopBackendEnv({
   plobiHome,
@@ -353,7 +326,7 @@ function buildDesktopBackendEnv({
   const pointers = home
     ? deriveBrainSurfacePointers({ plobiHome: home, platform, pathModule })
     : resolveBrainSurfacePointers({ currentEnv, platform, ...(readEnvVar ? { readEnvVar } : {}), ...(exists ? { exists } : {}) })
-  const brainSurfaceValues = alignHumanRootNames(brainSurface ?? pointers)
+  const brainSurfaceValues = brainSurface ?? pointers
 
   return {
     PYTHONPATH: appendUniquePathEntries([...pythonPathEntries, currentPythonPath], { delimiter }),

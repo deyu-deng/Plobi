@@ -50,7 +50,7 @@ def notes(tmp_path, monkeypatch):
     (surface / "dossiers" / "projects").mkdir(parents=True)
     (tmp_path / "projects.yaml").write_text(ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
     return surface / "notes"
 
@@ -195,7 +195,7 @@ def test_accepts_the_display_name_the_user_gave(tmp_path, monkeypatch):
     (surface / "notes" / "物理").mkdir(parents=True)
     (tmp_path / "projects.yaml").write_text(DISPLAY_ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
 
     assert validate_note("Notes/物理/电磁学.md", DISPLAY_NOTE, surface / "notes") == []
@@ -209,7 +209,7 @@ def test_the_agent_id_still_passes_the_same_gate(tmp_path, monkeypatch):
     (surface / "notes" / "物理").mkdir(parents=True)
     (tmp_path / "projects.yaml").write_text(DISPLAY_ROSTER, encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
 
     by_id = DISPLAY_NOTE.replace("belongs: [大物物理（甲）II]", "belongs: [ii]")

@@ -1080,7 +1080,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         # 「§1 那名列的 projects ↔ ``Dossiers/projects`` 磁盘」，research/courses/… 的树
         # 根本不在那个名单里。硬同步会拿「这个名字不在那 10 个项目里」当失败 ⇒ research 那一格
         # 的 Agent 压根建不出来（用户 11-07 22:0x 现场：新建 SRTP 报「Dossiers/projects/SRTP
-        # 不在 … 的盘上，声明对不了盘」，而 SRTP 一直在 ``Surface/dossiers/research/SRTP``）。
+        # 不在 … 的盘上，声明对不了盘」，而 SRTP 一直在 ``Dossiers/research/SRTP``）。
         # 判据是**树落在哪一格**，不是品类：projects 的树照旧进声明（§1 与门禁那条纪律不动），
         # research 的树不进，也不许让那份声明动一个字节。
         if tree.relative.startswith(f"{PROJECTS_RELATIVE}/"):

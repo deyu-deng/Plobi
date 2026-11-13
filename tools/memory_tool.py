@@ -16,8 +16,9 @@ inside a 分身 home — the key is the Agent's identity, not its directory):
 Injection = GLOBAL + this agent's own + USER.  L1 additionally gets the
 per-agent STATUS digest, and **never** another agent's full MEMORY.md — 2200
 chars x 24 agents would be paid on every turn and would break the prefix cache.
-Each entry carries a ``source`` pointer (a relative ``surface/…`` or ``mind/…``
-path plus a date) so memory stays an index rather than a warehouse; the
+Each entry carries a ``source`` pointer (a relative kind-rooted path —
+``notes/…`` / ``dossiers/…`` — or ``mind/…``, plus a date) so memory stays an
+index rather than a warehouse; the
 direction is memory -> vault (that's the page a human can read), never the
 other way around (裁定 182 forbids de-duplicating the human-facing side).
 
@@ -199,7 +200,7 @@ def entry_with_source(content: str, source: Optional[str]) -> str:
 
     ``memory`` is a table of contents, not a warehouse — the char budget only
     works because each entry says where the human-readable version of it lives
-    (``surface/…`` / ``mind/…`` + date).  The pointer travels *inside* the entry
+    (``notes/…`` / ``dossiers/…`` / ``mind/…`` + date).  The pointer travels *inside* the entry
     text so the §-delimited format, the drift guard and every existing caller
     keep working unchanged.  Direction matters: memory points at the vault page
     a person can read; the vault is never rewritten to point back at memory to
@@ -1796,7 +1797,7 @@ def memory_write(scope: str = "self", parts: Optional[List[str]] = None,
     Whole-location write on purpose: one verb, no selector to get wrong. Send back
     what you read, edited — including every entry you mean to keep. The char cap is
     checked against the FINAL content only, so trimming and adding are one call.
-    ``source`` (a relative ``surface/…`` / ``mind/…`` path plus its date) is appended to
+    ``source`` (a relative kind-rooted path — ``notes/…`` / ``dossiers/…`` — or ``mind/…``, plus its date) is appended to
     each entry that has no pointer yet; the direction is memory -> the page a human
     reads, never the page -> memory to save space (裁定 182).
 
@@ -1871,8 +1872,9 @@ MEMORY_WRITE_SCHEMA = {
         "content; an over-budget write is refused with the current entries shown, and "
         "nothing is dropped silently. APPROVAL: with the user's approval switch on (memory.write_approval), every location's write is staged — nothing lands until they nod on the card in the chat, and a staged result is terminal (do not repeat the call).\n\n"
         "'source' is how memory stays small: the relative path of the page a person can "
-        "read (under surface/ or mind/) plus its date, e.g. "
-        "'surface/dossiers/projects/Plobi/dossier.json 2026-10-19'. It is appended to each entry that has "
+        "read plus its date, e.g. 'dossiers/projects/Plobi/dossier.json 2026-10-19'. "
+        "The first segment is the kind root as it sits in the data directory "
+        "(notes/ dossiers/ diary/ meta/ inbox/) or 'mind/' for the brain. It is appended to each entry that has "
         "no pointer yet. Never paste the page's content or base64 into memory, and never "
         "rewrite the vault to point back at memory — memory points at the human-facing "
         "page, that direction is the design.\n\n"
@@ -1901,8 +1903,9 @@ MEMORY_WRITE_SCHEMA = {
             "source": {
                 "type": "string",
                 "description": (
-                    "Provenance pointer for these entries: a relative path under surface/ or "
-                    "mind/ that a human can read, with its date. Appended to each entry "
+                    "Provenance pointer for these entries: a relative kind-rooted path "
+                    "(notes/ dossiers/ diary/ meta/ inbox/) or mind/, with its date, that a "
+                    "human can read. Appended to each entry "
                     "that has none."
                 ),
             },
@@ -1946,7 +1949,7 @@ MEMORY_SCHEMA = {
             },
             "source": {
                 "type": "string",
-                "description": "Provenance pointer for add/replace: a relative path under surface/ or mind/ with its date, e.g. 'surface/dossiers/projects/Plobi/dossier.json 2026-10-19'."
+                "description": "Provenance pointer for add/replace: a relative kind-rooted path (notes/ dossiers/ diary/ meta/ inbox/) or mind/ with its date, e.g. 'dossiers/projects/Plobi/dossier.json 2026-10-19'."
             },
             "old_text": {
                 "type": "string",

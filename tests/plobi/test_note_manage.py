@@ -31,7 +31,6 @@ def human(tmp_path, monkeypatch):
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("HUMAN_ROOT", str(root))
-    monkeypatch.delenv("SURFACE_ROOT", raising=False)
     # 注册表那份钉不许进来：它指着这台机器上**真的**人读面。
     from plobi.mind import paths as mind_paths
 

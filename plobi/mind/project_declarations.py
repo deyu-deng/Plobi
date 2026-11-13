@@ -2,13 +2,13 @@
 
 :mod:`plobi.mind.project_tree` 只负责「建目录 + 三件套」那一半。光有磁盘那一半在脑仓里
 是**不合格**的：Mind 自己的门禁 ``Mind/scripts/verifier.py`` 的 ``check_projects()`` 把
-「``AGENTS.md`` §1 声明的 projects 列表 ≠ ``Surface/dossiers/projects`` 磁盘」判成 BLOCKER（退出码 1），
+「``AGENTS.md`` §1 声明的 projects 列表 ≠ ``Dossiers/projects`` 磁盘」判成 BLOCKER（退出码 1），
 而 ``mind/.githooks/pre-commit`` 已经装上（``core.hooksPath=.githooks``）——于是只建目录不同步
 声明，用户在脑仓的下一次提交会被他自己的 verifier 拦下，拦在一个**我们**刚造出来的洞上。
 
 这里补的就是那一格，两件东西按各自的真源来：
 
-* ``Surface/dossiers/projects/INDEX.md`` —— **不自己写生成器**，调脑仓自己的
+* ``Dossiers/projects/INDEX.md`` —— **不自己写生成器**，调脑仓自己的
   ``Mind/scripts/verifier.py --fix-projects``（它就是「依据 ``plan.md`` frontmatter 重生成
   INDEX.md」那个工具，见其 ``check_or_fix_project_registry``）。脚本按**我们所用的那个 Mind 根**
   定位（``<mind_root>/Mind/scripts/verifier.py``，与 :mod:`plobi.mind.writer` 里
@@ -339,7 +339,7 @@ def sync_project_declarations(
     index_path = real_target(INDEX_RELATIVE, root)
 
     if not agents_path.is_file() and not verifier_path.is_file():
-        # 这个 Mind 根不带脑仓自己的门禁（只有 Surface/dossiers/projects 的假库 / 非 Mind 仓）：没有声明可
+        # 这个 Mind 根不带脑仓自己的门禁（只有 Dossiers/projects 的假库 / 非 Mind 仓）：没有声明可
         # 同步。此处**不许**退化成「自己写一套 INDEX / 自己造一份 AGENTS.md」——那正是脑仓门禁与
         # 磁盘长期不一致的来源。
         logger.info(

@@ -147,7 +147,7 @@ def _human_root() -> Path:
 
 
 def _canonical_logical(path: str) -> str:
-    """进来的路径先归一（旧写法 ``Surface/notes/…`` 也收下）。"""
+    """进来的路径先归一（只认 ``Notes/…``）。"""
     return normalize_logical(str(path or "").strip().replace("\\", "/"))
 
 

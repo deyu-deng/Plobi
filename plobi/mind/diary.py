@@ -1,4 +1,4 @@
-"""日记：``surface/diary/YYYY-MM-DD-Weekday.md`` 的读与写（WP-VAULT-AGENTS-VIEW）。
+"""日记：``diary/YYYY-MM-DD-Weekday.md`` 的读与写（WP-VAULT-AGENTS-VIEW）。
 
 用户 10-24 拍：日记就在 Plobi 里写，存原位置，保存时自动提交一笔。
 文件名与旧日记保持同一形状（日期 + 英文星期），正文仍是纯 markdown，不加 frontmatter——

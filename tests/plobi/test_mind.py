@@ -43,22 +43,31 @@ _REAL_MIND_COMMIT = MindWriter._commit
 
 
 @pytest.fixture()
-def surface(tmp_path, monkeypatch):
-    root = tmp_path / "Mind"
-    (root / "persona").mkdir(parents=True)
-    (root / "Surface" / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
-    (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
-    # 详版画像在脑里（用户 10-24：surface 不进记忆系统；USER.md 是精简版）
-    (root / "persona" / "profile.md").write_text("我是邓德宇。", encoding="utf-8")
+def human_home(tmp_path, monkeypatch):
+    """数据家（人读面根）：11-13 全清之后，notes／diary／dossiers／… 就在它顶层。"""
+    home = tmp_path / "Home"
+    (home / "dossiers" / "projects" / "Plobi").mkdir(parents=True)
     # **档案本体**是目标／现状的真源（11-09，WP-DOSSIER-SHAPE）；md 那一对退役了，
     # 留着它们是为了钉住「读侧不再看 md 一眼」。
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "dossier.json").write_text(
+    (home / "dossiers" / "projects" / "Plobi" / "dossier.json").write_text(
         '{"agent": "Plobi", "goal": "北极星…", "status": "M1 进行中"}', encoding="utf-8"
     )
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n旧目标。", encoding="utf-8")
-    (root / "Surface" / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("旧进展。", encoding="utf-8")
-    monkeypatch.setenv("MIND_ROOT", str(root))
-    return root
+    (home / "dossiers" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n旧目标。", encoding="utf-8")
+    (home / "dossiers" / "projects" / "Plobi" / "progress.md").write_text("旧进展。", encoding="utf-8")
+    monkeypatch.setenv("HUMAN_ROOT", str(home))
+    return home
+
+
+@pytest.fixture()
+def surface(human_home, tmp_path, monkeypatch):
+    """脑根（夹具名沿用旧称，返回的就是 ``<家>/mind`` 那个脑）。"""
+    brain = tmp_path / "Mind"
+    (brain / "persona").mkdir(parents=True)
+    (brain / "AGENTS.md").write_text("# Mind", encoding="utf-8")
+    # 详版画像在脑里（用户 10-24：人读面不进记忆系统；USER.md 是精简版）
+    (brain / "persona" / "profile.md").write_text("我是邓德宇。", encoding="utf-8")
+    monkeypatch.setenv("MIND_ROOT", str(brain))
+    return brain
 
 
 # --- path safety ------------------------------------------------------------
@@ -68,8 +77,8 @@ def surface(tmp_path, monkeypatch):
     "relative",
     [
         "Mind/wiki/daily/2026-08-25.md",
-        "Surface/dossiers/projects/Plobi/notes.md",
-        "Surface/inbox/idea.md",
+        "Dossiers/projects/Plobi/notes.md",
+        "Inbox/idea.md",
     ],
 )
 def test_safe_paths_are_accepted(relative):
@@ -84,12 +93,12 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     在单库 ``state.db``（裁定 180），所以这道门要关；而摘要与打勾回复按裁定 158 归人读面。
     """
     from plobi.mind import AI_WRITE_ROOT
-    from plobi.mind.paths import SAFE_PREFIXES
+    from plobi.mind.paths import SAFE_PREFIXES, is_human_logical
 
     assert not [p for p in SAFE_PREFIXES if "raw" in p.split("/")], SAFE_PREFIXES
     # 用户 10-24：「surface 不要进记忆系统」⇒ AI 写的那份必须在脑里（Mind），不许落人读面。
     assert AI_WRITE_ROOT.split("/")[0] == "Mind", AI_WRITE_ROOT
-    assert not AI_WRITE_ROOT.startswith("Surface/"), AI_WRITE_ROOT
+    assert not is_human_logical(AI_WRITE_ROOT), AI_WRITE_ROOT
     assert is_safe_relative(f"{AI_WRITE_ROOT}/2026-10-23/agenda.md") is True
 
 
@@ -97,7 +106,7 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     "relative",
     [
         "AGENTS.md",                       # would rewrite Mind's own contract
-        "surface/dossiers/projects/Aura/plan.md",  # 逻辑前缀大小写敏感：小写 surface 不是那格
+        "surface/dossiers/projects/Aura/plan.md",  # 逻辑前缀大小写敏感：小写不是那格
         "Mind/skills/whatever/SKILL.md",   # skill count declaration
         "../outside.md",
         "/etc/passwd",
@@ -116,15 +125,15 @@ def test_dossier_homes_are_open_after_2026_10_25():
     （``writer.py:228-234``），比静默 skip 至少是看得见的。立项仍然只有
     ``plobi/mind/project_tree.py`` 那一把手（它会同步 AGENTS.md §1 与 INDEX.md）。
     """
-    assert is_safe_relative("Surface/dossiers/projects/新项目/plan.md") is True
-    assert is_safe_relative("Surface/dossiers/research/新课题/progress.md") is True
+    assert is_safe_relative("Dossiers/projects/新项目/plan.md") is True
+    assert is_safe_relative("Dossiers/research/新课题/progress.md") is True
     # 放开的是路径，不是记忆面：surface 再宽也不进记忆系统（用户 10-24/25 两次判）。
-    assert is_memory_zone("Surface/dossiers/projects/新项目/plan.md") is False
+    assert is_memory_zone("Dossiers/projects/新项目/plan.md") is False
 
 
 def test_safe_target_rejects_traversal(surface):
     with pytest.raises(UnsafeMindPath):
-        safe_target(surface, "Surface/inbox/../../../escape.md")
+        safe_target(surface, "Inbox/../../../escape.md")
 
 
 def test_resolve_root_prefers_env(surface, monkeypatch, tmp_path):
@@ -182,22 +191,20 @@ def test_the_writable_prefixes_are_the_new_kinds(surface):
     ]
 
 
-def test_new_and_old_logical_prefixes_land_on_the_same_file(surface):
-    """新写法（``Inbox/…``）与旧写法（``Surface/inbox/…``）落到**同一个**物理文件。
+def test_the_old_logical_prefix_is_no_longer_resolved(surface, human_home):
+    """旧写法 ``Surface/…`` 2026-11-13 起不再解析：不算安全路径，也不给它找落点。
 
-    旧路不是错话——存量脚本、存量名册还在用；但新写与回话一律走新写法。
+    用户「全清，不留过渡态」——归一分支已随兼容层一起删掉，旧写法既不是别名
+    也不再算「错话照旧」，它就是一条没有种类头的路径，由护栏拒掉。
     """
     from plobi.mind.paths import real_target
 
-    writer = MindWriter(surface, run_verifier=False)
-    result = writer.write_one("Inbox/new.md", "x")
-
-    assert result.ok is True
-    assert result.written == ["Inbox/new.md"]
-    assert real_target("Inbox/new.md", surface) == real_target(
-        "Surface/inbox/new.md", surface
+    assert is_safe_relative("Surface/inbox/new.md") is False
+    with pytest.raises(UnsafeMindPath):
+        safe_target(surface, "Surface/inbox/new.md")
+    assert real_target("Surface/inbox/new.md", surface) != (
+        human_home / "inbox" / "new.md"
     )
-    assert (surface / "Surface" / "inbox" / "new.md").read_text(encoding="utf-8") == "x"
 
 
 def test_unsafe_write_is_skipped_not_fatal(surface):
@@ -205,7 +212,7 @@ def test_unsafe_write_is_skipped_not_fatal(surface):
     result = writer.write(
         [
             WriteRequest("AGENTS.md", "hijacked"),
-            WriteRequest("Surface/inbox/ok.md", "fine"),
+            WriteRequest("Inbox/ok.md", "fine"),
         ]
     )
 
@@ -214,12 +221,12 @@ def test_unsafe_write_is_skipped_not_fatal(surface):
     assert (surface / "AGENTS.md").read_text(encoding="utf-8") == "# Mind"
 
 
-def test_append_mode_accumulates(surface):
+def test_append_mode_accumulates(surface, human_home):
     writer = MindWriter(surface, run_verifier=False)
-    writer.write_one("Surface/inbox/log.md", "one\n", mode="append")
-    writer.write_one("Surface/inbox/log.md", "two\n", mode="append")
+    writer.write_one("Inbox/log.md", "one\n", mode="append")
+    writer.write_one("Inbox/log.md", "two\n", mode="append")
 
-    assert (surface / "Surface/inbox/log.md").read_text(encoding="utf-8") == "one\ntwo\n"
+    assert (human_home / "inbox" / "log.md").read_text(encoding="utf-8") == "one\ntwo\n"
 
 
 def test_writer_reports_when_surface_missing(tmp_path, monkeypatch):
@@ -227,23 +234,23 @@ def test_writer_reports_when_surface_missing(tmp_path, monkeypatch):
     writer = MindWriter(run_verifier=False)
 
     assert writer.available is False
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
     assert result.ok is False
     assert result.written == []
 
 
-def test_failing_verifier_blocks_the_commit_but_keeps_files(surface):
+def test_failing_verifier_blocks_the_commit_but_keeps_files(surface, human_home):
     scripts = surface / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "verifier.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
 
     writer = MindWriter(surface, run_verifier=True)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is False
     assert "verifier" in result.detail
     # The file is still written — Mind is a working copy, not a transaction.
-    assert (surface / "Surface/inbox/x.md").exists()
+    assert (human_home / "inbox" / "x.md").exists()
 
 
 def test_passing_verifier_allows_the_write(surface):
@@ -251,12 +258,12 @@ def test_passing_verifier_allows_the_write(surface):
     scripts.mkdir(parents=True)
     (scripts / "verifier.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
 
-    result = MindWriter(surface, run_verifier=True).write_one("Surface/inbox/x.md", "x")
+    result = MindWriter(surface, run_verifier=True).write_one("Inbox/x.md", "x")
     assert result.ok is True
 
 
 def test_missing_verifier_is_not_a_blocker(surface):
-    assert MindWriter(surface, run_verifier=True).write_one("Surface/inbox/x.md", "x").ok is True
+    assert MindWriter(surface, run_verifier=True).write_one("Inbox/x.md", "x").ok is True
 
 
 # --- commit skip-on-dirty (WP-MIND-HOT, 裁定 33.2) ---------------------------
@@ -283,9 +290,13 @@ def _bypass_lock(monkeypatch):
 
 @pytest.fixture()
 def git_vault(tmp_path, monkeypatch):
-    """带 ``git init`` 的 Mind 顶层：commit 应该真的进去。"""
+    """带 ``git init`` 的脑顶层：commit 应该真的进去。
+
+    11-13 全清之后 ``Inbox/x.md`` 落在**数据家**（``HUMAN_ROOT``），不再是脑根下的
+    一格。这里把人读面钉回同一个仓，本组测的是「谁提交、skip 说什么」，不是两仓分布。
+    """
     root = tmp_path / "Mind"
-    (root / "Surface" / "meta").mkdir(parents=True)
+    (root / "meta").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     _git(["init"], root)
     _git(["config", "user.email", "tests@plobi.local"], root)
@@ -293,6 +304,7 @@ def git_vault(tmp_path, monkeypatch):
     _git(["add", "AGENTS.md"], root)
     _git(["commit", "-m", "seed"], root)
     monkeypatch.setenv("MIND_ROOT", str(root))
+    monkeypatch.setenv("HUMAN_ROOT", str(root))
     _install_real_commit(monkeypatch)
     return root
 
@@ -373,10 +385,10 @@ def test_commit_skipped_when_index_locked(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is True
-    assert result.written == ["Surface/inbox/x.md"]
+    assert result.written == ["Inbox/x.md"]
     assert "commit skipped" in result.detail
     assert "index.lock" in result.detail or "Unable to create" in result.detail
 
@@ -396,7 +408,7 @@ def test_commit_skipped_on_dirty_working_tree(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is True
     assert "commit skipped" in result.detail
@@ -416,7 +428,7 @@ def test_commit_skipped_on_untracked_overlap(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is True
     assert "commit skipped" in result.detail
@@ -434,11 +446,11 @@ def test_commit_skipped_when_add_raises(git_vault, monkeypatch):
     monkeypatch.setattr(mw.subprocess, "run", raiser)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is True
     assert "commit skipped" in result.detail
-    assert (git_vault / "Surface" / "inbox" / "x.md").is_file()
+    assert (git_vault / "inbox" / "x.md").is_file()
 
 
 def test_commit_still_returns_false_on_unrecognised_error(git_vault, monkeypatch):
@@ -452,7 +464,7 @@ def test_commit_still_returns_false_on_unrecognised_error(git_vault, monkeypatch
     monkeypatch.setattr(mw.subprocess, "run", runner)
 
     writer = MindWriter(git_vault, run_verifier=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is False
     assert "commit skipped" not in result.detail
@@ -480,7 +492,7 @@ def test_publish_daily_summary_continues_to_fail_open_on_commit_skip(git_vault, 
     writer = MindWriter(git_vault, run_verifier=False)
     # 这等价于 publish_daily_summary 内部 sink.write_one(...) 的返回；
     # 直接验 WriteResult 的契约而不是再过一遍 mind_sync 的 import 重置
-    result = writer.write_one("Surface/inbox/anything.md", "x")
+    result = writer.write_one("Inbox/anything.md", "x")
     assert result.ok is True
     assert "commit skipped" in result.detail
 
@@ -520,16 +532,17 @@ def test_commit_skipped_when_root_is_nested_in_an_enclosing_repo(tmp_path, monke
     _git(["commit", "-m", "seed"], outer)
 
     root = outer / "Mind"
-    (root / "Surface" / "meta").mkdir(parents=True)
+    (root / "meta").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
+    monkeypatch.setenv("HUMAN_ROOT", str(root))
 
     writer = MindWriter(root, commit=True, run_verifier=False, require_approval=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     # The write itself is unaffected by the guard.
     assert result.ok is True
-    assert (root / "Surface/inbox/x.md").read_text(encoding="utf-8") == "x"
+    assert (root / "inbox" / "x.md").read_text(encoding="utf-8") == "x"
     # …but no commit reached the enclosing repo.
     assert "commit skipped" in result.detail
     log = _git(["log", "--oneline"], outer)
@@ -541,13 +554,14 @@ def test_commit_happens_when_root_is_its_own_repo(tmp_path, monkeypatch):
     monkeypatch.setattr(writer_module.MindWriter, "_commit", _REAL_MIND_COMMIT)
 
     root = tmp_path / "Mind"
-    (root / "Surface" / "meta").mkdir(parents=True)
+    (root / "meta").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     _init_repo(root)
     monkeypatch.setenv("MIND_ROOT", str(root))
+    monkeypatch.setenv("HUMAN_ROOT", str(root))
 
     writer = MindWriter(root, commit=True, run_verifier=False, require_approval=False)
-    result = writer.write_one("Surface/inbox/x.md", "x")
+    result = writer.write_one("Inbox/x.md", "x")
 
     assert result.ok is True
     assert result.detail == "committed"
@@ -556,13 +570,13 @@ def test_commit_happens_when_root_is_its_own_repo(tmp_path, monkeypatch):
     assert "chore(plobi)" in log
 
 
-def test_concurrent_writers_do_not_interleave(surface):
+def test_concurrent_writers_do_not_interleave(surface, human_home):
     writer = MindWriter(surface, run_verifier=False)
     errors: list[BaseException] = []
 
     def worker(index: int) -> None:
         try:
-            writer.write_one(f"Surface/inbox/w{index}.md", f"content {index}")
+            writer.write_one(f"Inbox/w{index}.md", f"content {index}")
         except BaseException as exc:  # noqa: BLE001 - surfaced below
             errors.append(exc)
 
@@ -574,7 +588,9 @@ def test_concurrent_writers_do_not_interleave(surface):
 
     assert errors == []
     for index in range(8):
-        assert (surface / f"Surface/inbox/w{index}.md").read_text(encoding="utf-8") == f"content {index}"
+        assert (human_home / "inbox" / f"w{index}.md").read_text(
+            encoding="utf-8"
+        ) == f"content {index}"
     # The lock file must not survive the batch.
     assert not (surface / ".plobi-mind.lock").exists()
 
@@ -636,17 +652,17 @@ def test_reader_is_quiet_when_surface_absent(tmp_path):
     assert reader.context().is_empty is True
 
 
-def test_reader_skips_empty_project_dirs(surface):
-    (surface / "Surface" / "dossiers" / "projects" / "empty").mkdir()
+def test_reader_skips_empty_project_dirs(surface, human_home):
+    (human_home / "dossiers" / "projects" / "empty").mkdir()
     assert [p.name for p in MindReader(surface).projects()] == ["Plobi"]
 
 
-def test_reader_covers_projects_and_research(surface):
+def test_reader_covers_projects_and_research(surface, human_home):
     """上下文接**项目 ＋ 研究**两类档案（11-09）。
 
-    研究那一类以前一条都进不来——读侧只认 ``Surface/dossiers/projects``。
+    研究那一类以前一条都进不来——读侧只认 ``Dossiers/projects``。
     """
-    research = surface / "Surface" / "dossiers" / "research" / "SRTP"
+    research = human_home / "dossiers" / "research" / "SRTP"
     research.mkdir(parents=True)
     (research / "dossier.json").write_text(
         '{"agent": "SRTP", "goal": "研究目标", "status": "在写第三章"}', encoding="utf-8"
@@ -660,8 +676,8 @@ def test_reader_covers_projects_and_research(surface):
     assert context.research[0].status == "在写第三章"
 
 
-def _add_project(surface, name: str) -> None:
-    directory = surface / "Surface" / "dossiers" / "projects" / name
+def _add_project(human_home, name: str) -> None:
+    directory = human_home / "dossiers" / "projects" / name
     directory.mkdir(parents=True)
     (directory / "dossier.json").write_text(
         '{"agent": "%s", "goal": "%s 目标", "status": "%s 现状"}' % (name, name, name),
@@ -669,10 +685,10 @@ def _add_project(surface, name: str) -> None:
     )
 
 
-def test_reader_puts_the_current_dossier_first(surface):
+def test_reader_puts_the_current_dossier_first(surface, human_home):
     """当前那一份**无条件入选**：旗舰项目不许被字母序切掉。"""
     for name in ("Aura", "Kit", "Nymo"):
-        _add_project(surface, name)
+        _add_project(human_home, name)
 
     context = MindReader(surface).context(project_limit=2, current="Plobi")
 
@@ -680,9 +696,9 @@ def test_reader_puts_the_current_dossier_first(surface):
     assert [b.name for b in context.dossiers][:2] == ["Plobi", "Aura"]
 
 
-def test_reader_without_a_current_one_keeps_name_order(surface):
+def test_reader_without_a_current_one_keeps_name_order(surface, human_home):
     for name in ("Aura", "Kit", "Nymo"):
-        _add_project(surface, name)
+        _add_project(human_home, name)
 
     context = MindReader(surface).context(project_limit=2)
 
@@ -705,7 +721,7 @@ def test_profile_block_carries_both_goal_and_status(surface):
     assert block.index("目标：") < block.index("现状：")
 
 
-def test_profile_block_carries_the_stages_too(surface):
+def test_profile_block_carries_the_stages_too(surface, human_home):
     """**阶段**也进上下文（屏上那张卡有阶段条，模型也该看见走到哪儿了）。
 
     压成一行「几个节点、几个做完了、正在做哪个」——阶段条在屏上是一排节点，
@@ -713,7 +729,7 @@ def test_profile_block_carries_the_stages_too(surface):
     """
     from plobi.mind.provider import _profile_block
 
-    (surface / "Surface" / "dossiers" / "projects" / "Plobi" / "dossier.json").write_text(
+    (human_home / "dossiers" / "projects" / "Plobi" / "dossier.json").write_text(
         '{"agent": "Plobi", "goal": "北极星…", "status": "M1 进行中", "stages": ['
         '{"id": "s1", "title": "接线", "done": true},'
         '{"id": "s2", "title": "MVP 五层闭环跑通", "done": false},'
@@ -729,15 +745,15 @@ def test_profile_block_carries_the_stages_too(surface):
     assert block.index("目标：") < block.index("现状：") < block.index("阶段：")
 
 
-def test_profile_block_includes_research_and_keeps_the_current_one_first(surface):
+def test_profile_block_includes_research_and_keeps_the_current_one_first(surface, human_home):
     from plobi.mind.provider import _profile_block
 
-    research = surface / "Surface" / "dossiers" / "research" / "SRTP"
+    research = human_home / "dossiers" / "research" / "SRTP"
     research.mkdir(parents=True)
     (research / "dossier.json").write_text(
         '{"agent": "SRTP", "goal": "研究目标", "status": "在写第三章"}', encoding="utf-8"
     )
-    _add_project(surface, "Aura")
+    _add_project(human_home, "Aura")
 
     block = _profile_block(surface, include_persona=False, current="Plobi")
 

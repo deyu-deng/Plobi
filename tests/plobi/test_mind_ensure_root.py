@@ -98,7 +98,7 @@ def test_surface_children_only_appear_when_the_library_exists(
 ) -> None:
     """指针指着一个还没建出来的 Obsidian 库时，不替用户造格子。"""
     missing = tmp_path / "not_created_yet"
-    monkeypatch.setenv("SURFACE_ROOT", str(missing))
+    monkeypatch.setenv("HUMAN_ROOT", str(missing))
 
     mind_paths.ensure_root()
 
@@ -110,7 +110,7 @@ def test_surface_children_appear_when_the_library_exists(
 ) -> None:
     surface = tmp_path / "surface_lib"
     surface.mkdir()
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
 
     mind_paths.ensure_root()
 

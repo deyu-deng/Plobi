@@ -24,7 +24,7 @@ from plobi.mind.notes_view import (
     unknown_belongs,
 )
 
-NOTE_ROOT = "Surface/notes/数学 Math"
+NOTE_ROOT = "notes/数学 Math"
 
 
 def _entry(name: str, subtree: str = "", category: str = "projects") -> types.SimpleNamespace:
@@ -34,12 +34,16 @@ def _entry(name: str, subtree: str = "", category: str = "projects") -> types.Si
 
 
 @pytest.fixture()
-def surface(tmp_path):
-    root = tmp_path / "Mind"
-    notes = root / NOTE_ROOT
+def surface(tmp_path, monkeypatch):
+    """脑根 ``mind/`` 与人读面根 ``home/`` 各一处 —— 2026-11-13 起只有这一种布局。"""
+    mind = tmp_path / "mind"
+    home = tmp_path / "home"
+    notes = home / NOTE_ROOT
     notes.mkdir(parents=True)
-    (root / "Surface" / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
-    (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
+    (home / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
+    mind.mkdir(parents=True, exist_ok=True)
+    (mind / "AGENTS.md").write_text("# Mind", encoding="utf-8")
+    monkeypatch.setenv("HUMAN_ROOT", str(home))
 
     (notes / "Rust 所有权.md").write_text(
         "---\ntitle: Rust 所有权\ntype: note\nbelongs: [SRTP]\n---\n\n正文一二三。\n",
@@ -51,7 +55,7 @@ def surface(tmp_path):
     )
     (notes / "无 frontmatter.md").write_text("直接一句正文，没有栅栏。\n", encoding="utf-8")
     (notes / "坏 YAML.md").write_text("---\ntitle: ]:\n  - broken\n---\nbody\n", encoding="utf-8")
-    return root
+    return mind
 
 
 # --- tallying ---------------------------------------------------------------
@@ -65,8 +69,9 @@ def test_scan_counts_every_file_not_just_the_readable_ones(surface):
     assert len(scan.skipped) == 2
 
 
-def test_missing_note_root_is_reported_not_empty(tmp_path):
-    scan = scan_notes(tmp_path)
+def test_missing_note_root_is_reported_not_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path / "empty-home"))
+    scan = scan_notes(tmp_path / "mind")
 
     assert scan.scanned == 0
     assert any("目录不存在" in item for item in scan.skipped)
@@ -77,7 +82,7 @@ def test_missing_note_root_is_reported_not_empty(tmp_path):
 
 def test_belongs_matches_through_agent_subtree(surface):
     scan = scan_notes(surface)
-    entry = _entry("srtp", "Surface/dossiers/projects/SRTP")
+    entry = _entry("srtp", "Dossiers/projects/SRTP")
 
     matched = notes_for(scan, agent_aliases(entry))
 
@@ -101,7 +106,7 @@ def test_payload_carries_an_openable_absolute_path(surface):
 
 def test_unregistered_belongs_is_surfaced_not_dropped(surface):
     scan = scan_notes(surface)
-    known = known_names(surface, [_entry("srtp", "Surface/dossiers/projects/SRTP")])
+    known = known_names(surface, [_entry("srtp", "Dossiers/projects/SRTP")])
 
     assert unknown_belongs(scan, known) == ["Ghost"]
 
@@ -113,8 +118,9 @@ def test_no_aliases_matches_nothing(surface):
 # --- budget ----------------------------------------------------------------
 
 
-def test_entry_cap_reports_what_it_cut(tmp_path):
-    notes = tmp_path / "Surface" / "notes"
+def test_entry_cap_reports_what_it_cut(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path))
+    notes = tmp_path / "notes"
     notes.mkdir(parents=True)
     for index in range(MAX_ENTRIES + 5):
         (notes / f"n{index}.md").write_text(
@@ -129,8 +135,9 @@ def test_entry_cap_reports_what_it_cut(tmp_path):
     assert payload["budget"]["truncated"] is True
 
 
-def test_payload_byte_cap_holds_below_the_declared_limit(tmp_path):
-    notes = tmp_path / "Surface" / "notes"
+def test_payload_byte_cap_holds_below_the_declared_limit(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUMAN_ROOT", str(tmp_path))
+    notes = tmp_path / "notes"
     notes.mkdir(parents=True)
     for index in range(40):
         (notes / f"n{index}.md").write_text(
@@ -159,8 +166,8 @@ def test_agent_notes_route_shapes(monkeypatch, surface):
     from plobi.console import router
 
     registry = types.SimpleNamespace(
-        get=lambda agent_id: _entry(agent_id, "Surface/dossiers/projects/SRTP") if agent_id == "srtp" else None,
-        live_entries=lambda: [_entry("srtp", "Surface/dossiers/projects/SRTP")],
+        get=lambda agent_id: _entry(agent_id, "Dossiers/projects/SRTP") if agent_id == "srtp" else None,
+        live_entries=lambda: [_entry("srtp", "Dossiers/projects/SRTP")],
     )
     monkeypatch.setattr(router, "get_registry", lambda: registry)
     monkeypatch.setattr("plobi.mind.paths.resolve_root", lambda *a, **k: surface)

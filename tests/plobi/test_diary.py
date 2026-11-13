@@ -28,7 +28,7 @@ def surface(tmp_path, monkeypatch):
         monkeypatch.setenv(key, value)
 
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(root))
+    monkeypatch.setenv("HUMAN_ROOT", str(root))
     return root
 
 
@@ -94,7 +94,7 @@ def test_no_commit_when_the_root_is_not_a_repo(tmp_path, monkeypatch):
     (mind / "wiki").mkdir(parents=True)
     (root / "diary").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(root))
+    monkeypatch.setenv("HUMAN_ROOT", str(root))
 
     result = diary.save_entry("2026-10-24", "没有 git 也要落盘")
     assert result["committed"] is False

@@ -28,7 +28,7 @@ def roots(tmp_path, monkeypatch):
     mind.mkdir()
     home = tmp_path / "home"
     monkeypatch.setenv("MIND_ROOT", str(mind))
-    monkeypatch.setenv("SURFACE_ROOT", str(surface))
+    monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_HOME", str(home))
     return surface, home
 

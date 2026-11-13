@@ -2463,8 +2463,8 @@ function Set-MindRootEnv {
     # 决定：安装记录 HKCU\Software\Plobi\DataDir（装机版）与 PLOBI_HOME env
     # （开发态）；桌面 spawn 后端时按数据根派生这两格，见
     # apps/desktop/electron/backend-env.ts::deriveBrainSurfacePointers()。
-    # 人读面那一格 2026-11-10 改名 HUMAN_ROOT（旧名 SURFACE_ROOT 仍认）：两个名字
-    # 在本进程里都写同一个值，见下面那段。
+    # 人读面那一格 2026-11-10 改名 HUMAN_ROOT；旧名 SURFACE_ROOT 2026-11-13 彻底
+    # 停用（不再读、不再写），只留给下面 Remove-LegacySharedEnvVars 当旧垃圾收回。
     param(
         [Parameter(Mandatory=$true)][string]$PlobiHomePath
     )
@@ -2498,13 +2498,11 @@ function Set-MindRootEnv {
     # 2026-11-03 起人读面**住在家目录本体**（不再有 `<家>\surface` 这一层）：这一格的值
     # 就是家。旧形状（`<家>\surface`）把指针指到一处根本不存在的地方 ⇒ 人读面读不到。
     # 2026-11-08：同样只设进程内 $env，不写用户级（理由见函数开头）。
-    # 2026-11-10：那一格**改名了**——新名 `HUMAN_ROOT`，旧名 `SURFACE_ROOT` 仍认
-    # （兼容期）。两个都写，**值必须一致**：只认旧名的那一套后端/装订件不能因为
-    # 改名就找不到人读面，读到两个不同的家更糟。
+    # 2026-11-13「全清，不留过渡态」：那一格只叫 `HUMAN_ROOT`，旧名 `SURFACE_ROOT`
+    # 不再读、也不再写——读它等于把 11-10 之前的旧指针当成配置继续用。
     $surfaceRoot = $PlobiHomePath
-    # 新名优先、旧名兜底：继承来的那一串按 HUMAN_ROOT 优先取。
+    # 继承来的那一串只按 HUMAN_ROOT 取。
     $inheritedHuman = $env:HUMAN_ROOT
-    if ([string]::IsNullOrWhiteSpace($inheritedHuman)) { $inheritedHuman = $env:SURFACE_ROOT }
     if ($inheritedHuman) {
         Write-Info "HUMAN_ROOT (this process only, already inherited): $inheritedHuman"
         if ($inheritedHuman -ne $surfaceRoot) {
@@ -2515,7 +2513,6 @@ function Set-MindRootEnv {
         Write-Info "HUMAN_ROOT (this process only, user env untouched): $surfaceRoot"
     }
     $env:HUMAN_ROOT = $inheritedHuman
-    $env:SURFACE_ROOT = $inheritedHuman
 
     # 家在，但人读面还没搬进来（dossiers/ notes/ diary/ 三样都还没有）＝ 还没到。
     $hasSurface = $false
@@ -2537,7 +2534,8 @@ function Set-MindRootEnv {
 # 目录"——这种值只可能是旧安装器自己写的。指向别处（例如同机开发者手设的
 # D:\Data\AppData\Plobi-Dev）一律不动：那是人的配置，不是安装器的垃圾。
 # 不碰 HKCU\Software\Plobi\DataDir；这几个变量都不存在时静默跳过；重复执行无变化。
-# HUMAN_ROOT 是 SURFACE_ROOT 的新名（2026-11-10）：指向同一处的也要一并收回。
+# HUMAN_ROOT 是 SURFACE_ROOT 的新名（2026-11-10）；SURFACE_ROOT 自 11-13 起只作为
+# 「旧安装器留下的垃圾」出现在这份待清名单里，产品侧不再读写它。
 
 function Get-LegacyEnvVerdict {
     <#

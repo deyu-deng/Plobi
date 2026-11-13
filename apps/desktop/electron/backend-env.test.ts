@@ -34,13 +34,11 @@ test('脑与人读面：env 有就用 env，没有就读注册表那份', () => 
   })
 
   assert.equal(fromRegistry.MIND_ROOT, 'D:\\Data\\AppData\\Plobi-Dev\\mind')
-  // 人读面那格有两个名字：**新名 HUMAN_ROOT 优先**，旧名 SURFACE_ROOT 兜底；
-  // 两个都写，值必须一致（兼容期旧件只认旧名）。
+  // 人读面那格只有一个名字：HUMAN_ROOT。
   assert.equal(fromRegistry.HUMAN_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
-  assert.equal(fromRegistry.SURFACE_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
 })
 
-test('人读面：新名 HUMAN_ROOT 优先，旧名 SURFACE_ROOT 只作兜底', () => {
+test('人读面：只认 HUMAN_ROOT，旧名 SURFACE_ROOT 不再认', () => {
   const pointers = resolveBrainSurfacePointers({
     currentEnv: { HUMAN_ROOT: 'D:\\Data\\AppData\\Plobi-Dev', SURFACE_ROOT: 'D:\\Data\\AppData\\Plobi-Old' },
     platform: 'win32',
@@ -48,17 +46,16 @@ test('人读面：新名 HUMAN_ROOT 优先，旧名 SURFACE_ROOT 只作兜底', 
   })
 
   assert.equal(pointers.HUMAN_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
-  assert.equal(pointers.SURFACE_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
+  assert.equal('SURFACE_ROOT' in pointers, false, '旧名不许再被写回 env')
 
-  // 只有旧名时仍然认（旧件还在用），两个名字写同一个值。
+  // 只有旧名 ⇒ 什么都不给（2026-11-13 全清，旧指针名彻底停用）。
   const legacyOnly = resolveBrainSurfacePointers({
     currentEnv: { SURFACE_ROOT: 'D:\\Data\\AppData\\Plobi-Old' },
     platform: 'win32',
     readEnvVar: () => ''
   })
 
-  assert.equal(legacyOnly.HUMAN_ROOT, 'D:\\Data\\AppData\\Plobi-Old')
-  assert.equal(legacyOnly.SURFACE_ROOT, 'D:\\Data\\AppData\\Plobi-Old')
+  assert.deepEqual(legacyOnly, {})
 })
 
 test('脑与人读面：继承来的那串已经不在了，注册表那份还在 ⇒ 改读注册表那份', () => {
@@ -89,13 +86,12 @@ test('显式传入的 brainSurface 仍然优先（老调用点兼容口）', () 
     platform: 'win32',
     pathModule: path.win32,
     currentEnv: {},
-    brainSurface: { MIND_ROOT: 'D:\\Data\\AppData\\Plobi-Dev\\mind', SURFACE_ROOT: 'D:\\Data\\AppData\\Plobi-Dev' }
+    brainSurface: { MIND_ROOT: 'D:\\Data\\AppData\\Plobi-Dev\\mind', HUMAN_ROOT: 'D:\\Data\\AppData\\Plobi-Dev' }
   })
 
   assert.equal(env.MIND_ROOT, 'D:\\Data\\AppData\\Plobi-Dev\\mind')
-  assert.equal(env.SURFACE_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
-  // 只给旧名也补上新名，值一致（兼容期两套件各认一个）。
   assert.equal(env.HUMAN_ROOT, 'D:\\Data\\AppData\\Plobi-Dev')
+  assert.equal('SURFACE_ROOT' in env, false)
 })
 
 test('desktop backend PATH adds Plobi-managed bins and missing POSIX sane entries', () => {
@@ -292,7 +288,7 @@ test('buildDesktopBackendEnv still adds PYTHONPATH and PATH when the inherited e
 //
 // 这台机器上装了两份 Plobi：开发态（`npm run dev`，家 = `D:\Data\AppData\Plobi-Dev`）
 // 与装机版（家在安装时选、记在 `HKCU\Software\Plobi\DataDir`，现为
-// `D:\Data\AppData\Plobi`）。过去安装器把 `PLOBI_HOME`／`MIND_ROOT`／`SURFACE_ROOT`
+// `D:\Data\AppData\Plobi`）。过去安装器把 `PLOBI_HOME`／`MIND_ROOT`／`HUMAN_ROOT`
 // 三格写进 `HKCU\Environment`，于是两份身份共用同一块门牌：谁后装，谁就把
 // 对方带偏。
 //
@@ -329,7 +325,7 @@ test('双身份：装机版后端三格由 installRecordedDir 派生，不再读
   const env = backendEnvFor(dataRoot.root)
   assert.equal(env.PLOBI_HOME, WIN_PACKAGED_HOME)
   assert.equal(env.MIND_ROOT, `${WIN_PACKAGED_HOME}\\mind`)
-  assert.equal(env.SURFACE_ROOT, WIN_PACKAGED_HOME)
+  assert.equal(env.HUMAN_ROOT, WIN_PACKAGED_HOME)
 })
 
 test('双身份：开发态后端三格由 PLOBI_HOME 环境值派生，绝不落到装机版目录', () => {
@@ -348,14 +344,14 @@ test('双身份：开发态后端三格由 PLOBI_HOME 环境值派生，绝不�
   const env = backendEnvFor(dataRoot.root)
   assert.equal(env.PLOBI_HOME, WIN_DEV_HOME)
   assert.equal(env.MIND_ROOT, `${WIN_DEV_HOME}\\mind`)
-  assert.equal(env.SURFACE_ROOT, WIN_DEV_HOME)
+  assert.equal(env.HUMAN_ROOT, WIN_DEV_HOME)
 })
 
-test('双身份：继承来的脏 MIND_ROOT／SURFACE_ROOT 一律作废（脑与家必须同源）', () => {
+test('双身份：继承来的脏 MIND_ROOT／HUMAN_ROOT 一律作废（脑与家必须同源）', () => {
   const dirty = {
     PLOBI_HOME: WIN_PACKAGED_HOME,
     MIND_ROOT: `${WIN_PACKAGED_HOME}\\mind`,
-    SURFACE_ROOT: `${WIN_PACKAGED_HOME}\\surface`
+    HUMAN_ROOT: WIN_PACKAGED_HOME
   }
 
   // 开发态拿到的是登录快照，里面三格全指着装机版 —— 这正是被污染的样子。
@@ -363,9 +359,8 @@ test('双身份：继承来的脏 MIND_ROOT／SURFACE_ROOT 一律作废（脑与
 
   assert.equal(env.PLOBI_HOME, WIN_DEV_HOME)
   assert.equal(env.MIND_ROOT, `${WIN_DEV_HOME}\\mind`)
-  assert.equal(env.SURFACE_ROOT, WIN_DEV_HOME)
   assert.equal(env.HUMAN_ROOT, WIN_DEV_HOME)
-  for (const value of [env.PLOBI_HOME, env.MIND_ROOT, env.SURFACE_ROOT, env.HUMAN_ROOT]) {
+  for (const value of [env.PLOBI_HOME, env.MIND_ROOT, env.HUMAN_ROOT]) {
     assert.equal(String(value).includes('\\Plobi\\'), false, `泄漏了装机版路径：${value}`)
   }
 })
@@ -385,7 +380,7 @@ test('没给数据根时退回 resolveBrainSurfacePointers 的旧口径（不造
     pythonPathEntries: [],
     // 两格都由 currentEnv 给足；注册表读取一并钉空，免得开发机上残留的
     // MIND_ROOT（现为 Plobi-Dev 派生）把它顶掉，让断言随本机环境飘。
-    currentEnv: { MIND_ROOT: `${WIN_PACKAGED_HOME}\\mind`, SURFACE_ROOT: WIN_PACKAGED_HOME },
+    currentEnv: { MIND_ROOT: `${WIN_PACKAGED_HOME}\\mind`, HUMAN_ROOT: WIN_PACKAGED_HOME },
     readEnvVar: () => '',
     platform: 'win32',
     pathModule: path.win32
@@ -393,6 +388,5 @@ test('没给数据根时退回 resolveBrainSurfacePointers 的旧口径（不造
 
   assert.equal(env.PLOBI_HOME, undefined, '没有数据根就不写 PLOBI_HOME')
   assert.equal(env.MIND_ROOT, `${WIN_PACKAGED_HOME}\\mind`)
-  assert.equal(env.SURFACE_ROOT, WIN_PACKAGED_HOME)
   assert.equal(env.HUMAN_ROOT, WIN_PACKAGED_HOME)
 })
