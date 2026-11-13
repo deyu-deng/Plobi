@@ -15,6 +15,28 @@ type QueueState = Record<string, QueuedPromptEntry[]>
 
 const STORAGE_KEY = 'plobi.desktop.composerQueue.v1'
 
+/**
+ * 「还没有会话」的那一场对话的队列键前缀。
+ *
+ * 身份改成「以 Agent 为单位」之后，会话 id 不再是**先于**对话存在的东西：一场
+ * 新对话在第一条消息落地之前，既没有存着的会话 id，也没有运行时 id ⇒ 队列键
+ * 为空 ⇒ `enqueueQueuedPrompt` 直接返回 null ⇒ **排队静默失败**（用户：输入后
+ * 发送不了了）。草稿那套早就有同样的占位（`composer.ts` 的 `__new__`），转录的
+ * threadKey 也有 `'new'` 兜底——**只有队列没跟上**。
+ *
+ * 所以这里给「还没有会话的那一场」一个占位键，按 Agent 分桶（两个 Agent 的新
+ * 对话不许共用一个桶 ⇒ 否则一条排队的消息会跑到别的 Agent 那场去）。等这一场
+ * 拿到真会话 id，占位桶整体搬过去（`migrateQueuedPrompts`）。
+ */
+const PENDING_QUEUE_PREFIX = '__new__:'
+
+/** 「还没有会话的那一场」的队列键（按 Agent 分桶）。 */
+export const pendingQueueKey = (scope: string): string => `${PENDING_QUEUE_PREFIX}${scope.trim() || 'chat'}`
+
+/** 这个队列键是不是占位键（还没拿到会话 id 的那一场）。 */
+export const isPendingQueueKey = (key: string | null | undefined): boolean =>
+  Boolean(key?.trim().startsWith(PENDING_QUEUE_PREFIX))
+
 const load = (): QueueState => {
   if (typeof window === 'undefined') {
     return {}
@@ -135,6 +157,43 @@ export const removeQueuedPrompt = (key: string | null | undefined, id: string): 
   }
 
   writeSession(sid, next)
+
+  return true
+}
+
+/**
+ * Remove an entry by id from EVERY bucket.
+ *
+ * A drain send can be the very thing that mints the session its message
+ * belongs to — the session-creation path then moves the pending placeholder
+ * bucket onto the real session key, so the entry this drain just sent is no
+ * longer in the bucket it was read from. Removing by id across buckets is the
+ * only way to be sure it doesn't go out a second time (entry ids are unique
+ * per entry, so this can't touch an unrelated message).
+ */
+export const removeQueuedPromptEverywhere = (id: string): boolean => {
+  const state = $queuedPromptsBySession.get()
+  const next: QueueState = {}
+  let changed = false
+
+  for (const [key, queue] of Object.entries(state)) {
+    const kept = queue.filter(entry => entry.id !== id)
+
+    if (kept.length !== queue.length) {
+      changed = true
+    }
+
+    if (kept.length > 0) {
+      next[key] = kept
+    }
+  }
+
+  if (!changed) {
+    return false
+  }
+
+  $queuedPromptsBySession.set(next)
+  save(next)
 
   return true
 }

@@ -48,6 +48,7 @@ import { useComposerUrlDialog } from './hooks/use-composer-url-dialog'
 import { useComposerVoice } from './hooks/use-composer-voice'
 import { useSlashCompletions } from './hooks/use-slash-completions'
 import { useSessionStatusPresence } from './hooks/use-status-presence'
+import { composerQueueKey } from './queue-key'
 import { QueuePanel } from './queue-panel'
 import {
   composerPlainText,
@@ -104,7 +105,13 @@ export function ChatBar() {
   // not interrupt it — there's nothing actively running to stop, and stopping
   // would discard a question the user may want to come back to. The blocking
   // prompt owns its own dismissal (Skip, Reject, dialog close).
-  const activeQueueSessionKey = queueSessionKey || sessionId || null
+  // 队列键 —— 这一场对话的排队消息落在哪个桶里（规则见 queue-key.ts：键永远
+  // 存在，最差退到「这个 Agent 的新对话槽」这个占位键）。
+  const activeQueueSessionKey = composerQueueKey({
+    pathname: useLocation().pathname,
+    queueSessionKey,
+    sessionId
+  })
 
   // Status items (subagents, background processes) are keyed by the RUNTIME
   // session id — gateway events and process.list both speak that id. Only the

@@ -11,6 +11,7 @@ import {
   takeSessionDraft,
   updateComposerAttachment
 } from './composer'
+import { pendingQueueKey } from './composer-queue'
 
 function attachment(overrides: Partial<ComposerAttachment> & Pick<ComposerAttachment, 'id'>): ComposerAttachment {
   return { kind: 'file', label: 'doc.pdf', ...overrides }
@@ -71,6 +72,16 @@ describe('session drafts', () => {
     expect(takeSessionDraft(null).text).toBe('new chat draft')
     expect(takeSessionDraft(undefined).text).toBe('new chat draft')
     expect(takeSessionDraft('session-a').text).toBe('session draft')
+  })
+
+  it('keeps a new-chat draft in the new-chat slot when the scope is a queue placeholder', () => {
+    // The queue's placeholder bucket ("this conversation has no session id
+    // yet") must not drag the draft along — a half-written new chat would
+    // otherwise vanish the moment the queue key changed.
+    stashSessionDraft(pendingQueueKey('agenda-secretary'), 'half-written', [])
+
+    expect(takeSessionDraft(null).text).toBe('half-written')
+    expect(takeSessionDraft(pendingQueueKey('agenda-secretary')).text).toBe('half-written')
   })
 
   it('persists draft text (not attachments) to localStorage', () => {

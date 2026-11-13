@@ -186,17 +186,14 @@ export function useSlashCommand(deps: SlashCommandDeps) {
           const outcome = await submitPromptText(message)
 
           // A LOCAL refusal (the busy gate / the in-flight lock / a session
-          // switch mid-flight) means the message never left the box. Say so
-          // and hand the words back to the composer instead of dropping them —
-          // the same "nothing is lost" rule the composer path follows.
-          if (outcome === 'busy' || outcome === 'locked') {
-            renderSlashOutput('session busy — /interrupt the current turn before sending this command')
-            setComposerDraft(message)
-
-            return
-          }
-
-          if (outcome === 'drifted') {
+          // switch mid-flight) means the message never left the box. Hand the
+          // words back to the composer instead of dropping them — the same
+          // "nothing is lost" rule the composer path follows. The reason is
+          // deliberately NOT named: the refusals share one value, and saying
+          // "busy" when the user merely switched chats would be a lie on
+          // screen. The words visibly landing back in the composer is the
+          // signal.
+          if (outcome === 'local') {
             setComposerDraft(message)
 
             return

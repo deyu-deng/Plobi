@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getSessionMessages, type SessionInfo } from '@/plobi'
 import { createClientSessionState } from '@/lib/chat-runtime'
+import { clearQueuedPrompts, enqueueQueuedPrompt, getQueuedPrompts, pendingQueueKey } from '@/store/composer-queue'
 import { $scopeAgent, $newChatProfile } from '@/store/scope'
 import {
   $activeSessionId,
@@ -222,6 +223,66 @@ describe('createBackendSessionForSend secretary shell URL (WP-L2-FE-BUGFIX)', ()
 
     expect(sessionId).toBe(RUNTIME_SESSION_ID)
     expect(navigate).toHaveBeenCalledWith('/stored-new-1', { replace: true })
+  })
+})
+
+// The queue bucket of a conversation that has no session id yet is a
+// placeholder (one per Agent). The moment that conversation gets its session,
+// the bucket has to move with it — otherwise the pending messages stay
+// stranded in a bucket nothing reads (user 11-13: 「输入后。发送不了了」).
+describe('the queue placeholder moves onto the session it becomes', () => {
+  afterEach(() => {
+    cleanup()
+    $newChatProfile.set(null)
+    $scopeAgent.set('default')
+    $currentCwd.set('')
+    clearQueuedPrompts(pendingQueueKey('simulation'))
+    clearQueuedPrompts(pendingQueueKey('other-agent'))
+    clearQueuedPrompts('stored-new-1')
+    vi.restoreAllMocks()
+  })
+
+  async function createOnAgentRoute(routeToken: string) {
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'session.create') {
+        return { session_id: RUNTIME_SESSION_ID, stored_session_id: 'stored-new-1' } as never
+      }
+
+      return {} as never
+    })
+
+    let create: ((preview?: string | null) => Promise<string | null>) | null = null
+    render(
+      <Harness
+        getRouteToken={() => routeToken}
+        onReady={c => (create = c)}
+        requestGateway={requestGateway}
+      />
+    )
+    await waitFor(() => expect(create).not.toBeNull())
+    await create!()
+  }
+
+  it('carries the pending bucket of that Agent onto the new session', async () => {
+    const pending = pendingQueueKey('simulation')
+
+    enqueueQueuedPrompt(pending, { attachments: [], text: 'queued before the session existed' })
+
+    await createOnAgentRoute('/agent/simulation::')
+
+    expect(getQueuedPrompts(pending)).toEqual([])
+    expect(getQueuedPrompts('stored-new-1').map(entry => entry.text)).toEqual(['queued before the session existed'])
+  })
+
+  it("leaves another Agent's pending bucket alone", async () => {
+    const otherPending = pendingQueueKey('other-agent')
+
+    enqueueQueuedPrompt(otherPending, { attachments: [], text: 'belongs to another agent' })
+
+    await createOnAgentRoute('/agent/simulation::')
+
+    expect(getQueuedPrompts(otherPending).map(entry => entry.text)).toEqual(['belongs to another agent'])
+    expect(getQueuedPrompts('stored-new-1')).toEqual([])
   })
 })
 

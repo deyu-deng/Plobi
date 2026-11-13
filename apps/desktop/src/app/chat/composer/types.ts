@@ -38,18 +38,22 @@ export interface ChatBarState {
  * - `false` — the **gateway** rejected it. The error surface already spoke
  *   (an error bubble in the transcript + a toast), so the composer just puts
  *   the words back in the box.
- * - `'busy'` / `'locked'` — a **local** refusal: the session is running a turn
- *   (the busy gate) or the previous submit still holds the per-session lock.
- *   These used to be indistinguishable from `false`, so the composer treated
- *   them as "the gateway said no" and put the words back in the box — the
- *   message vanished with no sound at all (user 11-13: 「输入后，发送不了了」).
- *   Now the composer **queues** it: the words stay visible in the queue panel
- *   and go out when the session frees up.
- * - `'drifted'` — the user switched session/route while the submit was in
- *   flight. The words belong to the session they were typed in, so they go back
- *   to *that* session's draft — never into the one now on screen.
+ * - `'local'` — a **local** refusal: the session was running a turn (the busy
+ *   gate), the previous submit still held the per-session lock, or the user
+ *   switched conversations mid-flight. Nothing was said on screen, and these
+ *   used to be indistinguishable from `false` — so the composer treated them
+ *   as "the gateway said no" and put the words back in the box: the message
+ *   vanished with no sound at all (user 11-13: 「输入后，发送不了了」).
+ *   Now the composer **queues** it, under the conversation it was typed in:
+ *   the user sees it in the queue panel and it goes out when that
+ *   conversation frees up.
+ *
+ * Note the queue key always exists now (a conversation that has no session id
+ * yet falls back to a per-Agent placeholder bucket — see
+ * `store/composer-queue.ts`), so a local refusal always has somewhere to put
+ * the words.
  */
-export type SubmitOutcome = boolean | 'busy' | 'locked' | 'drifted'
+export type SubmitOutcome = boolean | 'local'
 
 export interface ChatBarProps {
   busy: boolean

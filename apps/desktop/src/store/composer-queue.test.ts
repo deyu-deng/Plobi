@@ -7,9 +7,12 @@ import {
   dequeueQueuedPrompt,
   enqueueQueuedPrompt,
   getQueuedPrompts,
+  isPendingQueueKey,
   migrateQueuedPrompts,
+  pendingQueueKey,
   promoteQueuedPrompt,
   removeQueuedPrompt,
+  removeQueuedPromptEverywhere,
   shouldAutoDrain,
   updateQueuedPrompt,
   updateQueuedPromptText
@@ -146,6 +149,80 @@ describe('migrateQueuedPrompts', () => {
   it('is a no-op when source is empty or keys match', () => {
     expect(migrateQueuedPrompts('rt-old', 'rt-new')).toBe(false)
     expect(migrateQueuedPrompts('rt-x', 'rt-x')).toBe(false)
+  })
+})
+
+describe('the placeholder bucket for a conversation that has no session id yet', () => {
+  beforeEach(() => {
+    window.localStorage.removeItem(QUEUE_STORAGE_KEY)
+    $queuedPromptsBySession.set({})
+  })
+
+  it('gives every Agent its own bucket (two new chats never share one)', () => {
+    const l1 = pendingQueueKey('l1')
+    const agentA = pendingQueueKey('agenda-secretary')
+    const agentB = pendingQueueKey('butler')
+
+    expect(l1).not.toBe(agentA)
+    expect(agentA).not.toBe(agentB)
+
+    enqueueQueuedPrompt(agentA, { attachments: [], text: 'for agenda' })
+    enqueueQueuedPrompt(agentB, { attachments: [], text: 'for butler' })
+
+    expect(getQueuedPrompts(agentA).map(e => e.text)).toEqual(['for agenda'])
+    expect(getQueuedPrompts(agentB).map(e => e.text)).toEqual(['for butler'])
+  })
+
+  it('recognizes its own keys and does not claim a real session id', () => {
+    expect(isPendingQueueKey(pendingQueueKey('l1'))).toBe(true)
+    expect(isPendingQueueKey('stored-session-a')).toBe(false)
+    expect(isPendingQueueKey(null)).toBe(false)
+    expect(isPendingQueueKey(undefined)).toBe(false)
+  })
+
+  it('carries the pending entries onto the session that replaces the placeholder', () => {
+    const pending = pendingQueueKey('agenda-secretary')
+
+    enqueueQueuedPrompt(pending, { attachments: [], text: 'queued before the session existed' })
+
+    expect(migrateQueuedPrompts(pending, 'stored-session-a')).toBe(true)
+    expect(getQueuedPrompts(pending)).toEqual([])
+    expect(getQueuedPrompts('stored-session-a').map(e => e.text)).toEqual(['queued before the session existed'])
+  })
+})
+
+describe('removeQueuedPromptEverywhere', () => {
+  beforeEach(() => {
+    window.localStorage.removeItem(QUEUE_STORAGE_KEY)
+    $queuedPromptsBySession.set({})
+  })
+
+  it('drops the entry from every bucket (the drain that minted the session moved it)', () => {
+    const pending = pendingQueueKey('l1')
+
+    enqueueQueuedPrompt(pending, { attachments: [], text: 'sent by the drain' })
+    const id = getQueuedPrompts(pending)[0]!.id
+
+    // The session-creation path moves the placeholder bucket onto the real
+    // session key — the entry this drain just sent now lives over there.
+    migrateQueuedPrompts(pending, 'stored-session-a')
+
+    expect(removeQueuedPromptEverywhere(id)).toBe(true)
+    expect(getQueuedPrompts('stored-session-a')).toEqual([])
+  })
+
+  it('leaves the other buckets alone', () => {
+    enqueueQueuedPrompt('session-a', { attachments: [], text: 'keep me' })
+    enqueueQueuedPrompt('session-b', { attachments: [], text: 'drop me' })
+    const id = getQueuedPrompts('session-b')[0]!.id
+
+    expect(removeQueuedPromptEverywhere(id)).toBe(true)
+    expect(getQueuedPrompts('session-a').map(e => e.text)).toEqual(['keep me'])
+    expect(getQueuedPrompts('session-b')).toEqual([])
+  })
+
+  it('reports no change for an unknown id', () => {
+    expect(removeQueuedPromptEverywhere('queued-nope')).toBe(false)
   })
 })
 

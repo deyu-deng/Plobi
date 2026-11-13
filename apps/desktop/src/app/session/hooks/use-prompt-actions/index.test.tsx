@@ -615,20 +615,19 @@ describe('usePromptActions submit / queue drain semantics', () => {
 
     const accepted = await handle!.submitText('should be blocked')
 
-    // The gate names ITSELF now ('busy'), instead of wearing the gateway's
-    // rejection face ('false'). The composer used to read every `false` as
-    // "rejected" and put the words back in the box — so a message refused here
-    // vanished with no sound at all (user 11-13: 「输入后。发送不了了」).
-    // With the reason named, the composer queues it instead.
-    expect(accepted).toBe('busy')
+    // A LOCAL refusal ('local'), not the gateway's rejection face ('false').
+    // The composer used to read every `false` as "rejected" and put the words
+    // back in the box — so a message refused here vanished with no sound at
+    // all (user 11-13: 「输入后。发送不了了」). With the refusal named, the
+    // composer queues it instead.
+    expect(accepted).toBe('local')
     expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
   })
 
-  it('names the in-flight lock when a second submit lands while the first is still running', async () => {
-    // Same refusal family as the busy gate, but a different reason: the
-    // previous submit for this session still holds the lock. It must not be
-    // reported as a gateway rejection either — and the second send must NOT
-    // reach the gateway.
+  it('refuses a second submit while the first still holds the session lock', async () => {
+    // Same refusal family as the busy gate: the previous submit for this
+    // session still holds the lock. It must not be reported as a gateway
+    // rejection either — and the second send must NOT reach the gateway.
     const busyRef = { current: false }
 
     let releaseSubmit: () => void = () => {}
@@ -664,17 +663,17 @@ describe('usePromptActions submit / queue drain semantics', () => {
 
     const second = await handle!.submitText('second message')
 
-    expect(second).toBe('locked')
+    expect(second).toBe('local')
     expect(requestGateway.mock.calls.filter(c => c[0] === 'prompt.submit')).toHaveLength(1)
 
     releaseSubmit()
     expect(await first).toBe(true)
   })
 
-  it('names a drift when the user switched sessions mid-submit (no silent false)', async () => {
+  it('refuses a submit when the user switched sessions mid-flight (no silent false)', async () => {
     // The words belong to the session they were typed in. The composer needs
-    // to know this was a drift (not a gateway rejection) so it puts them back
-    // into THAT session's draft instead of into the one now on screen.
+    // to know this was a local refusal (not a gateway rejection) so it keeps
+    // them under THAT conversation instead of into the one now on screen.
     let releaseResume: () => void = () => {}
     const selectedStoredSessionIdRef: MutableRefObject<string | null> = { current: 'stored-a' }
     const activeSessionIdRef: MutableRefObject<string | null> = { current: null }
@@ -711,7 +710,7 @@ describe('usePromptActions submit / queue drain semantics', () => {
     await waitFor(() => expect(requestGateway).toHaveBeenCalledWith('session.resume', expect.anything()))
     releaseResume()
 
-    expect(await submitting).toBe('drifted')
+    expect(await submitting).toBe('local')
     expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
   })
 })
@@ -1484,11 +1483,10 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     await waitFor(() => expect(calls.some(c => c.method === 'session.resume')).toBe(true))
     releaseResume()
 
-    // 'drifted', not `false`: the composer has to be able to tell "the user
+    // 'local', not `false`: the composer has to be able to tell "the user
     // switched sessions mid-flight" from "the gateway rejected it" — the words
-    // go back into session A's draft, not into session B's box (and not into
-    // B at all).
-    expect(await submitting).toBe('drifted')
+    // wait in session A's queue, not in session B's box (and not in B at all).
+    expect(await submitting).toBe('local')
     expect(calls.some(c => c.method === 'prompt.submit')).toBe(false)
     expect(calls.find(c => c.method === 'session.resume')?.params).toEqual({
       session_id: STORED_SESSION_A
@@ -1541,7 +1539,7 @@ describe('usePromptActions submit session-context isolation (#54527)', () => {
     await waitFor(() => expect(calls.some(c => c.method === 'session.resume')).toBe(true))
     releaseResume()
 
-    expect(await submitting).toBe('drifted')
+    expect(await submitting).toBe('local')
     expect(submitAttempts).toBe(1)
     expect(calls.filter(c => c.method === 'prompt.submit')).toHaveLength(1)
     expect(calls.find(c => c.method === 'session.resume')?.params).toMatchObject({

@@ -33,7 +33,7 @@ interface UseComposerSubmitArgs {
   onSubmit: ChatBarProps['onSubmit']
   queueCurrentDraft: () => boolean
   queueEdit: QueueEditState | null
-  queueText: (text: string, attachments: ComposerAttachment[]) => boolean
+  queueText: (text: string, attachments: ComposerAttachment[], key?: string | null) => boolean
   queuedPrompts: QueuedPromptEntry[]
   sessionId: string | null | undefined
   setComposerText: (value: string) => void
@@ -45,10 +45,10 @@ interface UseComposerSubmitArgs {
  * queue meet. `submitDraft` is the one decision tree (queue-edit save · slash-
  * now-while-busy · queue · drain · send · stop); `dispatchSubmit` is the shared
  * send primitive: it sends, and it decides what happens to the words when the
- * send does NOT go out — a local refusal (busy / locked) QUEUES them, a drift
- * (the user switched session mid-flight) puts them back into the session they
- * were typed in, a gateway rejection restores them in the box (the error
- * surface already spoke). Nothing is ever dropped in silence.
+ * send does NOT go out — a local refusal (busy / locked / the user switched
+ * session mid-flight) QUEUES them under the conversation they were typed in,
+ * a gateway rejection restores them in the box (the error surface already
+ * spoke). Nothing is ever dropped in silence.
  */
 export function useComposerSubmit({
   activeQueueSessionKey,
@@ -102,35 +102,23 @@ export function useComposerSubmit({
     }
 
     void Promise.resolve(Object.keys(options).length ? onSubmit(text, options) : onSubmit(text))
-      .then(accepted => {
-        // 本地被拒（会话在跑 / 上一笔还占着锁）：这句话**不丢**——排进队列。
-        // 队列面板上看得见它，会话一闲就发出去。原来这里把它当成「网关拒了」，
-        // 把草稿恢复回输入框：既没发出去、也没排队、还没有任何提示
-        // （用户 11-13：「输入后。发送不了了」）。
-        if (accepted === 'busy' || accepted === 'locked') {
-          if (!queueText(text, submittedAttachments)) {
-            // 这一场还没有队列键（连会话 id 都还没有）⇒ 只能把话放回输入框。
+      .then(outcome => {
+        // 本地被拒（会话在跑／上一笔还占着锁／提交途中换了会话）：这句话**不丢**
+        // ——排进**它所属的那一场**的队列（队列面板上看得见它，那一场一闲就发出去）。
+        // 原来这里把它当成「网关拒了」，把草稿恢复回输入框：既没发出去、也没排队、
+        // 还没有任何提示（用户 11-13：「输入后。发送不了了」）。
+        if (outcome === 'local') {
+          if (!queueText(text, submittedAttachments, submittedScope)) {
+            // 这一场连队列键都没有（理论上不会了：键有占位兜底）⇒ 只能放回输入框。
             restore()
           }
 
           return
         }
 
-        // 提交途中用户换了会话/路由：这句话属于原来那一场 ⇒ 只回灌原来那一场的
-        // 草稿；灌进当前那一场就是错投（用户换会话的半句话跑到别的对话里）。
-        if (accepted === 'drifted') {
-          stashAt(submittedScope, text, submittedAttachments)
-
-          if (submittedScope === activeQueueSessionKeyRef.current) {
-            loadIntoComposer(text, submittedAttachments)
-          }
-
-          return
-        }
-
-        if (accepted === false) {
-          // 网关拒了：错误面（转录里的错误气泡 + 提示）已经说过话，这里只把
-          // 字放回输入框，用户改完再发。
+        // 网关拒了：错误面（转录里的错误气泡 + 提示）已经说过话，这里只把字放回
+        // 输入框，用户改完再发。
+        if (outcome === false) {
           restore()
 
           return

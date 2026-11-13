@@ -9,11 +9,12 @@ import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
 import {
   $queuedPromptsBySession,
   enqueueQueuedPrompt,
+  isPendingQueueKey,
   MAX_AUTO_DRAIN_ATTEMPTS,
   migrateQueuedPrompts,
   promoteQueuedPrompt,
   type QueuedPromptEntry,
-  removeQueuedPrompt,
+  removeQueuedPromptEverywhere,
   shouldAutoDrain,
   updateQueuedPrompt
 } from '@/store/composer-queue'
@@ -198,20 +199,25 @@ export function useComposerQueue({
    * in-flight lock). Takes the text explicitly: the composer clears the draft
    * before dispatching, so the queue can't read the words off the draft ref.
    *
+   * `key` is the bucket it belongs to — **the conversation the words were typed
+   * in**, which is not necessarily the one on screen right now (the user may
+   * have switched conversations mid-flight; putting it in the current one would
+   * be a misdelivery).
+   *
    * These words must land in the queue, not back in the box — the old path put
    * them back in the box and said nothing, so a message refused locally
    * vanished without a sound (user 11-13: 「输入后。发送不了了」). In the queue
    * panel the user SEES them, and they go out when the session frees up.
    */
   const queueText = useCallback(
-    (text: string, queuedAttachments: ComposerAttachment[]): boolean => {
-      if (!activeQueueSessionKey || (!text.trim() && queuedAttachments.length === 0)) {
+    (text: string, queuedAttachments: ComposerAttachment[], key: string | null = activeQueueSessionKey): boolean => {
+      if (!key || (!text.trim() && queuedAttachments.length === 0)) {
         return false
       }
 
       const quote = $quoteTarget.get()
 
-      const entry = enqueueQueuedPrompt(activeQueueSessionKey, {
+      const entry = enqueueQueuedPrompt(key, {
         text,
         attachments: queuedAttachments,
         ...(quote ? { replyTo: quote.id } : {})
@@ -257,16 +263,19 @@ export function useComposerQueue({
           })
         )
 
-        // 只有 `true` 才算「发出去了」。`onSubmit` 现在会回一个有理由的拒绝
-        // （'busy' / 'locked' / 'drifted'），它们都是真值——按「非 false 即成功」
-        // 判会把**没发出去**的队列条目从队列里删掉 ⇒ 消息静默消失。
+        // 只有 `true` 才算「发出去了」。`onSubmit` 现在会回一个本地拒绝
+        // （`'local'`），它是真值——按「非 false 即成功」判会把**没发出去**的
+        // 队列条目从队列里删掉 ⇒ 消息静默消失。
         // 拒绝 ⇒ 条目留在队列里，等下一轮排空（退避计数照常走）。
         if (accepted !== true) {
           return false
         }
 
         drainFailuresRef.current.delete(entry.id)
-        removeQueuedPrompt(activeQueueSessionKey, entry.id)
+        // 按 id 全桶摘：这一发可能刚好把会话创建出来（占位桶 ⇒ 真会话桶，见
+        // store/composer-queue.ts）⇒ 条目已经被搬去了另一个桶 ⇒ 只摘原桶的话，
+        // 它会在新桶里被再发一次。
+        removeQueuedPromptEverywhere(entry.id)
         resetBrowseState(sessionId)
 
         return true
@@ -361,6 +370,14 @@ export function useComposerQueue({
     prevQueueKeyRef.current = activeQueueSessionKey
 
     if (queueSessionKey || !prev || !activeQueueSessionKey || prev === activeQueueSessionKey) {
+      return
+    }
+
+    // A placeholder bucket ("this conversation has no session id yet") is NOT
+    // migrated on a key change: only the session-creation path knows which
+    // conversation the placeholder belongs to. Moving it here would hand the
+    // pending messages to whatever conversation the user switched to.
+    if (isPendingQueueKey(prev)) {
       return
     }
 

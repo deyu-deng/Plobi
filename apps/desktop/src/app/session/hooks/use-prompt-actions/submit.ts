@@ -125,15 +125,14 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         return false
       }
 
-      // LOCAL refusal #1 — the session is running a turn. This is NOT the
-      // gateway saying no, and it must not look like it: the composer used to
-      // read every `false` as "rejected" and put the words back in the box, so
-      // a message refused here vanished with no sound (user 11-13:
-      // 「输入后，发送不了了」). Say which refusal it is — the composer queues
-      // the words instead, where the user can see them and they go out when
-      // the session frees up.
+      // LOCAL refusal — the session is running a turn. This is NOT the gateway
+      // saying no, and it must not look like it: the composer used to read
+      // every `false` as "rejected" and put the words back in the box, so a
+      // message refused here vanished with no sound (user 11-13:
+      // 「输入后，发送不了了」). The composer queues the words instead, where the
+      // user can see them and they go out when the session frees up.
       if (!options?.fromQueue && busyRef.current) {
-        return 'busy'
+        return 'local'
       }
 
       // Pin the session context for the whole async submit pipeline. Without
@@ -154,10 +153,10 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       const submitLockKey = startingStoredSessionId || startingActiveSessionId || '__pending_new__'
 
       if (_submitInFlight.has(submitLockKey)) {
-        // LOCAL refusal #2 — the previous submit for this session still holds
-        // the lock. Same deal as the busy gate: name it, don't let the
-        // composer mistake it for a gateway rejection.
-        return 'locked'
+        // LOCAL refusal — the previous submit for this session still holds the
+        // lock. Same deal as the busy gate: the composer must not mistake it
+        // for a gateway rejection.
+        return 'local'
       }
 
       _submitInFlight.add(submitLockKey)
@@ -240,15 +239,15 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         )
       }
 
-      const abortForSessionSwitch = (optimisticSessionId: null | string): 'drifted' => {
+      const abortForSessionSwitch = (optimisticSessionId: null | string): 'local' => {
         dropOptimistic(optimisticSessionId)
         releaseBusy()
 
-        // LOCAL refusal #3 — the user switched session/route while this
-        // submit was in flight. The words belong to the session they were
-        // typed in, so the composer puts them back into THAT session's draft
-        // (never into the one now on screen).
-        return 'drifted'
+        // LOCAL refusal — the user switched session/route while this submit was
+        // in flight. The words belong to the session they were typed in, so the
+        // composer queues them under THAT conversation (never the one now on
+        // screen).
+        return 'local'
       }
 
       setMutableRef(busyRef, true)
