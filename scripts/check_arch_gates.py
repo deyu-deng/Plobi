@@ -130,7 +130,13 @@ def main() -> int:
             "tests/plobi_cli/test_cli_help_says_agent_not_profile.py",
             "tests/plobi/test_identity_surfaces_readable.py",
             "-q",
-            "--basetemp=.pytest-run",
+            # basetemp 换档（11-13 主人授权接手这一行）：旧的 `.pytest-run` 那档的 ACL 坏了 ——
+            # 它「存在」却 stat 不到，pytest 对这种目录只会 `mkdir` → `FileExistsError` ⇒ 这道门
+            # 必红 ⇒ pre-commit 挡住**全仓所有** Code 提交（不止这一刀）。换成一档干净的新目录：
+            # 名字带 `.pytest-` 前缀，`.gitignore` 第 175 行 `.pytest-*/` 已经收着，不进仓。
+            # 那一档坏掉的原因记在这儿，别当随手改：它是 11-13 一次 `rm --` 清理尝试改坏的，
+            # 只有管理员权限能修（见 Docs 登记册 WP-TURTLE-LOADING 那一格）。
+            "--basetemp=.pytest-arch-gate",
         ],
         ROOT,
     )
