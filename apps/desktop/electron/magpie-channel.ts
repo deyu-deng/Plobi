@@ -100,6 +100,84 @@ export function magpieBinRoot(plobiHome: string): string {
   return path.join(plobiHome, 'magpie-runtime', 'bin')
 }
 
+/**
+ * Where a version's bytes wait between `curl` runs: `<bin>/<version>.part`.
+ *
+ * The name carries the version and nothing else. It used to end in
+ * `.<pid>.part`, which made the file unique per *process* — and therefore
+ * unreachable by the next one, so `-C -` resumed from zero every time and each
+ * killed run left a 74 MB tombstone that no code path removed. One stable name
+ * per version means the retry that matters, the one after this process is gone,
+ * can find its own bytes.
+ *
+ * Two downloads of the same version would now share a file. They do not: the
+ * check/install door in `main.ts` is a single button, and the worst case if one
+ * ever raced is a digest mismatch, which `downloadVerified` answers by starting
+ * over from zero.
+ */
+export function magpiePartPath(plobiHome: string, version: string): string {
+  return path.join(magpieBinRoot(plobiHome), `${version}.part`)
+}
+
+/** `v0.1.3771.part`, or the pre-2026-11-13 `v0.1.3771.34360.part` (that number is a pid). */
+const PART_RE = /^(v\d+\.\d+\.\d+)(?:\.(\d+))?\.part$/
+
+/**
+ * Remove part files no future download can use; return the names removed.
+ *
+ * Two shapes are dead on arrival:
+ *  - the pid-suffixed names written before the naming fix — the pid that wrote
+ *    them is gone, so nothing will ever resume them;
+ *  - the bytes of a version that is already installed — the rename happened and
+ *    only the copy was left behind.
+ *
+ * A plain `<version>.part` with no finished binary beside it is left in peace:
+ * that is either an interrupted download worth resuming or the file the current
+ * install is writing. Deleting those is how a resumable updater stops being
+ * resumable. Pass `keepVersion` when the caller knows which version it is about
+ * to install — then every *other* version's part is garbage too, and the sweep
+ * keeps the pile from growing one 74 MB fossil per abandoned update.
+ */
+export function sweepStaleParts(
+  plobiHome: string,
+  platform: NodeJS.Platform = process.platform,
+  keepVersion: string | null = null
+): string[] {
+  const root = magpieBinRoot(plobiHome)
+  let entries: fs.Dirent[]
+
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  const exe = magpieExeName(platform)
+  const removed: string[] = []
+
+  for (const entry of entries) {
+    if (!entry.isFile()) {continue}
+
+    const match = PART_RE.exec(entry.name)
+
+    if (!match) {continue}
+
+    const [, version, pid] = match
+    const stale = keepVersion !== null && version !== keepVersion
+
+    if (!pid && !stale && !fs.existsSync(path.join(root, version, exe))) {continue}
+
+    try {
+      fs.rmSync(path.join(root, entry.name), { force: true })
+      removed.push(entry.name)
+    } catch {
+      // a running virus scanner holding the handle; the next install tries again
+    }
+  }
+
+  return removed
+}
+
 /** `v0.1.3492` > `v0.1.3403`. Anything unversioned compares equal to anything. */
 export function compareMagpieVersion(a: string, b: string): number {
   if (!VERSION_RE.test(a) || !VERSION_RE.test(b)) {return 0}
@@ -419,9 +497,10 @@ async function fetchText(
  *    eat the whole 30-minute budget; `--speed-limit/--speed-time` turns "no bytes
  *    for a minute" into a real exit code we can see and retry.
  * 2. **Resume instead of restart.** `-C -` picks up whatever is already in `dest`,
- *    so a retry costs the tail of the file, not all 74 MB again. That is why the
- *    caller's temp name is now stable per version (no pid) — a pid-suffixed name
- *    guaranteed a resume could never find its own bytes.
+ *    so a retry costs the tail of the file, not all 74 MB again. That only works
+ *    if the name outlives the process, which is why the caller's part file is
+ *    stable per version (`magpiePartPath`) — on 11-11 this shipped with
+ *    `.<pid>.part`, so every resume quietly started from zero.
  */
 async function downloadTo(url: string, dest: string, timeoutMs = 30 * 60_000): Promise<void> {
   const base = [
@@ -464,6 +543,48 @@ async function downloadTo(url: string, dest: string, timeoutMs = 30 * 60_000): P
   }
 
   throw last instanceof Error ? last : new Error(String(last))
+}
+
+/** The downloader `downloadVerified` drives. A parameter so a test can fake the wire. */
+export type MagpieDownload = (url: string, dest: string) => Promise<void>
+
+/**
+ * Download `url` into `dest` and prove the bytes are the ones `sha256` names.
+ *
+ * `-C -` cannot tell a truncated file from a poisoned one — it appends to
+ * whatever is in `dest`. So one bad byte left by an earlier run fails the same
+ * digest forever, and every retry resumes onto the same garbage: the update is
+ * stuck, silently, with 74 MB on disk to show for it. One clean restart from
+ * zero is the escape hatch. If that digest disagrees too, the asset and the
+ * checksum file do not describe the same thing and no amount of retrying helps.
+ */
+export async function downloadVerified(
+  url: string,
+  dest: string,
+  sha256: string,
+  download: MagpieDownload = (target, file) => downloadTo(target, file)
+): Promise<void> {
+  const expected = sha256.toLowerCase()
+
+  // A part that is already complete — the run that downloaded it died between the
+  // last byte and the rename — would make `-C -` ask for bytes past the end and
+  // collect a 416 on every retry. Verify what is on disk before spending the wire.
+  if (fs.existsSync(dest) && (await sha256File(dest)) === expected) {return}
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await download(url, dest)
+
+    const got = await sha256File(dest)
+
+    if (got === expected) {return}
+
+    // Suspect the bytes we may have resumed onto, not the server: start over once.
+    fs.rmSync(dest, { force: true })
+
+    if (attempt === 1) {
+      throw new Error(`sha256 mismatch for ${path.basename(dest)}: expected ${expected}, got ${got}`)
+    }
+  }
 }
 
 /**
@@ -636,7 +757,15 @@ export async function installBuild(
     throw new Error(`refusing ${version}: older than the packaged ${options.floor}`)
   }
 
-  const dir = path.join(magpieBinRoot(plobiHome), version)
+  const root = magpieBinRoot(plobiHome)
+
+  // Now that we know which version this install is for, the pile of part files
+  // has exactly one member worth keeping: this version's. Everything else is a
+  // fossil from a run that died, an install that finished, or a version that has
+  // already been superseded — and nothing will ever read it again.
+  sweepStaleParts(plobiHome, platform, version)
+
+  const dir = path.join(root, version)
   const binary = path.join(dir, magpieExeName(platform))
 
   // Already here and still intact — trust the bytes on disk only after hashing them.
@@ -658,52 +787,51 @@ export async function installBuild(
     }
   }
 
-  fs.mkdirSync(magpieBinRoot(plobiHome), { recursive: true })
-  const part = path.join(magpieBinRoot(plobiHome), `${version}.${process.pid}.part`)
+  fs.mkdirSync(root, { recursive: true })
+
+  // Pid-free on purpose: the run that resumes these bytes is allowed to be a
+  // different process than the one that started them. And deliberately *not*
+  // cleaned up when the download fails — an interrupted download is the case
+  // `-C -` exists for, and deleting the tail here would charge the next attempt
+  // for all 74 MB over again. `sweepStaleParts` collects it once it is useless.
+  const part = magpiePartPath(plobiHome, version)
+
+  await downloadVerified(url, part, sha256)
+
+  fs.mkdirSync(dir, { recursive: true })
+
+  // Windows cannot rename onto an existing file; drop the stale one first.
+  try {
+    fs.rmSync(binary, { force: true })
+  } catch {
+    // a locked leftover surfaces on the rename below, which is where it belongs
+  }
+
+  fs.renameSync(part, binary)
 
   try {
-    await downloadTo(url, part)
-    const got = await sha256File(part)
-
-    if (got !== sha256) {throw new Error(`sha256 mismatch for ${version}: expected ${sha256}, got ${got}`)}
-
-    fs.mkdirSync(dir, { recursive: true })
-
-    // Windows cannot rename onto an existing file; drop the stale one first.
-    try {
-      fs.rmSync(binary, { force: true })
-    } catch {
-      // a locked leftover surfaces on the rename below, which is where it belongs
-    }
-
-    fs.renameSync(part, binary)
-
-    try {
-      fs.chmodSync(binary, 0o755)
-    } catch {
-      // a filesystem without modes is fine
-    }
-
-    // A fresh install clears the old verdict on this version.
-    fs.rmSync(badMarker(plobiHome, version), { force: true })
-
-    const current: MagpieCurrent = {
-      version,
-      binary,
-      sha256,
-      size: fs.statSync(binary).size,
-      installedAt: new Date().toISOString()
-    }
-    writeJsonAtomic(currentPointer(plobiHome), current)
-    // Only after the pointer moved: a half-pruned directory is harmless, but a
-    // pruned directory that was still current would not be. Same reason the
-    // prune runs last rather than as the download starts.
-    pruneOldBuilds(plobiHome, version, options.keep)
-
-    return current
-  } finally {
-    fs.rmSync(part, { force: true })
+    fs.chmodSync(binary, 0o755)
+  } catch {
+    // a filesystem without modes is fine
   }
+
+  // A fresh install clears the old verdict on this version.
+  fs.rmSync(badMarker(plobiHome, version), { force: true })
+
+  const current: MagpieCurrent = {
+    version,
+    binary,
+    sha256,
+    size: fs.statSync(binary).size,
+    installedAt: new Date().toISOString()
+  }
+  writeJsonAtomic(currentPointer(plobiHome), current)
+  // Only after the pointer moved: a half-pruned directory is harmless, but a
+  // pruned directory that was still current would not be. Same reason the prune
+  // runs last rather than as the download starts.
+  pruneOldBuilds(plobiHome, version, options.keep)
+
+  return current
 }
 
 /*
