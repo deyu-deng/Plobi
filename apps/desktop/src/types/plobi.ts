@@ -209,6 +209,8 @@ export interface PlobiConfig {
   display?: {
     personality?: string
     skin?: string
+    /** 忙时 Enter 干什么：`interrupt`｜`queue`｜`steer`（底座那一个键）。 */
+    busy_input_mode?: string
   }
   terminal?: {
     cwd?: string

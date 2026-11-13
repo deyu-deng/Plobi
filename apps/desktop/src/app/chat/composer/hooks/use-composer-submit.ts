@@ -2,6 +2,7 @@ import { type RefObject, useEffect, useRef } from 'react'
 
 import { SLASH_COMMAND_RE } from '@/lib/chat-runtime'
 import { triggerHaptic } from '@/lib/haptics'
+import type { BusyInputMode } from '@/store/busy-input-mode'
 import { clearSessionDraft, type ComposerAttachment } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
 import { enqueueQueuedPrompt, type QueuedPromptEntry } from '@/store/composer-queue'
@@ -18,6 +19,8 @@ interface UseComposerSubmitArgs {
   activeQueueSessionKeyRef: RefObject<string | null>
   attachments: ComposerAttachment[]
   busy: boolean
+  /** 忙时怎么办＝**底座那一个键**（`display.busy_input_mode`）。 */
+  busyInputMode: BusyInputMode
   canSteer: boolean
   clearDraft: () => void
   disabled: boolean
@@ -55,6 +58,7 @@ export function useComposerSubmit({
   activeQueueSessionKeyRef,
   attachments,
   busy,
+  busyInputMode,
   canSteer,
   clearDraft,
   disabled,
@@ -99,6 +103,9 @@ export function useComposerSubmit({
     const options = {
       ...(attachments ? { attachments } : {}),
       ...(quote ? { replyTo: quote.id } : {}),
+      // 发送锁的桶＝**Agent 的作用域键**（不是会话 id）：一个 Agent 一张嘴，
+      // 两个 Agent 各自一把锁——以前新对话共用一把全局锁，互相顶掉。
+      ...(submittedScope ? { scopeKey: submittedScope } : {}),
     }
 
     void Promise.resolve(Object.keys(options).length ? onSubmit(text, options) : onSubmit(text))
@@ -109,7 +116,8 @@ export function useComposerSubmit({
         // 还没有任何提示（用户 11-13：「输入后。发送不了了」）。
         if (outcome === 'local') {
           if (!queueText(text, submittedAttachments, submittedScope)) {
-            // 这一场连队列键都没有（理论上不会了：键有占位兜底）⇒ 只能放回输入框。
+            // 这一场连队列键都没有（理论上不会了：桶＝Agent 的作用域键，永远在）
+            // ⇒ 只能放回输入框。
             restore()
           }
 
@@ -190,7 +198,26 @@ export function useComposerSubmit({
         clearDraft()
         dispatchSubmit(text)
       } else if (payloadPresent) {
-        queueCurrentDraft()
+        // 忙时怎么办＝**底座那一个键**（`display.busy_input_mode`，缺省 interrupt）：
+        // - `queue`：排进桌面端自己的队列——面板上看得见那一条，这一场一闲就发出去；
+        // - `interrupt`：**交给底座**——它打断当前这一轮，这句话作为下一轮发出去
+        //   （底座的 `tui_gateway/server.py::_handle_busy_submit` 同款口径）；
+        // - `steer`：转向当前这一轮；底座不接（没活工具窗口／带图）时落回队列。
+        if (busyInputMode === 'queue') {
+          queueCurrentDraft()
+        } else if (busyInputMode === 'steer' && canSteer) {
+          steerDraft()
+        } else if (busyInputMode === 'steer') {
+          queueCurrentDraft()
+        } else {
+          const submittedAttachments = cloneAttachments(attachments)
+
+          triggerHaptic('submit')
+          resetBrowseState(sessionId)
+          clearDraft()
+          attachmentsAtom.set([])
+          dispatchSubmit(text, submittedAttachments)
+        }
       } else {
         // Stop button (the only way to reach here while busy with an empty
         // composer — empty Enter is short-circuited in the keydown handler).

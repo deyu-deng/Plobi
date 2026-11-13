@@ -2,8 +2,6 @@ import { atom } from 'nanostores'
 
 import { triggerHaptic } from '@/lib/haptics'
 
-import { isPendingQueueKey } from './composer-queue'
-
 export interface ComposerAttachment {
   id: string
   kind: 'image' | 'file' | 'folder' | 'terminal' | 'url'
@@ -44,10 +42,9 @@ const draftKey = (scope: string | null | undefined) => {
     return NEW_SESSION_DRAFT_KEY
   }
 
-  // 队列的占位键（「还没有会话的那一场」，见 composer-queue.ts）在草稿这边仍是
-  // 同一个「新对话草稿槽」——别让草稿跟着队列键换桶，否则用户写了一半的新对话
-  // 草稿会凭空不见。
-  return isPendingQueueKey(trimmed) ? NEW_SESSION_DRAFT_KEY : trimmed
+  // 草稿的桶＝队列的桶＝**Agent 的作用域键**（`app/chat/composer/queue-key.ts`）：
+  // 切 Agent 换一份草稿，同一个 Agent 回来草稿还在。键不变 ⇒ 草稿不会凭空不见。
+  return trimmed
 }
 
 const cloneDraft = (draft: SessionDraft): SessionDraft => ({

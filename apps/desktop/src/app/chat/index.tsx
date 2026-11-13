@@ -540,7 +540,6 @@ export function ChatView({
               onSteer={onSteer}
               onSubmit={onSubmit}
               onTranscribeAudio={onTranscribeAudio}
-              queueSessionKey={selectedSessionId}
               sessionId={activeSessionId}
               state={chatBarState}
             >

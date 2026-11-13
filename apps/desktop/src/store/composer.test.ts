@@ -11,7 +11,6 @@ import {
   takeSessionDraft,
   updateComposerAttachment
 } from './composer'
-import { pendingQueueKey } from './composer-queue'
 
 function attachment(overrides: Partial<ComposerAttachment> & Pick<ComposerAttachment, 'id'>): ComposerAttachment {
   return { kind: 'file', label: 'doc.pdf', ...overrides }
@@ -74,14 +73,16 @@ describe('session drafts', () => {
     expect(takeSessionDraft('session-a').text).toBe('session draft')
   })
 
-  it('keeps a new-chat draft in the new-chat slot when the scope is a queue placeholder', () => {
-    // The queue's placeholder bucket ("this conversation has no session id
-    // yet") must not drag the draft along — a half-written new chat would
-    // otherwise vanish the moment the queue key changed.
-    stashSessionDraft(pendingQueueKey('agenda-secretary'), 'half-written', [])
+  it('keeps one draft per Agent (the draft bucket is the Agent bucket)', () => {
+    // The draft lives in the same bucket as the queue: the Agent's scope key.
+    // Switching Agents swaps the draft; coming back to the same Agent finds it
+    // again — and the key never changes under it, so a half-written draft can
+    // never vanish.
+    stashSessionDraft('agent:agenda-secretary', 'agenda draft', [])
+    stashSessionDraft('agent:butler', 'butler draft', [])
 
-    expect(takeSessionDraft(null).text).toBe('half-written')
-    expect(takeSessionDraft(pendingQueueKey('agenda-secretary')).text).toBe('half-written')
+    expect(takeSessionDraft('agent:agenda-secretary').text).toBe('agenda draft')
+    expect(takeSessionDraft('agent:butler').text).toBe('butler draft')
   })
 
   it('persists draft text (not attachments) to localStorage', () => {

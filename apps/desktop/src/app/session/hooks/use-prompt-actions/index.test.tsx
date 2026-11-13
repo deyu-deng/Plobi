@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubmitOutcome } from '@/app/chat/composer/types'
 import { translateNow } from '@/i18n'
 import { textPart } from '@/lib/chat-messages'
+import { DEFAULT_BUSY_INPUT_MODE, setBusyInputMode } from '@/store/busy-input-mode'
 import { $composerAttachments, $composerDraft, type ComposerAttachment, setComposerDraft } from '@/store/composer'
 import { $connectedDesktopApps } from '@/store/desktop-quotas'
 import { $notifications } from '@/store/notifications'
@@ -20,6 +21,12 @@ vi.mock('@/plobi', () => ({
   setApiRequestProfile: vi.fn(),
   transcribeAudio: vi.fn()
 }))
+
+// The busy mode is the base's one knob (`display.busy_input_mode`). A test that
+// flips it must not leak into the next one.
+afterEach(() => {
+  setBusyInputMode(DEFAULT_BUSY_INPUT_MODE)
+})
 
 // The active id the desktop holds is the *runtime* session id from
 // session.create — deliberately distinct from the stored DB id here, because
@@ -54,7 +61,7 @@ interface HarnessHandle {
   steerPrompt: (text: string) => Promise<boolean>
   submitText: (
     text: string,
-    options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
+    options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean; scopeKey?: string; steer?: boolean }
   ) => Promise<SubmitOutcome>
 }
 
@@ -599,7 +606,14 @@ describe('usePromptActions submit / queue drain semantics', () => {
     )
   })
 
-  it('a normal (non-queue) submit still respects the busyRef guard', async () => {
+  it('a normal (non-queue) submit still respects the busyRef guard in `queue` mode', async () => {
+    // `queue` mode ⇒ the queue is the desktop's own (the panel shows the
+    // pending turn), so the desktop refuses the send and the composer queues
+    // the words. A LOCAL refusal ('local'), not the gateway's rejection face
+    // ('false'): the composer used to read every `false` as "rejected" and put
+    // the words back in the box — so a message refused here vanished with no
+    // sound at all (user 11-13: 「输入后。发送不了了」).
+    setBusyInputMode('queue')
     const busyRef = { current: true }
     const requestGateway = vi.fn(async () => ({}) as never)
 
@@ -615,13 +629,86 @@ describe('usePromptActions submit / queue drain semantics', () => {
 
     const accepted = await handle!.submitText('should be blocked')
 
-    // A LOCAL refusal ('local'), not the gateway's rejection face ('false').
-    // The composer used to read every `false` as "rejected" and put the words
-    // back in the box — so a message refused here vanished with no sound at
-    // all (user 11-13: 「输入后。发送不了了」). With the refusal named, the
-    // composer queues it instead.
     expect(accepted).toBe('local')
     expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
+  })
+
+  it('lets a busy submit through in `interrupt` mode (the base decides)', async () => {
+    // The base already knows what to do with a prompt that lands mid-turn
+    // (`tui_gateway/server.py::_handle_busy_submit` applies
+    // `display.busy_input_mode`). A local gate in front of it ate the message
+    // before the base ever saw it — that was the "busy and nothing goes out"
+    // tell. In `interrupt` mode the message must reach the base.
+    setBusyInputMode('interrupt')
+    const busyRef = { current: true }
+
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'prompt.submit') {
+        return { status: 'queued' } as never
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness
+        busyRef={busyRef}
+        onReady={h => (handle = h)}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+      />
+    )
+
+    const accepted = await handle!.submitText('let the base decide')
+
+    expect(accepted).toBe(true)
+    expect(requestGateway.mock.calls.some(c => c[0] === 'prompt.submit')).toBe(true)
+  })
+
+  it('locks per Agent, not per session (two Agents never block each other)', async () => {
+    // The lock used to be keyed by the session id, and a brand-new chat had
+    // none ⇒ a **global** `__pending_new__` lock ⇒ two Agents' first messages
+    // locked each other out. The bucket is the Agent now (one Agent, one
+    // mouth).
+    const resolvers: (() => void)[] = []
+
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'prompt.submit') {
+        await new Promise<void>(resolve => {
+          resolvers.push(resolve)
+        })
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness
+        onReady={h => (handle = h)}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+      />
+    )
+
+    const first = handle!.submitText('agent A first', { scopeKey: 'agent:a' })
+    await waitFor(() => expect(requestGateway.mock.calls.some(c => c[0] === 'prompt.submit')).toBe(true))
+
+    // The same Agent still holds the lock ⇒ a LOCAL refusal (the composer
+    // queues the words instead of losing them).
+    expect(await handle!.submitText('agent A second', { scopeKey: 'agent:a' })).toBe('local')
+
+    // Another Agent ⇒ its own lock ⇒ its own send goes through.
+    const other = handle!.submitText('agent B first', { scopeKey: 'agent:b' })
+    await waitFor(() => expect(requestGateway.mock.calls.filter(c => c[0] === 'prompt.submit')).toHaveLength(2))
+
+    for (const resolve of resolvers) {
+      resolve()
+    }
+
+    expect(await first).toBe(true)
+    expect(await other).toBe(true)
   })
 
   it('refuses a second submit while the first still holds the session lock', async () => {
@@ -737,6 +824,23 @@ describe('usePromptActions steerPrompt', () => {
       session_id: RUNTIME_SESSION_ID,
       text: 'nudge the run'
     })
+    expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
+  })
+
+  it('routes a steer submit through session.steer (the composer\'s Ctrl+Enter path)', async () => {
+    // The console's steer rides the SAME submit channel, tagged with `steer`
+    // ⇒ the base injects it into the live run instead of starting a new turn.
+    const requestGateway = vi.fn(async () => ({ status: 'queued' }) as never)
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness onReady={h => (handle = h)} refreshSessions={async () => undefined} requestGateway={requestGateway} />
+    )
+
+    const accepted = await handle!.submitText('nudge the run', { steer: true })
+
+    expect(accepted).toBe(true)
+    expect(requestGateway).toHaveBeenCalledWith('session.steer', expect.anything())
     expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
   })
 

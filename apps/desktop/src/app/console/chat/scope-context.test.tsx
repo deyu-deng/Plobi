@@ -118,6 +118,29 @@ describe('ScopeChatContext — composer attach surface', () => {
     expect(composer.pickImages).toHaveBeenCalled()
   })
 
+  it('wires the steer path (Ctrl+Enter rides the live run, not a new turn)', async () => {
+    // The console used to hand the composer NO `onSteer` ⇒ `canSteer` was
+    // always false ⇒ Ctrl+Enter was swallowed by the key handler: nothing sent,
+    // nothing queued, no feedback at all (user 11-13: 「怎么这个功能给你整没了」).
+    const submit = vi.fn(async (_text: string, _options?: { steer?: boolean }) => true)
+    let value: ChatContextValue | undefined
+
+    render(
+      <ScopeChatContext submit={submit}>
+        <Probe onValue={next => (value = next)} />
+      </ScopeChatContext>
+    )
+
+    expect(typeof value!.onSteer).toBe('function')
+
+    const accepted = await value!.onSteer!('nudge the run')
+
+    expect(accepted).toBe(true)
+    // Same channel as a send, but tagged ⇒ the base steers instead of starting
+    // a new turn.
+    expect(submit).toHaveBeenCalledWith('nudge the run', { steer: true })
+  })
+
   it('threads the actions through ChatSurface into the real ChatBar: pasting an image attaches it', async () => {
     const composer = makeComposerActions()
 

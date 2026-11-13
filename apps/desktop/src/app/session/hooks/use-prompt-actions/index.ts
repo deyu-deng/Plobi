@@ -462,9 +462,53 @@ export function usePromptActions({
     submitPromptText
   })
 
+  // Steer = nudge the live turn without interrupting: the gateway appends the
+  // text to the next tool result so the model reads it on its next iteration
+  // (desktop parity with `/steer`). Returns false on reject (no live tool
+  // window) so the caller can fall back to queueing the words for the next turn.
+  //
+  // 放在 `submitText` 前面：那条提交通道（`options.steer`）要用它。
+  const steerPrompt = useCallback(
+    async (rawText: string): Promise<boolean> => {
+      const text = rawText.trim()
+      const sessionId = activeSessionId || activeSessionIdRef.current
+
+      if (!text || !sessionId) {
+        return false
+      }
+
+      try {
+        const result = await requestGateway<SessionSteerResponse>('session.steer', { session_id: sessionId, text })
+
+        if (result?.status === 'queued') {
+          triggerHaptic('submit')
+          // Inline note (not a toast) so the nudge lives in the transcript next
+          // to the turn it steered. The `steer:` prefix is rendered as a codicon
+          // row by SystemMessage (see STEER_NOTE_RE), same style as slash output.
+          appendSessionTextMessage(sessionId, 'system', `steer:${text}`)
+
+          return true
+        }
+      } catch {
+        // Swallow — caller queues the text so nothing is lost.
+      }
+
+      return false
+    },
+    [activeSessionId, activeSessionIdRef, appendSessionTextMessage, requestGateway]
+  )
+
   const submitText = useCallback(
     async (rawText: string, options?: SubmitTextOptions): Promise<SubmitOutcome> => {
       const visibleText = rawText.trim()
+
+      // 转向（Ctrl+Enter／输入框旁那枚转向键）：走 `session.steer`，**不新起
+      // 一轮**。底座那边被拒（没有活工具窗口／agent 不支持 steer）时回 `false`
+      // ⇒ 调用方（composer）把这句话落回队列，一句都不丢。
+      if (options?.steer) {
+        return await steerPrompt(visibleText)
+      }
+
       const attachments = options?.attachments ?? $composerAttachments.get()
 
       if (!attachments.length && SLASH_COMMAND_RE.test(visibleText)) {
@@ -476,7 +520,7 @@ export function usePromptActions({
 
       return await submitPromptText(rawText, options)
     },
-    [executeSlashCommand, submitPromptText]
+    [executeSlashCommand, steerPrompt, submitPromptText]
   )
 
   const transcribeVoiceAudio = useCallback(
@@ -580,40 +624,6 @@ export function usePromptActions({
     selectedStoredSessionIdRef,
     updateSessionState
   ])
-
-  // Steer = nudge the live turn without interrupting: the gateway appends the
-  // text to the next tool result so the model reads it on its next iteration
-  // (desktop parity with `/steer`). Returns false on reject (no live tool
-  // window) so the caller can fall back to queueing the words for the next turn.
-  const steerPrompt = useCallback(
-    async (rawText: string): Promise<boolean> => {
-      const text = rawText.trim()
-      const sessionId = activeSessionId || activeSessionIdRef.current
-
-      if (!text || !sessionId) {
-        return false
-      }
-
-      try {
-        const result = await requestGateway<SessionSteerResponse>('session.steer', { session_id: sessionId, text })
-
-        if (result?.status === 'queued') {
-          triggerHaptic('submit')
-          // Inline note (not a toast) so the nudge lives in the transcript next
-          // to the turn it steered. The `steer:` prefix is rendered as a codicon
-          // row by SystemMessage (see STEER_NOTE_RE), same style as slash output.
-          appendSessionTextMessage(sessionId, 'system', `steer:${text}`)
-
-          return true
-        }
-      } catch {
-        // Swallow — caller queues the text so nothing is lost.
-      }
-
-      return false
-    },
-    [activeSessionId, activeSessionIdRef, appendSessionTextMessage, requestGateway]
-  )
 
   const reloadFromMessage = useCallback(
     async (parentId: string | null) => {

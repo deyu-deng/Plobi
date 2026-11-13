@@ -3,6 +3,7 @@ import { type MutableRefObject, useCallback, useState } from 'react'
 import { BUILTIN_PERSONALITIES, normalizePersonalityValue, personalityNamesFromConfig } from '@/lib/chat-runtime'
 import { normalize } from '@/lib/text'
 import { getPlobiConfig, getPlobiConfigDefaults } from '@/plobi'
+import { normalizeBusyInputMode, setBusyInputMode } from '@/store/busy-input-mode'
 import {
   $agentCwd,
   $currentCwd,
@@ -97,6 +98,10 @@ export function usePlobiConfig({ activeSessionIdRef, refreshProjectBranch }: Plo
 
       setVoiceMaxRecordingSeconds(recordingLimit(config.voice?.max_recording_seconds))
       setSttEnabled(config.stt?.enabled !== false)
+      // 忙时语义＝底座那一个键（`display.busy_input_mode`）。桌面端不再自己
+      // 发明一套：同一个键，CLI／网关／桌面端三处同脾气。设置屏改完这一项，
+      // 保存时会再跑一次这个刷新 ⇒ 立刻生效。
+      setBusyInputMode(normalizeBusyInputMode(config.display?.busy_input_mode))
       applyAutoSpeakFromConfig(config)
     } catch {
       // Config is nice-to-have; chat still works without it.

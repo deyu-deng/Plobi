@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getSessionMessages, type SessionInfo } from '@/plobi'
 import { createClientSessionState } from '@/lib/chat-runtime'
-import { clearQueuedPrompts, enqueueQueuedPrompt, getQueuedPrompts, pendingQueueKey } from '@/store/composer-queue'
+import { clearQueuedPrompts, enqueueQueuedPrompt, getQueuedPrompts } from '@/store/composer-queue'
 import { $scopeAgent, $newChatProfile } from '@/store/scope'
 import {
   $activeSessionId,
@@ -226,18 +226,19 @@ describe('createBackendSessionForSend secretary shell URL (WP-L2-FE-BUGFIX)', ()
   })
 })
 
-// The queue bucket of a conversation that has no session id yet is a
-// placeholder (one per Agent). The moment that conversation gets its session,
-// the bucket has to move with it — otherwise the pending messages stay
-// stranded in a bucket nothing reads (user 11-13: 「输入后。发送不了了」).
-describe('the queue placeholder moves onto the session it becomes', () => {
+// The queue bucket IS the Agent, so it never moves: the moment that
+// conversation gets its session, the bucket stays exactly where it was (before
+// the session existed, the bucket was keyed by the session id and had to be
+// carried across — a move that could hand a pending message to the wrong
+// conversation).
+describe('the queue bucket stays with the Agent', () => {
   afterEach(() => {
     cleanup()
     $newChatProfile.set(null)
     $scopeAgent.set('default')
     $currentCwd.set('')
-    clearQueuedPrompts(pendingQueueKey('simulation'))
-    clearQueuedPrompts(pendingQueueKey('other-agent'))
+    clearQueuedPrompts('agent:simulation')
+    clearQueuedPrompts('agent:other-agent')
     clearQueuedPrompts('stored-new-1')
     vi.restoreAllMocks()
   })
@@ -263,25 +264,27 @@ describe('the queue placeholder moves onto the session it becomes', () => {
     await create!()
   }
 
-  it('carries the pending bucket of that Agent onto the new session', async () => {
-    const pending = pendingQueueKey('simulation')
+  it('keeps the pending message in that Agent bucket when the session appears', async () => {
+    const bucket = 'agent:simulation'
 
-    enqueueQueuedPrompt(pending, { attachments: [], text: 'queued before the session existed' })
+    enqueueQueuedPrompt(bucket, { attachments: [], text: 'queued before the session existed' })
 
     await createOnAgentRoute('/agent/simulation::')
 
-    expect(getQueuedPrompts(pending)).toEqual([])
-    expect(getQueuedPrompts('stored-new-1').map(entry => entry.text)).toEqual(['queued before the session existed'])
+    // The bucket did NOT move: it is still the Agent's bucket, and the message
+    // is still there (no loss, no second copy, nothing left in a dead bucket).
+    expect(getQueuedPrompts(bucket).map(entry => entry.text)).toEqual(['queued before the session existed'])
+    expect(getQueuedPrompts('stored-new-1')).toEqual([])
   })
 
-  it("leaves another Agent's pending bucket alone", async () => {
-    const otherPending = pendingQueueKey('other-agent')
+  it("leaves another Agent's bucket alone", async () => {
+    const otherBucket = 'agent:other-agent'
 
-    enqueueQueuedPrompt(otherPending, { attachments: [], text: 'belongs to another agent' })
+    enqueueQueuedPrompt(otherBucket, { attachments: [], text: 'belongs to another agent' })
 
     await createOnAgentRoute('/agent/simulation::')
 
-    expect(getQueuedPrompts(otherPending).map(entry => entry.text)).toEqual(['belongs to another agent'])
+    expect(getQueuedPrompts(otherBucket).map(entry => entry.text)).toEqual(['belongs to another agent'])
     expect(getQueuedPrompts('stored-new-1')).toEqual([])
   })
 })

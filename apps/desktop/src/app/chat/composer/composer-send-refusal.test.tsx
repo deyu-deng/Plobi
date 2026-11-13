@@ -6,12 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type QueueEditState } from '@/app/chat/composer/composer-utils'
 import { useComposerQueue } from '@/app/chat/composer/hooks/use-composer-queue'
 import { useComposerSubmit } from '@/app/chat/composer/hooks/use-composer-submit'
-import { composerQueueKey } from '@/app/chat/composer/queue-key'
+import { agentScopeKey } from '@/app/chat/composer/queue-key'
 import type { SubmitOutcome } from '@/app/chat/composer/types'
 import { ChatContext, type ChatContextValue } from '@/app/chat/context'
 import type { ChatMessage } from '@/lib/chat-messages'
+import { type BusyInputMode } from '@/store/busy-input-mode'
 import { type ComposerAttachment } from '@/store/composer'
-import { clearQueuedPrompts, getQueuedPrompts, migrateQueuedPrompts, pendingQueueKey } from '@/store/composer-queue'
+import { clearQueuedPrompts, getQueuedPrompts } from '@/store/composer-queue'
 
 // The composer's send decision tree, on the REAL hooks (`useComposerSubmit` +
 // `useComposerQueue`) and the REAL queue store — not a logic mirror.
@@ -27,50 +28,54 @@ import { clearQueuedPrompts, getQueuedPrompts, migrateQueuedPrompts, pendingQueu
 // The contract this file pins down:
 //   - a LOCAL refusal queues the words (the user SEES them in the queue panel,
 //     and they go out on the next drain) instead of bouncing back into the box;
-//   - the queue always has a bucket for the conversation — a conversation with
-//     no session id yet falls back to a per-Agent placeholder bucket, because
-//     a key of `null` used to drop the message on the floor;
+//   - the queue bucket is the **Agent** (`l1` / `agent:<id>`), so it always
+//     exists — a key of `null` used to drop the message on the floor;
 //   - a GATEWAY rejection still restores them into the box (the error surface
-//     already spoke).
+//     already spoke);
+//   - what "busy" means is the base's one knob (`display.busy_input_mode`).
 
-const SESSION_KEY = 'stored-session-a'
-const OTHER_SESSION_KEY = 'stored-session-b'
 const AGENT_A = 'agenda-secretary'
 const AGENT_B = 'butler'
+const BUCKET_A = `agent:${AGENT_A}`
+const BUCKET_B = `agent:${AGENT_B}`
 const DRAFT = 'hello there'
 
 interface HarnessApi {
   submitDraft: () => void
+  steerDraft: () => void
   loadIntoComposer: (text: string, attachments: ComposerAttachment[]) => void
   stashAt: (scope: string | null, text?: string, attachments?: ComposerAttachment[]) => void
 }
 
 type SubmitFn = (
   text: string,
-  options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
+  options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean; scopeKey?: string; steer?: boolean }
 ) => Promise<SubmitOutcome> | SubmitOutcome
 
 interface ComposerProps {
+  busy?: boolean
+  /** 忙时怎么办＝底座那一个键（`display.busy_input_mode`）。 */
+  busyInputMode?: BusyInputMode
+  canSteer?: boolean
   draft: string
   onReady: (api: HarnessApi) => void
+  onSteer?: (text: string) => Promise<boolean> | boolean
   onSubmit: SubmitFn
   /** The route the composer sits on — it decides which Agent's bucket is used. */
   pathname?: string
-  /** The stored session id (null = the conversation has no session id yet). */
-  queueSessionKey?: null | string
-  /** The runtime session id (null = the conversation has no session id yet). */
-  sessionId?: null | string
   scopeRef?: MutableRefObject<string | null>
 }
 
 // The hooks that need the chat context live INSIDE the provider.
 function Composer({
+  busy = false,
+  busyInputMode = 'interrupt',
+  canSteer = false,
   draft,
   onReady,
+  onSteer,
   onSubmit,
-  pathname = '/agent/agenda-secretary',
-  queueSessionKey = SESSION_KEY,
-  sessionId = SESSION_KEY,
+  pathname = `/agent/${AGENT_A}`,
   scopeRef
 }: ComposerProps) {
   const attachmentsAtom = useMemo(() => atom<ComposerAttachment[]>([]), [])
@@ -81,15 +86,16 @@ function Composer({
   const stashAt = useMemo(() => vi.fn(), [])
   const clearDraft = useMemo(() => vi.fn(), [])
   const focusInput = useMemo(() => vi.fn(), [])
-  // The real key derivation — the same one the ChatBar uses.
-  const activeQueueSessionKey = composerQueueKey({ pathname, queueSessionKey, sessionId })
+  // The real key derivation — the same one the ChatBar uses: the bucket is the
+  // Agent, so it never depends on a session id.
+  const activeQueueSessionKey = agentScopeKey(pathname)
   const localScopeRef = useRef<string | null>(activeQueueSessionKey)
   const activeQueueSessionKeyRef = scopeRef ?? localScopeRef
 
   const queue = useComposerQueue({
     activeQueueSessionKey,
     attachments: [],
-    busy: false,
+    busy,
     clearDraft,
     draftRef,
     focusInput,
@@ -97,16 +103,16 @@ function Composer({
     onCancel: vi.fn(),
     onSubmit,
     queueEditRef,
-    queueSessionKey,
-    sessionId
+    sessionId: null
   })
 
   const submit = useComposerSubmit({
     activeQueueSessionKey,
     activeQueueSessionKeyRef,
     attachments: [],
-    busy: false,
-    canSteer: false,
+    busy,
+    busyInputMode,
+    canSteer,
     clearDraft,
     disabled: false,
     draftRef,
@@ -117,20 +123,25 @@ function Composer({
     inputDisabled: false,
     loadIntoComposer,
     onCancel: vi.fn(),
-    onSteer: undefined,
+    onSteer,
     onSubmit,
     queueCurrentDraft: queue.queueCurrentDraft,
     queueEdit: queue.queueEdit,
     queueText: queue.queueText,
     queuedPrompts: queue.queuedPrompts,
-    sessionId,
+    sessionId: null,
     setComposerText: vi.fn(),
     stashAt
   })
 
   useEffect(() => {
-    onReady({ submitDraft: submit.submitDraft, loadIntoComposer, stashAt })
-  }, [loadIntoComposer, onReady, stashAt, submit.submitDraft])
+    onReady({
+      loadIntoComposer,
+      stashAt,
+      steerDraft: submit.steerDraft,
+      submitDraft: submit.submitDraft
+    })
+  }, [loadIntoComposer, onReady, stashAt, submit.steerDraft, submit.submitDraft])
 
   return null
 }
@@ -140,19 +151,19 @@ function Harness(props: ComposerProps) {
     () => ({
       attachments: atom<ComposerAttachment[]>([]),
       awaitingInput: false,
-      busy: false,
+      busy: props.busy ?? false,
       disabled: false,
       messages: atom<ChatMessage[]>([]),
       onCancel: vi.fn(),
       onSubmit: props.onSubmit,
-      sessionId: SESSION_KEY,
+      sessionId: null,
       state: {
         model: { canSwitch: false, model: 'test', provider: 'test' },
         tools: { enabled: true, label: 'tools' },
         voice: { enabled: false, active: false }
       }
     }),
-    [props.onSubmit]
+    [props.busy, props.onSubmit]
   )
 
   return (
@@ -164,10 +175,8 @@ function Harness(props: ComposerProps) {
 
 describe('composer send — a local refusal must not swallow the message', () => {
   beforeEach(() => {
-    clearQueuedPrompts(SESSION_KEY)
-    clearQueuedPrompts(OTHER_SESSION_KEY)
-    clearQueuedPrompts(pendingQueueKey(AGENT_A))
-    clearQueuedPrompts(pendingQueueKey(AGENT_B))
+    clearQueuedPrompts(BUCKET_A)
+    clearQueuedPrompts(BUCKET_B)
   })
 
   afterEach(() => {
@@ -190,8 +199,8 @@ describe('composer send — a local refusal must not swallow the message', () =>
       api!.submitDraft()
     })
 
-    // The words are queued for THIS session — the user can see them.
-    expect(getQueuedPrompts(SESSION_KEY).map(entry => entry.text)).toEqual([DRAFT])
+    // The words are queued for THIS Agent — the user can see them.
+    expect(getQueuedPrompts(BUCKET_A).map(entry => entry.text)).toEqual([DRAFT])
 
     // ...and they are NOT bounced back into the input box (that was the
     // "nothing happened" tell: the text looked like it had never been sent).
@@ -210,63 +219,21 @@ describe('composer send — a local refusal must not swallow the message', () =>
     })
 
     // The idle session drains the queue: the message actually goes out.
-    await waitFor(() => expect(getQueuedPrompts(SESSION_KEY)).toHaveLength(0))
+    await waitFor(() => expect(getQueuedPrompts(BUCKET_A)).toHaveLength(0))
     expect(onSubmit).toHaveBeenCalledWith(DRAFT, expect.objectContaining({ fromQueue: true }))
   })
 
-  it('queues a refused message even when the conversation has no session id yet', async () => {
-    // A brand-new chat: no stored session id, no runtime session id. The queue
-    // key used to be null here and `enqueueQueuedPrompt` returned null — the
-    // message had nowhere to go, so it vanished (user 11-13). Now the key falls
-    // back to this Agent's placeholder bucket.
-    const outcomes: SubmitOutcome[] = ['local', 'local']
-    const onSubmit = vi.fn(async () => outcomes.shift() ?? 'local')
-
-    let api: HarnessApi | null = null
-    render(
-      <Harness
-        draft={DRAFT}
-        onReady={a => (api = a)}
-        onSubmit={onSubmit}
-        pathname={`/agent/${AGENT_A}`}
-        queueSessionKey={null}
-        sessionId={null}
-      />
-    )
-
-    await act(async () => {
-      api!.submitDraft()
-    })
-
-    expect(getQueuedPrompts(pendingQueueKey(AGENT_A)).map(entry => entry.text)).toEqual([DRAFT])
-    expect(api!.loadIntoComposer).not.toHaveBeenCalled()
-  })
-
-  it("keeps two Agents' new chats apart (a pending message is never misdelivered)", async () => {
+  it("keeps two Agents' chats apart (a pending message is never misdelivered)", async () => {
     const onSubmit = vi.fn(async (): Promise<SubmitOutcome> => 'local')
 
     let apiA: HarnessApi | null = null
     let apiB: HarnessApi | null = null
 
     render(
-      <Harness
-        draft={DRAFT}
-        onReady={a => (apiA = a)}
-        onSubmit={onSubmit}
-        pathname={`/agent/${AGENT_A}`}
-        queueSessionKey={null}
-        sessionId={null}
-      />
+      <Harness draft={DRAFT} onReady={a => (apiA = a)} onSubmit={onSubmit} pathname={`/agent/${AGENT_A}`} />
     )
     render(
-      <Harness
-        draft={DRAFT}
-        onReady={b => (apiB = b)}
-        onSubmit={onSubmit}
-        pathname={`/agent/${AGENT_B}`}
-        queueSessionKey={null}
-        sessionId={null}
-      />
+      <Harness draft={DRAFT} onReady={b => (apiB = b)} onSubmit={onSubmit} pathname={`/agent/${AGENT_B}`} />
     )
 
     await act(async () => {
@@ -276,15 +243,15 @@ describe('composer send — a local refusal must not swallow the message', () =>
       apiB!.submitDraft()
     })
 
-    expect(getQueuedPrompts(pendingQueueKey(AGENT_A)).map(entry => entry.text)).toEqual([DRAFT])
-    expect(getQueuedPrompts(pendingQueueKey(AGENT_B)).map(entry => entry.text)).toEqual([DRAFT])
+    expect(getQueuedPrompts(BUCKET_A).map(entry => entry.text)).toEqual([DRAFT])
+    expect(getQueuedPrompts(BUCKET_B).map(entry => entry.text)).toEqual([DRAFT])
   })
 
   it('queues a message refused mid-switch under the conversation it was typed in', async () => {
     let resolveSubmit: (outcome: SubmitOutcome) => void = () => {}
     const onSubmit = vi.fn(() => new Promise<SubmitOutcome>(resolve => (resolveSubmit = resolve)))
 
-    const scopeRef: MutableRefObject<string | null> = { current: SESSION_KEY }
+    const scopeRef: MutableRefObject<string | null> = { current: BUCKET_A }
 
     let api: HarnessApi | null = null
     render(<Harness draft={DRAFT} onReady={a => (api = a)} onSubmit={onSubmit} scopeRef={scopeRef} />)
@@ -294,7 +261,7 @@ describe('composer send — a local refusal must not swallow the message', () =>
     })
 
     // The user switched to another conversation while the submit was in flight.
-    scopeRef.current = OTHER_SESSION_KEY
+    scopeRef.current = BUCKET_B
 
     await act(async () => {
       resolveSubmit('local')
@@ -302,49 +269,26 @@ describe('composer send — a local refusal must not swallow the message', () =>
 
     // The words belong to the conversation they were typed in — they wait in
     // ITS queue...
-    expect(getQueuedPrompts(SESSION_KEY).map(entry => entry.text)).toEqual([DRAFT])
+    expect(getQueuedPrompts(BUCKET_A).map(entry => entry.text)).toEqual([DRAFT])
     // ...and never in the one now on screen (that was a misdelivery).
-    expect(getQueuedPrompts(OTHER_SESSION_KEY)).toEqual([])
+    expect(getQueuedPrompts(BUCKET_B)).toEqual([])
     expect(api!.loadIntoComposer).not.toHaveBeenCalled()
   })
 
-  it('does not leave a sent message behind when the drain mints the session (the entry moved bucket)', async () => {
-    // The drain's send can be the very thing that creates the session the
-    // message belongs to — the session-creation path then moves the pending
-    // bucket onto the real session key. If the drain only cleared the bucket
-    // it read from, the message would still be sitting in the new bucket and
-    // would go out a second time.
-    const onSubmit = vi.fn(async (_text: string, options?: { fromQueue?: boolean }) => {
-      if (options?.fromQueue) {
-        migrateQueuedPrompts(pendingQueueKey(AGENT_A), 'stored-session-new')
-
-        return true
-      }
-
-      return 'local'
-    })
+  it('leaves no copy of a sent message behind (the bucket never moves, so one send is one send)', async () => {
+    const onSubmit = vi.fn(async (_text: string, options?: { fromQueue?: boolean }) => (options?.fromQueue ? true : 'local'))
 
     let api: HarnessApi | null = null
-    render(
-      <Harness
-        draft={DRAFT}
-        onReady={a => (api = a)}
-        onSubmit={onSubmit}
-        pathname={`/agent/${AGENT_A}`}
-        queueSessionKey={null}
-        sessionId={null}
-      />
-    )
+    render(<Harness draft={DRAFT} onReady={a => (api = a)} onSubmit={onSubmit} pathname={`/agent/${AGENT_A}`} />)
 
     await act(async () => {
       api!.submitDraft()
     })
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
-    // The message was sent — it must not be left in ANY bucket, or it goes out
+    // The message was sent — it must not be left in the bucket, or it goes out
     // twice.
-    expect(getQueuedPrompts('stored-session-new')).toEqual([])
-    expect(getQueuedPrompts(pendingQueueKey(AGENT_A))).toEqual([])
+    expect(getQueuedPrompts(BUCKET_A)).toEqual([])
   })
 
   it('still restores a gateway-rejected message into the box (the error surface already spoke)', async () => {
@@ -358,7 +302,121 @@ describe('composer send — a local refusal must not swallow the message', () =>
     })
 
     expect(api!.loadIntoComposer).toHaveBeenCalledWith(DRAFT, [])
-    expect(api!.stashAt).toHaveBeenCalledWith(SESSION_KEY, DRAFT, [])
-    expect(getQueuedPrompts(SESSION_KEY)).toHaveLength(0)
+    expect(api!.stashAt).toHaveBeenCalledWith(BUCKET_A, DRAFT, [])
+    expect(getQueuedPrompts(BUCKET_A)).toHaveLength(0)
+  })
+})
+
+// What Enter does while the agent is running is the base's one knob
+// (`display.busy_input_mode`): `interrupt`（打断当前这一轮，这句话作为下一轮发
+// 出去）／`queue`（排队，等这一轮结束）／`steer`（转向当前这一轮）。桌面端不再
+// 自己发明一套——同一个键，CLI／网关／桌面端三处一致。
+describe('composer send while busy — the base decides what Enter does', () => {
+  beforeEach(() => {
+    clearQueuedPrompts(BUCKET_A)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('queues it in `queue` mode (the visible queue panel)', async () => {
+    const onSubmit = vi.fn(async (): Promise<SubmitOutcome> => true)
+
+    let api: HarnessApi | null = null
+    render(
+      <Harness
+        busy
+        busyInputMode="queue"
+        draft={DRAFT}
+        onReady={a => (api = a)}
+        onSubmit={onSubmit}
+      />
+    )
+
+    await act(async () => {
+      api!.submitDraft()
+    })
+
+    expect(getQueuedPrompts(BUCKET_A).map(entry => entry.text)).toEqual([DRAFT])
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('sends it in `interrupt` mode (the base interrupts and takes it as the next turn)', async () => {
+    const onSubmit = vi.fn(async (): Promise<SubmitOutcome> => true)
+
+    let api: HarnessApi | null = null
+    render(
+      <Harness
+        busy
+        busyInputMode="interrupt"
+        draft={DRAFT}
+        onReady={a => (api = a)}
+        onSubmit={onSubmit}
+      />
+    )
+
+    await act(async () => {
+      api!.submitDraft()
+    })
+
+    // The words go out — the desktop does NOT hold them back behind a local
+    // busy gate; the base applies the policy (that was the bug: the local gate
+    // ate the message before the base ever saw it).
+    expect(onSubmit).toHaveBeenCalledWith(DRAFT, expect.objectContaining({ scopeKey: BUCKET_A }))
+    expect(getQueuedPrompts(BUCKET_A)).toEqual([])
+  })
+
+  it('steers it in `steer` mode, and falls back to the queue when the base refuses', async () => {
+    const onSubmit = vi.fn(async (): Promise<SubmitOutcome> => true)
+    const onSteer = vi.fn(async () => false)
+
+    let api: HarnessApi | null = null
+    render(
+      <Harness
+        busy
+        busyInputMode="steer"
+        canSteer
+        draft={DRAFT}
+        onReady={a => (api = a)}
+        onSteer={onSteer}
+        onSubmit={onSubmit}
+      />
+    )
+
+    await act(async () => {
+      api!.submitDraft()
+    })
+
+    expect(onSteer).toHaveBeenCalledWith(DRAFT)
+    // The base refused the steer (no live tool window) ⇒ the words fall back
+    // to the queue instead of vanishing.
+    expect(getQueuedPrompts(BUCKET_A).map(entry => entry.text)).toEqual([DRAFT])
+  })
+
+  it('queues it in `steer` mode when there is nothing to steer with', async () => {
+    const onSubmit = vi.fn(async (): Promise<SubmitOutcome> => true)
+    const onSteer = vi.fn(async () => true)
+
+    let api: HarnessApi | null = null
+    render(
+      <Harness
+        busy
+        busyInputMode="steer"
+        canSteer={false}
+        draft={DRAFT}
+        onReady={a => (api = a)}
+        onSteer={onSteer}
+        onSubmit={onSubmit}
+      />
+    )
+
+    await act(async () => {
+      api!.submitDraft()
+    })
+
+    expect(onSteer).not.toHaveBeenCalled()
+    expect(getQueuedPrompts(BUCKET_A).map(entry => entry.text)).toEqual([DRAFT])
   })
 })

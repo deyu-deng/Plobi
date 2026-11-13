@@ -12,6 +12,7 @@ import { chatMessageText } from '@/lib/chat-messages'
 import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
+import { $busyInputMode } from '@/store/busy-input-mode'
 import { browseBackward, browseForward, deriveUserHistory, isBrowsingHistory } from '@/store/composer-input-history'
 import { POPOUT_WIDTH_REM } from '@/store/composer-popout'
 import { removeQueuedPrompt } from '@/store/composer-queue'
@@ -48,7 +49,7 @@ import { useComposerUrlDialog } from './hooks/use-composer-url-dialog'
 import { useComposerVoice } from './hooks/use-composer-voice'
 import { useSlashCompletions } from './hooks/use-slash-completions'
 import { useSessionStatusPresence } from './hooks/use-status-presence'
-import { composerQueueKey } from './queue-key'
+import { agentScopeKey } from './queue-key'
 import { QueuePanel } from './queue-panel'
 import {
   composerPlainText,
@@ -93,25 +94,23 @@ export function ChatBar() {
     onSteer,
     onSubmit,
     onTranscribeAudio,
-    queueSessionKey,
     sessionId,
     state
   } = useChatContext()
 
   const attachments = useStore($composerAttachments)
+  // 忙时怎么办＝**底座那一个键**（`display.busy_input_mode`）：桌面端不再自己
+  // 发明一套脾气——同一个键，CLI／网关／桌面端三处一致（用户 11-13：「都接上底座」）。
+  const busyInputMode = useStore($busyInputMode)
   const scrolledUp = useStore($threadScrolledUp)
   const autoSpeak = useStore($autoSpeakReplies)
   // The turn is parked on the user (clarify / approval / sudo / secret). Esc must
   // not interrupt it — there's nothing actively running to stop, and stopping
   // would discard a question the user may want to come back to. The blocking
   // prompt owns its own dismissal (Skip, Reject, dialog close).
-  // 队列键 —— 这一场对话的排队消息落在哪个桶里（规则见 queue-key.ts：键永远
-  // 存在，最差退到「这个 Agent 的新对话槽」这个占位键）。
-  const activeQueueSessionKey = composerQueueKey({
-    pathname: useLocation().pathname,
-    queueSessionKey,
-    sessionId
-  })
+  // 队列键 —— 这一场对话的排队消息落在哪个桶里：规则见 queue-key.ts：
+  // **桶＝这个 Agent**（`l1` / `agent:<id>`），键永远存在，而且一辈子不变。
+  const activeQueueSessionKey = agentScopeKey(useLocation().pathname)
 
   // Status items (subagents, background processes) are keyed by the RUNTIME
   // session id — gateway events and process.list both speak that id. Only the
@@ -204,7 +203,6 @@ export function ChatBar() {
     onCancel,
     onSubmit,
     queueEditRef,
-    queueSessionKey,
     sessionId
   })
 
@@ -213,7 +211,9 @@ export function ChatBar() {
   const { stacked } = useComposerMetrics({ composerRef, composerSurfaceRef, editorRef, poppedOut })
   const hasComposerPayload = hasText || attachments.length > 0
   const canSubmit = busy || hasComposerPayload
-  const busyAction = busy && hasComposerPayload ? 'queue' : 'stop'
+  // 忙时那枚按钮＝底座那一个键决定的：`queue` ⇒ 排队（面板上看得见）；`interrupt`
+  // ⇒ 打断当前这一轮并把这句话送出去；`steer` ⇒ 转向当前这一轮。空着的时候是停止。
+  const busyAction = busy && hasComposerPayload ? busyInputMode : 'stop'
 
   // Steer only makes sense mid-turn, text-only (the gateway can't carry images
   // into a tool result) and never for a slash command (those execute inline).
@@ -235,6 +235,7 @@ export function ChatBar() {
     activeQueueSessionKeyRef,
     attachments,
     busy,
+    busyInputMode,
     canSteer,
     clearDraft,
     disabled,

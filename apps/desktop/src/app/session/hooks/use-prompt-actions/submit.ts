@@ -6,6 +6,7 @@ import type { Translations } from '@/i18n'
 import { type ChatMessage, textPart } from '@/lib/chat-messages'
 import { optimisticAttachmentRef } from '@/lib/chat-runtime'
 import { setMutableRef } from '@/lib/mutable-ref'
+import { getBusyInputMode } from '@/store/busy-input-mode'
 import {
   $composerAttachments,
   clearComposerAttachments,
@@ -131,7 +132,13 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       // message refused here vanished with no sound (user 11-13:
       // 「输入后，发送不了了」). The composer queues the words instead, where the
       // user can see them and they go out when the session frees up.
-      if (!options?.fromQueue && busyRef.current) {
+      //
+      // **只有 `queue` 模式在这里拦**：`queue` 的队列是桌面端自己的（面板上看得见
+      // 那一条、这一场一闲就发出去）。`interrupt`／`steer` 两种模式**交给底座判**
+      // （`tui_gateway/server.py::_handle_busy_submit` 按 `display.busy_input_mode`
+      // 打断／转向／排队）——桌面端自己再发明一道闸，就又变成「同一台机器两套脾气」，
+      // 而且消息会在半路被拦下，底座压根没见到它。
+      if (!options?.fromQueue && busyRef.current && getBusyInputMode() === 'queue') {
         return 'local'
       }
 
@@ -148,9 +155,12 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         selectedStoredSessionIdRef.current !== startingStoredSessionId ||
         getRouteToken() !== startingRouteToken
 
-      // One submit in flight per session — drop any concurrent re-fire so a
-      // stalled turn can't stack the same prompt into multiple real turns.
-      const submitLockKey = startingStoredSessionId || startingActiveSessionId || '__pending_new__'
+      // One submit in flight per **Agent** —— 这个产品没有会话概念，一 Agent 一张嘴
+      // （裁定 37／R-015）⇒ 锁的桶＝**Agent 的作用域键**（composer 随提交带上来，
+      // `scopeKey`）。以前这里是会话 id，新对话没有会话 id ⇒ 一把**全局**的
+      // `__pending_new__` 锁 ⇒ 两个 Agent 的新对话互相顶掉。
+      const submitLockKey =
+        options?.scopeKey?.trim() || startingStoredSessionId || startingActiveSessionId || '__pending_new__'
 
       if (_submitInFlight.has(submitLockKey)) {
         // LOCAL refusal — the previous submit for this session still holds the

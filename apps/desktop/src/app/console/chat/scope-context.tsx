@@ -132,6 +132,17 @@ export function ScopeChatContext({
 
         return await submit(text, options)
       },
+      // 转向（Ctrl+Enter／输入框旁那枚转向键）：走**同一条**提交通道，但打上
+      // `steer` 标记 ⇒ 底座那边是 `session.steer`（注入当前这一轮），不是新起
+      // 一轮。以前控制台这条路**根本没有** `onSteer` ⇒ `canSteer` 恒假 ⇒
+      // Ctrl+Enter 被键处理吞掉（一键不发、也没任何提示）。
+      onSteer: text => {
+        if (!submit) {
+          return false
+        }
+
+        return Promise.resolve(submit(text, { steer: true })).then(outcome => outcome === true)
+      },
       onCancel: () => {
         void cancel?.()
       },

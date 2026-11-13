@@ -56,7 +56,11 @@ export function ComposerControls({
 }: {
   autoSpeak: boolean
   busy: boolean
-  busyAction: 'queue' | 'stop'
+  /**
+   * 忙时那枚按钮干什么＝**底座那一个键**（`display.busy_input_mode`）：
+   * `queue` 排队／`interrupt` 打断并发／`steer` 转向；`stop` 是空着的时候。
+   */
+  busyAction: 'interrupt' | 'queue' | 'steer' | 'stop'
   canSteer: boolean
   canSubmit: boolean
   compactModelPill?: boolean
@@ -87,12 +91,40 @@ export function ComposerControls({
 
   const showVoicePrimary = !busy && !hasComposerPayload
 
+  // 忙时那枚主按钮＝底座那一个键说的：
+  // - `queue`：排队（面板上看得见那一条）；
+  // - `interrupt`：打断当前这一轮并把这句话送出去（送＝向上箭头）；
+  // - `steer`：转向当前这一轮（转向轮）；
+  // - 空着的时候：停止（方块）。
+  // 形状用现成的 i18n 文案配对，不新增任何屏上文案。
+  const busyButton = (() => {
+    if (!busy) {
+      return { icon: <Codicon name="arrow-up" size="0.875rem" />, label: c.send }
+    }
+
+    if (busyAction === 'queue') {
+      return { icon: <Layers3 className={iconSize.sm} />, label: c.queueMessage }
+    }
+
+    if (busyAction === 'interrupt') {
+      return { icon: <Codicon name="arrow-up" size="0.875rem" />, label: c.send }
+    }
+
+    if (busyAction === 'steer') {
+      return { icon: <SteeringWheel className={iconSize.sm} />, label: c.steer }
+    }
+
+    return { icon: <span className="block size-2.5 rounded-2xs bg-current" />, label: c.stop }
+  })()
+
   return (
     <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
       <ModelPill compact={compactModelPill} disabled={disabled} model={state.model} />
       {/* While the agent runs and the user is typing, steer takes over the mic's
-          slot rather than crowding the row with an extra button. */}
-      {canSteer ? (
+          slot rather than crowding the row with an extra button. In `steer`
+          mode the primary button IS the steer button — two wheels on one row
+          would be noise, so the ghost one stands down. */}
+      {canSteer && busyAction !== 'steer' ? (
         <Tip label={steerTip}>
           <Button
             aria-label={steerLabel}
@@ -127,22 +159,14 @@ export function ComposerControls({
           </Button>
         </Tip>
       ) : (
-        <Tip label={busy ? (busyAction === 'queue' ? c.queueMessage : c.stop) : c.send}>
+        <Tip label={busyButton.label}>
           <Button
-            aria-label={busy ? (busyAction === 'queue' ? c.queueMessage : c.stop) : c.send}
+            aria-label={busyButton.label}
             className={PRIMARY_ICON_BTN}
             disabled={disabled || !canSubmit}
             type="submit"
           >
-            {busy ? (
-              busyAction === 'queue' ? (
-                <Layers3 className={iconSize.sm} />
-              ) : (
-                <span className="block size-2.5 rounded-2xs bg-current" />
-              )
-            ) : (
-              <Codicon name="arrow-up" size="0.875rem" />
-            )}
+            {busyButton.icon}
           </Button>
         </Tip>
       )}

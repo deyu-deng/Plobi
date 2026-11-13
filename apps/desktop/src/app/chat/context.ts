@@ -37,7 +37,6 @@ export interface ChatContextValue {
   maxRecordingSeconds?: number
   state: ChatBarState
   gateway?: PlobiGateway | null
-  queueSessionKey?: string | null
   sessionId?: string | null
   cwd?: string | null
   onCancel: () => Promise<void> | void
@@ -53,7 +52,14 @@ export interface ChatContextValue {
   onSteer?: (text: string) => Promise<boolean> | boolean
   onSubmit: (
     value: string,
-    options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }
+    options?: {
+      attachments?: ComposerAttachment[]
+      fromQueue?: boolean
+      /** 发送锁的桶＝**Agent 的作用域键**（`l1` / `agent:<id>`），不是会话 id。 */
+      scopeKey?: string
+      /** 这一条走「转向」当前这一轮（`session.steer`），不是发一轮新的。 */
+      steer?: boolean
+    }
   ) => Promise<SubmitOutcome> | SubmitOutcome
   onTranscribeAudio?: (audio: Blob) => Promise<string>
 }

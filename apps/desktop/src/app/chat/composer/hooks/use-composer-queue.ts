@@ -7,14 +7,12 @@ import { type ComposerAttachment } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
 import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
 import {
-  $queuedPromptsBySession,
+  $queuedPromptsByAgent,
   enqueueQueuedPrompt,
-  isPendingQueueKey,
   MAX_AUTO_DRAIN_ATTEMPTS,
-  migrateQueuedPrompts,
   promoteQueuedPrompt,
   type QueuedPromptEntry,
-  removeQueuedPromptEverywhere,
+  removeQueuedPrompt,
   shouldAutoDrain,
   updateQueuedPrompt
 } from '@/store/composer-queue'
@@ -35,7 +33,6 @@ interface UseComposerQueueArgs {
   onCancel: ChatBarProps['onCancel']
   onSubmit: ChatBarProps['onSubmit']
   queueEditRef: RefObject<QueueEditState | null>
-  queueSessionKey: ChatBarProps['queueSessionKey']
   sessionId: string | null | undefined
 }
 
@@ -59,7 +56,6 @@ export function useComposerQueue({
   onCancel,
   onSubmit,
   queueEditRef,
-  queueSessionKey,
   sessionId
 }: UseComposerQueueArgs) {
   const { t } = useI18n()
@@ -68,7 +64,7 @@ export function useComposerQueue({
   // Per-session slice (edge): re-renders only when THIS session's queue changes,
   // not on cross-session queue churn (the plain atom's map ref changes on every
   // write; the keyed array does not).
-  const queuedPrompts = useSessionSlice($queuedPromptsBySession, activeQueueSessionKey)
+  const queuedPrompts = useSessionSlice($queuedPromptsByAgent, activeQueueSessionKey)
 
   const [queueEdit, setQueueEdit] = useState<QueueEditState | null>(null)
   queueEditRef.current = queueEdit
@@ -272,10 +268,9 @@ export function useComposerQueue({
         }
 
         drainFailuresRef.current.delete(entry.id)
-        // 按 id 全桶摘：这一发可能刚好把会话创建出来（占位桶 ⇒ 真会话桶，见
-        // store/composer-queue.ts）⇒ 条目已经被搬去了另一个桶 ⇒ 只摘原桶的话，
-        // 它会在新桶里被再发一次。
-        removeQueuedPromptEverywhere(entry.id)
+        // 桶＝Agent 的作用域键，**一辈子不变** ⇒ 这一发就是把这条消息从它自己
+        // 那个桶里摘掉（会话换了桶也不换 ⇒ 不会在别的桶里再留一份、再发一次）。
+        removeQueuedPrompt(activeQueueSessionKey, entry.id)
         resetBrowseState(sessionId)
 
         return true
@@ -361,28 +356,9 @@ export function useComposerQueue({
       .catch(onFail)
   }, [activeQueueSessionKey, busy, pickDrainHead, queuedPrompts, runDrain, t])
 
-  // Re-key on a runtime session-id change. A stable stored id (queueSessionKey)
-  // never churns, so a change there is a real session switch and must NOT
-  // migrate; only the runtime-derived key (queueSessionKey falsy → key is
-  // sessionId) churns on a backend bounce/resume of the same conversation.
-  useEffect(() => {
-    const prev = prevQueueKeyRef.current
-    prevQueueKeyRef.current = activeQueueSessionKey
-
-    if (queueSessionKey || !prev || !activeQueueSessionKey || prev === activeQueueSessionKey) {
-      return
-    }
-
-    // A placeholder bucket ("this conversation has no session id yet") is NOT
-    // migrated on a key change: only the session-creation path knows which
-    // conversation the placeholder belongs to. Moving it here would hand the
-    // pending messages to whatever conversation the user switched to.
-    if (isPendingQueueKey(prev)) {
-      return
-    }
-
-    migrateQueuedPrompts(prev, activeQueueSessionKey)
-  }, [activeQueueSessionKey, queueSessionKey])
+  // 桶＝Agent 的作用域键 ⇒ **它不会变**（会话换了、恢复了、后端弹了一次 id，都
+  // 不影响桶）。所以这里**没有**「换键时搬家」那一段：以前按会话 id 分桶时需要它，
+  // 按 Agent 分桶之后那只会把消息错投给别的对话。
 
   // Queued turns flow whenever the session is idle — on the busy→false settle
   // edge, on mount/reconnect, and after a re-key — so a swallowed edge can't

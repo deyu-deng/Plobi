@@ -228,4 +228,11 @@ export interface SubmitTextOptions {
   fromQueue?: boolean
   /** 这条在引用哪一条消息（`messages.reply_to`，裁定 196 ④）。 */
   replyTo?: string
+  /**
+   * 发送锁的桶＝**Agent 的作用域键**（`l1` / `agent:<id>`）——不是会话 id：
+   * 一个 Agent 一张嘴，两个 Agent 各自一把锁。
+   */
+  scopeKey?: string
+  /** 这一条走「转向」当前这一轮（`session.steer`），不是发一轮新的。 */
+  steer?: boolean
 }

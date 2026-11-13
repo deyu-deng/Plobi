@@ -7,7 +7,7 @@ import { deleteSession, getSessionMessages, setSessionArchived } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
 import { setSessionApproval, setSessionYolo } from '@/lib/yolo-session'
-import { clearQueuedPrompts, migrateQueuedPrompts, pendingQueueKey } from '@/store/composer-queue'
+import { clearQueuedPrompts } from '@/store/composer-queue'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { $scopeAgent, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/scope'
@@ -50,7 +50,7 @@ import { broadcastSessionsChanged } from '@/store/session-sync'
 import { isWatchWindow } from '@/store/windows'
 import type { SessionCreateResponse, SessionResumeResponse, UsageStats } from '@/types/plobi'
 
-import { pendingQueueScope } from '../../../chat/composer/queue-key'
+import { agentScopeKey } from '../../../chat/composer/queue-key'
 import {
   NEW_CHAT_ROUTE,
   pathnameFromRouteToken,
@@ -215,20 +215,6 @@ export function useSessionActions({
         activeSessionIdRef.current = created.session_id
         selectedStoredSessionIdRef.current = stored
         ensureSessionState(created.session_id, stored)
-
-        // The conversation this session was born for may already have had
-        // messages queued while it had no session id yet — the queue key used
-        // to be empty then, so a locally-refused message had nowhere to land
-        // (user 11-13: 「输入后，发送不了了」). The queue now keeps a per-Agent
-        // placeholder bucket for exactly that case, and THIS is the moment the
-        // placeholder turns into a real session — so the bucket moves across.
-        // Doing it here (where the session is minted) is the authoritative
-        // place: the composer only sees a key change and can't tell whether
-        // the placeholder belongs to the conversation that just got a session.
-        migrateQueuedPrompts(
-          pendingQueueKey(pendingQueueScope(pathnameFromRouteToken(startingRouteToken))),
-          stored ?? created.session_id
-        )
 
         if (stored) {
           // Seed the sidebar preview with the user's first message so the row
@@ -867,11 +853,10 @@ export function useSessionActions({
         }
 
         await deleteSession(storedSessionId, removed ? sessionScopeKey(removed) : undefined)
-        clearQueuedPrompts(storedSessionId)
 
-        if (closingRuntimeId) {
-          clearQueuedPrompts(closingRuntimeId)
-        }
+        // 队列的桶＝**Agent 的作用域键**（不是会话 id）⇒ 删掉这一场对话，要把
+        // 这个 Agent 桶里排着的消息一起清掉，否则它们会被发到它的下一场对话里。
+        clearQueuedPrompts(agentScopeKey(pathnameFromRouteToken(getRouteToken())))
       } catch (err) {
         if (removed) {
           setSessions(prev => [removed, ...prev])

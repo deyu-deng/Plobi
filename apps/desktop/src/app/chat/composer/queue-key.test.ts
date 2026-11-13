@@ -1,70 +1,47 @@
 import { describe, expect, it } from 'vitest'
 
-import { pendingQueueKey } from '@/store/composer-queue'
+import { agentScope, chatScopeKey, L1_SCOPE } from '@/app/console/chat/scope'
 
-import { composerQueueKey, pendingQueueScope } from './queue-key'
+import { agentScopeKey } from './queue-key'
 
-// The rule this file pins: **the queue key always exists**.
+// The rule this file pins: **the queue bucket IS the Agent**.
 //
-// A conversation that has no session id yet (a brand-new chat, whose first
-// message is still on its way to the gateway) used to key the queue with
-// `null`, and the queue store dropped the message on the floor — the user
-// typed, pressed Enter, and nothing happened (user 11-13:
-// 「输入后。发送不了了」). The key now falls back to a per-Agent placeholder
-// bucket.
-describe('composerQueueKey', () => {
-  it('uses the stored session id when the conversation has one', () => {
-    expect(
-      composerQueueKey({
-        pathname: '/agent/agenda-secretary',
-        queueSessionKey: 'stored-1',
-        sessionId: 'runtime-1'
-      })
-    ).toBe('stored-1')
+// The product has no session concept any more — one Agent, one mouth (裁定 37／
+// R-015，`north-star-operating-model.md:89`). So the queue is keyed by the
+// Agent's scope key, which always exists and never changes. Before that it was
+// keyed by a session id: a brand-new chat had no session id yet, the key was
+// empty, and the queue store dropped the message on the floor (user 11-13:
+// 「输入后。发送不了了」).
+describe('agentScopeKey', () => {
+  it('gives the L1 chief secretary its own bucket', () => {
+    expect(agentScopeKey('/')).toBe('l1')
+    expect(agentScopeKey('/console')).toBe('l1')
   })
 
-  it('falls back to the runtime session id', () => {
-    expect(composerQueueKey({ pathname: '/agent/a', queueSessionKey: null, sessionId: 'runtime-1' })).toBe('runtime-1')
+  it('gives every L2 secretary its own bucket', () => {
+    expect(agentScopeKey('/agent/agenda-secretary')).toBe('agent:agenda-secretary')
+    expect(agentScopeKey('/agent/butler')).toBe('agent:butler')
   })
 
-  it('never returns nothing for a brand-new chat (the message used to vanish)', () => {
-    const key = composerQueueKey({
-      pathname: '/agent/agenda-secretary',
-      queueSessionKey: null,
-      sessionId: null
-    })
-
-    expect(key).toBe(pendingQueueKey('agenda-secretary'))
-    expect(key.trim()).not.toBe('')
+  it('never gives two Agents the same bucket (a pending message is never misdelivered)', () => {
+    expect(agentScopeKey('/agent/a')).not.toBe(agentScopeKey('/agent/b'))
+    expect(agentScopeKey('/agent/a')).not.toBe(agentScopeKey('/'))
   })
 
-  it('gives two Agents two buckets (a pending message is never misdelivered)', () => {
-    const a = composerQueueKey({ pathname: '/agent/a', queueSessionKey: null, sessionId: null })
-    const b = composerQueueKey({ pathname: '/agent/b', queueSessionKey: null, sessionId: null })
-
-    expect(a).not.toBe(b)
+  it('keeps the retired plain-chat route out of the L1 bucket', () => {
+    expect(agentScopeKey('/new')).toBe('chat')
   })
 
-  it('keeps the L1 chief secretary in its own bucket', () => {
-    expect(composerQueueKey({ pathname: '/', queueSessionKey: null, sessionId: null })).toBe(pendingQueueKey('l1'))
+  it('is the very same key the console uses for that conversation', () => {
+    // Two places writing the key shape would drift; the queue and the
+    // conversation must be the same identity, byte for byte.
+    expect(agentScopeKey('/')).toBe(chatScopeKey(L1_SCOPE))
+    expect(agentScopeKey('/agent/agenda-secretary')).toBe(chatScopeKey(agentScope('agenda-secretary')))
   })
 
-  it('keeps the plain chat route out of the L1 bucket', () => {
-    expect(composerQueueKey({ pathname: '/new', queueSessionKey: null, sessionId: null })).toBe(pendingQueueKey('chat'))
-  })
-})
-
-// The placeholder bucket is per Agent: two Agents' new chats must never share
-// one, or a pending message would surface in the wrong conversation.
-describe('pendingQueueScope', () => {
-  it('buckets L1, each L2 secretary and the plain chat route apart', () => {
-    expect(pendingQueueScope('/')).toBe('l1')
-    expect(pendingQueueScope('/console')).toBe('l1')
-    expect(pendingQueueScope('/agent/agenda')).toBe('agenda')
-    expect(pendingQueueScope('/new')).toBe('chat')
-  })
-
-  it('gives two Agents two different buckets', () => {
-    expect(pendingQueueScope('/agent/a')).not.toBe(pendingQueueScope('/agent/b'))
+  it('always returns a key — there is no "no bucket" state left', () => {
+    for (const pathname of ['/', '/console', '/agent/x', '/new', '/settings', '/whatever']) {
+      expect(agentScopeKey(pathname).trim()).not.toBe('')
+    }
   })
 })
