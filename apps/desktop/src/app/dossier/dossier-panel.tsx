@@ -3,7 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 
 import { AgentNotesList } from '@/app/chat/right-rail/notes-list'
+import { PanelEmpty } from '@/app/overlays/panel'
+import { RailChip, RailRow, RailSection } from '@/app/shell/rail-kit'
 import { fetchVaultAgent } from '@/app/surface/api'
+import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { ErrorCard } from '@/components/ui/error-state'
 import { useI18n } from '@/i18n'
@@ -32,18 +35,6 @@ import { DossierStageBar } from './dossier-stage-bar'
  *
  * ①③④⑤ 都来自**档案本体**（``dossier.json``）与 ``tasks.json``；md 那一对已退役。
  */
-
-const SECTION_TITLE = 'px-3 pt-3 pb-1 text-[0.78rem] font-medium text-foreground'
-
-const SECTION_BODY = 'px-3 pb-3'
-
-const DAY_CHIP =
-  'shrink-0 rounded-full border border-(--ui-stroke-tertiary) px-2 py-0.5 text-[0.65rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background)'
-
-const DAY_CHIP_ACTIVE =
-  'shrink-0 rounded-full border border-transparent bg-(--ui-control-hover-background) px-2 py-0.5 text-[0.65rem] font-medium text-foreground'
-
-const TASK_ROW = 'flex w-full items-start gap-2 rounded px-1.5 py-1 text-left transition-colors hover:bg-(--ui-control-hover-background)/60'
 
 function isToday(date: string): boolean {
   const now = new Date()
@@ -92,9 +83,8 @@ export function DossierPanel({ agentId, className }: { agentId: string; classNam
 
   if (!agentId) {
     return (
-      <div className={cn('flex flex-col items-center justify-center gap-2 px-4 py-10 text-center', className)}>
-        <Codicon className="text-(--ui-text-tertiary)" name="notebook" size="1.5rem" />
-        <p className="text-[0.7rem] font-medium text-foreground">{v.noAgentSelected}</p>
+      <div className={cn('flex flex-col items-center justify-center', className)}>
+        <PanelEmpty className="w-full" description={v.noAgentSelected} icon="notebook" size="compact" />
       </div>
     )
   }
@@ -135,19 +125,18 @@ export function DossierPanel({ agentId, className }: { agentId: string; classNam
         <span className="min-w-0 flex-1 truncate text-[0.7rem] text-(--ui-text-tertiary)">
           {agent.displayName}
         </span>
-        <button
+        <Button
           aria-label={pinned ? v.dossierUnpin : v.dossierPin}
-          className={cn(
-            'grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-(--ui-control-hover-background)',
-            pinned ? 'text-foreground' : 'text-(--ui-text-tertiary)'
-          )}
+          aria-pressed={pinned}
+          className={cn('shrink-0', pinned ? 'text-foreground' : 'text-(--ui-text-tertiary)')}
           data-testid="dossier-pin"
           onClick={() => toggleDossierPanelPin()}
+          size="icon-xs"
           title={pinned ? v.dossierUnpin : v.dossierPin}
-          type="button"
+          variant="ghost"
         >
           <Codicon name="pin" size="0.85rem" />
-        </button>
+        </Button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -164,17 +153,12 @@ export function DossierPanel({ agentId, className }: { agentId: string; classNam
         </div>
 
         {/* ②③ 目标（进度条右上角那枚图标）＋ 阶段进度条 */}
-        <section>
-          <h4 className={SECTION_TITLE}>{v.dossierStagesSection}</h4>
-          <div className={SECTION_BODY}>
-            <DossierStageBar goal={agent.goal} stages={stages} />
-          </div>
-        </section>
+        <RailSection title={v.dossierStagesSection}>
+          <DossierStageBar goal={agent.goal} stages={stages} />
+        </RailSection>
 
         {/* ④ 进度（按日清单） */}
-        <section>
-          <h4 className={SECTION_TITLE}>{v.dossierProgressSection}</h4>
-          <div className={SECTION_BODY}>
+        <RailSection title={v.dossierProgressSection}>
             {tasks.isError ? (
               <ErrorCard
                 action={{ label: t.common.retry, onClick: () => void tasks.refetch() }}
@@ -198,31 +182,27 @@ export function DossierPanel({ agentId, className }: { agentId: string; classNam
                     const active = day.date === activeDate
 
                     return (
-                      <button
-                        aria-pressed={active}
-                        className={active ? DAY_CHIP_ACTIVE : DAY_CHIP}
+                      <RailChip
+                        active={active}
                         data-testid={`dossier-day-${day.date}`}
                         key={day.date}
                         onClick={() => setSelectedDate(day.date)}
-                        type="button"
                       >
                         {isToday(day.date) ? v.dossierToday : day.date.slice(5)}
-                      </button>
+                      </RailChip>
                     )
                   })}
                 </div>
                 <ul className="flex flex-col gap-px" data-testid="dossier-tasks">
                   {(activeDay?.items ?? []).map(item => (
                     <li key={item.id}>
-                      <button
+                      <RailRow
                         aria-pressed={item.done}
-                        className={TASK_ROW}
                         data-testid={`dossier-task-${item.id}`}
                         disabled={toggle.isPending}
                         onClick={() =>
                           toggle.mutate({ date: activeDate ?? '', done: !item.done, id: item.id })
                         }
-                        type="button"
                       >
                         <Codicon
                           className={cn(
@@ -247,22 +227,18 @@ export function DossierPanel({ agentId, className }: { agentId: string; classNam
                             {item.doneBy === 'user' ? v.dossierDoneByUser : v.dossierDoneByAgent}
                           </span>
                         )}
-                      </button>
+                      </RailRow>
                     </li>
                   ))}
                 </ul>
               </>
             )}
-          </div>
-        </section>
+        </RailSection>
 
         {/* ⑤ 相关笔记（点一条 ⇒ 右栏开一个页签） */}
-        <section>
-          <h4 className={SECTION_TITLE}>{v.dossierNotesSection}</h4>
-          <div className="px-2 pb-3">
-            <AgentNotesList agentId={agentId} variant="item" />
-          </div>
-        </section>
+        <RailSection title={v.dossierNotesSection}>
+          <AgentNotesList agentId={agentId} variant="item" />
+        </RailSection>
       </div>
     </aside>
   )

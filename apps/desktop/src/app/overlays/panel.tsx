@@ -256,20 +256,33 @@ export function PanelDetail({ children, className }: { children: ReactNode; clas
 
 interface PanelEmptyProps {
   action?: ReactNode
+  className?: string
   description?: ReactNode
   // Codicon glyph name (e.g. 'hubot', 'warning', 'loading~spin').
   icon?: string
+  /** `compact` 是 rail 上那种小段里的空态（小一圈）；default 是整张面板的空态。 */
+  size?: 'compact' | 'default'
   title?: ReactNode
 }
 
-export function PanelEmpty({ action, description, icon = 'inbox', title }: PanelEmptyProps) {
+export function PanelEmpty({ action, className, description, icon = 'inbox', size = 'default', title }: PanelEmptyProps) {
+  const compact = size === 'compact'
+
   return (
-    <div className="grid flex-1 place-items-center px-6 py-10 text-center">
+    <div
+      className={cn('grid flex-1 place-items-center text-center', compact ? 'px-3 py-4' : 'px-6 py-10', className)}
+      data-size={size}
+      data-slot="panel-empty"
+    >
       <div className="flex flex-col items-center gap-2">
-        <Codicon className="text-muted-foreground/50" name={icon} size="1.25rem" />
-        {title ? <p className="text-sm font-medium text-foreground/90">{title}</p> : null}
+        <Codicon className="text-muted-foreground/50" name={icon} size={compact ? '1rem' : '1.25rem'} />
+        {title ? (
+          <p className={cn('font-medium text-foreground/90', compact ? 'text-[0.72rem]' : 'text-sm')}>{title}</p>
+        ) : null}
         {description ? (
-          <p className="max-w-sm text-xs leading-relaxed text-muted-foreground/70">{description}</p>
+          <p className={cn('max-w-sm leading-relaxed text-muted-foreground/70', compact ? 'text-[0.66rem]' : 'text-xs')}>
+            {description}
+          </p>
         ) : null}
         {action ? <div className="mt-2">{action}</div> : null}
       </div>
