@@ -667,7 +667,37 @@ def _resolve_cron_recipient(job: dict):
         )
     if entry.archived:
         return None, f"收件人 {name!r} 那一行已归档——不起。"
+
+    # 裁定 219：**结构化来源自带域**。作业记录上写了域，就拿名册的域表核一遍收件人：
+    # 那一行没声明负责这个域、或这个域压根没人认领 ⇒ 这一轮不起。写错的作业在花钱
+    # 之前就被挡住，而且不需要任何模型参与（域来自记录，不来自提示词）。
+    # 位置刻意在拼提示词之前、也不把域写进提示词（裁 45：内部字段值会被原样念出来）。
+    _domain, domain_error = _domain_gate_for(job, entry, registry)
+    if domain_error:
+        return None, domain_error
     return entry, None
+
+
+def _domain_gate_for(job: dict, entry, registry) -> tuple[str, str]:
+    """按作业记录上的 ``domain`` 核对收件人那一行；返回 ``(域, 错因)``。
+
+    两条判据各咬一头：域没人认领（多半是写错字）与收件人不是那一摊的主（作业配错行），
+    都算「这一轮不起」。没写域 ⇒ ``("", None)``，行为与裁定 219 之前逐字相同。
+    """
+    raw = str(job.get("domain") or "").strip()
+    if not raw:
+        return "", ""
+    try:
+        from plobi.agents.domains import check_recipient, normalize_domain
+
+        token = normalize_domain(raw)
+        ok, note, owners = check_recipient(entry, token, registry.agents.values())
+    except Exception as exc:  # 域表读不出来 = 没法核对，同样不起
+        return raw, f"域 {raw!r} 没法核对：名册域表读不出来（{exc}）——不起。"
+    if ok:
+        return token, ""
+    who = "、".join(owners) if owners else "（没有）"
+    return token, f"{note}（当前声明负责「{token}」的行：{who}）——不起。"
 
 
 def _recipient_model_override(entry) -> tuple[str, str]:
@@ -3678,11 +3708,18 @@ def run_job(
         # for delivery logic (empty response = no delivery).
         logged_response = final_response if final_response else "(No response generated)"
         
+        # 裁定 219：作业记录上写了域，就在这份留痕里留一行——事后查得出这一轮按哪一摊派。
+        _job_domain = str(job.get("domain") or "").strip()
+        _domain_line = (
+            f"**Domain:** {_job_domain}（作业记录上写的域 — 裁 219：结构化来源自带）\n"
+            if _job_domain
+            else ""
+        )
         output = f"""# Cron Job: {job_name}
 
 **Job ID:** {job_id}
 **Recipient:** {recipient.name}（名册里那一行 — 裁 177：这一轮有主人）
-**Run Time:** {_plobi_now().strftime('%Y-%m-%d %H:%M:%S')}
+{_domain_line}**Run Time:** {_plobi_now().strftime('%Y-%m-%d %H:%M:%S')}
 **Schedule:** {job.get('schedule_display', 'N/A')}
 
 ## Prompt

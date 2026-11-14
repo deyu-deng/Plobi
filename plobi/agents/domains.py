@@ -27,11 +27,21 @@ __all__ = [
     "domain_roster",
     "owners_for_domain",
     "check_recipient",
+    "normalize_domain",
 ]
 
 
-def _norm(value: Any) -> str:
+def normalize_domain(value: Any) -> str:
+    """域名的规范形：去首尾空白、小写。空串 = 没有声明。
+
+    结构化来源（Cron 作业记录、以后的项目卡）存的是人写的原文，名册行存的是
+    声明——两边必须是同一套归一，否则 ``Schedule`` 与 ``schedule`` 会被当成
+    两个域，校验就形同虚设。``check_recipient`` 内部用的是同一个函数。
+    """
     return str(value or "").strip().casefold()
+
+
+_norm = normalize_domain
 
 
 def declared_domains(entry: Any) -> frozenset[str]:

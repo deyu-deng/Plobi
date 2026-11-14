@@ -1130,6 +1130,7 @@ def create_job(
     no_agent: bool = False,
     attach_to_session: Optional[bool] = None,
     recipient: Optional[str] = None,
+    domain: Optional[str] = None,
     catch_up: Optional[bool] = None,
     grace_minutes: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -1181,6 +1182,12 @@ def create_job(
                 没写、或写了一个名册里不存在的名字，那一轮**不起**，绝不退回到
                 「正好起着后端的那个家」——那是这条裁定要消灭的匿名执行。
                 ``no_agent=True`` 的作业不经过 Agent，因而不需要收件人。
+        domain: 这一轮属于哪一摊（名册行的 ``category`` 或 ``domains`` 声明的域，裁定 219）。
+                这是**人写作业时顺手写下的结构事实**，不是模型从提示词里猜出来的：
+                到点时 ``cron/scheduler.py`` 拿名册的域表核对「收件人那一行有没有
+                声明负责这个域」，核不上（或这个域没人认领）那一轮**不起**——
+                写错的作业在花钱之前就被挡住。留空 = 不校验，行为与以前一致。
+                记录层只存这个字符串，域表与名册都在产品层（同 recipient 的分工）。
 
     Returns:
         The created job dict
@@ -1214,6 +1221,7 @@ def create_job(
     normalized_no_agent = bool(no_agent)
     normalized_attach = attach_to_session if isinstance(attach_to_session, bool) else None
     normalized_recipient = _normalize_job_optional_text(recipient)
+    normalized_domain = _normalize_job_optional_text(domain)
 
     # no_agent jobs are meaningless without a script — the script IS the job.
     # Surface this as a clear ValueError at create time so bad configs never
@@ -1305,6 +1313,8 @@ def create_job(
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
         "recipient": normalized_recipient,
+        # 裁定 219：结构化来源自带域。只在写了才落盘，老作业的持久形状逐字节不变。
+        **({"domain": normalized_domain} if normalized_domain else {}),
     }
     # Only persist attach_to_session when explicitly set, so existing jobs and
     # the common case stay byte-identical (absent key => fall back to the
@@ -1415,6 +1425,15 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
                 # 收件人存的只是名字：空白串与 None 都算「没写」，跟 create_job 同一形状，
                 # 免得 ``recipient="  "`` 这种记录把「缺收件人」读成「写了个空名字」。
                 updates["recipient"] = _normalize_job_optional_text(updates["recipient"])
+
+            if "domain" in updates:
+                # 裁定 219：空白串与 None 都算「没写」⇒ 清掉这一格，
+                # 而不是留一个空字符串被读成「声明了一个叫 '' 的域」。
+                _domain = _normalize_job_optional_text(updates.pop("domain"))
+                if _domain:
+                    updates["domain"] = _domain
+                else:
+                    job.pop("domain", None)
 
             previous_inference_axes = _normalized_inference_axes(job)
             updated = _apply_skill_fields({**job, **updates})

@@ -386,6 +386,41 @@ def _recipient_name_check(name: str) -> tuple[Optional[str], Optional[str]]:
     return str(entry.name), None
 
 
+def _domain_check(
+    recipient_name: str, domain: str
+) -> tuple[Optional[str], Optional[str]]:
+    """核对「收件人那一行有没有声明负责这个域」（裁定 218 的域表 / 裁定 219 这条来源）。
+
+    返回 ``(规范后的域名, None)`` 或 ``(None, 错因)``。名册读不出来、这台还没有名册、
+    或那个名字本来就解析不到时**不在这里下判决**——到点那一轮的闸门才是把关处
+    （与 :func:`_recipient_name_check` 同一条分工）。
+    """
+    from plobi.agents.domains import check_recipient, normalize_domain
+
+    token = normalize_domain(domain)
+    if not token:
+        return "", None
+    registry = _recipient_roster()
+    if registry is None:
+        return token, None
+    if not registry.live_entries():
+        return token, None
+    entry = registry.get(recipient_name)
+    if entry is None:
+        lowered = str(recipient_name).casefold()
+        entry = next(
+            (row for row in registry.agents.values() if str(row.name).casefold() == lowered),
+            None,
+        )
+    if entry is None:
+        return token, None
+    ok, note, owners = check_recipient(entry, token, registry.agents.values())
+    if not ok:
+        who = "、".join(owners) if owners else "（没有）"
+        return None, f"{note}（当前声明负责「{token}」的行：{who}）"
+    return token, None
+
+
 def _speaker_recipient_name() -> Optional[str]:
     """正在说话的那一行 Agent 的名字——嘴新建作业时先归自己（裁定 177 的反面是匿名执行）。
 
@@ -654,6 +689,7 @@ def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
         "last_delivery_error": job.get("last_delivery_error"),
         "enabled": job.get("enabled", True),
         "recipient": job.get("recipient"),
+        "domain": job.get("domain"),
         "state": job.get("state", "scheduled" if job.get("enabled", True) else "paused"),
         "paused_at": job.get("paused_at"),
         "paused_reason": job.get("paused_reason"),
@@ -746,6 +782,7 @@ def cronjob(
     no_agent: Optional[bool] = None,
     attach_to_session: Optional[bool] = None,
     recipient: Optional[str] = None,
+    domain: Optional[str] = None,
     task_id: str = None,
 ) -> str:
     """Unified cron job management tool."""
@@ -819,6 +856,16 @@ def cronjob(
                     if not recipient_value:
                         _recipient_notice = _no_recipient_notice()
 
+            # 域：这一轮属于哪一摊（裁定 219）。**结构化来源自带**——人写作业时
+            # 顺手写下，不是模型从提示词里猜。写错的域在这里就拦（生下来也是死的），
+            # 到点那一轮的闸门再核一次（名册行可能这中间被改过）。
+            domain_value = _normalize_optional_job_value(domain)
+            if domain_value and recipient_value:
+                canonical_domain, domain_error = _domain_check(recipient_value, domain_value)
+                if domain_error:
+                    return tool_error(domain_error, success=False)
+                domain_value = canonical_domain
+
             job = create_job(
                 prompt=prompt or "",
                 schedule=schedule,
@@ -837,6 +884,7 @@ def cronjob(
                 no_agent=_no_agent,
                 attach_to_session=attach_to_session,
                 recipient=recipient_value,
+                domain=domain_value or None,
             )
             _notify_provider_jobs_changed_safe()
             _create_message = f"Cron job '{job['name']}' created."
@@ -1051,6 +1099,20 @@ def cronjob(
                             success=False,
                         )
                     updates["recipient"] = None
+            if domain is not None:
+                # 裁定 219：换域跟换收件人同一条道理——先拿名册域表核一遍，
+                # 写错的域当场拒绝并列出真正的负责人。清空合法（回到「不校验」）。
+                new_domain = _normalize_optional_job_value(domain)
+                if new_domain:
+                    effective_recipient = updates.get("recipient", job.get("recipient"))
+                    if effective_recipient:
+                        canonical_domain, domain_error = _domain_check(
+                            str(effective_recipient), new_domain
+                        )
+                        if domain_error:
+                            return tool_error(domain_error, success=False)
+                        new_domain = canonical_domain
+                updates["domain"] = new_domain or None
             if repeat is not None:
                 # Normalize: treat 0 or negative as None (infinite)
                 normalized_repeat = None if repeat <= 0 else repeat
@@ -1206,6 +1268,16 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
                     "no_agent=True 的纯脚本作业不需要收件人。"
                 ),
             },
+            "domain": {
+                "type": "string",
+                "description": (
+                    "这一轮属于哪一摊：名册行的 `category`，或那一行 `domains` 里写的细标签。"
+                    "裁定 219 —— 结构化来源自带域：作业写下来就是结构事实，不由模型从提示词猜。"
+                    "写了就在名册域表上核：收件人那一行没声明负责这个域、或这个域没人认领，"
+                    "创建/更新当场拒绝并列出真正的负责人；到点再核一次。"
+                    "留空 = 不校验（与以前一致）。纯脚本作业（no_agent=True）不需要域。"
+                ),
+            },
         },
         "required": ["action"]
     }
@@ -1262,6 +1334,7 @@ registry.register(
         workdir=args.get("workdir"),
         no_agent=args.get("no_agent"),
         recipient=args.get("recipient"),
+        domain=args.get("domain"),
         task_id=kw.get("task_id"),
     ))(),
     check_fn=check_cronjob_requirements,
