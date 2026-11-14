@@ -604,6 +604,62 @@ class CDPSupervisor:
 
         return {"ok": True, "result": value, "result_type": result_type}
 
+    def send_cdp(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        *,
+        timeout: float = 15.0,
+    ) -> Dict[str, Any]:
+        """裸 CDP 调用（**页面会话**上），给 :mod:`tools.browser_exec_runtime` 的 helper 用。
+
+        ``evaluate_runtime`` 只答「跑一句 JS」；``browser_exec`` 的 helper 还需要
+        ``Page.navigate``／``Page.captureScreenshot``／``DOM.*`` 这些**方法调用**。
+
+        形状与 :meth:`evaluate_runtime` 一致：成功 ``{"ok": True, "result": ...}``，
+        失败 ``{"ok": False, "error": "..."}``（不抛——工具层要把它变成一句人话）。
+        """
+        loop = self._loop
+        if loop is None or not loop.is_running():
+            return {"ok": False, "error": "supervisor loop is not running"}
+
+        with self._state_lock:
+            if not self._active:
+                return {"ok": False, "error": "supervisor is not active"}
+            session_id = self._page_session_id
+
+        if not session_id:
+            return {"ok": False, "error": "supervisor has no attached page session"}
+
+        async def _do_send() -> Dict[str, Any]:
+            return await self._cdp(
+                method,
+                params or {},
+                session_id=session_id,
+                timeout=timeout,
+            )
+
+        from agent.async_utils import safe_schedule_threadsafe
+
+        fut = safe_schedule_threadsafe(_do_send(), loop)
+        if fut is None:
+            return {"ok": False, "error": "supervisor loop unavailable"}
+        try:
+            response = fut.result(timeout=timeout + 1)
+        except Exception as exc:  # noqa: BLE001 - CDP 失败也要变成一句人话
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        if isinstance(response, dict):
+            if "error" in response and response.get("error"):
+                err = response.get("error")
+                message = err.get("message") if isinstance(err, dict) else str(err)
+                return {"ok": False, "error": message or "CDP call failed"}
+            result = response.get("result")
+            if isinstance(result, dict):
+                return {"ok": True, "result": result.get("value", result)}
+            return {"ok": True, "result": result}
+        return {"ok": True, "result": response}
+
     # ── Supervisor loop internals ────────────────────────────────────────────
 
     def _thread_main(self) -> None:
