@@ -379,6 +379,18 @@ EXPECTED_HOSTED_CONSOLE_COMMANDS = {
     ("tools", "enable"),
     ("tools", "disable"),
     ("tools", "post-setup"),
+    # 11-14：装第三方信源包那个功能（Code 9903fff3）把 collectors 三条带进了 hosted
+    # 的允许名单；**用户 11-14 当面拍：云端容器（hosted）里也允许装第三方采集器包**
+    # （判据：PLOBI_HOME 落在 /opt/data 那一档＝云端容器化部署；用户自己的 Windows
+    # 机器是 local，照旧能装、不受影响）。
+    #
+    # 这份名单与 ``plobi_cli/console_engine.py::EXPECTED_HOSTED_PATHS``（那道闸）
+    # **故意留成两份**：代码那份是「闸」，这份是「人定的独立名单」——两份不一致就红，
+    # 正是要逼着人明确表态（有人给 hosted 加了命令却没同步这份名单 ⇒ 逼他拍）。
+    # **别把这份改成读代码那份**：那样断言就成了恒等式，变成一扇假绿的门。
+    ("collectors", "install"),
+    ("collectors", "remove"),
+    ("collectors", "list"),
     ("skills", "browse"),
     ("skills", "search"),
     ("skills", "inspect"),

@@ -86,8 +86,11 @@ class TestBlankSlateMinimalToolsets:
         names = sorted(
             {(d.get("function") or {}).get("name") or d.get("name") for d in defs}
         )
-        assert names == ["patch", "process", "read_file", "search_files",
-                         "terminal", "write_file"]
+        # `list_open_files`（读用户打开的桌面标签页）是 **file 门类的第五把**
+        # （`toolsets.py:208`，门类描述里明写 "see the human's open desktop tabs"）
+        # ⇒ 空白开局保留 file 门类，它自然在这张表里。
+        assert names == ["list_open_files", "patch", "process", "read_file",
+                         "search_files", "terminal", "write_file"]
 
     def test_tool_schema_survives_disabled_toolsets_from_config(self):
         """Regression: disabled_toolsets must not erase the minimal Blank Slate
@@ -110,8 +113,11 @@ class TestBlankSlateMinimalToolsets:
         names = sorted(
             {(d.get("function") or {}).get("name") or d.get("name") for d in defs}
         )
-        assert names == ["patch", "process", "read_file", "search_files",
-                         "terminal", "write_file"]
+        # `list_open_files`（读用户打开的桌面标签页）是 **file 门类的第五把**
+        # （`toolsets.py:208`，门类描述里明写 "see the human's open desktop tabs"）
+        # ⇒ 空白开局保留 file 门类，它自然在这张表里。
+        assert names == ["list_open_files", "patch", "process", "read_file",
+                         "search_files", "terminal", "write_file"]
 
 
 class TestBlankSlateMinimizeConfig:

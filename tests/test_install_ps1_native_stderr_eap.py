@@ -37,19 +37,17 @@ def _assert_relaxed_call(text: str, command_pattern: str) -> None:
 def test_repository_stage_relieves_eap_for_ssh_and_https_git_clone() -> None:
     text = _install_ps1()
     assert "function Invoke-NativeWithRelaxedErrorAction" in text
-    _assert_relaxed_call(
-        text,
-        r"git -c windows\.appendAtomically=false clone --depth 1 --branch \$Branch \$RepoUrlSsh \$InstallDir",
-    )
-    _assert_relaxed_call(
-        text,
-        r"git -c windows\.appendAtomically=false clone --depth 1 --branch \$Branch \$RepoUrlHttps \$InstallDir",
-    )
+    # 11-14：clone 的参数收成了数组（``$cloneArgsSsh``／``$cloneArgsHttps``）⇒ 断言认
+    # **现况的写法**，但仍旧要求那两次 clone 落在放松 EAP 的 helper 里（意图不减）。
+    _assert_relaxed_call(text, r"git @cloneArgsSsh")
+    _assert_relaxed_call(text, r"git @cloneArgsHttps")
 
 
 def test_uv_venv_and_dependency_installs_relax_eap() -> None:
     text = _install_ps1()
-    _assert_relaxed_call(text, r"& \$UvCmd venv venv --python \$PythonVersion")
+    # 变量名会变（``$PythonVersion`` → ``$pythonForVenv``）⇒ 断言只认「uv venv 那次调用」，
+    # **不认死变量名**：脚本下次改个名字不该又红一次。
+    _assert_relaxed_call(text, r"& \$UvCmd venv venv --python \$[A-Za-z][A-Za-z0-9_]*")
     _assert_relaxed_call(text, r"& \$UvCmd sync --extra all --locked")
     _assert_relaxed_call(text, r"& \$UvCmd pip install -e \$tier\.Spec")
 
@@ -67,7 +65,7 @@ def test_uv_venv_failure_is_not_swallowed_after_eap_relax() -> None:
     # The uv-venv invocation, then an exit-code capture, then a throw — all
     # within a small window after the relaxed call.
     guard = re.search(
-        r"& \$UvCmd venv venv --python \$PythonVersion[\s\S]{0,400}?"
+        r"& \$UvCmd venv venv --python \$[A-Za-z][A-Za-z0-9_]*[\s\S]{0,400}?"
         r"\$LASTEXITCODE[\s\S]{0,200}?"
         r"-ne 0[\s\S]{0,200}?throw",
         text,
