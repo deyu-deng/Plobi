@@ -124,8 +124,13 @@ _PROVIDER_TOOL_TOOLSET = {
     "note_set_property": "note",
     "diary_read": "diary",
     "diary_write": "diary",
+    "diary_list": "diary",
+    "diary_append": "diary",
     "dossier_read": "dossier",
     "dossier_write": "dossier",
+    "dossier_list": "dossier",
+    "dossier_task_toggle": "dossier",
+    "dossier_stage_update": "dossier",
     "mind_read": "mind",
     "mind_write": "mind",
 }

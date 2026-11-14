@@ -102,6 +102,23 @@ NOTE_LIST_TOOL = "note_list"
 NOTE_LINKS_TOOL = "note_links"
 NOTE_SET_PROPERTY_TOOL = "note_set_property"
 
+# 11-14（用户 11-14「dossier，diary 还有的工具也太少太基础了……dossier 里面还有很多情况呢」）：
+# 日记与档案那两族也补细动作。**每一把都有产品侧现成的实现**（屏上那一侧的同一份真源），
+# 这一刀只是把它们接到工具面上，不改产品行为：
+# ① 列日记（`diary.list_entries`）——原来只能按路径读一篇，读之前得先知道路径；
+# ② 往某天接一行（`diary.append_entry` 那条路）——原来只能整篇覆写，
+#    追加一句要把今天的全文读出来再拼上再写回去；
+# ③ 列档案（`agent_dossier.build_index`）——同上；
+# ④ 勾掉/取消勾掉当日清单里的一条（`dossier_tasks.toggle_task`）——原来只能整份覆写
+#    `tasks.json`，而屏上那一条是**勾一下**；
+# ⑤ 改**一个**阶段（`dossier_profile` 那套字段级写）——`dossier_write` 的 stages 是
+#    **整组替换**（不传的等于被删），改一条要把整张阶段表照原样传回来。
+DIARY_LIST_TOOL = "diary_list"
+DIARY_APPEND_TOOL = "diary_append"
+DOSSIER_LIST_TOOL = "dossier_list"
+DOSSIER_TASK_TOGGLE_TOOL = "dossier_task_toggle"
+DOSSIER_STAGE_UPDATE_TOOL = "dossier_stage_update"
+
 # 每把工具**只碰一类**（逻辑前缀）。``Surface/…`` 那套旧写法 2026-11-13 停用，
 # 现在只认这几种逻辑头。
 NOTE_PREFIX = "Notes"
@@ -934,6 +951,143 @@ class MindProvider(MemoryProvider):
                     "required": ["path"],
                 },
             },
+            {
+                "name": DIARY_LIST_TOOL,
+                "description": (
+                    "List the diary entries on the human side — which days exist, how "
+                    "long each one is and when it was last touched. You get dates and "
+                    "sizes, never the entries themselves; read one with "
+                    "``diary_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": DIARY_APPEND_TOOL,
+                "description": (
+                    "Add one line to a diary entry — the same quick capture the "
+                    "screen does: a ``- HH:MM …`` line at the end of that day. The "
+                    "diary is the user's own writing, so ask before you write here "
+                    "and say what you are about to add. The write is checked by the "
+                    "trust gate; the result says whether it landed, went to the "
+                    "pending queue (with an id), or was refused, and why."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "line": {
+                            "type": "string",
+                            "description": "The one line to add (no line breaks).",
+                        },
+                        "day": {
+                            "type": "string",
+                            "description": (
+                                "Which day — ``YYYY-MM-DD``. Leave it out for today."
+                            ),
+                        },
+                    },
+                    "required": ["line"],
+                },
+            },
+            {
+                "name": DOSSIER_LIST_TOOL,
+                "description": (
+                    "List the dossiers on the human side — one row per agent in the "
+                    "roster: its goal, where it stands, its stages and whether the "
+                    "dossier file exists. You get the summary, not the whole file; "
+                    "read one with ``dossier_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": DOSSIER_TASK_TOGGLE_TOOL,
+                "description": (
+                    "Tick or untick one item in an agent's day-by-day checklist (the "
+                    "file beside the dossier). The checklist belongs to the agent, "
+                    "so the file records who changed the item — ``agent`` for you, "
+                    "``user`` for them. To see the items first, read "
+                    "``Dossiers/<category>/<name>/tasks.json`` with ``dossier_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {
+                            "type": "string",
+                            "description": "Whose checklist — by name (e.g. ``Aura``).",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Logical path of the checklist file, e.g. "
+                                "Dossiers/projects/Aura/tasks.json"
+                            ),
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "Which day — ``YYYY-MM-DD``.",
+                        },
+                        "id": {
+                            "type": "string",
+                            "description": "Which item — its id in that day's list.",
+                        },
+                        "done": {
+                            "type": "boolean",
+                            "description": "True to tick it, false to untick it.",
+                        },
+                    },
+                    "required": ["date", "id", "done"],
+                },
+            },
+            {
+                "name": DOSSIER_STAGE_UPDATE_TOOL,
+                "description": (
+                    "Change **one** stage of an agent's dossier — mark it finished, "
+                    "rename it, or adjust its detail — without sending the whole "
+                    "stage list back. ``dossier_write`` replaces the stage list as a "
+                    "group (a stage you leave out is deleted); this one touches a "
+                    "single stage by id."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {
+                            "type": "string",
+                            "description": "Whose dossier — by name (e.g. ``Aura``).",
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Logical path of the dossier file, e.g. "
+                                "Dossiers/projects/Aura/dossier.json"
+                            ),
+                        },
+                        "stage_id": {
+                            "type": "string",
+                            "description": "Which stage — its id in the dossier.",
+                        },
+                        "done": {
+                            "type": "boolean",
+                            "description": "True to mark the stage finished.",
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "A new title for that stage.",
+                        },
+                        "detail": {
+                            "type": "string",
+                            "description": "A new detail line for that stage.",
+                        },
+                    },
+                    "required": ["stage_id"],
+                },
+            },
         ]
 
     # -- model-facing dossier tools (WP-MIND-DOSSIER-WRITE) --------------
@@ -980,6 +1134,16 @@ class MindProvider(MemoryProvider):
             return json.dumps(self._tool_note_links(args), ensure_ascii=False)
         if tool_name == NOTE_SET_PROPERTY_TOOL:
             return json.dumps(self._tool_note_set_property(args), ensure_ascii=False)
+        if tool_name == DIARY_LIST_TOOL:
+            return json.dumps(self._tool_diary_list(args), ensure_ascii=False)
+        if tool_name == DIARY_APPEND_TOOL:
+            return json.dumps(self._tool_diary_append(args), ensure_ascii=False)
+        if tool_name == DOSSIER_LIST_TOOL:
+            return json.dumps(self._tool_dossier_list(args), ensure_ascii=False)
+        if tool_name == DOSSIER_TASK_TOGGLE_TOOL:
+            return json.dumps(self._tool_dossier_task_toggle(args), ensure_ascii=False)
+        if tool_name == DOSSIER_STAGE_UPDATE_TOOL:
+            return json.dumps(self._tool_dossier_stage_update(args), ensure_ascii=False)
         if tool_name == MIND_READ_TOOL:
             return json.dumps(
                 self._tool_read(args, MEMORY_ZONES, _FACE_HINTS[MIND_FACE]), ensure_ascii=False
@@ -1384,6 +1548,303 @@ class MindProvider(MemoryProvider):
         if isinstance(result, dict) and result.get("success"):
             result["changed"] = sorted(changes)
         return result
+
+    # -- 日记：列 / 往某天接一行 -------------------------------------------
+
+    def _tool_diary_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """列日记有哪几天（屏上那一栏的同一份真源）。
+
+        原来只能按路径读一篇 ⇒ 读之前得先知道路径；日记的路径是日期，
+        Agent 根本猜不出来 ⇒ 这一把把「哪几天有」给它。
+        """
+        from plobi.mind import diary as diary_module
+        from plobi.mind.paths import MindUnavailable
+
+        try:
+            data = diary_module.list_entries()
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - 列不出来要说清，不许炸这一轮
+            logger.warning("[mind] diary_list failed: %s", exc)
+            return {"success": False, "error": f"列日记失败：{exc}"}
+        entries = list(data.get("entries") or [])
+        return {
+            "success": True,
+            "today": data.get("today", ""),
+            "entries": entries,
+            "totals": {"days": len(entries)},
+        }
+
+    def _tool_diary_append(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """往某天末尾接一行 ``- HH:MM …``（屏上「路过记一句」那一条路）。
+
+        日记是**用户自己的字** ⇒ 这一把仍走 ``diary_write`` 那条路（信任闸：
+        闸关着就进待批，人点头才落）。
+        """
+        from plobi.mind import diary as diary_module
+        from plobi.mind.paths import MindUnavailable
+
+        payload = args or {}
+        line = str(payload.get("line") or "").strip()
+        if not line:
+            return {"success": False, "error": "line 是必需的：要记的那一句"}
+        if "\n" in line or "\r" in line:
+            return {"success": False, "error": "一次只记一行"}
+        raw_day = str(payload.get("day") or "").strip()
+        if not raw_day or raw_day.casefold() == "today":
+            raw_day = datetime.now().strftime("%Y-%m-%d")
+        try:
+            entry = diary_module.read_entry(raw_day)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+
+        addition = f"- {datetime.now().strftime('%H:%M')} {line}"
+        body = entry.get("text") or ""
+        content = (
+            body.rstrip("\n") + "\n" + addition + "\n"
+            if body.strip()
+            else addition + "\n"
+        )
+        logical = f"{DIARY_PREFIX}/{entry.get('filename', '')}"
+        result = self._tool_write(
+            {"path": logical, "content": content},
+            (DIARY_PREFIX,),
+            _FACE_HINTS[DIARY_PREFIX],
+        )
+        if isinstance(result, dict) and result.get("success"):
+            result["line"] = addition
+            result["day"] = entry.get("date", raw_day)
+        return result
+
+    # -- 档案：列 / 勾清单里的一条 / 改一个阶段 ---------------------------
+
+    def _tool_dossier_list(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """列档案（名册里每一行 ＋ 它那份档案的摘要）。
+
+        真源＝屏上那张卡（``agent_dossier.build_index``）⇒ 同一个数据。
+        给的是**摘要**（目标／现状／阶段／有没有本体），不是整份档案；
+        读一份用 ``dossier_read``。
+        """
+        from plobi.mind import agent_dossier
+        from plobi.mind import dossier_profile as dp
+        from plobi.mind.paths import MindUnavailable, require_root
+
+        try:
+            root = require_root(self._mind_root)
+            index = agent_dossier.build_index()
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[mind] dossier_list failed: %s", exc)
+            return {"success": False, "error": f"列档案失败：{exc}"}
+
+        rows = []
+        for agent in index.get("agents") or []:
+            name = str(agent.get("name") or "")
+            logical = ""
+            if name:
+                resolved = self._resolve_dossier_by_name(root, name)
+                if resolved is not None:
+                    logical = f"{resolved[0]}/{dp.PROFILE_FILENAME}"
+            rows.append(
+                {
+                    "name": name,
+                    "displayName": agent.get("displayName", ""),
+                    "category": agent.get("category", ""),
+                    "status": agent.get("status", ""),
+                    "goal": agent.get("goal", ""),
+                    "summary": agent.get("summary", ""),
+                    "stages": agent.get("stages", []),
+                    "milestones": agent.get("milestones", {}),
+                    "updated": agent.get("updated", ""),
+                    "profileExists": agent.get("profileExists", False),
+                    "path": logical,
+                }
+            )
+        return {
+            "success": True,
+            "agents": rows,
+            "totals": index.get("totals", {}),
+        }
+
+    def _tool_dossier_task_toggle(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """勾掉/取消勾掉当日清单里的**一条**（屏上那一下勾选的那条路）。
+
+        ``doneBy`` 记的是**最后一次动它的人**：Agent 动的是 ``agent``，人动的是 ``user``。
+        """
+        from plobi.mind import dossier_tasks as dt
+        from plobi.mind.paths import (
+            MindUnavailable,
+            UnsafeMindPath,
+            require_root,
+            safe_target,
+        )
+
+        payload = args or {}
+        agent = str(payload.get("agent") or "").strip()
+        shown = str(payload.get("path") or "").strip().replace("\\", "/")
+        date = str(payload.get("date") or "").strip()
+        item_id = str(payload.get("id") or "").strip()
+        done = payload.get("done")
+        if not date:
+            return {"success": False, "error": "date 是必需的：哪一天的那一条"}
+        if not item_id:
+            return {"success": False, "error": "id 是必需的：哪一条"}
+        if not isinstance(done, bool):
+            return {"success": False, "error": "done 要是一个布尔值（勾上还是取消）"}
+        try:
+            root = require_root(self._mind_root)
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+
+        if shown:
+            logical = _to_logical(shown)
+        elif agent:
+            resolved = self._resolve_dossier_by_name(root, agent)
+            if resolved is None:
+                return {
+                    "success": False,
+                    "error": f"名册与盘上都找不到叫 {agent!r} 的档案",
+                }
+            logical = f"{resolved[0]}/{dt.TASKS_FILENAME}"
+        else:
+            return {
+                "success": False,
+                "error": "agent（或 path）是必需的：要说清改谁的清单",
+            }
+        if not logical.endswith("/" + dt.TASKS_FILENAME):
+            return {
+                "success": False,
+                "path": logical,
+                "error": f"只认 Dossiers/<类>/<名>/{dt.TASKS_FILENAME} 这一种形状",
+            }
+        try:
+            target = safe_target(root, logical)
+        except UnsafeMindPath as exc:
+            return {"success": False, "error": str(exc)}
+        try:
+            dt.toggle_task(target, date, item_id, done, actor=dt.DONE_BY_AGENT)
+        except dt.TasksError as exc:
+            return {"success": False, "path": logical, "error": str(exc)}
+        except OSError as exc:
+            return {"success": False, "path": logical, "error": f"写不下去：{exc}"}
+        return {
+            "success": True,
+            "path": logical,
+            "date": date,
+            "id": item_id,
+            "done": done,
+            "doneBy": dt.DONE_BY_AGENT,
+        }
+
+    def _tool_dossier_stage_update(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """改**一个**阶段（``dossier_write`` 的 stages 是整组替换）。
+
+        走档案本体那套字段级写：只改点名的几格、文件里不认识的键原样留着、落盘原子。
+        """
+        from plobi.mind import dossier_profile as dp
+        from plobi.mind.paths import (
+            MindUnavailable,
+            UnsafeMindPath,
+            is_safe_relative,
+            require_root,
+            safe_target,
+        )
+
+        payload = args or {}
+        agent = str(payload.get("agent") or "").strip()
+        shown = str(payload.get("path") or "").strip().replace("\\", "/")
+        stage_id = str(payload.get("stage_id") or "").strip()
+        if not stage_id:
+            return {"success": False, "error": "stage_id 是必需的：改哪一条阶段"}
+        changes = {
+            key: payload[key]
+            for key in ("done", "title", "detail")
+            if payload.get(key) is not None
+        }
+        if not changes:
+            return {
+                "success": False,
+                "error": "至少给一格：done／title／detail。",
+            }
+        try:
+            root = require_root(self._mind_root)
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+
+        if shown:
+            logical = _to_logical(shown)
+            if not logical.endswith("/" + dp.PROFILE_FILENAME):
+                return {
+                    "success": False,
+                    "path": logical,
+                    "error": f"只认 Dossiers/<类>/<名>/{dp.PROFILE_FILENAME} 这一种形状",
+                }
+            if not is_safe_relative(logical):
+                return {"success": False, "error": f"{shown} 不在可写的面里"}
+            try:
+                target = safe_target(root, logical)
+            except UnsafeMindPath as exc:
+                return {"success": False, "error": str(exc)}
+        elif agent:
+            resolved = self._resolve_dossier_by_name(root, agent)
+            if resolved is None:
+                return {
+                    "success": False,
+                    "error": f"名册与盘上都找不到叫 {agent!r} 的档案",
+                }
+            logical, target = resolved
+            logical = f"{logical}/{dp.PROFILE_FILENAME}"
+        else:
+            return {
+                "success": False,
+                "error": "agent（或 path）是必需的：要说清改哪一份档案",
+            }
+
+        current = dp.read_profile(target)
+        if current.error or current.profile is None:
+            return {
+                "success": False,
+                "path": logical,
+                "error": current.error or f"{dp.PROFILE_FILENAME} 读不出来",
+            }
+        stages = [stage.to_dict() for stage in current.profile.stages]
+        hit = next(
+            (row for row in stages if str(row.get("id") or "") == stage_id), None
+        )
+        if hit is None:
+            known = "、".join(str(row.get("id") or "") for row in stages) or "（没有）"
+            return {
+                "success": False,
+                "path": logical,
+                "error": f"这份档案里没有 id 为「{stage_id}」的阶段；现有的是：{known}",
+            }
+        hit.update(changes)
+        try:
+            result = dp.apply_profile_update(target, stages=stages)
+        except dp.ProfileError as exc:
+            return {"success": False, "path": logical, "error": str(exc)}
+        except OSError as exc:
+            return {"success": False, "path": logical, "error": f"写不下去：{exc}"}
+        profile = result.profile
+        if result.error or profile is None:
+            return {
+                "success": False,
+                "path": logical,
+                "error": result.error or "写完读不回来：盘上那份档案不在预期形状里",
+            }
+        return {
+            "success": True,
+            "path": logical,
+            "stage": hit,
+            "updated": profile.updated,
+            "stages": {
+                "done": profile.milestones_done,
+                "total": profile.milestones_total,
+            },
+        }
 
     # -- 档案本体的字段级编辑（dossier_write）--------------------------
 

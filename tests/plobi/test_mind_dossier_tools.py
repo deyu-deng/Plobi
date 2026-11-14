@@ -140,6 +140,12 @@ def test_the_tools_are_atomic(roots):
         "note_list",
         "note_links",
         "note_set_property",
+        # 11-14：日记与档案那两族也补细动作（列／接一行／勾一条／改一个阶段）。
+        "diary_list",
+        "diary_append",
+        "dossier_list",
+        "dossier_task_toggle",
+        "dossier_stage_update",
     ]
     for schema in schemas:
         # 裁定 185：不许用 action/mode/surface 这类选分支的参数把两件事塞进一枚工具——
@@ -174,6 +180,29 @@ def test_the_tools_are_atomic(roots):
                 "tags",
                 "belongs",
                 "relates",
+            }
+        elif name == "diary_list":
+            assert set(schema["parameters"]["properties"]) == set()
+        elif name == "diary_append":
+            assert set(schema["parameters"]["properties"]) == {"line", "day"}
+        elif name == "dossier_list":
+            assert set(schema["parameters"]["properties"]) == set()
+        elif name == "dossier_task_toggle":
+            assert set(schema["parameters"]["properties"]) == {
+                "agent",
+                "path",
+                "date",
+                "id",
+                "done",
+            }
+        elif name == "dossier_stage_update":
+            assert set(schema["parameters"]["properties"]) == {
+                "agent",
+                "path",
+                "stage_id",
+                "done",
+                "title",
+                "detail",
             }
         elif name == "note_rename":
             # 改名那把只收两个：哪一篇 ＋ 新名字（裁 185：一枚工具只干一件事）。

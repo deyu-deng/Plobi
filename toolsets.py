@@ -287,12 +287,23 @@ TOOLSETS = {
     },
     "diary": {
         "description": "The human side's diary: one entry per day, never written automatically",
-        "tools": ["diary_read", "diary_write"],
+        "tools": [
+            "diary_read",
+            "diary_write",
+            "diary_list",
+            "diary_append",
+        ],
         "includes": []
     },
     "dossier": {
         "description": "The human side's dossiers: an agent's record — read it, update it",
-        "tools": ["dossier_read", "dossier_write"],
+        "tools": [
+            "dossier_read",
+            "dossier_write",
+            "dossier_list",
+            "dossier_task_toggle",
+            "dossier_stage_update",
+        ],
         "includes": []
     },
 

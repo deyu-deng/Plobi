@@ -36,8 +36,14 @@ NOTE_TOOLS = {
     "note_links",
     "note_set_property",
 }
-DIARY_TOOLS = {"diary_read", "diary_write"}
-DOSSIER_TOOLS = {"dossier_read", "dossier_write"}
+DIARY_TOOLS = {"diary_read", "diary_write", "diary_list", "diary_append"}
+DOSSIER_TOOLS = {
+    "dossier_read",
+    "dossier_write",
+    "dossier_list",
+    "dossier_task_toggle",
+    "dossier_stage_update",
+}
 MIND_TOOLS = {"mind_read", "mind_write"}
 HUMAN_TOOLS = NOTE_TOOLS | DIARY_TOOLS | DOSSIER_TOOLS
 
