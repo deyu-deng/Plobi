@@ -356,6 +356,27 @@ describe('左下底栏那一格', () => {
     fireEvent.click(tun)
     await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalled())
   })
+
+  it('引擎关着时模式那两颗照旧能点：它是预设，不是接管', async () => {
+    //: 11-13 定：只灰「系统代理接管」那一格。模式（规则/全局）不灰是有意的 ——
+    //: `patchMode` 只是往表里加/摘同一枚 `RULE_MODE_MATCH` 直连，可逆，不碰注册表，
+    //: 也不会造出"指向没人监听的端口"；而"先配好模式、再拨引擎"是正常顺序，灰掉等于堵死它。
+    getNetworkStatus.mockResolvedValue(
+      status({ switch: { exit: 'POOL', mode: 'rule', transport: 'off', vpn: false } })
+    )
+    render(<EgressPanel />)
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOn })).toBeTruthy())
+
+    const rule = screen.getByRole('button', { name: copy.modeRule }) as HTMLButtonElement
+    const global = screen.getByRole('button', { name: copy.modeGlobal }) as HTMLButtonElement
+    expect(rule.disabled).toBe(false)
+    expect(global.disabled).toBe(false)
+
+    fireEvent.click(global)
+    await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalled())
+    // 屏上那份读数永远听后端的（裁定 94），这里只看送出去的表：全局模式就是摘掉那条分类直连。
+    expect(sent().egress.rules).toEqual([{ match: '*', via: 'proxy:POOL' }])
+  })
 })
 
 describe('机器原话不许顶在这一屏上', () => {
