@@ -360,8 +360,7 @@ class MindProvider(MemoryProvider):
                     "comparisons, the daily summary, memory notes. This is the AI-facing "
                     "surface: what is written here is mostly machine product, not prose for "
                     "the user. Only paths inside those zones resolve; the human side "
-                    "(``Notes/…`` / ``Diary/…`` / ``Dossiers/…``) is other tools: "
-                    "``note_read``, ``diary_read``, ``dossier_read``."
+                    "(notes, the diary, dossiers) belongs to other tools."
                 ),
                 "parameters": {
                     "type": "object",
@@ -380,9 +379,8 @@ class MindProvider(MemoryProvider):
                     "Overwrite one page on the brain's OWN surface (``Mind/wiki/...``) by its "
                     "LOGICAL path — the zones this tool may touch are the memory system's own "
                     "pages (concepts, entities, sources, comparisons, daily, memory). Keep the "
-                    "file's frontmatter. Notes for the user (``Notes/…``), the diary "
-                    "(``Diary/…``) and dossiers (``Dossiers/…``) are other tools: "
-                    "``note_write``, ``diary_write``, ``dossier_write``. The write is "
+                    "file's frontmatter. Notes for the user, the diary and dossiers "
+                    "belong to other tools. The write is "
                     "checked by the trust gate; the result says whether it landed, went to "
                     "the pending queue (with an id), or was refused, and why. Never report "
                     "success the model did not read back."

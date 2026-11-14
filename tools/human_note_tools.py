@@ -52,9 +52,8 @@ NOTE_READ_SCHEMA = {
         "e.g. ``Notes/<topic>/<title>.md``. A note carries a hard contract in "
         "its frontmatter: ``title``, ``tags`` and ``belongs`` (the agent "
         "names it belongs to; ``[]`` = public knowledge), optionally "
-        "``relates``. Only paths under ``Notes/`` resolve — a dossier "
-        "record is ``dossier_read``, today's diary is ``diary_read``, the "
-        "brain's own pages are ``mind_read``."
+        "``relates``. Only paths under ``Notes/`` resolve — anything "
+        "outside that prefix belongs to another tool."
     ),
     "parameters": {
         "type": "object",
@@ -80,8 +79,8 @@ NOTE_WRITE_SCHEMA = {
         "write is refused with the reasons listed. The write is checked by "
         "the trust gate — the result says whether it landed, went to the "
         "pending queue (with an id), or was refused, and why. Never report "
-        "success the model did not read back. The diary and the dossier "
-        "records are other tools (``diary_write`` / ``dossier_write``)."
+        "success the model did not read back. Records outside ``Notes/`` "
+        "belong to other tools."
     ),
     "parameters": {
         "type": "object",

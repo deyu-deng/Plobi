@@ -44,8 +44,8 @@ DOSSIER_READ_SCHEMA = {
         "path, ``Dossiers/...`` — the record "
         "``Dossiers/<category>/<name>/dossier.json`` (goal, status, stages), "
         "the day-by-day checklist beside it (``tasks.json``), or the index "
-        "beside that. Only paths under ``Dossiers/`` resolve — notes are "
-        "``note_read``, the diary is ``diary_read``."
+        "beside that. Only paths under ``Dossiers/`` resolve — anything "
+        "outside that prefix belongs to another tool."
     ),
     "parameters": {
         "type": "object",

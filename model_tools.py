@@ -512,6 +512,26 @@ def _compute_tool_definitions(
                     }
                     break
 
+    # Cross-family hints for the human side (WP-TOOL-SCHEMA-XGATE).
+    #
+    # Upstream Hermes' rule (tools/AGENTS.md): a schema description must not name
+    # a tool from ANOTHER toolset — those tools may be absent (that category is
+    # off, a dependency is missing, check_fn failed) and the model then
+    # hallucinates a call to them.  The static descriptions therefore say only
+    # what belongs to their own kind; the "the diary is another tool" sentence
+    # is added HERE — upstream adds its cross-references in this same place.
+    #
+    # **Per agent, not per session**: Plobi's unit is the Agent (there is no
+    # session concept).  The judge is the tool table THIS agent ends up with —
+    # not enabled_toolsets: the Agent's own blacklist subtracts tools from it, so
+    # judging by category would point at a tool that is not in the table.
+    try:
+        from tools.xrefs import apply_cross_family_hints
+
+        filtered_tools = apply_cross_family_hints(filtered_tools, available_tool_names)
+    except Exception:  # noqa: BLE001 - 提示句补不上也不该炸这一轮
+        logger.debug("cross-family hints not applied", exc_info=True)
+
     if not quiet_mode:
         if filtered_tools:
             tool_names = [t["function"]["name"] for t in filtered_tools]

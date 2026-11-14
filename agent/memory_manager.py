@@ -230,6 +230,22 @@ def inject_memory_provider_tools(agent: Any) -> int:
         existing_tool_names.add(tool_name)
         added += 1
 
+    # 跨门类引导（WP-TOOL-SCHEMA-XGATE）：``mind_read``／``mind_write`` 的描述里那句
+    # 「人读面是别的工具」按**这个 Agent 手上的工具表**补——那份表是它自己的
+    # （Agent 的黑名单已经减过一轮），不是进程全局，也不是会话。
+    # 上游在同一处加同一句（tools/AGENTS.md：cross-references are added dynamically）。
+    try:
+        from tools.xrefs import apply_cross_family_hints
+
+        available = {
+            t.get("function", {}).get("name")
+            for t in tools
+            if isinstance(t, dict)
+        }
+        tools[:] = apply_cross_family_hints(tools, available)
+    except Exception:  # noqa: BLE001 - 提示句补不上也不该炸这一轮
+        logger.debug("cross-family hints not applied", exc_info=True)
+
     return added
 
 
