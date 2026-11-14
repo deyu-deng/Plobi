@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 from agent import external_offload as channel
 from plobi.delegation.offload import ExternalAgent, availability, total_usd
+from plobi.delegation.offload_contract import cached_answers
 
 #: 这一屏的读数缓存 120s（探针不进读路径，见文件头第 1 条）。
 PROBE_TTL_SECONDS = 120.0
@@ -31,6 +32,70 @@ _ABSENT_MARKERS = ("not logged in", "please run /login", "login required",
                    "not authenticated", "no api key")
 
 _CACHE: dict[str, Any] = {"at": 0.0, "payload": None}
+
+#: 后台那一轮 ACP 握手的进度（``running`` 只是防重复起）。
+_SWEEP: dict[str, Any] = {"running": False}
+
+
+def _acp_pending(vendors: list[str]) -> list[str]:
+    """还没探过的那几家：装上了、契约表里有 ACP 入口、缓存里还没有答案。"""
+    from plobi.delegation.offload_contract import OFFLOAD_CONTRACT, cached_answers
+
+    have = cached_answers()
+    out: list[str] = []
+    for name in vendors:
+        spec = OFFLOAD_CONTRACT.get(name)
+        if spec is None or not spec.acp_args:
+            continue
+        if name in have:
+            continue
+        out.append(name)
+    return out
+
+
+def maybe_start_acp_sweep() -> list[str]:
+    """后台起一轮 ACP 握手（**路由那一层调它**：用户把那一屏打开就是那个信号）。
+
+    起完了返回本轮在探的那几家（空 = 没什么要探的，或已经在跑）。
+
+    取数那一层保持纯的：它只报「还有几家没探」，**不自己起线程**——
+    否则每个读这一屏的调用方（包括测试）都会莫名其妙起一堆 CLI 进程。
+    """
+    from plobi.delegation.offload_contract import OFFLOAD_CONTRACT, cached_answers
+
+    have = cached_answers()
+    pending = [
+        name for name, spec in OFFLOAD_CONTRACT.items()
+        if spec.acp_args and name not in have
+    ]
+    if not pending:
+        return []
+    if _SWEEP.get("running"):
+        return pending
+    _start_acp_sweep(pending)
+    return pending
+
+
+def _start_acp_sweep(vendors: list[str]) -> None:
+    """后台跑一轮 ACP 握手——用户把这一屏打开就够了，不必再点一次「再读一次」。
+
+    **首屏不跑探针**那一条管的是「不许在读路径上同步跑」；这里是后台线程：
+    跑完把答案落进契约表的缓存，再把这一屏的结果缓存丢掉，下一次读数就是新的
+    （那一格自己就从「＋」长成开关）。
+    """
+    import threading
+
+    from plobi.delegation.offload_contract import probe_all
+
+    def _run() -> None:
+        try:
+            probe_all(vendors, max_workers=4, deadline_seconds=90.0)
+        finally:
+            _SWEEP["running"] = False
+            forget_rows_cache()
+
+    _SWEEP["running"] = True
+    threading.Thread(target=_run, name="plobi-offload-acp-sweep", daemon=True).start()
 
 
 def _version_of(binary: str, scrub: tuple[str, ...]) -> str:
@@ -63,8 +128,13 @@ def _rows_by_agent() -> dict[str, list[dict[str, Any]]]:
     return grouped
 
 
-def _login_evidence(last: dict[str, Any], local: Optional[bool] = None) -> dict[str, Any]:
-    """登录态：**上一趟厂商亲口说的**优先，其次**本地强证据**（登录后才会落盘的那种）。
+def _login_evidence(last: dict[str, Any], local: Optional[bool] = None,
+                    acp: Any = None) -> dict[str, Any]:
+    """登录态：**厂商亲口说的**优先 —— 先是「ACP 腿此刻的答复」，再是「上一趟真跑的证据」。
+
+    11-14 改：ACP 那一腿（``plobi/delegation/offload_contract.py``）排在**最前**。
+    它是**此刻**的答复：它自己说「没登录」就比三天前那一趟的旧话准；它自己开了会话，
+    就说明此刻登录着。**它探不到（没回话／拒的原因不是登录）时不算数** —— 往下落到旧的两档。
 
     11-08 21:2x 现读：这一格原来**只读「上一趟真跑的证据」** ⇒ 刚装上、还没派过活的那几家
     （Copilot CLI、Kilo Code CLI）永远是「配置好了」⇒ 主人看见一个开关，以为能用，
@@ -72,11 +142,19 @@ def _login_evidence(last: dict[str, Any], local: Optional[bool] = None) -> dict[
 
     三条证据按可信度排队：
 
-    1. **上一趟厂商自己说的话**（「Not logged in · Please run /login」）——它亲口说的，最可靠；
-    2. **本地强证据**：登录后才会落盘的那个文件（oauth token / creds json）、凭据库条目、
-       登录用的环境变量 ⇒ 能判 True／False；
+    1. **厂商自己说的话** —— 活的 ACP 答复（``session/new`` 给不给会话）、上一趟它自己说的
+       「Not logged in · Please run /login」；
+    2. **本地痕迹**：登录后才会落盘的那个文件（oauth token / creds json）、凭据库条目、
+       登录用的环境变量 ⇒ 能判 True／False。**但那只是痕迹**：屏上写的是「凭据痕迹在，
+       但那只是提示」，不写成「还保持登录」（不许把「有文件」说成「登上了」）；
     3. 别的（目录里有过痕迹、压根没证据）⇒ **探不到（None）**，不判成不能。
     """
+    if acp is not None and getattr(acp, "value", None) is not None:
+        return {
+            "value": bool(acp.value),
+            "source": str(getattr(acp, "source", "acp") or "acp"),
+            "detail": str(getattr(acp, "detail", "") or ""),
+        }
     if last:
         haystack = " ".join(
             str(last.get(key) or "") for key in ("answer_excerpt", "reply", "failure")
@@ -109,6 +187,9 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
 
     roster = {agent.name: agent for agent in agent_roster()}
     grouped = _rows_by_agent()
+    # ACP 那一腿**已经探到**的答案（缓存里的）。**读路径上不许跑握手**——首屏要在秒级出数，
+    # 探针在后台跑（见 `_start_acp_sweep`），落地后这一屏自己就更新。
+    acp_answers = cached_answers()
     today = datetime.now(timezone.utc).date().isoformat()
     rows: list[dict[str, Any]] = []
 
@@ -120,7 +201,7 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
         last = mine[0] if mine else {}
         # 本地证据（探针/凭据痕迹）优先；`base.logged_in` 就是 `availability()` 用的那一份，
         # 两处口径不许分家（裁定 94）。
-        login = _login_evidence(last, getattr(base, "logged_in", None))
+        login = _login_evidence(last, getattr(base, "logged_in", None), acp_answers.get(name))
 
         capabilities = base.capabilities if base is not None else {}
         decision = ExternalAgent(
@@ -175,12 +256,17 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
             } if last else None,
         })
 
+    # 还有几家没探（答案落地后那一格自己就从「＋」长成开关）。
+    # **取数这一层不起线程**（它得是纯的）：起手在路由那一层（见 `maybe_start_acp_sweep`）。
+    pending = _acp_pending([row["name"] for row in rows if row.get("installed")])
+
     payload = {
         "agents": rows,
         "probed_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "probe_ttl_seconds": PROBE_TTL_SECONDS,
+        "acp_probe_pending": len(pending),
         "note": ("这一屏管的是「把活外包给那家软件」；把它的订阅/API 当模型用，在 Providers 那一屏，"
-                 "两件事不共用一张表。登录态读的是**上一趟真跑的证据**，首屏不跑探针。"),
+                 "两件事不共用一张表。登录态问的是厂商自己（ACP 那一腿），首屏不跑探针。"),
     }
     _CACHE["at"] = now
     _CACHE["payload"] = payload
@@ -190,6 +276,20 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
 def forget_rows_cache() -> None:
     """开关改了：下一次取数别再拿缓存里的旧 `enabled` 糊弄人（探针不动，只丢结果）。"""
     _CACHE.clear()
+
+
+def _probe_login_state(agent: str) -> Any:
+    """问那家软件自己（ACP 那一腿）：它此刻登录着没有。
+
+    探不到（没回话／这一家没法用 ACP 问）⇒ 返回 ``None``，**不挡主人**：
+    调用方照旧走登录命令。探针不许把屏带崩。
+    """
+    try:
+        from plobi.delegation.offload_contract import probe_acp_login
+
+        return probe_acp_login(agent, use_cache=True)
+    except Exception:  # noqa: BLE001 — 探不到不是错误状态
+        return None
 
 
 def start_login(agent: str) -> dict[str, Any]:
@@ -211,6 +311,12 @@ def start_login(agent: str) -> dict[str, Any]:
     binary = channel.resolve_command(agent)
     if not binary:
         return {"started": False, "reason": f"本机没有 {agent}：先装上再登录。"}
+
+    # **先问它自己**（ACP 那一腿）：已经登录着就别再拉一遍登录命令
+    # （浏览器 OAuth 那一下要人点同意，白跑一次只是添乱）。
+    answer = _probe_login_state(agent)
+    if answer is not None and getattr(answer, "value", None) is True:
+        return {"started": False, "reason": "它已经是登录状态：它自己的 ACP 腿刚给了会话。"}
 
     import os
     import subprocess

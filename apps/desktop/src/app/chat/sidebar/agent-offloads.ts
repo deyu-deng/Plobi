@@ -28,6 +28,8 @@ export type OffloadRoundReply = {
   /** 派发前那张预授权票（后端在 offloads 行上顺带补 ticket_status）。 */
   ticket_id?: string
   ticket_status?: string
+  /** 失败码配的那一句人话（后端给）。**屏上摆它，不摆机器码**（`not_logged_in` 那一族）。 */
+  failure_note?: string
 }
 
 export type OffloadRoundWithReply = OffloadRound & OffloadRoundReply
@@ -205,6 +207,15 @@ export type RoundFacts = {
   credits: null | number
   durationSeconds: null | number
   permissionFlag: string
+}
+
+/**
+ * 这一趟失败时**屏上那句话**——后端给的人话（`failure_note`），一个字都不改。
+ *
+ * 空串 = 这一趟没记到失败（那不是失败，是成功那一档）。
+ */
+export function failureText(round: OffloadRoundWithReply): string {
+  return (round.failure_note ?? '').trim()
 }
 
 /**

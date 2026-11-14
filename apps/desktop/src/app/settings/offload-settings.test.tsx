@@ -169,14 +169,37 @@ describe('settings → offload', () => {
 
     await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
 
-    // 没配好（qoder 未登录、agy 未安装）右边是加号，不是开关
+    // 没配好（qoder 未登录、agy 未安装）右边是加号，不是开关。
+    // 11-14 起还有第三种「没配好」：**探不到登录态**（kiro / qwen 的 logged_in 是 null）——
+    // 探不到 ≠ 没登录，但它同样不配开关，所以也落在加号这一侧（不是亮着的假开关）。
     const setupButtons = screen.getAllByLabelText(/Not set up yet/)
 
-    expect(setupButtons.length).toBe(2)
+    expect(setupButtons.length).toBe(4)
 
     fireEvent.click(setupButtons[0])
 
     await waitFor(() => expect(screen.getByText(/sign in inside its own app/)).toBeTruthy())
+  })
+
+  // 11-14 现读修：三态里「探不到」与「没登录」**不是同一句话**。
+  it('探不到登录态与没登录，两句话不一样', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Qoder')).toBeTruthy())
+
+    // qoder：后端明说上次没登录 ⇒ 悬停里是那句「上次连接时显示未登录」。
+    const qoderTip = screen.getByText('Qoder').getAttribute('title') || ''
+    expect(qoderTip).toContain('The last connection reported not signed in')
+
+    // kiro：探不到（value=null）⇒ 悬停里是「暂无登录状态记录」那一句，**不是**未登录那句。
+    const kiroTip = screen.getByText('Kiro').getAttribute('title') || ''
+    expect(kiroTip).toContain('No sign-in status available yet')
+    expect(kiroTip).not.toContain('not signed in')
+
+    // 点开 kiro 的加号，给的也是「暂无登录状态记录」，不冒充「没登录」。
+    fireEvent.click(screen.getAllByLabelText(/Not set up yet/)[2])
+    await waitFor(() => expect(screen.getByText(/No sign-in status available yet/)).toBeTruthy())
   })
 
   it('reads again when the refresh control is used', async () => {

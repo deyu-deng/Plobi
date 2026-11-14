@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,13 +131,15 @@ def main() -> int:
             "tests/plobi_cli/test_cli_help_says_agent_not_profile.py",
             "tests/plobi/test_identity_surfaces_readable.py",
             "-q",
-            # basetemp 换档（11-13 主人授权接手这一行）：旧的 `.pytest-run` 那档的 ACL 坏了 ——
-            # 它「存在」却 stat 不到，pytest 对这种目录只会 `mkdir` → `FileExistsError` ⇒ 这道门
-            # 必红 ⇒ pre-commit 挡住**全仓所有** Code 提交（不止这一刀）。换成一档干净的新目录：
-            # 名字带 `.pytest-` 前缀，`.gitignore` 第 175 行 `.pytest-*/` 已经收着，不进仓。
-            # 那一档坏掉的原因记在这儿，别当随手改：它是 11-13 一次 `rm --` 清理尝试改坏的，
-            # 只有管理员权限能修（见 Docs 登记册 WP-TURTLE-LOADING 那一格）。
-            "--basetemp=.pytest-arch-gate",
+            # basetemp **搬出仓根**（11-14）：仓根里那一档（11-13 起是 `.pytest-arch-gate`）
+            # 在这台机器上被 pytest 用 `mkdir(mode=0o700)` 造出来之后，**连创建者自己都读不到**
+            # （WinError 5；`icacls` 与 `takeown` 都回 Access is denied）⇒ pytest 在 setup 阶段
+            # 就 22 条 ERROR ⇒ 这道门必红 ⇒ pre-commit 挡住**全仓所有** Code 提交（不止这一刀）。
+            # 同一档在**系统临时区**里造得出来（仓内测试跑的 scratch 就在那儿）⇒ 落到
+            # `tempfile.gettempdir()`（裁定 48.1：不许写死盘符；TMPDIR/TEMP/TMP 谁在算就用谁）。
+            # 仓根那一档的残留（`.pytest-*/` 在 `.gitignore` 第 175 行）**没有管理员权限清不掉**，
+            # 它不进仓、不碍事 —— 别再拿 `rm --` 去清它（11-13 那次正是那样把 ACL 改坏的）。
+            f"--basetemp={os.path.join(tempfile.gettempdir(), 'plobi-arch-gate')}",
         ],
         ROOT,
     )

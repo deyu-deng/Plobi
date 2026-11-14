@@ -80,6 +80,7 @@ from plobi.agents.registry import (
     profile_name_blocker,
     registration_blocker,
 )
+from plobi.delegation.offload_contract import resume_argv_map
 from plobi.delegation.tracker import (
     STATUS_AWAITING_APPROVAL,
     STATUS_ERROR,
@@ -1587,6 +1588,28 @@ def _cwd_under_folder(cwd: str, home: str) -> bool:
     return rel != os.pardir and not rel.startswith(os.pardir + os.sep)
 
 
+def _local_day(ts: str) -> str:
+    """那一轮落在**本地**的哪一天（空串＝读不出来）。
+
+    台账记的是 UTC（``offload.py`` 写的是 ``datetime.now(timezone.utc)``），
+    屏上写「今天花了多少」就得按**本地那天**算——按 UTC 那天的线，东八区在凌晨 0:00–8:00
+    会把昨天的下午算进「今天」，反过来在傍晚把今天的一部分算丢。
+
+    极端日期转本地时区可能越界（Windows 抛 ``OSError [Errno 22]``）⇒ 读不出来就空串，
+    不让一行的坏账掀了整格读数。
+    """
+    try:
+        moment = _dt.datetime.fromisoformat(str(ts or ""))
+    except (TypeError, ValueError):
+        return ""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_dt.timezone.utc)
+    try:
+        return moment.astimezone().date().isoformat()
+    except (OSError, OverflowError, ValueError):
+        return ""
+
+
 def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
     """这一格**外包出去**的轮次：给了谁、在哪个目录、开了什么权限档、花了多少。
 
@@ -1627,6 +1650,33 @@ def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
         pass
     amount, cost_status = total_usd(picked)
 
+    # 失败码 → 那一句人话（``failure_note``）。**屏上不摆机器码**（``not_logged_in`` 那一族）。
+    try:
+        from plobi.delegation.offload import failure_note
+
+        for _row in picked:
+            _code = str(_row.get("failure") or "").strip()
+            _row["failure_note"] = failure_note(_code) if _code else ""
+    except Exception:  # noqa: BLE001 — 没有人话也不该把这一摊读数整个丢掉
+        pass
+
+    # 这一格那一摊的四个读数：派过几轮 / 几轮没出错 / 几轮失败 / 今天花了多少。
+    # 全部**从台账现读**（不另记一份账）；金额算不出就是「算不出来」，不拿 0 充。
+    _failed = sum(1 for r in matched if str(r.get("failure") or "").strip())
+    _clean = len(matched) - _failed
+    _today_key = _dt.datetime.now().date().isoformat()
+    _today_rows = [r for r in matched if _local_day(r.get("ts")) == _today_key]
+    _today_usd, _today_status = total_usd(_today_rows)
+    if not _today_rows:
+        # **今天没派过活** ≠ **算不出来**：前者是「没发生」，后者是「发生了但量不出」。
+        # 混成一句话就是在拿「量不出」的样子掩盖「没发生」。
+        _money = "今天还没派过活"
+    elif _today_usd is None:
+        _money = "今天花了多少算不出来"
+    else:
+        _money = f"今天花了 ${_today_usd:.2f}"
+    _summary = f"派过 {len(matched)} 轮 · {_clean} 轮没出错 · {_failed} 轮失败 · {_money}"
+
     return {
         "agent": agent_id,
         "bound_folder": home or None,
@@ -1634,6 +1684,7 @@ def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
         "total_rounds": len(matched),
         "total_usd": amount,
         "cost_status": cost_status,
+        "summary": _summary,
         "unattributed_reason": reason,
     }
 
@@ -1738,11 +1789,16 @@ async def offload_agents_route(refresh: bool = False):
     """GET /api/offload/agents — 设置 → 外包 那一屏的取数（一家外部软件一行）。
 
     与 Providers 那一屏**不是一件事**：那边借订阅/API 当模型，这边是"把活交给那家软件去做"。
-    判据只有一处（`availability()`）；登录态来自厂商自己的探针，读不出的记 `null`。
+    判据只有一处（`availability()`）；登录态问**厂商自己**（ACP 那一腿），读不出的记 `null`。
+
+    **这一层顺带起后台那一轮握手**：主人把这一屏打开就是那个信号。
+    起手放在这里而不是取数那一层，是为了让取数保持纯的（它只报「还有几家没探」）。
     """
-    from plobi.delegation.offload_surface import external_agent_rows
+    from plobi.delegation.offload_surface import external_agent_rows, maybe_start_acp_sweep
 
     payload = await run_in_threadpool(external_agent_rows, refresh=refresh)
+    if payload.get("acp_probe_pending"):
+        await run_in_threadpool(maybe_start_acp_sweep)
     return {"ok": True, "data": payload}
 
 
@@ -1802,16 +1858,15 @@ async def start_offload_agent_login_route(agent_name: str):
 # 外包那一轮回到它自己的软件里（WP-L2-OUTSOURCE-ENTRY 入口面③第三级）
 # --------------------------------------------------------------------------- #
 
-#: 白名单：只有这三家在 10-1x/10-23 现核到「回到那条会话」的旗标（``--help`` 本机跑过，
-#: Qoder 那一支还实测过「续上后问它上一轮读到的标题，回的正是原来那行」）。
-#: 要加新的一家，必须先有 ``agent.external_offload.resolve_command`` 解析得到的入口 + 一条实测旗标，
-#: 而不是在这里补一个看起来像的名字。``{session_id}`` 是唯一允许被替换的槽位。
-OFFLOAD_RESUME_ARGV: dict[str, tuple[str, ...]] = {
-    "codebuddy": ("--resume", "{session_id}", "--open"),
-    "agy": ("--conversation", "{session_id}"),
-    #: Qoder：`--resume <id>` 是续接；`--session-id` 是"新建并指定 id"，别混。
-    "qoder": ("--resume", "{session_id}"),
-}
+#: 白名单：**只有现核到「回到那条会话」旗标的那几家**才有。
+#:
+#: 真源是契约表（``plobi/delegation/offload_contract.py``）——那里一家一行，
+#: 没实测过的那家明写「这一家还没有实测过的回跳旗标」，**不许照着别家的形状编一个**
+#: （Qoder 那一支实测过「续上后问它上一轮读到的标题，回的正是原来那行」：
+#: 它的 ``--resume <id>`` 是续接，``--session-id`` 是「新建并指定 id」，两者别混）。
+#: 要加新的一家，必须先有 ``agent.external_offload.resolve_command`` 解析得到的入口 + 一条实测旗标。
+#: ``{session_id}`` 是唯一允许被替换的槽位。
+OFFLOAD_RESUME_ARGV: dict[str, tuple[str, ...]] = resume_argv_map()
 
 #: 会话标识只认这些字符。它会被拼进 argv，所以宁可拒一个真的长 id，也不放过一个带元字符的假 id。
 _EXTERNAL_SESSION_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"

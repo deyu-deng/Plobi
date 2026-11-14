@@ -52,22 +52,50 @@ export function OffloadSettings() {
   const [pending, setPending] = useState('')
   const [guide, setGuide] = useState('')
 
-  const load = useCallback(async (refresh = false) => {
-    setBusy(true)
-    setError('')
+  /**
+   * 取数。`silent` 那一档是给**后台轮询**用的：它不该让「再读一次」那颗按钮一直转，
+   * 也不该把主人正在看的那句错擦掉。
+   */
+  const load = useCallback(async (refresh = false, silent = false) => {
+    if (!silent) {
+      setBusy(true)
+      setError('')
+    }
 
     try {
       setPayload(await getOffloadAgents(refresh))
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (!silent) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     } finally {
-      setBusy(false)
+      if (!silent) {
+        setBusy(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * 后台那一轮 ACP 握手还没答完 ⇒ 隔几秒自己再读一次。
+   *
+   * 为什么屏上自己会动：登录态现在问的是**厂商自己**（ACP 那一腿），读路径上不许跑探针，
+   * 所以答案只能等它落地；落地后这一屏自己就更新（那一格从「＋」长成开关）。
+   */
+  useEffect(() => {
+    if (!payload?.acp_probe_pending) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      void load(false, true)
+    }, 5000)
+
+    return () => window.clearInterval(timer)
+  }, [payload?.acp_probe_pending, load])
 
   /**
    * 点「+」时**拉起这一家官方那条登录命令**（用户 11-08 19:4x：「点 + 看看会不会自动拉起登录流程」）。
@@ -78,12 +106,13 @@ export function OffloadSettings() {
   const launchLogin = useCallback(
     async (agent: OffloadAgent) => {
       try {
-        const result = await startOffloadLogin(agent.name)
-        if (result.started) {
-          window.setTimeout(() => void load(true), 4000)
-        }
+        await startOffloadLogin(agent.name)
       } catch {
         // 拉不起来不是错误状态：那一句引导已经写着「去它自己的应用里登录」。
+      } finally {
+        // 拉起成没成成都过几秒重读一次：后端已经问过那家软件了（ACP 那一腿），
+        // 它答完的那一格会自己从「＋」长成开关。
+        window.setTimeout(() => void load(true), 4000)
       }
     },
     [load]
@@ -120,7 +149,9 @@ export function OffloadSettings() {
 
   const loginText = (agent: OffloadAgent): string => {
     if (agent.logged_in.value === true) {
-      return s.loginYes
+      // 「本地痕迹」**不是**一次会话的答复：凭据文件在 ≠ 此刻登上了
+      // （不许把「有文件」说成「登上了」）⇒ 那一句是「凭据痕迹在，但那只是提示」。
+      return agent.logged_in.source === 'local' ? s.hintSaysMaybe : s.loginYes
     }
 
     if (agent.logged_in.value === false) {
@@ -130,6 +161,22 @@ export function OffloadSettings() {
     return s.loginUnknown
   }
 
+  /**
+   * 这一格「配好了没有」——**三态，不是两态**（11-14 现读修）。
+   *
+   * 以前是 `installed && logged_in.value !== false` ⇒ **探不到（None）被算成「配好了」**：
+   * 屏上给一颗亮着的开关，主人以为能用，一点上去可能当场撞「它没登录」。
+   * 本机现读的三家（codebuddy / opencode / kiro）登录态就是 None ⇒ 三颗假开关。
+   *
+   * 现在：**探不到 ⇒ 不给开关**，给「＋」＋ 那句「暂无登录状态记录」——
+   * **那不是「没登录」**（`loginNo` 说的是「上次连接时显示未登录」，是另一回事、另一句）。
+   */
+  const configured = (agent: OffloadAgent): boolean =>
+    agent.installed && agent.logged_in.value === true
+
+  /** 这一格能不能开：装上了、且**没判成没登录**。探不到（None）也照旧给开关。 */
+  const usable = (agent: OffloadAgent): boolean => agent.installed && agent.logged_in.value !== false
+
   // 机器细节（二进制、版本、旗标、会话号、后端给的原因、今天几轮花了多少）进悬停提示：
   // 屏上只留「这是什么」——状态由控件的形状说话，坏了才在控件旁一颗红点。
   const agentTip = (agent: OffloadAgent): string =>
@@ -137,6 +184,8 @@ export function OffloadSettings() {
       agent.installed ? `${agent.binary}${agent.version ? ` · ${agent.version}` : ''}` : s.notInstalled,
       agent.permission_flag,
       loginText(agent),
+      // 这一格的证据原话（谁说的、说了什么）——机器细节进悬停，不上屏。
+      agent.logged_in.detail,
       agent.why_not,
       agent.resume_supported ? s.resumeYes : s.resumeNo,
       agent.last_round?.external_session ? `${s.sessionId} ${agent.last_round.external_session}` : '',
@@ -148,7 +197,7 @@ export function OffloadSettings() {
           }`
         : '',
       // 自己关掉的那一格不是坏了，是关着——开关的形状已经说了，这句进悬停。
-      agent.installed && agent.logged_in.value !== false && !agent.enabled ? s.switchOff : ''
+      usable(agent) && !agent.enabled ? s.switchOff : ''
     ]
       .filter(Boolean)
       .join('\n')
@@ -175,13 +224,16 @@ export function OffloadSettings() {
         {error ? <p className="py-2 text-sm text-destructive">{error}</p> : null}
         {!payload && !error ? <LoadingState label={s.loading} /> : null}
         {payload?.agents.map(agent => {
-          // 「配好了」= 装上了、且没判成未登录；能不能用另算（那是后端一处判据）。
-          const configured = agent.installed && agent.logged_in.value !== false
+          // 「配好了」= 装上了、且**探到登录了**（探不到不算，见上面 `configured`）。
+          // 能不能用另算（那是后端一处判据）。
+          const isConfigured = configured(agent)
 
           // 自己关掉的那一格不标红、也不搬后端「主人把它关了」那句上屏——那时该说的是「这格是关的」。
-          const reason = !configured
+          const reason = !usable(agent)
             ? agent.installed
-              ? s.loginNo
+              ? agent.logged_in.value === false
+                ? s.loginNo
+                : s.loginUnknown
               : s.notInstalled
             : !agent.enabled
               ? ''
@@ -191,12 +243,12 @@ export function OffloadSettings() {
 
           // 「坏了」＝开着却服务不了这一回合：控件不变（开关仍然可点），旁边多一颗红点，
           // 原因进悬停（11-07 统一令：形状说话，坏了才红点）。
-          const broken = configured && agent.enabled && !agent.can_use
+          const broken = usable(agent) && agent.enabled && !agent.can_use
 
           return (
             <ListRow
               action={
-                configured ? (
+                isConfigured ? (
                   /* 右侧那**一颗**控件（`ConnectionControl`，与 Providers/Sources 同一件）：
                      配好了是开关；坏了不换控件，旁边一颗红点。 */
                   <ConnectionControl
@@ -231,7 +283,11 @@ export function OffloadSettings() {
                    机器细节、原因与用量都在悬停里（`agentTip`）。 */
                 guide === agent.name ? (
                   <p className={CAPTION} role="note">
-                    {agent.installed ? s.loginGuide : s.installGuide}
+                    {!agent.installed
+                      ? s.installGuide
+                      : agent.logged_in.value === false
+                        ? s.loginGuide
+                        : s.loginUnknown}
                   </p>
                 ) : null
               }

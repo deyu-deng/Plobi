@@ -9,7 +9,7 @@
 export interface OffloadLogin {
   /** `true` 登录着 / `false` 它自己说没登录 / `null` 没有证据（**不许读成不能**）。 */
   value: boolean | null
-  /** `last-run`（台账里上一趟的真证据）/ `unknown` / `probe`（以后显式检查才有）。 */
+  /** `last-run`（台账里上一趟的真证据）/ `acp`（厂商自己在 ACP 那一腿给的答复）/ `local`（本地痕迹）/ `unknown`。 */
   source: string
   detail: string
 }
@@ -47,6 +47,8 @@ export interface OffloadPayload {
   agents: OffloadAgent[]
   probed_at: string
   probe_ttl_seconds: number
+  /** 后台那一轮 ACP 握手还有几家没答（11-14 起：登录态问厂商自己）。>0 ⇒ 屏上隔几秒自己再读一次。 */
+  acp_probe_pending?: number
   note: string
 }
 

@@ -22,6 +22,7 @@ function round(over: Partial<OffloadRoundWithReply> = {}): OffloadRoundWithReply
     artifacts: [{ path: 'D:/projects/Aura/today.py', sha256_12: '3da942743391' }],
     brief: '把今天的读数写成页',
     cost_status: 'usage_reported_without_price',
+    failure_note: '',
     cwd: 'D:/projects/Aura',
     duration_seconds: 16.4,
     permission_flag: '-y --permission-mode=bypassPermissions',
@@ -37,6 +38,7 @@ function payload(rounds: OffloadRoundWithReply[], unattributedReason = '') {
       bound_folder: 'D:/projects/Aura',
       cost_status: 'usage_reported_without_price',
       rounds,
+      summary: '派过 3 轮 · 2 轮没出错 · 1 轮失败 · 今天花了 $0.42',
       total_rounds: rounds.length,
       total_usd: null,
       unattributed_reason: unattributedReason,
@@ -115,8 +117,18 @@ describe('AgentOffloadPanel', () => {
     expect(text).toContain('bypassPermissions')
     expect(text).toContain('16s')
     expect(text).toContain('cost unknown')
-    expect(text).toContain('usage_reported_without_price')
+    // 机器词（cost_status 那一族）**不上屏**（11-14 观察面一刀）：它进悬停。
+    expect(text).not.toContain('usage_reported_without_price')
+    expect(row.getAttribute('title')).toContain('usage_reported_without_price')
     expect(text).not.toContain('$0')
+  })
+
+  it('抽屉顶上那一摊的四个读数在（派过几轮／几轮没出错／几轮失败／今天花了多少）', async () => {
+    await renderPanel([round()])
+
+    // 后端给的那一句原话，屏上不另写。
+    expect(screen.getByText(/派过 3 轮/)).toBeTruthy()
+    expect(screen.getByText(/今天花了 \$0\.42/)).toBeTruthy()
   })
 
   it('开着这一格时它会自己重读：L2 刚外包完，不用重新点进来', async () => {
@@ -167,13 +179,15 @@ describe('AgentOffloadPanel', () => {
   })
 
   it('没产物的一行不可点，也不会假装去开', async () => {
-    await renderPanel([round({ artifacts: [], failure: '没登录，起不来' })])
+    // 失败那一格摆的是**后端给的人话**；机器码（not_logged_in 那一族）不上屏。
+    await renderPanel([round({ artifacts: [], failure: 'not_logged_in', failure_note: '没登录，起不来' })])
     fireEvent.click(screen.getByRole('button', { name: /CodeBuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
 
     expect(row.hasAttribute('disabled')).toBe(true)
     expect(row.textContent).toContain('没登录，起不来')
+    expect(row.textContent).not.toContain('not_logged_in')
 
     fireEvent.click(row)
     expect(openExternal).not.toHaveBeenCalled()

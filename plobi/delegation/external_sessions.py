@@ -271,16 +271,30 @@ def _local_stamp(value: Any) -> str:
     **为什么非转不可**：排序是拿字符串比的（屏上也是按字符串排的），带时区偏移的 ISO 串
     与本地串混在一起比，时区那一截会把序比错——Marvis 的 ``+00:00`` 串就是这样排反的。
     读不出来就原样返回（宁可原样，不编一个时间）。
+
+    **转不动不许抛**（11-14 现读修）：`astimezone()` 会算本地偏移，越界时 Windows 抛
+    `OSError [Errno 22]`——agy 的库里就有一条 `'0001-01-01 00:00:00+00:00'`（公元 1 年，
+    转本地时区时越界）。那一条**把整个 `_agy_sessions()` 掀了** ⇒
+    `all_sessions()` 抛 ⇒ `session_sources()` 抛 ⇒ 左栏「外部会话」整格 500（不是「agy 那家少几条」）。
+    ⇒ 现在：**转不动就原样返回那串**（它已经是 ISO 串，屏上照样能显示与排序），**不编一个时间**。
     """
     text = str(value or "").strip()
     if not text:
+        return ""
+    # **零值时间戳**：`'0001-01-01 …'` 不是「很早」，是「没有」。留着它会把一堆空会话
+    # 顶到列表最前面（那串转成本地时间是公元 1 年，排序上等于最新）。
+    if text.startswith("0001-01-01"):
         return ""
     try:
         moment = datetime.fromisoformat(text)
     except ValueError:
         return text
     if moment.tzinfo is not None:
-        moment = moment.astimezone()
+        try:
+            moment = moment.astimezone()
+        except (OSError, OverflowError, ValueError):
+            # 越界／本机时区算不出 ⇒ 原样留着那串 ISO，不编一个时间，也不让一家的坏掀了整格。
+            return text
 
     return moment.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -796,10 +810,23 @@ def all_sessions() -> list[dict[str, Any]]:
     now = time.time()
     if _ALL_CACHE["rows"] and now - float(_ALL_CACHE["at"]) < _ALL_TTL:
         return list(_ALL_CACHE["rows"])
-    sessions = [
-        *_qoder_sessions(), *_codebuddy_sessions(), *_marvis_sessions(),
-        *_cursor_sessions(), *_agy_sessions(), *_opencode_sessions(),
-    ]
+    sessions: list[dict[str, Any]] = []
+    # **一家坏不掀整格**（11-14 现读修）：六家各一个读取器，其中任何一家抛异常，
+    # 以前整份 `all_sessions()` 就抛 ⇒ `session_sources()` 抛 ⇒ 左栏「外部会话」整格 500。
+    # （现读的真样本：agy 那家读 `last_modified_time` 时越界，`OSError [Errno 22]`。）
+    # ⇒ 现在逐家兜住：**这一家少几条或一条没有，其余五家照常出数**。
+    for reader in (
+        _qoder_sessions,
+        _codebuddy_sessions,
+        _marvis_sessions,
+        _cursor_sessions,
+        _agy_sessions,
+        _opencode_sessions,
+    ):
+        try:
+            sessions.extend(reader())
+        except Exception:  # noqa: BLE001 - 一家读不动不是整格的理由
+            continue
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     _ALL_CACHE["rows"] = sessions
     _ALL_CACHE["at"] = now

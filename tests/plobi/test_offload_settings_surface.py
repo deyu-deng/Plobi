@@ -40,6 +40,8 @@ def test_start_login_launches_the_vendors_own_login_command(monkeypatch):
 
     monkeypatch.setattr(channel, "resolve_command", lambda agent="copilot": "D:/bin/copilot.cmd")
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    # ACP 那一腿在测试里短路（不许真起 CLI，也不许往仓里写缓存）。
+    monkeypatch.setattr(offload_surface, "_probe_login_state", lambda agent: None)
 
     result = offload_surface.start_login("copilot")
 
@@ -51,6 +53,7 @@ def test_start_login_launches_the_vendors_own_login_command(monkeypatch):
 def test_start_login_says_so_when_there_is_no_one_click_login(monkeypatch):
     """kilo 的 `auth login` 要人挑 provider（终端交互）⇒ 拉不起来，如实说，不假装。"""
     monkeypatch.setattr(channel, "resolve_command", lambda agent="kilo": "D:/bin/kilo.cmd")
+    monkeypatch.setattr(offload_surface, "_probe_login_state", lambda agent: None)
 
     result = offload_surface.start_login("kilo")
 
@@ -64,6 +67,35 @@ def test_start_login_for_an_unknown_agent_is_not_a_crash():
 
     assert result["started"] is False
     assert result["reason"]
+
+
+def test_start_login_does_not_launch_it_when_it_is_already_signed_in(monkeypatch):
+    """点「+」时先问它自己（ACP 那一腿）：**已经登录着就别再拉一遍登录命令**。
+
+    浏览器 OAuth 那一下要人点同意，白跑一次只是添乱。
+    """
+    import subprocess
+
+    class _Answer:
+        value = True
+        source = "acp"
+        detail = "它自己的 ACP 腿给我开了一条会话 ⇒ 登录着。"
+
+    launched: list[list[str]] = []
+
+    def fake_popen(argv, **_kw):
+        launched.append(list(argv))
+        return object()
+
+    monkeypatch.setattr(channel, "resolve_command", lambda agent="copilot": "D:/bin/copilot.cmd")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(offload_surface, "_probe_login_state", lambda agent: _Answer())
+
+    result = offload_surface.start_login("copilot")
+
+    assert result["started"] is False
+    assert "登录" in result["reason"]
+    assert launched == [], "已经登录着就不该再拉登录命令"
 
 
 def test_the_login_evidence_is_ranked_not_guessed():
@@ -147,6 +179,8 @@ def test_rows_carry_one_decision_and_the_evidence_behind_it(monkeypatch):
                         lambda agent="codebuddy": "" if agent == "agy" else f"/bin/{agent}")
     monkeypatch.setattr(channel, "permission_flags", lambda agent, mode=None: ("--permission-mode", "default"))
     monkeypatch.setattr(offload_surface, "_version_of", lambda binary, scrub: "9.9.9")
+    # ACP 那一腿的答案在测试里是空的（不许让这台机器上一次的探测结果影响判据）。
+    monkeypatch.setattr(offload_surface, "cached_answers", lambda vendors=None: {})
     today_ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     monkeypatch.setattr(offload_surface, "_rows_by_agent", lambda: {
         "qoder": [{"ts": today_ts, "cwd": "D:/Projects/Sindri",

@@ -6,7 +6,14 @@ import { cn } from '@/lib/utils'
 import { getAgentOffloads, offloadResume } from '@/plobi'
 import { openConversation } from '@/store/conversation-view'
 
-import { externalHandleOf, groupOutsourced, jumpTargetFor, outsourcedItems, roundFacts } from './agent-offloads'
+import {
+  externalHandleOf,
+  failureText,
+  groupOutsourced,
+  jumpTargetFor,
+  outsourcedItems,
+  roundFacts
+} from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarDrawerRow } from './chrome'
 import { ExpertRoleRow, useAgentExperts } from './expert-panel'
@@ -39,6 +46,9 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
   const { t } = useI18n()
   const c = t.console
   const [rounds, setRounds] = useState<null | OffloadRoundWithReply[]>(null)
+  // 这一格那一摊的四个读数（派过几轮／几轮没出错／几轮失败／今天花了多少）：
+  // **后端给的那一句原话**，屏上不另写、也不拿数字自己拼一句。
+  const [summary, setSummary] = useState('')
   const [expertsOpen, setExpertsOpen] = useState(true)
   const [outsourcedOpen, setOutsourcedOpen] = useState(true)
   const [openVendor, setOpenVendor] = useState<null | string>(null)
@@ -61,6 +71,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
         .then(body => {
           if (!cancelled) {
             setRounds(body?.data?.rounds ?? [])
+            setSummary(String((body?.data as { summary?: string } | undefined)?.summary ?? ''))
           }
         })
         .catch(() => {
@@ -151,6 +162,9 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
           open={outsourcedOpen}
         >
           <div className="flex flex-col gap-px pl-4">
+            {summary ? (
+              <p className="px-2 py-0.5 text-[0.68rem] text-(--ui-text-tertiary)">{summary}</p>
+            ) : null}
             {groups.map(group => {
               const expanded = openVendor === group.vendor
 
@@ -288,13 +302,14 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
   const clickable = plan.kind !== 'none'
   const [error, setError] = useState('')
 
+  // 金额算不出就是「算不出来」——**机器词（cost_status 那一族）不上屏**，它进悬停。
   const money = facts.costUsd !== null && facts.costUsd > 0
     ? `$${facts.costUsd}`
     : facts.credits !== null && facts.credits > 0
       ? `${Math.round(facts.credits * 100) / 100} ${c.offloadsCredits}`
       : facts.costUsd !== null
         ? `$${facts.costUsd}`
-        : `${c.offloadsCostUnknown}${facts.costStatus ? ` (${facts.costStatus})` : ''}`
+        : c.offloadsCostUnknown
 
   const parts = [
     facts.permissionFlag,
@@ -305,7 +320,16 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
   const reason = plan.reason ? c.offloadsNoArtifact : ''
   const handle = externalHandleOf(round)
   const action = plan.kind === 'resume' ? c.offloadsJump : plan.kind === 'reveal' ? c.offloadsReveal : reason
-  const title = [round.cwd, action, round.failure].filter(Boolean).join(' · ')
+  // 悬停里是机器细节（目录、动作、失败那一句、计费状态）；**行上只摆人话**。
+  // 人话没给成的那些（后端那一列取不到）：机器码**留在悬停**，不许顶到行上当正文。
+  const title = [
+    round.cwd,
+    action,
+    failureText(round) || round.failure,
+    facts.costStatus
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   const run = () => {
     if (plan.kind === 'resume' && plan.resume) {
@@ -343,8 +367,8 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
           {round.reply}
         </span>
       )}
-      {round.failure && (
-        <span className="truncate text-[0.68rem] text-(--ui-red)">{round.failure}</span>
+      {failureText(round) && (
+        <span className="truncate text-[0.68rem] text-(--ui-red)">{failureText(round)}</span>
       )}
       {handle && (
         <span className="truncate text-[0.65rem] text-(--ui-text-quaternary)" title={round.external_session_source || undefined}>
