@@ -261,89 +261,6 @@ def _ticket_fields(ticket) -> dict:
     }
 
 
-# ── 每趟留一条有身份的记录（裁定 59.1 / 62；WP-SECRETARY-TASK 收口）─────────
-#
-# 10-05 那版把这条落痕写在 ``run_secretary_ask`` 的包装里。11-02
-# ``WP-RETIRED-MOUTH-SWEEP`` 删掉 ``_secretary_ask`` 一窝时把它一起带走了
-# （``16b47ad4``）⇒ 看板的 ``logged`` 栏自此**有消费者、没有生产者**：现读
-# ``kanban.db`` 32 条、最后一条停在 10-20 23:06，之后再没长过。今天秘书没有
-# 专用入口，它派活走的就是这两枚嘴，所以生产者只能挂在这里。
-#
-# 只给 L1 总秘书落：任何 Agent 之间说话都落，会让看板被日常对话灌满；而
-# L2→L3 那一跳已经有授权票（``tickets`` 表）与行内票号徽标可追。落痕是**旁路**：
-# 板子写不进去只记一条 warning，这一句话照旧送到（与 :func:`_router_ticket` 同姿态）。
-
-TURN_RECORD_BODY_MAX_CHARS = 2000
-
-
-def _is_l1_secretary(name: str) -> bool:
-    """发起方是不是 L1 总秘书——读名册那一行的 ``role``，不认名字也不认环境变量。"""
-    target = (name or "").strip().casefold()
-    if not target:
-        return False
-    try:
-        from plobi.agents.registry import L1_SECRETARY_ROLE
-
-        for row in _roster().agents.values():
-            if str(getattr(row, "name", "")).strip().casefold() == target:
-                return str(getattr(row, "role", "")) == L1_SECRETARY_ROLE
-    except Exception:  # noqa: BLE001 - 名册读不出 ⇒ 不落痕，绝不因此堵住说话
-        logger.debug("say/ask: L1 identity unavailable", exc_info=True)
-    return False
-
-
-def _record_turn(
-    sender: str, entry, mode: str, text: str, *,
-    session_id: str = "", ticket_id: str = "", thread_id: str = "", domain: str = "",
-) -> dict:
-    """把这一跳记成看板 ``logged`` 上一件**有身份、不可派工**的任务。
-
-    裁定 59.1：秘书一个工作单元算一件任务。裁定 62：它落在 ``logged``——
-    列得出来、点得开、``claim_task`` 的 CAS 只认 ``ready``、``recompute_ready``
-    只升 ``todo``/``blocked``，所以**记账永远不会变成排队**。
-
-    返回塞进工具回传的那几个字段；不是秘书、或板子写不进去 ⇒ 空 dict，
-    say/ask 的成功与否与它无关。
-    """
-    if not _is_l1_secretary(sender):
-        return {}
-    one_line = " ".join(str(text or "").split())
-    body = json.dumps(
-        {
-            "from": sender,
-            "to": getattr(entry, "name", ""),
-            "mode": mode,
-            "domain": domain,
-            "ticket_id": ticket_id,
-            "thread_id": thread_id,
-            "session_id": session_id,
-            "parts": str(text or "")[:1600],
-        },
-        ensure_ascii=False,
-    )[:TURN_RECORD_BODY_MAX_CHARS]
-    try:
-        from plobi_cli import kanban_db as kb
-
-        with kb.connect_closing() as conn:
-            task_id = kb.create_task(
-                conn,
-                title=f"secretary:{mode} · {getattr(entry, 'name', '')} · {one_line[:60]}",
-                body=body,
-                assignee=getattr(entry, "name", None),
-                created_by="secretary",
-                initial_status="logged",
-                session_id=session_id or None,
-            )
-    except Exception as exc:  # noqa: BLE001 - 旁路：板子写不进去不影响这句话送到
-        logger.warning("say/ask: 这一趟没记进看板：%s", exc)
-        return {}
-    return {
-        "logged_task_id": task_id,
-        "logged_column": "logged",
-        "logged_note": f"本趟记了 1 件，记在看板 logged 栏（{task_id}）。",
-    }
-
-
 def _round_allowed(ticket, capability: str = "say") -> tuple[bool, str]:
     """撤销／限权在**执行层**生效：票不许跑，就不替收件人起那一轮。
 
@@ -648,14 +565,6 @@ def handle_say(args: dict, **kwargs) -> str:
     if domain:
         fields["domain"] = domain
         fields["domain_owners"] = domain_owners
-    # 裁定 59.1/62：秘书这一跳在看板 logged 上留一件可追的记录（旁路，写失败不影响投递）。
-    fields.update(_record_turn(
-        sender, entry, "say", text,
-        session_id=session_id,
-        ticket_id=getattr(ticket, "id", ""),
-        thread_id=str(getattr(ticket, "refs", {}).get("thread_id") or "") if ticket is not None else "",
-        domain=domain,
-    ))
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
@@ -774,14 +683,6 @@ def handle_ask(args: dict, **kwargs) -> str:
     if domain:
         fields["domain"] = domain
         fields["domain_owners"] = domain_owners
-    # 裁定 59.1/62：与 say 同一个落痕口——问这一趟也记一件（写失败不影响答复）。
-    fields.update(_record_turn(
-        sender, entry, "ask", text,
-        session_id=session_id,
-        ticket_id=getattr(ticket, "id", ""),
-        thread_id=str(getattr(ticket, "refs", {}).get("thread_id") or "") if ticket is not None else "",
-        domain=domain,
-    ))
     if ticket is not None:
         ok = failure is None
         try:
