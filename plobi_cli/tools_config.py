@@ -52,16 +52,22 @@ from plobi_cli.cli_output import (  # noqa: E402 — late import block
     prompt as _prompt,
 )
 
-# The tool categories owned by the memory provider (the human side:
-# notes / diary / dossiers, and the brain's own pages).  Their tools are
-# injected by the provider at agent init rather than registered in the
-# tool registry, so they are not part of any platform composite's tool
-# universe.  Kept in sync with
-# ``agent/memory_manager.py::_PROVIDER_TOOL_TOOLSET``.
+# The tool categories the human side is made of (the notes / diary / dossiers,
+# and the brain's own pages).
 #
 # 11-13：人读面那一族拆成 **一类一门类**（note / diary / dossier）——
 # 用户 11-13 原话「以后不要 surface 这个概念了。note 就放在 note 工具集里面。
 # 日记就放在 diary 工具集，dossier-read 就放在对应的 dossier 里面」。
+#
+# 11-14（WP-HUMAN-REGISTRY-TOOLS）：那 17 把工具**搬出了 provider**，成了
+# **注册表工具** ⇒ 前三格（note／diary／dossier）现在是**普通门类**，走
+# ``tools/registry.py`` 那条下发路；只有 ``mind`` 那一格还是 provider 自己的
+# （``mind_read``／``mind_write``）。
+#
+# 但**默认开那条路对四格一视同仁**：人读面那三格以前是 provider 类别、
+# 默认开着（用户在 Tools 页存过且没勾 ⇒ 关着），搬成注册表工具之后**仍旧默认开**
+# ——否则那些工具会**凭空消失**（用户没存过 Tools 页 ⇒ 他从没要求过关）。
+# 换句话说：这四格是「**默认开的门类**」，不是「provider 的私产」。
 _PROVIDER_TOOL_CATEGORIES = ("note", "diary", "dossier", "mind")
 
 # 退役的门类 → 拆开后的那几格。存量用户在那一个开关上存过「开/关」，
@@ -1892,18 +1898,16 @@ def _get_platform_tools(
         )
         enabled_toolsets -= default_off
 
-    # Provider tool categories (the human side: notes / diary / dossiers).
-    # These tools are NOT registry tools — they are injected by the memory
-    # provider at agent init — so the recovery loop below can never see them
-    # (its test is "tools ⊆ platform composite tool universe", and the
-    # provider tools are not in that universe).  Before this, the provider
-    # categories existed in ``toolsets.py`` but were unreachable: the desktop
-    # session's enabled_toolsets never contained them, so the per-category
-    # gate in agent/memory_manager.py filtered the note/diary/dossier tools
-    # out of the agent's tool table (WP-SURFACE-TOOLSET-GATE; the same
-    # disease WP-TOOLSET-INBOUND-2 fixed for the ``mind`` category).
-    # Each category is enabled here unless the user turned it off, so the
-    # gate can be closed as well as opened.
+    # 人读面那三格（note／diary／dossier）＋脑那一格（mind）：**默认开的门类**。
+    #
+    # 11-14（WP-HUMAN-REGISTRY-TOOLS）之后，人读面那三格**已经是注册表工具**
+    # （走 ``tools/registry.py`` 那条路），只有 ``mind`` 那一格还是 provider 注入的。
+    # 但这条「默认开」的路**对四格一视同仁**：搬走之前它们就是 provider 类别、
+    # 默认开着；搬走之后若不补这一段，那些工具会**凭空消失**（用户没存过 Tools 页
+    # ⇒ 他从没要求过关 ⇒ 那不是他的决定）。
+    #
+    # 另一头：**用户存过且没勾 ⇒ 关着**（``_provider_known_off``），这条不许动——
+    # 「关得掉」比「默认开」更要紧（WP-SURFACE-TOOLSET-GATE 的本意）。
     for _provider_cat in _PROVIDER_TOOL_CATEGORIES:
         if _provider_cat in enabled_toolsets:
             continue

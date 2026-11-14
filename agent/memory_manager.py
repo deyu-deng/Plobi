@@ -109,37 +109,24 @@ def resolve_memory_provider_name(configured: object) -> str:
 # **一类一门类**——``note_*`` 归 note、``diary_*`` 归 diary、``dossier_*`` 归 dossier，
 # ``mind_*`` 归 mind。用户在 Tools 页可以分别开关。
 #
+# 11-14（WP-HUMAN-REGISTRY-TOOLS）：人读面那 17 把**搬出 provider**，成了
+# **注册表工具**（``tools/human_note_tools.py`` 等）⇒ 这张表只剩脑页那两把。
+#
 # 拆开的理由不是好看：这三样的**规矩不一样**（笔记有硬契约、日记永不自动、
 # 档案只增不改），合成一个门类就只有一个开关，用户没法只关日记。
 # 旧的 ``surface`` 门类退役；存量用户在那三格上存过的开关，读的时候按
 # ``plobi_cli/tools_config.py::_LEGACY_PROVIDER_CATEGORIES`` 展开。
 _PROVIDER_TOOL_TOOLSET = {
-    "note_read": "note",
-    "note_write": "note",
-    "note_rename": "note",
-    "note_delete": "note",
-    "agent_notes": "note",
-    "note_list": "note",
-    "note_links": "note",
-    "note_set_property": "note",
-    "diary_read": "diary",
-    "diary_write": "diary",
-    "diary_list": "diary",
-    "diary_append": "diary",
-    "dossier_read": "dossier",
-    "dossier_write": "dossier",
-    "dossier_list": "dossier",
-    "dossier_task_toggle": "dossier",
-    "dossier_stage_update": "dossier",
     "mind_read": "mind",
     "mind_write": "mind",
 }
 _PROVIDER_TOOLSETS = frozenset(_PROVIDER_TOOL_TOOLSET.values())
 
 # 任一门类命中就把 provider 工具放出来。``memory`` 是总开关（旧行为：开了它
-# 全部 provider 工具都下发）；``note`` / ``diary`` / ``dossier`` / ``mind`` 是拆开的
-# 细分门类。复合门类（如 ``plobi-acp``）解析出来的工具名里含 ``memory`` 也算命中。
-_GATE_TOOLSETS = ("memory", "note", "diary", "dossier", "mind")
+# 全部 provider 工具都下发）；``mind`` 是脑那一面那一格（人读面那三格已是注册表
+# 工具，走普通门类那套开关，不经过这里）。复合门类（如 ``plobi-acp``）解析出来的
+# 工具名里含 ``memory`` 也算命中。
+_GATE_TOOLSETS = ("memory", "mind")
 _GATE_TOOL_NAMES = ("memory", *_PROVIDER_TOOL_TOOLSET.keys())
 
 

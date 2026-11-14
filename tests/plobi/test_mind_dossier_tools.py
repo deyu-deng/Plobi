@@ -25,6 +25,28 @@ from plobi.mind import writer as writer_module
 from tools import write_approval as write_approval_module
 from plobi.mind.paths import is_memory_zone, is_safe_relative
 from plobi.mind.provider import MindProvider
+from tools import human_diary_tools, human_dossier_tools, human_note_tools
+
+
+# ── 人读面那 17 把现在是注册表工具（WP-HUMAN-REGISTRY-TOOLS，11-14）──────────
+#
+# provider 只管脑页了 ⇒ 人读面的工具在 ``tools/human_*_tools.py``，
+# 脑页那两把还在 provider。这一只口把两边的调用收在一处 ⇒ 断言一个字不动。
+
+from tools import human_diary_tools, human_dossier_tools, human_note_tools
+
+_HUMAN_TOOL_MODULES = (human_note_tools, human_diary_tools, human_dossier_tools)
+
+
+def _call(name, args):
+    """人读面的工具走新模块；脑页那两把还走 provider。"""
+    for module in _HUMAN_TOOL_MODULES:
+        fn = getattr(module, name, None)
+        if fn is not None:
+            return fn(args)
+    provider = MindProvider()
+    provider.initialize("sess-registry-tools", agent_context="primary")
+    return provider.handle_tool_call(name, args)
 
 
 @pytest.fixture()
@@ -77,6 +99,9 @@ def roots(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("HUMAN_ROOT", str(surface))
+    # **当前是谁**：注册表工具在**调用时**问身份（``PLOBI_AGENT_ID`` 优先）
+    # ⇒ 这几把的会话身份就在这根环境变量里（provider 原来是 init 时问一次）。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "Aura")
     provider = MindProvider()
     provider.initialize("sess-dossier", agent_context="primary", agent_identity="Aura")
     return mind, surface, provider
@@ -122,31 +147,40 @@ def test_paths_still_refuse_escapes_and_legacy_zones(roots):
 
 def test_the_tools_are_atomic(roots):
     _mind, _vault, provider = roots
-    schemas = provider.get_tool_schemas()
-    assert [schema["name"] for schema in schemas] == [
+    # 11-14（WP-HUMAN-REGISTRY-TOOLS）：人读面那 17 把搬成了**注册表工具**
+    # （``tools/human_*_tools.py``），脑页那两把还在 provider ⇒ 这一份清单
+    # 从两处取，**名字一个不多一个不少**。
+    from tools.registry import registry
+
+    human_names = [
         "note_read",
         "note_write",
         "note_rename",
         "note_delete",
-        "diary_read",
-        "diary_write",
-        "dossier_read",
-        "dossier_write",
-        "mind_read",
-        "mind_write",
-        "agent_notes",
         # 11-13：笔记那一族补三把细动作（列全库／看链接／改那几格属性）——
         # 以前写侧只有「整篇覆写」，读侧只看得见自己名下那一份。
+        "agent_notes",
         "note_list",
         "note_links",
         "note_set_property",
+        "diary_read",
+        "diary_write",
         # 11-14：日记与档案那两族也补细动作（列／接一行／勾一条／改一个阶段）。
         "diary_list",
         "diary_append",
+        "dossier_read",
+        "dossier_write",
         "dossier_list",
         "dossier_task_toggle",
         "dossier_stage_update",
     ]
+    schemas = [registry.get_schema(name) for name in human_names]
+    schemas += provider.get_tool_schemas()
+    assert {schema["name"] for schema in schemas} == set(human_names) | {
+        "mind_read",
+        "mind_write",
+    }
+    assert len(schemas) == 19
     for schema in schemas:
         # 裁定 185：不许用 action/mode/surface 这类选分支的参数把两件事塞进一枚工具——
         # 「碰哪一类」由工具身份决定，不是让模型猜对才走对。
@@ -233,7 +267,7 @@ def test_the_old_tool_names_are_retired_without_aliases(roots):
     """
     _mind, _vault, provider = roots
     for name in ("surface_read", "surface_write"):
-        result = json.loads(provider.handle_tool_call(name, {"path": "Notes/x.md"}))
+        result = json.loads(_call(name, {"path": "Notes/x.md"}))
         assert result["success"] is False
         assert "does not handle" in result["error"]
 
@@ -242,20 +276,20 @@ def test_dossier_read_returns_the_file_or_says_it_is_missing(roots):
     _mind, _vault, provider = roots
 
     ok = json.loads(
-        provider.handle_tool_call("dossier_read", {"path": "Dossiers/projects/Aura/dossier.json"})
+        _call("dossier_read", {"path": "Dossiers/projects/Aura/dossier.json"})
     )
     assert ok["success"] is True
     assert "上一句还停在九月" in ok["content"]
 
     missing = json.loads(
-        provider.handle_tool_call("dossier_read", {"path": "Dossiers/projects/Aura/plan.md"})
+        _call("dossier_read", {"path": "Dossiers/projects/Aura/plan.md"})
     )
     assert missing["success"] is False
     assert "还不存在" in missing["error"]
 
     # 工具面只认档案：脑里的东西（原料区与 wiki 那两格都算）一律指名道姓拒掉。
     for outside_path in ("Mind/raw/chat-logs/x.md", "Mind/wiki/concepts/x.md", "random/file.md"):
-        outside = json.loads(provider.handle_tool_call("dossier_read", {"path": outside_path}))
+        outside = json.loads(_call("dossier_read", {"path": outside_path}))
         assert outside["success"] is False
         assert "Dossiers" in outside["error"]
 
@@ -279,7 +313,7 @@ def test_rename_and_delete_always_wait_for_the_user(roots, monkeypatch):
     before = target.read_bytes()
 
     renamed = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_rename", {"path": "Notes/某主题/某篇.md", "name": "新篇"}
         )
     )
@@ -289,7 +323,7 @@ def test_rename_and_delete_always_wait_for_the_user(roots, monkeypatch):
     assert "approve" in renamed["detail"]
 
     deleted = json.loads(
-        provider.handle_tool_call("note_delete", {"path": "Notes/某主题/某篇.md"})
+        _call("note_delete", {"path": "Notes/某主题/某篇.md"})
     )
     assert deleted["success"] is False
     assert deleted["staged"] is True
@@ -314,7 +348,7 @@ def test_rename_and_delete_refuse_the_other_faces(roots):
         ("note_rename", {"path": "Diary/2026-11-10-Tuesday.md", "name": "新篇"}),
         ("note_delete", {"path": "Dossiers/projects/Aura/dossier.json"}),
     ):
-        result = json.loads(provider.handle_tool_call(tool, args))
+        result = json.loads(_call(tool, args))
         assert result["success"] is False
         assert "Notes" in result["error"], result
 
@@ -333,7 +367,7 @@ def test_note_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, mon
     monkeypatch.setattr(writer_module.MindWriter, "_stage_for_approval", fake_stage)
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_write",
             {
                 "path": "Notes/某主题/某篇.md",
@@ -360,7 +394,7 @@ def test_note_write_lands_when_the_gate_opens(roots, monkeypatch):
     )
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_write",
             {
                 "path": "Notes/某主题/某篇.md",
@@ -377,14 +411,14 @@ def test_note_write_refuses_empty_oversized_and_unknown_tools(roots):
     _mind, _vault, provider = roots
 
     empty = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_write", {"path": "Notes/某主题/某篇.md", "content": "  "}
         )
     )
     assert empty["success"] is False and "non-empty" in empty["error"]
 
     big = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_write",
             {
                 "path": "Notes/某主题/某篇.md",
@@ -394,7 +428,7 @@ def test_note_write_refuses_empty_oversized_and_unknown_tools(roots):
     )
     assert big["success"] is False and "too large" in big["error"]
 
-    unknown = json.loads(provider.handle_tool_call("mind_search", {"q": "x"}))
+    unknown = json.loads(_call("mind_search", {"q": "x"}))
     assert unknown["success"] is False and "does not handle" in unknown["error"]
 
 
@@ -410,7 +444,7 @@ def test_each_tool_touches_only_its_own_kind(roots):
             正文。
             """
         )
-        return json.loads(provider.handle_tool_call(tool, {"path": path, "content": content}))
+        return json.loads(_call(tool, {"path": path, "content": content}))
 
     cross = [
         ("note_read", "Dossiers/projects/Aura/dossier.json"),
@@ -440,7 +474,7 @@ def test_dossier_write_only_touches_dossier_records(roots):
         "Dossiers/projects/Aura/plan.md",
         "Notes/某主题/某篇.md",
     ):
-        result = json.loads(provider.handle_tool_call("dossier_write", {"path": path, "goal": "x"}))
+        result = json.loads(_call("dossier_write", {"path": path, "goal": "x"}))
         assert result["success"] is False, path
         assert "不是档案本体" in result["error"], (path, result)
 
@@ -452,7 +486,7 @@ def test_dossier_write_changes_only_the_named_fields(roots):
     before = json.loads(target.read_text(encoding="utf-8"))
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_write",
             {"path": "Dossiers/projects/Aura/dossier.json", "status": "今天写完了。"},
         )
@@ -467,7 +501,7 @@ def test_dossier_write_refuses_a_raw_overwrite_of_the_record(roots):
     """档案本体**不许整份覆盖**——那是字段级那把手存在的理由（形状一坏就报废）。"""
     _mind, _vault, provider = roots
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_write",
             {"path": "Dossiers/projects/Aura/dossier.json", "content": "{ broken"},
         )
@@ -489,7 +523,7 @@ def test_dossier_write_can_write_the_checklist_beside_it(roots, monkeypatch):
         lambda root=None: writer_module.MindWriter(root, commit=False, run_verifier=False),
     )
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_write",
             {
                 "path": "Dossiers/projects/Aura/tasks.json",
@@ -505,7 +539,7 @@ def test_agent_notes_lists_the_notes_that_belong_to_you(roots):
     """列自己名下有哪些笔记——与屏上「相关笔记」同一份投影；**只给清单，不给正文**。"""
     _mind, _vault, provider = roots
 
-    result = json.loads(provider.handle_tool_call("agent_notes", {}))
+    result = json.loads(_call("agent_notes", {}))
     assert result["success"] is True, result
     paths = [note["path"] for note in result["notes"]]
     assert paths == ["Notes/某主题/某篇.md"], paths
@@ -515,12 +549,14 @@ def test_agent_notes_lists_the_notes_that_belong_to_you(roots):
     assert "正文不该出现在清单里" not in json.dumps(result, ensure_ascii=False)
 
 
-def test_agent_notes_without_an_agent_says_so(roots):
+def test_agent_notes_without_an_agent_says_so(roots, monkeypatch):
     """连当前身份都没有 ⇒ 说清要一个名字，不许瞎猜一份清单出来。"""
     _mind, _vault, _provider = roots
-    bare = MindProvider()
-    bare.initialize("sess-bare", agent_context="primary")
-    result = json.loads(bare.handle_tool_call("agent_notes", {}))
+    # 注册表工具在**调用时**问身份（provider 原来是 init 时问一次）⇒ 这一例
+    # 把那根环境变量清空，并把那一格的身份函数也换掉。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "")
+    monkeypatch.setattr(human_note_tools, "current_identity", lambda: "")
+    result = json.loads(human_note_tools.agent_notes({}))
     assert result["success"] is False
     assert "Agent" in result["error"]
 
@@ -529,11 +565,11 @@ def test_mind_read_speaks_mind_not_loom(roots):
     """脑那一面对模型的说法是 ``Mind/wiki/…``；内部仍按 ``Mind/…`` 解析，回给人看的也是 Mind。"""
     _mind, _vault, provider = roots
 
-    ok = json.loads(provider.handle_tool_call("mind_read", {"path": "Mind/wiki/concepts/plobi-gate.md"}))
+    ok = json.loads(_call("mind_read", {"path": "Mind/wiki/concepts/plobi-gate.md"}))
     assert ok["success"] is True
     assert ok["path"] == "Mind/wiki/concepts/plobi-gate.md"
     assert "每次先点头" in ok["content"]
 
-    legacy = json.loads(provider.handle_tool_call("mind_read", {"path": "Mind/wiki/concepts/plobi-gate.md"}))
+    legacy = json.loads(_call("mind_read", {"path": "Mind/wiki/concepts/plobi-gate.md"}))
     assert legacy["success"] is True  # 存量那圈旧拼法照样读得到，不改判成"不存在"
     assert legacy["path"] == "Mind/wiki/concepts/plobi-gate.md"

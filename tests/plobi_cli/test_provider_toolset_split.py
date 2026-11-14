@@ -52,9 +52,27 @@ HUMAN_TOOLS = NOTE_TOOLS | DIARY_TOOLS | DOSSIER_TOOLS
 
 
 def _provider_tools_for(enabled_toolsets):
-    """走真的注入路径，返回进表的 provider 工具名集合。"""
+    """真进得了 Agent 工具表的那些名字。
+
+    11-14（WP-HUMAN-REGISTRY-TOOLS）之后有**两条**下发路，这一只口把两条合起来看：
+
+    * 人读面那 17 把＝**注册表工具**（``model_tools.get_tool_definitions``）；
+    * 脑页那两把＝provider 注入（``inject_memory_provider_tools``）。
+
+    拆开看两条路是这一刀的新判据；合起来看才是「用户手上到底有什么」。
+    """
     from agent.memory_manager import inject_memory_provider_tools
+    from model_tools import get_tool_definitions
     from plobi.mind.provider import MindProvider
+
+    names = {
+        t["function"]["name"]
+        for t in get_tool_definitions(
+            enabled_toolsets=list(enabled_toolsets),
+            quiet_mode=True,
+            skip_tool_search_assembly=True,
+        )
+    }
 
     class _MM:
         def __init__(self):
@@ -75,7 +93,8 @@ def _provider_tools_for(enabled_toolsets):
 
     agent = _Agent(list(enabled_toolsets))
     inject_memory_provider_tools(agent)
-    return {t["function"]["name"] for t in agent.tools}
+    names |= {t["function"]["name"] for t in agent.tools}
+    return names
 
 
 def _platform_tools(config, platform="cli"):
@@ -139,17 +158,22 @@ def test_one_category_alone_brings_only_its_own_tools():
 
 
 def test_the_owner_table_puts_each_tool_under_its_own_kind():
+    """11-14 起：人读面那 17 把的归户表在**注册表**里；provider 那张只剩脑页两把。"""
     from agent.memory_manager import _PROVIDER_TOOL_TOOLSET
+    from tools.registry import registry
 
     for name in NOTE_TOOLS:
-        assert _PROVIDER_TOOL_TOOLSET.get(name) == "note", name
+        assert registry.get_toolset_for_tool(name) == "note", name
     for name in DIARY_TOOLS:
-        assert _PROVIDER_TOOL_TOOLSET.get(name) == "diary", name
+        assert registry.get_toolset_for_tool(name) == "diary", name
     for name in DOSSIER_TOOLS:
-        assert _PROVIDER_TOOL_TOOLSET.get(name) == "dossier", name
+        assert registry.get_toolset_for_tool(name) == "dossier", name
     for name in MIND_TOOLS:
         assert _PROVIDER_TOOL_TOOLSET.get(name) == "mind", name
-    assert "surface" not in _PROVIDER_TOOL_TOOLSET.values(), (
+    every_owner = set(_PROVIDER_TOOL_TOOLSET.values()) | {
+        registry.get_toolset_for_tool(name) for name in HUMAN_TOOLS
+    }
+    assert "surface" not in every_owner, (
         "surface 这个门类退役了（用户 11-13 原话）"
     )
 

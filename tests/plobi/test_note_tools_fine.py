@@ -25,12 +25,34 @@ import pytest
 from plobi.mind import provider as provider_module
 from plobi.mind import writer as writer_module
 from plobi.mind.provider import MindProvider
+from tools import human_diary_tools, human_dossier_tools, human_note_tools
 
 
 def _note(title: str, body: str, *, tags: str = "[物理]", belongs: str = "[Aura]") -> str:
     return (
         f"---\ntitle: {title}\ntags: {tags}\nbelongs: {belongs}\n---\n\n{body}\n"
     )
+
+
+# ── 人读面那 17 把现在是注册表工具（WP-HUMAN-REGISTRY-TOOLS，11-14）──────────
+#
+# provider 只管脑页了 ⇒ 人读面的工具在 ``tools/human_*_tools.py``，
+# 脑页那两把还在 provider。这一只口把两边的调用收在一处 ⇒ 断言一个字不动。
+
+from tools import human_diary_tools, human_dossier_tools, human_note_tools
+
+_HUMAN_TOOL_MODULES = (human_note_tools, human_diary_tools, human_dossier_tools)
+
+
+def _call(name, args):
+    """人读面的工具走新模块；脑页那两把还走 provider。"""
+    for module in _HUMAN_TOOL_MODULES:
+        fn = getattr(module, name, None)
+        if fn is not None:
+            return fn(args)
+    provider = MindProvider()
+    provider.initialize("sess-registry-tools", agent_context="primary")
+    return provider.handle_tool_call(name, args)
 
 
 @pytest.fixture()
@@ -48,6 +70,9 @@ def roots(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("HUMAN_ROOT", str(surface))
+    # **当前是谁**：注册表工具在**调用时**问身份（``PLOBI_AGENT_ID`` 优先）
+    # ⇒ 这几把的会话身份就在这根环境变量里（provider 原来是 init 时问一次）。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "Aura")
     # 名册上落一行 Agent（「Aura」）——归属与校验都以它为准
     from plobi.agents.registry import AgentEntry, AgentRegistry
     from plobi_constants import get_plobi_home
@@ -81,7 +106,7 @@ def _open_gate(monkeypatch):
 def test_note_list_gives_the_whole_library_including_public_notes(roots):
     _mind, _surface, provider = roots
 
-    result = json.loads(provider.handle_tool_call("note_list", {}))
+    result = json.loads(_call("note_list", {}))
     assert result["success"] is True, result
     titles = {n["title"] for n in result["notes"]}
     assert titles == {"某篇", "另一篇"}, result
@@ -95,7 +120,7 @@ def test_note_list_never_gives_the_body(roots):
     """纪律同屏上：只给标题、逻辑路径、字数——**正文一个字不给**。"""
     _mind, _surface, provider = roots
 
-    result = json.loads(provider.handle_tool_call("note_list", {}))
+    result = json.loads(_call("note_list", {}))
     blob = json.dumps(result, ensure_ascii=False)
     assert "正文" not in blob and "公共知识。" not in blob
     for note in result["notes"]:
@@ -105,7 +130,7 @@ def test_note_list_never_gives_the_body(roots):
 def test_note_list_can_narrow_to_one_agent(roots):
     _mind, _surface, provider = roots
 
-    result = json.loads(provider.handle_tool_call("note_list", {"agent": "Aura"}))
+    result = json.loads(_call("note_list", {"agent": "Aura"}))
     assert result["success"] is True, result
     assert {n["title"] for n in result["notes"]} == {"某篇"}
 
@@ -113,7 +138,7 @@ def test_note_list_can_narrow_to_one_agent(roots):
 def test_note_list_rejects_an_agent_the_roster_does_not_know(roots):
     _mind, _surface, provider = roots
 
-    result = json.loads(provider.handle_tool_call("note_list", {"agent": "查无此人"}))
+    result = json.loads(_call("note_list", {"agent": "查无此人"}))
     assert result["success"] is False
     assert "名册" in result["error"]
 
@@ -125,14 +150,14 @@ def test_note_links_reports_outgoing_and_backlinks(roots):
     _mind, _surface, provider = roots
 
     outgoing = json.loads(
-        provider.handle_tool_call("note_links", {"path": "Notes/某主题/某篇.md"})
+        _call("note_links", {"path": "Notes/某主题/某篇.md"})
     )
     assert outgoing["success"] is True, outgoing
     assert outgoing["outgoing"] == ["Notes/某主题/另一篇.md"], outgoing
     assert outgoing["backlinks"] == []
 
     backlinks = json.loads(
-        provider.handle_tool_call("note_links", {"path": "Notes/某主题/另一篇.md"})
+        _call("note_links", {"path": "Notes/某主题/另一篇.md"})
     )
     assert backlinks["success"] is True, backlinks
     assert backlinks["backlinks"] == ["Notes/某主题/某篇.md"], backlinks
@@ -143,7 +168,7 @@ def test_note_links_says_so_when_the_note_does_not_exist(roots):
     _mind, _surface, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call("note_links", {"path": "Notes/某主题/查无此篇.md"})
+        _call("note_links", {"path": "Notes/某主题/查无此篇.md"})
     )
     assert result["success"] is False
     assert "还不存在" in result["error"]
@@ -160,7 +185,7 @@ def test_note_set_property_changes_the_metadata_and_leaves_the_body_alone(
     before = (surface / "notes" / "某主题" / "某篇.md").read_text(encoding="utf-8")
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_set_property",
             {
                 "path": "Notes/某主题/某篇.md",
@@ -187,7 +212,7 @@ def test_note_set_property_refuses_a_title_change(roots):
     _mind, _surface, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_set_property",
             {"path": "Notes/某主题/某篇.md", "title": "新名字"},
         )
@@ -204,7 +229,7 @@ def test_note_set_property_rejects_an_unknown_owner(roots, monkeypatch):
     before = target.read_bytes()
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_set_property",
             {"path": "Notes/某主题/某篇.md", "belongs": ["查无此人"]},
         )
@@ -218,7 +243,7 @@ def test_note_set_property_needs_at_least_one_key(roots):
     _mind, _surface, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_set_property", {"path": "Notes/某主题/某篇.md"}
         )
     )
@@ -230,43 +255,36 @@ def test_note_set_property_needs_at_least_one_key(roots):
 
 
 def test_the_three_new_tools_belong_to_the_note_category():
-    from agent.memory_manager import _PROVIDER_TOOL_TOOLSET
+    """它们是**注册表工具** ⇒ 门类归注册表（provider 那张表只剩脑页两把）。"""
+    from tools.registry import registry
 
     for name in ("note_list", "note_links", "note_set_property"):
-        assert _PROVIDER_TOOL_TOOLSET.get(name) == "note", name
+        assert registry.get_toolset_for_tool(name) == "note", name
 
 
 def test_the_three_new_tools_reach_the_agent_tool_table():
-    from agent.memory_manager import inject_memory_provider_tools
+    """下发路换了：注册表工具走 ``model_tools.get_tool_definitions``（门类 note 开着就在）。"""
+    from model_tools import get_tool_definitions
 
-    class _MM:
-        def __init__(self):
-            self._providers = [MindProvider()]
-
-        def get_all_tool_schemas(self):
-            out = []
-            for p in self._providers:
-                out.extend(p.get_tool_schemas())
-            return out
-
-    class _Agent:
-        def __init__(self, enabled):
-            self.enabled_toolsets = enabled
-            self.tools = []
-            self.valid_tool_names = set()
-            self._memory_manager = _MM()
-
-    agent = _Agent(["note"])
-    inject_memory_provider_tools(agent)
-    names = {t["function"]["name"] for t in agent.tools}
+    names = {
+        t["function"]["name"]
+        for t in get_tool_definitions(enabled_toolsets=["note"], quiet_mode=True)
+    }
     assert {"note_list", "note_links", "note_set_property"} <= names, names
+    # 门类关掉 ⇒ 工具表里就没有它们（Tools 页那一格仍然管用）。
+    off = {
+        t["function"]["name"]
+        for t in get_tool_definitions(enabled_toolsets=["todo"], quiet_mode=True)
+    }
+    assert not {"note_list", "note_links", "note_set_property"} & off, off
 
 
 def test_the_new_tools_are_atomic_no_branch_parameters():
     """裁定 185：不许用 action/mode 这类参数把两件事塞进一枚工具。"""
-    provider = MindProvider()
-    schemas = {s["name"]: s for s in provider.get_tool_schemas()}
+    from tools.registry import registry
+
     for name in ("note_list", "note_links", "note_set_property"):
-        assert name in schemas, name
-        properties = set(schemas[name]["parameters"]["properties"])
+        schema = registry.get_schema(name)
+        assert schema is not None, name
+        properties = set(schema["parameters"]["properties"])
         assert not {"action", "mode", "surface", "intent"} & properties, name

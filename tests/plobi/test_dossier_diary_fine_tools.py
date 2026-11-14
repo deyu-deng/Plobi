@@ -26,6 +26,28 @@ import pytest
 from plobi.mind import provider as provider_module
 from plobi.mind import writer as writer_module
 from plobi.mind.provider import MindProvider
+from tools import human_diary_tools, human_dossier_tools, human_note_tools
+
+
+# ── 人读面那 17 把现在是注册表工具（WP-HUMAN-REGISTRY-TOOLS，11-14）──────────
+#
+# provider 只管脑页了 ⇒ 人读面的工具在 ``tools/human_*_tools.py``，
+# 脑页那两把还在 provider。这一只口把两边的调用收在一处 ⇒ 断言一个字不动。
+
+from tools import human_diary_tools, human_dossier_tools, human_note_tools
+
+_HUMAN_TOOL_MODULES = (human_note_tools, human_diary_tools, human_dossier_tools)
+
+
+def _call(name, args):
+    """人读面的工具走新模块；脑页那两把还走 provider。"""
+    for module in _HUMAN_TOOL_MODULES:
+        fn = getattr(module, name, None)
+        if fn is not None:
+            return fn(args)
+    provider = MindProvider()
+    provider.initialize("sess-registry-tools", agent_context="primary")
+    return provider.handle_tool_call(name, args)
 
 
 @pytest.fixture()
@@ -37,6 +59,9 @@ def roots(tmp_path, monkeypatch):
     (human / "dossiers" / "projects" / "Aura").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("HUMAN_ROOT", str(human))
+    # **当前是谁**：注册表工具在**调用时**问身份（``PLOBI_AGENT_ID`` 优先）
+    # ⇒ 这几把的会话身份就在这根环境变量里（provider 原来是 init 时问一次）。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "Aura")
 
     (human / "diary" / "2026-11-13-Friday.md").write_text(
         "- 09:00 早上那件事\n", encoding="utf-8"
@@ -120,7 +145,7 @@ def _open_gate(monkeypatch):
 def test_diary_list_gives_the_days_not_the_text(roots):
     _mind, _human, provider = roots
 
-    result = json.loads(provider.handle_tool_call("diary_list", {}))
+    result = json.loads(_call("diary_list", {}))
     assert result["success"] is True, result
     days = [row["date"] for row in result["entries"]]
     assert days == ["2026-11-13", "2026-11-12"], days
@@ -136,7 +161,7 @@ def test_diary_append_adds_one_line_and_keeps_the_rest(roots, monkeypatch):
     _open_gate(monkeypatch)
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "diary_append", {"day": "2026-11-13", "line": "顺手记一句"}
         )
     )
@@ -153,11 +178,11 @@ def test_diary_append_adds_one_line_and_keeps_the_rest(roots, monkeypatch):
 def test_diary_append_refuses_an_empty_or_multiline_line(roots):
     _mind, _human, provider = roots
 
-    empty = json.loads(provider.handle_tool_call("diary_append", {"line": "  "}))
+    empty = json.loads(_call("diary_append", {"line": "  "}))
     assert empty["success"] is False
 
     multi = json.loads(
-        provider.handle_tool_call("diary_append", {"line": "第一行\n第二行"})
+        _call("diary_append", {"line": "第一行\n第二行"})
     )
     assert multi["success"] is False
     assert "一行" in multi["error"]
@@ -167,7 +192,7 @@ def test_diary_append_refuses_a_day_it_cannot_read(roots):
     _mind, _human, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call("diary_append", {"day": "13/11/2026", "line": "x"})
+        _call("diary_append", {"day": "13/11/2026", "line": "x"})
     )
     assert result["success"] is False
 
@@ -178,7 +203,7 @@ def test_diary_append_refuses_a_day_it_cannot_read(roots):
 def test_dossier_list_gives_one_row_per_agent(roots):
     _mind, _human, provider = roots
 
-    result = json.loads(provider.handle_tool_call("dossier_list", {}))
+    result = json.loads(_call("dossier_list", {}))
     assert result["success"] is True, result
     row = next(a for a in result["agents"] if a["name"] == "Aura")
     assert row["goal"] == "把情绪记录做成一个能用的应用。"
@@ -195,7 +220,7 @@ def test_dossier_task_toggle_ticks_one_item_and_records_who(roots):
     _mind, human, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_task_toggle",
             {"agent": "Aura", "date": "2026-11-13", "id": "t1", "done": True},
         )
@@ -220,7 +245,7 @@ def test_dossier_task_toggle_unticks_and_says_so_when_unknown(roots):
     _mind, human, provider = roots
 
     unknown = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_task_toggle",
             {"agent": "Aura", "date": "2026-11-13", "id": "t9", "done": True},
         )
@@ -228,7 +253,7 @@ def test_dossier_task_toggle_unticks_and_says_so_when_unknown(roots):
     assert unknown["success"] is False
 
     missing = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_task_toggle",
             {"agent": "Aura", "date": "2026-11-13", "id": "t1"},
         )
@@ -244,7 +269,7 @@ def test_dossier_stage_update_touches_one_stage_only(roots):
     _mind, human, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_stage_update",
             {"agent": "Aura", "stage_id": "s1", "title": "先跑通（改了）"},
         )
@@ -267,7 +292,7 @@ def test_dossier_stage_update_can_mark_a_stage_done(roots):
     _mind, human, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_stage_update",
             {"agent": "Aura", "stage_id": "s2", "done": True},
         )
@@ -288,7 +313,7 @@ def test_dossier_stage_update_says_so_for_an_unknown_stage(roots):
     _mind, _human, provider = roots
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "dossier_stage_update",
             {"agent": "Aura", "stage_id": "s9", "done": True},
         )
@@ -301,41 +326,29 @@ def test_dossier_stage_update_says_so_for_an_unknown_stage(roots):
 
 
 def test_the_new_tools_belong_to_their_own_category():
-    from agent.memory_manager import _PROVIDER_TOOL_TOOLSET
+    """它们是**注册表工具** ⇒ 门类归注册表（provider 那张表只剩脑页两把）。"""
+    from tools.registry import registry
 
     for name in ("diary_list", "diary_append"):
-        assert _PROVIDER_TOOL_TOOLSET.get(name) == "diary", name
+        assert registry.get_toolset_for_tool(name) == "diary", name
     for name in (
         "dossier_list",
         "dossier_task_toggle",
         "dossier_stage_update",
     ):
-        assert _PROVIDER_TOOL_TOOLSET.get(name) == "dossier", name
+        assert registry.get_toolset_for_tool(name) == "dossier", name
 
 
 def test_the_new_tools_reach_the_agent_tool_table():
-    from agent.memory_manager import inject_memory_provider_tools
+    """下发路换了：注册表工具走 ``model_tools.get_tool_definitions``（门类开着就在）。"""
+    from model_tools import get_tool_definitions
 
-    class _MM:
-        def __init__(self):
-            self._providers = [MindProvider()]
-
-        def get_all_tool_schemas(self):
-            out = []
-            for p in self._providers:
-                out.extend(p.get_tool_schemas())
-            return out
-
-    class _Agent:
-        def __init__(self, enabled):
-            self.enabled_toolsets = enabled
-            self.tools = []
-            self.valid_tool_names = set()
-            self._memory_manager = _MM()
-
-    agent = _Agent(["diary", "dossier"])
-    inject_memory_provider_tools(agent)
-    names = {t["function"]["name"] for t in agent.tools}
+    names = {
+        t["function"]["name"]
+        for t in get_tool_definitions(
+            enabled_toolsets=["diary", "dossier"], quiet_mode=True
+        )
+    }
     assert {
         "diary_list",
         "diary_append",
@@ -343,12 +356,19 @@ def test_the_new_tools_reach_the_agent_tool_table():
         "dossier_task_toggle",
         "dossier_stage_update",
     } <= names, names
+    # 门类关掉 ⇒ 工具表里就没有它们（Tools 页那一格仍然管用）。
+    off = {
+        t["function"]["name"]
+        for t in get_tool_definitions(enabled_toolsets=["todo"], quiet_mode=True)
+    }
+    assert not {"diary_list", "diary_append", "dossier_list"} & off, off
 
 
 def test_the_new_tools_are_atomic_no_branch_parameters():
     """裁定 185：不许用 action/mode 这类参数把两件事塞进一枚工具。"""
-    provider = MindProvider()
-    schemas = {s["name"]: s for s in provider.get_tool_schemas()}
+    from tools.registry import registry
+
+    schemas = {}
     for name in (
         "diary_list",
         "diary_append",
@@ -356,6 +376,7 @@ def test_the_new_tools_are_atomic_no_branch_parameters():
         "dossier_task_toggle",
         "dossier_stage_update",
     ):
-        assert name in schemas, name
-        properties = set(schemas[name]["parameters"]["properties"])
+        schema = registry.get_schema(name)
+        assert schema is not None, name
+        properties = set(schema["parameters"]["properties"])
         assert not {"action", "mode", "surface", "intent"} & properties, name

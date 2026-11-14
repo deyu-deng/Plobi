@@ -14,6 +14,17 @@ import pytest
 from plobi.mind import provider as provider_module
 from plobi.human.notes_contract import validate_note
 from plobi.mind.provider import MindProvider
+from tools import human_note_tools
+
+
+def _call(name, args):
+    """人读面的工具走新模块（WP-HUMAN-REGISTRY-TOOLS：provider 只管脑页了）。"""
+    fn = getattr(human_note_tools, name, None)
+    if fn is not None:
+        return fn(args)
+    provider = MindProvider()
+    provider.initialize("sess-registry-tools", agent_context="primary")
+    return provider.handle_tool_call(name, args)
 
 ROSTER = textwrap.dedent(
     """
@@ -147,7 +158,7 @@ def test_note_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monke
     )  # 闸门开着也不能放行不合规的笔记
 
     result = json.loads(
-        provider.handle_tool_call(
+        _call(
             "note_write",
             {"path": "Notes/数学 Math/拉普拉斯.md", "content": "# 拉普拉斯\n\n没有 frontmatter。\n"},
         )
