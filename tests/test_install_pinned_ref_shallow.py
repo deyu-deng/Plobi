@@ -131,7 +131,9 @@ def _remote_with_tag(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, st
     return clone_dir, tagged
 
 
-def _run_install_repository(install_dir: Path, *, tag: str = "", branch: str = "main") -> subprocess.CompletedProcess:
+def _run_install_repository(
+    install_dir: Path, *, tag: str = "", branch: str = "main", commit: str = "", remote_url: str = ""
+) -> subprocess.CompletedProcess:
     """真跑 install.ps1 的 repository stage（只抠出它要用的那几个函数）。"""
     stubs = (
         "$ErrorActionPreference = 'Stop'\n"
@@ -140,11 +142,21 @@ def _run_install_repository(install_dir: Path, *, tag: str = "", branch: str = "
         "function Write-Warn { param([string]$Message) Write-Output \"WARN:$Message\" }\n"
         "function Write-Err { param([string]$Message) Write-Output \"ERR:$Message\" }\n"
     )
-    prelude = stubs + _function_text("Install-Repository") + "\n" + _function_text("Discard-LockfileChurn") + "\n"
+    # Expand-ShallowHistoryForPinnedRef 必须在 Install-Repository 之前定义：
+    # 安装器在动手 fetch 一个固定 ref 之前会先叫它把浅历史补全。
+    prelude = (
+        stubs
+        + _function_text("Invoke-NativeWithRelaxedErrorAction") + "\n"
+        + _function_text("Expand-ShallowHistoryForPinnedRef") + "\n"
+        + _function_text("Install-Repository") + "\n"
+        + _function_text("Discard-LockfileChurn") + "\n"
+    )
     body = (
+        f"$RepoUrlSsh = '{remote_url}'\n"
+        f"$RepoUrlHttps = '{remote_url}'\n"
         f"$InstallDir = '{install_dir}'\n"
         f"$Branch = '{branch}'\n"
-        "$Commit = ''\n"
+        f"$Commit = '{commit}'\n"
         f"$Tag = '{tag}'\n"
         "$NonInteractive = $true\n"
         "Install-Repository\n"
@@ -271,3 +283,75 @@ def test_the_helpers_next_step_leaves_the_checkout_on_a_branch(_remote_with_tag)
     assert _git(["symbolic-ref", "--short", "HEAD"], clone_dir) == "main"
     assert _git(["rev-parse", "main"], clone_dir) == tagged
     assert _git(["rev-parse", "HEAD"], clone_dir) == tagged
+
+
+def test_commit_slot_lands_on_an_older_sha_the_shallow_clone_never_had(tmp_path: Path) -> None:
+    """`-Commit` 裸 sha：钉的是一枚比 tip 更旧的提交，浅 clone 里根本没有它的对象。
+
+    11-06 装机态验收就是死在这一格：安装器对固定 ref 直接 fetch／checkout，而浅
+    clone 里既没有那个对象，也不能指望远端一定肯按裸 sha 供货。先把历史补全再
+    fetch，这条才不靠平台灰度过日子。
+
+    这条不走 `_remote_with_tag`：那是 module 级 fixture，前面的用例已经把它的
+    HEAD 挪到 tag 上、把 main 重置过，拿它当「浅、且缺这枚旧 sha」的现场已经不成立。
+    """
+    work = tmp_path / "work"
+    work.mkdir()
+    _git(["init", "-b", "main"], work)
+    (work / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", "A"], work)
+    oldest = _git(["rev-parse", "HEAD"], work)
+    (work / "b.txt").write_text("b\n", encoding="utf-8")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", "B"], work)
+    (work / "c.txt").write_text("c\n", encoding="utf-8")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", "C"], work)
+
+    bare = tmp_path / "remote.git"
+    _git(["clone", "--bare", str(work), str(bare)], tmp_path)
+
+    install_dir = tmp_path / "install"
+    proc = _run_install_repository(install_dir, commit=oldest, remote_url="file:///" + bare.as_posix())
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert _git(["rev-parse", "HEAD"], install_dir) == oldest
+    # 全历史都在：钉旧 sha 的代价是这一次多下一段历史，别指望它是浅的。
+    # （HEAD 已经是那枚旧提交，`rev-list HEAD` 只剩它自己，所以要数 --all。）
+    assert _git(["rev-parse", "--is-shallow-repository"], install_dir) == "false"
+    assert _git(["rev-list", "--count", "--all"], install_dir) == "3"
+
+
+def test_a_fresh_clone_lands_clean_even_when_the_machine_wants_crlf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """克隆出来的工作树必须是干净的。
+
+    Windows 的 Git 默认 `core.autocrlf=true`（这台机器的 system config 就是 true）：
+    clone 会把索引里的 LF 写成 CRLF，紧接着安装器又把 `core.autocrlf` 改成 false，
+    于是整棵树被判成「本地改动」——11-14 实测一次装机留下 545～807 个脏文件，后续
+    `pull --ff-only` 与固定 ref 的 `checkout` 全部被拒。所以 autocrlf 必须在 clone
+    那一步就关掉，不能等到事后补。
+    """
+    work = tmp_path / "work"
+    work.mkdir()
+    _git(["init", "-b", "main"], work)
+    (work / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", "A"], work)
+    bare = tmp_path / "remote.git"
+    _git(["clone", "--bare", str(work), str(bare)], tmp_path)
+    url = "file:///" + bare.as_posix()
+
+    # 让子进程按 Windows 默认那样带着 autocrlf=true 跑，别的机器上也测得出来。
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.autocrlf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+
+    install_dir = tmp_path / "install"
+    proc = _run_install_repository(install_dir, remote_url=url)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert _git(["status", "--porcelain"], install_dir).strip() == "", (
+        "克隆完工作树就脏了：core.autocrlf 没在 clone 那一步关掉"
+    )
+    assert _git(["rev-parse", "--abbrev-ref", "HEAD"], install_dir) == "main"

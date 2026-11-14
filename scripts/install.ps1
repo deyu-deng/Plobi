@@ -265,6 +265,40 @@ function Invoke-NativeWithRelaxedErrorAction {
         $ErrorActionPreference = $prevEAP
     }
 }
+function Expand-ShallowHistoryForPinnedRef {
+    param([string]$Ref)
+
+    # A shallow clone (the installer's default is --depth 1) only carries the
+    # tip of ONE ref. A pinned commit SHA -- or any tag that is not that tip --
+    # is simply absent from the object store, and `git fetch origin <sha>`
+    # against a shallow repo fails on most hosts: a want that isn't reachable
+    # from the shallow boundary is rejected. That is why every pinned
+    # `-Commit <sha>` install died at the fetch/checkout step.
+    #
+    # Widen the clone to full history once, then let the caller's normal
+    # fetch/checkout proceed. Caller must already be inside the repo and
+    # running with EAP=Continue, and still relies on $LASTEXITCODE afterwards.
+    $shallowState = (git -c windows.appendAtomically=false rev-parse --is-shallow-repository 2>$null)
+    if ($LASTEXITCODE -ne 0) { return $false }
+    if ((($shallowState -join "") -replace "\s", "") -ne "true") { return $false }
+
+    # If the pinned ref is already present (e.g. the clone was made with
+    # --branch <tag>), there is nothing to widen -- don't pull history for
+    # nothing.
+    if ($Ref) {
+        $null = git -c windows.appendAtomically=false rev-parse --verify --quiet "${Ref}^{commit}" 2>$null
+        if ($LASTEXITCODE -eq 0) { return $false }
+    }
+
+    Write-Info "Shallow clone detected; fetching full history so the pinned ref can be resolved..."
+    git -c windows.appendAtomically=false fetch --unshallow origin 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "Could not widen the shallow clone -- resolving the pinned ref may still fail."
+        return $false
+    }
+    Write-Info "Shallow clone widened to full history."
+    return $true
+}
 function Discard-LockfileChurn {
     param([string]$Repo = $InstallDir)
 
@@ -1631,10 +1665,15 @@ function Install-Repository {
                 if ($Commit) {
                     # Make sure we have the commit locally (a tag-less commit
                     # SHA isn't always reachable from any one branch fetch).
+                    # An existing managed clone can itself be shallow (installed
+                    # with the default --depth 1), in which case that fetch
+                    # cannot resolve the SHA -- widen it first.
+                    $null = Expand-ShallowHistoryForPinnedRef -Ref $Commit
                     git -c windows.appendAtomically=false fetch origin $Commit
                     git -c windows.appendAtomically=false checkout --detach $Commit
                     if ($LASTEXITCODE -ne 0) { throw "git checkout $Commit failed (exit $LASTEXITCODE)" }
                 } elseif ($Tag) {
+                    $null = Expand-ShallowHistoryForPinnedRef -Ref "refs/tags/$Tag"
                     git -c windows.appendAtomically=false fetch origin "refs/tags/${Tag}:refs/tags/${Tag}"
                     git -c windows.appendAtomically=false checkout --detach "refs/tags/$Tag"
                     if ($LASTEXITCODE -ne 0) { throw "git checkout tag $Tag failed (exit $LASTEXITCODE)" }
@@ -1665,7 +1704,10 @@ function Install-Repository {
                     } else {
                         # A tag: fetch it with an explicit refspec so refs/tags/<tag>
                         # exists locally, then check it out detached (a pin, not a
-                        # branch to pull into).
+                        # branch to pull into). This path is exactly what CI-stamped
+                        # `-Branch v0.3.x` installs hit, and a shallow clone cannot
+                        # resolve a non-tip tag -- widen first.
+                        $null = Expand-ShallowHistoryForPinnedRef -Ref "refs/tags/$Branch"
                         git -c windows.appendAtomically=false fetch origin "+refs/tags/${Branch}:refs/tags/${Branch}"
                         if ($LASTEXITCODE -ne 0) { throw "git fetch tag $Branch failed (exit $LASTEXITCODE)" }
                         git -c windows.appendAtomically=false checkout --detach "refs/tags/$Branch"
@@ -1753,6 +1795,38 @@ function Install-Repository {
     if (-not $didUpdate) {
         $cloneSuccess = $false
 
+        # Pick the clone shape from the requested pin (Commit > Tag > Branch).
+        # The default `--depth 1` only carries ONE ref's tip, which is exactly
+        # what broke pinned installs:
+        #   -Commit <sha>  the commit is not the tip, so its objects aren't in
+        #                  the clone at all. `clone --branch <sha>` can't fix it
+        #                  either (a bare SHA is not a ref), so clone WITHOUT
+        #                  --depth and let the post-clone pin block at the end
+        #                  of this stage detach to the SHA.
+        #   -Tag <name>    shallow the tag itself instead of the branch tip.
+        # Anything else keeps the shallow branch clone (fast and correct).
+        $cloneDepthArgs = @("--depth", "1")
+        $cloneRef = $null
+        if ($Commit) {
+            Write-Info "Pinned commit $Commit requested -- cloning full history."
+            $cloneDepthArgs = @()
+        } elseif ($Tag) {
+            $cloneRef = $Tag
+        } else {
+            $cloneRef = $Branch
+        }
+        # core.autocrlf=false has to ride on the clone itself, not just be set
+        # afterwards (below): with the Windows default of true, git clone
+        # writes CRLF into the working tree while the index keeps LF, so the
+        # moment the setting flips afterwards ~1.7k tracked files read as
+        # modified and any later checkout --detach of a pinned ref dies with
+        # local-changes-would-be-overwritten.  Passing it here keeps the tree
+        # clean from the first byte.
+        $cloneArgsBase = @("-c", "windows.appendAtomically=false", "-c", "core.autocrlf=false", "clone") + $cloneDepthArgs
+        if ($cloneRef) { $cloneArgsBase += @("--branch", $cloneRef) }
+        $cloneArgsSsh = $cloneArgsBase + @($RepoUrlSsh, $InstallDir)
+        $cloneArgsHttps = $cloneArgsBase + @($RepoUrlHttps, $InstallDir)
+
         # Fix Windows git "copy-fd: write returned: Invalid argument" error.
         # Git for Windows can fail on atomic file operations (hook templates,
         # config lock files) due to antivirus, OneDrive, or NTFS filter drivers.
@@ -1767,7 +1841,7 @@ function Install-Repository {
         Write-Info "Trying SSH clone..."
         $env:GIT_SSH_COMMAND = "ssh -o BatchMode=yes -o ConnectTimeout=5"
         try {
-            Invoke-NativeWithRelaxedErrorAction { git -c windows.appendAtomically=false clone --depth 1 --branch $Branch $RepoUrlSsh $InstallDir }
+            Invoke-NativeWithRelaxedErrorAction { git @cloneArgsSsh }
             if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
         } catch { }
         $env:GIT_SSH_COMMAND = $null
@@ -1776,7 +1850,7 @@ function Install-Repository {
             if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue }
             Write-Info "SSH failed, trying HTTPS..."
             try {
-                Invoke-NativeWithRelaxedErrorAction { git -c windows.appendAtomically=false clone --depth 1 --branch $Branch $RepoUrlHttps $InstallDir }
+                Invoke-NativeWithRelaxedErrorAction { git @cloneArgsHttps }
                 if ($LASTEXITCODE -eq 0) { $cloneSuccess = $true }
             } catch { }
         }
@@ -1862,8 +1936,27 @@ function Install-Repository {
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
-            if ($Commit) {
+            # A ZIP fallback (above) lands a plain file tree that was just
+            # `git init`-ed: no commits, no objects, no history.  The archive
+            # URL already asked for the requested Commit/Tag, so the files on
+            # disk are the right ones -- pinning here can only fail (`fetch
+            # origin <sha>` inside a repo with no objects dies with exit 128
+            # and takes the whole install down with it).  Skip it, loudly.
+            $hasGitHistory = $false
+            if (Test-Path "$InstallDir\.git") {
+                $null = git -c windows.appendAtomically=false rev-parse --verify --quiet HEAD 2>$null
+                $hasGitHistory = ($LASTEXITCODE -eq 0)
+            }
+            if (-not $hasGitHistory) {
+                if ($Commit -or $Tag) {
+                    Write-Info "No git history (ZIP install) -- skipping pin; the archive already matches the requested ref."
+                }
+            } elseif ($Commit) {
                 Write-Info "Pinning to commit $Commit..."
+                # The clone above already avoids --depth for a pinned commit,
+                # but a ZIP fallback / an older shallow tree can still land us
+                # in a shallow repo -- widen it before fetching the SHA.
+                $null = Expand-ShallowHistoryForPinnedRef -Ref $Commit
                 git -c windows.appendAtomically=false fetch origin $Commit
                 git -c windows.appendAtomically=false checkout --detach $Commit
                 if ($LASTEXITCODE -ne 0) {
@@ -1871,6 +1964,7 @@ function Install-Repository {
                 }
             } elseif ($Tag) {
                 Write-Info "Pinning to tag $Tag..."
+                $null = Expand-ShallowHistoryForPinnedRef -Ref "refs/tags/$Tag"
                 git -c windows.appendAtomically=false fetch origin "refs/tags/${Tag}:refs/tags/${Tag}"
                 git -c windows.appendAtomically=false checkout --detach "refs/tags/$Tag"
                 if ($LASTEXITCODE -ne 0) {
