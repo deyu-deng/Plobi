@@ -2068,7 +2068,7 @@ def _read_project_registry(entry_dir: Path) -> dict[str, str]:
     11-09 退役（WP-DOSSIER-SHAPE）。迁移期兜底：本体还不存在的老档案仍按它自己的
     frontmatter 读——抽完 md 就只剩本体这一条路。
     """
-    from plobi.mind.dossier_profile import profile_path, read_profile
+    from plobi.human.dossier_profile import profile_path, read_profile
 
     profile = read_profile(profile_path(entry_dir)).profile
     if profile is not None:

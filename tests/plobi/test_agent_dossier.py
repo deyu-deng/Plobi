@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from plobi.mind import agent_dossier as ad
+from plobi.human import agent_dossier as ad
 
 ROSTER = textwrap.dedent(
     """

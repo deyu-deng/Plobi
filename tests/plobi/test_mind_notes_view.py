@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from plobi.mind.notes_view import (
+from plobi.human.notes_view import (
     MAX_ENTRIES,
     BrainNotConfigured,
     agent_aliases,

@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from plobi.mind import diary
+from plobi.human import diary
 
 
 @pytest.fixture()

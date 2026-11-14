@@ -11,8 +11,8 @@ import textwrap
 
 import pytest
 
-from plobi.mind import agent_dossier as ad
-from plobi.mind import surface_api
+from plobi.human import agent_dossier as ad
+from plobi.human import surface_api
 
 ROSTER = textwrap.dedent(
     """
@@ -183,7 +183,7 @@ def notes_live(live, monkeypatch):
     root.mkdir(parents=True)
     (root / "微积分.md").write_text("---\ntitle: 微积分\n---\n\n## 第1章 极限\n\n原文", encoding="utf-8")
     monkeypatch.setattr(
-        "plobi.mind.notes_library._commit_note",
+        "plobi.human.notes_library._commit_note",
         lambda *a, **k: {"committed": False, "commit": "", "detail": "test"},
     )
     return root
@@ -243,7 +243,7 @@ def test_save_note_requires_a_text_string(notes_live):
 
 
 def test_note_template_keeps_frontmatter_minimal():
-    from plobi.mind.notes_library import note_template
+    from plobi.human.notes_library import note_template
 
     text = note_template("线性代数")
     assert text.startswith("---\n")
@@ -259,7 +259,7 @@ def test_http_roundtrip_binds_body_and_query(notes_live):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from plobi.mind.surface_api import router
+    from plobi.human.surface_api import router
 
     app = FastAPI()
     app.include_router(router, prefix="/api")
@@ -360,7 +360,7 @@ def test_search_falls_back_to_the_excerpt_not_only_the_title(notes_live, monkeyp
     """摘要命中也算：口径对齐 SQL 的 ``title LIKE ? OR excerpt LIKE ?``。"""
     monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "vault.db"))
     _write_searchable_note(notes_live)
-    from plobi.mind.notes_library import build_library
+    from plobi.human.notes_library import build_library
 
     hit = next(n for n in build_library()["notes"] if n["title"] == "线性代数")
     needle = hit["excerpt"].strip()[:6]

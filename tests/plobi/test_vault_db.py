@@ -327,7 +327,7 @@ def test_missing_db_falls_back_to_filesystem(monkeypatch, tmp_path):
     判据六：DB 空／坏／异常都要能降级，**屏上不许白屏**。
     """
     from plobi.mind import paths as paths_mod
-    from plobi.mind import surface_api
+    from plobi.human import surface_api
 
     surface = _make_surface(tmp_path)
     monkeypatch.setenv("HUMAN_ROOT", str(surface))

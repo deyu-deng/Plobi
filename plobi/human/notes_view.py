@@ -23,8 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from .paths import real_target
-from .project_tree import TREE_ROOT_RELATIVES
+from plobi.mind.paths import real_target
+from plobi.mind.project_tree import TREE_ROOT_RELATIVES
 
 logger = logging.getLogger(__name__)
 

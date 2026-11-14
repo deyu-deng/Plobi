@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import date as _date
 from pathlib import Path
 
-from .dossier_profile import PROFILE_FILENAME, DossierProfile, Stage
+from plobi.human.dossier_profile import PROFILE_FILENAME, DossierProfile, Stage
 from .paths import real_target, resolve_root
 
 PROJECTS_RELATIVE = "Dossiers/projects"

@@ -5,7 +5,7 @@
 
 五条规则，都是从这台的真实现状里挑出来的（现核 2026-10-27：79 篇笔记里 68 篇有 frontmatter、
 63 篇有 tags，但**只有 8 篇有 `belongs`**（全是大学物理那 8 章）⇒ 「某个 Agent 的笔记」
-那一面几乎是空的，而 ``plobi/mind/notes_library.py`` 与档案页就是靠 `belongs` 认归属的）：
+那一面几乎是空的，而 ``plobi/human/notes_library.py`` 与档案页就是靠 `belongs` 认归属的）：
 
 1. 必须落在 ``Notes/<已有主题>/`` 下——主题目录得先在盘上，不许顺手发明新主题。
 2. frontmatter 必填 ``title``／``tags``（至少一个）／``belongs``；``belongs`` **这一格必须在，
@@ -26,13 +26,13 @@ from typing import Any
 
 import yaml
 
-from .paths import normalize_logical
+from plobi.mind.paths import normalize_logical
 
-from .paths import normalize_logical
+from plobi.mind.paths import normalize_logical
 
-from .paths import normalize_logical
+from plobi.mind.paths import normalize_logical
 
-from .paths import normalize_logical
+from plobi.mind.paths import normalize_logical
 
 NOTES_LOGICAL_ROOT = "Notes"
 # `belongs` 这一格**必须在**，但值可以是空列表 —— 空＝公共知识（谁都能读，不属于谁）。
@@ -82,7 +82,7 @@ def _registered_names() -> set[str]:
     拿不到名册时返回空集 = 不卡名字。
     """
     try:
-        from .agent_dossier import load_entries
+        from plobi.human.agent_dossier import load_entries
 
         _path, entries = load_entries()
     except Exception:
@@ -175,7 +175,7 @@ def validate_note(logical: str, content: str, notes_root: Path | None = None) ->
 
     if notes_root is None:
         try:
-            from .paths import MindUnavailable, real_target
+            from plobi.mind.paths import MindUnavailable, real_target
 
             notes_root = real_target(NOTES_LOGICAL_ROOT)
         except MindUnavailable:

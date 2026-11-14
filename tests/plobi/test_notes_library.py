@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from plobi.mind import notes_library as nl
+from plobi.human import notes_library as nl
 
 
 @pytest.fixture()

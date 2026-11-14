@@ -12,7 +12,7 @@ import textwrap
 import pytest
 
 from plobi.mind import provider as provider_module
-from plobi.mind.notes_contract import validate_note
+from plobi.human.notes_contract import validate_note
 from plobi.mind.provider import MindProvider
 
 ROSTER = textwrap.dedent(

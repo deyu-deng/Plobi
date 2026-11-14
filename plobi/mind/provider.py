@@ -177,7 +177,7 @@ def _roster_entry_for(name: str) -> Any | None:
     if not wanted:
         return None
     try:
-        from plobi.mind.agent_dossier import _find, load_entries
+        from plobi.human.agent_dossier import _find, load_entries
 
         _path, entries = load_entries()
     except Exception:  # noqa: BLE001 - 名册读不到就只按名字认
@@ -196,10 +196,10 @@ def _roster_entry_for(name: str) -> Any | None:
 def _agent_note_aliases(name: str) -> tuple[str, ...]:
     """这个 Agent 认领笔记时可能用的那几个名字（**显示名**在前，`agent_id` 与脑树末段也算）。
 
-    与屏上**同一只口**：``plobi.mind.notes_view.agent_aliases`` 是那处真源，
+    与屏上**同一只口**：``plobi.human.notes_view.agent_aliases`` 是那处真源，
     这里只负责把名字换成名册里那一行（换了就查得到 ``mind_subtree``）。
     """
-    from plobi.mind.notes_view import agent_aliases
+    from plobi.human.notes_view import agent_aliases
 
     entry = _roster_entry_for(name)
     if entry is None:
@@ -382,7 +382,7 @@ def _render_digest(messages: List[Dict[str, Any]]) -> str:
 
 # ── 改 frontmatter 的那几格（正文一个字不动） ────────────────────────────────
 #
-# 这几格怎么写，**格式真相在 :mod:`plobi.mind.note_manage`**（frontmatter 的切法、
+# 这几格怎么写，**格式真相在 :mod:`plobi.human.note_manage`**（frontmatter 的切法、
 # 标量的引号、行尾那句 ``# 备注`` 怎么办，都在那儿）——这里只借用它那几个小工具，
 # 不另开一份格式口径。
 
@@ -391,14 +391,14 @@ _KEY_LINE_RE = re.compile(r"^([ \t]*)([A-Za-z_][\w-]*)([ \t]*:[ \t]*)(.*)$")
 
 def _yaml_flow_list(values) -> str:
     """一行写完的 YAML 列表（``[数学, 物理]``）——引号交给 yaml 决定。"""
-    from plobi.mind.note_manage import _yaml_scalar
+    from plobi.human.note_manage import _yaml_scalar
 
     return "[" + ", ".join(_yaml_scalar(v) for v in values) + "]"
 
 
 def _rewrite_frontmatter_keys(block: str, changes: Dict[str, Any]) -> str:
     """把 frontmatter 里指定的那几格换掉；其余行（含行尾备注）原样留着。"""
-    from plobi.mind.note_manage import (
+    from plobi.human.note_manage import (
         _split_line_ending,
         _split_yaml_comment,
         _yaml_scalar,
@@ -464,7 +464,7 @@ def set_note_properties(
     行尾那句 ``# 备注`` 原样留着（那是用户自己写在那儿的话）；frontmatter 里没有的
     那一格**不加**：不替用户造结构。
     """
-    from plobi.mind.note_manage import _split_frontmatter
+    from plobi.human.note_manage import _split_frontmatter
 
     changes: Dict[str, Any] = {}
     if tags is not None:
@@ -531,7 +531,7 @@ class MindProvider(MemoryProvider):
         写文件的那几把一律走 :class:`MindWriter`，因此过 L1 那道闸：这台
         ``mind_write_auto_approve`` 关着时落不了盘，就照实回「已进待批 + id」；
         ``dossier_write`` 改档案本体时走
-        :func:`plobi.mind.dossier_profile.update_profile`（只增不改 ＋ 原子写），**不过那道闸**。
+        :func:`plobi.human.dossier_profile.update_profile`（只增不改 ＋ 原子写），**不过那道闸**。
         """
         return [
             {
@@ -1210,7 +1210,7 @@ class MindProvider(MemoryProvider):
         }
 
     def _tool_write(self, args: Dict[str, Any], allowed: tuple[str, ...], face: str = "") -> Dict[str, Any]:
-        from plobi.mind.notes_contract import validate_note
+        from plobi.human.notes_contract import validate_note
         from plobi.mind.paths import MindUnavailable, is_safe_relative
         from plobi.mind.writer import WriteRequest
 
@@ -1286,7 +1286,7 @@ class MindProvider(MemoryProvider):
         批准那一趟由 :func:`plobi_cli.write_approval_commands._apply_one` 里新加的一支执行
         （批准的**行为**只有一处实现，不在这里另写一遍 apply）。
         """
-        from plobi.mind import note_manage
+        from plobi.human import note_manage
         from plobi.mind.paths import is_safe_relative
 
         payload = args or {}
@@ -1349,7 +1349,7 @@ class MindProvider(MemoryProvider):
         那一篇就算谁的（``plobi.mind/notes_view.py`` 是那一处真源，屏上与这里共用）。
         纪律同屏上：只给标题、逻辑路径与字数，**不给正文**。
         """
-        from plobi.mind.notes_view import agent_aliases, notes_for, scan_notes
+        from plobi.human.notes_view import agent_aliases, notes_for, scan_notes
         from plobi.mind.paths import MindUnavailable, require_root
 
         payload = args or {}
@@ -1402,7 +1402,7 @@ class MindProvider(MemoryProvider):
         更别说路径。这一把把整库的清单给它：标题、逻辑路径、字数、归属。
         **正文一个字不给**（纪律同屏上）。
         """
-        from plobi.mind.notes_view import notes_for, scan_notes
+        from plobi.human.notes_view import notes_for, scan_notes
         from plobi.mind.paths import MindUnavailable, require_root
 
         payload = args or {}
@@ -1445,7 +1445,7 @@ class MindProvider(MemoryProvider):
 
     def _tool_note_links(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """一篇笔记的入链与出链——屏上那一格（``/api/surface/notes/links``）的同一份真源。"""
-        from plobi.mind.notes_links import build_link_graph
+        from plobi.human.notes_links import build_link_graph
         from plobi.mind.paths import (
             MindUnavailable,
             is_safe_relative,
@@ -1557,7 +1557,7 @@ class MindProvider(MemoryProvider):
         原来只能按路径读一篇 ⇒ 读之前得先知道路径；日记的路径是日期，
         Agent 根本猜不出来 ⇒ 这一把把「哪几天有」给它。
         """
-        from plobi.mind import diary as diary_module
+        from plobi.human import diary as diary_module
         from plobi.mind.paths import MindUnavailable
 
         try:
@@ -1581,7 +1581,7 @@ class MindProvider(MemoryProvider):
         日记是**用户自己的字** ⇒ 这一把仍走 ``diary_write`` 那条路（信任闸：
         闸关着就进待批，人点头才落）。
         """
-        from plobi.mind import diary as diary_module
+        from plobi.human import diary as diary_module
         from plobi.mind.paths import MindUnavailable
 
         payload = args or {}
@@ -1627,8 +1627,8 @@ class MindProvider(MemoryProvider):
         给的是**摘要**（目标／现状／阶段／有没有本体），不是整份档案；
         读一份用 ``dossier_read``。
         """
-        from plobi.mind import agent_dossier
-        from plobi.mind import dossier_profile as dp
+        from plobi.human import agent_dossier
+        from plobi.human import dossier_profile as dp
         from plobi.mind.paths import MindUnavailable, require_root
 
         try:
@@ -1674,7 +1674,7 @@ class MindProvider(MemoryProvider):
 
         ``doneBy`` 记的是**最后一次动它的人**：Agent 动的是 ``agent``，人动的是 ``user``。
         """
-        from plobi.mind import dossier_tasks as dt
+        from plobi.human import dossier_tasks as dt
         from plobi.mind.paths import (
             MindUnavailable,
             UnsafeMindPath,
@@ -1744,7 +1744,7 @@ class MindProvider(MemoryProvider):
 
         走档案本体那套字段级写：只改点名的几格、文件里不认识的键原样留着、落盘原子。
         """
-        from plobi.mind import dossier_profile as dp
+        from plobi.human import dossier_profile as dp
         from plobi.mind.paths import (
             MindUnavailable,
             UnsafeMindPath,
@@ -1851,7 +1851,7 @@ class MindProvider(MemoryProvider):
     def _tool_dossier_write(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """档案本体（``dossier.json``）的**字段级**编辑。
 
-        走 :func:`plobi.mind.dossier_profile.update_profile`：只改点名的几格、文件里
+        走 :func:`plobi.human.dossier_profile.update_profile`：只改点名的几格、文件里
         我们不认识的键原样留着（只增不改）、落盘原子（临时文件 ＋ ``os.replace``）。
 
         **不过 L1 那道闸**：这道手是给 Agent 自己维护档案用的（别的写手是
@@ -1863,7 +1863,7 @@ class MindProvider(MemoryProvider):
         校验全在**落盘前**：路径形状、文件可解析、字段形状；有一条不合法就报错，
         盘上那一份**一个字节都不动**。
         """
-        from plobi.mind import dossier_profile as dp
+        from plobi.human import dossier_profile as dp
         from plobi.mind.paths import (
             MindUnavailable,
             UnsafeMindPath,
@@ -1969,7 +1969,7 @@ class MindProvider(MemoryProvider):
         名册那一格 ``mind_subtree`` 才是"这个名字的档案在哪儿"的权威（名册名与
         目录名可能只差大小写：名册 ``srtp`` ↔ 目录 ``SRTP``）。
         """
-        from plobi.mind import dossier_profile as dp
+        from plobi.human import dossier_profile as dp
         from plobi.mind.paths import logical_target, real_target
         from plobi.mind.reader import DOSSIER_CATEGORIES
 

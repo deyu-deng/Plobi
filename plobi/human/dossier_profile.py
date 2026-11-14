@@ -15,7 +15,7 @@ Agent维护相关的笔记，Plan或者progress它都不知道有这个东西的
   闸，要么另写一个写入器——两样都比现在差。
 * 与 ``tasks.json`` 同构：同一目录、同一套原子写、同一套「坏文件不许糊成空表」。
 
-这一层的四件事（与 :mod:`plobi.mind.dossier_tasks` 同一套纪律，不另立规矩）：
+这一层的四件事（与 :mod:`plobi.human.dossier_tasks` 同一套纪律，不另立规矩）：
 
 * **坏文件不许糊住读手**：文件不在 ⇒「还没建立」；文件在但 JSON 坏了 ⇒「读不到」。
   这两件事必须分开——空档案会被读成「什么都没有」，而那是**假的**。
@@ -156,15 +156,15 @@ def profile_path(home: Path) -> Path:
 def home_for_agent(name: str, roster_path: Path | None = None) -> Path | None:
     """名册那一行落到的档案目录。
 
-    **复用清单那一层的解析**（:func:`plobi.mind.dossier_tasks.find_home`）：名册 →
+    **复用清单那一层的解析**（:func:`plobi.human.dossier_tasks.find_home`）：名册 →
     ``mind_subtree`` → :func:`plobi.mind.paths.real_target` 这一条路只许有一处，
     两处各写一套迟早分叉（档案卡说有档案、清单说没有，比没有还糟）。
 
-    * 名册里没这一行 ⇒ :class:`~plobi.mind.dossier_tasks.AgentNotRegistered`。
+    * 名册里没这一行 ⇒ :class:`~plobi.human.dossier_tasks.AgentNotRegistered`。
     * 这一行没绑 ``mind_subtree`` ⇒ ``None``：它压根没有档案可谈。
-    * 绑了但根读不到 ⇒ :class:`~plobi.mind.dossier_tasks.DossierRootUnavailable`。
+    * 绑了但根读不到 ⇒ :class:`~plobi.human.dossier_tasks.DossierRootUnavailable`。
     """
-    from .dossier_tasks import find_home
+    from plobi.human.dossier_tasks import find_home
 
     return find_home(name, roster_path)
 

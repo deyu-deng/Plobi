@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from plobi.mind import dossier_tasks as dt
-from plobi.mind import surface_api
+from plobi.human import dossier_tasks as dt
+from plobi.human import surface_api
 
 ROSTER = textwrap.dedent(
     """
@@ -459,7 +459,7 @@ def test_the_routes_reach_these_handlers_over_real_http(live):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from plobi.mind.surface_api import router
+    from plobi.human.surface_api import router
 
     _, surface = live
     path = _write_tasks(surface, "Aura", TASKS)

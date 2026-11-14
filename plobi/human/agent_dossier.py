@@ -22,15 +22,15 @@ from typing import Any, Iterable, Optional
 
 import yaml
 
-from .dossier_profile import ProfileFile, profile_path, read_profile
-from .paths import MindUnavailable, real_target
+from plobi.human.dossier_profile import ProfileFile, profile_path, read_profile
+from plobi.mind.paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
 
 # 类别 -> ((键, 中文名, 文件名), …)。顺序就是屏上的顺序。
 #
 # 11-09 起（WP-DOSSIER-SHAPE）**档案本体是 ``dossier.json``**：目标／状况／阶段都在
-# 那一份结构化记录里（见 :mod:`plobi.mind.dossier_profile`），``plan.md``／``progress.md``
+# 那一份结构化记录里（见 :mod:`plobi.human.dossier_profile`），``plan.md``／``progress.md``
 # 那一对退役了——「Plan现在占的位置太长了，本质还是md，没有UI设计」。
 #
 # 这里剩下的 md 是**文档**，不是档案状态：研究笔记与课程那两份。所以它们照旧列出来，

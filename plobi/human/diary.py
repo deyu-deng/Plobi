@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .paths import MindUnavailable, real_target
+from plobi.mind.paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
 

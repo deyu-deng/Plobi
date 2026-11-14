@@ -7,7 +7,7 @@
 路径安全：对外只认 ``Notes/...`` 这种逻辑路径（``Surface/notes/...`` 旧写法 2026-11-13 停用），
 读**和写**之前都再解析一次并确认落点在 ``<HUMAN_ROOT>/notes`` 之内——前端传来的字符串永远当不可信输入。
 
-注意 :mod:`plobi.mind.notes_contract` 那道闸**只管 Agent 写**，明写「不管人自己写」；
+注意 :mod:`plobi.human.notes_contract` 那道闸**只管 Agent 写**，明写「不管人自己写」；
 所以 :func:`save_note` 不调用 ``validate_note``。人写的笔记可以没有 frontmatter、可以有多个
 一级标题，那是人的自由；但路径越界、写坏文件、覆盖别人刚改过的字，这里一律拦。
 """
@@ -24,8 +24,8 @@ from typing import Any
 
 import yaml
 
-from .notes_contract import INDEX_FILE_NAMES
-from .paths import MindUnavailable, normalize_logical, real_target
+from plobi.human.notes_contract import INDEX_FILE_NAMES
+from plobi.mind.paths import MindUnavailable, normalize_logical, real_target
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ def save_note(
     长笔记**不做**日记那种「按行合并」——2919 行的文章按行猜哪些是别人新加的，
     猜错的代价是丢字，所以盘上不一致就直接拒绝，让人自己决定怎么处理。
 
-    不调用 :func:`plobi.mind.notes_contract.validate_note`：那道闸管的是 Agent 写，
+    不调用 :func:`plobi.human.notes_contract.validate_note`：那道闸管的是 Agent 写，
     模块头注里明写「不管人自己写」。人写的笔记可以没有 frontmatter、可以有多个
     一级标题；这里只管路径安全、原子写、不覆盖别人的改动。
     """

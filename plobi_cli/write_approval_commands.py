@@ -184,7 +184,7 @@ def _apply_one(subsystem: str, rec, memory_store):
             # 人读面的 ``Notes/…`` 不在里面。批准的**行为**只有这一处实现。
             import json as _json
 
-            from plobi.mind import note_manage
+            from plobi.human import note_manage
 
             op = note_manage.NoteOp.from_json(_json.dumps(payload.get("op") or {}, ensure_ascii=False))
             note_manage.apply_op(op)

@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from plobi.mind.dossier_profile import (  # noqa: E402  (路径要先摆好)
+from plobi.human.dossier_profile import (  # noqa: E402  (路径要先摆好)
     PROFILE_FILENAME,
     parse_plan_markdown,
     parse_progress_markdown,

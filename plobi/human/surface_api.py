@@ -18,7 +18,7 @@
 读取全在 ``plobi.mind.*``（同步、窄读）；这里只做线程池与状态码。名册/根不可用时
 返回 503 而不是空表——空表会被读成「一个都没有」。
 
-笔记写入**不套** :mod:`plobi.mind.notes_contract` 那道闸：它管的是 Agent 写，
+笔记写入**不套** :mod:`plobi.human.notes_contract` 那道闸：它管的是 Agent 写，
 模块头注里明写「不管人自己写」。路径安全与并发保护在 ``notes_library.save_note`` 里。
 """
 
@@ -68,7 +68,7 @@ async def list_surface_agents():
     库那份 ``agent_dossiers`` 是旧 md 的影子——md 退役之后影子只剩陈账，走它等于把
     一个月前的计划端到屏上。库继续做笔记与日记的索引，档案这一格不再经它。
     """
-    from plobi.mind.agent_dossier import build_index as fs_build_index
+    from plobi.human.agent_dossier import build_index as fs_build_index
 
     try:
         data = await run_in_threadpool(fs_build_index)
@@ -83,7 +83,7 @@ async def get_surface_agent(name: str):
 
     同样**不走库**：库那份是 md 的影子，md 退役后它只会把陈账端上屏。
     """
-    from plobi.mind.agent_dossier import read_agent as fs_read_agent, resolve_dossier_id
+    from plobi.human.agent_dossier import read_agent as fs_read_agent, resolve_dossier_id
 
     # **作用域哨兵先翻译成名册 id**（桌面那边 L1 的哨兵是 ``'l1'``，名册里 L1
     # 那一行的 name 是 ``secretary``）：两条腿都用同一个 id，否则档案卡去要
@@ -107,9 +107,9 @@ async def get_surface_agent_profile(name: str):
     文件在但 JSON 坏了 ⇒ ``data.error`` 有值（屏上说「读不到」）。这两件事必须分开——
     空档案会被读成「什么都没有」，而那是**假的**。
     """
-    from plobi.mind.agent_dossier import resolve_dossier_id
-    from plobi.mind.dossier_profile import profile_for_agent
-    from plobi.mind.dossier_tasks import AgentNotRegistered, DossierRootUnavailable
+    from plobi.human.agent_dossier import resolve_dossier_id
+    from plobi.human.dossier_profile import profile_for_agent
+    from plobi.human.dossier_tasks import AgentNotRegistered, DossierRootUnavailable
 
     name = resolve_dossier_id(name)
 
@@ -134,8 +134,8 @@ async def get_surface_agent_tasks(name: str):
     坏文件不许糊成空表：JSON 坏了 ⇒ ``data.error`` 有值（前端显示「读不到」），
     文件不在 ⇒ ``data.exists`` 为 False（前端显示「还没有清单」）。
     """
-    from plobi.mind.agent_dossier import resolve_dossier_id
-    from plobi.mind.dossier_tasks import (
+    from plobi.human.agent_dossier import resolve_dossier_id
+    from plobi.human.dossier_tasks import (
         AgentNotRegistered,
         DossierRootUnavailable,
         find_home,
@@ -169,8 +169,8 @@ async def toggle_surface_agent_task(name: str, body: dict):
 
     ``done`` 是**目标状态**，不是翻转——前端少传一次请求不会把状态带偏。
     """
-    from plobi.mind.agent_dossier import resolve_dossier_id
-    from plobi.mind.dossier_tasks import (
+    from plobi.human.agent_dossier import resolve_dossier_id
+    from plobi.human.dossier_tasks import (
         AgentNotRegistered,
         DossierRootUnavailable,
         TaskNotFound,
@@ -222,11 +222,11 @@ async def list_surface_notes():
     DB 腿给的是**每篇笔记的元数据**；``topics``／``totals`` 这两格是清单级的聚合，
     由文件系统腿算（它本来就要扫一遍目录）⇒ 两条腿的形状一致。
     """
-    from plobi.mind.notes_library import build_library as fs_build_library
+    from plobi.human.notes_library import build_library as fs_build_library
 
     # 1. 先试数据库
     try:
-        from .vault import list_notes
+        from plobi.mind.vault import list_notes
 
         notes = list_notes()
         if notes:
@@ -295,7 +295,7 @@ async def search_surface_notes(q: str = Query(..., min_length=1)):
     和 ``/surface/notes`` 用**同一条**降级腿：索引没填库时，搜索不能比列表更瞎。
     """
     try:
-        from .vault import search_notes
+        from plobi.mind.vault import search_notes
         
         notes = await run_in_threadpool(search_notes, q, limit=50)
         payload = [
@@ -319,7 +319,7 @@ async def search_surface_notes(q: str = Query(..., min_length=1)):
         # 2026-11-12 报的就是这个。降级腿在内存里做包含匹配，口径对齐 SQL 的
         # LIKE（两侧转小写；中文无大小写之分，不受影响）。
         if not payload:
-            from plobi.mind.notes_library import build_library as fs_build_library
+            from plobi.human.notes_library import build_library as fs_build_library
 
             base = await run_in_threadpool(fs_build_library)
             gone = _root_gone("notes", str(base.get("root") or ""))
@@ -351,7 +351,7 @@ async def get_surface_note_links():
 
     一次给全：反向链接要的是**全库**的关系，前端一次只读一篇正文，算不出来。
     """
-    from plobi.mind.notes_links import build_link_graph
+    from plobi.human.notes_links import build_link_graph
 
     try:
         data = await run_in_threadpool(build_link_graph)
@@ -363,7 +363,7 @@ async def get_surface_note_links():
 
 @router.get("/surface/notes/content")
 async def get_surface_note(path: str = Query(..., min_length=1)):
-    from plobi.mind.notes_library import read_note
+    from plobi.human.notes_library import read_note
 
     try:
         data = await run_in_threadpool(read_note, path)
@@ -384,7 +384,7 @@ async def put_surface_note(
     ``base`` 是编辑器打开时那份原文：盘上被别处改过就 409，绝不整篇覆盖。
     ``create`` 必须显式给——保存已有笔记时路径拼错，不该静默写出一个新文件。
     """
-    from plobi.mind.notes_library import NoteConflict, resolve_note, save_note
+    from plobi.human.notes_library import NoteConflict, resolve_note, save_note
 
     text = body.get("text") if isinstance(body, dict) else None
     if not isinstance(text, str):
@@ -415,8 +415,8 @@ async def rename_surface_note(body: dict = Body(...)):
     404 = 那篇不在；400 = 路径越界、名字不合法或重名；409 = 人在这期间改过它
     （盘上现状与算计划时对不上，宁可不动）。
     """
-    from plobi.mind import note_manage
-    from plobi.mind.notes_library import NoteConflict
+    from plobi.human import note_manage
+    from plobi.human.notes_library import NoteConflict
 
     payload = body if isinstance(body, dict) else {}
     path = payload.get("path")
@@ -450,8 +450,8 @@ async def delete_surface_note(body: dict = Body(...)):
 
     404 = 那篇不在；409 = 人在这期间改过它（盘上现状与算计划时对不上）。
     """
-    from plobi.mind import note_manage
-    from plobi.mind.notes_library import NoteConflict
+    from plobi.human import note_manage
+    from plobi.human.notes_library import NoteConflict
 
     payload = body if isinstance(body, dict) else {}
     path = payload.get("path")
@@ -486,11 +486,11 @@ async def list_surface_diary():
     （旧版本这里返回的是「日期 → {date, exists, updated}」的字典，
     与 ``diary.list_entries()`` 的形状对不上 ⇒ 前端按前者的形状写的代码读不到。）
     """
-    from plobi.mind.diary import list_entries as fs_list_entries
+    from plobi.human.diary import list_entries as fs_list_entries
 
     # 1. 先试数据库
     try:
-        from .vault import list_diaries
+        from plobi.mind.vault import list_diaries
 
         entries = await run_in_threadpool(list_diaries)
         if entries:
@@ -532,11 +532,11 @@ async def list_surface_diary():
 @router.get("/surface/diary/{day}")
 async def get_surface_diary_entry(day: str):
     """优先从数据库查询 user_diary 表；没有则降级到文件系统扫描。"""
-    from plobi.mind.diary import read_entry as fs_read_entry
+    from plobi.human.diary import read_entry as fs_read_entry
 
     # 1. 先试数据库
     try:
-        from .vault import get_diary
+        from plobi.mind.vault import get_diary
 
         entry = await run_in_threadpool(get_diary, day)
         if entry and entry.content:
@@ -561,7 +561,7 @@ async def get_surface_diary_entry(day: str):
 
 @router.put("/surface/diary/{day}")
 async def put_surface_diary_entry(day: str, body: dict):
-    from plobi.mind.diary import save_entry
+    from plobi.human.diary import save_entry
 
     text = body.get("text") if isinstance(body, dict) else None
     if not isinstance(text, str):
@@ -583,7 +583,7 @@ async def put_surface_diary_entry(day: str, body: dict):
 @router.post("/surface/diary/{day}/capture")
 async def capture_surface_diary_entry(day: str, body: dict):
     """路过记一句：往当天那篇末尾接一行 ``- HH:MM …``，记完浮层就收。"""
-    from plobi.mind.diary import append_entry
+    from plobi.human.diary import append_entry
 
     line = body.get("line") if isinstance(body, dict) else None
     if not isinstance(line, str):

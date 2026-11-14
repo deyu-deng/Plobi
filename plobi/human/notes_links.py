@@ -22,7 +22,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from .paths import real_target
+from plobi.mind.paths import real_target
 
 # `[[目标|别名]]` —— 目标到 `|` 或 `#` 为止。
 WIKILINK_RE = re.compile(r"\[\[([^\][\n]+)\]\]")

@@ -10,7 +10,7 @@ import json
 import textwrap
 from pathlib import Path
 
-from plobi.mind import dossier_profile as dp
+from plobi.human import dossier_profile as dp
 
 PLAN = textwrap.dedent(
     """\

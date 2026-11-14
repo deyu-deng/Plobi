@@ -10,7 +10,7 @@
 Agent 那一侧只许把算好的计划（:class:`NoteOp`）存进待批队列，批了才落盘。
 
 路径一律走 :func:`plobi.mind.paths.real_target`，落点必须在人读面 ``notes/`` 之内；
-判据复用 :func:`plobi.mind.notes_library._safe_note_target`（读与写共用同一份——
+判据复用 :func:`plobi.human.notes_library._safe_note_target`（读与写共用同一份——
 两处各写一套，早晚漂成「读得到但写不进去」）。
 
 落盘顺序：**先写后删**——新文件与各入链笔记都原子写好之后，才动旧文件。
@@ -34,9 +34,9 @@ from typing import Any, Sequence
 
 import yaml
 
-from . import notes_library
-from .notes_library import NoteConflict
-from .paths import normalize_logical, real_target
+from plobi.human import notes_library
+from plobi.human.notes_library import NoteConflict
+from plobi.mind.paths import normalize_logical, real_target
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ def _split_frontmatter(text: str) -> tuple[str, str, str]:
     """切成 (frontmatter 块, 分隔符, 正文)。
 
     没有 frontmatter 时三样都是空串。判据与
-    :func:`plobi.mind.notes_library._frontmatter` 同一份：``---`` 开头、
+    :func:`plobi.human.notes_library._frontmatter` 同一份：``---`` 开头、
     后面还有一个 ``---`` 行才算。
     """
     if not text.startswith("---"):
@@ -685,7 +685,7 @@ def _commit_notes(root: Path, relatives: Sequence[str], message: str) -> dict[st
     """只提交受影响的那几档。
 
     git 不可用／没变化都**不算失败**（落盘已经完成了），口径与
-    :func:`plobi.mind.notes_library._commit_note` 一样。
+    :func:`plobi.human.notes_library._commit_note` 一样。
     """
     blank = {"committed": False, "commit": "", "detail": ""}
     paths = [rel for rel in relatives if rel]

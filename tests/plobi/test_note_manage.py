@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from plobi.mind import note_manage
-from plobi.mind import surface_api
+from plobi.human import note_manage
+from plobi.human import surface_api
 
 EDITED = "# 被人改过了\n"
 NOTE_BODY = "---\ntitle: 旧标题\ntags: [工具]\nbelongs: []\n---\n\n# 旧标题\n\n正文第一段。\n第二段。\n"

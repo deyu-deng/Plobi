@@ -107,7 +107,7 @@ def migrate_notes(roots: Dict[str, Path], dry_run: bool = False) -> int:
     skipped = 0
     
     # Import notes library for building metadata
-    from plobi.mind.notes_library import build_library, _net_chars, MIN_NOTE_NET_CHARS
+    from plobi.human.notes_library import build_library, _net_chars, MIN_NOTE_NET_CHARS
     from plobi.mind.paths import real_target
 
     print(f"\n📚 Migrating notes from {notes_root}...")

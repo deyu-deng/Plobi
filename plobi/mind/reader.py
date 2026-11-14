@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .dossier_profile import PROFILE_FILENAME, Stage, read_profile
+from plobi.human.dossier_profile import PROFILE_FILENAME, Stage, read_profile
 from .paths import real_target, resolve_root
 
 logger = logging.getLogger(__name__)

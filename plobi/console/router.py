@@ -1546,7 +1546,7 @@ def agent_notes(agent_id: str) -> Optional[dict]:
     ``BrainNotConfigured`` is **not** swallowed here: an unreachable brain must not
     be rendered as "this agent has no notes".
     """
-    from plobi.mind.notes_view import build_view
+    from plobi.human.notes_view import build_view
     from plobi.mind.paths import resolve_root
 
     registry = get_registry()
@@ -2097,7 +2097,7 @@ async def expert_role_model_route(role: str, request: Request):
 @router.get("/agents/{agent_id}/notes")
 async def agent_notes_route(agent_id: str):
     """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""
-    from plobi.mind.notes_view import BrainNotConfigured
+    from plobi.human.notes_view import BrainNotConfigured
 
     try:
         payload = await run_in_threadpool(agent_notes, agent_id)

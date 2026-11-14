@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from plobi.mind import note_manage as NM
+from plobi.human import note_manage as NM
 from plobi.mind import proposal as L1
 from plobi.mind.writer import MindWriter, WriteRequest
 
@@ -84,7 +84,7 @@ def test_one_rejection_falls_back_to_asking(roots):
 def test_delete_style_ops_have_no_automatic_route_yet(roots):
     """「删除」这一样：它现在**有**那条腿了，但**永不自动**。
 
-    钉的是判据接口，不是行为。删除与改名住在 ``plobi.mind.note_manage``（人读面那一族），
+    钉的是判据接口，不是行为。删除与改名住在 ``plobi.human.note_manage``（人读面那一族），
     **不是** L1 的写腿 ⇒ ``L1.MODES`` 里仍然只有「写内容」那几种（``Change`` 装上未知模式
     就报错 ⇒ 删除压根进不了 L1 那条路；``never_auto`` 对未知模式本来就拒）。
     真正让删除安全的是 note_manage 那一族**没有自动档**：``NEVER_AUTO_KINDS`` 里有它，

@@ -12,7 +12,7 @@
   不把别人的字段洗掉。
 * **落盘要原子**：临时文件 ＋ ``os.replace``，写到一半崩了不会留下半份清单。
 
-档案在哪儿由 :mod:`plobi.mind.agent_dossier` 那一套回答（名册 → ``mind_subtree`` →
+档案在哪儿由 :mod:`plobi.human.agent_dossier` 那一套回答（名册 → ``mind_subtree`` →
 :func:`plobi.mind.paths.real_target`），这里**不另立**一套「档案在哪」的逻辑。
 """
 
@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .agent_dossier import _find, _home_for, load_entries
+from plobi.human.agent_dossier import _find, _home_for, load_entries
 
 logger = logging.getLogger(__name__)
 

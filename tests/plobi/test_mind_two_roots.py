@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from plobi.mind import paths
-from plobi.mind.notes_view import known_names, scan_notes
+from plobi.human.notes_view import known_names, scan_notes
 from plobi.mind.paths import (
     MindUnavailable,
     Roots,
@@ -295,7 +295,7 @@ def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vaul
     entry = types.SimpleNamespace(
         name="srtp", mind_subtree="Dossiers/projects/SRTP", category="research", role="l2_course"
     )
-    from plobi.mind.notes_view import agent_aliases
+    from plobi.human.notes_view import agent_aliases
 
     assert "SRTP" in agent_aliases(entry)
     assert "SRTP" in known_names(mind, [entry])

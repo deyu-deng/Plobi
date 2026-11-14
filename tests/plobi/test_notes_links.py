@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from plobi.mind import notes_links
+from plobi.human import notes_links
 
 
 @pytest.fixture()
@@ -99,7 +99,7 @@ def test_route_returns_the_graph_in_an_envelope(vault):
     import asyncio
     import json
 
-    from plobi.mind import surface_api
+    from plobi.human import surface_api
 
     response = asyncio.run(surface_api.get_surface_note_links())
     body = response if isinstance(response, dict) else json.loads(response.body)
@@ -115,7 +115,7 @@ def test_route_reports_unavailable_instead_of_an_empty_graph(monkeypatch, tmp_pa
     import asyncio
     import json
 
-    from plobi.mind import surface_api
+    from plobi.human import surface_api
 
     mind = tmp_path / "mind"
     (mind / "wiki").mkdir(parents=True)
