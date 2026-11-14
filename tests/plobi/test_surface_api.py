@@ -324,3 +324,57 @@ def test_root_gone_is_503_even_when_the_db_still_has_rows(surface_gone, monkeypa
     response = asyncio.run(surface_api.list_surface_notes())
     assert response.status_code == 503
     assert "notes root does not exist" in json.loads(response.body)["error"]
+
+
+# ── 库空时的搜索：降级扫盘，不能「列表有一堆、搜什么都是 0 条」（WP-NOTES-SEARCH-FS）─
+
+
+SEARCHABLE_BODY = (
+    "---\ntitle: 线性代数\n---\n\n"
+    "## 矩阵与行列式\n\n"
+    "矩阵的秩是行空间的维数，行列式为零时矩阵不可逆；这一章把秩、行列式与线性方程组"
+    "解的结构串起来讲，后面讲特征值与对角化时还要回到同一套语言里来。\n"
+)
+
+
+def _write_searchable_note(notes_live):
+    """再放一篇**够长**的笔记：短于 MIN_NOTE_NET_CHARS 的壳会被扫盘腿藏掉，
+    拿它当探针只会验到隐藏规则，验不到搜索。"""
+    target = notes_live / "线性代数.md"
+    target.write_text(SEARCHABLE_BODY, encoding="utf-8")
+    return target
+
+
+def test_search_falls_back_to_the_disk_when_the_db_is_empty(notes_live, monkeypatch, tmp_path):
+    """vault_notes 空表（装机态常态）⇒ 搜索走扫盘腿，标题命中。"""
+    monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "vault.db"))
+    _write_searchable_note(notes_live)
+
+    body = asyncio.run(surface_api.search_surface_notes("线性代数"))
+    assert body["ok"] is True
+    assert "Notes/数学/线性代数.md" in [n["path"] for n in body["data"]["notes"]]
+    assert body["data"]["count"] == len(body["data"]["notes"])
+
+
+def test_search_falls_back_to_the_excerpt_not_only_the_title(notes_live, monkeypatch, tmp_path):
+    """摘要命中也算：口径对齐 SQL 的 ``title LIKE ? OR excerpt LIKE ?``。"""
+    monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "vault.db"))
+    _write_searchable_note(notes_live)
+    from plobi.mind.notes_library import build_library
+
+    hit = next(n for n in build_library()["notes"] if n["title"] == "线性代数")
+    needle = hit["excerpt"].strip()[:6]
+    assert "线性代数" not in needle, "要验的是摘要腿，别让关键词落在标题上"
+
+    body = asyncio.run(surface_api.search_surface_notes(needle))
+    assert [n["path"] for n in body["data"]["notes"]] == ["Notes/数学/线性代数.md"]
+
+
+def test_search_on_disk_still_answers_zero_for_a_real_miss(notes_live, monkeypatch, tmp_path):
+    """降级不等于「把全库都给你」：真没命中就回 0 条。"""
+    monkeypatch.setenv("PLOBI_VAULT_DB", str(tmp_path / "vault.db"))
+    _write_searchable_note(notes_live)
+
+    body = asyncio.run(surface_api.search_surface_notes("量子场论"))
+    assert body["data"]["count"] == 0
+    assert body["data"]["notes"] == []

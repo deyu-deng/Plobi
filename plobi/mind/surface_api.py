@@ -290,28 +290,55 @@ def get_vault_root() -> str:
 
 @router.get("/surface/notes/search")
 async def search_surface_notes(q: str = Query(..., min_length=1)):
-    """Search notes by title/excerpt."""
+    """Search notes by title/excerpt — DB 腿为主，库空则降级扫盘。
+
+    和 ``/surface/notes`` 用**同一条**降级腿：索引没填库时，搜索不能比列表更瞎。
+    """
     try:
         from .vault import search_notes
         
         notes = await run_in_threadpool(search_notes, q, limit=50)
+        payload = [
+            {
+                "path": n.path,
+                "title": n.title,
+                "topic": n.topic,
+                "tags": n.tags,
+                "updated": n.updated,
+                "chars": n.chars,
+                "excerpt": n.excerpt
+            }
+            for n in notes
+        ]
+
+        # 库空 ⇒ 降级扫盘（与 /surface/notes 同一条腿）。
+        #
+        # vault.db 的 vault_notes 在装机态是空的：往表里填数据的唯一入口今天
+        # 不存在（`search_notes` 直查表，全仓没有 migrate_notes_from_filesystem）。
+        # 列表接口另有扫盘腿，所以「列表里明明有一堆笔记，搜什么都是 0 条」——
+        # 2026-11-12 报的就是这个。降级腿在内存里做包含匹配，口径对齐 SQL 的
+        # LIKE（两侧转小写；中文无大小写之分，不受影响）。
+        if not payload:
+            from plobi.mind.notes_library import build_library as fs_build_library
+
+            base = await run_in_threadpool(fs_build_library)
+            gone = _root_gone("notes", str(base.get("root") or ""))
+            if gone is not None:
+                return gone
+            needle = q.lower()
+            payload = [
+                note
+                for note in (base.get("notes") or [])
+                if needle in str(note.get("title") or "").lower()
+                or needle in str(note.get("excerpt") or "").lower()
+            ][:50]
+
         return {
             "ok": True,
             "data": {
                 "query": q,
-                "count": len(notes),
-                "notes": [
-                    {
-                        "path": n.path,
-                        "title": n.title,
-                        "topic": n.topic,
-                        "tags": n.tags,
-                        "updated": n.updated,
-                        "chars": n.chars,
-                        "excerpt": n.excerpt
-                    }
-                    for n in notes
-                ]
+                "count": len(payload),
+                "notes": payload
             }
         }
     except Exception as exc:
