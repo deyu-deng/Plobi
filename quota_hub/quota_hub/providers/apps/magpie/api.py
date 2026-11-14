@@ -29,6 +29,7 @@ still keep stay as the fallback for the vendors they serve.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -550,15 +551,67 @@ class MagpieProvider(Provider):
             return UpstreamError(404, f"magpie: no such model: {model}", retryable=False)
         return None
 
+    #: Statuses that mean "the gateway itself is not ready", not "the model said no".
+    #: magpie is a *local* sidecar and it restarts its plugin host whenever it compares
+    #: `@latest` against the versions installed (measured 2026-11-14: five plugins
+    #: upgraded at 19:50:43, host restarted 19:50:47). For those seconds it would answer
+    #: 502/503/504, and passing a 502 through unchanged is a lie that costs real time:
+    #: the desktop client reads "bad gateway", retries 3 times inside 9 seconds — all of
+    #: it inside the restart window — then reports the leg as broken, while the catalogue
+    #: stayed empty for 3 m 46 s. 503 is what those statuses actually mean here.
+    _NOT_READY_STATUSES = frozenset({502, 503, 504})
+    #: Bounded so a restarting sidecar is retried soon; `Scheduler._apply_error` doubles it
+    #: per consecutive failure, which is the right shape for a gap measured in seconds.
+    NOT_READY_COOLDOWN = 2.0
+
+    def _classify_upstream(self, status: int, oai_req: dict) -> UpstreamError | None:
+        """Map a gateway status to what it *means*, not just what it says."""
+        if status in self._NOT_READY_STATUSES:
+            return UpstreamError(
+                503,
+                f"magpie: the local gateway is not ready (it answered {status}) — it is "
+                "most likely restarting its plugin host; retry in a moment",
+                retryable=True,
+                cooldown=self.NOT_READY_COOLDOWN,
+            )
+        return self._classify_http(status) or self._not_served(status, oai_req)
+
+    def _unreachable(self, err: Exception) -> UpstreamError:
+        """Nothing on that port: not running yet, or the sidecar is being restarted."""
+        return UpstreamError(
+            503,
+            f"magpie: the local gateway is unreachable ({type(err).__name__}) — it is not "
+            "running or still starting; retry in a moment",
+            retryable=True,
+            cooldown=self.NOT_READY_COOLDOWN,
+        )
+
+    @contextlib.asynccontextmanager
+    async def _open_stream(self, body: dict) -> AsyncIterator[httpx.Response]:
+        try:
+            async with self.http.stream(
+                "POST",
+                self._base_url() + CHAT_PATH,
+                headers=self._headers(),
+                json=body,
+                timeout=self.timeout,
+            ) as res:
+                yield res
+        except httpx.HTTPError as err:
+            raise self._unreachable(err) from err
+
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         body = self._body(oai_req, stream=False)
-        res = await self.http.post(
-            self._base_url() + CHAT_PATH,
-            headers=self._headers(),
-            json=body,
-            timeout=self.timeout,
-        )
-        err = self._classify_http(res.status_code) or self._not_served(res.status_code, oai_req)
+        try:
+            res = await self.http.post(
+                self._base_url() + CHAT_PATH,
+                headers=self._headers(),
+                json=body,
+                timeout=self.timeout,
+            )
+        except httpx.HTTPError as err:
+            raise self._unreachable(err) from err
+        err = self._classify_upstream(res.status_code, oai_req)
         if err is not None:
             raise err
         try:
@@ -576,14 +629,8 @@ class MagpieProvider(Provider):
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         body = self._body(oai_req, stream=True)
-        async with self.http.stream(
-            "POST",
-            self._base_url() + CHAT_PATH,
-            headers=self._headers(),
-            json=body,
-            timeout=self.timeout,
-        ) as res:
-            err = self._classify_http(res.status_code) or self._not_served(res.status_code, oai_req)
+        async with self._open_stream(body) as res:
+            err = self._classify_upstream(res.status_code, oai_req)
             if err is not None:
                 raise err
             async for line in res.aiter_lines():

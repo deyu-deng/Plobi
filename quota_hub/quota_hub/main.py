@@ -682,9 +682,25 @@ async def chat_completions(request: Request, authorization: str = Header(None)):
         _detail = _no_account_detail(prov0) or f"no upstream account available: {e}"
         if _wait is not None:
             raise HTTPException(429, _detail, headers={"Retry-After": str(_wait)})
+        # Not "spent" (that is the 429 above) but "cooling": the leg says when it can
+        # serve again, so say it. A 503 with no Retry-After is a client left guessing,
+        # and on 2026-11-14 the guess was 3 attempts in 9 seconds against a 3 m 46 s gap.
+        _soon = getattr(e, "retry_after", None)
+        if _soon:
+            raise HTTPException(
+                503, _detail, headers={"Retry-After": str(max(1, int(round(_soon))))}
+            )
         raise HTTPException(503, _detail)
     except UpstreamError as e:
-        raise HTTPException(e.status if 400 <= e.status < 600 else 502, str(e))
+        status = e.status if 400 <= e.status < 600 else 502
+        # 一条腿"还没准备好"不是"网关坏了"。上游是本地侧车时，重启窗口内它会回
+        # 502/503/504 —— 原样透传出去，客户端读到的是"坏网关"，于是连着重试
+        # （实测 2026-11-14 19:51：3 次全在 134 ms 内砸回来，总跨度 9 秒，而空窗
+        # 是 3 分 46 秒）。503 + Retry-After 才是实情：等一会儿再来。
+        headers = None
+        if status == 503 and e.retryable:
+            headers = {"Retry-After": str(max(1, int(round(e.cooldown or 5.0))))}
+        raise HTTPException(status, str(e), headers=headers)
 
 
 async def _sse(gen):
@@ -697,6 +713,12 @@ async def _sse(gen):
     yield "data: [DONE]\n\n"
 
 
+#: finish reasons that prove the upstream did a turn, even when the visible content
+#: is empty. Only `length` belongs here: the model ran and hit the output budget
+#: (`stop` with nothing at all is still the "no goods" case — see `_is_no_goods`).
+_NOT_EMPTY_FINISH_REASONS = frozenset({"length"})
+
+
 def _first_choice(result: object) -> dict:
     if not isinstance(result, dict):
         return {}
@@ -705,7 +727,7 @@ def _first_choice(result: object) -> dict:
 
 
 def _is_no_goods(result: object) -> bool:
-    """这一发是不是"没货"：既没有正文，也没有 tool_calls。"""
+    """这一发是不是"没货"：没有正文、没有 tool_calls、也没有思考。"""
     choice = _first_choice(result)
     message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
     content = message.get("content")
@@ -713,6 +735,18 @@ def _is_no_goods(result: object) -> bool:
     if text.strip():
         return False
     if message.get("tool_calls") or choice.get("tool_calls"):
+        return False
+    # 思考也是货。reasoning 模型把预算花在 reasoning 上时 content 是空的（`null`），
+    # 那一轮的正文本来就该空着——把它判成"没货"，等于把上游真烧掉的 token 说成上游
+    # 的空话；客户端再把 502 当网关故障重试，同一个请求于是再烧一遍预算
+    # （实测 2026-11-14：`workbuddy/hy3` + `max_tokens=8`，200 而 content=null、
+    # reasoning_content 有字、finish_reason='length'，被这里判成了 502）。
+    for key in ("reasoning_content", "reasoning"):
+        thinking = message.get(key)
+        if isinstance(thinking, str) and thinking.strip():
+            return False
+    # 被预算截断也是干过活的证据：上游跑完了一轮才撞上 length。
+    if _finish_reason(result) in _NOT_EMPTY_FINISH_REASONS:
         return False
     return True
 

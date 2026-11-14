@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 import httpx
 
 import quota_hub.main as main
-from quota_hub.providers.base import AccountState
+from quota_hub.providers.base import AccountState, UpstreamError
 from quota_hub.registry import Registry
 from quota_hub.scheduler import Scheduler
 
@@ -350,3 +350,129 @@ async def _a_real_reply_is_still_success():
 
 def test_a_real_reply_is_still_success():
     asyncio.run(_a_real_reply_is_still_success())
+
+
+# --------------------------------------------------------------------------
+# 2026-11-14 现场那一族（安装版 D:\Software\Plobi 上复现的两次读数）
+# --------------------------------------------------------------------------
+# 1) `workbuddy/hy3` + `max_tokens=8`：quota_hub 回 502「没货」，而同一请求直连
+#    magpie 是 200 —— content=null、reasoning_content 有字、finish_reason='length'。
+#    一个合理请求因为思考吃满预算被判成上游空话；客户端再当故障重试，同一个请求
+#    于是把上游预算烧第二遍。
+# 2) 19:51:01/04/10 那三次 502：本地侧车正在重启插件宿主，客户端读成"坏网关"，
+#    3 次重试在 9 秒内砸完，而空窗是 3 分 46 秒。说 503 + Retry-After 才是实情。
+
+
+def _thinking_only() -> dict:
+    """A reasoning model that spent the whole budget thinking — the measured shape."""
+    return {
+        "id": "chatcmpl-think",
+        "object": "chat.completion",
+        "model": "mock/static",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "length",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "先看题目要什么，再看边界……",
+                },
+            }
+        ],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 8, "total_tokens": 13},
+    }
+
+
+async def _post_turn(c):
+    return await c.post(
+        "/v1/chat/completions",
+        headers={"authorization": f"Bearer {KEY}"},
+        json={
+            "model": "mock/static",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 8,
+        },
+    )
+
+
+async def _reasoning_only_is_a_real_reply():
+    async with _ctx(_base_cfg()) as (c, reg):
+        async def chat(acc, oai_req):
+            return _thinking_only()
+
+        reg.providers["mock"].chat = chat
+        r = await _post_turn(c)
+    assert r.status_code == 200, r.text[:300]
+    message = r.json()["choices"][0]["message"]
+    assert message["content"] is None, "那一轮的正文本来就该空着"
+    assert message["reasoning_content"], "思考必须原样到达客户端，不能被判成没货"
+
+
+def test_reasoning_only_is_a_real_reply():
+    asyncio.run(_reasoning_only_is_a_real_reply())
+
+
+async def _a_budget_truncated_turn_is_a_real_reply():
+    """content 空且没有 reasoning，但 finish_reason='length'：上游确实跑过一轮。"""
+    async with _ctx(_base_cfg()) as (c, reg):
+        async def chat(acc, oai_req):
+            out = _thinking_only()
+            out["choices"][0]["message"] = {"role": "assistant", "content": ""}
+            return out
+
+        reg.providers["mock"].chat = chat
+        r = await _post_turn(c)
+    assert r.status_code == 200, r.text[:300]
+
+
+def test_a_budget_truncated_turn_is_a_real_reply():
+    asyncio.run(_a_budget_truncated_turn_is_a_real_reply())
+
+
+async def _a_silent_stop_is_still_no_goods():
+    """反向那一半：判据放宽之后，"200 而一个字都没有"还得照样判红。"""
+    async with _ctx(_base_cfg()) as (c, reg):
+        async def chat(acc, oai_req):
+            return {
+                "id": "chatcmpl-silent",
+                "object": "chat.completion",
+                "model": "mock/static",
+                "choices": [
+                    {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": ""}}
+                ],
+            }
+
+        reg.providers["mock"].chat = chat
+        r = await _post_turn(c)
+    assert r.status_code == 502, (r.status_code, r.text[:300])
+    assert "没货" in r.text or "empty completion" in r.text, r.text[:300]
+
+
+def test_a_silent_stop_is_still_no_goods():
+    asyncio.run(_a_silent_stop_is_still_no_goods())
+
+
+async def _a_cooling_leg_says_when_to_come_back():
+    """就绪中的腿要报 503 + Retry-After，而不是一个让客户端瞎重试的 502。"""
+    async with _ctx(_base_cfg()) as (c, reg):
+        async def chat(acc, oai_req):
+            raise UpstreamError(
+                503,
+                "mock: the local gateway is not ready (it answered 502)",
+                retryable=True,
+                cooldown=2.0,
+            )
+
+        reg.providers["mock"].chat = chat
+        r = await _post_turn(c)
+
+    assert r.status_code == 503, (r.status_code, r.text[:300])
+    wait = r.headers.get("retry-after")
+    assert wait is not None, "没有 Retry-After，客户端只能再猜一次 9 秒"
+    assert 1 <= int(wait) <= 3, wait
+
+
+def test_a_cooling_leg_says_when_to_come_back():
+    asyncio.run(_a_cooling_leg_says_when_to_come_back())
+

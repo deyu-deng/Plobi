@@ -25,7 +25,17 @@ from .tokens.manager import Health, TokenManager
 
 
 class NoAccountAvailable(Exception):
-    pass
+    """No account could take this turn.
+
+    ``retry_after`` carries the *soonest* moment one of them could, when the reason
+    is a cooldown rather than a dead credential. Without it the caller can only say
+    "503, try again" and leave the client guessing: on 2026-11-14 that guess was
+    three attempts inside 9 seconds against a window that was 3 m 46 s long.
+    """
+
+    def __init__(self, message: str, *, retry_after: float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class Scheduler:
@@ -114,6 +124,23 @@ class Scheduler:
         return changed
 
     # ---- dispatch -------------------------------------------------------
+    def _soonest_retry(self, prov_list: list[str]) -> float | None:
+        """Seconds until one of these legs could serve again, when it is cooling.
+
+        ``None`` when nothing is cooling: a dead credential does not get better by
+        waiting, and inventing a Retry-After for it would only teach the client to
+        spin. This is the number the gateway puts in the header.
+        """
+        now = time.time()
+        waits: list[float] = []
+        for name in prov_list:
+            prov = self.providers.get(name)
+            for acc in getattr(prov, "accounts", None) or []:
+                if acc.state == AccountState.COOLDOWN:
+                    waits.append(max(0.0, acc.cooldown_until - now))
+        soonest = min(waits) if waits else 0.0
+        return soonest if soonest > 0 else None
+
     async def dispatch(self, provider, oai_req: dict, session_id: str | None, stream: bool):
         """provider may be a single provider name or a list of names (cross-provider
         failover). Returns a dict (non-stream) or an async iterator (stream)."""
@@ -135,7 +162,9 @@ class Scheduler:
                     revived = True
                     if await self._revive(prov_list):
                         continue
-                last_err = NoAccountAvailable(f"no more accounts for {prov_list}")
+                last_err = NoAccountAvailable(
+                    f"no more accounts for {prov_list}", retry_after=self._soonest_retry(prov_list)
+                )
                 break
             acc, chosen = self._select(candidates, session_id)
             tried.add(acc.id)
@@ -166,7 +195,9 @@ class Scheduler:
                     raise
                 continue
 
-        raise last_err or NoAccountAvailable(f"exhausted accounts for {prov_list}")
+        raise last_err or NoAccountAvailable(
+            f"exhausted accounts for {prov_list}", retry_after=self._soonest_retry(prov_list)
+        )
 
     async def _run_stream(self, prov: Provider, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         """Acquire concurrency slots for the lifetime of the stream."""

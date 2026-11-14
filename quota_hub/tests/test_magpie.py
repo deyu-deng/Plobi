@@ -24,6 +24,7 @@ import httpx
 import pytest
 
 from quota_hub.providers.apps.magpie import MagpieProvider, MagpieProviderLeg, their_list
+from quota_hub.providers.base import UpstreamError
 
 
 def _provider(http, **extra):
@@ -478,3 +479,103 @@ def test_our_table_claims_every_vendor_it_names():
     assert "workbuddy" in table and "workbuddy-ai" in table, "国内版与国际版是两张卡"
     assert table["workbuddy"]["name"] == "WorkBuddy"
     assert table["workbuddy-ai"]["name"] == "WorkBuddy AI"
+
+
+# --- what a struggling gateway is allowed to be called ----------------------
+#
+# Measured 2026-11-14 on the user's installed copy (`D:\Software\Plobi` +
+# `D:\Data\AppData\Plobi`): 19:50:43 magpie upgraded five plugins, 19:50:47 it
+# restarted its plugin host, 19:51:01/04/10 the desktop made three attempts and
+# got `HTTP 502` back in ~134 ms each, and the catalogue stayed empty until
+# 19:53:58. magpie's own log had no upstream failure in that window — those three
+# calls never reached a vendor. They died on a *local* sidecar that was still
+# coming back, and this leg called that "bad gateway", which every client in the
+# world reads as "the network is broken, retry right now". That is how a 9-second
+# retry budget got spent inside a 3 m 46 s window and the screen ended up saying
+# the model was broken. "Not ready, come back" is what was true.
+
+
+def _gateway_saying(status: int):
+    """A gateway that answers `status` on chat and a healthy catalogue otherwise."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json=_models_payload())
+        return httpx.Response(status, json={"error": {"message": f"upstream {status}"}})
+
+    return handler
+
+
+def _turn(model: str = "magpie/workbuddy/hy4free") -> dict:
+    return {"model": model, "messages": [{"role": "user", "content": "hi"}]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [502, 503, 504])
+async def test_a_gateway_that_is_restarting_is_not_a_bad_gateway(status):
+    """5xx from the local sidecar means "coming back", and it must be retryable."""
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_gateway_saying(status))) as http:
+        prov = _with_gateway(_provider(http))
+        accounts = await prov.discover_accounts()
+        with pytest.raises(UpstreamError) as caught:
+            await prov.chat(accounts[0], _turn())
+
+    err = caught.value
+    assert err.status == 503, f"{status} passed through as a bad gateway"
+    assert err.retryable is True, "a restart window is exactly when retrying works"
+    assert err.cooldown > 0, "without a cooldown the scheduler spins on it"
+
+
+@pytest.mark.asyncio
+async def test_a_gateway_that_is_not_listening_says_come_back():
+    """Connection refused is the same story: nothing there *yet*."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        prov = _with_gateway(_provider(http))
+        accounts = await prov.discover_accounts()
+        with pytest.raises(UpstreamError) as caught:
+            await prov.chat(accounts[0], _turn())
+
+    assert caught.value.status == 503
+    assert caught.value.retryable is True
+    assert "unreachable" in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_a_stream_that_cannot_open_says_come_back_too():
+    """The stream path must not leak a raw httpx error to the scheduler."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        prov = _with_gateway(_provider(http))
+        accounts = await prov.discover_accounts()
+        with pytest.raises(UpstreamError) as caught:
+            async for _ in prov.chat_stream(accounts[0], _turn()):
+                pass
+
+    assert caught.value.status == 503
+    assert caught.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_their_own_answer_is_still_their_answer():
+    """The new mapping must not swallow what magpie says about *our* request.
+
+    A model they do not serve is a 404 carrying our name for it, and retrying that
+    is pointless — so it may never become a 503.
+    """
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(_gateway_saying(404))
+    ) as http:
+        prov = _with_gateway(_provider(http))
+        accounts = await prov.discover_accounts()
+        with pytest.raises(UpstreamError) as caught:
+            await prov.chat(accounts[0], _turn("magpie/nope/nope"))
+
+    assert caught.value.status == 404, "a model we cannot route is not a restart"
+    assert caught.value.retryable is False
