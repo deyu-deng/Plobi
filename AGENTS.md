@@ -69,14 +69,13 @@ by the local TLS proxy).
 
 **POSIX.** `source .venv/bin/activate`.
 
-**Never write literal POSIX paths in code or tests.** On this machine Python
-resolves `/tmp` and `/proc` against the current drive (`D:\tmp`), and a literal
-`c:\...` inside Git Bash is *not* absolute — it lands under the current drive
-root. Use `tempfile.gettempdir()`, `pathlib`, or env vars; assume a path that
-"happens to be unwritable on Linux" is not a test premise.
+**Never write literal POSIX paths in code or tests.** Python resolves `/tmp` against
+the current drive, `c:\...` is not absolute in Git Bash; use `tempfile`/`pathlib`/env vars.
 
-**Never leave runtime data on C:** use `get_plobi_home()` (profile-aware),
-never `Path.home() / ".plobi"` hardcoded. Scratch files go to `D:\Temp`.
+**Never leave runtime data on C:** use `get_plobi_home()`, never `.plobi` under `Path.home()`.
+**Scratch and verification dirs go to `D:\Temp\plobi-work\<YYYYMMDD>\<name>`** — a folder per
+day, a subfolder per task, nothing loose in `D:\Temp` (11-14: 116 folders + 765 files, 38 GB),
+only rebuildable junk, delete it when done.
 
 **Tests.** The single entry point is `scripts/run_tests.sh`; direct `pytest`
 calls are forbidden (the wrapper unsets credential vars, forces UTC/C.UTF-8,
