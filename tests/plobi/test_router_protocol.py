@@ -195,12 +195,19 @@ def test_ticket_report_six_states(CH, env):
 
 
 def test_two_mouths_stay_flat(CH):
-    """裁定 183 不动：消息面只有 say/ask，parts 里没有 state/intent。"""
+    """裁定 183 不动：消息面只有 say/ask，parts 里没有 state/intent。
+
+    裁定 218 补的 ``domain`` 是**可选元数据**（与 ``reply_to``／``timeout``
+    同类）：string、非必填、不带 enum。它不改 ``parts``、不指定对方做什么，
+    不是第三枚嘴，也不许被扩展成 intent 枚举——下面几行把这条边界钉住。
+    """
     for schema in (CH.SAY_SCHEMA, CH.ASK_SCHEMA):
         props = schema["parameters"]["properties"]
-        assert set(props) <= {"to", "parts", "timeout", "reply_to"}
+        assert set(props) <= {"to", "parts", "timeout", "reply_to", "domain"}
         assert "state" not in props and "intent" not in props
         assert schema["parameters"]["required"] == ["to", "parts"]
+        assert props["domain"]["type"] == "string"
+        assert "enum" not in props["domain"], "domain 不许变成 intent 枚举"
     assert CH.TICKET_REPORT_SCHEMA["parameters"]["properties"]["state"]["enum"] == [
         "progress", "waiting", "ready", "blocked", "failed", "dropped",
     ]

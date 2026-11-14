@@ -86,6 +86,7 @@ SAY_SCHEMA = {
         "会留下一条带收发双方的痕。\n"
         "对方要改什么、要不要改，由它自己用它的工具决定，你只负责把话说清楚；"
         "需要它**现在**回答你才继续，就改用 `ask`（`ask` 会等它答完）。\n"
+        "知道这活落在哪一摊就填 `domain`：程序按名册行的域声明核对 `to`，核不上会当场列出负责那一摊的行，不会替你改收件人。"
         "这一枚就是说话本身：不要开工具菜单、不要列 MCP/skills 让用户手动选、不要让用户改配置。"
     ),
     "parameters": {
@@ -104,6 +105,14 @@ SAY_SCHEMA = {
                     "不填就是不引用。填了但那一屏里没有这条，会当场报错，不会挂一条空引用。"
                 ),
             },
+            "domain": {
+                "type": "string",
+                "description": (
+                    "可选元数据：这一跳属于哪一摊（名册行的 `category` 或 `domains` 里声明的域）。"
+                    "填了就由程序拿名册表核对 `to`——错配会拒绝投递并列出声明了该域的行，程序绝不替你挑人；"
+                    "不填就完全照旧。这不是第三枚嘴，也不是 intent：它不改变 `parts`，也不指定对方该做什么。"
+                ),
+            },
         },
         "required": ["to", "parts"],
     },
@@ -118,6 +127,7 @@ ASK_SCHEMA = {
         "超时不代表没答——答上来的部分照带回来，别丢。\n"
         "`to`／`parts` 与 `say` 完全一样。这一问一答会留在对方自己的会话里。\n"
         "问不到（名字不对、已归档、超时、它那边起不来）会明确回错，并列出现在能发的人名。\n"
+        "知道这活落在哪一摊就填 `domain`：程序按名册行的域声明核对 `to`，核不上会当场列出负责那一摊的行，不会替你改收件人。\n"
         "这一枚就是问话本身：不要开工具菜单、不要列 MCP/skills 让用户手动选、不要让用户改配置。"
     ),
     "parameters": {
@@ -138,6 +148,14 @@ ASK_SCHEMA = {
                 "description": (
                     "续接哪一件事——填上一次 `say`/`ask` 返回值里的 `message_id`。"
                     "填了就归到同一条 thread、同一份授权范围；不填就是新开一件。"
+                ),
+            },
+            "domain": {
+                "type": "string",
+                "description": (
+                    "可选元数据：这一跳属于哪一摊（名册行的 `category` 或 `domains` 里声明的域）。"
+                    "填了就由程序拿名册表核对 `to`——错配会拒绝投递并列出声明了该域的行，程序绝不替你挑人；"
+                    "不填就完全照旧。这不是第三枚嘴，也不是 intent：它不改变 `parts`，也不指定对方该做什么。"
                 ),
             },
         },
@@ -178,9 +196,40 @@ TICKET_REPORT_SCHEMA = {
 # ── 每一跳的授权票（裁定 216：跳无关，不是执行边界专用）──────────────────
 
 
+def _domain_gate(args: dict, entry) -> tuple[str, list[str]]:
+    """裁定 218：发起方**显式**给了 ``domain`` 才查名册行的域声明。
+
+    返回 ``(错误负载, 该域的权威负责人)``；没错配时错误负载是空串。
+    **只校验、不改写** ``to``：错配就把候选列给发起方，让它自己重填——
+    程序绝不替模型挑人。没给 ``domain`` 或名册读不动 ⇒ 完全不介入
+    （旁路，绝不因为一张表读不出来就堵住说话这条路）。
+    """
+    token = str(args.get("domain") or "").strip().casefold()
+    if not token:
+        return "", []
+    try:
+        from plobi.agents.domains import check_recipient
+
+        rows = list(_roster().agents.values())
+        ok, note, owners = check_recipient(entry, token, rows)
+    except Exception:  # noqa: BLE001
+        logger.debug("say/ask: domain roster unavailable", exc_info=True)
+        return "", []
+    if ok:
+        return "", owners
+    return (
+        _result(
+            False, error=note, domain=token,
+            domain_owners=owners, reachable=live_names(),
+        ),
+        owners,
+    )
+
+
 def _router_ticket(
     sender: str, entry, mode: str, text: str, *,
     session_id: str = "", message_id: str = "", reply_to: str = "",
+    domain: str = "", domain_owners: Optional[list[str]] = None,
 ):
     """投递成功后开一张 router 票。**授权层是旁路**：坏了不许挡住说话。"""
     try:
@@ -194,6 +243,8 @@ def _router_ticket(
             session_id=session_id,
             message_id=message_id,
             reply_to=reply_to,
+            domain=domain,
+            domain_owners=domain_owners,
         )
     except Exception:  # noqa: BLE001
         logger.debug("say/ask: router ticket unavailable", exc_info=True)
@@ -474,6 +525,8 @@ def handle_say(args: dict, **kwargs) -> str:
             return _result(False, error=parts_error)
         return _deliver_to_user(text, sender=sender)
     reply_to = str(args.get("reply_to") or "")
+    domain = str(args.get("domain") or "").strip().casefold()
+    domain_owners: list[str] = []
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
@@ -483,6 +536,11 @@ def handle_say(args: dict, **kwargs) -> str:
                 False,
                 error=f"「{entry.name}」就是你自己——别发给自己，这条永远不会有回音。要交给用户就用 `to=用户`。",
             )
+        # 裁定 218：给了 domain 才查名册行的域声明；错配在**投递之前**挡下，
+        # 绝不让一段话先送到不该收的人那一屏。没给则这一行完全不介入。
+        domain_error, domain_owners = _domain_gate(args, entry)
+        if domain_error:
+            return domain_error
         session_id, message_id = _deliver(
             entry, text, sender=sender, reply_to=reply_to
         )
@@ -493,6 +551,7 @@ def handle_say(args: dict, **kwargs) -> str:
     ticket = _router_ticket(
         sender, entry, "say", text,
         session_id=session_id, message_id=message_id, reply_to=reply_to,
+        domain=domain, domain_owners=domain_owners,
     )
     allowed, blocked_note = _round_allowed(ticket)
     if allowed:
@@ -503,6 +562,9 @@ def handle_say(args: dict, **kwargs) -> str:
     else:
         woke, wake_note = False, blocked_note
     fields = _ticket_fields(ticket)
+    if domain:
+        fields["domain"] = domain
+        fields["domain_owners"] = domain_owners
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
@@ -547,6 +609,8 @@ def handle_ask(args: dict, **kwargs) -> str:
             False,
             error="`ask` 只问 Agent——用户回不回不由你等。要交给他就用 `say(to=用户)`。",
         )
+    domain = str(args.get("domain") or "").strip().casefold()
+    domain_owners: list[str] = []
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
@@ -556,6 +620,10 @@ def handle_ask(args: dict, **kwargs) -> str:
                 False,
                 error="问自己不会得到第二个回答——把问题交给用户就用 `say(to=用户)`。",
             )
+        # 裁定 218：与 say 同一道门，在起那一轮／开那张票之前校验，别问错人。
+        domain_error, domain_owners = _domain_gate(args, entry)
+        if domain_error:
+            return domain_error
         db = _session_db()
         session_id = db.latest_conversational_session_for_agent(entry.name) or ""
         if not session_id:
@@ -572,7 +640,8 @@ def handle_ask(args: dict, **kwargs) -> str:
     # say 返回的 message_id 为准（见 SAY_SCHEMA.reply_to）。
     reply_to = str(args.get("reply_to") or "")
     ticket = _router_ticket(
-        sender, entry, "ask", text, session_id=session_id, reply_to=reply_to
+        sender, entry, "ask", text, session_id=session_id, reply_to=reply_to,
+        domain=domain, domain_owners=domain_owners,
     )
     allowed, blocked_note = _round_allowed(ticket, "ask")
     if not allowed:
@@ -611,6 +680,9 @@ def handle_ask(args: dict, **kwargs) -> str:
             _session, delivered_id = _deliver(entry, text, sender=sender)
 
     fields = _ticket_fields(ticket)
+    if domain:
+        fields["domain"] = domain
+        fields["domain_owners"] = domain_owners
     if ticket is not None:
         ok = failure is None
         try:

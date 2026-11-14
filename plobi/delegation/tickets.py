@@ -336,6 +336,8 @@ class TicketLedger:
         session_id: str = "",
         message_id: str = "",
         reply_to: str = "",
+        domain: str = "",
+        domain_owners: Optional[list[str]] = None,
     ) -> Ticket:
         """Router→Router 那一跳的**派发前**预授权票（裁定 216）。
 
@@ -361,6 +363,12 @@ class TicketLedger:
         }
         if prior is not None:
             refs["inherited_from"] = prior.id
+        # 裁定 218：发起方显式声明的域与当时的权威候选一起固化进票。事后能回答
+        # 「这一跳按哪张名册表派的」，而不用回头猜模型当时读了哪句 SOUL。
+        domain_token = str(domain or "").strip().casefold()
+        if domain_token:
+            refs["domain"] = domain_token
+            refs["domain_owners"] = list(domain_owners or [])
         ticket = self.open_ticket(
             parent_agent=str(sender or ""),
             leg="router",
@@ -368,6 +376,7 @@ class TicketLedger:
             scope={
                 "allowed_capabilities": ["say", "ask", "delegate"],
                 "recipient": str(recipient or ""),
+                **({"domain": domain_token} if domain_token else {}),
             },
             triggered_by=f"{mode}:router",
             refs={k: v for k, v in refs.items() if v},

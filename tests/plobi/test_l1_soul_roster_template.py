@@ -129,6 +129,18 @@ def test_template_puts_the_builtin_agenda_secretary_on_the_same_footing_as_other
     assert "地位平等" in L1_SOUL_BLOCK
 
 
+def test_template_routes_by_roster_domains_not_soft_routing():
+    """裁定 218：「谁负责哪一摊」搬进名册行，SOUL 不再手写软路由名单。"""
+    from plobi.agents.registry import L1_SOUL_BLOCK
+
+    assert "域归名册行" in L1_SOUL_BLOCK
+    assert "软路由" not in L1_SOUL_BLOCK, "旧口径会把派给谁交回散文判断"
+    assert "`domain`" in L1_SOUL_BLOCK
+    assert "`category`" in L1_SOUL_BLOCK and "`domains`" in L1_SOUL_BLOCK
+    assert "不会替你改收件人" in L1_SOUL_BLOCK
+    assert "不要写死某个 agent id" in L1_SOUL_BLOCK
+
+
 # ---------------------------------------------------------------------------
 # ④ 落到已经存在的 L1 家：下一次启动换掉围栏以内那一段，围栏外不动
 # ---------------------------------------------------------------------------

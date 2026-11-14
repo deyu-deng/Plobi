@@ -548,6 +548,11 @@ class AgentEntry:
     disabled_skills: tuple[str, ...] = ()
     disabled_toolsets: tuple[str, ...] = ()
     disabled_mcp_servers: tuple[str, ...] = ()
+    # 裁定 218：「派给谁」的真源从 SOUL 散文搬进名册行。``category`` 永远是
+    # 一个域（存量行零迁移），这里再给一行可选的**细标签**：同一 category 里
+    # 几个 Agent 分摊不同事务时写进 projects.yaml。真源与校验见
+    # ``plobi/agents/domains.py``；这一格只存声明，不做关键词匹配、不替模型挑人。
+    domains: tuple[str, ...] = ()
 
     @property
     def profile_name(self) -> str:
@@ -637,6 +642,10 @@ class AgentEntry:
             data["disabled_toolsets"] = list(self.disabled_toolsets)
         if self.disabled_mcp_servers:
             data["disabled_mcp_servers"] = list(self.disabled_mcp_servers)
+        # 裁定 218：域声明和 registered 一样要落进 yaml——人读名册时要能直接
+        # 看见「这一行负责哪摊」，不靠猜、不靠 SOUL 里那段散文。
+        if self.domains:
+            data["domains"] = list(self.domains)
         if self.description:
             data["description"] = self.description
         if self.description_auto:
@@ -719,6 +728,11 @@ class AgentEntry:
             ),
             disabled_mcp_servers=tuple(
                 str(s) for s in (raw.get("disabled_mcp_servers") or ()) if str(s).strip()
+            ),
+            domains=tuple(
+                str(s).strip().casefold()
+                for s in (raw.get("domains") or ())
+                if str(s).strip()
             ),
             description=str(raw.get("description") or ""),
             description_auto=bool(raw.get("description_auto") or False),
