@@ -13,7 +13,6 @@ import os
 from typing import Callable, Optional
 
 from tools.registry import registry, tool_error
-from utils import env_var_enabled
 
 
 def read_terminal_tool(
@@ -50,8 +49,21 @@ def read_terminal_tool(
 
 
 def check_read_terminal_requirements() -> bool:
-    """Desktop GUI only — PLOBI_DESKTOP is set on the gateway the app spawns."""
-    return env_var_enabled("PLOBI_DESKTOP")
+    """**没有 env 闸**——可用性由**会话**决定（上游纪律②）。
+
+    以前这里答的是「这个进程是不是被桌面起的」（``PLOBI_DESKTOP``）⇒ 那是**进程级**的：
+    桌面客户端连**远程后端**时后端进程上没有那个变量 ⇒ 工具**从工具表里静默消失**，
+    而能力其实可用（renderer 的 WS 桥就在那个连接上）。
+
+    现在：**门类 ``desktop_ui`` 就是那道面闸**——GUI 网关按**这一会话的平台**把它折进去
+    （platform=desktop 折、tui 不折），CLI／消息／cron 的复合体压根不带它。
+    check_fn 只答**可达性／可选**，不答表面（它的结果是**进程级 TTL 缓存**的，
+    「这次会话是不是桌面」根本不该住在那里）。
+
+    这个函数现在**没有调用点**（注册时不再传 check_fn）——留着只为让旧引用不至于 ImportError；
+    新的判据在 ``tests/tools/test_desktop_ui_surface.py``。
+    """
+    return True
 
 
 READ_TERMINAL_SCHEMA = {
@@ -82,13 +94,12 @@ READ_TERMINAL_SCHEMA = {
 
 registry.register(
     name="read_terminal",
-    toolset="terminal",
+    toolset="desktop_ui",
     schema=READ_TERMINAL_SCHEMA,
     handler=lambda args, **kw: read_terminal_tool(
         start_line=args.get("start_line"),
         count=args.get("count"),
         callback=kw.get("callback"),
     ),
-    check_fn=check_read_terminal_requirements,
     emoji="🖥️",
 )

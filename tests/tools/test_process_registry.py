@@ -195,15 +195,25 @@ def test_close_terminal_tool_routes_to_registry(monkeypatch):
     assert seen["sid"] == "proc_abc"
 
 
-def test_close_terminal_tool_gated_on_desktop(monkeypatch):
-    """Hidden unless PLOBI_DESKTOP is set (mirrors read_terminal gating)."""
-    from tools.close_terminal_tool import check_close_terminal_requirements
+def test_close_terminal_tool_is_gated_by_the_desktop_ui_toolset(monkeypatch):
+    """闸是**门类**（会话级），不是进程 env（上游纪律②）。
+
+    以前这里答的是「这个进程是不是被桌面起的」（``PLOBI_DESKTOP``）⇒ 进程级的：
+    桌面客户端连**远程后端**时后端进程上没有那个变量 ⇒ 工具从工具表里静默消失，
+    而能力其实可用。
+
+    现在：**门类 `desktop_ui` 就是那道面闸**——GUI 网关按**这一会话的平台**折进去
+    （platform=desktop 折、tui 不折）；check_fn 只答可达性／可选，不答表面。
+    """
+    from tools.registry import discover_builtin_tools, registry
 
     monkeypatch.delenv("PLOBI_DESKTOP", raising=False)
-    assert check_close_terminal_requirements() is False
-
-    monkeypatch.setenv("PLOBI_DESKTOP", "1")
-    assert check_close_terminal_requirements() is True
+    discover_builtin_tools()
+    entry = registry.get_entry("close_terminal")
+    assert entry is not None
+    assert entry.toolset == "desktop_ui"
+    # 没有 env check_fn 了（它的结果是进程级 TTL 缓存的，答不了「这次会话是不是桌面」）。
+    assert entry.check_fn is None
 
 
 def test_reader_loop_streams_incremental_chunks_from_read1(registry, monkeypatch):

@@ -33,10 +33,6 @@ _PLOBI_CORE_TOOLS = [
     "web_search", "web_extract",
     # Terminal + process management
     "terminal", "process",
-    # Read the desktop GUI's embedded terminal pane, and close an agent's
-    # read-only terminal tab (both gated on PLOBI_DESKTOP via check_fn —
-    # hidden outside the GUI).
-    "read_terminal", "close_terminal",
     # File manipulation + read-only view of the human's open desktop tabs
     "read_file", "write_file", "patch", "search_files", "list_open_files",
     # Vision + image generation
@@ -255,6 +251,26 @@ TOOLSETS = {
         "description": "Desktop Projects — create/switch named workspaces (GUI sessions only)",
         "tools": ["project_list", "project_create", "project_switch"],
         "includes": []
+    },
+
+    # 桌面 GUI 那一面（上游 Hermes 的同名门类 ``desktop_ui``）：只在**桌面会话**里折进去。
+    #
+    # 为什么是门类而不是 check_fn（上游 tools/AGENTS.md 的那三条纪律）：
+    # **表面能力是会话的属性，不是进程 env 的属性**。``PLOBI_DESKTOP`` 答的是
+    # 「谁把这个进程起起来的」，不是「谁在这次会话里」——桌面客户端连**远程后端**时，
+    # 后端进程上没有那个变量 ⇒ 靠它当闸 ⇒ 工具**从工具表里静默消失**，而能力其实可用
+    # （renderer 的 WS 桥就在那个连接上）。
+    #
+    # 门类则是**会话级**的：GUI 网关按**这一会话的平台**把它折进去（platform=desktop 折、
+    # tui 不折），CLI／消息／cron 的复合体压根不带它 ⇒ 窄腰。
+    "desktop_ui": {
+        "description": "Desktop GUI affordances — the in-app terminal pane (read / close) (GUI sessions only)",
+        "tools": ["read_terminal", "close_terminal"],
+        "includes": [],
+        # 表面门类（上游 Hermes 同名字段）：**不进 `all` 那一扫**——它只能由
+        # GUI 网关按**这一会话的平台**折进去（上游：surface capability is a
+        # property of the SESSION, never of the process env）。
+        "platforms": frozenset({"desktop"}),
     },
 
     # ── 10-31 工具面按「用户能说出口的一件事」重排（WP-TOOLSET-INBOUND-2）──
@@ -506,7 +522,7 @@ TOOLSETS = {
         "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision, browser",
         "tools": [
             "web_search", "web_extract",
-            "terminal", "process", "read_terminal", "close_terminal",
+            "terminal", "process",
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
@@ -741,6 +757,18 @@ TOOLSETS = {
 }
 
 
+# 表面门类（带 ``platforms`` 的那几格）——**不进 `all` 那一扫**。
+#
+# 上游 Hermes 同款（toolsets.py：``TOOLSET_SESSION_PLATFORMS``）：「表面能力是**会话**
+# 的属性，不是进程 env 的属性」⇒ 那一格只能由 GUI 网关按**这一会话的平台**折进去，
+# 不能被「全都给」顺手捎上（否则 TUI／CLI／cron 会白拿那两把）。
+TOOLSET_SESSION_PLATFORMS: Dict[str, frozenset] = {
+    name: spec["platforms"]
+    for name, spec in TOOLSETS.items()
+    if isinstance(spec, dict) and "platforms" in spec
+}
+
+
 
 def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[str, Any]]:
     """
@@ -871,6 +899,10 @@ def resolve_toolset(name: str, visited: Set[str] = None, *, include_registry: bo
     if name in {"all", "*"}:
         all_tools: Set[str] = set()
         for toolset_name in get_toolset_names():
+            # 表面门类（``platforms=``）**不进这一扫**：它们只能按**会话的平台**折进去
+            # （上游 Hermes 同款口径）——「全都给」不等于「把桌面的那一格也捎上」。
+            if toolset_name in TOOLSET_SESSION_PLATFORMS:
+                continue
             # Use a fresh visited set per branch to avoid cross-branch contamination
             resolved = resolve_toolset(toolset_name, visited.copy(), include_registry=include_registry)
             all_tools.update(resolved)

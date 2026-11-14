@@ -64,12 +64,12 @@ class TestApiServerPlatformConfig:
         assert PLATFORMS["api_server"]["default_toolset"] == "plobi-api-server"
 
     def test_default_api_server_includes_terminal_toolset(self):
-        """Regression #49622: desktop-only read_terminal is registered into the
-        'terminal' toolset (ships in-repo), so resolve_toolset('terminal') grows
-        to include it after discovery. read_terminal is NOT in the
-        plobi-api-server composite, so the old all-tools subset test dropped
-        'terminal' entirely. Its static membership (terminal, process) IS in the
-        composite, so it must stay enabled."""
+        """Regression #49622: a tool registered into a toolset but absent from
+        the platform composite must not drop the whole toolset.
+
+        (11-14 那一刀把桌面那两把搬进了 `desktop_ui` 门类 ⇒ 它们不再注册在
+        `terminal` 里；`terminal` 的静态清单仍是 (terminal, process)，仍在
+        composite 里 ⇒ 结论不变：**terminal 这一格必须留着**。)"""
         from tools.registry import discover_builtin_tools
         from plobi_cli.tools_config import _get_platform_tools
         discover_builtin_tools()
@@ -175,4 +175,13 @@ class TestApiServerAdapterToolset:
             mock_agent_cls.assert_called_once()
             call_kwargs = mock_agent_cls.call_args
             toolsets = call_kwargs.kwargs.get("enabled_toolsets")
-            assert sorted(toolsets) == ["terminal", "web"]
+            # 用户在 config.yaml 里只勾了 web ＋ terminal；**人读面那三格
+            # （note／diary／dossier）与脑那一格（mind）是默认开的门类**
+            # （provider 类别默认开，`_PROVIDER_TOOL_CATEGORIES`）⇒ 它们**也在**清单里。
+            #
+            # （这一条 11-14 之前钉的是 `["terminal", "web"]` 两个字：那时 provider
+            # 类别只影响**工具下发**、门类本身不进清单；WP-PROVIDER-TOOLSET-SPLIT 之后
+            # 三格成了真门类 ⇒ 清单里就有它们了。）
+            assert sorted(toolsets) == [
+                "diary", "dossier", "mind", "note", "terminal", "web",
+            ]

@@ -2704,7 +2704,22 @@ def _load_tool_progress_mode() -> str:
     return mode if mode in {"off", "new", "all", "verbose"} else "all"
 
 
-def _load_enabled_toolsets() -> list[str] | None:
+def _load_enabled_toolsets(platform: str | None = None) -> list[str] | None:
+    """这个**会话**开着哪些门类。
+
+    ``platform`` ＝**这一会话**的平台（桌面客户端自报 source ⇒ "desktop"；
+    嵌入式 TUI ⇒ "tui"）。它只用来决定**表面能力**那一格要不要折进来：
+
+    * ``desktop_ui``（``read_terminal``／``close_terminal``）——**只在桌面会话里折**
+      （上游纪律②：**表面能力是会话的属性，不是进程 env 的属性**）。
+      以前那两把靠 ``PLOBI_DESKTOP`` 这个 **env** 闸挡在外面 ⇒ 桌面客户端连
+      **远程后端**时后端进程上没有那个变量 ⇒ 工具从工具表里**静默消失**，
+      而能力其实可用（renderer 的 WS 桥就在那个连接上）。
+    * ``project``——照旧（GUI 那一族）。
+
+    传进来的 ``platform`` 优先；没传就用**进程兜底**（``_resolve_session_platform``）
+    ⇒ 本地 spawn 的老路径行为照旧。
+    """
     explicit = [
         item.strip()
         for item in os.environ.get("PLOBI_TUI_TOOLSETS", "").split(",")
@@ -2712,6 +2727,26 @@ def _load_enabled_toolsets() -> list[str] | None:
     ]
     cfg = None
     fallback_notice = None
+    session_platform = (platform or _resolve_session_platform() or "").strip()
+    surface_toolsets = {"project"}
+    if session_platform == "desktop":
+        surface_toolsets.add("desktop_ui")
+
+    def _all_with_surface() -> list[str] | None:
+        """「全都给」＋ 表面那一格。
+
+        ``None``（＝不筛 ⇒ 全部门类）这条路上**表面门类不在其中**（它们被
+        ``all`` 那一扫排除）⇒ 桌面会话得显式补上，否则它在「全都给」模式下反而
+        拿不到那两把。
+        """
+        if session_platform != "desktop":
+            return None
+        try:
+            from toolsets import get_toolset_names
+
+            return sorted({*get_toolset_names(), *surface_toolsets})
+        except Exception:
+            return None
 
     # Coding posture (base Plobi): with no explicit pin, collapse to the
     # coding toolset (+ enabled MCP servers) when sitting in a code workspace.
@@ -2723,13 +2758,14 @@ def _load_enabled_toolsets() -> list[str] | None:
         try:
             from agent.coding_context import coding_selection
 
-            selection = coding_selection(platform=_resolve_session_platform())
+            selection = coding_selection(platform=session_platform)
             if selection is not None:
                 # Fold in `project` here too: this is a GUI-only resolver, and
                 # the focus-mode coding posture returns before the fallback path
                 # that normally adds it — without this the desktop loses the
                 # project tools exactly when sitting in a repo (see below).
-                return sorted({*selection, "project"})
+                # (``desktop_ui`` 同理：它只属于**桌面会话**。）
+                return sorted({*selection, *surface_toolsets})
         except Exception:
             pass
 
@@ -2764,7 +2800,7 @@ def _load_enabled_toolsets() -> list[str] | None:
                     file=sys.stderr,
                     flush=True,
                 )
-            return None
+            return _all_with_surface()
 
         if not unresolved:
             return built_in
@@ -2839,14 +2875,14 @@ def _load_enabled_toolsets() -> list[str] | None:
         if fallback_notice is not None:
             print(fallback_notice, file=sys.stderr, flush=True)
         if not enabled:
-            return None
+            return _all_with_surface()
         # The desktop Project tools are off _PLOBI_CORE_TOOLS (every other
         # platform would carry their schema for nothing), so the platform
         # recovery above — which keys off plobi-cli's tool universe — can't
         # surface them. This resolver runs ONLY in the desktop/TUI gateway, so
         # folding in the `project` toolset here is the gate that exposes them on
         # exactly the surface that can follow a project move.
-        return sorted(enabled | {"project"})
+        return sorted(enabled | surface_toolsets)
     except Exception:
         if fallback_notice is not None:
             print(
@@ -2854,7 +2890,7 @@ def _load_enabled_toolsets() -> list[str] | None:
                 file=sys.stderr,
                 flush=True,
             )
-        return None
+        return _all_with_surface()
 
 
 def _session_tool_progress_mode(sid: str) -> str:
@@ -4752,7 +4788,11 @@ def _make_agent(
             if service_tier_override is not None
             else _load_service_tier()
         ),
-        enabled_toolsets=_load_enabled_toolsets(),
+        enabled_toolsets=_load_enabled_toolsets(
+            # 这一会话的平台（客户端自报的 source；env 只作兜底）⇒ 表面那一格
+            # （``desktop_ui``）按**会话**折进去，不是按进程 env 猜。
+            _resolve_agent_platform(platform_override)
+        ),
         # OpenRouter provider-routing prefs (config.yaml `provider_routing`).
         # Mirrors the messaging gateway + CLI so the desktop/TUI honors the same
         # routing instead of letting OpenRouter pick providers at random.
