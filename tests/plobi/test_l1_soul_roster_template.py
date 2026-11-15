@@ -119,14 +119,21 @@ def test_template_stops_routing_everything_to_the_agenda_secretary():
     assert "`ask`" in L1_SOUL_BLOCK
 
 
-def test_template_puts_the_builtin_agenda_secretary_on_the_same_footing_as_other_l2():
-    """裁定 69 的口径写进模板：agenda 只是系统自带的测试用 L2，不得特殊化。"""
+def test_template_presets_no_builtin_agenda_secretary():
+    """裁定 221：软件不预设任何首席。日程归 L1 自己（裁定 145②）。
+
+    这条测试原来叫 `..._builtin_agenda_secretary_on_the_same_footing`，断言模板里得有
+    「日程秘书 / 测试用 L2 / 不得特殊化」——那是当时的设计（裁定 69）。用户 11-15 13:0x
+    当面否掉：那个 Agent 是因为他反复拿"日程"举例、上一波 Agent 照着例子造出来的，
+    属于目标置换；软件不该替用户预设任何首席。所以判据反过来：模板里**不许**再把
+    agenda 说成系统自带身份。
+    """
     from plobi.agents.registry import L1_SOUL_BLOCK
 
-    assert "日程秘书" in L1_SOUL_BLOCK
-    assert "测试用 L2" in L1_SOUL_BLOCK
-    assert "不得特殊化" in L1_SOUL_BLOCK
-    assert "地位平等" in L1_SOUL_BLOCK
+    assert "名册里没有「日程秘书」这个预设身份" in L1_SOUL_BLOCK
+    assert "软件不预设任何首席" in L1_SOUL_BLOCK
+    assert "测试用 L2" not in L1_SOUL_BLOCK, "旧口径会让人以为装好就自带一个日程助理"
+    assert "归你自己" in L1_SOUL_BLOCK
 
 
 def test_template_routes_by_roster_domains_not_soft_routing():
