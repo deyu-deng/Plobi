@@ -9,7 +9,7 @@
     version: 1
     agents:
       simulation:
-        role: l2_project
+        role: principal
         profile: simulation         # 对应 plobi profile（省略 = 用 agent 名）
         category: projects          # 左栏五类之一
         provider: deepseek          # 可选覆盖默认路由；省略 = 用 DEFAULT_ROUTES
@@ -18,7 +18,7 @@
         skills: [morning-report, message-digest]
         description: 项目分身
 
-``role`` 只有两种值：``l1_secretary``（指挥）与 ``l2_project``（首席）。五类
+``role`` 只有两种值：``conductor``（指挥）与 ``principal``（首席）。五类
 ``category`` 一律挂首席，差异全在 ``category``，不在 ``role``。
 
 ``spawn`` 做三件事：接好共享层那一份（:meth:`AgentRegistry._ensure_shared_layer`，**不再建分身家**，见 WP-REGISTRY-NO-HOME）、
@@ -39,10 +39,10 @@ logger = logging.getLogger(__name__)
 
 REGISTRY_VERSION = 1
 
-# 指挥（L1）在 DEFAULT_ROUTES 里的角色名（spawn 时禁止把首席当 L1）。
-# 名字读作「指挥」，**值仍是 `l1_secretary`**：那是名册 25 行里存的数据，改它要迁移＋兼容期
-# （裁定 220 第 6 条）。别顺手把值也改了。
-CONDUCTOR_ROLE = "l1_secretary"
+# 指挥在名册里的 role（spawn 时禁止把首席当指挥）。
+# 值 **就是 `conductor`**：`WP-L2-OBJECTS-CLEANUP`（11-15）已把 25 行名册从
+# `l1_secretary` / `l2_project` 迁完并过了兼容期；别再改回旧值（裁定 220 第 6 条的前半段已作废）。
+CONDUCTOR_ROLE = "conductor"
 
 
 class RegistryError(ValueError):
@@ -176,6 +176,34 @@ def _slug_from_table(table: "dict[str, str]", name: str) -> str:
     for key, slug in table.items():
         if key.lower() == low:
             return slug
+    return ""
+
+
+def explain_runtime_slug(name: str) -> str:
+    """``derive_runtime_slug`` 回空串时，说清是**哪一条**规则拦下的；派生得出回空串。
+
+    与 ``derive_runtime_slug`` 走同一套规则、同序判断——写在两处的唯一理由是
+    「用户看见的那句话要能指向改哪一格」：非 ASCII 未登记要去 ``runtime_slugs.yaml``
+    加一行，撞保留名要换名字，形状不合法要改写法。三种修法完全不同，只回一句
+    「派生不出」等于什么都没说（裁 146②(b)）。
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return "name is empty"
+    slug = _slug_from_table(runtime_slug_table(), raw)
+    if not slug:
+        if not raw.isascii():
+            return (
+                "the name is not ASCII and has no slug registered in "
+                "$PLOBI_HOME/plobi/runtime_slugs.yaml"
+            )
+        slug = raw.lower()
+    if slug.casefold() == "default" and raw.casefold() != _L1_ROSTER_NAME:
+        return "the name derives the reserved slug 'default' (that one belongs to L1 only)"
+    if not _RUNTIME_SLUG_RE.match(slug):
+        return f"the name derives '{slug}', which is not a valid slug shape"
+    if slug in _RUNTIME_SLUG_RESERVED:
+        return f"the name derives the reserved slug '{slug}' — pick another name"
     return ""
 
 
@@ -481,7 +509,7 @@ class AgentEntry:
     """注册表里一个常驻 L2 agent 的描述。"""
 
     name: str
-    role: str = "l2_project"
+    role: str = "principal"
     # 2026-11-05（profile 连根拔 · 后端批）：这里原来是一格可填写的 ``profile`` 名
     # （``profile: str = ""  # 空 = 用 name``）。现在**没有这一格**——运行时 slug
     # 由 :func:`derive_runtime_slug` 按 ``name`` 机械派生（见 :attr:`profile_name`）。
@@ -505,7 +533,7 @@ class AgentEntry:
     # ``name`` 永远是小写 slug（id）；``display_name`` 空时回退 id。description
     # 不再承担显示名职责——它继续存长标语 / 一句话意图。
     display_name: str = ""
-    # C5 项目节奏：{"weekly_hours": N}。仅对 role=l2_project 有意义；
+    # C5 项目节奏：{"weekly_hours": N}。仅对 role=principal 有意义；
     # None = 未配置（规划员不为其排推进块）。
     pace: Optional[dict] = None
     # R-012: sidebar taxonomy group. ``butler`` default for backward compat.
@@ -580,7 +608,7 @@ class AgentEntry:
         # lazy imports below), and even a lazy import breaks under the test
         # harness, where ``plobi_cli`` does not resolve to the real module.
         # tests/plobi_cli/test_agent_identity.py pins the two rules together.
-        # 数据角色（``l2_course``）不是分身：它**没有运行时可连**，所以对外也不该有一个
+        # 派生不出 slug 的行不是分身：它**没有运行时可连**，所以对外也不该有一个
         # 看起来能连的 profile 名。以前这里一律回退到条目名，于是名册里那五门课各自
         # 冒充一格 profile ⇒ 桌面为它们起 `plobi -p <课名>`：ASCII 名退 1
         # （`Profile 'X' does not exist`）、非 ASCII 名被 CLI 的 `-p` 预扫丢掉退 2
@@ -591,20 +619,22 @@ class AgentEntry:
         #
         # ⚠️ **这段注释的前半句已被后续裁定推翻，别照它给课程行判死刑**（2026-10-20
         # 实录：有人读了这几行就以为「课程是数据、不可点」，把 courses 品类的行批量
-        # 打回 l2_course，结果与三条裁定相反）：
+        # 打回当年那个第三值（11-15 已删），结果与三条裁定相反）：
         #   * 裁定 143②：课程要有可路由的 L2 身份，课程 Agent 与项目分身**同列同点**；
         #   * 裁定 145①(b)：课程作业/考试的派发以那个身份为前提；
         #   * 裁定 146②(b)：要么给身份让它可点，要么那一栏不显示，**不许列在那儿点不动**；
         #   * 用户原话（10-15）：「课程Agent还是不能点击」「左边的五种Agent要完全平等」。
-        # 名册里的课程行走的就是这条路：``role: l2_project`` + ``category: courses``
+        # 名册里的课程行走的就是这条路：``role: principal`` + ``category: courses``
         # + 显式 ASCII ``profile: l2-course-*``，家裸建（12 KB）。所以
-        # ``l2_course`` 只描述「**还没有**身份的课程条目」这一种形状，不是课程行的
+        # 当年那个第三值只描述「**还没有**身份的课程条目」这一种形状，从来不是课程行的
         # 正统。课程行的点击资格按 :func:`agent_navigability` 判（那条只否决点了必然
-        # 失败的形状：没身份 / 保留名 / 家没落地）。
-        from plobi.routing.models import L2_COURSE
-
-        if self.role == L2_COURSE:
-            return ""
+        # 失败的形状：派生不出 slug / 保留名）。
+        #
+        # 2026-11-15：「没有身份」不再是一种角色（第三值已删），所以这里也没有
+        # 按角色早退那一条了——下面 ``derive_runtime_slug`` 对非 ASCII 未登记名、
+        # 形状不合法的名、撞保留名的名一律返回空串，「派生不出可路由身份」这一个
+        # 事实同时说清了上面那段事故、也替掉了原来的第三值。
+        #
         # 2026-11-05：**派生物，不是数据**。以前这里是 ``self.profile or self.name``
         # ——名册上多一个可填写的一格，就有了「name 与 profile 名不一致」这条分叉；
         # 现在只读 ``name``，并在 ``runtime_slugs.yaml`` 里为历史那 14 行钉住旧值，
@@ -721,7 +751,7 @@ class AgentEntry:
             primary = paths[0]
         return cls(
             name=name,
-            role=str(raw.get("role") or "l2_project"),
+            role=str(raw.get("role") or "principal"),
             # 老形状的 ``profile:`` 键在这里被**静默忽略**（2026-11-05 降级为派生）。
             provider=str(raw.get("provider") or ""),
             model=str(raw.get("model") or ""),
@@ -1070,8 +1100,8 @@ class AgentRegistry:
         """那张**角色 → 模型**的共享表本身；**不把名册行的覆盖折进来**（裁定 172）。
 
         这里以前会把每一行的 ``provider``/``model`` 直接盖到 ``routes[entry.role]`` 上，
-        而现核未归档 24 行里 ``l2_project`` 占 23 行 ⇒ 给 Aura 单选一个模型就是改写
-        ``l2_project`` 这一整类（后写的还赢），ADR-0013 完成定义第 1 条
+        而现核未归档 24 行里 ``principal`` 占 23 行 ⇒ 给 Aura 单选一个模型就是改写
+        ``principal`` 这一整类（后写的还赢），ADR-0013 完成定义第 1 条
         「给某个 Agent 单独选，只有它变」因此结构上不成立。这一格现在只管「这一类默认用什么」，
         **某一个 Agent 的生效值问 :meth:`route_for`**——惰性 import 的方向问题不变。
         """
@@ -1167,7 +1197,7 @@ class AgentRegistry:
         # （裁定 180）。剩下的只有共享层那一份要接好。
         self._ensure_shared_layer(entry)
         # C 刀：新行的工具集真源写进名册（diet_entry_toolsets 幂等）。
-        # B 刀摘掉的旧调用是 apply_l2_project_diet(家)——家不再被建，那一式已死。
+        # B 刀摘掉的旧调用是 apply_principal_diet(家)——家不再被建，那一式已死。
         try:
             diet_entry_toolsets(entry)
         except Exception as exc:  # 不减也不许挡住 spawn
@@ -1194,7 +1224,7 @@ class AgentRegistry:
 
         # 3) 模型与工作目录**不再往分身家落任何一节**（裁 166 / ADR-0013 ``config.yaml`` 那一行）。
         #    以前这一步是两次写盘：``_write_profile_config`` 写 ``model:``、
-        #    ``apply_l2_project_cwd`` 写 ``terminal.cwd:``。两样东西的真源本来就是名册那一行
+        #    ``apply_principal_cwd`` 写 ``terminal.cwd:``。两样东西的真源本来就是名册那一行
         #    （``provider``/``model`` 与 ``project_path``），现在由
         #    :func:`profile_config_overlay` 在 :func:`plobi_cli.config.load_config` 里读时叠，
         #    顺序＝「名册行覆盖 → 顶层 → 出厂默认」。落盘那两扇门在这里关掉。
@@ -1294,12 +1324,9 @@ def profile_name_blocker(entry: AgentEntry) -> str:
     """
     from plobi_cli.agent_identity import validate_profile_name
 
-    from plobi.routing.models import L2_COURSE
-
-    if entry.role == L2_COURSE:
-        # 数据条目**本来就没有家**——这不是缺陷，不该报"建不出自己的家"。
-        # （它的"问不到"由 :func:`agent_askability` 按角色那句说，不靠这里。）
-        return ""
+    # 2026-11-15：这里原来有一格按第三值早退（「数据条目本来就没有家，
+    # 不该报建不出自己的家」）。第三值删掉之后，那种形状由下面这条派生判据自己说清：
+    # 派生不出 slug 的行，报的正是「派生不出可用的运行时名字」——那本来就是它该看到的话。
 
     # 2026-11-06（profile 连根拔）：`entry.profile_name` 这一格已从 AgentEntry 删掉，
     # 身份名只有一个来源——名册 name 派生出的 slug。这里照旧只判那一个派生值。
@@ -1332,15 +1359,16 @@ def profile_name_blocker(entry: AgentEntry) -> str:
 #: default profile 是提问的那一个。判据看的是**角色**不是名字——``agenda`` 不是
 #: 因为叫 ``agenda`` 被排除，任何非项目角色都同样走不到这条路上（裁定 69：
 #: 日程秘书与其他 L2 地位平等，两边都不给它开后门、也不给它挂特殊牌子）。
-ASKABLE_ROLE = "l2_project"
+ASKABLE_ROLE = "principal"
 
 
 def has_agent_identity(entry: AgentEntry) -> bool:
     """裁定 192：**身份就是名册这一行本身**——判据是这一行有没有角色路由，不再是盘上有没有一个家。
 
-    `l2_course` 是数据记录，故意不进 ``DEFAULT_ROUTES``（`plobi/routing/models.py:31-38`：没有路由
-    就 ``resolve()`` 抛），所以它天然不在这把尺里；`l1_secretary`/`l2_project`
-    都有路由，就是能对话的对象。``registered`` 那一格章也要盖上——Mind 投影进来的
+    ``CONDUCTOR`` / ``PRINCIPAL`` 两个角色都有路由，就是能对话的对象；没有路由的行
+    （operator 手编出来的怪角色）不在这一把尺里。2026-11-15 之后这张表只有这两格，
+    所以「没有身份」不再靠一个角色名去表示，而是「派生不出可路由的 slug」那一条。
+    ``registered`` 那一格章也要盖上——Mind 投影进来的
     占位行（``registered=False``）不是手下，否则「一个能问的人都没有」那种关门判据会失效。
 
     这一格取代原来那三条"探目录"的判据：`profiles/<name>` 在裁 178 乙案里本来就要消失，
@@ -1367,11 +1395,10 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
         return False, "这一条已经归档，问不到它。"
     if entry.role != ASKABLE_ROLE:
         return False, (
-            f"这一条的角色是 ``{entry.role}``，不是项目智能体，不归那枚嘴问"
-            "（日程秘书有它自己的沟通路：say / ask）。"
+            f"这一条的角色是 ``{entry.role}``，不是首席（``{ASKABLE_ROLE}``），不归那枚嘴问。"
         )
     if not has_agent_identity(entry):
-        return False, f"这一条的角色是 ``{entry.role}``，是数据记录、没有路由，问不到。"
+        return False, f"这一条的角色是 ``{entry.role}``，名册上还没盖章、没有路由，问不到。"
     blocker = profile_name_blocker(entry)
     if blocker:
         return False, blocker
@@ -1387,15 +1414,14 @@ def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
     """桌面左栏这一行能不能点进聊天页；点不了就给一句原因。
 
     和 :func:`agent_askability` 是**两件事**，别混：askability 判的是 Agent 之间
-    那枚嘴（裁定 183 之后是 ``ask``，内壳 ``agent_ask``）问不问得到——日程秘书
-    走它自己的沟通路，所以 agenda 行 askable=False 却完全点得动；
+    那枚嘴（裁定 183 之后是 ``ask``，内壳 ``agent_ask``）问不问得到；
     navigability 判的是「点了之后桌面能不能真的拉起一个后端来对话」——
     也就是 spawn 不会失败。这正是裁定 146②(b) 那句「不许列在那儿点不动」的
     可执行形状。三条否决，全是结构性事实：
 
-    1. 这一行**没有角色路由**（:func:`has_agent_identity`，裁 192）——课程数据条目
-       （``l2_course`` 故意不进 ``DEFAULT_ROUTES``）没有运行时可连，点进去只会是一张空壳。
-       有身份的课程行（``l2_project`` + ``category: courses``，裁定 143②）有路由，照样可点；
+    1. 这一行**没有角色路由**（:func:`has_agent_identity`，裁 192）——没有路由的行
+       没有运行时可连，点进去只会是一张空壳。有身份的课程行
+       （``role: principal`` + ``category: courses``，裁定 143②）有路由，照样可点；
     2. ``profile_name_blocker`` 非空——保留名（名册里那条 ``Plobi`` 行的
        ``l2-plobi``，小写化撞上安装本身）这类永远建不出家的形状，点了就是一次
        必然失败的 spawn。
@@ -1407,7 +1433,7 @@ def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
     if entry.archived:
         return False, "这一条已经归档。"
     if not has_agent_identity(entry):
-        return False, "这一条没有自己的运行时（课程是数据记录，不是可对话的智能体）——点进去也只会是一张空壳。"
+        return False, "这一条还没有自己的运行时（名册名派生不出可路由的身份）——点进去也只会是一张空壳。"
     blocker = profile_name_blocker(entry)
     if blocker:
         return False, blocker
@@ -1638,7 +1664,7 @@ def agent_id_for_scope(scope: str | None, *, entries=None) -> Optional[str]:
 
     * ``None`` —— **不圈行**：作用域是 ``all``（跨 Agent 的全局面），或名册里认不出这写法。
     * ``''``   —— **L1 那一格**。裁定 180 把秘书的归属键定成空串；名册里 L1 那一行
-      （``role=l1_secretary``，这台它的 slug 恰好叫 ``default``）**不是**另一个键，
+      （``role=conductor``，这台它的 slug 恰好叫 ``default``）**不是**另一个键，
       它是同一格的另一种写法。**没带作用域也是这一格**——与 SINGLE-GATEWAY §3.4
       「空 = 进程默认身份（L1 总秘书）」同形，桌面刻意不维护第二种"没说"的状态。
     * 其余     —— 名册那一行的 ``name``（L2 的行级键）。
@@ -1714,10 +1740,10 @@ def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[Agen
 def project_cwd_for_profile(profile_name: str) -> Optional[str]:
     """这个家的 ``terminal.cwd``＝名册那一行的主文件夹；**目录不存在就不给**。
 
-    以前这一样是 ``apply_l2_project_cwd`` 往分身家 ``config.yaml`` 写一节实现的，
+    以前这一样是 ``apply_principal_cwd`` 往分身家 ``config.yaml`` 写一节实现的，
     于是每建一个项目分身就多一份复印件。真源本来就是名册那一行的 ``project_path``
     （R-013 的文件夹绑定），读时算即可，不需要那份文件。
-    宁可不给 cwd，也不把一个假路径塞进会话的工作目录——那是 ``apply_l2_project_cwd``
+    宁可不给 cwd，也不把一个假路径塞进会话的工作目录——那是 ``apply_principal_cwd``
     当年就写死的判据（「NEVER fabricate a cwd」）。
     """
     entry = entry_for_profile(profile_name)
@@ -1743,7 +1769,7 @@ def profile_config_overlay(profile_name: str) -> dict:
     被 :func:`plobi_cli.config.agent_config_overlay` 调用（那条链是
     「名册行覆盖 → 顶层 → 出厂默认」，ADR-0013 ``config.yaml`` 那一行的目标形状）。
     两项覆盖以前各有一份落盘实现（``_write_profile_config`` 写 ``model:``、
-    ``apply_l2_project_cwd`` 写 ``terminal.cwd:``），两扇落盘的门在本刀一起关掉，
+    ``apply_principal_cwd`` 写 ``terminal.cwd:``），两扇落盘的门在本刀一起关掉，
     判据与 :func:`apply_secret_overrides` 同一句：**就地叠，不落盘成第二份**。
 
     模型那一项的两道闸原样从 ``_write_profile_config`` 搬过来，一条不放宽：
@@ -1754,7 +1780,7 @@ def profile_config_overlay(profile_name: str) -> dict:
 
     ⚠️ 裁定 172 那句「覆盖必须按 **Agent 身份**解析，不许折进共享 role 路由」在这里是硬约束，
     所以这一格拿 :meth:`AgentRegistry.route_for`——那一行自己的 ``provider``/``model`` 盖在
-    它那一类的路由之上，**绝不写回** ``routes[role]``（现核未归档 24 行里 ``l2_project`` 占 23 行，
+    它那一类的路由之上，**绝不写回** ``routes[role]``（现核未归档 24 行里 ``principal`` 占 23 行，
     折进类表就等于给 Aura 单选一次、22 个一起变）。
     """
     found = _registry_and_entry_for_profile(profile_name)
@@ -2042,10 +2068,10 @@ def _resolve_project_path(name: str, front: dict[str, str]) -> str:
 # :func:`agent_askability` 那四条结构性事实——两处都不读 ``description``。
 #
 # 这句桩话**唯一**的用途是渲染：分身那段身份里「这个项目在做的事」不能印机器写的
-# 备注（实测会把 ``l2_project for Mind project Aura`` 当用途念出来）。所以「生成桩」
+# 备注（实测会把 ``principal for Mind project Aura`` 当用途念出来）。所以「生成桩」
 # 和「识别桩」共用下面这一份常量——识别只在 :func:`build_l2_identity_soul_block` 里
 # 用，别拿它当任何判据。
-L2_PLACEHOLDER_DESCRIPTION_PREFIX = "l2_project for Mind project "
+L2_PLACEHOLDER_DESCRIPTION_PREFIX = "principal for Mind project "
 
 
 def _is_placeholder_project_description(description: str) -> bool:
@@ -2096,7 +2122,7 @@ def ensure_mind_project_agents(
     the system-self project (``Mind``), any directory without a dossier profile
     (``dossier.json``; the legacy ``plan.md`` still counts during migration), and
     any profile whose ``registry.state`` matches the skip markers. The remaining
-    projects become ``l2_project`` entries with ``category=projects`` (or ``research``
+    projects become ``principal`` entries with ``category=projects`` (or ``research``
     only when the profile's ``registry.group`` says so). Returns ``(registry, seeded)``
     where ``seeded`` lists the *new* agent names registered on this call.
 
@@ -2162,20 +2188,20 @@ def ensure_mind_project_agents(
                 patched = _replace(patched, description=description)
             if patched.category == "butler" and category != "butler":
                 patched = _replace(patched, category=category)
-            if patched.role != "l2_project":
-                patched = _replace(patched, role="l2_project")
+            if patched.role != "principal":
+                patched = _replace(patched, role="principal")
             if patched is not existing:
                 reg.upsert(patched)
             # WP-L2-DIET / 裁定 33.3: 已有未归档的项目 L2 也要减肥——不能只
             # 靠新 spawn 把清单清掉，旧 profile 留着 terminal 一样会偷开
             # shell。profile 不存在时静默跳过（注册表先行、profile 稍后
             # 落地的过渡期）。
-            _diet_existing_l2_project(patched)
+            _diet_existing_principal(patched)
             continue
 
         entry_obj = AgentEntry(
             name=safe_id,
-            role="l2_project",
+            role="principal",
             provider="",
             model="",
             mind_subtree=f"{relative}/{entry.name}",
@@ -2207,7 +2233,7 @@ def ensure_mind_project_agents(
         # session_search / plobi-* 从该 profile config.yaml 剥掉。**B 刀起不再调用**：
         # 家不再被创建，它会去读一个不存在的目录。工具集策略的真源本来就在名册行 /
         # 共享层（不是家里那份出厂 config），收编它属于 C 刀——函数本体仍在
-        # `apply_l2_project_diet`，测试也仍钉着它。
+        # `apply_principal_diet`，测试也仍钉着它。
     if seeded:
         try:
             reg.save()
@@ -2484,7 +2510,7 @@ def mid_narrow_toolset_names(names: list[str] | None, keep=()) -> list[str]:
     """Rewrite a toolset name list for L1 mid-narrow (reversible).
 
     ``keep`` is the same explicit user opt-in escape hatch as
-    :func:`_filter_l2_project_toolsets` (both passes share the discriminator in
+    :func:`_filter_principal_toolsets` (both passes share the discriminator in
     :func:`_explicit_toolset_optins`): drop-set names in it survive the narrow,
     but only ``L1_DROP_TOOLSETS`` ones — a ``plobi-*`` composite is never an
     opt-in, because ``_save_platform_tools`` refuses to write platform default
@@ -2519,7 +2545,7 @@ def apply_l1_mid_toolsets(config: dict) -> bool:
 
     Runs at every plugin load via :func:`ensure_north_star_toolset`, so it is
     the pass that actually reverted the 主秘书 / 日程 toggles. It now honours
-    explicit user opt-ins exactly like :func:`apply_l2_project_diet` does —
+    explicit user opt-ins exactly like :func:`apply_principal_diet` does —
     same discriminator (:func:`_explicit_toolset_optins`, reused as-is), so
     ``terminal`` switched on in ``plobi tools`` / the desktop Toolsets panel
     after a narrowing survives the next start instead of being silently
@@ -2584,13 +2610,13 @@ PRINCIPAL_DROP_TOOLSETS = frozenset(
 )
 
 
-def _filter_l2_project_toolsets(names, keep=()) -> list[str]:
+def _filter_principal_toolsets(names, keep=()) -> list[str]:
     """Drop the diet list + every ``plobi-*`` composite from a name list.
 
     Preserves any other name (file / web / skills / todo / clarify / …) in
     the original order so config diffs stay minimal. Returns a new list.
 
-    ``keep`` names an *explicit user opt-in* (see :func:`apply_l2_project_diet`):
+    ``keep`` names an *explicit user opt-in* (see :func:`apply_principal_diet`):
     drop-set names in it survive, but only the diet-set ones — a ``plobi-*``
     composite is never an opt-in, because the product's toggle refuses to write
     platform default toolsets and 裁定 33.3 calls composites out separately.
@@ -2607,7 +2633,7 @@ def _filter_l2_project_toolsets(names, keep=()) -> list[str]:
 def _explicit_toolset_optins(platform_names, baseline_names) -> set:
     """Names the user opted into through the product's own toggle.
 
-    Shared discriminator for BOTH narrowing passes — :func:`apply_l2_project_diet`
+    Shared discriminator for BOTH narrowing passes — :func:`apply_principal_diet`
     and :func:`apply_l1_mid_toolsets` — so there is only one rule about who
     wrote what. Their own output, and every policy pass that seeds a profile's
     ``config.yaml``, writes the top-level ``toolsets`` together with the platform
@@ -2628,7 +2654,7 @@ def _explicit_toolset_optins(platform_names, baseline_names) -> set:
     return set(platform_names) - set(baseline_names)
 
 
-def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
+def apply_principal_diet(profile_dir: Path | str | None) -> bool:
     """**清理工具**（2026-10-24 C 刀起，不再是真源）：strip terminal /
     computer_use / code_execution / session_search + every ``plobi-*``
     composite from a project L2 profile's ``config.yaml``。
@@ -2679,7 +2705,7 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
     # name it is about to remove for an opt-in and leave it in place.
     baseline = [str(n) for n in top] if isinstance(top, list) else []
     if isinstance(top, list):
-        new_top = _filter_l2_project_toolsets(top)
+        new_top = _filter_principal_toolsets(top)
         if new_top != top:
             cfg["toolsets"] = new_top
             changed = True
@@ -2689,7 +2715,7 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
         for platform in ("cli", "gateway"):
             listed = platforms.get(platform)
             if isinstance(listed, list):
-                new_listed = _filter_l2_project_toolsets(
+                new_listed = _filter_principal_toolsets(
                     listed,
                     keep=_explicit_toolset_optins([str(n) for n in listed], baseline),
                 )
@@ -2791,9 +2817,9 @@ def apply_shared_skills_root() -> bool:
 
 
 def diet_entry_toolsets(entry: "AgentEntry") -> bool:
-    """WP-L2-DIET 的**真源**：把 l2_project 的工具集减肥写进名册那一行。
+    """WP-L2-DIET 的**真源**：把 principal 的工具集减肥写进名册那一行。
 
-    2026-10-24 C 刀。旧形状是 :func:`apply_l2_project_diet` 剥分身家
+    2026-10-24 C 刀。旧形状是 :func:`apply_principal_diet` 剥分身家
     ``config.yaml``——B 刀（WP-REGISTRY-NO-HOME）之后家不再被建出来，那条路
     两条触发路径全 no-op；而且它剥的从来是 ``create_profile`` 给的**出厂默认**，
     跟一个默认值较劲。真源按裁定 42 §42.2 / 裁 166 落在名册行：这一行的
@@ -2804,7 +2830,7 @@ def diet_entry_toolsets(entry: "AgentEntry") -> bool:
     写什么：``PRINCIPAL_DROP_TOOLSETS`` 那四个（terminal / computer_use /
     code_execution / session_search——"留 terminal 是把 L2 重新变回工人"）。
     **不写** ``plobi-*`` 复合：它不是用户勾来的，是平台复合，禁它连带禁掉
-    里面every healthy leaf；复合的处置归 ``_filter_l2_project_toolsets``
+    里面every healthy leaf；复合的处置归 ``_filter_principal_toolsets``
     （生成 / 清理侧）。
 
     契约：
@@ -2813,9 +2839,9 @@ def diet_entry_toolsets(entry: "AgentEntry") -> bool:
     - 可逆——用户在桌面 / ``plobi tools`` 把某一项开回来 = 改名册行
       （``web_server.py`` 的 ``disabled_toolsets`` 开关），这里不会在读时
       重新剥掉（读时过滤会破坏 diet 的可逆契约，所以不做读时过滤）；
-    - 非 l2_project / 已归档 / 类别不在 projects·research ⇒ 不写。
+    - 非 principal / 已归档 / 类别不在 projects·research ⇒ 不写。
     """
-    if entry.role != "l2_project" or entry.archived:
+    if entry.role != "principal" or entry.archived:
         return False
     if entry.category not in ("projects", "research"):
         return False
@@ -2828,21 +2854,21 @@ def diet_entry_toolsets(entry: "AgentEntry") -> bool:
     # AgentEntry 是 frozen dataclass。object.__setattr__ 是 dataclasses 自己的
     # 逃生口（pickle / copy 重建同款），运行中就地改一格用它是这个类的既定做法；
     # 换成 replace() 会返回新对象，而三个调用方（spawn / ensure_mind_project_agents
-    # / _diet_existing_l2_project）都是"改进去后 reg.save()"的形状，接不住。
+    # / _diet_existing_principal）都是"改进去后 reg.save()"的形状，接不住。
     object.__setattr__(entry, "disabled_toolsets", merged)
     return True
 
 
-def _diet_existing_l2_project(entry: "AgentEntry") -> None:
-    """WP-L2-DIET / 裁定 33.3: 对注册表里已存在的未归档 ``l2_project`` 行
+def _diet_existing_principal(entry: "AgentEntry") -> None:
+    """WP-L2-DIET / 裁定 33.3: 对注册表里已存在的未归档 ``principal`` 行
     也走减肥。
 
     2026-10-24 C 刀：落点从「剥家里的 config.yaml」换成
     :func:`diet_entry_toolsets`（写名册行）。家不在盘上也照写——真源本来就是
     名册行，盘上那份只是历史复印件。旧的家清理仍由
-    :func:`apply_l2_project_diet` 承担（定位已降级为清理工具）。
+    :func:`apply_principal_diet` 承担（定位已降级为清理工具）。
     """
-    if entry.role != "l2_project":
+    if entry.role != "principal":
         return
     if entry.archived:
         return
@@ -2935,12 +2961,13 @@ def build_l2_identity_soul_block(
     """Render one 分身's **assignment** from fields the registry already has.
 
     Only ``AgentEntry`` columns (name / display_name / description /
-    project_path / mind_subtree) — no new schema, no config keys. Two rulings
+    project_path / mind_subtree) — no new schema, no config keys. Three things
     shape the text:
 
-    * 裁定 45 — 内部字段值不进提示词。``id`` / ``role`` / ``l2_project`` 这类词
-      模型会原样念给用户听（实测已经发作过），用户听不懂也不该听见；
-      L1 / L2 是他自己的说法，留着。
+    * 裁定 45 — 内部字段值不进提示词。``id`` / ``role`` / ``principal`` 这类词
+      模型会原样念给用户听（实测已经发作过），用户听不懂也不该听见。
+    * 裁定 220／223 — ``L1 / L2 / L3`` 是**内部代号**：只留在档案、WP 名与
+      代码标识符里；进模型的自称一律用四个角色名（指挥／首席／名手／客席）。
     * 这一段是**分工**，不是整个人。围栏之外那份人设才是这个人说话的样子，
       生成器一个字都不碰它；``persona_written`` 只决定最后一条怎么说。
     """
@@ -2953,6 +2980,7 @@ def build_l2_identity_soul_block(
         "## 你负责的这一摊（WP-L2-IDENTITY，硬规则，不可绕过）",
         "",
         f"- 你是 **{who}**。用户这么叫你，你就这么自称；这个名字之外没有别的身份等着你认领。",
+        "- 你的**角色**叫**首席**：管这一摊、能再请**名手**或**客席**；统筹全局那位叫**指挥**。这四个是角色名，不是等级，也不是要你改掉上面那个名字；对用户说话只用这四个词，不说 `L1 / L2 / L3` 这类内部代号（裁定 220／223）。",
     ]
     if entry.project_path:
         # 裁定 42.1：注册表里那 12 条 ``project_path`` 还是报废 Windows 机的路径。
@@ -2973,7 +3001,7 @@ def build_l2_identity_soul_block(
         )
     # 用途那一格只印**人写过的话**：``registered`` 那一格判「这行算不算他登记的手下」，
     # :func:`_is_placeholder_project_description` 判「这句话是不是播种机自己写的备注」——
-    # 那句备注印在这里，分身就会把 ``l2_project for Mind project …`` 当自己的用途念出来
+    # 那句备注印在这里，分身就会把 ``principal for Mind project …`` 当自己的用途念出来
     # （裁定 45：内部字段值不进提示词）。识别桩只在这一处用，不参与任何判据。
     if (
         entry.registered
@@ -3025,7 +3053,7 @@ def build_l2_identity_soul_block(
         "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",
         "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，不要拿别的项目的进度顶。",
         "- **职责不是从共享记忆里挑一个来当**。账本里写着别人的分工——比如指挥那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位，不是你的。上面没写你的职责，就照项目归属说话；说不准就问用户一句，不要自己认领一个头衔。",
-        "- 你**不是**本机 Plobi 指挥（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。跨项目的派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）——**本项目内部的统筹是你自己的**；不要转述调度器的角色，不要替别的项目作答，也不要自称指挥。",
+        "- 你**不是**本机 Plobi 指挥，**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。跨项目的派工、日程入口、跨项目统筹归**指挥**（裁定 44：一嘴一个 Agent）——**本项目内部的统筹是你自己的**；不要转述调度器的角色，不要替别的项目作答，也不要自称指挥。",
     ]
     if persona_written:
         lines.append(

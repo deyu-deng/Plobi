@@ -243,7 +243,10 @@ def test_the_dispatch_section_feeds_no_hierarchy_back_to_the_model():
 
     assert "分身" not in s
     assert "同级" in s and "只有**类型**不同" in s
-    assert "L2 Agent" in s
+    # 裁定 220／223：`L2 Agent` 是内部代号，屏上与进模型的文字都不再用；
+    # 「首席」是角色名不是等级，所以这一条「不喂等级观念」的判据仍然成立。
+    assert "首席" in s
+    assert "L2 Agent" not in s
 
 
 def test_dispatch_is_the_default_action_and_the_temp_worker_has_a_ceiling():
