@@ -202,6 +202,9 @@ TICKETS_SCHEMA = {
         "不给 `ticket_id`：列你自己发起的那些，最新在前；每张带最近一次结构化回执"
         "（六态之一 + 一句话 + 谁报的）。\n"
         "给了 `ticket_id`：只看那一张，连它最近的回执一起给。\n"
+        "指挥另可给 `thread_id`：读自己发起的那条 thread 上所有下游回执（别人用会被拒）。\n"
+        "回包里的 `next_escalation` 是「这一刻该向用户开口」的那一件，由六态与信任账算出，"
+        "不是让你自己猜；只念它的 `one_line`，一次一件，没有就别开口。\n"
         "看得见的范围只有两种——你发起的、派给你的；别人那一摊看不到。\n"
         "要问对方话用 `ask`；要继续说用 `say`；要报自己的进展用 `ticket_report`。"
         "这一枚只管读。"
@@ -210,6 +213,10 @@ TICKETS_SCHEMA = {
         "type": "object",
         "properties": {
             "ticket_id": {"type": "string", "description": "只看这一张票（可选）。"},
+            "thread_id": {
+                "type": "string",
+                "description": "只对指挥开放：读自己发起的那条 thread 上所有下游票（可选，与 ticket_id 二选一）。",
+            },
             "status": {
                 "type": "string",
                 "enum": ["observed", "active", "done", "failed", "revoked"],
@@ -821,6 +828,24 @@ def _iso_ts(value: Any) -> str:
     return datetime.fromtimestamp(ts).replace(microsecond=0).isoformat()
 
 
+def _is_conductor(name: str) -> bool:
+    """汇总读的唯一身份闸（裁定 225）：名册里那一行 ``role=conductor``。
+
+    读不出名册一律当「不是」——宁可拒绝一次汇总，也不要把「能看整条 thread」
+    这权限凭一个空身份放出去。测试可替换本函数，不必动真名册。
+    """
+    if not name:
+        return False
+    try:
+        from plobi.agents.registry import CONDUCTOR_ROLE, load_registry
+
+        entry = load_registry().get(name)
+        return bool(entry and getattr(entry, "role", "") == CONDUCTOR_ROLE)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("conductor identity lookup failed: %s", exc)
+        return False
+
+
 def _may_read_ticket(ticket, me: str) -> bool:
     """看得见的只有两种：我发起的、派给我的（裁定 222）。
 
@@ -865,9 +890,55 @@ def _ticket_view(ticket, ledger, *, with_reports: int = 0) -> dict:
     return view
 
 
+def _ticket_limit(args: dict) -> int:
+    try:
+        value = int(args.get("limit") or 20)
+    except (TypeError, ValueError):
+        value = 20
+    return max(1, min(50, value))
+
+
+def _escalation_payload(views: list[dict]) -> dict:
+    """「这一刻该不该开口」只在读口算一次，别在别处抄第二份（裁定 225）。
+
+    判据层读不出来时**往多喊倒**：只靠回包里已有的六态字段粗判，绝不因为
+    一个 import 失败就静默地不报。这仍然是纯计算，不发提示词、不改票。
+    """
+    try:
+        from plobi.delegation.report_gate import due_escalations
+
+        found = due_escalations(views)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("report gate unavailable, failing loud: %s", exc)
+        found = []
+        for view in views:
+            state = str((view.get("last_report") or {}).get("state") or "").lower()
+            if not state or state == "progress":
+                continue
+            goal = " ".join(str(view.get("goal") or "那件事").split())[:28]
+            found.append({
+                "ticket_id": str(view.get("ticket_id") or ""),
+                "state": state,
+                "category": "",
+                "one_line": f"「{goal}」有情况，判据读不出来，先按要人处理。要我继续，还是你来定？",
+            })
+    return {
+        "escalations": found,
+        # 一次只问一个具体问题（REPORTING_RULES 第 2 条）：清单全给，但这一轮
+        # 只念第一件；剩下的留到下一轮，不许攒成一串追问。
+        "next_escalation": found[0] if found else None,
+    }
+
+
 def handle_tickets(args: dict, **kwargs) -> str:
     """读口（裁定 222）：只 SELECT。**不调 _transition / report_state / open_ticket**，
-    也**不调 _deliver / wake**——它既不改票，也不向任何人发提示词。"""
+    也**不调 _deliver / wake**——它既不改票，也不向任何人发提示词。
+
+    裁定 225 在回包里补 ``escalations``／``next_escalation``：判据由
+    ``plobi.delegation.report_gate`` 算，仍是只读回包字段，不是第三枚嘴。
+    ``thread_id`` 是**另一条独立受控路径**：只对指挥开放、且根票必须是他发起的；
+    ``_may_read_ticket`` 那两种可见性一个字没放宽。
+    """
     args = args if isinstance(args, dict) else {}
     try:
         from plobi.delegation.tickets import TicketLedger, VALID_STATUSES
@@ -878,6 +949,9 @@ def handle_tickets(args: dict, **kwargs) -> str:
 
     me = current_agent_name(kwargs.get("session_id") or "")
     ticket_id = str(args.get("ticket_id") or "").strip()
+    thread_id = str(args.get("thread_id") or "").strip()
+    if ticket_id and thread_id:
+        return _result(False, error="`ticket_id` 与 `thread_id` 二选一，别同时给。")
     if ticket_id:
         ticket = ledger.get(ticket_id)
         if ticket is None:
@@ -885,29 +959,41 @@ def handle_tickets(args: dict, **kwargs) -> str:
         if not _may_read_ticket(ticket, me):
             # 不回任何内容：连 goal 都不该漏给不相干的人。
             return _result(False, error=f"票 {ticket_id} 既不是你发起的、也不是派给你的，看不到。")
+        view = _ticket_view(ticket, ledger, with_reports=10)
         return _result(
-            True, mode="tickets", caller=me,
-            ticket=_ticket_view(ticket, ledger, with_reports=10),
+            True, mode="tickets", caller=me, ticket=view,
+            **_escalation_payload([view]),
+        )
+
+    if thread_id:
+        if not _is_conductor(me):
+            return _result(False, error="只有指挥能按 thread 汇总读；这里不回任何内容。")
+        cap = _ticket_limit(args)
+        rows = ledger.list_by_thread(thread_id, limit=cap * 3)
+        # 根票归属是第二道闸：指挥也只能看自己发起的那条 thread。
+        if not rows or str(rows[0].parent_agent or "") != me:
+            return _result(False, error="这条 thread 不是你发起的，看不到。")
+        views = [_ticket_view(t, ledger) for t in rows[:cap]]
+        return _result(
+            True, mode="tickets", caller=me, thread_id=thread_id,
+            count=len(views), tickets=views, **_escalation_payload(views),
         )
 
     status = str(args.get("status") or "").strip().lower()
     if status and status not in VALID_STATUSES:
         return _result(False, error=f"不认识的状态 {status!r}。", states=sorted(VALID_STATUSES))
     leg = str(args.get("leg") or "").strip().lower()
-    try:
-        limit = int(args.get("limit") or 20)
-    except (TypeError, ValueError):
-        limit = 20
-    limit = max(1, min(50, limit))
+    limit = _ticket_limit(args)
 
     rows = [
         t for t in ledger.list_tickets(status=status, leg=leg, limit=limit * 3)
         if _may_read_ticket(t, me)
     ][:limit]
+    views = [_ticket_view(t, ledger) for t in rows]
     return _result(
         True, mode="tickets", caller=me, count=len(rows),
-        tickets=[_ticket_view(t, ledger) for t in rows],
-        hint="" if rows else "你名下还没有派出去过的活。",
+        tickets=views, hint="" if rows else "你名下还没有派出去过的活。",
+        **_escalation_payload(views),
     )
 
 

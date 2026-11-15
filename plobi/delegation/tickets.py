@@ -443,6 +443,33 @@ class TicketLedger:
             ).fetchall()
         return [_row_to_ticket(row) for row in rows]
 
+    def list_by_thread(self, thread_id: str, *, limit: int = 100) -> list[Ticket]:
+        """同一条 thread 上的所有票，**按创建时间正序**（第一张就是根票）。
+
+        裁定 225 给指挥的受控汇总读用。这里只做检索：身份与根票归属由调用方
+        另验（``channel._is_conductor`` 与 ``rows[0].parent_agent``），本方法
+        不放宽 ``_may_read_ticket`` 那两种可见性。
+        """
+        tid = str(thread_id or "").strip()
+        if not tid:
+            return []
+        cap = max(1, int(limit))
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM tickets WHERE json_extract(refs_json, '$.thread_id') = ? "
+                    "ORDER BY created_at ASC, rowid ASC LIMIT ?",
+                    (tid, cap),
+                ).fetchall()
+            return [_row_to_ticket(row) for row in rows]
+        except sqlite3.Error:
+            logger.debug("ticket json_extract unavailable, falling back", exc_info=True)
+        # list_tickets 是「最新在前」；汇总读要正序，根票才稳稳落在第一行。
+        return [
+            t for t in reversed(self.list_tickets(limit=500))
+            if str(t.refs.get("thread_id") or "") == tid
+        ][:cap]
+
     def find_by_ref(self, key: str, value: str) -> Optional[Ticket]:
         """按 ``refs`` 里的关联键找回最近那张票（Thread 续接用）。
 
