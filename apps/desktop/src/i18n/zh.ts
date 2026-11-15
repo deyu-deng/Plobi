@@ -2275,7 +2275,7 @@ export const zh: Translations = {
     agentsLoadFailed: '无法加载智能体',
     agentsEmptyTitle: '暂无智能体',
     agentsEmptyDesc: '需要的时候再加。',
-    // 11-01：中段那枚来回切换的两个名词。外包那一页里，主管自己派出去的和你在别家
+    // 11-01：中段那枚来回切换的两个名词。外包那一页里，首席自己派出去的和你在别家
     // AI 软件里的会话是同一件事（都是"外包给谁"），所以只有一个词。
     tabAgents: '智能体',
     tabOutsourced: '外包',
@@ -2307,9 +2307,9 @@ export const zh: Translations = {
     expertsTitle: '专家',
     expertsRunning: '正在干',
     expertsEmpty: '还没有派过专家',
-    expertsIdleHint: '这一类专家还没被派过活。主管派工时指定这个角色，它干完的日志就会出现在这里。',
+    expertsIdleHint: '这一类专家还没被派过活。指挥派工时指定这个角色，它干完的日志就会出现在这里。',
     expertModelHint: '派它时用的模型',
-    expertModelFollow: '跟随主管',
+    expertModelFollow: '跟随首席',
     expertsLoading: '正在读专家…',
     expertsLoadFailed: '专家名单读不出来：后端没答这一格。',
     expertsLog: '工作日志',
@@ -2431,7 +2431,7 @@ export const zh: Translations = {
       viewNotes: '笔记',
       loading: '读脑中…',
       brainUnreachable: '脑读不到',
-      emptyTitle: '这个主管还没有挂笔记',
+      emptyTitle: '这个首席还没有挂笔记',
       emptyHowToTitle: '给笔记打标签',
       emptyHowToBody: (agent) => `在笔记的 frontmatter 里写 belongs: [${agent}]，它就会出现在这里。`,
       scanned: (n) => `脑里已扫 ${n} 篇`,
@@ -2498,7 +2498,7 @@ export const zh: Translations = {
     },
     deliveryLabels: {
       local: '此桌面',
-      user: '我（总管对话）',
+      user: '我（与指挥对话）',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',
@@ -2655,7 +2655,7 @@ export const zh: Translations = {
       skills: '技能与工具',
       messaging: '消息平台',
       artifacts: '产物',
-      console: '总管控制台'
+      console: '指挥台'
     },
     searchAria: '搜索会话',
     searchPlaceholder: '搜索会话…',

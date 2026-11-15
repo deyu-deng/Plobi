@@ -1995,9 +1995,9 @@ export const zhHant = defineLocale({
     expertsTitle: '專家',
     expertsRunning: '正在做',
     expertsEmpty: '還沒有派過專家',
-    expertsIdleHint: '這一類專家還沒被派過活。主管派工時指定這個角色，它幹完的日誌就會出現在這裡。',
+    expertsIdleHint: '這一類專家還沒被派過活。指揮派工時指定這個角色，它幹完的日誌就會出現在這裡。',
     expertModelHint: '派它時用的模型',
-    expertModelFollow: '跟隨主管',
+    expertModelFollow: '跟隨首席',
     expertsLoading: '正在讀專家…',
     expertsLoadFailed: '專家名單讀不出來：後端沒答這一格。',
     expertsLog: '工作日誌',
@@ -2114,7 +2114,7 @@ export const zhHant = defineLocale({
       viewNotes: '筆記',
       loading: '讀腦中…',
       brainUnreachable: '讀不到腦',
-      emptyTitle: '這個主管還沒有掛筆記',
+      emptyTitle: '這個首席還沒有掛筆記',
       emptyHowToTitle: '給筆記打標籤',
       emptyHowToBody: (agent) => `在筆記的 frontmatter 裡寫 belongs: [${agent}]，它就會出現在這裡。`,
       scanned: (n) => `腦裡已掃 ${n} 篇`,
@@ -2181,7 +2181,7 @@ export const zhHant = defineLocale({
     },
     deliveryLabels: {
       local: '此桌面',
-      user: '我（總管對話）',
+      user: '我（與指揮對話）',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',
@@ -2336,7 +2336,7 @@ export const zhHant = defineLocale({
       skills: '技能與工具',
       messaging: '訊息平台',
       artifacts: '成品',
-      console: '總管控制台'
+      console: '指揮台'
     },
     searchAria: '搜尋工作階段',
     searchPlaceholder: '搜尋工作階段…',

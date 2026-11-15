@@ -2151,7 +2151,7 @@ export const en: Translations = {
     agentsLoadFailed: 'Could not load agents',
     agentsEmptyTitle: 'No agents yet',
     agentsEmptyDesc: 'Add one when you need it.',
-    // 11-01: the two nouns of the middle switch. Inside "Outsourced", what the Foreman handed
+    // 11-01: the two nouns of the middle switch. Inside "Outsourced", what the Principal handed
     // to another app and your own conversations in that app are one thing — one word.
     tabAgents: 'Agents',
     tabOutsourced: 'Outsourced',
@@ -2183,9 +2183,9 @@ export const en: Translations = {
     expertsTitle: 'Experts',
     expertsRunning: 'running',
     expertsEmpty: 'No experts dispatched yet',
-    expertsIdleHint: 'This expert has not been dispatched yet. When the Foreman hands out work with this role, its log shows up here.',
+    expertsIdleHint: 'This expert has not been dispatched yet. When the Conductor hands out work with this role, its log shows up here.',
     expertModelHint: 'Model used when dispatching it',
-    expertModelFollow: 'Follow the Foreman',
+    expertModelFollow: 'Follow the Principal',
     expertsLoading: 'Reading experts…',
     expertsLoadFailed: 'Cannot read experts: the backend did not answer.',
     expertsLog: 'Work log',
@@ -2368,7 +2368,7 @@ export const en: Translations = {
     },
     deliveryLabels: {
       local: 'This desktop',
-      user: 'Me (Steward chat)',
+      user: 'Me (Conductor chat)',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',
@@ -2526,7 +2526,7 @@ export const en: Translations = {
       skills: 'Capabilities',
       messaging: 'Messaging',
       artifacts: 'Artifacts',
-      console: 'Steward Console'
+      console: 'Conductor Console'
     },
     searchAria: 'Search sessions',
     searchPlaceholder: 'Search sessions…',

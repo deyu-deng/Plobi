@@ -2056,9 +2056,9 @@ export const ja = defineLocale({
     expertsTitle: '専門家',
     expertsRunning: '実行中',
     expertsEmpty: 'まだ専門家を派遣していません',
-    expertsIdleHint: 'この専門家はまだ派遣されていません。フォアマンがこの役割で仕事を割り当てると、そのログがここに表示されます。',
+    expertsIdleHint: 'この専門家はまだ派遣されていません。指揮者がこの役割で仕事を割り当てると、そのログがここに表示されます。',
     expertModelHint: '派遣時に使うモデル',
-    expertModelFollow: 'フォアマンに従う',
+    expertModelFollow: '首席に従う',
     expertsLoading: '専門家を読み込み中…',
     expertsLoadFailed: '専門家を読めません：バックエンドが応答しません。',
     expertsLog: '作業ログ',
@@ -2242,7 +2242,7 @@ export const ja = defineLocale({
     },
     deliveryLabels: {
       local: 'このデスクトップ',
-      user: '自分（スチュワードチャット）',
+      user: '自分（指揮者チャット）',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',
@@ -2399,7 +2399,7 @@ export const ja = defineLocale({
       skills: 'スキルとツール',
       messaging: 'メッセージング',
       artifacts: 'アーティファクト',
-      console: 'スチュワードコンソール'
+      console: '指揮者コンソール'
     },
     searchAria: 'セッションを検索',
     searchPlaceholder: 'セッションを検索…',
