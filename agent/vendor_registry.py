@@ -1601,12 +1601,14 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         extra_args_env="PLOBI_OFFLOAD_DEVIN_EXTRA_ARGS",
         offloadable=False,
         install=InstallSpec(
-            command="",
+            command="irm https://static.devin.ai/cli/setup.ps1 | iex",
             package="",
             homepage="https://docs.devin.ai/cli",
             binary="devin",
             verified=True,
-            note="ACP 官方注册表收录（id「devin」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「devin」）；官方分发是二进制压缩包；"
+                 "安装命令照官方 Windows 文档写的（PowerShell 专用），本机实测用的是下载安装器那条路 "
+                 "⇒ 这条命令没在本机跑过；这一家还没接派活腿",
         ),
     ),
 
