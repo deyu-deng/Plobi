@@ -42,7 +42,7 @@ class TestModuleSurface:
         for required in (
             "web_search",
             "web_extract",
-            "browser_navigate",
+            "browser_exec",
             "vision_analyze",
             "image_generate",
             "skill_view",

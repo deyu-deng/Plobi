@@ -133,6 +133,62 @@ describe('buildToolView browser_navigate title', () => {
   })
 })
 
+describe('buildToolView browser_exec title', () => {
+  afterEach(() => {
+    setRuntimeI18nLocale('en')
+  })
+
+  // WP-BROWSER-EXEC: the browser family collapsed into one `browser_exec` tool —
+  // without a title entry the card would fall back to the English "Exec".
+  it('says 正在执行浏览器脚本 while the script is still running', () => {
+    setRuntimeI18nLocale('zh')
+
+    const view = buildToolView(
+      part({ args: { code: 'await page.goto("https://example.com")' }, result: undefined, toolName: 'browser_exec' }),
+      ''
+    )
+
+    expect(view.status).toBe('running')
+    expect(view.title).toBe('正在执行浏览器脚本')
+    expect(view.titleAction).toEqual({ prefix: '', text: '正在执行', suffix: '浏览器脚本' })
+  })
+
+  it('says 已执行浏览器脚本 once the script finished', () => {
+    setRuntimeI18nLocale('zh')
+
+    const view = buildToolView(
+      part({
+        args: { code: 'await page.goto("https://example.com")' },
+        result: { success: true },
+        toolName: 'browser_exec'
+      }),
+      ''
+    )
+
+    expect(view.status).toBe('success')
+    expect(view.title).toBe('已执行浏览器脚本')
+  })
+
+  it('uses the English copy outside zh', () => {
+    const pending = buildToolView(
+      part({ args: { code: 'await page.goto("https://example.com")' }, result: undefined, toolName: 'browser_exec' }),
+      ''
+    )
+
+    const done = buildToolView(
+      part({
+        args: { code: 'await page.goto("https://example.com")' },
+        result: { success: true },
+        toolName: 'browser_exec'
+      }),
+      ''
+    )
+
+    expect(pending.title).toBe('Running browser script')
+    expect(done.title).toBe('Ran browser script')
+  })
+})
+
 describe('buildToolView file edit diffs', () => {
   const patchDiff = '--- a/src/demo.ts\n+++ b/src/demo.ts\n@@ -1 +1 @@\n-old\n+new'
 

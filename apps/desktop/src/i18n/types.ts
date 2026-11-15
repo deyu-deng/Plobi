@@ -9,6 +9,7 @@ export type Locale = 'en' | 'zh' | 'zh-hant' | 'ja'
 
 export type ToolTitleKey =
   | 'browser_click'
+  | 'browser_exec'
   | 'browser_fill'
   | 'browser_navigate'
   | 'browser_snapshot'

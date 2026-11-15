@@ -1560,7 +1560,7 @@ DEFAULT_CONFIG = {
         "engine": "auto",
         "auto_local_for_private_urls": True,  # When a cloud provider is set, auto-spawn local Chromium for LAN/localhost URLs instead of sending them to the cloud
         "cdp_url": "",  # Optional persistent CDP endpoint for attaching to an existing Chromium/Chrome
-        "allow_unsafe_evaluate": False,  # Allow browser_console(expression=...) to use sensitive JS primitives (cookies/storage/clipboard/network/form values)
+        "allow_unsafe_evaluate": False,  # Allow raw JS in the browser tool (旧族是 browser_console(expression=...)；16b 起是 browser_exec 里的 js()/cdp()) to use sensitive JS primitives (cookies/storage/clipboard/network/form values)
         # CDP supervisor — dialog + frame detection via a persistent WebSocket.
         # Active only when a CDP-capable backend is attached (Browserbase or
         # local Chrome via /browser connect). See
@@ -4170,7 +4170,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Browserbase API key for cloud browser (optional — local browser works without this)",
         "prompt": "Browserbase API key",
         "url": "https://browserbase.com/",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["browser_exec"],
         "password": True,
         "category": "tool",
     },
@@ -4178,7 +4178,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Browserbase project ID (optional — only needed for cloud browser)",
         "prompt": "Browserbase project ID",
         "url": "https://browserbase.com/",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["browser_exec"],
         "password": False,
         "category": "tool",
     },
@@ -4186,14 +4186,14 @@ OPTIONAL_ENV_VARS = {
         "description": "Browser Use API key for cloud browser (optional — local browser works without this)",
         "prompt": "Browser Use API key",
         "url": "https://browser-use.com/",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["browser_exec"],
         "password": True,
         "category": "tool",
     },
     "FIRECRAWL_BROWSER_TTL": {
         "description": "Firecrawl browser session TTL in seconds (optional, default 300)",
         "prompt": "Browser session TTL (seconds)",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["browser_exec"],
         "password": False,
         "category": "tool",
     },
@@ -4201,7 +4201,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Browser engine for local mode: auto (default Chrome), lightpanda (faster, no screenshots), chrome",
         "prompt": "Browser engine (auto/lightpanda/chrome)",
         "url": "https://github.com/vercel-labs/agent-browser",
-        "tools": ["browser_navigate", "browser_snapshot", "browser_click", "browser_vision"],
+        "tools": ["browser_exec"],
         "password": False,
         "category": "tool",
         "advanced": True,
@@ -4210,7 +4210,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Camofox browser server URL for local anti-detection browsing (e.g. http://localhost:9377)",
         "prompt": "Camofox server URL",
         "url": "https://github.com/jo-inc/camofox-browser",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["browser_exec"],
         "password": False,
         "category": "tool",
     },
@@ -4218,7 +4218,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Optional bearer token sent as Authorization header to a remote/authenticated Camofox server",
         "prompt": "Camofox API key",
         "url": "https://github.com/jo-inc/camofox-browser",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["browser_exec"],
         "password": True,
         "category": "tool",
         "advanced": True,

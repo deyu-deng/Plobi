@@ -33,11 +33,19 @@ class TestPlobiApiServerToolset:
             assert tool in tools, f"Missing expected tool: {tool}"
 
     def test_toolset_includes_browser_tools(self):
+        """浏览器那一族 16b 起收成一把 `browser_exec`（＋裸 CDP 那把 `browser_cdp`）。"""
+        tools = resolve_toolset("plobi-api-server")
+        for tool in ["browser_exec", "browser_cdp"]:
+            assert tool in tools, f"Missing browser tool: {tool}"
+
+    def test_toolset_drops_the_old_click_family(self):
+        """旧那十几把点击类**不再进任何门类**（WP-BROWSER-EXEC 16b 换面）。"""
         tools = resolve_toolset("plobi-api-server")
         for tool in ["browser_navigate", "browser_snapshot", "browser_click",
-                      "browser_type", "browser_scroll", "browser_back",
-                      "browser_press"]:
-            assert tool in tools, f"Missing browser tool: {tool}"
+                     "browser_type", "browser_scroll", "browser_back",
+                     "browser_press", "browser_get_images", "browser_vision",
+                     "browser_console", "browser_dialog"]:
+            assert tool not in tools, f"Retired browser tool is still in the toolset: {tool}"
 
     def test_toolset_includes_homeassistant_tools(self):
         tools = resolve_toolset("plobi-api-server")

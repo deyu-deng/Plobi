@@ -231,12 +231,7 @@ _LEGACY_TOOLSET_MAP = {
     "vision_tools": ["vision_analyze"],
     "image_tools": ["image_generate"],
     "skills_tools": ["skills_list", "skill_view", "skill_manage"],
-    "browser_tools": [
-        "browser_navigate", "browser_snapshot", "browser_click",
-        "browser_type", "browser_scroll", "browser_back",
-        "browser_press", "browser_get_images",
-        "browser_vision", "browser_console"
-    ],
+    "browser_tools": ["browser_exec"],
     "cronjob_tools": ["cronjob"],
     "file_tools": ["read_file", "write_file", "patch", "search_files"],
     "tts_tools": ["text_to_speech"],
@@ -491,26 +486,6 @@ def _compute_tool_definitions(
                     if td.get("function", {}).get("name") == discord_tool_name:
                         filtered_tools[i] = {"type": "function", "function": dynamic}
                         break
-
-    # Strip web tool cross-references from browser_navigate description when
-    # web_search / web_extract are not available.  The static schema says
-    # "prefer web_search or web_extract" which causes the model to hallucinate
-    # those tools when they're missing.
-    if "browser_navigate" in available_tool_names:
-        web_tools_available = {"web_search", "web_extract"} & available_tool_names
-        if not web_tools_available:
-            for i, td in enumerate(filtered_tools):
-                if td.get("function", {}).get("name") == "browser_navigate":
-                    desc = td["function"].get("description", "")
-                    desc = desc.replace(
-                        " For simple information retrieval, prefer web_search or web_extract (faster, cheaper).",
-                        "",
-                    )
-                    filtered_tools[i] = {
-                        "type": "function",
-                        "function": {**td["function"], "description": desc},
-                    }
-                    break
 
     # Cross-family hints for the human side (WP-TOOL-SCHEMA-XGATE).
     #
@@ -1065,7 +1040,7 @@ def handle_function_call(
         function_name: Name of the function to call.
         function_args: Arguments for the function.
         task_id: Unique identifier for terminal/browser session isolation.
-        user_task: The user's original task (for browser_snapshot context).
+        user_task: The user's original task (for the browser tool's context).
         enabled_tools: Tool names enabled for this session.  When provided,
                        execute_code uses this list to determine which sandbox
                        tools to generate.  Falls back to the process-global

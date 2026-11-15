@@ -24,9 +24,6 @@ IDEMPOTENT_TOOL_NAMES = frozenset(
         "web_search",
         "web_extract",
         "session_search",
-        "browser_snapshot",
-        "browser_console",
-        "browser_get_images",
         "mcp_filesystem_read_file",
         "mcp_filesystem_read_text_file",
         "mcp_filesystem_read_multiple_files",
@@ -51,11 +48,10 @@ MUTATING_TOOL_NAMES = frozenset(
         # （`agenda_read` 反过来不进这张名单——它什么也不改）。
         "agenda_write",
         "skill_manage",
-        "browser_click",
-        "browser_type",
-        "browser_press",
-        "browser_scroll",
-        "browser_navigate",
+        # 浏览器那一族 16b 起收成一把 `browser_exec`（写 Python 驱动真浏览器）：
+        # 它什么都能改（点、输入、导航），循环守卫必须认得出它在改东西。
+        # （旧那十几把点击类已停止注册——WP-BROWSER-EXEC 16b。）
+        "browser_exec",
         "send_message",
         "cronjob",
         "delegate_task",

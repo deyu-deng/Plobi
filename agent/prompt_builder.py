@@ -1830,15 +1830,10 @@ def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -
     relevant_tool_names = {
         "web_search",
         "web_extract",
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_click",
-        "browser_type",
-        "browser_scroll",
-        "browser_console",
-        "browser_press",
-        "browser_get_images",
-        "browser_vision",
+        # 浏览器那一族 16b 起只剩一把 `browser_exec`（写 Python 驱动真浏览器）
+        # ＋ 裸 CDP 那把 `browser_cdp`；旧那十几把点击类已停止注册。
+        "browser_exec",
+        "browser_cdp",
         "image_generate",
         "text_to_speech",
         "terminal",

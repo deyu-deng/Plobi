@@ -500,10 +500,13 @@ class TestBuildToolLabel:
         assert label.startswith("Reading ")
         assert "example.com/page" in label
 
-    def test_browser_navigate_browses_url(self):
+    def test_browser_exec_drives_the_browser(self):
+        """浏览器那一族 16b 起收成一把 `browser_exec`（WP-BROWSER-EXEC）。"""
         from agent.display import build_tool_label
-        label = build_tool_label("browser_navigate", {"url": "https://news.site"})
-        assert label == "Browsing https://news.site"
+        label = build_tool_label("browser_exec", {"code": "goto_url('https://news.site')"})
+        assert label is not None
+        assert label.startswith("Driving the browser")
+        assert "goto_url" in label
 
     def test_read_file_uses_basename(self):
         from agent.display import build_tool_label

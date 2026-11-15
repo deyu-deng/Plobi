@@ -351,6 +351,11 @@ def _read_file_line_label(args: dict) -> str:
 def redact_browser_typed_text_for_display(value: Any, typed_text: Any) -> Any:
     """Apply secret redaction to browser_type text in display-facing payloads.
 
+    ⚠ **这一把是旧族的**（`browser_type` 16b 起不再注册——浏览器那一族收成了
+    `browser_exec`，见 WP-BROWSER-EXEC）。函数**留着**：旧族的实现还在仓里，
+    别的调用方也可能引用它。**新族没有等价的参数级脱敏**——`browser_exec` 收的是
+    一整段自由 Python，做不了「某个参数里的秘密」这一层。
+
     Backends sometimes echo the attempted input in error strings or fallback
     metadata.  When the raw typed value contains a recognizable secret (API
     key, token, JWT, etc.) the redacted form differs from the raw value, so we
@@ -483,8 +488,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
     primary_args = {
         "terminal": "command", "web_search": "query", "web_extract": "urls",
         "read_file": "path", "write_file": "path", "patch": "path",
-        "search_files": "pattern", "browser_navigate": "url",
-        "browser_click": "ref", "browser_type": "text",
+        "search_files": "pattern",
         "image_generate": "prompt", "text_to_speech": "text",
         "vision_analyze": "question",
         "skill_view": "name", "skills_list": "category",
@@ -630,9 +634,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
 _TOOL_VERBS: dict[str, str] = {
     "web_search": "Searching the web",
     "web_extract": "Reading",
-    "browser_navigate": "Browsing",
-    "browser_click": "Clicking",
-    "browser_type": "Typing",
+    "browser_exec": "Driving the browser",
     "read_file": "Reading",
     "write_file": "Writing",
     "patch": "Editing",
@@ -1400,29 +1402,14 @@ def _get_cute_tool_message(
         target = args.get("target", "content")
         verb = "find" if target == "files" else "grep"
         return _wrap(f"┊ 🔎 {verb:9} {pattern}  {dur}")
-    if tool_name == "browser_navigate":
-        url = args.get("url", "")
-        domain = url.replace("https://", "").replace("http://", "").split("/")[0]
-        return _wrap(f"┊ 🌐 navigate  {_trunc(domain, 35)}  {dur}")
-    if tool_name == "browser_snapshot":
-        mode = "full" if args.get("full") else "compact"
-        return _wrap(f"┊ 📸 snapshot  {mode}  {dur}")
-    if tool_name == "browser_click":
-        return _wrap(f"┊ 👆 click     {args.get('ref', '?')}  {dur}")
-    if tool_name == "browser_type":
-        return _wrap(f"┊ ⌨️  type      \"{_trunc(args.get('text', ''), 30)}\"  {dur}")
-    if tool_name == "browser_scroll":
-        d = args.get("direction", "down")
-        arrow = {"down": "↓", "up": "↑", "right": "→", "left": "←"}.get(d, "↓")
-        return _wrap(f"┊ {arrow}  scroll    {d}  {dur}")
-    if tool_name == "browser_back":
-        return _wrap(f"┊ ◀️  back      {dur}")
-    if tool_name == "browser_press":
-        return _wrap(f"┊ ⌨️  press     {args.get('key', '?')}  {dur}")
-    if tool_name == "browser_get_images":
-        return _wrap(f"┊ 🖼️  images    extracting  {dur}")
-    if tool_name == "browser_vision":
-        return _wrap(f"┊ 👁️  vision    analyzing page  {dur}")
+    if tool_name == "browser_exec":
+        # 浏览器那一族 16b 起收成一把（WP-BROWSER-EXEC）：参数是 `code`／`session`，
+        # 没有 url／ref／key 那一套 ⇒ 这一行报的是「跑的那段脚本」与会话名。
+        raw = str(args.get("code", "") or "").strip()
+        first_line = raw.splitlines()[0] if raw else ""
+        session = str(args.get("session", "") or "")
+        detail = _trunc(first_line, 35) or (f"session={session}" if session else "")
+        return _wrap(f"┊ 🌐 exec      {detail}  {dur}")
     if tool_name == "todo":
         todos_arg = args.get("todos")
         merge = args.get("merge", False)

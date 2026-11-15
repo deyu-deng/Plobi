@@ -37,15 +37,9 @@ TOOL_KIND_MAP: Dict[str, ToolKind] = {
     "web_search": "fetch",
     "web_extract": "fetch",
     # Browser
-    "browser_navigate": "fetch",
-    "browser_click": "execute",
-    "browser_type": "execute",
-    "browser_snapshot": "read",
-    "browser_vision": "read",
-    "browser_scroll": "execute",
-    "browser_press": "execute",
-    "browser_back": "execute",
-    "browser_get_images": "read",
+    # 16b 起浏览器那一族收成一把 `browser_exec`（写 Python 驱动真浏览器）——
+    # 它能改页面 ⇒ ACP kind 是 "execute"。
+    "browser_exec": "execute",
     # Agent internals
     "delegate_task": "execute",
     "vision_analyze": "read",
@@ -63,8 +57,7 @@ _POLISHED_TOOLS = {
     "read_file", "write_file", "patch", "search_files", "terminal", "process", "execute_code",
     # Skills / web / browser / media
     "skill_view", "skills_list", "skill_manage", "web_search", "web_extract",
-    "browser_navigate", "browser_click", "browser_type", "browser_press", "browser_scroll",
-    "browser_back", "browser_snapshot", "browser_console", "browser_get_images", "browser_vision",
+    "browser_exec",
     "vision_analyze", "image_generate", "text_to_speech",
     # Schedulers / platform integrations
     "cronjob", "send_message", "clarify", "discord", "discord_admin",
@@ -165,14 +158,11 @@ def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
         if len(target) > 64:
             target = target[:61] + "..."
         return f"skill {action}: {target}"
-    if tool_name == "browser_navigate":
-        return f"navigate: {args.get('url', '?')}"
-    if tool_name == "browser_snapshot":
-        return "browser snapshot"
-    if tool_name == "browser_vision":
-        return f"browser vision: {str(args.get('question', '?'))[:50]}"
-    if tool_name == "browser_get_images":
-        return "browser images"
+    if tool_name == "browser_exec":
+        # 浏览器那一族 16b 起收成一把（WP-BROWSER-EXEC）：参数是 `code`／`session`。
+        code = str(args.get("code", "") or "").strip()
+        first_line = code.splitlines()[0] if code else ""
+        return f"browser exec: {first_line[:50]}" if first_line else "browser exec"
     if tool_name == "vision_analyze":
         return f"analyze image: {str(args.get('question', '?'))[:50]}"
     if tool_name == "image_generate":
@@ -693,29 +683,25 @@ def _format_edit_result(tool_name: str, result: Optional[str], args: Optional[Di
 
 
 def _format_browser_result(tool_name: str, result: Optional[str], args: Optional[Dict[str, Any]]) -> Optional[str]:
+    """``browser_exec`` 的回包：``{success, exit_code, output, workspace, stderr}``。
+
+    浏览器那一族 16b 起收成一把（WP-BROWSER-EXEC）⇒ 这一段只为它服务。
+    """
     data = _json_loads_maybe(result)
     if not isinstance(data, dict):
         return result if isinstance(result, str) and result.strip() else None
     if data.get("success") is False or data.get("error"):
-        return f"{tool_name} failed: {data.get('error', 'unknown error')}"
-    if tool_name == "browser_get_images":
-        images = data.get("images") or data.get("data")
-        if isinstance(images, list):
-            lines = [f"Images found: {len(images)}"]
-            for img in images[:12]:
-                if isinstance(img, dict):
-                    alt = str(img.get("alt") or "").strip()
-                    url = str(img.get("url") or img.get("src") or "").strip()
-                    lines.append(f"- {alt or 'image'}" + (f" — {url}" if url else ""))
-            return _truncate_text("\n".join(lines), limit=5000)
-    title = str(data.get("title") or data.get("url") or data.get("status") or tool_name)
-    text = str(data.get("text") or data.get("content") or data.get("snapshot") or data.get("analysis") or data.get("message") or "").strip()
-    lines = [title]
-    if data.get("url") and data.get("url") != title:
-        lines.append(str(data.get("url")))
-    if text:
-        lines.extend(["", _truncate_text(text, limit=5000)])
-    return _truncate_text("\n".join(lines), limit=7000)
+        reason = data.get("error") or data.get("stderr") or "unknown error"
+        return f"{tool_name} failed: {reason}"
+    output = str(data.get("output") or "").strip()
+    lines = []
+    if output:
+        lines.append(output)
+    if data.get("stderr"):
+        lines.append(f"(stderr) {data['stderr']}")
+    if not lines:
+        return f"{tool_name} completed (exit {data.get('exit_code')})"
+    return _truncate_text("\n".join(lines), limit=5000)
 
 
 def _format_media_or_cron_result(tool_name: str, result: Optional[str]) -> Optional[str]:
@@ -893,10 +879,7 @@ def _build_polished_completion_content(
         "skill_manage": lambda: _format_skill_manage_result(result, function_args),
         "web_search": lambda: _format_web_search_result(result),
         "web_extract": lambda: _format_web_extract_result(result),
-        "browser_navigate": lambda: _format_browser_result(tool_name, result, function_args),
-        "browser_snapshot": lambda: _format_browser_result(tool_name, result, function_args),
-        "browser_vision": lambda: _format_browser_result(tool_name, result, function_args),
-        "browser_get_images": lambda: _format_browser_result(tool_name, result, function_args),
+        "browser_exec": lambda: _format_browser_result(tool_name, result, function_args),
         "vision_analyze": lambda: _format_media_or_cron_result(tool_name, result),
         "image_generate": lambda: _format_media_or_cron_result(tool_name, result),
         "cronjob": lambda: _format_media_or_cron_result(tool_name, result),

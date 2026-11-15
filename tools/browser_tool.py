@@ -4713,91 +4713,31 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# Registry — **这一族在 16b 起不再注册**（`WP-BROWSER-EXEC`）
 # ---------------------------------------------------------------------------
-from tools.registry import registry, tool_error
+# 上游 Hermes 把浏览器那一族收成一把 ``browser_exec``（写一段 Python 驱动真浏览器）。
+# 我们照那个形状换面：这十几把点击类工具**停止注册**（文件**不删**，代码留着——
+# 16c 还要用里面的云 provider 接线与端点解析），工具面换成 ``browser_exec``。
+#
+# 它们的能力一条没丢，都搬进了 ``browser_exec`` 的 helper 集
+# （``tools/browser_exec_runner.py``）：导航＝``goto_url``、快照＝``snapshot``、
+# 点击＝``click``、输入＝``fill_input``、滚动＝``scroll``、后退＝``back``、
+# 按键＝``press``、取图＝``get_images``、控制台＝``console_logs``、
+# 截图＝``capture_screenshot``、裸 CDP＝``cdp``。
+#
+# 想恢复注册就把下面那段注释放开——**但那要先想清楚是不是又长回两套工具面**。
+from tools.registry import tool_error
 
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 
-registry.register(
-    name="browser_navigate",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_navigate"],
-    handler=lambda args, **kw: browser_navigate(url=args.get("url", ""), task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="🌐",
-)
-registry.register(
-    name="browser_snapshot",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_snapshot"],
-    handler=lambda args, **kw: browser_snapshot(
-        full=args.get("full", False), task_id=kw.get("task_id"), user_task=kw.get("user_task")),
-    check_fn=check_browser_requirements,
-    emoji="📸",
-)
-registry.register(
-    name="browser_click",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_click"],
-    handler=lambda args, **kw: browser_click(ref=args.get("ref", ""), task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="👆",
-)
-registry.register(
-    name="browser_type",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_type"],
-    handler=lambda args, **kw: browser_type(ref=args.get("ref", ""), text=args.get("text", ""), task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="⌨️",
-)
-registry.register(
-    name="browser_scroll",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_scroll"],
-    handler=lambda args, **kw: browser_scroll(direction=args.get("direction", "down"), task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="📜",
-)
-registry.register(
-    name="browser_back",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_back"],
-    handler=lambda args, **kw: browser_back(task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="◀️",
-)
-registry.register(
-    name="browser_press",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_press"],
-    handler=lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="⌨️",
-)
-
-registry.register(
-    name="browser_get_images",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_get_images"],
-    handler=lambda args, **kw: browser_get_images(task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="🖼️",
-)
-registry.register(
-    name="browser_vision",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_vision"],
-    handler=lambda args, **kw: browser_vision(question=args.get("question", ""), annotate=args.get("annotate", False), task_id=kw.get("task_id")),
-    check_fn=check_browser_vision_requirements,
-    emoji="👁️",
-)
-registry.register(
-    name="browser_console",
-    toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_console"],
-    handler=lambda args, **kw: browser_console(clear=args.get("clear", False), expression=args.get("expression"), task_id=kw.get("task_id")),
-    check_fn=check_browser_requirements,
-    emoji="🖥️",
-)
+# 冻结的注册块（原样留着，一行没改）：
+#
+# registry.register(
+#     name="browser_navigate",
+#     toolset="browser",
+#     schema=_BROWSER_SCHEMA_MAP["browser_navigate"],
+#     handler=lambda args, **kw: browser_navigate(url=args.get("url", ""), task_id=kw.get("task_id")),
+#     check_fn=check_browser_requirements,
+#     emoji="🌐",
+# )
+# …（snapshot／click／type／scroll／back／press／get_images／vision／console 这九把同理）

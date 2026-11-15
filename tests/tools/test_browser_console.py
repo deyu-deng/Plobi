@@ -268,24 +268,29 @@ class TestBrowserConsoleSchema:
 
 
 class TestBrowserConsoleToolsetWiring:
-    """browser_console must be reachable via toolset resolution."""
+    """``browser_console`` 随浏览器那一族一起退役（WP-BROWSER-EXEC 16b 换面）。
 
-    def test_in_browser_toolset(self):
+    **实现还在仓里**（文件不删、代码留着）——所以下面这四条现在钉的是**接线**：
+    门类／核心清单／旧映射／注册表里**都没有它**了（换面 ⇒ 旧族退场）。
+    真测实现的那几条用例照旧跑（它们打的是实现，不是接线）。
+    """
+
+    def test_not_in_browser_toolset(self):
         from toolsets import TOOLSETS
-        assert "browser_console" in TOOLSETS["browser"]["tools"]
+        assert "browser_console" not in TOOLSETS["browser"]["tools"]
 
-    def test_in_plobi_core_tools(self):
+    def test_not_in_plobi_core_tools(self):
         from toolsets import _PLOBI_CORE_TOOLS
-        assert "browser_console" in _PLOBI_CORE_TOOLS
+        assert "browser_console" not in _PLOBI_CORE_TOOLS
 
-    def test_in_legacy_toolset_map(self):
+    def test_not_in_legacy_toolset_map(self):
         from model_tools import _LEGACY_TOOLSET_MAP
-        assert "browser_console" in _LEGACY_TOOLSET_MAP["browser_tools"]
+        assert "browser_console" not in _LEGACY_TOOLSET_MAP["browser_tools"]
 
-    def test_in_registry(self):
+    def test_not_in_registry(self):
         from tools.registry import registry
         from tools import browser_tool  # noqa: F401
-        assert "browser_console" in registry._tools
+        assert "browser_console" not in registry._tools
 
 
 # ── browser_vision annotate ──────────────────────────────────────────

@@ -58,8 +58,9 @@ class TestToolKindMap:
     def test_tool_kind_skill_view(self):
         assert get_tool_kind("skill_view") == "read"
 
-    def test_tool_kind_browser_navigate(self):
-        assert get_tool_kind("browser_navigate") == "fetch"
+    def test_tool_kind_browser_exec(self):
+        # 浏览器那一族 16b 起收成一把 `browser_exec`（它能改页面 ⇒ execute）。
+        assert get_tool_kind("browser_exec") == "execute"
 
     def test_unknown_tool_returns_other_kind(self):
         assert get_tool_kind("nonexistent_tool_xyz") == "other"
@@ -237,14 +238,14 @@ class TestBuildToolStart:
         assert result.content is None
         assert result.raw_input is None
 
-    def test_build_tool_start_for_browser_navigate(self):
-        """browser_navigate should emit a polished start event."""
-        args = {"url": "https://x.com"}
-        result = build_tool_start("tc-browser-start", "browser_navigate", args)
+    def test_build_tool_start_for_browser_exec(self):
+        """browser_exec should emit a polished start event."""
+        args = {"code": "print(1)"}
+        result = build_tool_start("tc-browser-start", "browser_exec", args)
         assert isinstance(result, ToolCallStart)
-        assert result.title == "navigate: https://x.com"
-        assert result.kind == "fetch"
-        assert result.content[0].content.text == '{\n  "url": "https://x.com"\n}'
+        assert result.title == "browser exec: print(1)"
+        assert result.kind == "execute"
+        assert result.content[0].content.text == '{\n  "code": "print(1)"\n}'
         assert result.raw_input is None
 
     def test_build_tool_start_for_search(self):

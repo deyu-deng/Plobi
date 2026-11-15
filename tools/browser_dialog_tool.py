@@ -20,7 +20,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from tools.browser_supervisor import SUPERVISOR_REGISTRY
-from tools.registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -133,16 +132,20 @@ def _browser_dialog_check() -> bool:
     return _browser_cdp_check()
 
 
-registry.register(
-    name="browser_dialog",
-    toolset="browser-cdp",
-    schema=BROWSER_DIALOG_SCHEMA,
-    handler=lambda args, **kw: browser_dialog(
-        action=args.get("action", ""),
-        prompt_text=args.get("prompt_text"),
-        dialog_id=args.get("dialog_id"),
-        task_id=kw.get("task_id"),
-    ),
-    check_fn=_browser_dialog_check,
-    emoji="💬",
-)
+# **16b 起不再注册**（`WP-BROWSER-EXEC`）：弹窗这件事并进了 ``browser_exec``
+# （helper：``dialogs()`` 看开着的弹窗、``respond_dialog(action, text)`` 回它）。
+# 文件留着，能力也留着——只是不再单独占一把工具。
+#
+# registry.register(
+#     name="browser_dialog",
+#     toolset="browser-cdp",
+#     schema=BROWSER_DIALOG_SCHEMA,
+#     handler=lambda args, **kw: browser_dialog(
+#         action=args.get("action", ""),
+#         prompt_text=args.get("prompt_text"),
+#         dialog_id=args.get("dialog_id"),
+#         task_id=kw.get("task_id"),
+#     ),
+#     check_fn=_browser_dialog_check,
+#     emoji="💬",
+# )

@@ -265,6 +265,10 @@ def run_browser_exec(
         result["session"] = session
     if err:
         result["stderr"] = err
+    if proc.returncode != 0:
+        # 那段 Python 抛了异常 ⇒ 原因在 stderr 里。把它也放进 ``error``：
+        # 模型先看的是 ``error``，只留 stderr 会让「为什么失败」被埋掉。
+        result["error"] = err.splitlines()[-1] if err else f"browser_exec exited with {proc.returncode}"
     return result
 
 

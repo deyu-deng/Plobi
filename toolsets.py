@@ -39,11 +39,9 @@ _PLOBI_CORE_TOOLS = [
     "vision_analyze", "image_generate",
     # Skills
     "skills_list", "skill_view", "skill_manage",
-    # Browser automation
-    "browser_navigate", "browser_snapshot", "browser_click",
-    "browser_type", "browser_scroll", "browser_back",
-    "browser_press", "browser_get_images",
-    "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+    # Browser automation（16b 起只剩一把 `browser_exec` ＋ 裸 CDP 那把 `browser_cdp`；
+    # 旧那十几把点击类已停止注册，能力一条没丢——都在 `browser_exec` 的 helper 集里）
+    "browser_exec", "browser_cdp",
     # Text-to-speech
     "text_to_speech",
     # Planning & memory
@@ -183,11 +181,8 @@ TOOLSETS = {
     "browser": {
         "description": "Browser automation for web interaction (navigate, click, type, scroll, iframes, hold-click) with web search for finding URLs",
         "tools": [
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp",
-            "browser_dialog", "web_search"
+            "browser_exec", "browser_cdp",
+            "web_search"
         ],
         "includes": []
     },
@@ -526,10 +521,7 @@ TOOLSETS = {
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+            "browser_exec", "browser_cdp",
             "todo", "memory",
             "session_search", "clarify",
             "execute_code", "delegate_task",
@@ -558,10 +550,7 @@ TOOLSETS = {
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+            "browser_exec", "browser_cdp",
             "todo", "memory",
             "session_search",
             "execute_code", "delegate_task",
@@ -583,10 +572,7 @@ TOOLSETS = {
             # Skills
             "skills_list", "skill_view", "skill_manage",
             # Browser automation
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
-            "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+            "browser_exec", "browser_cdp",
             # Planning & memory
             "todo", "memory",
             # Session history search

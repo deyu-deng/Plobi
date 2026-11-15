@@ -169,6 +169,10 @@ const TOOL_META: Record<ToolTitleKey, ToolMetaSpec> = {
     icon: 'globe',
     tone: 'browser'
   },
+  browser_exec: {
+    icon: 'globe',
+    tone: 'browser'
+  },
   browser_fill: {
     icon: 'globe',
     tone: 'browser'

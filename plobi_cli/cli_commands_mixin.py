@@ -1889,7 +1889,7 @@ class CLICommandsMixin:
 
             os.environ["BROWSER_CDP_URL"] = cdp_url
             # Eagerly start the CDP supervisor so pending_dialogs + frame_tree
-            # show up in the next browser_snapshot.  No-op if already started.
+            # show up in the next browser call.  No-op if already started.
             try:
                 from tools.browser_tool import _ensure_cdp_supervisor  # type: ignore[import-not-found]
                 _ensure_cdp_supervisor("default")
@@ -1906,8 +1906,8 @@ class CLICommandsMixin:
                 self._pending_input.put(
                     "[System note: The user invoked /browser connect and connected your browser tools to "
                     "a Chromium-family dev/debug browser via Chrome DevTools Protocol. "
-                    "Your browser_navigate, browser_snapshot, browser_click, and other browser tools now "
-                    "control that CDP browser. The command itself is a signal that using browser tools for "
+                    "Your browser_exec tool now drives that CDP browser. "
+                    "The command itself is a signal that using browser tools for "
                     "their current browser-related request is expected; do not wait for separate permission "
                     "just because CDP is connected. This is typically a Plobi-managed isolated debug "
                     "profile, not the user's main everyday browser. It is still user-visible and may contain "

@@ -13,9 +13,9 @@ the user gets full Plobi capability inside a Codex turn.
 
 Scope (what we expose):
   - web_search, web_extract              — Firecrawl, no codex equivalent
-  - browser_navigate / _click / _type /  — Camofox/Browserbase automation
-    _snapshot / _scroll / _back / _press /
-    _get_images / _console / _vision
+  - browser_exec                         — one tool drives the browser (writes
+                                           Python; the browser family collapsed
+                                           into it — WP-BROWSER-EXEC)
   - vision_analyze                       — image inspection by vision model
   - image_generate                       — image generation
   - skill_view, skills_list              — Plobi' skill library
@@ -68,16 +68,8 @@ logger = logging.getLogger(__name__)
 EXPOSED_TOOLS: tuple[str, ...] = (
     "web_search",
     "web_extract",
-    "browser_navigate",
-    "browser_click",
-    "browser_type",
-    "browser_press",
-    "browser_snapshot",
-    "browser_scroll",
-    "browser_back",
-    "browser_get_images",
-    "browser_console",
-    "browser_vision",
+    # 浏览器那一族 16b 起收成一把 `browser_exec`（WP-BROWSER-EXEC）
+    "browser_exec",
     "vision_analyze",
     "image_generate",
     "skill_view",
