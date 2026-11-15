@@ -1716,12 +1716,13 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         extra_args_env="PLOBI_OFFLOAD_JUNIE_EXTRA_ARGS",
         offloadable=False,
         install=InstallSpec(
-            command="",
-            package="",
-            homepage="https://github.com/JetBrains/junie-acp-release",
+            command="npm i -g @jetbrains/junie",
+            package="@jetbrains/junie",
+            homepage="https://github.com/JetBrains/junie",
             binary="junie",
             verified=True,
-            note="ACP 官方注册表收录（id「junie」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「junie」）；本体在 npm 上有官方 scope 的包"
+                 "（registry 现核：「Junie command-line client」）⇒ 给这条命令；这一家还没接派活腿",
         ),
     ),
 
