@@ -32,8 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 BEZEL_CONFIG_CANDIDATES = (
-    REPO_ROOT / "quota_hub" / "config.yaml",
-    REPO_ROOT / "quota_hub" / "config.example.yaml",
+    REPO_ROOT / "bezel" / "config.yaml",
+    REPO_ROOT / "bezel" / "config.example.yaml",
     REPO_ROOT / "bezel" / "config.yaml",
     REPO_ROOT / "bezel" / "config.example.yaml",
 )
@@ -756,10 +756,10 @@ def _desktop_token_status() -> dict[str, Any]:
 
     Never returns a token — see ``antigravity_desktop_token_status``.
     """
-    hub_root = REPO_ROOT / "quota_hub"
+    hub_root = REPO_ROOT / "bezel"
     if str(hub_root) not in sys.path:
         sys.path.insert(0, str(hub_root))
-    from quota_hub.tokens import desktop_stores as ds
+    from bezel.tokens import desktop_stores as ds
 
     return ds.antigravity_desktop_token_status()
 
@@ -1134,12 +1134,12 @@ def _authored_l1_toolsets(cfg: dict) -> set[str]:
     return names
 
 
-def check_l1_secretary_form(home: Path | None = None) -> dict[str, Any]:
+def check_conductor_form(home: Path | None = None) -> dict[str, Any]:
     """Three questions about this machine's L1, answered in one read-only row.
 
     总秘书形态 is not a profile — it is a handful of keys in the default home's
     ``config.yaml`` plus a fence in its ``SOUL.md``. The backend applies them at
-    boot (:func:`plobi.agents.registry.ensure_l1_secretary_form`), so a red row
+    boot (:func:`plobi.agents.registry.ensure_conductor_form`), so a red row
     here means that pass never ran, was skipped, or something reverted it after.
     """
     from plobi.agents.registry import (
@@ -1454,7 +1454,7 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
         check_subscription_desktop_store(),
         check_dingtalk(),
         check_north_star(),
-        check_l1_secretary_form(),
+        check_conductor_form(),
         check_chatlog_config(),
         check_chatlog_whitelist_efficiency(),
         check_mind_sync(),

@@ -329,7 +329,7 @@ def test_check_l1_secretary_form_green(tmp_path: Path):
         encoding="utf-8",
     )
     (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
-    row = D.check_l1_secretary_form(tmp_path)
+    row = D.check_conductor_form(tmp_path)
     assert row["color"] == D.GREEN
     assert row["plugin_enabled"] and row["narrow_toolsets"] and row["soul_fence"]
 
@@ -342,7 +342,7 @@ def test_check_l1_secretary_form_names_which_question_failed(tmp_path: Path):
         encoding="utf-8",
     )
     (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
-    row = D.check_l1_secretary_form(tmp_path)
+    row = D.check_conductor_form(tmp_path)
     assert row["color"] == D.RED
     assert "plugin=yes" in row["detail"]
     assert "narrow toolsets=NO" in row["detail"]
@@ -351,7 +351,7 @@ def test_check_l1_secretary_form_names_which_question_failed(tmp_path: Path):
 
 
 def test_check_l1_secretary_form_red_when_shape_never_applied(tmp_path: Path):
-    row = D.check_l1_secretary_form(tmp_path)
+    row = D.check_conductor_form(tmp_path)
     assert row["color"] == D.RED
     assert "never applied" in row["detail"]
 

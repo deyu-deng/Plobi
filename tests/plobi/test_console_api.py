@@ -134,7 +134,7 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert row["id"] == "agenda"
     assert row["name"] == "日程秘书"
     assert row["status"] == "idle"  # no L3 children in flight
-    assert row["model"] == "bezel/workbuddy/deepseek-chat"  # ADR-0011 default route
+    assert row["model"] == "bezel/workbuddy/deepseek-v4.1-flash"  # ADR-0011 default route（deepseek-chat 已退役）
     assert row["todayCalls"] == 0
     # profile 连根拔（11-05）：行上连键都不许再有——谁把它加回来这里就红。
     assert "profile" not in row
@@ -996,7 +996,7 @@ def _stub_agent_materialisation(monkeypatch) -> dict[str, list[str]]:
     monkeypatch.setattr(AgentRegistry, "spawn", fake_spawn)
     monkeypatch.setattr("plobi_cli.agent_identity.profile_exists", lambda name: False)
     monkeypatch.setattr("plobi.agents.registry.ensure_l2_agenda_toolsets", fake_toolsets)
-    monkeypatch.setattr("plobi.agents.registry.ensure_l1_secretary_form", lambda: False)
+    monkeypatch.setattr("plobi.agents.registry.ensure_conductor_form", lambda: False)
     return calls
 
 
@@ -1072,7 +1072,7 @@ def test_l1_secretary_shape_failure_does_not_break_startup(_isolated_state, monk
     def explode(*args, **kwargs):
         raise RuntimeError("config offline")
 
-    monkeypatch.setattr("plobi.agents.registry.ensure_l1_secretary_form", explode)
+    monkeypatch.setattr("plobi.agents.registry.ensure_conductor_form", explode)
 
     with caplog.at_level(logging.WARNING, logger="plobi_cli.web_server"):
         with TestClient(

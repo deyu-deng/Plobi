@@ -151,7 +151,7 @@ def test_existing_l1_home_upgrades_at_next_boot_and_keeps_user_text(isolated_hom
         L1_SOUL_BEGIN,
         L1_SOUL_BLOCK,
         L1_SOUL_END,
-        ensure_l1_secretary_routing_soul,
+        ensure_conductor_routing_soul,
     )
 
     # 一份「装机时写过的那版」SOUL：围栏以内是**旧**合同（没有 plobi_agent_ask），
@@ -163,7 +163,7 @@ def test_existing_l1_home_upgrades_at_next_boot_and_keeps_user_text(isolated_hom
     persona = "我自己写的人设：说话简短，别客套。\n"
     isolated_home.joinpath("SOUL.md").write_text(persona + "\n" + old_contract, encoding="utf-8")
 
-    assert ensure_l1_secretary_routing_soul(home=isolated_home) is True
+    assert ensure_conductor_routing_soul(home=isolated_home) is True
 
     text = _soul(isolated_home)
     # 新合同整段进来……
@@ -175,19 +175,19 @@ def test_existing_l1_home_upgrades_at_next_boot_and_keeps_user_text(isolated_hom
     # 围栏以外用户写的字原样留着——这一刀不覆盖用户手改。
     assert "我自己写的人设：说话简短，别客套。" in text
     # 幂等：第二次启动什么都不必改。
-    assert ensure_l1_secretary_routing_soul(home=isolated_home) is False
+    assert ensure_conductor_routing_soul(home=isolated_home) is False
     assert _soul(isolated_home).count(L1_SOUL_END) == 1
 
 
 def test_boot_path_is_the_backend_startup_hook_not_a_chat_time_patch():
-    """:func:`ensure_l1_secretary_form` 是启动那一步的写入方（web_server lifespan），
+    """:func:`ensure_conductor_form` 是启动那一步的写入方（web_server lifespan），
     它把模板落到 default profile 自己的家；聊天时不打补丁。"""
     import inspect
 
     from plobi.agents import registry as registry_mod
 
-    src = inspect.getsource(registry_mod.ensure_l1_secretary_form)
-    assert "ensure_l1_secretary_routing_soul" in src
+    src = inspect.getsource(registry_mod.ensure_conductor_form)
+    assert "ensure_conductor_routing_soul" in src
     # 只在 default profile 那一把椅子上写（裁定 42 §6(b)）。
     assert 'get_active_profile_name() != "default"' in src
 

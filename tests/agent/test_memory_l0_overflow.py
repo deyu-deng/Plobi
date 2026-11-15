@@ -66,7 +66,7 @@ def test_l1_template_is_the_source_and_it_opens_l0():
     """开机塑形把这份模板并进真实配置并落盘 ⇒ 它就是那一处真源。
 
     现核链条：``agent/agent_init.py`` 读的是 ``load_config()``，而
-    ``ensure_l1_secretary_form`` 在启动时把本模板深并进配置再 ``save_config()``——
+    ``ensure_conductor_form`` 在启动时把本模板深并进配置再 ``save_config()``——
     模板写 false 的时候，改 ``config.yaml`` 等于下次开机又被写回，所以判据落在模板本身。
     """
     assert TEMPLATE.is_file(), f"模板不在：{TEMPLATE}"

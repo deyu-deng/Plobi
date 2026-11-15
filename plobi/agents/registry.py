@@ -35,8 +35,10 @@ logger = logging.getLogger(__name__)
 
 REGISTRY_VERSION = 1
 
-# DEFAULT_ROUTES 里定义的 L1 秘书角色名（spawn 时禁止把 L2 当 L1）。
-L1_SECRETARY_ROLE = "l1_secretary"
+# 指挥（L1）在 DEFAULT_ROUTES 里的角色名（spawn 时禁止把首席当 L1）。
+# 名字读作「指挥」，**值仍是 `l1_secretary`**：那是名册 25 行里存的数据，改它要迁移＋兼容期
+# （裁定 220 第 6 条）。别顺手把值也改了。
+CONDUCTOR_ROLE = "l1_secretary"
 
 
 class RegistryError(ValueError):
@@ -1096,14 +1098,14 @@ class AgentRegistry:
         所以这里补一格：拿 :meth:`route_for` 的值与 L1 比，同一条 qualified 就是不绿。
         """
         try:
-            l1 = self.router().resolve(L1_SECRETARY_ROLE)
+            l1 = self.router().resolve(CONDUCTOR_ROLE)
         except Exception:
             return []
         try:
             route = self.route_for(entry)
         except Exception:
             return []
-        if entry.role == L1_SECRETARY_ROLE or not route.configured or not l1.configured:
+        if entry.role == CONDUCTOR_ROLE or not route.configured or not l1.configured:
             return []
         if route.qualified == l1.qualified:
             # 话术跟着 :meth:`plobi.routing.ModelRouter.violations` 走，不留第二种说法：
@@ -1652,7 +1654,7 @@ def agent_id_for_scope(scope: str | None, *, entries=None) -> Optional[str]:
         # 认不出：不圈。存在性另有 `_scope_name_for_read` 那道 404，这里不重复判。
         return None
     entry = next((e for e in pool if e.name == name), None)
-    if entry is not None and getattr(entry, "role", "") == L1_SECRETARY_ROLE:
+    if entry is not None and getattr(entry, "role", "") == CONDUCTOR_ROLE:
         return ""
     return name
 
@@ -2346,8 +2348,8 @@ BEZEL_DEFAULT_BASE = "http://127.0.0.1:8000/v1"
 # The only list of env var *names* for this endpoint — the ``model-providers/bezel``
 # profile and ``scripts/plobi/doctor.py`` import it instead of writing their own.
 BEZEL_URL_ENV_VARS: tuple[str, ...] = (
-    "PLOBI_QUOTA_HUB_URL",
     "PLOBI_BEZEL_URL",
+    "PLOBI_QUOTA_HUB_URL",
     "PLOBI_QUOTA_BEZEL_URL",
 )
 
@@ -2370,12 +2372,12 @@ def bezel_base_url() -> str:
 # resolver's declared fallback), ``scripts/plobi/doctor.py`` and
 # ``plobi.quota.config``.  None of them re-implements this chain.
 BEZEL_KEY_ENV_VARS: tuple[str, ...] = (
-    "QUOTA_HUB_API_KEY",
     "BEZEL_API_KEY",
+    "QUOTA_HUB_API_KEY",
     "PLOBI_QUOTA_BEZEL_KEY",
 )
 BEZEL_DEV_DEFAULT_API_KEY = "sk-local-dev-key"
-BEZEL_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "quota_hub" / "config.yaml"
+BEZEL_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "bezel" / "config.yaml"
 
 # ``api_key: ${BEZEL_KEY:-sk-local-dev-key}`` is a valid form in the gateway's own
 # config (the gateway expands it at startup), so the reader expands it too —
@@ -2498,7 +2500,7 @@ _SOUL_BOILERPLATE_HEADS = (
     "# Plobi Agent Persona",
 )
 #: L1 那份 SOUL 合同（两道围栏以内）的唯一真源 = 这个模板文件。改口令就在
-#: 这儿改；它不是运行时打补丁——后端启动时 :func:`ensure_l1_secretary_routing_soul`
+#: 这儿改；它不是运行时打补丁——后端启动时 :func:`ensure_conductor_routing_soul`
 #: 只把 ``SOUL.md`` 里**围栏以内**那一段整段换成它的内容，围栏以外用户自己写的
 #: 人设一个字都不碰（同一个文件里也不许再有第二段 L1 合同，见那道 strip）。
 L1_SOUL_TEMPLATE_PATH = (
@@ -2515,7 +2517,7 @@ def load_l1_soul_template() -> str:
     Same shape as :func:`load_l1_profile_template`: the template file is the
     source, the runtime ``SOUL.md`` is what it lands into. Fail loud here —
     a template with a missing or reversed fence would make
-    :func:`ensure_l1_secretary_routing_soul` either strip user text or stack a
+    :func:`ensure_conductor_routing_soul` either strip user text or stack a
     second contract into the same file, and neither is recoverable from the
     secretary's side.
     """
@@ -2530,7 +2532,7 @@ def load_l1_soul_template() -> str:
     return text + "\n"
 
 
-#: 载入一次，让读这个常量的那些测试与 :func:`ensure_l1_secretary_routing_soul`
+#: 载入一次，让读这个常量的那些测试与 :func:`ensure_conductor_routing_soul`
 #: 落到盘上的那份字节完全一致。
 L1_SOUL_BLOCK = load_l1_soul_template()
 
@@ -3003,7 +3005,7 @@ def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
     return True
 
 
-def ensure_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
+def ensure_conductor_routing_soul(*, home: Path | str | None = None) -> bool:
     """Upsert soft-routing instructions into the active profile ``SOUL.md``.
 
     L1 and L2 contracts are mutually exclusive: writing the L1 block also drops
@@ -3027,7 +3029,7 @@ def ensure_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
     return True
 
 
-def strip_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
+def strip_conductor_routing_soul(*, home: Path | str | None = None) -> bool:
     """Drop the L1 secretary contract from a **non-default** profile's SOUL.md.
 
     ``--clone`` copies the root ``SOUL.md`` whole, L1 fence included, and the
@@ -3287,7 +3289,7 @@ def ensure_l2_identity_soul(
     给还在按家起的调用方一条退路）。
 
     其余契约不变：Shape copied from
-    :func:`ensure_l1_secretary_routing_soul`: strip the known fences, then
+    :func:`ensure_conductor_routing_soul`: strip the known fences, then
     append; the two contracts never coexist in one file. No-op when the content
     already matches, and never written onto the default (L1) profile.
 
@@ -3297,7 +3299,7 @@ def ensure_l2_identity_soul(
     text exists is decided by :func:`_soul_persona_text` (the upstream stub is
     not a persona) and handed to the renderer as ``persona_written``.
     """
-    if entry.role == L1_SECRETARY_ROLE or entry.profile_name == "default":
+    if entry.role == CONDUCTOR_ROLE or entry.profile_name == "default":
         return False
 
     if home is not None:
@@ -3398,11 +3400,11 @@ def _enable_north_star_plugin(config: dict) -> bool:
     return changed
 
 
-def _apply_l1_secretary_config(config: dict) -> bool:
+def _apply_conductor_config(config: dict) -> bool:
     """Fold one config dict into L1 secretary shape. True when anything changed.
 
     One body, two callers (:func:`ensure_north_star_toolset` and
-    :func:`ensure_l1_secretary_form`) so the plugin path and the boot path
+    :func:`ensure_conductor_form`) so the plugin path and the boot path
     cannot disagree about what the shape is.
     """
     changed = _merge_l1_profile_template(config)
@@ -3439,7 +3441,7 @@ def refresh_l2_identity_souls() -> int:
     return updated
 
 
-def ensure_l1_secretary_form() -> bool:
+def ensure_conductor_form() -> bool:
     """Give the **default profile** its L1 secretary shape, inside its own home.
 
     Boot-time bootstrap for a chicken-and-egg: ``plobi-core`` is a bundled
@@ -3467,11 +3469,11 @@ def ensure_l1_secretary_form() -> bool:
     if not get_plobi_home().is_dir():
         return False
     config = load_config()
-    changed = _apply_l1_secretary_config(config)
+    changed = _apply_conductor_config(config)
     if changed:
         save_config(config)
     refreshed = refresh_l2_identity_souls()
-    return ensure_l1_secretary_routing_soul() or changed or refreshed > 0
+    return ensure_conductor_routing_soul() or changed or refreshed > 0
 
 
 def ensure_north_star_toolset(*, save: bool = True) -> dict:
@@ -3482,13 +3484,13 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
     soft-routing SOUL instructions. Idempotent and reversible via config lists.
 
     Reachable only once the plugin is enabled, which is why the boot-time door
-    is :func:`ensure_l1_secretary_form` — bundled plugins are opt-in, so a home
+    is :func:`ensure_conductor_form` — bundled plugins are opt-in, so a home
     that never opted in would otherwise never write this shape at all.
     """
     from plobi_cli.config import load_config, save_config
 
     config = load_config()
-    changed = _apply_l1_secretary_config(config)
+    changed = _apply_conductor_config(config)
 
     if changed and save:
         save_config(config)
@@ -3502,9 +3504,9 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
         from plobi_cli.agent_identity import get_active_profile_name
 
         if get_active_profile_name() == "default":
-            ensure_l1_secretary_routing_soul()
+            ensure_conductor_routing_soul()
         else:
-            strip_l1_secretary_routing_soul()
+            strip_conductor_routing_soul()
     except Exception:
         logger.debug("plobi: L1 secretary SOUL routing upsert skipped", exc_info=True)
     return config

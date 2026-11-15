@@ -69,7 +69,7 @@ from plobi.agents.registry import (
     MIND_PROJECT_CATEGORIES,
     AgentEntry,
     AgentRegistry,
-    L1_SECRETARY_ROLE,
+    CONDUCTOR_ROLE,
     RegistryError,
     default_project_path,
     find_agenda_agent,
@@ -198,9 +198,9 @@ _STATUS_PRIORITY = (STATUS_ERROR, STATUS_AWAITING_APPROVAL, STATUS_WORKING)
 
 def is_l2(entry: AgentEntry) -> bool:
     """True for rows the left rail should render (i.e. not the L1 secretary)."""
-    from plobi.agents.registry import L1_SECRETARY_ROLE
+    from plobi.agents.registry import CONDUCTOR_ROLE
 
-    return entry.role != L1_SECRETARY_ROLE
+    return entry.role != CONDUCTOR_ROLE
 
 
 def _resolve(entry: AgentEntry) -> Optional[ModelRoute]:
@@ -924,7 +924,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     role = str(role_raw).strip() if role_raw else "l2_project"
     if not role:
         role = "l2_project"
-    if role.lower() == L1_SECRETARY_ROLE:
+    if role.lower() == CONDUCTOR_ROLE:
         return _error(400, "role l1_secretary is not allowed")
 
     # WP-AGENT-DISPLAY-NAME / 裁定 37.1: ``name`` 进 display_name（人设的中

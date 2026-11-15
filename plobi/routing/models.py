@@ -32,7 +32,8 @@ from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-L1_SECRETARY = "l1_secretary"
+# 同 ``CONDUCTOR_ROLE``：常量名读作「指挥」，值仍是名册里的 ``l1_secretary``（裁定 220 第 6 条）。
+CONDUCTOR = "l1_secretary"
 L2_AGENDA = "l2_agenda"
 L2_PROJECT = "l2_project"
 # ``l2_course``（用户 10-11 拍：五门课要进名册，并且"再加一个角色"）。课业条目是**数据**，
@@ -43,7 +44,7 @@ L2_PROJECT = "l2_project"
 # 作业归属靠的是条目名（``planning.py::_matches_project`` 读 ``evidence.course``），不靠分身。
 L2_COURSE = "l2_course"
 
-KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PROJECT, L2_COURSE)
+KNOWN_ROLES = (CONDUCTOR, L2_AGENDA, L2_PROJECT, L2_COURSE)
 
 # ``bezel`` is the local OpenAI-compatible gateway (WorkBuddy / OpenCode quota
 # and friends behind one loopback endpoint). L2 generation goes through bezel
@@ -60,7 +61,7 @@ KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PROJECT, L2_COURSE)
 # The gateway is a model/provider route for L2 generation — it is not an L3
 # agent (ruling 205). Direct ``deepseek`` API routes are retired.
 DEFAULT_ROUTES: dict[str, dict[str, str]] = {
-    L1_SECRETARY: {"provider": "moonshot", "model": "kimi-k3"},
+    CONDUCTOR: {"provider": "moonshot", "model": "kimi-k3"},
     L2_PROJECT: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
     L2_AGENDA: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
 }
@@ -250,7 +251,7 @@ class ModelRouter:
         return route
 
     def is_l1(self, role: str) -> bool:
-        return role == L1_SECRETARY
+        return role == CONDUCTOR
 
     def violations(self, known_models: Optional[Iterable[str]] = None) -> list[str]:
         """Contract checks. Empty list means the routing obeys ADR-0011.
@@ -265,7 +266,7 @@ class ModelRouter:
         """
         problems: list[str] = []
 
-        l1 = self.routes.get(L1_SECRETARY)
+        l1 = self.routes.get(CONDUCTOR)
         if l1 is None or not l1.configured:
             problems.append("l1_secretary has no model configured")
             return problems
@@ -275,7 +276,7 @@ class ModelRouter:
             catalogue = {m.strip() for m in known_models if m and m.strip()}
 
         for role, route in self.routes.items():
-            if role == L1_SECRETARY:
+            if role == CONDUCTOR:
                 continue
             if not route.configured:
                 problems.append(f"{role} has no model configured")

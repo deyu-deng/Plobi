@@ -425,10 +425,10 @@ def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
     就是这种：模板说 true、出厂也说 true，文件不重复它）。判"文件里有这行"会把这种
     正确形状判成失败，所以这里判的是解析结果。
     """
-    from plobi.agents.registry import ensure_l1_secretary_form
+    from plobi.agents.registry import ensure_conductor_form
     from plobi_cli.config import DEFAULT_CONFIG, _deep_merge
 
-    assert ensure_l1_secretary_form() is True
+    assert ensure_conductor_form() is True
 
     written = _loaded_yaml(l1_home / "config.yaml")
     effective = _deep_merge(dict(DEFAULT_CONFIG), written)
@@ -442,9 +442,9 @@ def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
 
 def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):
     """窄名单 + 插件启用是同一趟播种的另外两件产物，缺一件 L1 就还是工人。"""
-    from plobi.agents.registry import L1_DROP_TOOLSETS, L1_MID_TOOLSETS, ensure_l1_secretary_form
+    from plobi.agents.registry import L1_DROP_TOOLSETS, L1_MID_TOOLSETS, ensure_conductor_form
 
-    ensure_l1_secretary_form()
+    ensure_conductor_form()
 
     written = _loaded_yaml(l1_home / "config.yaml")
     assert "plobi-core" in written["plugins"]["enabled"]
@@ -457,13 +457,13 @@ def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):
 
 def test_l1_secretary_form_keeps_the_keys_the_user_wrote(l1_home):
     """补齐不是覆盖：他自己写过的键必须原样活着。"""
-    from plobi.agents.registry import ensure_l1_secretary_form
+    from plobi.agents.registry import ensure_conductor_form
 
     (l1_home / "config.yaml").write_text(
         "terminal:\n  cwd: /srv/his-workspace\n  timeout: 90\n", encoding="utf-8"
     )
 
-    ensure_l1_secretary_form()
+    ensure_conductor_form()
 
     written = _loaded_yaml(l1_home / "config.yaml")
     assert written["terminal"]["cwd"] == "/srv/his-workspace"
@@ -472,14 +472,14 @@ def test_l1_secretary_form_keeps_the_keys_the_user_wrote(l1_home):
 
 def test_l1_secretary_form_is_idempotent_and_never_creates_a_profile(l1_home):
     """已经启用的家重复开机：不重写 config，不把 SOUL 栅栏写两遍，也不建 profile。"""
-    from plobi.agents.registry import L1_SOUL_BEGIN, ensure_l1_secretary_form
+    from plobi.agents.registry import L1_SOUL_BEGIN, ensure_conductor_form
 
-    assert ensure_l1_secretary_form() is True
+    assert ensure_conductor_form() is True
     config_bytes = (l1_home / "config.yaml").read_bytes()
     soul_text = (l1_home / "SOUL.md").read_text(encoding="utf-8")
     assert soul_text.count(L1_SOUL_BEGIN) == 1
 
-    assert ensure_l1_secretary_form() is False
+    assert ensure_conductor_form() is False
 
     assert (l1_home / "config.yaml").read_bytes() == config_bytes
     assert (l1_home / "SOUL.md").read_text(encoding="utf-8") == soul_text
@@ -488,13 +488,13 @@ def test_l1_secretary_form_is_idempotent_and_never_creates_a_profile(l1_home):
 
 def test_l1_secretary_form_does_not_create_a_missing_home(tmp_path, monkeypatch):
     """家目录不存在就当这台上没有 L1 可写——为一份 SOUL.md 建 profile 是第二真源。"""
-    from plobi.agents.registry import ensure_l1_secretary_form
+    from plobi.agents.registry import ensure_conductor_form
 
     missing = tmp_path / ".plobi"
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("PLOBI_HOME", str(missing))
 
-    assert ensure_l1_secretary_form() is False
+    assert ensure_conductor_form() is False
     assert not missing.exists()
 
 

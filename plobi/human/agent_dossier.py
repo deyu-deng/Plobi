@@ -285,7 +285,7 @@ def resolve_dossier_id(name: str, roster_path: Path | None = None) -> str:
     翻译走**名册**（唯一真源）：用户给秘书改名字，映射跟着走，不另立一张对照表。
     名册里没有 L1 那一行时原样还回去——那时候该 404 就 404，不许瞎猜一个。
     """
-    from plobi.agents.registry import L1_SECRETARY_ROLE
+    from plobi.agents.registry import CONDUCTOR_ROLE
 
     text = (name or "").strip()
     if text.casefold() != L1_SCOPE:
@@ -293,7 +293,7 @@ def resolve_dossier_id(name: str, roster_path: Path | None = None) -> str:
     _, entries = load_entries(roster_path)
     for entry in entries:
         role = str(getattr(entry, "role", "") or "").strip().casefold()
-        if role == L1_SECRETARY_ROLE.casefold():
+        if role == CONDUCTOR_ROLE.casefold():
             return entry.name
     return text
 

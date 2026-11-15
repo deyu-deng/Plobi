@@ -7,7 +7,7 @@ import json
 import pytest
 
 from plobi.routing import (
-    L1_SECRETARY,
+    CONDUCTOR,
     L2_AGENDA,
     L2_PROJECT,
     ModelRoute,
@@ -19,7 +19,7 @@ from plobi.routing import (
 def test_defaults_put_the_flagship_on_l1_and_cheap_models_below(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
 
-    assert router.resolve(L1_SECRETARY).model == "kimi-k3"
+    assert router.resolve(CONDUCTOR).model == "kimi-k3"
     assert router.resolve(L2_AGENDA).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
     assert router.violations() == []
 
@@ -27,12 +27,12 @@ def test_defaults_put_the_flagship_on_l1_and_cheap_models_below(tmp_path):
 def test_config_overrides_defaults(tmp_path):
     path = tmp_path / "models.json"
     path.write_text(
-        json.dumps({"roles": {L1_SECRETARY: {"provider": "openai", "model": "gpt-5.6"}}}),
+        json.dumps({"roles": {CONDUCTOR: {"provider": "openai", "model": "gpt-5.6"}}}),
         encoding="utf-8",
     )
 
     router = ModelRouter.load(path)
-    assert router.resolve(L1_SECRETARY).qualified == "openai/gpt-5.6"
+    assert router.resolve(CONDUCTOR).qualified == "openai/gpt-5.6"
     # Unspecified roles keep their defaults.
     assert router.resolve(L2_AGENDA).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
 
@@ -54,7 +54,7 @@ def test_display_model_drops_the_upstream_prefix(tmp_path):
 
 
 def test_a_plain_model_name_has_no_upstream(tmp_path):
-    route = ModelRoute(role=L1_SECRETARY, provider="moonshot", model="kimi-k3")
+    route = ModelRoute(role=CONDUCTOR, provider="moonshot", model="kimi-k3")
 
     assert route.display_model == "kimi-k3"
     assert route.upstream == ""
@@ -109,7 +109,7 @@ def test_l2_sharing_l1s_model_is_flagged(tmp_path):
 
 def test_missing_l1_model_is_a_violation(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
-    router.routes[L1_SECRETARY] = ModelRoute(role=L1_SECRETARY)
+    router.routes[CONDUCTOR] = ModelRoute(role=CONDUCTOR)
 
     assert router.violations() == ["l1_secretary has no model configured"]
 
@@ -142,7 +142,7 @@ def test_corrupt_config_falls_back_to_defaults(tmp_path):
     path = tmp_path / "models.json"
     path.write_text("{ not json", encoding="utf-8")
 
-    assert ModelRouter.load(path).resolve(L1_SECRETARY).model == "kimi-k3"
+    assert ModelRouter.load(path).resolve(CONDUCTOR).model == "kimi-k3"
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ def test_save_writes_one_file_not_a_new_copy(tmp_path, monkeypatch):
 
     root, profile = _two_homes(
         tmp_path,
-        shared_roles={L1_SECRETARY: {"provider": "moonshot", "model": "kimi-k3"}},
+        shared_roles={CONDUCTOR: {"provider": "moonshot", "model": "kimi-k3"}},
         profile_roles={},
     )
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
@@ -226,7 +226,7 @@ def test_a_model_upstream_does_not_list_is_a_violation():
     ``violations()`` 只看结构（非空、别撞 L1），一个语法合法的假 id 能一路绿。
     """
     router = ModelRouter(routes={
-        L1_SECRETARY: ModelRoute(role=L1_SECRETARY, provider="moonshot", model="kimi-k3"),
+        CONDUCTOR: ModelRoute(role=CONDUCTOR, provider="moonshot", model="kimi-k3"),
         L2_PROJECT: ModelRoute(role=L2_PROJECT, provider="bezel", model="workbuddy/deepseek-chat"),
     })
 
@@ -237,7 +237,7 @@ def test_a_model_upstream_does_not_list_is_a_violation():
 
 def test_a_model_upstream_lists_passes_the_catalogue_check():
     router = ModelRouter(routes={
-        L1_SECRETARY: ModelRoute(role=L1_SECRETARY, provider="moonshot", model="kimi-k3"),
+        CONDUCTOR: ModelRoute(role=CONDUCTOR, provider="moonshot", model="kimi-k3"),
         L2_PROJECT: ModelRoute(role=L2_PROJECT, provider="bezel", model="workbuddy/deepseek-v4.1-flash"),
     })
 

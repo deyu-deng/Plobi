@@ -27,7 +27,7 @@ from plobi.collectors.chatlog.pipeline import ChatlogPipeline
 from plobi.collectors.chatlog.config import CollectorConfig
 from plobi.collectors.chatlog.state import SeenStore
 from plobi.agenda.service import AgendaService
-from plobi.routing import L1_SECRETARY, L2_AGENDA, ModelRoute, ModelRouter, RoutingError
+from plobi.routing import CONDUCTOR, L2_AGENDA, ModelRoute, ModelRouter, RoutingError
 
 NOW = datetime(2026, 8, 25, 10, 0)
 
@@ -105,7 +105,7 @@ def test_wiring_the_secretary_here_is_rejected():
     confirmer = ModelConfirmer(
         completer=RecordingCompleter(),
         router=router_with(),
-        role=L1_SECRETARY,
+        role=CONDUCTOR,
         now_factory=lambda: NOW,
     )
 

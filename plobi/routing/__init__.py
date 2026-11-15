@@ -2,7 +2,7 @@
 
 from .models import (
     KNOWN_ROLES,
-    L1_SECRETARY,
+    CONDUCTOR,
     L2_AGENDA,
     L2_COURSE,
     L2_PROJECT,
@@ -15,7 +15,7 @@ from .models import (
 
 __all__ = [
     "KNOWN_ROLES",
-    "L1_SECRETARY",
+    "CONDUCTOR",
     "L2_AGENDA",
     "L2_COURSE",
     "L2_PROJECT",

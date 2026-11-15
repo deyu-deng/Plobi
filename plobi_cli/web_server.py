@@ -168,10 +168,10 @@ def _warm_gateway_module() -> None:
         pass
 
 
-def _apply_l1_secretary_form() -> None:
+def _apply_conductor_form() -> None:
     """Put the default profile into L1 secretary shape before serving a turn.
 
-    The shape itself lives in :func:`plobi.agents.registry.ensure_l1_secretary_form`;
+    The shape itself lives in :func:`plobi.agents.registry.ensure_conductor_form`;
     what belongs here is *when* it happens. ``plobi-north-star`` is opt-in, and the
     only code that used to narrow L1 / write its SOUL fence ran from that plugin's
     ``register()`` — so on a home that never opted in, nothing was ever going to
@@ -179,9 +179,9 @@ def _apply_l1_secretary_form() -> None:
     re-applies it on every load.
     """
     try:
-        from plobi.agents.registry import ensure_l1_secretary_form
+        from plobi.agents.registry import ensure_conductor_form
 
-        if ensure_l1_secretary_form():
+        if ensure_conductor_form():
             _log.info("plobi: default profile brought into L1 secretary shape")
     except Exception as exc:
         _log.warning("plobi: L1 secretary shape skipped: %s", exc)
@@ -212,7 +212,7 @@ async def _lifespan(app: "FastAPI"):
     # 裁定 211：**启动路径不替用户写任何 Agent 行**——首装只有一个 L1、零 L2。
     # （原来这里有一句 ``_seed_agenda_agent()``，它无条件往名册写一行 ``agenda``，
     # 于是每个新用户都收到一条自己没要的 L2；那条函数与它的调用已一并删掉。）
-    _apply_l1_secretary_form()
+    _apply_conductor_form()
 
     # Fire plobi_cli.gateway import into a background thread so the event
     # loop is not blocked and PLOBI_DASHBOARD_READY fires without delay.
@@ -6130,7 +6130,7 @@ def _agent_roster_name(target: str) -> str:
     if not raw or raw.casefold() == "default":
         return ""
     try:
-        from plobi.agents.registry import L1_SECRETARY_ROLE, entry_for_profile
+        from plobi.agents.registry import CONDUCTOR_ROLE, entry_for_profile
         from plobi_cli.agent_identity import normalize_profile_name
 
         canon = normalize_profile_name(raw)
@@ -6142,7 +6142,7 @@ def _agent_roster_name(target: str) -> str:
         return ""
     if entry is None:
         return ""
-    if str(getattr(entry, "role", "") or "") == L1_SECRETARY_ROLE:
+    if str(getattr(entry, "role", "") or "") == CONDUCTOR_ROLE:
         return ""
     return entry.name
 
