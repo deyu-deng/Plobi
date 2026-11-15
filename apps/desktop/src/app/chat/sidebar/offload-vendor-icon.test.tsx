@@ -53,6 +53,10 @@ describe('offload vendor icon', () => {
     // 11-08 新接的两家：命令行程序名分别是 `copilot` 与 `kilo`，屏上写品牌名。
     expect(vendorLabelFor('copilot')).toBe('GitHub Copilot CLI')
     expect(vendorLabelFor('kilo')).toBe('Kilo Code')
+    // 11-15：Qoder 中国版是**另一件安装**（`product: qodercn`、另一个账号）⇒ 单列一家，
+    // 屏上写它自己的名字，不与 Qoder 混成一家。
+    expect(vendorLabelFor('qoder-cn')).toBe('Qoder 中国版')
+    expect(vendorLabelFor('qoder')).toBe('Qoder')
   })
 
   it('没登记的一家回落成原样的 id，不许变空白', () => {

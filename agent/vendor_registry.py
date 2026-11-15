@@ -279,6 +279,9 @@ class SessionSpec:
     shape: str = ""
     #: 正文（transcript）的读法形状。
     transcript_shape: str = ""
+    #: jsonl 的摆法：``project-dir``（``<根>/<项目>/<会话号>.jsonl``，Qoder 那一族）／
+    #: ``flat``（``<根>/<会话号>.jsonl``，kiro 那一族：会话直接躺在根下，没有项目目录）。
+    layout: str = "project-dir"
     #: 这一家在「会话来源」那一列里的次序（照屏上现在的顺序；不加就排最后）。
     order: int = 0
 
@@ -322,6 +325,9 @@ class SessionSpec:
     #: 取标题时剥掉的那层包裹（``<user_query>``）：厂商把**人说的那一句**裹在里面，
     #: 外面还压着一层系统提醒（``<system-reminder>``）⇒ 不剥就是一串机器话。
     title_strip_wrapper: str = ""
+    #: 这些值**不算标题**（kiro 的 ``[user]``／``None`` 是占位：它自己没起出名字）
+    #: ⇒ 换一个来源取（先退到 jsonl 里那句人话，再退到会话号）。
+    title_placeholder_values: tuple[str, ...] = ()
 
     # ── 项目 / 工作目录 ─────────────────────────────────────────────────
     #: ``none``／``column``（表里那一列）／``json-uri-list``（一列 JSON 列表，取第一项解码）／
@@ -363,24 +369,48 @@ class SessionSpec:
     empty_reason: str = ""
 
     # ── jsonl 那一族怎么分派角色 ────────────────────────────────────────
+    #: 记录里「类型」在哪一格（``type``／kiro 的 ``kind``）。
+    record_kind_field: str = "type"
     #: 记录 ``type`` 要是这几个之一（空 = 不看 type）。
     accept_types: tuple[str, ...] = ()
     #: 记录 ``role`` 要是这几个之一（空 = 不看 role）。
     accept_roles: tuple[str, ...] = ()
     #: 角色是 ``type`` 自己（Qoder），还是 ``role`` 那一格（CodeBuddy）。
     role_from_type: bool = False
-    #: 正文在那条记录的哪一格（``message.content``／``content``）。
+    #: 正文在那条记录的哪一格（``message.content``／``content``／kiro 的 ``data.content``）。
     content_path: str = "content"
     #: 取不到时退到哪一格。
     content_fallback: str = ""
+    #: 内容块里「类型」在哪一格（kiro 的块用 ``kind`` 而不是 ``type``）。
+    content_block_kind_field: str = "type"
+    #: 内容块里正文在哪一格（kiro 的块把正文放在 ``data`` 里）。
+    content_block_text_field: str = "text"
     #: 时间戳那一格。
     ts_field: str = ""
+    #: 时间戳那一格的**点路径**（kiro：``data.meta.timestamp``）；空 = 用 ``ts_field`` 扁平取。
+    ts_path: str = ""
+    #: 时间怎么归一：``raw``（原样）／``epoch-s``（epoch **秒**）／``epoch-ms``／``local``（ISO→本地串）。
+    ts_mode: str = "raw"
+
+    # ── 旁挂元数据（sidecar）那一族 ─────────────────────────────────────
+    #
+    # 有些家把**会话本身的元数据**写在正文文件旁边的一个 JSON 里（kiro：
+    # ``<会话号>.json`` 里有 title／cwd／updated_at，正文在同名 ``.jsonl`` 里）。
+    #: 旁挂那个文件在哪（相对会话目录；``{session_id}`` 是会话号占位）。
+    sidecar_glob: str = ""
+    #: sidecar 里标题在哪一格（kiro：``title``）。
+    sidecar_title_field: str = ""
+    #: sidecar 里工作目录在哪一格（kiro：``cwd``）。
+    sidecar_project_field: str = ""
+    #: sidecar 里时间在哪一格（kiro：``updated_at``）。
+    sidecar_updated_field: str = ""
 
     # ── 正文（transcript）怎么读 ────────────────────────────────────────
     #: jsonl 正文在会话目录下的相对位置（``*/<会话号>.jsonl``）。
     transcript_glob: str = ""
-    #: jsonl 正文那一条的类型 → 角色（``jsonl-steps`` 用：``USER_INPUT``→user…）。
-    step_roles: tuple[tuple[str, str], ...] = ()
+    #: jsonl 正文那一条的**类型 → 角色**（两种 jsonl 形状共用这一张：
+    #: ``jsonl-steps`` 的 ``USER_INPUT``→user…／``jsonl-dialogue`` 的 kiro ``Prompt``→user…）。
+    kind_roles: tuple[tuple[str, str], ...] = ()
     #: jsonl 正文里要剥掉的那层包裹（agy 的 ``<USER_REQUEST>``）。
     strip_wrapper: str = ""
     #: 上面那层只对哪个角色剥（agy 的是**人说的**那层，回复不剥）。
@@ -396,6 +426,10 @@ class SessionSpec:
     transcript_content_column: str = ""
     transcript_order_column: str = ""
     transcript_ts_column: str = ""
+    #: **角色编在列名里**那一族（copilot 的 ``turns`` 表）：一行一个 turn，
+    #: 人说的那一句与它答的那一句各占一列 ⇒ 两列名都写在这张表里。
+    turn_user_column: str = ""
+    turn_assistant_column: str = ""
     #: 正文的时间怎么归一：``local``／``epoch``。
     transcript_ts_mode: str = "local"
     #: 正文那一列怎么取字：``raw``／``json-field``（user）／``json-parts``（assistant）。
@@ -637,7 +671,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             updated_column="last_modified_time",
             table="conversation_summaries",
             order_by="last_modified_time desc",
-            step_roles=(("USER_INPUT", "user"), ("PLANNER_RESPONSE", "assistant")),
+            kind_roles=(("USER_INPUT", "user"), ("PLANNER_RESPONSE", "assistant")),
             strip_wrapper="<USER_REQUEST>",
             skip_contents=("None",),
             transcript_glob="{session_id}/.system_generated/logs/transcript.jsonl",
@@ -957,6 +991,43 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         ),
     ),
     VendorRow(
+        id="qoder-cn",
+        # 11-15 现读：这台机器上装的是 **Qoder 中国版**——它自己的
+        # ``.qoder-app-status.json`` 写的是 ``product: "qodercn"``、账号是另一个
+        # （邓德彧）、二进制是 ``qodercn.cmd``、会话 11 条与 qoder 那边零重叠
+        # ⇒ **另一件安装**（同一产品的另一分区），单列一家，不并进 qoder。
+        # 派活腿（怎么起它、权限档）本刀**没实测过** ⇒ ``offloadable=False``，
+        # 只进会话表，不进通道表、不进契约表。
+        install=InstallSpec(command="", homepage="", binary="qodercn", verified=False,
+                            note="Qoder 中国版（这台机器上是 qodercn.cmd）；官方安装包没核到 ⇒ 不给一条可能是错的命令"),
+        binary_name="qodercn",
+        command_env="",
+        extra_args_env="",
+        offloadable=False,
+        session=SessionSpec(
+            vendor="qoder-cn",
+            shape="jsonl-dir",
+            transcript_shape="jsonl-dialogue",
+            order=9,
+            root_rule=PathRule(
+                candidates=("home:.qoder-cn|projects",),
+                pick="first",
+            ),
+            root_resolver="qoder_cn_root",
+            title_source="jsonl-role",
+            title_role="user",
+            project_mode="jsonl-workspace",
+            updated_mode="state-json",
+            accept_types=("user", "assistant"),
+            role_from_type=True,
+            content_path="message.content",
+            content_fallback="content",
+            ts_field="timestamp",
+            transcript_glob="*/{session_id}.jsonl",
+            sendable_mode="never",
+        ),
+    ),
+    VendorRow(
         id=AGENT_KIRO,
         install=InstallSpec(command="", homepage="https://kiro.dev/docs", binary="kiro-cli", verified=True, note="官方安装器（**不在 npm**：registry 上的 kiro-cli 是别的东西，命令叫 kirox）"),
         binary_name="kiro-cli",
@@ -975,6 +1046,44 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         acp_args=("acp",),
         acp_note="11-14 现核：给了会话（登录着）",
         resume_note=NO_RESUME_FLAG,
+        # ── 会话腿（11-15 现读）─────────────────────────────────────────
+        # ``~/.kiro/sessions/cli/<会话号>.json`` ＋同名 ``.jsonl``：
+        # **元数据在旁挂那个 .json 里**（title／cwd／updated_at），正文在 .jsonl 里；
+        # 记录判别键是 ``kind``（``Prompt``／``AssistantMessage``），
+        # 正文块是 ``{"kind":"text","data":…}``，时间是 ``data.meta.timestamp``（epoch **秒**）。
+        # ⇒ 通用旋钮：layout=flat／sidecar_*／record_kind_field／content_block_*／ts_path。
+        session=SessionSpec(
+            vendor=AGENT_KIRO,
+            shape="jsonl-dir",
+            transcript_shape="jsonl-dialogue",
+            order=7,
+            layout="flat",
+            root_rule=PathRule(
+                candidates=("home:.kiro|sessions/cli",),
+                pick="first",
+            ),
+            root_resolver="kiro_root",
+            sidecar_glob="{session_id}.json",
+            sidecar_title_field="title",
+            sidecar_project_field="cwd",
+            sidecar_updated_field="updated_at",
+            # 它自己没起出名字时占位写 ``[user]``／``None`` ⇒ 不算标题，退到 jsonl 那句人话。
+            title_placeholder_values=("[user]", "None"),
+            title_source="jsonl-role",
+            title_role="user",
+            project_mode="jsonl-field",
+            project_field="cwd",
+            updated_mode="mtime",
+            record_kind_field="kind",
+            kind_roles=(("Prompt", "user"), ("AssistantMessage", "assistant")),
+            content_path="data.content",
+            content_block_kind_field="kind",
+            content_block_text_field="data",
+            ts_path="data.meta.timestamp",
+            ts_mode="epoch-s",
+            transcript_glob="{session_id}.jsonl",
+            sendable_mode="never",
+        ),
     ),
     VendorRow(
         id=AGENT_QWEN,
@@ -1022,6 +1131,42 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         acp_args=("--acp",),
         acp_note="11-14 现核：给了会话（登录着）",
         resume_note=NO_RESUME_FLAG,
+        # ── 会话腿（11-15 现读）─────────────────────────────────────────
+        # ``~/.copilot/session-store.db``：会话层是 ``sessions`` 表
+        # （id／summary／cwd／created_at／updated_at）；
+        # 正文层是 ``turns`` 表，**角色编在列名里**（``user_message``／
+        # ``assistant_response``）⇒ 新形状 ``sqlite-turn-pairs``。
+        session=SessionSpec(
+            vendor=AGENT_COPILOT,
+            shape="sqlite-rows",
+            transcript_shape="sqlite-turn-pairs",
+            order=8,
+            db_rule=PathRule(
+                candidates=("home:.copilot|session-store.db",),
+                pick="first",
+            ),
+            db_resolver="copilot_db",
+            readable_mode="db-exists",
+            missing_reason="没找到 GitHub Copilot 的会话库",
+            id_column="id",
+            title_source="column",
+            title_column="summary",
+            title_norm="first-line",
+            project_mode="column",
+            project_column="cwd",
+            updated_mode="column-local",
+            updated_column="updated_at",
+            table="sessions",
+            order_by="updated_at desc",
+            transcript_table="turns",
+            transcript_id_column="session_id",
+            transcript_order_column="turn_index",
+            transcript_ts_column="timestamp",
+            transcript_ts_mode="local",
+            turn_user_column="user_message",
+            turn_assistant_column="assistant_response",
+            sendable_mode="never",
+        ),
     ),
     VendorRow(
         id=AGENT_KILO,

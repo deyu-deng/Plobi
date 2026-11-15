@@ -111,6 +111,11 @@ VENDORS: dict[str, VendorCapabilities] = {
     # 它的回包是**逐行 JSON 事件**（不是 Qoder 那种一个对象）⇒ 解析在
     # `external_sessions.py::_parse_opencode_stream` 里，不在能力表这一层。
     "opencode": VendorCapabilities(vendor="opencode", label="OpenCode", send=True),
+    # ── 11-15 新接会话腿的那三家（都**只读**：回跳旗标没实测过）────────────
+    "kiro": VendorCapabilities(vendor="kiro", label="Kiro"),
+    "copilot": VendorCapabilities(vendor="copilot", label="GitHub Copilot CLI"),
+    # Qoder 中国版：另一件安装（`product: qodercn`）⇒ 单列一家，不并进 qoder。
+    "qoder-cn": VendorCapabilities(vendor="qoder-cn", label="Qoder 中国版"),
 }
 
 

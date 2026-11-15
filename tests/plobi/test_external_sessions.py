@@ -41,12 +41,23 @@ def homes(tmp_path, monkeypatch):
     # 于是真会话串进这一档的读数（三条用例一起红）。把「库在哪」这一根直接钉在假家里：
     # 假家没有库文件 → 这一家照旧当「没装」跳过。
     monkeypatch.setattr(es, "opencode_db", lambda: opencode / "opencode.db")
+    # 11-15 新接的三家：落点解析器按名字调 ⇒ monkeypatch 照样生效（同一个道理）。
+    # 假家一律**空的**：老用例看到的家数一个都不许变。
+    kiro = tmp_path / "kiro"
+    copilot = tmp_path / "copilot"
+    qoder_cn = tmp_path / "qoder-cn" / "projects"
+    for directory in (kiro, copilot, qoder_cn):
+        directory.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(es, "kiro_root", lambda: kiro)
+    monkeypatch.setattr(es, "copilot_db", lambda: copilot / "session-store.db")
+    monkeypatch.setattr(es, "qoder_cn_root", lambda: qoder_cn)
     es._ALL_CACHE.update({"at": 0.0, "rows": []})
     es._META_CACHE.clear()
 
     return SimpleNamespace(qoder=qoder, codebuddy=codebuddy, marvis=marvis, home=home,
                            cursor=tmp_path / "cursor-home", agy=tmp_path / "agy-home",
-                           opencode=opencode)
+                           opencode=opencode, kiro=kiro, copilot=copilot,
+                           qoder_cn=qoder_cn)
 
 
 def qoder_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
@@ -278,6 +289,82 @@ def agy_transcript(root: Path, session_id: str, *, prompt: str, reply: str) -> N
     ]
     (logs / "transcript.jsonl").write_text(
         "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+
+
+def kiro_session(root: Path, session_id: str, *, title: str, cwd: str, prompt: str, reply: str,
+                 updated: str = "2026-10-28T16:30:51.913495Z",
+                 stamp: int = 1793205048) -> None:
+    """按**真机**的形状建一条 kiro 会话（11-15 现读）。
+
+    真机上每个会话是**一对文件**：
+
+    - ``<会话号>.json``：**元数据**（``title``／``cwd``／``updated_at``／``created_at``…）——
+      会话直接躺在 ``sessions/cli/`` 根下，**没有**按项目分的子目录；
+    - ``<会话号>.jsonl``：正文。记录判别键是 ``kind``（``Prompt``／``AssistantMessage``），
+      正文块是 ``{"kind":"text","data":…}``，时间是 ``data.meta.timestamp``（epoch **秒**）。
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    (root / f"{session_id}.json").write_text(json.dumps({
+        "session_id": session_id,
+        "cwd": cwd,
+        "created_at": updated,
+        "updated_at": updated,
+        "title": title,
+        "session_created_reason": "subagent",
+    }, ensure_ascii=False), encoding="utf-8")
+    records = [
+        {"version": "v1", "kind": "Prompt", "data": {
+            "message_id": "m1", "content": [{"kind": "text", "data": prompt}],
+            "meta": {"timestamp": stamp}}},
+        {"version": "v1", "kind": "AssistantMessage", "data": {
+            "message_id": "m2", "content": [{"kind": "text", "data": reply}]}},
+    ]
+    (root / f"{session_id}.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+
+
+def copilot_session(root: Path, session_id: str, *, summary: str, cwd: str,
+                    turns: list[tuple[str, str]], updated: str = "2026-11-08T13:27:38.039Z") -> None:
+    """按**真机**的形状建一个 Copilot 库（11-15 现读）。
+
+    - ``sessions`` 表：``id``／``cwd``／``summary``／``created_at``／``updated_at``；
+    - ``turns`` 表：**角色编在列名里**（``user_message``／``assistant_response``），
+      一行一个 turn，另有 ``turn_index`` 与 ``timestamp``。
+    """
+    root.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(root / "session-store.db")
+    con.executescript(
+        "create table sessions (id text, cwd text, repository text, host_type text, branch text,"
+        " summary text, created_at text, updated_at text);"
+        "create table turns (id integer primary key, session_id text, turn_index integer,"
+        " user_message text, assistant_response text, timestamp text);"
+    )
+    con.execute("insert into sessions values (?,?,?,?,?,?,?,?)",
+                (session_id, cwd, None, None, None, summary, updated, updated))
+    for index, (said, answered) in enumerate(turns):
+        con.execute("insert into turns values (?,?,?,?,?,?)",
+                    (index + 1, session_id, index, said, answered, updated))
+    con.commit()
+    con.close()
+
+
+def qoder_cn_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
+                     updated: str = "2026-10-27T10:00:00.000Z") -> None:
+    """Qoder 中国版：与 qoder **逐字段同形**（同一个 ``<项目键>/<会话号>.jsonl`` 摆法）。"""
+    directory = root / es.project_key(project)
+    directory.mkdir(parents=True, exist_ok=True)
+    records = [
+        {"type": "workspace-directories", "sessionId": session_id, "directories": [project]},
+        {"type": "user", "message": {"role": "user", "content": prompt}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": reply},
+        ]}},
+    ]
+    (directory / f"{session_id}.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+    (directory / session_id).mkdir(exist_ok=True)
+    (directory / session_id / "state.json").write_text(
+        json.dumps({"sessionId": session_id, "updatedAt": updated}), encoding="utf-8")
 
 
 def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
@@ -821,3 +908,114 @@ def test_an_opencode_error_event_is_reported_in_its_own_words(homes, monkeypatch
 
     assert out["ok"] is False
     assert out["error"] == "Rate limit exceeded"
+
+
+# ── 11-15 新接会话腿的那三家（kiro／Copilot／Qoder 中国版）─────────────────
+
+def test_kiro_reads_its_sidecar_for_the_title_the_directory_and_the_time(homes):
+    """kiro 的**元数据在旁挂那个 .json 里**（11-15 现读）：标题／工作目录／时间都从那儿取。"""
+    kiro_session(homes.kiro, "0f578fca-71c7", title="用一句话回答：1+1等于几",
+                 cwd=r"D:\Projects\Plobi\Plobi-Desktop\Code", prompt="1+1等于几", reply="1+1等于2。")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "kiro"}
+
+    assert "0f578fca-71c7" in rows
+    assert rows["0f578fca-71c7"]["title"] == "用一句话回答：1+1等于几"
+    assert rows["0f578fca-71c7"]["project"] == r"D:\Projects\Plobi\Plobi-Desktop\Code"
+    # 时间取旁挂文件的 updated_at（ISO 带 Z）⇒ 本地时间串，排序才对。
+    assert rows["0f578fca-71c7"]["updated_at"].startswith("20")
+
+
+def test_kiro_falls_back_to_the_first_thing_you_said_when_its_own_title_is_a_placeholder(homes):
+    """它自己没起出名字时占位写 ``[user]``（真机 16 条里有 11 条）⇒ 那是**占位，不是标题**。
+
+    退到 jsonl 里那句人话；连那句都没有的（0 字节的占位会话）才退到会话号。
+    """
+    kiro_session(homes.kiro, "aaaa1111-2222", title="[user]", cwd=r"D:\Temp",
+                 prompt="reply with exactly: KIROUTING-OK", reply="KIROUTING-OK")
+    kiro_session(homes.kiro, "bbbb2222-3333", title="None", cwd=r"D:\Temp",
+                 prompt="", reply="")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "kiro"}
+
+    assert rows["aaaa1111-2222"]["title"] == "reply with exactly: KIROUTING-OK"
+    # 那条 jsonl 里没有一句人话 ⇒ 没有标题可取 ⇒ 落回会话号（照实，不编一个）。
+    assert rows["bbbb2222-3333"]["title"] == "bbbb2222-3333"
+
+
+def test_kiro_transcript_splits_by_kind_and_reads_the_text_out_of_the_block(homes):
+    """正文那一层：判别键是 ``kind``，块是 ``{"kind":"text","data":…}``，时间是 epoch **秒**。"""
+    kiro_session(homes.kiro, "0f578fca-71c7", title="问一句", cwd=r"D:\Temp",
+                 prompt="1+1等于几", reply="1+1等于2。")
+
+    out = es.read_transcript("kiro", "0f578fca-71c7")
+
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    assert out["data"]["messages"][0]["text"] == "1+1等于几"
+    assert out["data"]["messages"][1]["text"] == "1+1等于2。"
+    # epoch 秒 ⇒ 本地时间串（不是秒数本身）。
+    assert out["data"]["messages"][0]["ts"].startswith("20")
+
+
+def test_copilot_reads_its_sessions_table_and_its_turn_pairs(homes):
+    """Copilot：会话层 ``sessions`` 表，正文层 ``turns`` 表（**角色编在列名里**）。"""
+    copilot_session(homes.copilot, "2ca367a4-5c4c", summary="验收一下桌面端",
+                    cwd=r"D:\Temp\offload-verify\copilot",
+                    turns=[("任务书在这个文件里", "done"), ("再确认一遍", "仍然是 done")])
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "copilot"}
+
+    assert "2ca367a4-5c4c" in rows
+    assert rows["2ca367a4-5c4c"]["title"] == "验收一下桌面端"
+    assert rows["2ca367a4-5c4c"]["project"] == r"D:\Temp\offload-verify\copilot"
+    assert rows["2ca367a4-5c4c"]["updated_at"].startswith("20")
+
+    out = es.read_transcript("copilot", "2ca367a4-5c4c")
+
+    assert out["ok"] is True
+    # 一行一个 turn ⇒ 人说的与它答的**成对**出来。
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant", "user", "assistant"]
+    assert out["data"]["messages"][0]["text"] == "任务书在这个文件里"
+    assert out["data"]["messages"][1]["text"] == "done"
+    assert out["data"]["messages"][3]["text"] == "仍然是 done"
+
+
+def test_the_qoder_cn_build_is_read_as_its_own_guest_and_not_merged_into_qoder(homes):
+    """Qoder 中国版是**另一件安装**（11-15 现读：``product: qodercn``、另一个账号、零重叠会话）。
+
+    ⇒ 单列一家；它与 qoder **逐字段同形**，所以读法一样，但**不并进 qoder**。
+    """
+    qoder_cn_session(homes.qoder_cn, r"D:\Cloud\Research\01-SRTP", "507d77b8-c665",
+                     prompt="请你了解一下这个项目。", reply="了解了。")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "qoder-cn"}
+
+    assert "507d77b8-c665" in rows
+    assert rows["507d77b8-c665"]["title"] == "请你了解一下这个项目。"
+    assert rows["507d77b8-c665"]["project"] == r"D:\Cloud\Research\01-SRTP"
+
+    out = es.read_transcript("qoder-cn", "507d77b8-c665")
+
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    assert out["data"]["messages"][1]["text"] == "了解了。"
+
+
+def test_the_three_new_guests_do_not_disturb_the_six_that_were_already_read(homes):
+    """**零新增红**：老六家一家都不许少读、不许改名。
+
+    （新三家的假家是空的 ⇒ 这一条同时钉住「没落点的家照实是 0 条」。）
+    """
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    codebuddy_session(homes.codebuddy, r"D:\Temp", "01a1140d-30ed", prompt="写个函数", reply="写好了")
+
+    found = {item["vendor"] for item in es.all_sessions()}
+
+    assert found == {"qoder", "codebuddy"}
+    sources = {item["vendor"]: item for item in es.session_sources()}
+    assert sources["qoder"]["sessions"] == 1
+    assert sources["codebuddy"]["sessions"] == 1
+    # 新三家在表里，但没会话 ⇒ 照实 0 条，不报「读不动」。
+    for vendor in ("kiro", "copilot", "qoder-cn"):
+        assert sources[vendor]["sessions"] == 0

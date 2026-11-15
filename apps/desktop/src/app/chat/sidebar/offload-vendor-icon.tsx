@@ -53,6 +53,8 @@ const VENDOR_LABELS: Record<string, string> = {
   marvis: 'Marvis',
   opencode: 'OpenCode',
   qoder: 'Qoder',
+  // Qoder 中国版：另一件安装（`product: qodercn`、另一个账号、另一个二进制）⇒ 单列一家。
+  'qoder-cn': 'Qoder 中国版',
   qwen: 'Qwen Code'
 }
 
@@ -81,6 +83,9 @@ const VENDOR_LEG_ID: Record<string, string> = {
   kiro: 'kiro_cli',
   opencode: 'opencode_free',
   qoder: 'qoder',
+  // Qoder 中国版与 Qoder 是**同一个品牌**（另一分区）⇒ 用同一颗品牌方块，
+  // 不给它另造一个字形（屏幕上靠名字区分，不靠图标）。
+  'qoder-cn': 'qoder',
   qwen: 'qwen-cli'
 }
 

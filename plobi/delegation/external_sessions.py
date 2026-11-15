@@ -9,7 +9,13 @@
 已核过的存放形状（10-27 现读，11-08 再核一遍）：
 
 - ``qoder``      ``~/.qoder/projects/<项目键>/<会话号>.jsonl`` + ``<会话号>/state.json``
+- ``qoder-cn``   ``~/.qoder-cn/projects/<项目键>/<会话号>.jsonl``（与 qoder 同形，**另一个安装**：
+  ``product: qodercn``、另一个账号、另一个二进制 ⇒ 单列一家）
 - ``codebuddy``  ``~/.codebuddy/projects/<项目键>/<会话号>.jsonl``（记录顶层带 ``cwd``）
+- ``kiro``       ``~/.kiro/sessions/cli/<会话号>.json``（**元数据**：title／cwd／updated_at）
+  ＋同名 ``<会话号>.jsonl``（正文：判别键是 ``kind``，块是 ``{"kind":"text","data":…}``）
+- ``copilot``    ``~/.copilot/session-store.db`` 的 ``sessions``／``turns`` 两张表
+  （正文那一层**角色编在列名里**：``user_message``／``assistant_response``）
 - ``marvis``     ``~/.marvis/database/data.db`` 的 ``conversations`` / ``messages`` 两张表（只读）
 - ``cursor``     ``state.vscdb`` 里的 ``composerData:<id>``（只读）——**这台机器上没留下可读的对话**
   （库在，6 条 composer 全是草稿或已归档；说「这台没留下」，不说「它没有对话」）
@@ -129,6 +135,32 @@ def codebuddy_root() -> Path:
     return resolve_path(spec.root_rule) if spec else Path()
 
 
+def qoder_cn_root() -> Path:
+    """Qoder 中国版的会话目录（``<家>/.qoder-cn/projects``）。
+
+    11-15 现读：这是**另一件安装**（``product: "qodercn"``、另一个账号、另一个二进制），
+    与 ``~/.qoder`` 的会话零重叠 ⇒ 单列一家，不并进 qoder。
+    """
+    spec = _spec("qoder-cn")
+    return resolve_path(spec.root_rule) if spec else Path()
+
+
+def kiro_root() -> Path:
+    """Kiro 的会话目录（``<家>/.kiro/sessions/cli``）。
+
+    11-15 现读：会话**直接躺在根下**（没有 Qoder 那种按项目分的子目录），
+    每个会话一对文件：``<会话号>.json``（元数据）＋ ``<会话号>.jsonl``（正文）。
+    """
+    spec = _spec("kiro")
+    return resolve_path(spec.root_rule) if spec else Path()
+
+
+def copilot_db() -> Path:
+    """GitHub Copilot 的会话库（SQLite，只读）。"""
+    spec = _spec("copilot")
+    return resolve_path(spec.db_rule) if spec else Path()
+
+
 def marvis_db() -> Path:
     """Marvis 的会话库（SQLite，只读）。"""
     spec = _spec("marvis")
@@ -236,17 +268,23 @@ def _cached_meta(path: Path, build) -> dict[str, Any]:
     return meta
 
 
-def _block_text(content: Any) -> str:
-    """一层 jsonl 里的正文：字符串、或块数组（``text`` / ``input_text`` / ``output_text``）。"""
+def _block_text(content: Any, spec=None) -> str:
+    """一层 jsonl 里的正文：字符串、或块数组（``text`` / ``input_text`` / ``output_text``）。
+
+    **块里那两格的名字由表写**（``content_block_kind_field``／``content_block_text_field``）：
+    kiro 的块把类型写在 ``kind``、正文写在 ``data``（不是 ``type``／``text``）。
+    """
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
+        kind_field = getattr(spec, "content_block_kind_field", "") or "type"
+        text_field = getattr(spec, "content_block_text_field", "") or "text"
         parts: list[str] = []
         for block in content:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") in ("text", "input_text", "output_text"):
-                value = block.get("text")
+            if block.get(kind_field) in ("text", "input_text", "output_text"):
+                value = block.get(text_field)
                 if isinstance(value, str) and value.strip():
                     parts.append(value.strip())
 
@@ -351,9 +389,32 @@ def _sendable_for(spec, project: str) -> bool:
     return False
 
 
+def _dig(source: Any, path: str) -> Any:
+    """点路径取值（``data.meta.timestamp``）；取不到就是 ``None``（不编一个值）。"""
+    current = source
+    for part in str(path or "").split("."):
+        if not part or not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+
+    return current
+
+
+def _record_kind(record: dict[str, Any], spec) -> str:
+    """这一条的**类型**（表里写在哪一格：``type``／kiro 的 ``kind``）。"""
+    field = getattr(spec, "record_kind_field", "") or "type"
+    return str(record.get(field) or "")
+
+
 def _record_matches(record: dict[str, Any], spec) -> bool:
-    """这一条算不算一句对话（表里写收哪几种类型／角色）。"""
-    if spec.accept_types and str(record.get("type") or "") not in spec.accept_types:
+    """这一条算不算一句对话（表里写收哪几种类型／角色）。
+
+    **登记了「类型 → 角色」那张映射就按它收**（kiro：``Prompt``／``AssistantMessage``），
+    没登记的走老路（``accept_types``／``accept_roles``）。
+    """
+    if getattr(spec, "kind_roles", None):
+        return _record_kind(record, spec) in dict(spec.kind_roles)
+    if spec.accept_types and _record_kind(record, spec) not in spec.accept_types:
         return False
     if spec.accept_roles and str(record.get("role") or "") not in spec.accept_roles:
         return False
@@ -362,8 +423,10 @@ def _record_matches(record: dict[str, Any], spec) -> bool:
 
 def _record_role(record: dict[str, Any], spec) -> str:
     """一条记录是谁说的（表里写角色在哪一格：``type`` 自己，还是 ``role`` 那一格）。"""
+    if getattr(spec, "kind_roles", None):
+        return dict(spec.kind_roles).get(_record_kind(record, spec), "")
     if spec.role_from_type:
-        return str(record.get("type") or "")
+        return _record_kind(record, spec)
     return str(record.get("role") or "")
 
 
@@ -377,7 +440,7 @@ def _record_text(record: dict[str, Any], spec) -> str:
         current = current[part]
     if current is None and spec.content_fallback:
         current = record.get(spec.content_fallback)
-    return _block_text(current)
+    return _block_text(current, spec)
 
 
 def _jsonl_project(records: Sequence[dict[str, Any]], spec) -> str:
@@ -591,27 +654,85 @@ def _workspace_path(db: Path, spec, workspace_id: str) -> str:
     return ""
 
 
+def _sidecar(spec, directory: Path, session_id: str) -> dict[str, Any]:
+    """旁挂的元数据文件（kiro 的 ``<会话号>.json``）：标题／工作目录／时间都在那儿。
+
+    读不出来就交回空 dict（**不编一个值**）⇒ 调用方退回 jsonl 那一侧。
+    """
+    if not spec.sidecar_glob:
+        return {}
+    path = directory / spec.sidecar_glob.format(session_id=session_id)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+    return payload if isinstance(payload, dict) else {}
+
+
+def _sidecar_title(sidecar: dict[str, Any], spec) -> str:
+    """旁挂文件里的标题；**占位值不算标题**（kiro 的 ``[user]``／``None``）。"""
+    if not sidecar or not spec.sidecar_title_field:
+        return ""
+    value = sidecar.get(spec.sidecar_title_field)
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or text in spec.title_placeholder_values:
+        return ""
+
+    return text
+
+
+def _sidecar_project(sidecar: dict[str, Any], spec) -> str:
+    """旁挂文件里的工作目录。"""
+    if not sidecar or not spec.sidecar_project_field:
+        return ""
+    value = sidecar.get(spec.sidecar_project_field)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+
+    return ""
+
+
+def _sidecar_updated(sidecar: dict[str, Any], spec) -> str:
+    """旁挂文件里的时间（ISO → 本地串）。"""
+    if not sidecar or not spec.sidecar_updated_field:
+        return ""
+    value = sidecar.get(spec.sidecar_updated_field)
+    if isinstance(value, (str, int, float)) and str(value).strip():
+        return _local_stamp(value)
+
+    return ""
+
+
 def _read_jsonl_dir(spec) -> list[dict[str, Any]]:
-    """读法一：目录里一堆 ``*.jsonl``（Qoder、CodeBuddy）。"""
+    """读法一：目录里一堆 ``*.jsonl``（Qoder、CodeBuddy、kiro、Qoder 中国版）。"""
     root = _resolved(spec.root_resolver, spec.root_rule)
     if not root.is_dir():
         return []
     out: list[dict[str, Any]] = []
-    for directory in root.iterdir():
-        if not directory.is_dir():
-            continue
+    # **两种摆法**（表里写）：``project-dir``＝``<根>/<项目>/<会话号>.jsonl``；
+    # ``flat``＝``<根>/<会话号>.jsonl``（kiro：会话直接躺在根下，没有项目目录）。
+    directories = ([root] if spec.layout == "flat"
+                   else [item for item in root.iterdir() if item.is_dir()])
+    for directory in directories:
         for jsonl in directory.glob("*.jsonl"):
             if not SESSION_ID_RE.match(jsonl.stem):
                 continue
 
             def build(jsonl=jsonl, directory=directory) -> dict[str, Any]:
                 records = _records_head(jsonl)
-                project = _jsonl_project(records, spec)
+                sidecar = _sidecar(spec, directory, jsonl.stem)
+                project = _sidecar_project(sidecar, spec) or _jsonl_project(records, spec)
+                # 标题：先看它自己起的（旁挂文件里那个），没有才退到 jsonl 那句人话。
+                title = _sidecar_title(sidecar, spec) or _jsonl_title(records, spec)
+                updated = _sidecar_updated(sidecar, spec) or _jsonl_updated(spec, directory, jsonl)
 
                 return {
                     **_entry(directory, jsonl, project=project,
-                             title=_jsonl_title(records, spec),
-                             updated=_jsonl_updated(spec, directory, jsonl),
+                             title=title,
+                             updated=updated,
                              sendable=_sendable_for(spec, project)),
                     "vendor": spec.vendor,
                 }
@@ -1230,15 +1351,16 @@ def _in_agent_scope(agent_name: str, vendor: str, session_id: str) -> bool:
     return related is not False
 
 
-# ── 通用正文读取器：一个入口，四种形状 ─────────────────────────────────
+# ── 通用正文读取器：一个入口，五种形状 ─────────────────────────────────
 #
 # 正文（transcript）跟会话列表一样：**落点与读法写在真源表里**，
-# 这里只有共用实现。四种形状：
+# 这里只有共用实现。五种形状：
 #
 # * ``jsonl-dialogue`` —— 一行一条，``type``／``role`` 分派（Qoder、CodeBuddy）；
 # * ``jsonl-steps`` —— 一行一个 step，类型各映射一种角色（agy）；
 # * ``sqlite-dialogue`` —— 一张消息表（Marvis、OpenCode）；
-# * ``sqlite-kv-json`` —— 与会话同一个 KV 大块（Cursor）。
+# * ``sqlite-kv-json`` —— 与会话同一个 KV 大块（Cursor）；
+# * ``sqlite-turn-pairs`` —— 一行一个 turn，**角色编在列名里**（Copilot）。
 
 
 def _strip_wrapper(text: str, wrapper: str) -> str:
@@ -1255,6 +1377,32 @@ def _strip_wrapper(text: str, wrapper: str) -> str:
     return text.strip()
 
 
+def _epoch_seconds_stamp(value: Any) -> str:
+    """epoch **秒** → 本地时间串（kiro 的 ``data.meta.timestamp`` 是秒，不是毫秒）。"""
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(seconds).strftime("%Y-%m-%dT%H:%M:%S")
+    except (OSError, OverflowError, ValueError):
+        return ""
+
+
+def _jsonl_stamp(spec, value: Any) -> str:
+    """jsonl 那一族的时间怎么归一（表里写：原样／epoch 秒／epoch 毫秒／ISO→本地串）。"""
+    mode = getattr(spec, "ts_mode", "") or "raw"
+    if mode == "epoch-s":
+        return _epoch_seconds_stamp(value)
+    if mode == "epoch-ms":
+        return _epoch_stamp(value)
+    if mode == "local":
+        return _local_stamp(value)
+    return str(value or "")
+
+
 def _transcript_jsonl_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
     """正文形状一：jsonl，一行一句对话。"""
     root = _resolved(spec.root_resolver, spec.root_rule)
@@ -1269,7 +1417,10 @@ def _transcript_jsonl_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
                 continue
             text = _record_text(record, spec)
             if text:
-                messages.append({"role": role, "text": text, "ts": str(record.get(spec.ts_field) or "")})
+                raw_ts = (_dig(record, spec.ts_path) if spec.ts_path
+                          else record.get(spec.ts_field))
+                messages.append({"role": role, "text": text,
+                                 "ts": _jsonl_stamp(spec, raw_ts)})
 
         return messages
 
@@ -1282,10 +1433,10 @@ def _transcript_jsonl_steps(spec, session_id: str) -> list[dict[str, Any]]:
     path = root / spec.transcript_glob.format(session_id=session_id)
     if not path.is_file():
         return []
-    roles = dict(spec.step_roles)
+    roles = dict(spec.kind_roles)
     messages: list[dict[str, Any]] = []
     for record in _records(path):
-        role = roles.get(str(record.get("type") or ""))
+        role = roles.get(_record_kind(record, spec))
         if not role:
             continue
         text = str(record.get("content") or "")
@@ -1376,8 +1527,43 @@ def _transcript_kv_json(spec, session_id: str) -> list[dict[str, Any]]:
     return _kv_messages(json.loads(row[0]), spec) if row else []
 
 
+def _transcript_sqlite_turn_pairs(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状五：一行一个 turn，**角色编在列名里**（copilot 的 ``turns`` 表）。
+
+    这一族没有 ``role`` 那一列：人说的那一句与它答的那一句**各占一列**
+    （``user_message``／``assistant_response``）⇒ 两列名都写在真源表里。
+    """
+    db = _resolved(spec.db_resolver, spec.db_rule)
+    if not db.is_file():
+        return []
+    sql = (f"select {spec.turn_user_column}, {spec.turn_assistant_column}, "
+           f"{spec.transcript_ts_column} from {spec.transcript_table} "
+           f"where {spec.transcript_id_column} = ? "
+           f"order by {spec.transcript_order_column}")
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = con.execute(sql, (session_id,)).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+    messages: list[dict[str, Any]] = []
+    for user_text, assistant_text, created in rows:
+        stamp = (_local_stamp(created) if spec.transcript_ts_mode == "local"
+                 else _epoch_stamp(created))
+        for role, raw in (("user", user_text), ("assistant", assistant_text)):
+            text = _transcript_text(spec, role, raw)
+            if not text:
+                continue
+            messages.append({"role": role, "text": _clamp_text(text), "ts": stamp})
+
+    return messages[-MAX_MESSAGES:]
+
+
 def read_transcript_messages(spec, session_id: str) -> list[dict[str, Any]]:
-    """**通用正文读取器**：一个入口，四种形状（真源表里写哪一种）。"""
+    """**通用正文读取器**：一个入口，五种形状（真源表里写哪一种）。"""
     shape = spec.transcript_shape
     if shape == "jsonl-dialogue":
         return _transcript_jsonl_dialogue(spec, session_id)
@@ -1387,6 +1573,8 @@ def read_transcript_messages(spec, session_id: str) -> list[dict[str, Any]]:
         return _transcript_sqlite_dialogue(spec, session_id)
     if shape == "sqlite-kv-json":
         return _transcript_kv_json(spec, session_id)
+    if shape == "sqlite-turn-pairs":
+        return _transcript_sqlite_turn_pairs(spec, session_id)
     return []
 
 

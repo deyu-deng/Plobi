@@ -170,13 +170,87 @@ def test_the_channel_module_still_exports_the_same_names():
 
 
 def test_the_session_specs_cover_every_vendor_that_has_sessions():
-    """六家（Qoder、CodeBuddy、Marvis、Cursor、agy、OpenCode）都在会话表里，次序照屏面。"""
-    assert list(vr.SESSION_SPECS) == ["qoder", "codebuddy", "marvis", "cursor", "agy", "opencode"]
+    """九家都在会话表里，次序照屏面。
+
+    前六家是 11-08／11-09 接的；11-15 又接了三家（kiro／Copilot／Qoder 中国版）——
+    Qoder 中国版是**另一件安装**（``product: qodercn``、另一个账号、零重叠会话）⇒ 单列一家。
+    """
+    assert list(vr.SESSION_SPECS) == [
+        "qoder", "codebuddy", "marvis", "cursor", "agy", "opencode",
+        "kiro", "copilot", "qoder-cn",
+    ]
     for vendor, spec in vr.SESSION_SPECS.items():
         assert spec.vendor == vendor
         assert spec.shape in ("jsonl-dir", "sqlite-rows", "sqlite-kv-json")
         assert spec.transcript_shape in (
-            "jsonl-dialogue", "jsonl-steps", "sqlite-dialogue", "sqlite-kv-json")
+            "jsonl-dialogue", "jsonl-steps", "sqlite-dialogue", "sqlite-kv-json",
+            "sqlite-turn-pairs")
+
+
+def test_the_three_new_guests_are_registered_as_data_not_as_code_branches():
+    """**加一家只改表**：新三家的判别键、块键、旁挂文件、列名**全在真源表里**。
+
+    读取器里不许出现按厂商分叉的代码 ⇒ 这里把「那份数据长什么样」钉住。
+    """
+    kiro = vr.SESSION_SPECS["kiro"]
+    assert kiro.shape == "jsonl-dir"
+    assert kiro.layout == "flat"                       # 会话直接躺在根下，没有项目目录
+    assert kiro.sidecar_glob == "{session_id}.json"    # 元数据在旁挂那个 .json 里
+    assert kiro.sidecar_title_field == "title"
+    assert kiro.sidecar_project_field == "cwd"
+    assert kiro.sidecar_updated_field == "updated_at"
+    assert kiro.record_kind_field == "kind"           # 判别键不是 type
+    assert dict(kiro.kind_roles) == {"Prompt": "user", "AssistantMessage": "assistant"}
+    assert kiro.content_block_kind_field == "kind"    # 块的类型写在 kind 里
+    assert kiro.content_block_text_field == "data"    # 正文写在 data 里
+    assert kiro.ts_path == "data.meta.timestamp"      # 时间在点路径上
+    assert kiro.ts_mode == "epoch-s"                  # epoch 秒，不是毫秒
+    # 它自己没起出名字时占位写的那两个值 ⇒ 不算标题。
+    assert "[user]" in kiro.title_placeholder_values
+
+    copilot = vr.SESSION_SPECS["copilot"]
+    assert copilot.shape == "sqlite-rows"
+    assert copilot.transcript_shape == "sqlite-turn-pairs"
+    assert copilot.turn_user_column == "user_message"
+    assert copilot.turn_assistant_column == "assistant_response"
+
+    qoder_cn = vr.SESSION_SPECS["qoder-cn"]
+    assert qoder_cn.shape == "jsonl-dir"
+    assert qoder_cn.layout == "project-dir"           # 与 qoder 同形
+
+
+def test_the_vendors_that_were_already_read_keep_the_old_knobs():
+    """没登记那些旋钮的家**不受牵连**（老六家一个字都不许变）。
+
+    （新旋钮都有默认值：不登记 sidecar 就不读旁挂文件、不登记 kind_roles 就走老路。）
+    """
+    for vendor in ("qoder", "codebuddy", "marvis", "cursor", "agy", "opencode"):
+        spec = vr.SESSION_SPECS[vendor]
+        assert spec.sidecar_glob == ""
+        assert spec.title_placeholder_values == ()
+        assert spec.record_kind_field == "type"
+        assert spec.content_block_kind_field == "type"
+        assert spec.content_block_text_field == "text"
+        assert spec.ts_path == ""
+        assert spec.ts_mode == "raw"
+        assert spec.layout == "project-dir"
+
+
+def test_a_guest_that_cannot_be_sent_to_stays_out_of_the_channel_tables():
+    """**能读它的会话 ≠ 能把话续接进它那条会话**——这是两件事。
+
+    kiro／Copilot 的**派活腿**早就接上了（它们在通道表里），但**续接已有会话**的
+    回跳旗标没实测过 ⇒ 会话那一格写 ``sendable_mode="never"``。
+    Qoder 中国版的派活腿本刀没实测过 ⇒ 整家不进通道表、不进契约表。
+    """
+    for vendor in ("kiro", "copilot"):
+        assert vendor in vr.SESSION_SPECS
+        assert vendor in vr.EXTERNAL_AGENTS          # 派活腿接上了
+        assert vr.SESSION_SPECS[vendor].sendable_mode == "never"   # 续接已有会话没实测
+
+    assert "qoder-cn" in vr.SESSION_SPECS
+    assert "qoder-cn" not in vr.EXTERNAL_AGENTS
+    assert "qoder-cn" not in vr.OFFLOAD_CONTRACT
 
 
 def test_a_session_vendor_that_is_not_offloadable_stays_out_of_the_channel_tables():

@@ -23,8 +23,17 @@ def agent(monkeypatch):
 # ── 单一真源 ──────────────────────────────────────────────────────────────
 
 def test_the_six_vendors_are_the_only_truth_and_the_text_is_generated():
-    assert caps.vendor_names() == ("qoder", "codebuddy", "marvis", "cursor", "agy", "opencode")
-    assert caps.vendor_list_text() == "qoder / codebuddy / marvis / cursor / agy / opencode"
+    """九家（11-15 又接了 kiro／Copilot／Qoder 中国版）——名单只有这一份。
+
+    新接的三家**只读**：能读它们的会话 ≠ 能把话送进去（回跳旗标没实测过）。
+    """
+    assert caps.vendor_names() == (
+        "qoder", "codebuddy", "marvis", "cursor", "agy", "opencode",
+        "kiro", "copilot", "qoder-cn",
+    )
+    assert caps.vendor_list_text() == (
+        "qoder / codebuddy / marvis / cursor / agy / opencode / kiro / copilot / qoder-cn"
+    )
 
 
 def test_qoder_and_opencode_can_speak_and_nobody_takes_attachments_yet():
