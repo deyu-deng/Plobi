@@ -1493,7 +1493,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             homepage="https://www.augmentcode.com/",
             binary="auggie",
             verified=True,
-            note="ACP 官方注册表收录（id「auggie」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「auggie」）；11-15 本机实测：握手通了，但登录/派活被拒——"
+                 "它自己说「要在终端里 auggie login，ACP 里登不了」⇒ 这一家还没接派活腿",
         ),
     ),
 
@@ -1669,7 +1670,9 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             homepage="https://github.com/stefandevo/glm-acp-agent",
             binary="glm-acp-agent",
             verified=True,
-            note="ACP 官方注册表收录（id「glm-acp-agent」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「glm-acp-agent」）；11-15 本机实测：握手通了，也开出了会话，"
+                 "权限档是 ACP 的 session mode（default／accept_edits／bypass_permissions）；"
+                 "但发一句 prompt 报「No API key found」⇒ 这一家还没接派活腿",
         ),
     ),
 
@@ -1685,7 +1688,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             homepage="",
             binary="grok",
             verified=True,
-            note="ACP 官方注册表收录（id「grok-build」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿；官网地址这台机器现核连不上 ⇒ 只给安装命令",
+            note="ACP 官方注册表收录（id「grok-build」）；11-15 本机实测：握手通了，但开会话被拒——"
+                 "它自己说没登录（authMethods 里是 grok.com 网页登录）⇒ 这一家还没接派活腿",
         ),
     ),
 
@@ -1765,7 +1769,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             homepage="https://moonshotai.github.io/kimi-code/",
             binary="kimi",
             verified=True,
-            note="ACP 官方注册表收录（id「kimi-code」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「kimi-code」）；11-15 本机实测：握手通了，但开会话被拒——"
+                 "它自己说没登录（要在终端里 /login）⇒ 这一家还没接派活腿",
         ),
     ),
 
@@ -1829,7 +1834,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             homepage="https://www.compassap.ai/portfolio/nova.html",
             binary="nova",
             verified=True,
-            note="ACP 官方注册表收录（id「nova」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「nova」）；11-15 本机实测：握手通了，但开会话被拒——"
+                 "它自己说「要点 Nova Setup 配 API key」⇒ 这一家还没接派活腿",
         ),
     ),
 
@@ -1910,6 +1916,23 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="vtcode",
             verified=True,
             note="ACP 官方注册表收录（id「vtcode」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+        ),
+    ),
+
+    VendorRow(
+        id="deveco",
+        binary_name="deveco",
+        command_env="PLOBI_OFFLOAD_DEVECO_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_DEVECO_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="npm i -g @deveco/deveco-code@stable",
+            package="@deveco/deveco-code",
+            homepage="https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide-deveco-code-install",
+            binary="deveco",
+            verified=True,
+            note="华为的 HarmonyOS 开发 AI Agent（11-15 官方文档现读 ＋ npm registry 现核：stable 0.3.0-stable）；"
+                 "它自己实现了 ACP（deveco acp）但不在 ACP 官方注册表里 ⇒ 这一家还没接派活腿",
         ),
     ),
 

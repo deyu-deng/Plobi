@@ -84,6 +84,7 @@ const VENDOR_LABELS: Record<string, string> = {
   sigit: 'siGit Code',
   stakpak: 'Stakpak',
   vtcode: 'VT Code',
+  deveco: 'DevEco Code',
 }
 
 /** 屏幕上那一家的名字。查不到就原样返回内部 id。 */

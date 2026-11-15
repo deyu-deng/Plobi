@@ -97,6 +97,7 @@ describe('offload vendor icon', () => {
     'sigit',
     'stakpak',
     'vtcode',
+    'deveco',
     ]
 
     for (const id of ids) {
