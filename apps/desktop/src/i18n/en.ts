@@ -2151,7 +2151,7 @@ export const en: Translations = {
     agentsLoadFailed: 'Could not load agents',
     agentsEmptyTitle: 'No agents yet',
     agentsEmptyDesc: 'Add one when you need it.',
-    // 11-01: the two nouns of the middle switch. Inside "Outsourced", what the L2 handed
+    // 11-01: the two nouns of the middle switch. Inside "Outsourced", what the Foreman handed
     // to another app and your own conversations in that app are one thing — one word.
     tabAgents: 'Agents',
     tabOutsourced: 'Outsourced',
@@ -2183,9 +2183,9 @@ export const en: Translations = {
     expertsTitle: 'Experts',
     expertsRunning: 'running',
     expertsEmpty: 'No experts dispatched yet',
-    expertsIdleHint: 'This expert has not been dispatched yet. When the L2 hands out work with this role, its log shows up here.',
+    expertsIdleHint: 'This expert has not been dispatched yet. When the Foreman hands out work with this role, its log shows up here.',
     expertModelHint: 'Model used when dispatching it',
-    expertModelFollow: 'Follow the L2',
+    expertModelFollow: 'Follow the Foreman',
     expertsLoading: 'Reading experts…',
     expertsLoadFailed: 'Cannot read experts: the backend did not answer.',
     expertsLog: 'Work log',
@@ -2368,7 +2368,7 @@ export const en: Translations = {
     },
     deliveryLabels: {
       local: 'This desktop',
-      user: 'Me (L1 chat)',
+      user: 'Me (Steward chat)',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',
@@ -2526,7 +2526,7 @@ export const en: Translations = {
       skills: 'Capabilities',
       messaging: 'Messaging',
       artifacts: 'Artifacts',
-      console: 'L1 Console'
+      console: 'Steward Console'
     },
     searchAria: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
@@ -3510,6 +3510,7 @@ export const en: Translations = {
       },
       titles: {
         browser_click: { done: 'Clicked page element', pending: 'Clicking page element', pendingAction: 'Clicking' },
+        browser_exec: { done: 'Ran browser script', pending: 'Running browser script', pendingAction: 'Running' },
         browser_fill: { done: 'Filled form field', pending: 'Filling form field', pendingAction: 'Filling' },
         browser_navigate: { done: 'Opened page', pending: 'Opening page', pendingAction: 'Opening' },
         browser_snapshot: {

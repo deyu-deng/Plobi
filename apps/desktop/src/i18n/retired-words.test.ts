@@ -5,14 +5,18 @@ import { ja } from './ja'
 import { zh } from './zh'
 import { zhHant } from './zh-hant'
 
-// 两个已经退役的说法不许再出现在人读到的句子里（WP-PROFILE-UI-PURGE 的尾巴，
+// 三个已经退役的说法不许再出现在人读到的句子里（WP-PROFILE-UI-PURGE 的尾巴，
 // 裁定 143④ 撤「分身」这个拟称、裁定 42/178 撤「一家一个 profile」）：
 //   · 「分身」——他们全是与总秘书同级、可点可问的智能体；
 //   · profile / 配置文件 / 配置档案 / 設定檔 / プロファイル——作为**称呼**已经没有了，
 //     名册里那一行才是身份。
+//   · `L1` / `L2` / `L3`——内部代号，屏上不许出现（2026-11-15 起）。四层现在各有
+//     一个词：Steward / Foreman / Specialist / Contractor，真源见
+//     `Docs/reference/glossary.md`；历史文档不追改，读到旧代号按那张表映射。
 // 这条测试扫的是四语目录里的**字符串值**（键名是内部标识，不在屏上）。
 
-const RETIRED = /分身|配置档案|配置文件|設定檔|设置档|プロファイル|\bprofile\b|\bprofiles\b/iu
+const RETIRED =
+  /分身|配置档案|配置文件|設定檔|设置档|プロファイル|\bprofile\b|\bprofiles\b|\bL[123]\b/iu
 
 // 屏上确实要提那个真文件的落点，那几处不是称呼，是文件名。
 // 屏上确实要提那个**真文件**的落点（代理池那份 yaml），那几处不是称呼。
@@ -57,7 +61,7 @@ function strings(node: unknown, path = ''): Array<[string, string]> {
 }
 
 describe('四语目录里不许留着已退役的称呼', () => {
-  it.each(CATALOGS)('%s：没有「分身」，也没有把 profile 当称呼的句子', (_name, catalog) => {
+  it.each(CATALOGS)('%s：没有「分身」、没有把 profile 当称呼的句子、也没有 L1/L2/L3 代号', (_name, catalog) => {
     const hits = strings(catalog)
       .filter(
         ([path, value]) =>
@@ -73,6 +77,8 @@ describe('四语目录里不许留着已退役的称呼', () => {
     const planted = {
       appearance: { note: (name: string) => `${name} 配置文件保留各自的主题` },
       console: { line: '这个分身不归你管' },
+      roster: { hint: 'L2 派工时指定这个角色' },
+      expert: { tag: 'Follow the L1' },
     }
     const caught = strings(planted).filter(
       ([path, value]) =>
@@ -80,7 +86,12 @@ describe('四语目录里不许留着已退役的称呼', () => {
         !ALLOWED_PATHS.some(allowed => path.startsWith(allowed))
     )
 
-    expect(caught.map(([path]) => path)).toEqual(['appearance.note', 'console.line'])
+    expect(caught.map(([path]) => path)).toEqual([
+      'appearance.note',
+      'console.line',
+      'roster.hint',
+      'expert.tag',
+    ])
 
     // 扫到 0 条也算这条测试没牙：四语每份都该有几百句。
     for (const [, catalog] of CATALOGS) {
