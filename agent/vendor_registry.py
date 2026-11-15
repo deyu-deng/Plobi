@@ -296,8 +296,8 @@ class SessionSpec:
     transcript_root_resolver: str = ""
 
     # ── 会话号从哪儿来 ───────────────────────────────────────────────────
-    #: ``filename``（jsonl 文件名）／``column``（表里那一列）。
-    id_from: str = "filename"
+    #: 会话号＝文件名（``jsonl-dir``）还是表里那一列（``sqlite-*``）——**由形状决定**，
+    #: 这里不另设一格（免得两处能各说各话）。
     id_column: str = ""
 
     # ── 标题 ─────────────────────────────────────────────────────────────
@@ -529,7 +529,6 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
                 pick="first",
             ),
             root_resolver="codebuddy_root",
-            id_from="filename",
             title_source="jsonl-role",
             title_role="user",
             project_mode="jsonl-field",
@@ -579,7 +578,6 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             transcript_root_resolver="agy_brain_root",
             readable_mode="db-exists",
             missing_reason="没找到 agy 的会话摘要库",
-            id_from="column",
             id_column="conversation_id",
             title_source="column",
             title_column="title",
@@ -619,7 +617,6 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
                 pick="first",
             ),
             db_resolver="marvis_db",
-            id_from="column",
             id_column="conversation_id",
             # Marvis 的会话名多半是**项目名**（Plobi／SRTP／Quota），不是人说的第一句话。
             # 屏上先看第一句话（跟别家同一形状），项目名另放一格（``source_title``），不丢信息。
@@ -684,7 +681,6 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             readable_mode="db-and-sessions",
             missing_reason="没找到 Cursor 的 state.vscdb",
             empty_reason="Cursor 这台机器上没留下可读的对话",
-            id_from="column",
             id_column="composerId",
             title_source="first-user",
             updated_mode="column-epoch-ms",
@@ -797,7 +793,6 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
                 pick="first-existing",
             ),
             db_resolver="opencode_db",
-            id_from="column",
             id_column="id",
             title_source="first-user",
             title_column="title",
@@ -892,7 +887,6 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
                 pick="first",
             ),
             root_resolver="qoder_root",
-            id_from="filename",
             title_source="jsonl-role",
             title_role="user",
             project_mode="jsonl-workspace",
