@@ -187,14 +187,14 @@ def test_agent_entry_domains_roundtrip():
     from plobi.agents.registry import AgentEntry
 
     entry = AgentEntry.from_dict("sim", {
-        "role": "l2_project", "category": "courses", "domains": ["Homework", "exam"],
+        "role": "principal", "category": "courses", "domains": ["Homework", "exam"],
     })
     assert entry.domains == ("homework", "exam")
     data = entry.to_dict()
     assert data["domains"] == ["homework", "exam"]
     clone = AgentEntry.from_dict("sim", data)
     assert clone.domains == entry.domains and clone.category == "courses"
-    assert "domains" not in AgentEntry.from_dict("bare", {"role": "l2_project"}).to_dict()
+    assert "domains" not in AgentEntry.from_dict("bare", {"role": "principal"}).to_dict()
 
 
 # ── 接进两枚嘴：错配在投递前挡下 ────────────────────────────────────────

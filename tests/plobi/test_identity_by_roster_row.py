@@ -25,10 +25,10 @@ from plobi_cli import agent_identity as profiles_mod
 ROSTER_YAML = (
     "agents:\n"
     "  Aura:\n"
-    "    role: l2_project\n"
+    "    role: principal\n"
     "    description: 名册上的那一行\n"
     "  agenda:\n"
-    "    role: l2_project\n"
+    "    role: principal\n"
     "    description: 日程秘书\n"
 )
 

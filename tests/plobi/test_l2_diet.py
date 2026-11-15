@@ -103,7 +103,7 @@ def test_mid_narrow_default_when_input_empty():
 
 
 # ---------------------------------------------------------------------------
-# 项目 L2 减肥：apply_l2_project_diet
+# 项目 L2 减肥：apply_principal_diet
 # ---------------------------------------------------------------------------
 
 
@@ -129,8 +129,8 @@ def _read_toolsets(profile_dir):
     return cfg or {}
 
 
-def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_session_search(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_strips_terminal_computer_use_code_execution_session_search(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-plobi"
     _write_config(
@@ -139,7 +139,7 @@ def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_sessi
         platforms={"cli": ["terminal", "web", "session_search"], "gateway": ["plobi-cli", "code_execution"]},
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
 
     cfg = _read_toolsets(profile_dir)
     assert "terminal" not in cfg["toolsets"]
@@ -158,8 +158,8 @@ def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_sessi
     assert "code_execution" not in cfg["platform_toolsets"]["gateway"]
 
 
-def test_apply_l2_project_diet_strips_plobi_composite_toolsets(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_strips_plobi_composite_toolsets(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-animation"
     _write_config(
@@ -167,7 +167,7 @@ def test_apply_l2_project_diet_strips_plobi_composite_toolsets(tmp_path):
         top=["plobi-cli", "plobi-cli-gateway", "web"],
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
 
     cfg = _read_toolsets(profile_dir)
     assert "plobi-cli" not in cfg["toolsets"]
@@ -175,8 +175,8 @@ def test_apply_l2_project_diet_strips_plobi_composite_toolsets(tmp_path):
     assert "web" in cfg["toolsets"]
 
 
-def test_apply_l2_project_diet_preserves_allowed_toolsets(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_preserves_allowed_toolsets(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-nuclide"
     _write_config(
@@ -185,15 +185,15 @@ def test_apply_l2_project_diet_preserves_allowed_toolsets(tmp_path):
     )
 
     # 没东西要删 → 第二次返回 False（idempotent）。
-    assert apply_l2_project_diet(profile_dir) is False
+    assert apply_principal_diet(profile_dir) is False
 
     cfg = _read_toolsets(profile_dir)
     for allowed in ("file", "web", "skills", "todo", "clarify", "delegation", "plobi_core"):
         assert allowed in cfg["toolsets"]
 
 
-def test_apply_l2_project_diet_is_idempotent(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_is_idempotent(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-prism"
     _write_config(
@@ -201,34 +201,34 @@ def test_apply_l2_project_diet_is_idempotent(tmp_path):
         top=["terminal", "web"],
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
     # 第二次已经干净 → 返回 False、不重写。
-    assert apply_l2_project_diet(profile_dir) is False
+    assert apply_principal_diet(profile_dir) is False
 
     cfg = _read_toolsets(profile_dir)
     assert "terminal" not in cfg["toolsets"]
     assert "web" in cfg["toolsets"]
 
 
-def test_apply_l2_project_diet_returns_false_for_missing_config(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_returns_false_for_missing_config(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
-    assert apply_l2_project_diet(tmp_path / "no-such-profile") is False
-    assert apply_l2_project_diet(None) is False
+    assert apply_principal_diet(tmp_path / "no-such-profile") is False
+    assert apply_principal_diet(None) is False
 
 
-def test_apply_l2_project_diet_survives_garbage_yaml(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_survives_garbage_yaml(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "broken"
     profile_dir.mkdir()
     (profile_dir / "config.yaml").write_text("not: valid: yaml: ::", encoding="utf-8")
     # 容错：解析失败 = 静默 False，不抛。
-    assert apply_l2_project_diet(profile_dir) is False
+    assert apply_principal_diet(profile_dir) is False
 
 
-def test_apply_l2_project_diet_preserves_other_keys(tmp_path):
-    from plobi.agents.registry import apply_l2_project_diet
+def test_apply_principal_diet_preserves_other_keys(tmp_path):
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-stithy"
     _write_config(
@@ -238,7 +238,7 @@ def test_apply_l2_project_diet_preserves_other_keys(tmp_path):
         extra={"model": {"provider": "deepseek", "name": "deepseek-chat"}, "plobi": {"something": 1}},
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
     cfg = _read_toolsets(profile_dir)
     # 业务字段保持原样。
     assert cfg["model"] == {"provider": "deepseek", "name": "deepseek-chat"}
@@ -269,7 +269,7 @@ def test_diet_strips_a_freshly_materialised_profile_everywhere(tmp_path):
     """首落无回归：clone 来的 profile 顶层 + cli + gateway 三处同时带
     terminal（``apply_l1_mid_toolsets`` / ``create_profile(clone_config=True)``
     就是这么三份一起写的），一次 diet 必须三处全剥掉。"""
-    from plobi.agents.registry import apply_l2_project_diet
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-framelet"
     _write_config(
@@ -281,7 +281,7 @@ def test_diet_strips_a_freshly_materialised_profile_everywhere(tmp_path):
         },
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
 
     cfg = _read_toolsets(profile_dir)
     for key in ("toolsets",):
@@ -296,7 +296,7 @@ def test_user_enabled_toolset_survives_the_next_diet_pass(tmp_path):
     then re-run it (registration re-applies the diet on every backend start) —
     the user's choice stays put and nothing is rewritten.
     """
-    from plobi.agents.registry import apply_l2_project_diet
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-aura"
     _write_config(
@@ -304,11 +304,11 @@ def test_user_enabled_toolset_survives_the_next_diet_pass(tmp_path):
         top=["terminal", "web", "skills"],
         platforms={"cli": ["terminal", "web", "skills"]},
     )
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
     assert "terminal" not in _read_toolsets(profile_dir)["platform_toolsets"]["cli"]
 
     _simulate_ui_toggle(profile_dir, "cli", "terminal")
-    assert apply_l2_project_diet(profile_dir) is False
+    assert apply_principal_diet(profile_dir) is False
 
     cfg = _read_toolsets(profile_dir)
     assert "terminal" in cfg["platform_toolsets"]["cli"]
@@ -320,7 +320,7 @@ def test_user_enabled_toolset_survives_repeated_passes_and_other_strips(tmp_path
     """The opt-in is not a one-shot exemption: it survives any number of later
     passes, while the diet keeps policing names the profile actually inherited.
     """
-    from plobi.agents.registry import apply_l2_project_diet
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-aura"
     _write_config(
@@ -328,7 +328,7 @@ def test_user_enabled_toolset_survives_repeated_passes_and_other_strips(tmp_path
         top=["terminal", "web", "skills"],
         platforms={"cli": ["terminal", "web", "skills"]},
     )
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
 
     _simulate_ui_toggle(profile_dir, "cli", "terminal")
     _simulate_ui_toggle(profile_dir, "gateway", "terminal")
@@ -343,7 +343,7 @@ def test_user_enabled_toolset_survives_repeated_passes_and_other_strips(tmp_path
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
     cfg = _read_toolsets(profile_dir)
     assert "terminal" in cfg["platform_toolsets"]["cli"]
     assert "terminal" in cfg["platform_toolsets"]["gateway"]
@@ -353,7 +353,7 @@ def test_user_enabled_toolset_survives_repeated_passes_and_other_strips(tmp_path
             assert name not in cfg["platform_toolsets"][platform], (name, platform)
     # 第三遍无事可做 = idempotent，不再重写文件。
     before = (profile_dir / "config.yaml").read_text(encoding="utf-8")
-    assert apply_l2_project_diet(profile_dir) is False
+    assert apply_principal_diet(profile_dir) is False
     assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == before
 
 
@@ -361,7 +361,7 @@ def test_plobi_composite_is_never_treated_as_user_opt_in(tmp_path):
     """``plobi-*`` 复合工具集把 L2 变回工人，且面板根本写不出它
     （``_save_platform_tools`` 先丢掉 platform default toolsets），所以即便
     只出现在单个平台列表里也照剥。"""
-    from plobi.agents.registry import apply_l2_project_diet
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-prism"
     _write_config(
@@ -370,7 +370,7 @@ def test_plobi_composite_is_never_treated_as_user_opt_in(tmp_path):
         platforms={"cli": ["plobi-cli", "web"]},
     )
 
-    assert apply_l2_project_diet(profile_dir) is True
+    assert apply_principal_diet(profile_dir) is True
     cfg = _read_toolsets(profile_dir)
     assert "plobi-cli" not in cfg["platform_toolsets"]["cli"]
     assert "web" in cfg["platform_toolsets"]["cli"]
@@ -378,7 +378,7 @@ def test_plobi_composite_is_never_treated_as_user_opt_in(tmp_path):
 
 def test_diet_leaves_an_untouched_profile_file_byte_identical(tmp_path):
     """用户没碰过的干净 profile：返回 False，且文件一个字节都不动。"""
-    from plobi.agents.registry import apply_l2_project_diet
+    from plobi.agents.registry import apply_principal_diet
 
     profile_dir = tmp_path / "l2-lean"
     _write_config(
@@ -388,7 +388,7 @@ def test_diet_leaves_an_untouched_profile_file_byte_identical(tmp_path):
     )
     before = (profile_dir / "config.yaml").read_text(encoding="utf-8")
 
-    assert apply_l2_project_diet(profile_dir) is False
+    assert apply_principal_diet(profile_dir) is False
     assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == before
 
 
@@ -400,8 +400,8 @@ def test_diet_leaves_an_untouched_profile_file_byte_identical(tmp_path):
 def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     tmp_path, monkeypatch
 ):
-    """ensure_mind_project_agents 内部对每个非 agenda / 非 butler 的 l2_project
-    调一次 apply_l2_project_diet。
+    """ensure_mind_project_agents 内部对每个非 agenda / 非 butler 的 principal
+    调一次 apply_principal_diet。
 
     WP-REGISTRY-NO-HOME（B 刀）之后补一句：这里预建的两个假 profile 就是「家」的
     全部来源——spawn 不再建家，所以这条路径上的家只能由调用方（或懒建）给。
@@ -470,7 +470,7 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
         (profile_dir / "plobi" / "models.json").write_text("{}", encoding="utf-8")
         return {
             "name": name,
-            "role": "l2_project",
+            "role": "principal",
             "profile": f"l2-{name}",
             "profile_dir": str(profile_dir),
             "command": f"plobi -p l2-{name} chat",
@@ -492,7 +492,7 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
         # WP-REGISTRY-NO-HOME（B 刀）之后这一行反过来钉：**spawn 不再触发 diet**。
         # 这两个带 terminal 的假 profile 是测试自己预建的，spawn 不该碰它们；
         # 「工具集策略的真源搬到名册行 / 共享层」是 C 刀的活，函数本体仍由
-        # `test_apply_l2_project_diet_strips_*` 那几条钉着。
+        # `test_apply_principal_diet_strips_*` 那几条钉着。
         assert "terminal" in cfg.get("toolsets", []), (
             "B 刀之后 spawn 不该再替谁剥工具集；真剥等 C 刀"
         )

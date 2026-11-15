@@ -38,7 +38,7 @@ def home(tmp_path, monkeypatch):
 
 
 def _entry(**kw):
-    defaults = dict(name="agenda", role="l2_project", model="deepseek-chat")
+    defaults = dict(name="agenda", role="principal", model="deepseek-chat")
     defaults.update(kw)
     return AgentEntry(**defaults)
 
@@ -138,7 +138,7 @@ def test_save_is_atomic_the_target_is_never_half_written(home, monkeypatch):
     并发读（左栏那次 `GET /api/agents`）会读到截断态，24 行名册瞬间读成 0 行。
     """
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="first", role="l2_project"))
+    reg.upsert(_entry(name="first", role="principal"))
     path = reg.save()
     assert "first" in path.read_text(encoding="utf-8")
 
@@ -152,7 +152,7 @@ def test_save_is_atomic_the_target_is_never_half_written(home, monkeypatch):
 
     monkeypatch.setattr(os, "replace", spy_replace)
     second = AgentRegistry.load(path)
-    second.upsert(_entry(name="second", role="l2_project"))
+    second.upsert(_entry(name="second", role="principal"))
     second.save()
 
     assert "second" not in seen["target"], "rename 时目标已经是新版/半截 —— 不是原子写"
@@ -165,7 +165,7 @@ def test_save_is_atomic_the_target_is_never_half_written(home, monkeypatch):
 def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
     """写中途炸了（盘满/序列化抛）也不许把原来那份 24 行的名册毁掉。"""
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="keepme", role="l2_project"))
+    reg.upsert(_entry(name="keepme", role="principal"))
     path = reg.save()
 
     import yaml as _yaml
@@ -175,7 +175,7 @@ def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
 
     monkeypatch.setattr(_yaml, "safe_dump", boom)
     second = AgentRegistry.load(path)
-    second.upsert(_entry(name="ghost", role="l2_project"))
+    second.upsert(_entry(name="ghost", role="principal"))
     with pytest.raises(OSError):
         second.save()
 
@@ -189,7 +189,7 @@ def test_round_trip_preserves_entries(home):
     # 正面那格 `skills:` 已退役（`WP-AGENT-CAPABILITIES`，11-15：它写了不生效）⇒
     # 这里改钉**还在的**那一份黑名单，判据仍是「存取一圈不丢东西」。
     reg.upsert(_entry(name="agenda", disabled_skills=("a", "b"), description="日程闭环"))
-    reg.upsert(_entry(name="srtp", role="l2_project"))
+    reg.upsert(_entry(name="srtp", role="principal"))
     path = reg.save()
 
     assert path.is_file()
@@ -214,7 +214,7 @@ def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
                 "agents": {
                     "agenda": {
                         "name": "agenda",
-                        "role": "l2_project",
+                        "role": "principal",
                         "skills": ["plobi-l2-resident"],
                         "description": "日程闭环",
                     }
@@ -288,15 +288,15 @@ def test_missing_profile_field_falls_back_to_name(home):
 
 def test_registry_with_l1_and_l2_is_green(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="l2_project", model="deepseek-chat"))
+    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="agenda", role="principal", model="deepseek-chat"))
     assert reg.routing_problems() == []
 
 
 def test_l2_sharing_l1_model_is_flagged(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="bad", role="l2_project", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="bad", role="principal", provider="moonshot", model="kimi-k3"))
     problems = reg.routing_problems()
     assert any("shares L1" in p for p in problems)
 
@@ -347,8 +347,8 @@ def test_spawn_creates_profile_and_models(spawn_env):
     复印件"从"检查一个空目录里没有某文件"变成"那个目录压根不存在"。
     """
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="l2_project", provider="deepseek", model="deepseek-chat"))
+    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="agenda", role="principal", provider="deepseek", model="deepseek-chat"))
     reg.save()
 
     _top_level_config(spawn_env, dict(_CONFIGURED_DEFAULT))
@@ -371,10 +371,10 @@ def test_spawn_creates_profile_and_models(spawn_env):
     shared = shared_config_path()
     models = json.loads(shared.read_text(encoding="utf-8"))
     # 裁 172：那张表是「这一类默认用什么」，**不接收任何一行的覆盖**（名册 24 行里
-    # l2_project 占 23 行，折进去就是给一个 Agent 单选 = 整类一起变）。这一行自己的生效值
+    # principal 占 23 行，折进去就是给一个 Agent 单选 = 整类一起变）。这一行自己的生效值
     # 问 ``route_for``——它仍是 deepseek/deepseek-chat，但只属于 agenda 那一行。
-    assert models["roles"]["l2_project"]["provider"] == "bezel"
-    assert models["roles"]["l2_project"]["model"] == "workbuddy/deepseek-v4.1-flash"
+    assert models["roles"]["principal"]["provider"] == "bezel"
+    assert models["roles"]["principal"]["model"] == "workbuddy/deepseek-v4.1-flash"
     agenda_route = reg.route_for(reg.get("agenda"))
     assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")
     # ADR-0011：那张唯一的表断言绿（L1≠L2）
@@ -393,7 +393,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
 def test_spawn_routing_violation_aborts(spawn_env):
     reg = AgentRegistry.load()
     # L1 缺失 → spawn 时 profile 路由表断言失败
-    reg.upsert(_entry(name="agenda", role="l2_project", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="agenda", role="principal", provider="moonshot", model="kimi-k3"))
     reg.save()
 
     with pytest.raises(RegistryError, match="routing"):
@@ -408,8 +408,8 @@ def test_spawn_unknown_agent_raises(home):
 
 def test_spawn_reuses_existing_profile(spawn_env):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="l2_project", provider="deepseek", model="deepseek-chat"))
+    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="agenda", role="principal", provider="deepseek", model="deepseek-chat"))
     reg.save()
 
     reg.spawn("agenda")
@@ -446,11 +446,11 @@ def test_cli_register_then_spawn(spawn_env, capsys, monkeypatch):
 
     run_plobi(_Args(
         plobi_action="agents", agents_action="register", name="secretary",
-        role="l1_secretary", profile="master", provider="moonshot", model="kimi-k3",
+        role="conductor", profile="master", provider="moonshot", model="kimi-k3",
     ))
     run_plobi(_Args(
         plobi_action="agents", agents_action="register", name="agenda",
-        role="l2_project", provider="deepseek", model="deepseek-chat",
+        role="principal", category="projects", provider="deepseek", model="deepseek-chat",
     ))
 
     run_plobi(_Args(plobi_action="agents", agents_action="spawn", name="agenda"))
@@ -470,24 +470,62 @@ def test_cli_spawn_inline_register(spawn_env, capsys):
 
     run_plobi(_Args(
         plobi_action="agents", agents_action="spawn", name="secretary",
-        role="l1_secretary", profile="master", provider="moonshot", model="kimi-k3",
+        role="conductor", profile="master", provider="moonshot", model="kimi-k3",
     ))
     run_plobi(_Args(
         plobi_action="agents", agents_action="spawn", name="agenda",
-        role="l2_project", provider="deepseek", model="deepseek-chat",
+        role="principal", category="projects", provider="deepseek", model="deepseek-chat",
     ))
     out = capsys.readouterr().out
     assert "Spawned agenda" in out
     assert "ADR-0011 green" in out
 
 
+def test_cli_register_principal_without_category_is_refused(spawn_env, capsys):
+    """2026-11-15 用户裁定：建造 Principal 必须当场说清类别。
+
+    ``principal`` 底下五类 category 是平行的，不给类别就只能静默落进
+    ``butler``（``DEFAULT_CATEGORY``）——那是一次看不见的错分类，事后没人知道
+    它本该怎么归。所以宁可在写名册之前拒掉。
+    """
+    import pytest
+
+    from plobi.agents.cli import run_plobi
+
+    with pytest.raises(SystemExit) as exc:
+        run_plobi(_Args(
+            plobi_action="agents", agents_action="register", name="agenda",
+            role="principal",
+        ))
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--category" in err
+    # 拒在写盘之前：名册里没有这一行空壳
+    assert "agenda" not in AgentRegistry.load().names()
+
+
+def test_cli_register_refuses_a_name_that_derives_no_slug(spawn_env, capsys):
+    """派生不出运行时 slug 的名字建出来是一行点了必然失败的空壳（裁 146②(b)）。"""
+    import pytest
+
+    from plobi.agents.cli import run_plobi
+
+    with pytest.raises(SystemExit) as exc:
+        run_plobi(_Args(
+            plobi_action="agents", agents_action="register", name="档案室",
+            role="principal", category="projects",
+        ))
+    assert exc.value.code == 2
+    assert "slug" in capsys.readouterr().err
+
+
 # --------------------------------------------------------------------------- #
-# C5 pace field (weekly_hours) on l2_project entries
+# C5 pace field (weekly_hours) on principal entries
 # --------------------------------------------------------------------------- #
 
 
 def test_pace_roundtrip_and_weekly_hours():
-    entry = AgentEntry.from_dict("sim", {"role": "l2_project", "pace": {"weekly_hours": 6}})
+    entry = AgentEntry.from_dict("sim", {"role": "principal", "pace": {"weekly_hours": 6}})
     assert entry.weekly_hours == 6.0
     data = entry.to_dict()
     assert data["pace"] == {"weekly_hours": 6.0}
@@ -496,7 +534,7 @@ def test_pace_roundtrip_and_weekly_hours():
 
 
 def test_pace_defaults_to_none():
-    entry = AgentEntry.from_dict("sim", {"role": "l2_project"})
+    entry = AgentEntry.from_dict("sim", {"role": "principal"})
     assert entry.pace is None
     assert entry.weekly_hours is None
     assert "pace" not in entry.to_dict()
@@ -504,18 +542,18 @@ def test_pace_defaults_to_none():
 
 def test_pace_rejects_bad_values():
     with pytest.raises(RegistryError):
-        AgentEntry.from_dict("sim", {"role": "l2_project", "pace": {"weekly_hours": 0}})
+        AgentEntry.from_dict("sim", {"role": "principal", "pace": {"weekly_hours": 0}})
     with pytest.raises(RegistryError):
-        AgentEntry.from_dict("sim", {"role": "l2_project", "pace": {"weekly_hours": -3}})
+        AgentEntry.from_dict("sim", {"role": "principal", "pace": {"weekly_hours": -3}})
     with pytest.raises(RegistryError):
-        AgentEntry.from_dict("sim", {"role": "l2_project", "pace": {"weekly_hours": 200}})
+        AgentEntry.from_dict("sim", {"role": "principal", "pace": {"weekly_hours": 200}})
     with pytest.raises(RegistryError):
-        AgentEntry.from_dict("sim", {"role": "l2_project", "pace": {"weekly_hours": "abc"}})
+        AgentEntry.from_dict("sim", {"role": "principal", "pace": {"weekly_hours": "abc"}})
 
 
 def test_registry_roundtrip_preserves_pace(home):
     registry = AgentRegistry(path=home / "projects.yaml")
-    registry.upsert(AgentEntry.from_dict("sim", {"role": "l2_project", "pace": {"weekly_hours": 6}}))
+    registry.upsert(AgentEntry.from_dict("sim", {"role": "principal", "pace": {"weekly_hours": 6}}))
     registry.save()
     reloaded = AgentRegistry.load(home / "projects.yaml")
     assert reloaded.get("sim").weekly_hours == 6.0
@@ -546,7 +584,7 @@ def test_display_name_empty_falls_back_to_id(home):
     raw = {
         "version": 1,
         "agents": {
-            "old-agent": {"role": "l2_project", "description": "pre-AGENT-DISPLAY-NAME"},
+            "old-agent": {"role": "principal", "description": "pre-AGENT-DISPLAY-NAME"},
         },
     }
     import yaml
@@ -591,7 +629,7 @@ def test_from_dict_handles_missing_display_name_key(home):
     raw = {
         "version": 1,
         "agents": {
-            "legacy": {"role": "l2_project", "description": "x"},
+            "legacy": {"role": "principal", "description": "x"},
         },
     }
     import yaml
@@ -642,7 +680,7 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     reg.upsert(
         AgentEntry(
             name="Plobi",
-            role="l2_project",
+            role="principal",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
@@ -722,10 +760,10 @@ def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
+        _entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="l2_project", provider=provider, model="a-model")
+        _entry(name="proj", role="principal", provider=provider, model="a-model")
     )
     reg.save()
 
@@ -763,10 +801,10 @@ def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, home, capl
     profile_dir = _seed_profile_dir(spawn_env, "proj")
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
+        _entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="l2_project", provider=_UNRESOLVABLE_PROVIDER, model="a-model",)
+        _entry(name="proj", role="principal", provider=_UNRESOLVABLE_PROVIDER, model="a-model",)
     )
     reg.save()
 
@@ -803,10 +841,10 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
 
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
+        _entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="l2_project", provider=_UNRESOLVABLE_PROVIDER, model="a-model", project_path=str(project_dir), category="projects",)
+        _entry(name="proj", role="principal", provider=_UNRESOLVABLE_PROVIDER, model="a-model", project_path=str(project_dir), category="projects",)
     )
     reg.save()
 
@@ -827,7 +865,7 @@ def test_profile_name_is_normalized_to_the_on_disk_id():
     → 退出码 2 → 分身后端永远起不来、界面一直停在「网关 检查中」。
     与底座那个函数的等价性钉在 tests/plobi_cli/test_agent_identity.py（本层不 import plobi_cli）。
     """
-    assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
+    assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
 
 
 # ---------------------------------------------------------------------------
@@ -857,9 +895,9 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
     profile_dir = _seed_profile_dir(spawn_env, "proj")
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
     reg.upsert(
-        _entry(name="proj", role="l2_project", provider="", model="")
+        _entry(name="proj", role="principal", provider="", model="")
     )
     reg.save()
 
@@ -878,7 +916,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     from plobi.routing.models import shared_config_path
 
     models = json.loads(shared_config_path().read_text(encoding="utf-8"))
-    assert "l2_project" in models["roles"]
+    assert "principal" in models["roles"]
     assert not (profile_dir / "plobi" / "models.json").exists(), "spawn 又往分身家复印了一张表"
 
     # 控制组：同一条读链在记录**确实**写了覆盖时必须落到那个分身。没有这一段，
@@ -886,7 +924,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     _seed_profile_dir(spawn_env, "ctrl")
     provider = _resolvable_provider_name()
     reg.upsert(
-        _entry(name="ctrl", role="l2_project", provider=provider, model="a-chosen-model",)
+        _entry(name="ctrl", role="principal", provider=provider, model="a-chosen-model",)
     )
     reg.save()
     reg.spawn("ctrl")
@@ -902,16 +940,16 @@ def test_profile_name_derives_from_the_agent_name():
     provider/model」测试——模板本身随日程秘书单例一起退场（产品不预设任何 L2）。
     同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
     """
-    assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
+    assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
 def test_profile_name_derives_from_the_agent_name():
     """2026-11-15：这里原来还挂着 ``agenda_template_entry()`` 的「模板不许硬写
     provider/model」测试——模板本身随日程秘书单例一起退场（产品不预设任何 L2）。
     同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
     """
-    assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
+    assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
     # 11-06：``default`` 是 L1（名册 name ``secretary``）专属的 slug，别人撞上它一律
     # 派生空串＝没有可路由身份（``derive_runtime_slug`` 里那道保留名闸）。
-    assert AgentEntry(name="Default", role="l2_project").profile_name == ""
-    assert AgentEntry(name="secretary", role="l1_secretary").profile_name == "default"
+    assert AgentEntry(name="Default", role="principal").profile_name == ""
+    assert AgentEntry(name="secretary", role="conductor").profile_name == "default"
     # 空值不许炸（未设 profile 的老行）
-    assert AgentEntry(name="", role="l2_project").profile_name == ""
+    assert AgentEntry(name="", role="principal").profile_name == ""

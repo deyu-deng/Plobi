@@ -47,7 +47,7 @@ def paced_registry(tmp_path, monkeypatch):
     def set_pace(name, weekly_hours):
         registry.upsert(
             AgentEntry.from_dict(
-                name, {"role": "l2_project", "pace": {"weekly_hours": weekly_hours}}
+                name, {"role": "principal", "pace": {"weekly_hours": weekly_hours}}
             )
         )
 

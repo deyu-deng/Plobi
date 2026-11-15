@@ -103,7 +103,7 @@ def tree_names(root: Path) -> list[str]:
 def register(registry: AgentRegistry, name: str, **raw) -> None:
     """直接摆一条进名册（绕开创建门，模拟已有 / 存量数据）。"""
     registry.agents[name] = AgentEntry.from_dict(
-        name, {"role": "l2_project", "category": "projects", **raw}
+        name, {"role": "principal", "category": "projects", **raw}
     )
 
 

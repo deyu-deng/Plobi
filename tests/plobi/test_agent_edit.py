@@ -67,7 +67,7 @@ def _seed(registry: AgentRegistry, **overrides) -> AgentEntry:
     folder = registry.path.parent / "work" / "aura"
     folder.mkdir(parents=True, exist_ok=True)
     raw = {
-        "role": "l2_project",
+        "role": "principal",
         "profile": "l2-aura",
         "display_name": "Aura",
         "category": "projects",
@@ -150,11 +150,11 @@ def test_unknown_keys_are_refused_instead_of_silently_dropped(client, _isolated_
     """
     _seed(_isolated_state)
 
-    response = client.patch("/api/agents/aura", json={"role": "l2_project"})
+    response = client.patch("/api/agents/aura", json={"role": "principal"})
 
     assert response.status_code == 400
     assert "这一格不改" in response.json()["error"]
-    assert _stored(_isolated_state).role == "l2_project"
+    assert _stored(_isolated_state).role == "principal"
 
 
 def test_icon_only_edit_leaves_model_and_role_intact(client, _isolated_state):
@@ -168,7 +168,7 @@ def test_icon_only_edit_leaves_model_and_role_intact(client, _isolated_state):
     assert stored.icon == "files"
     assert stored.color == ""
     assert stored.model == "deepseek/deepseek-chat"
-    assert stored.role == "l2_project"
+    assert stored.role == "principal"
     assert stored.project_path == str(_isolated_state.path.parent / "work" / "aura")
 
 

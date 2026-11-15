@@ -35,13 +35,13 @@ PLUGIN_DIR = REPO / "plugins" / "plobi-core"
 ROSTER_YAML = (
     "agents:\n"
     "  Aura:\n"
-    "    role: l2_project\n"
+    "    role: principal\n"
     "    profile: aura\n"
     "    category: projects\n"
     "    mind_subtree: Dossiers/projects/Aura\n"
     "    description: 名册上的那一行\n"
     "  agenda:\n"
-    "    role: l2_project\n"
+    "    role: principal\n"
     "    profile: l2-agenda\n"
 )
 
@@ -390,8 +390,8 @@ def test_the_cron_scopes_point_at_the_roster_name_dir(monkeypatch, tmp_path):
     from plobi_cli import web_server
 
     agents = [
-        {"name": "agenda", "profile_name": "l2-agenda", "description": "日程秘书", "role": "l2_project"},
-        {"name": "电工电子学", "profile_name": "l2-course-ee", "description": "课", "role": "l2_project"},
+        {"name": "agenda", "profile_name": "l2-agenda", "description": "日程秘书", "role": "principal"},
+        {"name": "电工电子学", "profile_name": "l2-course-ee", "description": "课", "role": "principal"},
     ]
     monkeypatch.setattr("plobi_cli.agent_identity.list_roster_agents", lambda *a, **k: agents)
     monkeypatch.setattr("plobi_cli.agent_identity._read_config_model", lambda *a, **k: (None, None))

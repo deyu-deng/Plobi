@@ -50,14 +50,14 @@ def _seed(home) -> AgentRegistry:
             (),
             {
                 "name": "agenda",
-                "role": "l2_project",
+                "role": "principal",
                 "profile": "l2-agenda",
                 "registered": True,
             },
         )()
         if False
         else __import__("plobi.agents.registry", fromlist=["AgentEntry"]).AgentEntry(
-            name="agenda", role="l2_project"
+            name="agenda", role="principal"
         )
     )
     reg.save()

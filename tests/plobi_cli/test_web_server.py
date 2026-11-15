@@ -252,7 +252,7 @@ def _register_roster_agent(profile: str, name: str | None = None) -> str:
     rows = {}
     if roster.exists():
         rows = (yaml.safe_load(roster.read_text(encoding="utf-8")) or {}).get("agents") or {}
-    rows[key] = {"name": key, "role": "l2_project", "profile": profile, "category": "projects"}
+    rows[key] = {"name": key, "role": "principal", "profile": profile, "category": "projects"}
     roster.write_text(
         yaml.safe_dump({"version": REGISTRY_VERSION, "agents": rows}, sort_keys=False, allow_unicode=True),
         encoding="utf-8",

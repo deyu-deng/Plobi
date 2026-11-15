@@ -22,21 +22,21 @@ ROSTER = textwrap.dedent(
     version: 1
     agents:
       Aura:
-        role: l2_project
+        role: principal
         category: projects
         mind_subtree: Dossiers/projects/Aura
         project_path: D:/projects/Aura
       SRTP:
-        role: l2_research
+        role: principal
         category: research
         mind_subtree: Dossiers/research/SRTP
         project_path: D:/Research/01-SRTP
       电工电子学:
-        role: l2_course
+        role: principal
         category: courses
         project_path: D:/Cloud/Courses/电工电子学
       agenda:
-        role: l1_secretary
+        role: conductor
         category: butler
         mind_subtree: Dossiers/butler
     """

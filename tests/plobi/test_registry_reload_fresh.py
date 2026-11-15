@@ -44,7 +44,7 @@ def test_a_row_written_to_disk_by_someone_else_shows_up_without_a_restart(tmp_re
     assert "later" not in before
 
     on_disk = AgentRegistry.load(tmp_registry)
-    on_disk.upsert(AgentEntry.from_dict("later", {"role": "l2_project", "profile": "later"}))
+    on_disk.upsert(AgentEntry.from_dict("later", {"role": "principal", "profile": "later"}))
     on_disk.save()
 
     after = {entry.name for entry in console_router.get_registry().entries()}

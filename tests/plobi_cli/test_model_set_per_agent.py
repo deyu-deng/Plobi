@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 
-def _seed_agent(home, name, role="l2_project"):
+def _seed_agent(home, name, role="principal"):
     """名册上落一行 Agent —— 身份＝名册那一行（裁 192），不是家目录。"""
     from plobi.agents.registry import AgentEntry, AgentRegistry
 

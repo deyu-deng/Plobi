@@ -165,7 +165,7 @@ def test_home_for_agent_resolves_through_the_roster(tmp_path, monkeypatch):
     monkeypatch.setenv("HUMAN_ROOT", str(surface))
     roster = tmp_path / "projects.yaml"
     roster.write_text(
-        "version: 1\nagents:\n  Aura:\n    role: l2_project\n"
+        "version: 1\nagents:\n  Aura:\n    role: principal\n"
         "    category: projects\n    mind_subtree: Dossiers/projects/Aura\n",
         encoding="utf-8",
     )

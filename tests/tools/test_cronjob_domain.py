@@ -29,7 +29,7 @@ def _roster(tmp_path, monkeypatch):
     path = tmp_path / "domain-roster.yaml"
     rows = {
         OWNER: AgentEntry(
-            name=OWNER, role="l2_project", display_name=OWNER, domains=("schedule",)
+            name=OWNER, role="principal", display_name=OWNER, domains=("schedule",)
         ),
         OTHER: AgentEntry(name=OTHER, role="l2_butler", display_name=OTHER),
     }

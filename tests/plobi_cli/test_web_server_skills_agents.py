@@ -25,7 +25,7 @@ def _seed_agent(home, name):
     from plobi.agents.registry import AgentEntry, AgentRegistry
 
     registry = AgentRegistry(home / "plobi" / "projects.yaml")
-    registry.upsert(AgentEntry(name=name, role="l2_project"))
+    registry.upsert(AgentEntry(name=name, role="principal"))
     registry.save()
     return registry
 

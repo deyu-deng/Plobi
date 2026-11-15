@@ -42,10 +42,10 @@ def bare_registry(tmp_path, monkeypatch):
     from plobi.agents.registry import AgentEntry, AgentRegistry
 
     registry = AgentRegistry(path=tmp_path / "projects.yaml")
-    registry.upsert(AgentEntry.from_dict("Plobi", {"role": "l2_project", "description": "代码项目"}))
+    registry.upsert(AgentEntry.from_dict("Plobi", {"role": "principal", "description": "代码项目"}))
     monkeypatch.setattr("plobi.agents.registry.load_registry", lambda path=None: registry)
 
-    def add(name, weekly_hours, role="l2_project"):
+    def add(name, weekly_hours, role="principal"):
         registry.upsert(
             AgentEntry.from_dict(
                 name, {"role": role, "description": name, "pace": {"weekly_hours": weekly_hours}}
@@ -87,7 +87,7 @@ class _CourseRoster:
         return registry.upsert(
             AgentEntry.from_dict(
                 name,
-                {"role": "l2_project", "category": "courses", "description": f"课程 {name}"},
+                {"role": "principal", "category": "courses", "description": f"课程 {name}"},
             )
         )
 

@@ -383,7 +383,7 @@ def test_a_refused_duplicate_changes_not_a_byte(client, make_brain, isolated_reg
     root = make_brain(disk=["Nymo"])
     isolated_registry.agents["Nymo"] = AgentEntry.from_dict(
         "Nymo",
-        {"role": "l2_project", "category": "projects", "display_name": "Nymo",
+        {"role": "principal", "category": "projects", "display_name": "Nymo",
          "mind_subtree": f"{PROJECTS_RELATIVE}/Nymo"},
     )
     before = snapshot(root)
@@ -401,7 +401,7 @@ def test_a_refused_tree_owner_claim_changes_not_a_byte(client, make_brain, isola
     root = make_brain(disk=["Nymo"])
     isolated_registry.agents["Nymo"] = AgentEntry.from_dict(
         "Nymo",
-        {"role": "l2_project", "category": "projects", "display_name": "别的名字",
+        {"role": "principal", "category": "projects", "display_name": "别的名字",
          "mind_subtree": f"{PROJECTS_RELATIVE}/Nymo"},
     )
     before = snapshot(root)

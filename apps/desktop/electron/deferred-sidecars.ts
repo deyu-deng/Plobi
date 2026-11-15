@@ -403,14 +403,13 @@ const RESPAWN_PERMANENT_HOLD_MS = 600_000
  *      "data rows carry no profile" and not "create the missing profile";
  *   3. "Profile name 'X' is reserved — it collides with either the Plobi
  *      installation itself or a common system binary" — the name passes the regex
- *      but is permanently banned. `Plobi`'s own roster row (`role: l2_project`,
+ *      but is permanently banned. `Plobi`'s own roster row (`role: principal`,
  *      so *not* a data row) is exactly this shape: that row can never be opened,
  *      however many times we try (产品线 13:2x 实测 `plobi -p plobi --help` ⇒ exit 0,
  *      the failure only appears when the backend actually boots).
  *
- * The 2026-10-13 incident this exists for: five `role: l2_course` rows were put
- * in the roster on 2026-10-12 20:1x. Course rows are *data* (裁定 recorded in
- * `plobi/routing/models.py`: no route, not askable), so they have no profile
+ * The 2026-10-13 incident this exists for: five rows that derived no runtime
+ * slug were put in the roster on 2026-10-12 20:1x. Those rows had no profile
  * directory — yet the console handed their name out as a `profile`, the renderer
  * reconnect loop asked for a backend for them, and desktop.log filled itself with
  * 2,214 / 2,767 / 280 / 96 identical spawn/exit cycles for profiles that can

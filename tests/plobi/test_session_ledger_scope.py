@@ -103,7 +103,7 @@ def test_agent_id_for_profile_maps_name_via_registry(tmp_path, monkeypatch):
         yaml.safe_dump(
             {
                 "version": REGISTRY_VERSION,
-                "agents": {"aura": {"name": "aura", "role": "l2_project", "category": "projects"}},
+                "agents": {"aura": {"name": "aura", "role": "principal", "category": "projects"}},
             },
             sort_keys=False,
             allow_unicode=True,
@@ -164,7 +164,7 @@ def panel_scope(tmp_path, monkeypatch):
         yaml.safe_dump(
             {
                 "version": REGISTRY_VERSION,
-                "agents": {"aura": {"name": "aura", "role": "l2_project", "category": "projects"}},
+                "agents": {"aura": {"name": "aura", "role": "principal", "category": "projects"}},
             },
             sort_keys=False,
             allow_unicode=True,
@@ -272,7 +272,7 @@ def mixed_ledger(tmp_path, monkeypatch):
                 "agents": {
                     "aura": {
                         "name": "aura",
-                        "role": "l2_project",
+                        "role": "principal",
                         "category": "projects",
                     }
                 },

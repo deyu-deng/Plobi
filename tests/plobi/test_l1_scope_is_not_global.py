@@ -3,7 +3,7 @@
 
 判据四件，全在这一个文件里：
   ① 一只口给出三个值：``''`` = L1 那一格、``None`` = 不圈（``all``／认不出）、名册 name = L2；
-  ② 名册里的 L1 行（``role=l1_secretary``，slug 恰好是 ``default``）翻回**空串**，
+  ② 名册里的 L1 行（``role=conductor``，slug 恰好是 ``default``）翻回**空串**，
      不再翻成 ``secretary``（那一翻就是 11-05「我和总秘书的对话又消失了」：按
      ``secretary`` 圈 = 0 行，按空串圈才是秘书那一格）；
   ③ 总账的过滤条件把 ``agent_id=''`` 当**真过滤**，不当"没传"；
@@ -25,9 +25,9 @@ from plobi.agents.registry import (
 )
 from plobi_state import SessionDB
 
-L1 = {"role": "l1_secretary", "profile": "default"}
-EE = {"role": "l2_project", "profile": "l2-course-ee", "category": "courses"}
-AGENDA = {"role": "l2_project", "profile": "l2-agenda"}
+L1 = {"role": "conductor", "profile": "default"}
+EE = {"role": "principal", "profile": "l2-course-ee", "category": "courses"}
+AGENDA = {"role": "principal", "profile": "l2-agenda"}
 
 
 @pytest.fixture

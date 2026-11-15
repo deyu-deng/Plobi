@@ -95,7 +95,7 @@ def test_legacy_row_without_category_loads_as_butler(_isolated_state):
     raw = {
         "version": 1,
         "agents": {
-            "old-agent": {"role": "l2_project", "description": "pre-R-012"},
+            "old-agent": {"role": "principal", "description": "pre-R-012"},
         },
     }
     import yaml
@@ -116,7 +116,7 @@ def test_category_roundtrips_through_yaml(_isolated_state):
     reg = _isolated_state
     for cat in AGENT_CATEGORIES:
         reg.upsert(
-            AgentEntry(name=f"agent-{cat}", role="l2_project", category=cat)
+            AgentEntry(name=f"agent-{cat}", role="principal", category=cat)
         )
     reg.save()
     reloaded = AgentRegistry.load(reg.path)
@@ -131,7 +131,7 @@ def test_invalid_category_in_yaml_folds_to_butler(_isolated_state):
     raw = {
         "version": 1,
         "agents": {
-            "typo": {"role": "l2_project", "category": "personal"},
+            "typo": {"role": "principal", "category": "personal"},
         },
     }
     _isolated_state.path.write_text(
@@ -209,7 +209,7 @@ def test_overview_returns_project_path(client, _isolated_state):
     _isolated_state.upsert(
         AgentEntry(
             name="proj-x",
-            role="l2_project",
+            role="principal",
             category="projects",
             project_path="/tmp/proj-x",
         )
@@ -268,7 +268,7 @@ def test_sixth_events_agent_is_400(client, _isolated_state, monkeypatch):
         _isolated_state.upsert(
             AgentEntry(
                 name=f"evt-{i}",
-                role="l2_project",
+                role="principal",
                 category="events",
                 source_event_id=f"confirmed_{i}",
             )
@@ -296,7 +296,7 @@ def test_events_cap_not_counted_on_update(client, _isolated_state, monkeypatch):
         _isolated_state.upsert(
             AgentEntry(
                 name=f"evt-{i}",
-                role="l2_project",
+                role="principal",
                 category="events",
                 source_event_id=f"confirmed_{i}",
             )
@@ -397,7 +397,7 @@ def test_dissolve_is_idempotent(client, _isolated_state, monkeypatch, tmp_path):
     """Dissolving an already-archived agent returns the existing archive info."""
     _stub_spawn(_isolated_state, monkeypatch)
     _isolated_state.upsert(
-        AgentEntry(name="already", role="l2_project", category="projects")
+        AgentEntry(name="already", role="principal", category="projects")
     )
     _isolated_state.save()
     console_router.reload_registry()
@@ -440,7 +440,7 @@ def test_create_agent_routes_name_to_display_name_not_description(client, _isola
     body = {
         "id": "aura",
         "category": "projects",
-        "role": "l2_project",
+        "role": "principal",
         "name": "Aura",
         "description": "节奏感知的项目 L2",
     }
@@ -492,7 +492,7 @@ def test_get_agents_falls_back_to_id_when_display_name_empty(
     raw = {
         "version": 1,
         "agents": {
-            "oldie": {"role": "l2_project", "category": "projects", "description": "legacy"},
+            "oldie": {"role": "principal", "category": "projects", "description": "legacy"},
         },
     }
     reg.path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
@@ -518,7 +518,7 @@ def test_a_row_display_name_wins_over_its_id(client, _isolated_state, monkeypatc
     reg.upsert(
         AgentEntry(
             name="agenda",
-            role="l2_project",
+            role="principal",
             category="butler",
             display_name="日程安排",
             description="日程闭环",
@@ -569,33 +569,31 @@ def test_create_agent_no_titlecase_no_truncate(client, _isolated_state, monkeypa
     assert entry.display_name == "iPhone 项目"  # 原样
 
 
-def test_course_role_is_data_not_a_worker():
-    """``l2_course``（用户 10-11 拍「再加一个角色」）的四条真实后果，逐条钉住。
+def test_course_row_without_a_slug_is_data_not_a_worker():
+    """派生不出 slug 的课程行的四条真实后果，逐条钉住。
 
-    课程条目进名册是为了让作业有名有姓，**不是为了多一个手下**：
-    ① 不带 pace ⇒ 不进推进池；② 不是 ``ASKABLE_ROLE`` ⇒ L1 问不到它，且话术点名角色；
-    ③ 不配 model 路由 ⇒ ``resolve`` 抛 RoutingError（三个调用点各自兜住，见
+    **2026-11-15（用户裁定）**：原来这条是钉第三个 role 值（``l2_course``）的；那一值
+    已物理删除，「有没有身份」只剩一条判据——名字派生得出 slug 吗。这四条后果跟着
+    换成挂在那条判据上：课程条目进名册是为了让作业有名有姓，**不是为了多一个手下**：
+    ① 不带 pace ⇒ 不进推进池；② 派生不出 slug ⇒ 不是可问的 L2，且话术说清为什么；
+    ③ 身份为空 ⇒ 不配 model 路由（三个调用点各自兜住，见
     ``plobi/routing/models.py`` 那段注释）；④ 品类 ``courses`` 在 ``UNBOUND_CATEGORIES`` 里
     ⇒ 不会被塞一个默认目录（这台 ``D:\\Cloud`` 是百度网盘，绑过去就是黑洞）。
     """
-    import pytest
-
     from plobi.agents.registry import AgentEntry, agent_askability
-    from plobi.routing.models import L2_COURSE, RoutingError, ModelRouter
+    from plobi.routing.models import PRINCIPAL
 
-    entry = AgentEntry(name="电工电子学", role=L2_COURSE, category="courses")
+    entry = AgentEntry(name="线性代数（未登记）", role=PRINCIPAL, category="courses")
 
     assert entry.weekly_hours is None, "课程不该自带每周推进目标——那是用户拍的"
+    assert entry.profile_name == ""
     askable, why = agent_askability(entry)
-    assert askable is False and L2_COURSE in why, (askable, why)
+    assert askable is False and "派生" in why, (askable, why)
     assert not entry.project_path, "courses 是无绑定品类，不该被塞默认目录"
 
-    with pytest.raises(RoutingError):
-        ModelRouter.load().resolve(L2_COURSE)
 
-
-def test_the_real_roster_carries_no_course_worker_rows():
-    """真名册上那五门课确实是 ``l2_course`` + ``courses``，而且**没有一条被排进推进池**。
+def test_the_real_roster_carries_no_unrouted_course_rows():
+    """真名册上那五门课是 ``principal`` + ``courses``，而且**没有一条被排进推进池**。
 
     这条只在真家目录存在名册时跑（缺文件就 skip）——它是"界面上该看见课程栏"这件事
     在服务端的对应面：前端不再自己抄一份分类名单（``agent-groups.ts``），
@@ -603,7 +601,6 @@ def test_the_real_roster_carries_no_course_worker_rows():
     """
     from plobi.agents.registry import load_registry, default_path
     from plobi.agenda.planning import paced_projects
-    from plobi.routing.models import L2_COURSE
 
     if not default_path().exists():
         import pytest
@@ -612,33 +609,39 @@ def test_the_real_roster_carries_no_course_worker_rows():
 
     courses = [e for e in load_registry().entries() if e.category == "courses"]
     assert courses, "名册里应有课程条目（用户 10-11 拍的五门课）"
-    assert all(e.role == L2_COURSE for e in courses), [e.role for e in courses]
+    assert all(e.role == PRINCIPAL for e in courses), [e.role for e in courses]
 
     paced = {e.name for e, _ in paced_projects()}
     assert not (paced & {e.name for e in courses}), "课程一旦被当成 pace 项目，作业就会从「无主」被摘走又拿不到块"
 
-def test_data_role_exposes_no_profile_name():
-    """``l2_course`` 是数据不是分身：对外不许有一个**看起来能连**的 profile 名。
+def test_a_row_that_derives_no_slug_exposes_no_profile_name():
+    """派生不出 slug 的行是数据不是分身：对外不许有一个**看起来能连**的 profile 名。
 
     以前 ``profile_name`` 一律回退到条目名，于是名册里那五门课各自冒充一格 profile，
     桌面为它们起 ``plobi -p <课名>``：ASCII 名退 1（Profile does not exist）、非 ASCII 名
     被 CLI 的 ``-p`` 预扫丢掉退 2 —— 每一门都是一场重启循环（2026-10-13 现核
-    desktop.log 单「电工电子学」2767 行 failed）。真要给运行时，改角色，不是给它写 profile。
+    desktop.log 单「电工电子学」2767 行 failed）。
+    **2026-11-15**：那个第三值删掉之后，这条牙挂在唯一判据上——名字派生得出 slug 吗。
+    派生不出来（未登记的非 ASCII 名）就是空串；真分身照旧归一化。
     """
     from plobi.agents.registry import AgentEntry
+    from plobi.routing.models import PRINCIPAL
 
-    course = AgentEntry(name="大学物理（甲）Ⅱ", role="l2_course", category="courses")
+    course = AgentEntry(name="线性代数（未登记）", role=PRINCIPAL, category="courses")
     assert course.profile_name == ""
 
-    project = AgentEntry(name="Aura", role="l2_project", category="projects")
+    project = AgentEntry(name="Aura", role=PRINCIPAL, category="projects")
     assert project.profile_name == "aura", "真分身的归一化一字不许动"
 
 
-def test_data_role_is_not_askable_and_says_why():
-    """可问性那条判据本来就先按角色拒课——两半必须同时成立，别只修一半。"""
+def test_unroutable_row_is_not_askable_and_says_why():
+    """可问性那条判据本来就先看有没有路由——两半必须同时成立，别只修一半。"""
     from plobi.agents.registry import AgentEntry, agent_askability
+    from plobi.routing.models import PRINCIPAL
 
-    usable, why = agent_askability(AgentEntry(name="电工电子学", role="l2_course", category="courses"))
+    usable, why = agent_askability(
+        AgentEntry(name="线性代数（未登记）", role=PRINCIPAL, category="courses")
+    )
 
     assert usable is False
-    assert "l2_course" in why
+    assert "派生" in why

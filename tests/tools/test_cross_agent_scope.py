@@ -38,10 +38,10 @@ def layered_plobi(tmp_path, monkeypatch):
     roster.write_text(
         "agents:\n"
         "  Aura:\n"
-        "    role: l2_project\n"
+        "    role: principal\n"
         "    profile: aura\n"
         "  Sindri:\n"
-        "    role: l2_project\n"
+        "    role: principal\n"
         "    profile: sindri\n",
         encoding="utf-8",
     )

@@ -112,18 +112,18 @@ describe('isNavigableAgent', () => {
     expect(isNavigableAgent(agent({ id: 'nymo', name: 'Nymo' }))).toBe(true)
   })
 
-  it('refuses a data row — because the backend says so, not because a profile is missing', () => {
-    // 名册里的课程条目（role=l2_course）就是这一类。以前点它，客户端会替它编一个
+  it('refuses a row with no runtime identity — because the backend says so, not because a profile is missing', () => {
+    // 名册里派生不出运行时 slug 的行就是这一类。以前点它，客户端会替它编一个
     // profile 名去起后端（`agent.id` 那条回退），于是每一门都是一场重启循环。
     // 11-06 之后 `profile` 那一格已从响应里删掉，判据只剩后端的 `navigable`：
-    // 课程行由后端标 false，客户端不再靠"没有 profile"这种缺字段去猜。
+    // 这一类行由后端标 false，客户端不再靠"没有 profile"这种缺字段去猜。
     expect(isNavigableAgent(agent({ id: '电工电子学', name: '电工电子学', navigable: false }))).toBe(false)
     // 没有 navigable 也不能凭"没有 profile"把它按死——缺字段是旧响应，不是判决。
     expect(isNavigableAgent(agent({ id: '电工电子学', name: '电工电子学' }))).toBe(true)
   })
 
   it('R-072: backend navigable=false wins', () => {
-    // 课程行（heal 后 role=l2_course）与保留名行（Plobi）后端说点了必然 spawn
+    // 派生不出 slug 的行与保留名行（Plobi）后端说点了必然 spawn
     // 失败 —— 行必须不可点。
     expect(isNavigableAgent(agent({ id: 'c', name: '电工电子学', navigable: false }))).toBe(false)
     expect(isNavigableAgent(agent({ id: 'p', name: 'Plobi', navigable: false }))).toBe(false)

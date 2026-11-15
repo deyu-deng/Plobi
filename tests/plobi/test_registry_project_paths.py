@@ -10,7 +10,7 @@ behavior contracts over snapshots).
 
 The mechanism behind invariants 2 and 3 changed with 裁 42 / 166 (ADR-0013):
 the binding used to be pushed into each 分身's own ``config.yaml`` by the now
-deleted ``apply_l2_project_cwd``; it is now resolved **at read time** from the
+deleted ``apply_principal_cwd``; it is now resolved **at read time** from the
 roster row by :func:`plobi.agents.registry.project_cwd_for_profile`. The
 contracts are the same — a healed binding feeds a cwd, an unresolvable one
 never becomes a fabricated directory and leaves no file behind — so only the
@@ -199,7 +199,7 @@ def test_stale_binding_is_rebased_onto_the_real_directory(home, tmp_path):
         path,
         {
             "Resonote": {
-                "role": "l2_project",
+                "role": "principal",
                 "category": "projects",
                 "profile": "resonote",
                 "project_path": WINDOWS_LEFTOVER.format(name="Resonote"),
@@ -240,7 +240,7 @@ def test_healed_registry_reloads_unchanged(home, tmp_path):
         path,
         {
             name: {
-                "role": "l2_project",
+                "role": "principal",
                 "category": "projects",
                 "project_path": WINDOWS_LEFTOVER.format(name=name),
             }
@@ -271,7 +271,7 @@ def test_research_row_resolves_against_the_projects_root(home, tmp_path):
         path,
         {
             "Wealth-Lab": {
-                "role": "l2_project",
+                "role": "principal",
                 "category": "research",
                 "project_path": WINDOWS_LEFTOVER.format(name="Wealth-Lab"),
             }
@@ -302,7 +302,7 @@ def test_unresolvable_stale_binding_is_never_fabricated(home, tmp_path):
         path,
         {
             "Animation": {
-                "role": "l2_project",
+                "role": "principal",
                 "category": "projects",
                 "profile": "animation",
                 "project_path": stale,
@@ -343,7 +343,7 @@ def test_heal_does_not_follow_a_path_traversal_entry_name(home, tmp_path):
 
     entry = AgentEntry(
         name="../outside",
-        role="l2_project",
+        role="principal",
         category="projects",
         project_path=WINDOWS_LEFTOVER.format(name="outside"),
     )
@@ -369,7 +369,7 @@ def test_human_set_existing_path_is_left_alone(home, tmp_path):
         path,
         {
             "Resonote": {
-                "role": "l2_project",
+                "role": "principal",
                 "category": "projects",
                 "project_path": str(chosen),
             }
@@ -406,7 +406,7 @@ def test_unbound_row_is_untouched(home, tmp_path):
     """Empty binding (the agenda row's shape) is not "stale" — nothing to
     heal, nothing to warn about."""
     path = _registry_file(tmp_path)
-    _write_registry(path, {"agenda": {"role": "l2_project", "category": "butler"}})
+    _write_registry(path, {"agenda": {"role": "principal", "category": "butler"}})
 
     before = path.read_text(encoding="utf-8")
     reg = AgentRegistry.load(path)
@@ -420,7 +420,7 @@ def test_seeding_a_new_row_uses_the_platform_root(home, tmp_path):
     reg = AgentRegistry(path=_registry_file(tmp_path))
     projects_root = home / POSIX_PROJECTS_ROOT_NAME
 
-    entry = reg.upsert(AgentEntry(name="newproj", role="l2_project", category="projects"))
+    entry = reg.upsert(AgentEntry(name="newproj", role="principal", category="projects"))
     assert Path(entry.project_path) == projects_root
     # the registry itself must not materialise the binding
     assert not projects_root.exists()

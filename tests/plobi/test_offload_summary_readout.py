@@ -83,7 +83,7 @@ class TestOffloadSummaryReadout:
         """`limit` 只截**显示**，总数不许跟着变小——屏上那一句按整本台账算。"""
         _register(
             _isolated_state,
-            aura={"role": "l2_project", "profile": "aura", "project_path": "D:/projects/Aura"},
+            aura={"role": "principal", "profile": "aura", "project_path": "D:/projects/Aura"},
         )
         _ledger_stub(
             monkeypatch,
@@ -108,7 +108,7 @@ class TestOffloadSummaryReadout:
         """机器码（`not_logged_in` 那一族）不上屏；后端给的那一句人话原样摆。"""
         _register(
             _isolated_state,
-            aura={"role": "l2_project", "profile": "aura", "project_path": "D:/projects/Aura"},
+            aura={"role": "principal", "profile": "aura", "project_path": "D:/projects/Aura"},
         )
         _ledger_stub(
             monkeypatch,
@@ -129,7 +129,7 @@ class TestOffloadSummaryReadout:
 
         _register(
             _isolated_state,
-            aura={"role": "l2_project", "profile": "aura", "project_path": "D:/projects/Aura"},
+            aura={"role": "principal", "profile": "aura", "project_path": "D:/projects/Aura"},
         )
         _ledger_stub(
             monkeypatch,
@@ -152,7 +152,7 @@ class TestOffloadSummaryReadout:
 
         _register(
             _isolated_state,
-            aura={"role": "l2_project", "profile": "aura", "project_path": "D:/projects/Aura"},
+            aura={"role": "principal", "profile": "aura", "project_path": "D:/projects/Aura"},
         )
         _ledger_stub(monkeypatch, [_round("D:/projects/Aura", yesterday_ts, cost=99.0)])
 
@@ -167,7 +167,7 @@ class TestOffloadSummaryReadout:
         """发生了但量不出 ⇒ 就说量不出（R-073：不许拿 0 充）。"""
         _register(
             _isolated_state,
-            aura={"role": "l2_project", "profile": "aura", "project_path": "D:/projects/Aura"},
+            aura={"role": "principal", "profile": "aura", "project_path": "D:/projects/Aura"},
         )
         _ledger_stub(
             monkeypatch, [_round("D:/projects/Aura", _ts(_dt.datetime.now().astimezone()), cost=None)]

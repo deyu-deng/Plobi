@@ -34,7 +34,7 @@ def test_a_locked_db_degrades_one_row_instead_of_the_whole_list(stub_common, mon
     monkeypatch.setattr(router, "totals_for_agent", _locked)
     monkeypatch.setattr(router, "sessions_for_agent", _locked)
 
-    row = router.agent_row(AgentEntry(name="aura", role="l2_project"))
+    row = router.agent_row(AgentEntry(name="aura", role="principal"))
 
     assert row["id"] == "aura", "这一行必须还在——锁的是读数，不是这个 Agent"
     assert row["todayCalls"] == 0, "读不到就按 0 说，别让整张单子 500"
@@ -51,4 +51,4 @@ def test_a_non_lock_sql_error_still_raises(stub_common, monkeypatch):
     monkeypatch.setattr(router, "sessions_for_agent", lambda agent_id: [])
 
     with pytest.raises(sqlite3.OperationalError):
-        router.agent_row(AgentEntry(name="aura", role="l2_project"))
+        router.agent_row(AgentEntry(name="aura", role="principal"))

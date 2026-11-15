@@ -115,7 +115,7 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     const src = read('desktop-controller.tsx')
     // Plobi 没有「会话」这个概念，一个 Agent 就是一张嘴，一个 Agent 的多轮对话
     // 共用同一份档案 ⇒ 键必须是 Agent id。L1 那一格给哨兵 `'l1'`（总秘书），
-    // 后端把它翻译成名册里 `role=l1_secretary` 那一行（名册是唯一真源）。
+    // 后端把它翻译成名册里 `role=conductor` 那一行（名册是唯一真源）。
     expect(src).toMatch(/chatScope\??\.kind === 'agent' \? chatScope\.id : 'l1'/)
   })
 

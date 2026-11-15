@@ -79,7 +79,7 @@ def _project(
 
     return AgentEntry(
         name=name,
-        role="l2_project",
+        role="principal",
         category="projects",
         description=description,
         registered=registered,
@@ -179,14 +179,14 @@ def test_genuinely_different_homes_stay_ambiguous(fresh_registry, tmp_path):
 
     a = AgentEntry(
         name="alpha",
-        role="l2_project",
+        role="principal",
         category="projects",
         display_name="共用人名",
         description="project",
     )
     b = AgentEntry(
         name="beta",
-        role="l2_project",
+        role="principal",
         category="projects",
         display_name="共用人名",
         description="project",
@@ -260,10 +260,10 @@ def test_a_course_row_takes_its_slug_from_the_table(fresh_registry):
     """数据条目（课程）的运行时名字只从 slug 表派生；它本来就不该报「建不出家」。"""
     from plobi.agents.registry import AgentEntry, profile_name_blocker
 
-    # 课程行的正统形状是 l2_project + category: courses（裁定 143②/146②）；
-    # 裸 l2_course 是「还没有身份的课程条目」，那种行才是没有家的。
+    # 课程行的正统形状是 principal + category: courses（裁定 143②/146②）；
+    # 派生不出 slug 的行（未登记的非 ASCII 名）才是没有身份的。
     course = fresh_registry.upsert(
-        AgentEntry(name="电工电子学", role="l2_project", category="courses")
+        AgentEntry(name="电工电子学", role="principal", category="courses")
     )
 
     assert course.profile_name == "l2-course-ee"
@@ -274,6 +274,6 @@ def test_an_unregistered_non_ascii_name_has_no_runtime_identity(fresh_registry):
     """非 ASCII 名派生不出 ASCII slug ⇒ 没有可路由身份（这是「没家」，不是「撞保留名」）。"""
     from plobi.agents.registry import AgentEntry
 
-    row = AgentEntry(name="未登记的中文名", role="l2_project", category="projects")
+    row = AgentEntry(name="未登记的中文名", role="principal", category="projects")
 
     assert row.profile_name == ""

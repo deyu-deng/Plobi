@@ -26,7 +26,7 @@ def isolated_profiles(tmp_path, monkeypatch):
     (default_home / "plobi").mkdir(parents=True)
     roster = default_home / "plobi" / "projects.yaml"
     roster.write_text(
-        "version: 1\nagents:\n  worker_alpha:\n    role: l2_project\n"
+        "version: 1\nagents:\n  worker_alpha:\n    role: principal\n"
         "    category: butler\n    profile: worker_alpha\n",
         encoding="utf-8",
     )

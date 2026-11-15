@@ -107,10 +107,10 @@ describe('createAgent (WP-L2-FE)', () => {
     })
 
     try {
-      const created = await createAgent({ id: 'plobi-code', role: 'l2_project' })
+      const created = await createAgent({ id: 'plobi-code', role: 'principal' })
 
       expect(api).toHaveBeenCalledWith({
-        body: { id: 'plobi-code', role: 'l2_project' },
+        body: { id: 'plobi-code', role: 'principal' },
         method: 'POST',
         path: '/api/agents'
       })

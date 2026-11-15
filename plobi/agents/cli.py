@@ -10,12 +10,16 @@ import sys
 from typing import Any, Optional
 
 from .registry import (
+    AGENT_CATEGORIES,
     AgentEntry,
     AgentRegistry,
+    DEFAULT_CATEGORY,
     RegistryError,
     default_path,
+    derive_runtime_slug,
     load_registry,
 )
+from ..routing.models import KNOWN_ROLES, PRINCIPAL
 
 
 def _entry_from_args(name: str, args: Any) -> AgentEntry:
@@ -29,6 +33,12 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
     # ``--skills`` 这一格**退役**（`WP-AGENT-CAPABILITIES`，11-15）：它原是正面清单
     # 「这个 Agent 会哪些技能」，但名册现行口径是**减法**（只记关掉了哪些）⇒ 正面那格
     # 从来不生效。旗标留着（老脚本还在传它），但**不再写进名册**，并当场说清。
+    #
+    # 2026-11-15（用户裁定）：**建造入口必须说清类别、名册名必须派生得出 slug**。
+    # 理由：``principal`` 底下五类 category 是平行的，不给类别就只能默认落进
+    # ``butler``（``DEFAULT_CATEGORY``）——那是一次静默的错分类；而派生不出 slug
+    # 的名字建出来的是一行点了必然失败的空壳（裁 146②(b)「不许列在那儿点不动」）。
+    # 两条都在**写名册之前**拒绝，并指明改哪一格。
     declared = tuple(getattr(args, "skills", None) or ())
     if declared:
         print(
@@ -36,9 +46,50 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
             "正面那格从来不生效 ⇒ 这次登记没有写它。"
             "要限制这个 Agent 的技能，在设置里逐个关（`plobi skills`）。"
         )
+
+    role_raw = str(getattr(args, "role", None) or "").strip().lower() or PRINCIPAL
+    if role_raw not in KNOWN_ROLES:
+        print(
+            f"Error: --role 只能是 {' / '.join(KNOWN_ROLES)}，收到 {role_raw!r}。"
+            "（名手/客席不是这里的值：名手见 delegation/expert_roles.py，客席见 external_offload.py）",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    category_raw = str(getattr(args, "category", None) or "").strip().lower()
+    if not category_raw:
+        if role_raw == PRINCIPAL:
+            print(
+                "Error: 登记 Principal 必须给 --category "
+                f"（{' / '.join(AGENT_CATEGORIES)}）——五类是平行的，不给就只能瞎猜一个。",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        # conductor（L1）不挂分类：五类只属于 Principal 那一层，给 L1 要类别是无意义
+        # 的要求（名册上它照旧写默认那一格，左栏不按 category 收它）。
+        category_raw = DEFAULT_CATEGORY
+    if category_raw not in AGENT_CATEGORIES:
+        print(
+            f"Error: --category 只能是 {' / '.join(AGENT_CATEGORIES)}，收到 {category_raw!r}。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    slug = derive_runtime_slug(name)
+    if not slug:
+        print(
+            f"Error: 名册名 {name!r} 派生不出运行时 slug，建出来是一行点了必然失败的空壳。"
+            "改法二选一：① 换成 ASCII 名字；② 非 ASCII 名（如中文课程名）在 "
+            "$PLOBI_HOME/plobi/runtime_slugs.yaml 里给它登记一个 ASCII slug；"
+            "③ 撞了保留名就换名。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
     return AgentEntry(
         name=name,
-        role=getattr(args, "role", None) or "l2_project",
+        role=role_raw,
+        category=category_raw,
         provider=getattr(args, "provider", None) or "",
         model=getattr(args, "model", None) or "",
         mind_subtree=getattr(args, "mind_subtree", None) or "",
@@ -86,7 +137,7 @@ def _list(registry: AgentRegistry) -> None:
     if not registry.agents:
         print("No resident agents registered.")
         print(f"Registry: {registry.path}")
-        print("Add one:  plobi plobi agents register <name> --role l2_project --category butler")
+        print("Add one:  plobi plobi agents register <name> --role principal --category butler")
         return
 
     problems = registry.routing_problems()
@@ -140,7 +191,7 @@ def _spawn(registry: AgentRegistry, args: Any) -> None:
     # `profile` 从这串里去掉：它不再是一格可写的东西（11-05 起是 name 派生的运行时
     # slug），留着等于给用户一个"写了也不生效"的假入口。
     if registry.get(name) is None and any(
-        getattr(args, f, None) for f in ("role", "provider", "model")
+        getattr(args, f, None) for f in ("role", "category", "provider", "model")
     ):
         registry.upsert(_entry_from_args(name, args))
         registry.save()

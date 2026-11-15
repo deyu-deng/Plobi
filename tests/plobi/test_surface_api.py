@@ -19,12 +19,12 @@ ROSTER = textwrap.dedent(
     version: 1
     agents:
       Aura:
-        role: l2_project
+        role: principal
         category: projects
         mind_subtree: Dossiers/projects/Aura
         project_path: D:/projects/Aura
       电工电子学:
-        role: l2_course
+        role: principal
         category: courses
     """
 ).lstrip()
@@ -121,7 +121,7 @@ def test_roster_failure_is_503(monkeypatch, tmp_path):
 
 @pytest.fixture()
 def l1_scope_live(monkeypatch, tmp_path):
-    """名册里有 L1 那一行（``role=l1_secretary``）时的档案读面。"""
+    """名册里有 L1 那一行（``role=conductor``）时的档案读面。"""
     mind = tmp_path / "mind"
     surface = tmp_path / "surface"
     mind.mkdir(parents=True)
@@ -131,7 +131,7 @@ def l1_scope_live(monkeypatch, tmp_path):
         version: 1
         agents:
           secretary:
-            role: l1_secretary
+            role: conductor
             display_name: 总秘书
         """
     ).lstrip()
@@ -158,7 +158,7 @@ def test_l1_scope_resolves_to_the_roster_row(l1_scope_live):
 def test_l1_scope_without_a_roster_row_is_404(l1_scope_live, tmp_path):
     """名册里没有 L1 那一行 ⇒ 照旧 404，不许瞎猜一个 id 出来。"""
     (tmp_path / "projects.yaml").write_text(
-        "version: 1\nagents:\n  Aura:\n    role: l2_project\n", encoding="utf-8"
+        "version: 1\nagents:\n  Aura:\n    role: principal\n", encoding="utf-8"
     )
     response = asyncio.run(surface_api.get_surface_agent("l1"))
     assert response.status_code == 404

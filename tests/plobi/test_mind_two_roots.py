@@ -293,7 +293,7 @@ def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vaul
     monkeypatch.setenv("HUMAN_ROOT", str(sibling_vault))
     (sibling_vault / "dossiers" / "projects" / "SRTP").mkdir(parents=True)
     entry = types.SimpleNamespace(
-        name="srtp", mind_subtree="Dossiers/projects/SRTP", category="research", role="l2_course"
+        name="srtp", mind_subtree="Dossiers/projects/SRTP", category="research", role="principal"
     )
     from plobi.human.notes_view import agent_aliases
 

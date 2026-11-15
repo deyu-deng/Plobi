@@ -117,7 +117,7 @@ def roots(tmp_path, monkeypatch):
     registry.upsert(
         AgentEntry(
             name="Aura",
-            role="l2_project",
+            role="principal",
             mind_subtree="Dossiers/projects/Aura",
         )
     )

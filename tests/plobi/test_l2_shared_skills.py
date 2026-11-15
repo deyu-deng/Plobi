@@ -96,7 +96,7 @@ def _registry_with_l2(home: Path, *, name: str = "demo") -> tuple[AgentRegistry,
     reg.upsert(
         AgentEntry(
             name="secretary",
-            role="l1_secretary",
+            role="conductor",
             provider="moonshot",
             model="kimi-k3",
         )
@@ -104,7 +104,7 @@ def _registry_with_l2(home: Path, *, name: str = "demo") -> tuple[AgentRegistry,
     reg.upsert(
         AgentEntry(
             name=name,
-            role="l2_project",
+            role="principal",
             category="projects",
             provider="deepseek",
             model="deepseek-chat",

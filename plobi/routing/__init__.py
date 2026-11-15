@@ -3,7 +3,6 @@
 from .models import (
     CONDUCTOR,
     KNOWN_ROLES,
-    L2_COURSE,
     PRINCIPAL,
     ModelRoute,
     ModelRouter,
@@ -15,7 +14,6 @@ from .models import (
 __all__ = [
     "CONDUCTOR",
     "KNOWN_ROLES",
-    "L2_COURSE",
     "PRINCIPAL",
     "ModelRoute",
     "ModelRouter",

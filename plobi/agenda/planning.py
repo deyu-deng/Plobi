@@ -58,7 +58,7 @@ def intervals_overlap(a_start: Any, a_end: Any, b_start: Any, b_end: Any) -> boo
 
 
 def paced_projects() -> list[tuple[Any, float]]:
-    """``(entry, weekly_hours)`` for enabled role=l2_project entries with pace.
+    """``(entry, weekly_hours)`` for enabled role=principal entries with pace.
 
     pace 存在注册表（projects.yaml）而非 agenda.db：pace 是项目（agent 条目）
     的属性，与 provider/model 覆盖同类，注册表是项目清单唯一真源；agenda.db
@@ -72,7 +72,7 @@ def paced_projects() -> list[tuple[Any, float]]:
     except Exception:
         return out
     for entry in entries:
-        if entry.role != "l2_project" or entry.weekly_hours is None:
+        if entry.role != "principal" or entry.weekly_hours is None:
             continue
         out.append((entry, entry.weekly_hours))
     out.sort(key=lambda pair: pair[0].name)

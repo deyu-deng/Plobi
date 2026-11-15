@@ -29,7 +29,7 @@ NOTE_ROOT = "notes/数学 Math"
 
 def _entry(name: str, subtree: str = "", category: str = "projects") -> types.SimpleNamespace:
     return types.SimpleNamespace(
-        name=name, mind_subtree=subtree, category=category, role="l2_project"
+        name=name, mind_subtree=subtree, category=category, role="principal"
     )
 
 

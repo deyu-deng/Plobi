@@ -27,7 +27,7 @@ from plobi.agents.registry import (
 
 def _entry(**kw) -> AgentEntry:
     base = dict(
-        name="Stithy", role="l2_project", category="projects"
+        name="Stithy", role="principal", category="projects"
     )
     base.update(kw)
     return AgentEntry(**base)
@@ -75,7 +75,7 @@ def test_lookup_matches_the_registry_name_not_only_the_profile_name():
     认一次」的分支随之删掉——slug 只还是它派生出来的活动名，不再是查找键。所以这一条
     从前钉的「slug 桶也要命中」已经作废，留 name 桶这一半。
     """
-    entries = [_entry(name="大学物理（甲）Ⅱ", role="l2_project", category="courses")]
+    entries = [_entry(name="大学物理（甲）Ⅱ", role="principal", category="courses")]
     assert _entry_for_profile_in(entries, "大学物理（甲）Ⅱ") is entries[0]  # name 桶
 
 

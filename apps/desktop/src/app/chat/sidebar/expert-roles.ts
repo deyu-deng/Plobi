@@ -1,17 +1,20 @@
 /**
- * 临时专家的**四类角色**（用户 11-01：左栏「专家」抽屉里放的是角色名册，不是会话流水）。
+ * 临时专家的**分类名册**（用户 11-01：左栏「专家」抽屉里放的是角色名册，不是会话流水）。
  *
- * 这份表镜像后端 `plobi/delegation/expert_roles.py` 的 `ROLES` / `ORDER`：后端决定
- * 派出去的子智能体是什么角色、拿哪一层工具面；前端只决定这一行长什么样。
- * 顺序与后端 `ORDER` 一致，别在这里重排——两边的次序不一致时，用户会以为少了一类。
+ * 三件事分得很清（2026-11-15 收口）：
+ * - **有哪些类、什么顺序** → `@/shared/expert-trades` 的 `EXPERT_TRADES`（镜像后端
+ *   `plobi/delegation/expert_roles.py` 的 `TRADES`，由 `expert-trades.test.ts` 对表）；
+ * - **这一行长什么样** → 本文件的 `LOOK`（图标是视觉，不进后端），中文名走 i18n `labelKey`；
+ * - **这一类派出去干什么** → 后端 `DUTIES` / `TOOLSETS`，前端一个字都不抄。
  *
- * 新增一类角色要两处一起改；只改这里会得到一行永远点不开的空行。
+ * 以前这三件事散在三处、加一类要改三个文件，漏一处就是一行永远点不开的空行；
+ * 现在 `LOOK` 是 `Record<ExpertRoleKey, …>`，漏一类**编译就红**，不必等人点开才发现。
  */
-import type { ExpertRoleKey } from '@/store/conversation-view'
+import { EXPERT_TRADES, type ExpertRoleKey } from '@/shared/expert-trades'
 
 import type { ExpertRun } from './expert-runs'
 
-/** 角色键只在一处定义（`store/conversation-view.ts`）：主区卡片与侧栏名册必须同一套。 */
+/** 角色键只在一处定义（`shared/expert-trades.ts`）：主区卡片与侧栏名册必须同一套。 */
 export type { ExpertRoleKey }
 
 export interface ExpertRoleSpec {
@@ -22,12 +25,20 @@ export interface ExpertRoleSpec {
   labelKey: 'expertRoleBrowser' | 'expertRoleComputer' | 'expertRoleFile' | 'expertRoleSoftware'
 }
 
-export const EXPERT_ROLES: readonly ExpertRoleSpec[] = [
-  { icon: 'file', key: 'file', labelKey: 'expertRoleFile' },
-  { icon: 'globe', key: 'browser', labelKey: 'expertRoleBrowser' },
-  { icon: 'terminal', key: 'software', labelKey: 'expertRoleSoftware' },
-  { icon: 'device-desktop', key: 'computer', labelKey: 'expertRoleComputer' }
-]
+/** 每类的长相。键取自 `ExpertRoleKey`，缺一类 TypeScript 直接报错——这就是那道牙。 */
+const LOOK: Record<ExpertRoleKey, { icon: string; labelKey: ExpertRoleSpec['labelKey'] }> = {
+  file: { icon: 'file', labelKey: 'expertRoleFile' },
+  browser: { icon: 'globe', labelKey: 'expertRoleBrowser' },
+  software: { icon: 'terminal', labelKey: 'expertRoleSoftware' },
+  computer: { icon: 'device-desktop', labelKey: 'expertRoleComputer' }
+}
+
+/** 顺序只由 `EXPERT_TRADES` 决定，这里不重排。 */
+export const EXPERT_ROLES: readonly ExpertRoleSpec[] = EXPERT_TRADES.map(key => ({
+  key,
+  icon: LOOK[key].icon,
+  labelKey: LOOK[key].labelKey
+}))
 
 /** 这一类角色跑过的所有会话（一个角色可以派很多次，每次都是一条子会话）。 */
 export function runsOfRole(runs: readonly ExpertRun[], role: ExpertRoleKey): ExpertRun[] {

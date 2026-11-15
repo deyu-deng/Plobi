@@ -440,7 +440,7 @@ def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
         assert node == expected, f"{path}: 解析出来是 {node!r}，模板要 {expected!r}"
 
 
-def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):
+def test_conductor_form_narrows_toolsets_and_enables_the_plugin(l1_home):
     """窄名单 + 插件启用是同一趟播种的另外两件产物，缺一件 L1 就还是工人。"""
     from plobi.agents.registry import L1_DROP_TOOLSETS, L1_MID_TOOLSETS, ensure_conductor_form
 
@@ -455,7 +455,7 @@ def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):
         assert "plobi_core" in listed
 
 
-def test_l1_secretary_form_keeps_the_keys_the_user_wrote(l1_home):
+def test_conductor_form_keeps_the_keys_the_user_wrote(l1_home):
     """补齐不是覆盖：他自己写过的键必须原样活着。"""
     from plobi.agents.registry import ensure_conductor_form
 
@@ -470,7 +470,7 @@ def test_l1_secretary_form_keeps_the_keys_the_user_wrote(l1_home):
     assert written["terminal"]["timeout"] == 90
 
 
-def test_l1_secretary_form_is_idempotent_and_never_creates_a_profile(l1_home):
+def test_conductor_form_is_idempotent_and_never_creates_a_profile(l1_home):
     """已经启用的家重复开机：不重写 config，不把 SOUL 栅栏写两遍，也不建 profile。"""
     from plobi.agents.registry import L1_SOUL_BEGIN, ensure_conductor_form
 
@@ -486,7 +486,7 @@ def test_l1_secretary_form_is_idempotent_and_never_creates_a_profile(l1_home):
     assert not (l1_home / "profiles").exists()
 
 
-def test_l1_secretary_form_does_not_create_a_missing_home(tmp_path, monkeypatch):
+def test_conductor_form_does_not_create_a_missing_home(tmp_path, monkeypatch):
     """家目录不存在就当这台上没有 L1 可写——为一份 SOUL.md 建 profile 是第二真源。"""
     from plobi.agents.registry import ensure_conductor_form
 

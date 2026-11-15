@@ -37,10 +37,10 @@ RPC (裁定 2; no ``POST /api/chat`` in MVP).
 One honest limitation, documented rather than faked:
 
 * **L1 secretary.** The registry also holds the L1 entry
-  (``role: l1_secretary``). §5's ``GET /api/agents`` feeds the *left rail*,
+  (``role: conductor``). §5's ``GET /api/agents`` feeds the *left rail*,
   which §3.1 defines as the L2 list — L1 is the shell itself, not a row — so
   L1 is excluded here. Flagged in PROGRESS.md so it can be overruled.
-* **POST /api/agents.** Human 配备 (裁定 18): register one ``l2_project``.
+* **POST /api/agents.** Human 配备 (裁定 18): register one ``principal``.
   No role owns a slot — the only refusals are duplicate names / paths /
   Mind trees (:func:`registration_blocker`). Not M3 execution.
 """
@@ -74,10 +74,13 @@ from plobi.agents.registry import (
     default_project_path,
     agent_askability,
     agent_navigability,
+    derive_runtime_slug,
+    explain_runtime_slug,
     load_registry,
     profile_name_blocker,
     registration_blocker,
 )
+from plobi.routing.models import KNOWN_ROLES, PRINCIPAL as PRINCIPAL_ROLE
 from plobi.delegation.offload_contract import resume_argv_map
 from plobi.delegation.tracker import (
     STATUS_AWAITING_APPROVAL,
@@ -205,7 +208,7 @@ def _resolve(entry: AgentEntry) -> Optional[ModelRoute]:
     """Route for **这一行名册**, or None when the role has no route.
 
     裁 172：要的是这一行的生效值（那一行的 ``provider``/``model`` 盖在它那一类之上），
-    不是把覆盖折进 ``routes[role]``——名册里 ``l2_project`` 占多数行，折进去就成了
+    不是把覆盖折进 ``routes[role]``——名册里 ``principal`` 占多数行，折进去就成了
     「给一个 Agent 选模型、整类一起变」。
     """
     try:
@@ -306,7 +309,8 @@ def sessions_for_agent(agent_id: str) -> list[str]:
     （overview.sessionId / todayCalls / todayTokens 的数据源）。聊天主通路
     不在这里——前端走底座 session store + gateway RPC（裁定 2）。
 
-    数据条目（``l2_course``）没有运行时的老早退随之取消：迁移把历史 session
+    派生不出运行时 slug 的行（老口径里那个「课程数据条目」）没有运行时的老早退
+    随之取消：迁移把历史 session
     并进了顶层库并打了标，库里有的就能显示；不再需要拿 ``profile_name``
     空串去拦一次（那个守卫防的是跨库解析 500，单库后没有那条路了）。
     """
@@ -879,7 +883,7 @@ _AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 def create_agent(body: dict) -> Union[dict, JSONResponse]:
     """Register one human-created L2: upsert → save → spawn → agent_row.
 
-    ``role`` defaults to ``l2_project``. ``l1_secretary`` is rejected. No role
+    ``role`` defaults to ``principal``. ``conductor`` is rejected. No role
     carries a slot of its own: two rows with the same ``category`` are two
     ordinary rows, and duplicate *names* are what :func:`registration_blocker`
     refuses (R-013).
@@ -922,11 +926,24 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         )
 
     role_raw = body.get("role")
-    role = str(role_raw).strip() if role_raw else "l2_project"
+    role = str(role_raw).strip() if role_raw else PRINCIPAL_ROLE
     if not role:
-        role = "l2_project"
+        role = PRINCIPAL_ROLE
     if role.lower() == CONDUCTOR_ROLE:
-        return _error(400, "role l1_secretary is not allowed")
+        return _error(400, "role conductor is not allowed")
+    # 2026-11-15（用户裁定）：role 只有两个值。第三值删掉之后，凡是写了别的字面量
+    # 都当作打错，直接拒——原来这里对未知 role 是放行的（靠下游路由时才发现没路由）。
+    if role.lower() not in KNOWN_ROLES:
+        return _error(400, f"role must be one of {list(KNOWN_ROLES)}")
+
+    # 2026-11-15（用户裁定）：名册名必须派生得出运行时 slug。派生不出（非 ASCII 未在
+    # runtime_slugs.yaml 登记 / 形状不合法 / 撞保留名）的行建出来点了必然失败（裁
+    # 146②(b)「不许列在那儿点不动」），所以在写名册之前就拒，并指明改哪一格。
+    if not derive_runtime_slug(agent_id):
+        return _error(
+            400,
+            f"name derives no runtime slug — {explain_runtime_slug(agent_id)}",
+        )
 
     # WP-AGENT-DISPLAY-NAME / 裁定 37.1: ``name`` 进 display_name（人设的中
     # 文 / 保留大小写）；description 继续存长标语 / 一句话意图——这两条不再混
@@ -1256,7 +1273,7 @@ def _archive_profile_dir(entry: AgentEntry, *, move: bool) -> Optional[Path]:
         src = get_profile_dir(entry.profile_name)
     except Exception:
         # Not KeyError specifically: an empty or illegal profile name raises
-        # ValueError (data rows like `l2_course` have no profile at all), and a
+        # ValueError (rows that derive no runtime slug have no profile at all), and a
         # dissolved row must still be marked archived with nothing to carry over.
         return None
     if not src.exists():

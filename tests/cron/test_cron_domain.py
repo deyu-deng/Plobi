@@ -44,7 +44,7 @@ def _agenda_row(tmp_path: Path, **fields) -> str:
         tmp_path,
         AgentEntry(
             name=RECIPIENT,
-            role="l2_project",
+            role="principal",
             display_name="日程秘书",
             description="日程采集 → SQLite → 看板 → 钉钉 闭环",
             **fields,
@@ -133,7 +133,7 @@ def test_the_refusal_names_the_real_owner(tmp_path, monkeypatch):
         "PLOBI_PROJECTS_CONFIG",
         _roster(
             tmp_path,
-            AgentEntry(name="agenda", role="l2_project", domains=("schedule",)),
+            AgentEntry(name="agenda", role="principal", domains=("schedule",)),
             AgentEntry(name="butler", role="l2_butler"),
         ),
     )
@@ -191,7 +191,7 @@ def test_the_category_alone_counts_as_a_domain(home, tmp_path, monkeypatch):
     """存量行零迁移：``category`` 本身就是一个域，一行都没改也能当负责人。"""
     monkeypatch.setenv(
         "PLOBI_PROJECTS_CONFIG",
-        _roster(tmp_path, AgentEntry(name=RECIPIENT, role="l2_project", category="projects")),
+        _roster(tmp_path, AgentEntry(name=RECIPIENT, role="principal", category="projects")),
     )
 
     success, error, agent_cls, _script = _fire(_job(domain="projects"), tmp_path)

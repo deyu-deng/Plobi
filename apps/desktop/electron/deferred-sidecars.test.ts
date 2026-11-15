@@ -462,7 +462,7 @@ test('the CLI accepts no name at all: argparse invalid choice is the same class'
 
 test('a reserved profile name is the third permanent shape (the `Plobi` roster row)', () => {
   // 产品线 13:2x 实测：`plobi -p plobi --help` 退 0，话术只在真起后端时出现 —— 所以它
-  // 既不是 `does not exist` 也不是 `invalid choice`，而 `Plobi` 这条是 `l2_project`，
+  // 既不是 `does not exist` 也不是 `invalid choice`，而 `Plobi` 这条是 `principal`，
   // **不是数据条目**：建目录这条路根本不存在，名字本身被永久禁用。
   const reservedLine =
     "Error: Profile name 'plobi' is reserved — it collides with either the Plobi installation " +

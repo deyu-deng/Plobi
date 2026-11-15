@@ -69,8 +69,8 @@ def register(registry: AgentRegistry, **entries: dict) -> AgentRegistry:
     return registry
 
 
-AGENDA = {"role": "l2_project", "profile": "l2-agenda", "description": "日程秘书"}
-SECRETARY = {"role": "l1_secretary", "profile": "master"}
+AGENDA = {"role": "principal", "profile": "l2-agenda", "description": "日程秘书"}
+SECRETARY = {"role": "conductor", "profile": "master"}
 
 
 # --------------------------------------------------------------------------- #
@@ -101,8 +101,8 @@ def test_l1_joins_the_roster_when_asked_and_keeps_its_own_role(client, _isolated
     by_id = {row["id"]: row for row in rows}
 
     assert set(by_id) == {"agenda", "secretary"}
-    assert by_id["secretary"]["role"] == "l1_secretary"
-    assert by_id["agenda"]["role"] == "l2_project"
+    assert by_id["secretary"]["role"] == "conductor"
+    assert by_id["agenda"]["role"] == "principal"
     # 平等 = 同一套键，不是「L1 少几格」。
     # 两行形状一致，唯一合法差异是「不可问的理由」——它只挂在不可问的行上。
     assert set(by_id["secretary"]) - set(by_id["agenda"]) == {"notAskableReason"}
@@ -143,7 +143,7 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert "profile" not in row
     # 日程秘书走 secretary_ask，所以 askable=false——但左栏完全点得动。
     # 这正是 askable 与 navigable 必须分成两个字段的原因。
-    assert row["askable"] is True, "l2_project 就是 ASKABLE_ROLE"
+    assert row["askable"] is True, "principal 就是 ASKABLE_ROLE"
     assert "notAskableReason" not in row, "可问的行不许带不可问的理由"
     assert row["navigable"] is True
     # None 的键在 agent_row 末尾被省略（与 model?/actualModel? 同一口径）
@@ -152,7 +152,7 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert row["mindSubtree"] == ""
 
 
-def test_agents_excludes_l1_secretary(client, _isolated_state):
+def test_agents_excludes_conductor(client, _isolated_state):
     """§3.1: the left rail lists L2s; L1 is the shell, not a row."""
     register(_isolated_state, agenda=AGENDA, secretary=SECRETARY)
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
@@ -160,7 +160,7 @@ def test_agents_excludes_l1_secretary(client, _isolated_state):
 
 
 def test_agents_name_falls_back_to_entry_name(client, _isolated_state):
-    register(_isolated_state, bare={"role": "l2_project"})
+    register(_isolated_state, bare={"role": "principal"})
     assert client.get("/api/agents").json()["data"][0]["name"] == "bare"
 
 
@@ -169,7 +169,7 @@ def test_agents_name_ignores_pipeline_description_slogan(client, _isolated_state
     register(
         _isolated_state,
         agenda={
-            "role": "l2_project",
+            "role": "principal",
             "profile": "l2-agenda",
             "description": "日程采集 -> SQLite -> 看板 -> 钉钉 闭环",
         },
@@ -182,7 +182,7 @@ def test_agents_name_never_uses_short_description(client, _isolated_state):
     register(
         _isolated_state,
         custom={
-            "role": "l2_project",
+            "role": "principal",
             "description": "项目助理",
         },
     )
@@ -192,7 +192,7 @@ def test_agents_name_never_uses_short_description(client, _isolated_state):
 def test_agents_honours_registry_model_override(client, _isolated_state):
     register(
         _isolated_state,
-        custom={"role": "l2_project", "provider": "zhipu", "model": "glm-4.6"},
+        custom={"role": "principal", "provider": "zhipu", "model": "glm-4.6"},
     )
     row = client.get("/api/agents").json()["data"][0]
     assert row["model"] == "zhipu/glm-4.6"
@@ -214,7 +214,7 @@ def _stub_spawn(registry, monkeypatch):
     return calls
 
 
-def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
+def test_post_principal_appears_in_list(client, _isolated_state, monkeypatch):
     """Human-created project L2 is saved and then visible on GET /api/agents."""
     calls = _stub_spawn(_isolated_state, monkeypatch)
     response = client.post(
@@ -248,15 +248,15 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     assert body["data"]["askable"] is True
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
     assert "plobi-code" in ids
-    assert _isolated_state.get("plobi-code").role == "l2_project"
+    assert _isolated_state.get("plobi-code").role == "principal"
     assert _isolated_state.get("plobi-code").category == "projects"
     assert calls == [("plobi-code", None)]
 
 
-def test_post_rejects_l1_secretary(client, _isolated_state, monkeypatch):
+def test_post_rejects_conductor(client, _isolated_state, monkeypatch):
     calls = _stub_spawn(_isolated_state, monkeypatch)
     response = client.post(
-        "/api/agents", json={"id": "boss", "role": "l1_secretary", "category": "butler"}
+        "/api/agents", json={"id": "boss", "role": "conductor", "category": "butler"}
     )
     assert response.status_code == 400
     assert response.json()["ok"] is False
@@ -361,7 +361,7 @@ def test_post_existing_name_does_not_spawn_second(client, _isolated_state, monke
     calls = _stub_spawn(_isolated_state, monkeypatch)
     response = client.post(
         "/api/agents",
-        json={"id": "agenda", "role": "l2_project", "category": "butler"},
+        json={"id": "agenda", "role": "principal", "category": "butler"},
     )
     assert response.status_code == 200
     assert response.json()["ok"] is True
@@ -380,7 +380,7 @@ def test_a_second_agent_in_the_same_category_is_allowed(client, _isolated_state,
     calls = _stub_spawn(_isolated_state, monkeypatch)
     response = client.post(
         "/api/agents",
-        json={"id": "agenda-2", "role": "l2_project", "category": "butler"},
+        json={"id": "agenda-2", "role": "principal", "category": "butler"},
     )
     assert response.status_code == 200
     assert response.json()["ok"] is True
@@ -416,7 +416,7 @@ def test_status_error_outranks_working(client, _isolated_state):
 
 
 def test_status_is_scoped_per_agent(client, _isolated_state):
-    register(_isolated_state, agenda=AGENDA, other={"role": "l2_project"})
+    register(_isolated_state, agenda=AGENDA, other={"role": "principal"})
     tracker = SubagentTracker()
     set_tracker(tracker)
     tracker.on_start(child_session_id="s1", agent_id="agenda")
@@ -485,7 +485,7 @@ def test_overview_404_for_unknown_agent(client, _isolated_state):
     assert response.json()["ok"] is False
 
 
-def test_overview_404_for_l1_secretary(client, _isolated_state):
+def test_overview_404_for_conductor(client, _isolated_state):
     """L1 is not an L2 row, so it has no S2 workbench card either."""
     register(_isolated_state, secretary=SECRETARY)
     assert client.get("/api/agents/secretary/overview").status_code == 404
@@ -540,7 +540,7 @@ def test_overview_session_id_is_latest_of_agent(client, _isolated_state, monkeyp
 
 def test_session_attribution_is_row_level(client, _isolated_state, monkeypatch, tmp_path):
     """归属按 sessions.agent_id：agenda 的会话不被 Kit 的查询看见（单库不串味）。"""
-    register(_isolated_state, agenda=AGENDA, kit={"role": "l2_project", "profile": "kit"})
+    register(_isolated_state, agenda=AGENDA, kit={"role": "principal", "profile": "kit"})
     _attributed_db(
         tmp_path,
         monkeypatch,
@@ -558,12 +558,12 @@ def test_latest_session_missing_db_is_empty(tmp_path, monkeypatch):
 
 
 def test_data_row_without_sessions_is_empty(client, _isolated_state, monkeypatch, tmp_path):
-    """数据条目（l2_course）不再有跨库解析那条路（单库后没有 500 的面了）。
+    """派生不出身份的行不再有跨库解析那条路（单库后没有 500 的面了）。
 
     库里没有它的行就是空——以前靠 profile_name 空串早退防 500，现在结构性
     保证：查询只碰 agent_id 列，永不碰 profile 解析器。
     """
-    register(_isolated_state, physics={"role": "l2_course", "category": "courses"})
+    register(_isolated_state, physics={"role": "principal", "category": "courses"})
     _attributed_db(tmp_path, monkeypatch, [("s-a", "agenda", 0.1, 1)])
     assert console_router.sessions_for_agent("physics") == []
 
@@ -608,7 +608,7 @@ def test_agent_rows_read_their_own_rows_under_single_backend(
     register(
         _isolated_state,
         agenda=AGENDA,
-        physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
+        physics={"role": "principal", "profile": "l2-physics", "category": "courses"},
     )
     _attributed_db(
         tmp_path,
@@ -783,7 +783,7 @@ def test_quota_summary_today_usd_follows_request_identity(client, _isolated_stat
     register(
         _isolated_state,
         agenda=AGENDA,
-        physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
+        physics={"role": "principal", "profile": "l2-physics", "category": "courses"},
     )
     _attributed_db(
         tmp_path,
@@ -820,7 +820,7 @@ def test_quota_summary_query_profile_is_remote_fallback(client, _isolated_state,
     register(
         _isolated_state,
         agenda=AGENDA,
-        physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
+        physics={"role": "principal", "profile": "l2-physics", "category": "courses"},
     )
     _attributed_db(
         tmp_path,
@@ -837,7 +837,7 @@ def test_agent_id_for_profile_maps_roster_rows(_isolated_state):
     register(
         _isolated_state,
         agenda=AGENDA,
-        physics={"role": "l2_project"},
+        physics={"role": "principal"},
         secretary=SECRETARY,
     )
     assert console_router._agent_id_for_profile("agenda") == "agenda"
@@ -875,7 +875,7 @@ def test_an_identity_written_as_the_roster_name_is_not_read_as_l1(
     register(
         _isolated_state,
         agenda=AGENDA,
-        电工电子学={"role": "l2_project", "profile": "l2-course-ee", "category": "courses"},
+        电工电子学={"role": "principal", "profile": "l2-course-ee", "category": "courses"},
     )
     _attributed_db(
         tmp_path,
@@ -1033,7 +1033,7 @@ def test_startup_registers_no_agent_row_at_all(_isolated_state, monkeypatch):
     assert calls == {"spawn": [], "toolsets": []}
 
 
-def test_startup_puts_the_default_home_into_l1_secretary_shape(
+def test_startup_puts_the_default_home_into_conductor_shape(
     _isolated_state, monkeypatch, tmp_path
 ):
     """Boot flips a never-opted-in home into L1 秘书形态, in place, with no new profile.
@@ -1069,7 +1069,7 @@ def test_startup_puts_the_default_home_into_l1_secretary_shape(
     assert not (home / "profiles").exists()
 
 
-def test_l1_secretary_shape_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
+def test_conductor_shape_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
     """Same rule for the secretary-shape pass: it is boot garnish, not a dependency.
 
     ``ensure_north_star_toolset`` re-applies the shape on every plugin load, so a
@@ -1131,7 +1131,7 @@ class TestAgentOffloadReadout:
 
     def test_rounds_are_attributed_by_bound_folder(self, _isolated_state, monkeypatch):
         """流水按**目录**记（交出去的本来就是"某个目录里的一段活"），归属靠 project_path。"""
-        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+        register(_isolated_state, aura={"role": "principal", "profile": "aura",
                                         "project_path": "D:/projects/Aura"})
         _ledger_stub(monkeypatch, [
             _round("D:/projects/Aura", "2026-10-13T01:00:00+00:00"),
@@ -1147,7 +1147,7 @@ class TestAgentOffloadReadout:
         assert out["unattributed_reason"] == ""
 
     def test_newest_first_and_limit(self, _isolated_state, monkeypatch):
-        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+        register(_isolated_state, aura={"role": "principal", "profile": "aura",
                                         "project_path": "D:/projects/Aura"})
         _ledger_stub(monkeypatch, [_round("D:/projects/Aura", f"2026-10-1{3 - i}T00:00:00+00:00")
                                    for i in range(3)])
@@ -1160,7 +1160,7 @@ class TestAgentOffloadReadout:
 
     def test_unbound_agent_says_why_instead_of_guessing(self, _isolated_state, monkeypatch):
         """没绑定目录 ⇒ 不许把所有外包都算到它头上（那比漏报更坏）。"""
-        register(_isolated_state, aura={"role": "l2_project", "profile": "aura"})
+        register(_isolated_state, aura={"role": "principal", "profile": "aura"})
         _ledger_stub(monkeypatch, [_round("D:/projects/Aura", "2026-10-13T01:00:00+00:00")])
 
         out = console_router.agent_offloads("aura")
@@ -1170,7 +1170,7 @@ class TestAgentOffloadReadout:
 
     def test_one_unmeasurable_round_makes_the_total_unmeasurable(self, _isolated_state, monkeypatch):
         """R-073：任何一笔算不出 ⇒ 总额也不能装作算得出，且不许塌成 0。"""
-        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+        register(_isolated_state, aura={"role": "principal", "profile": "aura",
                                         "project_path": "D:/projects/Aura"})
         _ledger_stub(monkeypatch, [
             _round("D:/projects/Aura", "2026-10-13T01:00:00+00:00", cost=0.42),
@@ -1183,7 +1183,7 @@ class TestAgentOffloadReadout:
         assert out["cost_status"] == "usage_reported_without_price"
 
     def test_priced_rounds_sum_up(self, _isolated_state, monkeypatch):
-        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+        register(_isolated_state, aura={"role": "principal", "profile": "aura",
                                         "project_path": "D:/projects/Aura"})
         _ledger_stub(monkeypatch, [
             _round("D:/projects/Aura", "2026-10-13T01:00:00+00:00", cost=0.42),

@@ -32,20 +32,28 @@ from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-# 常量名读的是**身份档位**（glossary.md 四词），值仍是名册里存着的旧字面量。
-# 值不动是刻意的：名册 25 行真数据 + 251 处代码判据存的都是 ``l1_secretary`` /
-# ``l2_project``，改值等于一次数据迁移，收益为零。名字说人话，值照旧。
-CONDUCTOR = "l1_secretary"   # 指挥
-PRINCIPAL = "l2_project"     # 首席（五类 category 一律挂这一档）
-# ``l2_course``（用户 10-11 拍：五门课要进名册，并且"再加一个角色"）。课业条目是**数据**，
-# 不是分身：它故意**不进 ``DEFAULT_ROUTES``**（没有模型路由 ⇒ ``resolve()`` 会抛 RoutingError）。
-# 三个 ``resolve(entry.role)`` 调用点都验过：``plobi/agents/cli.py:85`` 与
-# ``plobi/agents/registry.py:889`` 各自有 try/except 兜住，``registry.py:732`` 只在条目带
-# model override 时才走到（课程条目不带）。它也不是 ``ASKABLE_ROLE`` ⇒ L1 不会去"问一门课干活"，
-# 作业归属靠的是条目名（``planning.py::_matches_project`` 读 ``evidence.course``），不靠分身。
-L2_COURSE = "l2_course"
+# 常量读的是**身份档位**（glossary.md 四词），值就是名字本身、只有两个。
+#
+# 2026-11-15（用户裁定「role 只有两个值，第三值删掉」）：
+#   两个旧字面量跟着改名：``l1_secretary`` → ``conductor``；``l2_project`` → ``principal``。
+#   第三值 ``l2_course`` 物理删除。
+#
+# 原来值照旧的理由是「名册真数据 + 251 处判据存的都是旧字面量，改值等于数据迁移」。
+# 现在改，是因为旧值自己在撒谎：``l2_project`` 只是五种 category 之一，却被当成
+# 整个首席档的名字；而 ``l2_course`` 描述的那件事（这一行**还没有**身份）根本不是
+# 一个角色，它是 :func:`plobi.agents.registry.derive_runtime_slug` 返回空串这一个
+# 事实的第二张皮——同一个语义存两处，两处就会各走一边（10-20 那次「课程是数据、
+# 不可点」的误判就是这么来的）。
+#
+# 从 此「有没有身份」只有一个判据：名册名派生出的运行时 slug 是不是空串。
+# 课程条目没有身份时自然派生不出 slug；有了 ``category: courses`` ＋ 显式 ASCII
+# slug 就和项目分身同列同点（裁定 143② / 145①(b) / 146②(b)）。
+CONDUCTOR = "conductor"   # 指挥
+PRINCIPAL = "principal"   # 首席（五类 category 一律挂这一档）
 
-KNOWN_ROLES = (CONDUCTOR, PRINCIPAL, L2_COURSE)
+#: 名册里认得出的角色只有这两个。名手的四类（``plobi/delegation/expert_roles.py``
+#: 的 ``TRADES``）与客席（``agent/external_offload.py``）都不是本表的值。
+KNOWN_ROLES = (CONDUCTOR, PRINCIPAL)
 
 # ``bezel`` is the local OpenAI-compatible gateway (WorkBuddy / OpenCode quota
 # and friends behind one loopback endpoint). L2 generation goes through bezel
@@ -246,7 +254,7 @@ class ModelRouter:
 
         l1 = self.routes.get(CONDUCTOR)
         if l1 is None or not l1.configured:
-            problems.append("l1_secretary has no model configured")
+            problems.append("conductor has no model configured")
             return problems
 
         catalogue: Optional[set[str]] = None

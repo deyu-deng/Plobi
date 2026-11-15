@@ -31,7 +31,7 @@ ROSTER = textwrap.dedent(
     version: 1
     agents:
       Aura:
-        role: l2_project
+        role: principal
         category: projects
         mind_subtree: Dossiers/projects/Aura
     """
@@ -178,7 +178,7 @@ DISPLAY_ROSTER = textwrap.dedent(
     version: 1
     agents:
       ii:
-        role: l2_project
+        role: principal
         category: courses
         display_name: 大物物理（甲）II
     """

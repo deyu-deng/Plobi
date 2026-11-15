@@ -468,9 +468,9 @@ def propose_config_change(
         registry = load_registry()
         for upd in pace_updates:
             entry = registry.get(str(upd.get("project_id") or ""))
-            if entry is None or entry.role != "l2_project":
+            if entry is None or entry.role != "principal":
                 pid = str(upd.get("project_id") or "")
-                raise store.AgendaValidationError(f"unknown l2_project {pid!r}")
+                raise store.AgendaValidationError(f"unknown principal {pid!r}")
             try:
                 hours = float(upd.get("weekly_hours"))
             except (TypeError, ValueError) as exc:

@@ -926,7 +926,7 @@ def agent_config_overlay(current: Optional[Dict[str, Any]] = None) -> Dict[str, 
 
     裁 42.2 只允许分身带三项覆盖，其中两项以前是往分身家 ``config.yaml`` 写一节实现
     的：模型（``_write_profile_config`` 写 ``model:``）与工作目录
-    （``apply_l2_project_cwd`` 写 ``terminal.cwd:``）。裁 166 / ADR-0013 把配置收成一份
+    （``apply_principal_cwd`` 写 ``terminal.cwd:``）。裁 166 / ADR-0013 把配置收成一份
     之后，这两样的真源是名册那一行（``plobi/projects.yaml`` 的 ``provider``/``model``
     与 ``project_path``），这里在 :func:`load_config` 里**叠上去**，判据与
     :func:`plobi.agents.registry.apply_secret_overrides` 同一句：就地叠，不落盘成第二份。
@@ -934,7 +934,7 @@ def agent_config_overlay(current: Optional[Dict[str, Any]] = None) -> Dict[str, 
     返回空 dict 的几种情况（都等于「纯顶层值」，不许在这里编造）：**没有身份**
     （既无 ``PLOBI_AGENT_ID``、家也不在 ``profiles/`` 底下）——那正是 L1 / flat；
     名册里查不到这一行、那一行没声明模型覆盖、``project_path`` 空或那个目录不存在
-    （宁可不给 cwd，也不把一个假路径塞进会话的工作目录——同 ``apply_l2_project_cwd``
+    （宁可不给 cwd，也不把一个假路径塞进会话的工作目录——同 ``apply_principal_cwd``
     当年的判据）。
 
     2026-10-24 C 刀：这道门原来写着「活跃家 == 共享根 ⇒ 返回空」。B 刀

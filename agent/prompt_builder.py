@@ -1991,11 +1991,11 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
                 entry = next(
                     (e for e in load_registry().entries() if e.name == _agent_id), None
                 )
-                # 名册里 L1 那一行（role=l1_secretary）是**另一种写法的那个同一格**：秘书的
+                # 名册里 L1 那一行（role=conductor）是**另一种写法的那个同一格**：秘书的
                 # 人设在顶层 SOUL.md 上，不许按 L2 形状给它造一份「本项目统筹者」。
                 # 11-05 名册进了 L1 行以后，`-p default` 会把 PLOBI_AGENT_ID 写成它的 name，
                 # 于是共享层找不到、下面这支就会把秘书写成 L2。
-                _is_l1_row = entry is not None and getattr(entry, "role", "") == "l1_secretary"
+                _is_l1_row = entry is not None and getattr(entry, "role", "") == "conductor"
                 if entry is not None and not _is_l1_row:
                     return _truncate_content(
                         build_l2_identity_soul_block(entry),

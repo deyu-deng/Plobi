@@ -22,7 +22,7 @@ from plobi_cli.agent_identity import export_identity, _DEFAULT_EXPORT_EXCLUDE_RO
 ROSTER_YAML = (
     "agents:\n"
     "  Aura:\n"
-    "    role: l2_project\n"
+    "    role: principal\n"
     "    provider: minimax-cn\n"
     "    model: MiniMax-M2\n"
     "    secret_overrides:\n"

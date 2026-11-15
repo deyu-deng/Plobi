@@ -493,7 +493,7 @@ def _bind_profile_cwd(tmp_path, monkeypatch, *, profile: str, cwd) -> None:
                 "agents": {
                     profile: {
                         "name": profile,
-                        "role": "l2_project",
+                        "role": "principal",
                         "profile": profile,
                         "category": "projects",
                         "project_path": str(cwd),

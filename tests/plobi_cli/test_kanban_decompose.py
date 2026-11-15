@@ -80,7 +80,7 @@ def _patch_list_profiles(names: list[str]):
             "name": n,
             "display_name": n,
             "profile_name": n.lower(),
-            "role": "l2_project",
+            "role": "principal",
             "description": f"desc for {n}",
             "archived": False,
         }

@@ -68,10 +68,10 @@ def fake_plobi(tmp_path, monkeypatch):
     roster.write_text(
         "agents:\n"
         "  Aura:\n"
-        "    role: l2_project\n"
+        "    role: principal\n"
         "    profile: aura\n"
         "  plobi-security:\n"
-        "    role: l2_project\n"
+        "    role: principal\n"
         "    profile: plobi-security\n",
         encoding="utf-8",
     )

@@ -72,7 +72,7 @@ def _write_roster(base: Path, rows: dict) -> None:
 
 
 def _row(profile: str, **extra) -> dict:
-    base = {"name": profile, "role": "l2_project", "profile": profile, "category": "projects"}
+    base = {"name": profile, "role": "principal", "profile": profile, "category": "projects"}
     base.update(extra)
     return base
 
@@ -145,7 +145,7 @@ def test_one_configured_model_reaches_every_agent(root):
     _write_roster(root, {
         # **行键＝身份**（2026-11-05「profile 连根拔」之后）：行内那两格
         # ``name`` / ``profile`` 读盘时被忽略，所以身份只能落在键上。
-        "l2-agenda": _row("l2-agenda", role="l2_project"),
+        "l2-agenda": _row("l2-agenda", role="principal"),
         "l2-aura": _row("l2-aura"),
         "l2-kit": _row("l2-kit"),
     })
@@ -163,7 +163,7 @@ def test_a_roster_override_moves_only_that_agent(root):
     本身就在造复印件。
     """
     _write_roster(root, {
-        "l2-agenda": _row("l2-agenda", role="l2_project"),
+        "l2-agenda": _row("l2-agenda", role="principal"),
         "l2-aura": _row("l2-aura"),
         "l2-kit": _row("l2-kit"),
     })
@@ -186,7 +186,7 @@ def test_a_roster_override_moves_only_that_agent(root):
 def test_two_agents_with_overrides_do_not_fold_into_one_role_route(root):
     """裁定 172 那条判据：覆盖按 **Agent 身份**解析，不许折进共享 role 那张路由。
 
-    现核名册 24 行里 ``l2_project`` 占 23 行，而 :meth:`AgentRegistry.router` 把每行覆盖按
+    现核名册 24 行里 ``principal`` 占 23 行，而 :meth:`AgentRegistry.router` 把每行覆盖按
     **role** 盖进那张表（``routes[entry.role] = ...``，后写的赢）。所以「两个项目分身各选
     各的模型」若走 ``router()`` 就会双双变成同一个值——这条就是不让那一步回潮。
     """
@@ -256,7 +256,7 @@ def test_editing_the_roster_takes_effect_without_restarting(root):
 
 
 def test_a_model_override_on_one_row_leaves_the_other_23_rows_verbatim(root):
-    """裁定 172 判据的原文形状：24 行名册（``l2_project`` 占 23 行），给 ``Aura`` 那一行写
+    """裁定 172 判据的原文形状：24 行名册（``principal`` 占 23 行），给 ``Aura`` 那一行写
     ``model:`` ⇒ **其余 23 行解析结果逐字不变**。只测「Aura 变了」不算，所以这里逐行数。
 
     这条同时过两条消费方，因为把覆盖折进 ``routes[entry.role]`` 那个做法伤的就是两条：
@@ -270,7 +270,7 @@ def test_a_model_override_on_one_row_leaves_the_other_23_rows_verbatim(root):
     """
     from plobi.agents.registry import AgentRegistry
 
-    rows = {"secretary": {"name": "secretary", "role": "l1_secretary", "profile": "default",
+    rows = {"secretary": {"name": "secretary", "role": "conductor", "profile": "default",
                           "category": "butler"}}
     names = (["aura"] + [f"proj{n}" for n in range(23)])
     for name in names:
@@ -305,7 +305,7 @@ def test_a_model_override_on_one_row_leaves_the_other_23_rows_verbatim(root):
     # 类表本身没被任何一行动过：`router()` 只回答「这一类默认用什么」
     from plobi.agents.registry import AgentRegistry as _AR
 
-    class_route = _AR.load().router().resolve("l2_project")
+    class_route = _AR.load().router().resolve("principal")
     assert f"{class_route.provider}/{class_route.model}" == list(
         {v["route"] for k, v in before.items() if k != "aura"}
     )[0]

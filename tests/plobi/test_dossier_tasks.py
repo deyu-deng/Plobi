@@ -20,11 +20,11 @@ ROSTER = textwrap.dedent(
     version: 1
     agents:
       Aura:
-        role: l2_project
+        role: principal
         category: projects
         mind_subtree: Dossiers/projects/Aura
       secretary:
-        role: l1_secretary
+        role: conductor
         display_name: 总秘书
         mind_subtree: Dossiers/butler/secretary
     """
@@ -336,7 +336,7 @@ def test_unknown_agent_has_no_home(live):
 def test_an_agent_without_a_dossier_has_no_home(live, monkeypatch):
     roster = Path(live[0]) / "projects.yaml"
     roster.write_text(
-        "version: 1\nagents:\n  无档案:\n    role: l2_project\n    category: projects\n",
+        "version: 1\nagents:\n  无档案:\n    role: principal\n    category: projects\n",
         encoding="utf-8",
     )
 

@@ -29,7 +29,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
     registry = AgentRegistry(path=tmp_path / "projects.yaml")
     registry.upsert(
-        AgentEntry.from_dict("simulation", {"role": "l2_project", "pace": {"weekly_hours": 6}})
+        AgentEntry.from_dict("simulation", {"role": "principal", "pace": {"weekly_hours": 6}})
     )
     registry.save()  # upsert 只改内存；磁盘副本供 AgentRegistry.load 读取
     monkeypatch.setattr("plobi.agents.registry.load_registry", lambda path=None: registry)

@@ -3,29 +3,29 @@
 The 2026-10-21 symptom: every ``courses`` row rendered greyed out and
 unclickable. Root cause was a **role mislabel in the data**, not a policy
 decision: the rows carried 裁定 143②'s "identity granted" shape (``category:
-courses`` + explicit ASCII ``profile: l2-course-*`` + a landed profile home)
-but their ``role`` still said ``l2_course`` — the role that means「还没有拿到
-身份」. ``AgentEntry.profile_name`` returns "" for that role (by design), so
-``agent_navigability``'s first veto fired and the rail greys them out.
+courses`` + a name that derives an ASCII slug) but their ``role`` still pointed
+at「还没有拿到身份」那一档。``AgentEntry.profile_name`` 对那种行返回 ""，于是
+``agent_navigability`` 第一道否决开火，整列灰掉。
+
+**2026-11-15（用户裁定）**：那一档（第三个 role 值）已经物理删除——「有没有身份」
+现在只有一个判据：``derive_runtime_slug(name)`` 是否为空串。数据里写着的 ``profile``
+不算数，``role`` 也不再背这件事。这个文件跟着改成钉那条判据。
 
 This file pins the contract that closes it:
 
-1. A course row WITH identity (explicit profile + landed home) is navigable —
-   the same clickability any project 分身 gets (「五种 Agent 完全平等」).
-2. A course row WITHOUT identity (``l2_course``, no profile) stays
-   non-navigable — that shape genuinely has no runtime to bind, and pretending
-   otherwise is what produced the 2026-10-13 restart-loop bug.
-3. Askability follows the same identity: an identified course row is askable
-   like any other L2, so 派活/提问 paths see courses and projects identically.
-
-The data repair itself (flipping the mislabeled rows' role) is a one-time
-operation recorded in the agent register; what must never regress is the
-reading contract above.
+1. A course row WHOSE NAME derives a slug is navigable — the same clickability
+   any project 分身 gets (「五种 Agent 完全平等」).
+2. A course row WHOSE NAME derives no slug (非 ASCII 未在 ``runtime_slugs.yaml``
+   登记 / 撞保留名) stays non-navigable — that row genuinely has no runtime to
+   bind, and pretending otherwise is what produced the 2026-10-13 restart-loop
+   bug.
+3. Askability follows the same identity: a row with a slug is askable like any
+   other L2, so 派活/提问 paths see courses and projects identically.
 
 Isolation: every test runs against a temp ``PLOBI_HOME`` + temp roster file.
 Nothing here may read or write the real ``~/.plobi`` — the navigability probe
-checks ``profiles/<name>`` under the live home, so the env must be pinned or
-the test silently reads the real machine's homes.
+checks the live home, so the env must be pinned or the test silently reads the
+real machine's state.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from plobi.agents.registry import (
     agent_askability,
     agent_navigability,
 )
-from plobi.routing.models import L2_COURSE, PRINCIPAL
+from plobi.routing.models import PRINCIPAL
 
 
 @pytest.fixture()
@@ -122,7 +122,7 @@ def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
     这条原来钉的是反方向（"家没落地就先把行灰掉，否则点了 spawn 失败"）。那个前提随
     单后端（裁 168）与乙案（裁 178）一起没了：点击不再 spawn 一个带 `--profile` 的进程，
     而把家当"能不能点"的证据，会让一次数据搬家把整条左栏打瘫——10-23 11:36 就是这么红的。
-    防 2026-10-13 那个重启循环的牙在隔壁那条：`l2_course`（无路由的数据行）仍然不可点。
+    防 2026-10-13 那个重启循环的牙在隔壁那条：派生不出 slug 的行仍然不可点。
     """
     reg = _load(
         tmp_path,
@@ -143,11 +143,13 @@ def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
 
 
 def test_course_row_without_identity_stays_non_navigable(tmp_path, home):
-    """``l2_course`` with no profile = 数据记录 (裁定 40): no runtime to bind.
-    This is the shape that MUST stay grey — the 2026-10-13 restart-loop bug."""
+    """非 ASCII 名、又没在 ``runtime_slugs.yaml`` 登记 ⇒ 派生不出 slug ⇒ 无路由。
+
+    This is the shape that MUST stay grey — the 2026-10-13 restart-loop bug.
+    """
     reg = _load(
         tmp_path,
-        {"一门没有身份的课": {"role": L2_COURSE, "category": "courses"}},
+        {"一门没有身份的课": {"role": PRINCIPAL, "category": "courses"}},
     )
     entry = reg.get("一门没有身份的课")
 
@@ -157,23 +159,25 @@ def test_course_row_without_identity_stays_non_navigable(tmp_path, home):
     assert agent_askability(entry)[0] is False
 
 
-def test_mislabeled_course_row_is_the_bug_shape(tmp_path, home):
-    """The 2026-10-21 bug, pinned as a failing shape: identity in the data
-    (explicit profile + landed home) but the role still says ``l2_course``.
-    ``profile_name`` must NOT hand out a profile for that role — that is what
-    makes the mislabel visible instead of silently clickable."""
+def test_row_whose_name_derives_no_slug_is_not_clickable(tmp_path, home):
+    """数据里那格 ``profile`` 不再算数——身份只认名字派生出来的 slug。
+
+    原来是钉 2026-10-21 那个「role 说不算、数据说算」的错标形状。第三值删掉之后
+    那个形状不可能再存在了，牙改成钉新判据：即便有人在 yaml 里硬塞一个 ``profile``，
+    派生不出 slug 的行照样灰着、``profile_name`` 照样是空串。
+    """
     _landing_home(tmp_path, "l2-course-ee")
     reg = _load(
         tmp_path,
         {
-            "电工电子学": {
-                "role": L2_COURSE,
+            "线性代数": {
+                "role": PRINCIPAL,
                 "category": "courses",
                 "profile": "l2-course-ee",
             }
         },
     )
-    entry = reg.get("电工电子学")
+    entry = reg.get("线性代数")
 
     assert entry.profile_name == ""
     assert agent_navigability(entry)[0] is False

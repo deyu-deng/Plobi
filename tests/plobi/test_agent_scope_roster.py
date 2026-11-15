@@ -37,7 +37,7 @@ def roster(_isolate_plobi_home):
 
 
 def _add(reg: AgentRegistry, name: str) -> None:
-    reg.upsert(AgentEntry(name=name, role="l2_project"))
+    reg.upsert(AgentEntry(name=name, role="principal"))
     reg.save()
 
 

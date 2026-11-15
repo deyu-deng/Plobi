@@ -1,11 +1,11 @@
 """项目分身的工作目录：真源是名册那一行，读时叠，不落文件（裁 36.1 的契约，机制已换）。
 
 **这把刀换了机制**（裁 42 / 裁 166 / ADR-0013 ``config.yaml`` 那一行）。原来这一族钉的是
-``apply_l2_project_cwd`` 往分身家 ``config.yaml`` 写一节 ``terminal.cwd``——那等于每建一个
+``apply_principal_cwd`` 往分身家 ``config.yaml`` 写一节 ``terminal.cwd``——那等于每建一个
 项目分身就多一份复印件，而那份复印件恰恰是「一个模型要配 24 遍」的载体。现在那一格的
 真源是名册那一行的 ``project_path``，由
 :func:`plobi.agents.registry.profile_config_overlay` 在 :func:`plobi_cli.config.load_config`
-里**读时叠**（顺序＝名册行覆盖 → 顶层 → 出厂默认），落盘那扇门（``apply_l2_project_cwd``
+里**读时叠**（顺序＝名册行覆盖 → 顶层 → 出厂默认），落盘那扇门（``apply_principal_cwd``
 与 ``_write_profile_config``）已经关掉。
 
 契约本身一个字没改，所以测试也照原来的五条写，只是问的对象换了：
@@ -92,7 +92,7 @@ def _effective(agent_id: str) -> dict:
 def _project_row(name: str, profile: str, path) -> dict:
     return {
         "name": name,
-        "role": "l2_project",
+        "role": "principal",
         "profile": profile,
         "category": "projects",
         "project_path": str(path) if path is not None else "",
@@ -135,7 +135,7 @@ def test_the_roster_wins_over_the_top_level_file(home):
 def test_a_dead_project_path_never_becomes_a_cwd(home):
     """契约②：那一行的目录不存在 ⇒ 不给 cwd，也不把一个假路径塞进会话。
 
-    原话是 ``apply_l2_project_cwd`` 的「NEVER fabricate a cwd」——那句话跟着机制一起
+    原话是 ``apply_principal_cwd`` 的「NEVER fabricate a cwd」——那句话跟着机制一起
     搬进了 :func:`plobi.agents.registry._resolvable_project_cwd`，这条是它的替身。
     """
     ghost = home / "no-such-folder"
@@ -149,7 +149,7 @@ def test_a_dead_project_path_never_becomes_a_cwd(home):
     assert cfg["terminal"]["cwd"] != str(ghost)
 
 
-@pytest.mark.parametrize("role", ["l2_project", "l2_butler"])
+@pytest.mark.parametrize("role", ["principal", "l2_butler"])
 def test_butler_and_agenda_rows_get_no_cwd(home, role):
     """契约③：秘书 / 日程那一行没有文件夹绑定 ⇒ 不许把它们按进某个项目的目录。"""
     profile_dir = home / ".plobi" / "profiles" / "l2-agenda"
@@ -219,7 +219,7 @@ def test_spawning_a_project_agent_leaves_no_config_yaml_in_its_home(home):
     reg.upsert(
         AgentEntry(
             name="Spawned",
-            role="l2_project",
+            role="principal",
             project_path=str(workspace),
             category="projects",
         )
@@ -274,7 +274,7 @@ def test_the_l2_diet_cannot_move_an_agents_workspace(home):
     文件内容证的。现在 diet 写的还是分身家那份（它已经不存在 ⇒ 静默 no-op），
     而生效的 cwd 来自名册那一行——所以这一条改成证「diet 跑完之后，工作目录照旧」。
     """
-    from plobi.agents.registry import apply_l2_project_diet
+    from plobi.agents.registry import apply_principal_diet
 
     workspace = home / "dieted"
     workspace.mkdir()
@@ -283,7 +283,7 @@ def test_the_l2_diet_cannot_move_an_agents_workspace(home):
     _roster({"Diet": _project_row("Diet", "l2-diet", workspace)})
     before = _effective("Diet")["terminal"]["cwd"]
 
-    apply_l2_project_diet(profile_dir)
+    apply_principal_diet(profile_dir)
 
     assert (
         _effective("Diet")["terminal"]["cwd"]

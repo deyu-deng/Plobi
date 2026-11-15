@@ -16,7 +16,7 @@ export const $consoleAgentsLoading = atom(true)
 export const $consoleAgentsError = atom<null | string>(null)
 
 /**
- * 名册里 L1 那一行（role `l1_secretary`），用户 11-05：L1 也进名册，和五类 L2
+ * 名册里 L1 那一行（role `conductor`），用户 11-05：L1 也进名册，和五类 L2
  * 分开标、但地位平等。
  *
  * 为什么不放进 `$consoleAgents`：那张表是左栏「智能体名单」的渲染源，L1 是主界面

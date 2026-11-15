@@ -43,7 +43,7 @@ def soul_home(tmp_path, monkeypatch):
     return home
 
 
-def _entry(name: str = "Stithy", role: str = "l2_project") -> AgentEntry:
+def _entry(name: str = "Stithy", role: str = "principal") -> AgentEntry:
     return AgentEntry(name=name, role=role)
 
 
@@ -117,13 +117,13 @@ def test_writing_twice_is_a_noop(soul_home):
 
 def test_l1_row_is_never_written(soul_home):
     """L1 / default 不写（既有契约：那份是顶层模板的事，不是这一刀的）。"""
-    assert ensure_l2_identity_soul(_entry(name="Plobi", role="l1_secretary")) is False
+    assert ensure_l2_identity_soul(_entry(name="Plobi", role="conductor")) is False
     assert not shared_soul_path_for("Plobi").exists()
 
 
 def test_a_chinese_agent_name_still_gets_a_safe_filename(soul_home):
     """中文名 slug 成 hex digest——文件名必须始终是 `[A-Za-z0-9_-]+`。"""
-    entry = _entry(name="电工电子学", role="l2_project")
+    entry = _entry(name="电工电子学", role="principal")
 
     assert ensure_l2_identity_soul(entry) is True
 
@@ -149,7 +149,7 @@ def test_boot_refresh_rewrites_old_fences_without_touching_the_persona(
 
     roster = tmp_path / "projects.yaml"
     roster.write_text(
-        "version: 1\nagents:\n  Stithy:\n    role: l2_project\n    category: projects\n",
+        "version: 1\nagents:\n  Stithy:\n    role: principal\n    category: projects\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
@@ -193,11 +193,11 @@ def test_a_name_that_slugifies_differently_still_reads_its_own_soul(
     _roster(
         tmp_path,
         monkeypatch,
-        f"version: 1\nagents:\n  {name}:\n    role: l2_project\n"
+        f"version: 1\nagents:\n  {name}:\n    role: principal\n"
         f"    category: courses\n",
     )
 
-    entry = AgentEntry(name=name, role="l2_project", category="courses")
+    entry = AgentEntry(name=name, role="principal", category="courses")
     assert ensure_l2_identity_soul(entry) is True
     (soul_home / "SOUL.md").write_text("L1-SECRETARY-SOUL", encoding="utf-8")
 
@@ -218,7 +218,7 @@ def test_a_name_that_slugifies_differently_still_reads_its_own_soul(
     assert "L1-SECRETARY-SOUL" not in got
 
 
-def test_an_unresolvable_identity_never_borrows_the_l1_secretary_soul(
+def test_an_unresolvable_identity_never_borrows_the_conductor_soul(
     soul_home, tmp_path, monkeypatch
 ):
     """认不出是哪一行 ⇒ 宁可不给身份，也不许把 L1 的秘书合同印到分身身上。"""
@@ -243,7 +243,7 @@ def test_identity_name_for_key_maps_every_spelling_of_the_same_row(
     _roster(
         tmp_path,
         monkeypatch,
-        f"version: 1\nagents:\n  {name}:\n    role: l2_project\n"
+        f"version: 1\nagents:\n  {name}:\n    role: principal\n"
         f"    category: courses\n",
     )
 

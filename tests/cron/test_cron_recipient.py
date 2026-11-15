@@ -42,7 +42,7 @@ def _agenda_row(tmp_path: Path, **fields) -> str:
         tmp_path,
         AgentEntry(
             name=RECIPIENT,
-            role="l2_project",
+            role="principal",
             display_name="日程秘书",
             description="日程采集 → SQLite → 看板 → 钉钉 闭环",
             **fields,
@@ -150,7 +150,7 @@ def test_a_recipient_that_is_not_a_roster_row_is_refused(home):
 def test_an_archived_row_is_refused(home, tmp_path, monkeypatch):
     """归档那一行不是能认领这一轮的主（裁 19：归档是藏起来，不是删除）。"""
     entry = dataclasses.replace(
-        AgentEntry(name="old-agenda", role="l2_project"),
+        AgentEntry(name="old-agenda", role="principal"),
         archived=True,
     )
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", _roster(tmp_path / "archived", entry))
@@ -191,7 +191,7 @@ def test_no_internal_field_values_leak_into_the_identity_note(home):
     _success, _error, agent_cls, _script, _resolve = _fire(_job(), home)
 
     note = agent_cls.call_args.kwargs["ephemeral_system_prompt"]
-    for internal in ("l2_project", "role", "profile", "slug"):
+    for internal in ("principal", "role", "profile", "slug"):
         assert internal not in note
 
 
@@ -228,11 +228,11 @@ def test_a_sibling_row_does_not_borrow_the_override(home, tmp_path, monkeypatch)
             tmp_path,
             AgentEntry(
                 name=RECIPIENT,
-                role="l2_project",
+                role="principal",
                 provider="rowprov",
                 model="rowprov/row-model",
             ),
-            AgentEntry(name="other", role="l2_project"),
+            AgentEntry(name="other", role="principal"),
         ),
     )
     monkeypatch.setattr(

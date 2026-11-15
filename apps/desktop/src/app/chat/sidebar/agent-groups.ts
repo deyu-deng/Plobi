@@ -104,8 +104,8 @@ export function agentNameSet(agents: readonly Pick<Agent, 'id'>[]): Set<string> 
  * 这一行能不能点进聊天页。
  *
  * 判据只有后端 R-072 的 `navigable`（`agent_navigability`：点了之后 spawn
- * 不会失败的形状——课程行 heal 成 l2_course 后没有运行时可绑、保留名建不出
- * 家、家还没落地，三者任一都不可点）。11-06 收尾：`profile` 那格已经从响应里
+ * 不会失败的形状——派生不出运行时 slug 的行没有运行时可绑、保留名建不出
+ * 家，两者任一都不可点）。11-06 收尾：`profile` 那格已经从响应里
  * 删掉，这里也不再拿它兜底；读不到（老响应）按可点处理，不该因为缺字段把整栏点死。
  */
 export function isNavigableAgent(agent: Partial<Pick<Agent, 'navigable'>>): boolean {

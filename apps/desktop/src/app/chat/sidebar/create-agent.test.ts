@@ -46,13 +46,13 @@ describe('agentIdFromName', () => {
 })
 
 describe('buildCreateAgentBody', () => {
-  it('forwards category into the POST body with the l2_project role', () => {
+  it('forwards category into the POST body with the principal role', () => {
     const body = buildCreateAgentBody('My Project', 'research')
 
     expect(body).toEqual({
       id: 'my-project',
       name: 'My Project',
-      role: 'l2_project',
+      role: 'principal',
       category: 'research'
     })
   })
@@ -61,7 +61,7 @@ describe('buildCreateAgentBody', () => {
     const body = buildCreateAgentBody('Butler Bot', DEFAULT_AGENT_CATEGORY)
 
     expect(body.category).toBe(DEFAULT_AGENT_CATEGORY)
-    expect(body.role).toBe('l2_project')
+    expect(body.role).toBe('principal')
   })
 
   it('sends the typed name as-is while the id stays the lowercased slug', () => {
@@ -104,7 +104,7 @@ describe('buildCreateAgentBody projectPath (WP-STUDIO, 裁定 36.1)', () => {
     expect(body).toEqual({
       id: 'code',
       name: 'Code',
-      role: 'l2_project',
+      role: 'principal',
       category: 'projects',
       projectPath: 'D:/Projects/Plobi/Code'
     })

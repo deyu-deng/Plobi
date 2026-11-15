@@ -273,7 +273,7 @@ def load_entries(roster_path: Path | None = None) -> tuple[Path, list[Any]]:
 # 桌面那边的 Agent 作用域哨兵：``'l1'`` = 总秘书。
 #
 # 它**不是名册里的 id**——名册里 L1 那一行的 name 是 ``secretary``（role
-# ``l1_secretary``）。档案跟着 Agent 走 ⇒ 收到作用域的那一格，得先把它翻译成
+# ``conductor``）。档案跟着 Agent 走 ⇒ 收到作用域的那一格，得先把它翻译成
 # 名册那一行，否则档案卡去要 ``/api/surface/agents/l1`` ⇒ 404
 # 「agent 'l1' is not registered」（2026-11-08 现场）。
 L1_SCOPE = "l1"

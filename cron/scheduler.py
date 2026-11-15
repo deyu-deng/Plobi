@@ -734,7 +734,7 @@ def _recipient_model_override(entry) -> tuple[str, str]:
 def _recipient_identity_note(job: dict, entry) -> str:
     """这一轮是谁本人在跑——投进系统提示词的那一句署名（裁 42 / 裁 69）。
 
-    只说名册上那个**名字**：内部字段值（``role`` / ``l2_project`` 这类词）不进提示词，
+    只说名册上那个**名字**：内部字段值（``role`` / ``principal`` 这类词）不进提示词，
     模型会原样念给用户听（裁 45 实测发作过）。也不替那个 Agent 编人设——共享家里
     那份 ``SOUL.md`` 才是它说话的样子，这里只补「这一轮指名的是你」这一格事实。
     """

@@ -1,5 +1,7 @@
 import { atom } from 'nanostores'
 
+import type { ExpertRoleKey } from '@/shared/expert-trades'
+
 /**
  * 主区正在看的那条「外面的对话」（用户 11-01：不要弹窗，直接复用对话卡片）。
  *
@@ -41,8 +43,14 @@ export type OpenConversation =
     title: string
   }
 
-/** 与 `app/chat/sidebar/expert-roles.ts` 的 `ExpertRoleKey` 同义（store 不反向依赖 UI 模块）。 */
-export type ExpertRoleKey = 'browser' | 'computer' | 'file' | 'software'
+/**
+ * 名手分类键的类型从 `shared/expert-trades.ts` 那里来（2026-11-15 收口）。
+ *
+ * 以前这里手写一份字面量联合、`expert-roles.ts` 再写一份、后端 `ROLES` 写第三份：
+ * 三处不同步就得到一行点不开的空行。现在键只在 `shared/` 定义一次，store 与 UI 都引用它，
+ * store 依然不反向依赖 UI 模块。
+ */
+export type { ExpertRoleKey } from '@/shared/expert-trades'
 
 export const $openConversation = atom<null | OpenConversation>(null)
 

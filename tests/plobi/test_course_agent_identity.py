@@ -3,11 +3,11 @@
 用户 10-15 的原话就是判据：「**课程Agent还是不能点击**」「**每门课一个 L2 Agent**」。
 触发它的实况有两层：名册里 5 条课程条目的 ``profile_name`` 全为空 ⇒ 桌面前端
 ``isNavigableAgent``（只看 profile 非空）把它们整栏锁死；而 ``plobi_agent_ask`` 的名单
-按 ``ASKABLE_ROLE`` 筛，``l2_course`` 不在里面 ⇒ L1 也问不到（裁定 145①(b) 却要求
-「那一摊必须派」）。
+按 ``ASKABLE_ROLE`` 筛，派生不出 slug 的行（当年那个「课程数据条目」形状）不在里面
+⇒ L1 也问不到（裁定 145①(b) 却要求「那一摊必须派」）。
 
 钉的是**设计里那条路**（``plobi/routing/models.py:35-40`` 自己写的：真要给它一个运行时，
-就把角色改成 ``l2_project``），不是新造标志位：
+就把角色改成 ``principal``），不是新造标志位：
 
 * 一条 ``category: courses`` 的记录，**声明了** ``profile`` 就同时得到：非空
   ``profile_name``（前端可点）、在 ``ASKABLE_ROLE`` 里（L1 可问）、该角色有模型路由
@@ -32,7 +32,7 @@ from plobi.agents.registry import (
     is_askable_agent,
     profile_name_blocker,
 )
-from plobi.routing.models import DEFAULT_ROUTES, L2_COURSE, PRINCIPAL
+from plobi.routing.models import DEFAULT_ROUTES, PRINCIPAL
 
 COURSE = "大学物理（甲）Ⅱ"
 
@@ -99,4 +99,4 @@ def test_a_missing_home_no_longer_changes_askability(tmp_path, monkeypatch):
 
     assert askable is True
     assert reason == ""
-    assert L2_COURSE not in reason
+    assert "l2_course" not in reason

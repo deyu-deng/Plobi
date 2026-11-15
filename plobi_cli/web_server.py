@@ -4621,8 +4621,8 @@ def _agent_roster_names() -> list[str]:
     """名册里所有在册的 Agent 名字（**名册 name**，产品面唯一的身份键）。
 
     2026-11-05（profile 连根拔 · 后端批）：这段枚举过去借 :func:`_agent_home_names`
-    取键，而那张表按 ``profile_name`` 过滤——``l2_course`` 这类行派生不出 slug
-    （``profile_name == ""``），它们的会话就会被算进 ``default`` 那一格，把 L1
+    取键，而那张表按 ``profile_name`` 过滤——派生不出 slug 的行
+    （``profile_name == ""``）会话就会被算进 ``default`` 那一格，把 L1
     的数字抬高。产品面既然只认名册 name，枚举就直接读名册，不再借道 slug。
     """
     try:

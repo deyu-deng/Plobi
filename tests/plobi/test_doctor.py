@@ -321,7 +321,7 @@ def test_check_north_star_new_colon_fence(tmp_path: Path):
     assert row["color"] == D.GREEN
 
 
-def test_check_l1_secretary_form_green(tmp_path: Path):
+def test_check_conductor_form_green(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
         "plugins:\n  enabled:\n    - plobi-core\n"
         "toolsets:\n  - web\n  - clarify\n  - plobi_core\n"
@@ -334,7 +334,7 @@ def test_check_l1_secretary_form_green(tmp_path: Path):
     assert row["plugin_enabled"] and row["narrow_toolsets"] and row["soul_fence"]
 
 
-def test_check_l1_secretary_form_names_which_question_failed(tmp_path: Path):
+def test_check_conductor_form_names_which_question_failed(tmp_path: Path):
     """三问三答：`terminal` 还在名单里就只能否掉窄名单那一条，另外两条照实说 yes。"""
     (tmp_path / "config.yaml").write_text(
         "plugins:\n  enabled:\n    - plobi-core\n"
@@ -350,7 +350,7 @@ def test_check_l1_secretary_form_names_which_question_failed(tmp_path: Path):
     assert "terminal" in row["detail"]
 
 
-def test_check_l1_secretary_form_red_when_shape_never_applied(tmp_path: Path):
+def test_check_conductor_form_red_when_shape_never_applied(tmp_path: Path):
     row = D.check_conductor_form(tmp_path)
     assert row["color"] == D.RED
     assert "never applied" in row["detail"]

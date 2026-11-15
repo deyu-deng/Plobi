@@ -28,11 +28,11 @@ def cron_home(tmp_path, monkeypatch):
     roster.write_text(
         "agents:\n"
         "  agenda:\n"
-        "    role: l2_project\n"
+        "    role: principal\n"
         "    profile: l2-agenda\n"
         "    description: 日程秘书\n"
         "  Aura:\n"
-        "    role: l2_project\n"
+        "    role: principal\n"
         "    profile: aura\n"
         "    description: 名册上的那一行\n",
         encoding="utf-8",

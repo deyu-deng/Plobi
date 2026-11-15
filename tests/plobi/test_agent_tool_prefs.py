@@ -79,7 +79,7 @@ def _write_roster(base: Path, rows: dict) -> None:
 
 def _row(name: str, **extra) -> dict:
     # ``profile:`` 这一格已从名册删掉（2026-11-06 连根拔）：身份＝这一行的 name。
-    base = {"name": name, "role": "l2_project", "category": "projects"}
+    base = {"name": name, "role": "principal", "category": "projects"}
     base.update(extra)
     return base
 

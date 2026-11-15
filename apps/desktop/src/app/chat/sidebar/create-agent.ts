@@ -100,7 +100,7 @@ export function buildCreateAgentBody(
   const body: AgentCreateRequest = {
     id: agentIdFromName(display),
     name: display,
-    role: 'l2_project',
+    role: 'principal',
     category
   }
 

@@ -18,11 +18,11 @@ import yaml
 ROW = """
 agents:
   Aura:
-    role: l2_project
+    role: principal
     provider: deepseek
     model: deepseek-chat
   Kit:
-    role: l2_project
+    role: principal
     provider: openrouter
     model: x-top
 """
@@ -115,7 +115,7 @@ def test_clearing_one_row_does_not_move_any_other_row(roster, client):
 def test_clearing_a_row_that_had_no_override_is_idempotent(tmp_path, monkeypatch, client):
     path = tmp_path / "projects.yaml"
     path.write_text(
-        yaml.safe_dump({"agents": {"Sindri": {"role": "l2_project"}}}, sort_keys=False),
+        yaml.safe_dump({"agents": {"Sindri": {"role": "principal"}}}, sort_keys=False),
         encoding="utf-8",
     )
     monkeypatch.setattr("plobi.agents.registry.default_path", lambda: path)
@@ -124,5 +124,5 @@ def test_clearing_a_row_that_had_no_override_is_idempotent(tmp_path, monkeypatch
     second = client.put("/api/agents/sindri/model", json={"provider": "", "model": ""})
 
     assert first.status_code == 200 and second.status_code == 200
-    assert _row(path, "Sindri")["role"] == "l2_project"
+    assert _row(path, "Sindri")["role"] == "principal"
     assert not _row(path, "Sindri").get("provider")

@@ -38,7 +38,7 @@ def _seed_identity(home, name, **extra):
     from plobi.agents.registry import AgentEntry, AgentRegistry
 
     registry = AgentRegistry(home / "plobi" / "projects.yaml")
-    registry.upsert(AgentEntry(name=name, role="l2_project", **extra))
+    registry.upsert(AgentEntry(name=name, role="principal", **extra))
     registry.save()
 
 

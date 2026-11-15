@@ -88,7 +88,7 @@ class _FakeSessionDB:
         return dict(self.sessions.get(session_id) or {})
 
 
-def _roster_of(*names: str, archived: tuple[str, ...] = (), role: str = "l2_project"):
+def _roster_of(*names: str, archived: tuple[str, ...] = (), role: str = "principal"):
     """一个只认这几个名字的假名册。`role` 用来造日程秘书那一行（不是项目分身）。"""
     from plobi.agents.registry import AgentEntry
 
@@ -96,7 +96,7 @@ def _roster_of(*names: str, archived: tuple[str, ...] = (), role: str = "l2_proj
     for name in names:
         agents[name] = AgentEntry.from_dict(name, {"role": role, "category": "projects"})
     for name in archived:
-        agents[name] = AgentEntry.from_dict(name, {"role": "l2_project", "category": "projects", "archived": True})
+        agents[name] = AgentEntry.from_dict(name, {"role": "principal", "category": "projects", "archived": True})
 
     class _Registry:
         def __init__(self, rows):
@@ -332,12 +332,12 @@ def test_ask_timeout_after_the_child_wrote_does_not_double_post(CH, monkeypatch,
 
 
 def test_ask_reaches_a_non_project_row_the_role_gate_refuses(CH, monkeypatch, db):
-    """断点①的回归：一个普通 L2（role=l2_project）say 发得出，ask 也必须问得到。
+    """断点①的回归：一个普通 L2（role=principal）say 发得出，ask 也必须问得到。
 
     现读旧形状：`say` 的名单 24 行、这一侧 23 行，差的正是 agenda ——0.06 秒就被
     `plobi/agents/registry.py:1142` 那道角色闸拒掉。两枚工具对同一个人不许各判一次。
     """
-    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("agenda", role="l2_project"))
+    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("agenda", role="principal"))
     db.existing = [{"session_id": "chan_agenda_screen"}]
     got: list = []
     monkeypatch.setattr(CH.AA, "handle_agent_ask",
@@ -370,7 +370,7 @@ def test_build_child_command_resumes_before_the_subcommand(CH):
     """`--resume` 是顶层旗标（main.py 的 _TOP_LEVEL_VALUE_FLAGS），必须排在 `chat` 之前。"""
     from plobi.agents.registry import AgentEntry
 
-    entry = AgentEntry.from_dict("Nymo", {"role": "l2_project", "category": "projects"})
+    entry = AgentEntry.from_dict("Nymo", {"role": "principal", "category": "projects"})
     argv, _env, _cwd = CH.AA.build_child_command(entry, "问一句", resume_session="chan_abc")
     assert "--resume" in argv
     assert argv[argv.index("--resume") + 1] == "chan_abc"

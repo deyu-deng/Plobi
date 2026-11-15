@@ -75,7 +75,7 @@ def test_missing_l1_model_is_a_violation(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
     router.routes[CONDUCTOR] = ModelRoute(role=CONDUCTOR)
 
-    assert router.violations() == ["l1_secretary has no model configured"]
+    assert router.violations() == ["conductor has no model configured"]
 
 
 def test_unknown_role_raises(tmp_path):

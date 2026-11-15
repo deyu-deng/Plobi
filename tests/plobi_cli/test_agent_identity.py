@@ -1616,11 +1616,11 @@ def test_registry_profile_name_is_the_derived_runtime_slug():
     from plobi.agents.registry import AgentEntry, derive_runtime_slug
 
     for raw in ("Aura", "L2-Aura", "default", "DEFAULT", "  Prism  "):
-        entry = AgentEntry(name=raw, role="l2_project")
+        entry = AgentEntry(name=raw, role="principal")
         assert entry.profile_name == derive_runtime_slug(raw)
 
     # 保留名派不出内部门牌号 ⇒ 空串（不是「叫 default 的那个人」）
-    assert AgentEntry(name="default", role="l2_project").profile_name == ""
+    assert AgentEntry(name="default", role="principal").profile_name == ""
 
 
 # ===================================================================

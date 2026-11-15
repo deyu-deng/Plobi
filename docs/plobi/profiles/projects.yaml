@@ -10,24 +10,26 @@ version: 1
 agents:
   # L1 是派工的一方，不声明域。工具集在共享层全局配置里打开即可。
   secretary:
-    role: l1_secretary
+    role: conductor
     provider: moonshot        # e.g. moonshot/kimi-k3
     model: kimi-k3
     mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-morning-report, plobi-message-digest]
     description: L1 日程秘书 — 统筹、决策、派工、收摘要
 
-  # 示例 L2：一个普通的首席（`role` 一律 `l2_project`，差别只在 `category`）。
+  # 示例 L2：一个普通的首席（`role` 一律 `principal`，差别只在 `category`）。
   # **这不是出厂件**——产品不替用户建任何 L2（裁定 211：首装只有 L1、零 L2、
   # 零预置定时任务）；这一行是给你抄过去改的示例，名字、域、技能都随你的事来。
   # `domains` 这行是域声明的例子：声明了 schedule 之后，派工时填 domain=schedule
   # 就必须落在这一行；不填则完全照旧按名字发。
   schedule:
-    role: l2_project
+    role: principal
     category: butler
     provider: bezel
     model: workbuddy/deepseek-v4.1-flash
     mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-l2-resident]
     domains: [schedule]
-    description: 你说的一件事 → SQLite → 看板 → 消息推送 闭环
+    # 描述写这一行「管的事」，别写某套流水线（原先那句「SQLite → 看板 → 消息推送」
+    # 是某一家的实现，抄出去的人会以为这就是首席的出厂长相）。
+    description: 一个普通首席的示例，管什么由你自己写
