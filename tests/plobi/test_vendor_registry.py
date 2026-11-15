@@ -249,3 +249,30 @@ def test_the_channel_table_shape_did_not_change():
 
     assert "install" not in fields
     assert vr.EXTERNAL_AGENTS["codebuddy"].binary_name == "codebuddy"
+
+
+# ── 标题那两个旋钮（11-15 现读修）──────────────────────────────────────
+
+def test_the_vendor_named_title_is_a_knob_not_a_vendor_branch():
+    """「厂商自己起的名字」与「剥掉包裹」都写在**表里** ⇒ 不许长成按厂商分叉的代码。
+
+    11-15 真机现读：CodeBuddy／WorkBuddy 的 jsonl 前面有一条 ``ai-title`` 记录
+    （``aiTitle``＝它给这条会话起的名字），而第一条 user 消息外面压着
+    ``<system-reminder>``、人说的那句裹在 ``<user_query>`` 里。
+    ⇒ 两个事实**各写一格**：厂商自起名的那条记录是哪一种、标题取它哪一格；
+    没有它时剥掉哪一层包裹。
+    """
+    spec = vr.SESSION_SPECS["codebuddy"]
+
+    assert spec.title_record_type == "ai-title"
+    assert spec.title_record_field == "aiTitle"
+    assert spec.title_strip_wrapper == "user_query"
+
+
+def test_a_vendor_without_those_knobs_keeps_the_old_title_path():
+    """没登记那两个旋钮的家 ⇒ 走老路（第一条那个角色说的话），不许被牵连。"""
+    spec = vr.SESSION_SPECS["qoder"]
+
+    assert spec.title_record_type == ""
+    assert spec.title_record_field == ""
+    assert spec.title_strip_wrapper == ""

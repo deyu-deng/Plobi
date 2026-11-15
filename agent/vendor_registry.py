@@ -313,6 +313,15 @@ class SessionSpec:
     title_norm: str = "raw"
     #: 第一句用户话那一跳（``title_source == "first-user"`` 时用）。
     first_user: Optional[FirstUserSpec] = None
+    #: **厂商自起名的那条记录**（jsonl 那一族）：记录 ``type`` 要是它，
+    #: 标题就从它的那一格取（CodeBuddy／WorkBuddy 的 ``ai-title`` 记录带 ``aiTitle``）。
+    #: 空 = 不走这一跳（Qoder 那种：没有自起名的记录）。
+    title_record_type: str = ""
+    #: 上面那条记录里标题所在的那一格（``aiTitle``）。
+    title_record_field: str = ""
+    #: 取标题时剥掉的那层包裹（``<user_query>``）：厂商把**人说的那一句**裹在里面，
+    #: 外面还压着一层系统提醒（``<system-reminder>``）⇒ 不剥就是一串机器话。
+    title_strip_wrapper: str = ""
 
     # ── 项目 / 工作目录 ─────────────────────────────────────────────────
     #: ``none``／``column``（表里那一列）／``json-uri-list``（一列 JSON 列表，取第一项解码）／
@@ -561,6 +570,14 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             root_resolver="codebuddy_root",
             title_source="jsonl-role",
             title_role="user",
+            # 11-15 现读（这台机器上那 103 条会话）：厂商自己在 jsonl 里留了一条
+            # ``ai-title`` 记录（``aiTitle``＝「解决卸载ikuuu后marvis网络问题」）⇒
+            # 标题优先取它自己起的名字；取不到才退到第一条用户话，
+            # 而那条话裹着 ``<user_query>``，外面还压着 ``<system-reminder>``
+            # ⇒ 不剥就是一句机器话（屏上原来显示的就是那个）。
+            title_record_type="ai-title",
+            title_record_field="aiTitle",
+            title_strip_wrapper="user_query",
             project_mode="jsonl-field",
             project_field="cwd",
             updated_mode="mtime",

@@ -82,6 +82,34 @@ def codebuddy_session(root: Path, cwd: str, session_id: str, *, prompt: str, rep
         "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
 
 
+def codebuddy_real_shape(root: Path, cwd: str, session_id: str, *, prompt: str, reply: str,
+                          ai_title: str = "", stamp: int = 1791337771584) -> None:
+    """按**真机**的形状建一条 CodeBuddy／WorkBuddy 会话（11-15 现读）。
+
+    真机上那条 jsonl 的长相是：
+
+    - 厂商自己在前面留了一条 ``ai-title`` 记录（``aiTitle``＝它给这条会话起的名字）；
+    - 第一条 user 消息**不是人话本身**：外面压着 ``<system-reminder>``（系统提醒／
+      用户信息／工作目录），人说的那一句裹在 ``<user_query>`` 里面。
+    """
+    directory = root / "projects" / es.project_key(cwd)
+    directory.mkdir(parents=True, exist_ok=True)
+    wrapped = (f'<system-reminder data-role="user-context">\n<user_info>\n'
+               f"OS Version: win32\nWorkspace Folder: {cwd}\n</user_info>\n"
+               f"<user_query>\n{prompt}\n</user_query>\n</system-reminder>")
+    records = []
+    if ai_title:
+        records.append({"type": "ai-title", "aiTitle": ai_title, "cwd": cwd})
+    records += [
+        {"type": "message", "role": "user", "sessionId": session_id, "cwd": cwd, "timestamp": stamp,
+         "content": [{"type": "input_text", "text": wrapped}]},
+        {"type": "message", "role": "assistant", "sessionId": session_id, "cwd": cwd, "timestamp": stamp + 1000,
+         "content": [{"type": "output_text", "text": reply}]},
+    ]
+    (directory / f"{session_id}.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+
+
 def marvis_session(root: Path, session_id: str, *, title: str, prompt: str, reply: str,
                    updated: str = "2026-10-27T12:00:00+00:00") -> None:
     db = root / "database" / "data.db"
@@ -255,6 +283,37 @@ def agy_transcript(root: Path, session_id: str, *, prompt: str, reply: str) -> N
 def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
     assert es.project_key(r"D:\Projects\Sindri") == "D--Projects-Sindri"
     assert es.project_key("D:/Projects/Sindri") == "D--Projects-Sindri"
+
+
+def test_the_title_is_the_name_the_vendor_gave_the_session(homes):
+    """厂商自己在 jsonl 里留了 ``ai-title`` ⇒ 标题用它起的名字。
+
+    11-15 现读（这台机器上那 103 条会话）：第一条 user 消息外面压着
+    ``<system-reminder>``，人说的那句裹在 ``<user_query>`` 里 ⇒ 拿它当标题，
+    屏上显示的就是 ``<system-reminder data-role="user-context">``（一句机器话）。
+    而厂商另有一条 ``ai-title`` 记录写着「解决卸载ikuuu后marvis网络问题」——
+    **那才是这条会话的名字**。
+    """
+    codebuddy_real_shape(homes.codebuddy, r"D:\Temp", "01a1140d-30ed",
+                          prompt="我刚刚卸载了一个代理软件 marvis 就不能对话了",
+                          reply="这是系统代理没清干净", ai_title="解决卸载代理后marvis无法对话")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "codebuddy"}
+
+    assert rows["01a1140d-30ed"]["title"] == "解决卸载代理后marvis无法对话"
+
+
+def test_without_a_vendor_name_the_title_is_the_human_words_inside_the_wrapper(homes):
+    """没有厂商起的名字 ⇒ 剥掉那层包裹取人说的那一句（不是那句机器话）。
+
+    真机上 103 条里有 75 条没有 ``ai-title`` ⇒ 这条退路是常态，不是边角。
+    """
+    codebuddy_real_shape(homes.codebuddy, r"D:\Temp", "01a1140d-30ed",
+                          prompt="怎么创建画布呢？", reply="我先读设计文档")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "codebuddy"}
+
+    assert rows["01a1140d-30ed"]["title"] == "怎么创建画布呢？"
 
 
 def test_discovery_finds_every_vendor_on_this_machine(homes):

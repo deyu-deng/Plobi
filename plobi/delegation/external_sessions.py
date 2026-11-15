@@ -400,13 +400,33 @@ def _jsonl_project(records: Sequence[dict[str, Any]], spec) -> str:
 
 
 def _jsonl_title(records: Sequence[dict[str, Any]], spec) -> str:
-    """标题＝第一条那个角色说的话（表里写角色是哪一格、是哪一种）。"""
+    """标题：**先问厂商自己起的名字**，没有才退到第一条那个角色说的话。
+
+    两条路都在表里（**不按厂商分叉**）：
+
+    1. ``title_record_type``／``title_record_field`` —— 厂商自己在 jsonl 里留了一条
+       「这条会话叫什么」��记录（CodeBuddy／WorkBuddy 的 ``ai-title`` 带 ``aiTitle``）。
+       这一格是**厂商起的人话**，比人随口打的第一句更好认。
+    2. 退到第一条那个角色说的话（表里写角色是哪一格、是哪一种），
+       并按 ``title_strip_wrapper`` 剥掉那层包裹 —— 厂商把**人说的那一句**裹在
+       ``<user_query>`` 里，外面还压着 ``<system-reminder>`` ⇒ 不剥就是一句机器话。
+    """
+    if spec.title_record_type and spec.title_record_field:
+        for record in records:
+            if str(record.get("type") or "") != spec.title_record_type:
+                continue
+            value = record.get(spec.title_record_field)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
     for record in records:
         if not _record_matches(record, spec):
             continue
         if _record_role(record, spec) != spec.title_role:
             continue
         text = _record_text(record, spec)
+        if spec.title_strip_wrapper:
+            text = _strip_wrapper(text, spec.title_strip_wrapper)
         if text:
             return text
     return ""
