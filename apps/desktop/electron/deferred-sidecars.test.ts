@@ -527,7 +527,7 @@ test('the quota hub enable hint is a statement, not a command the user is handed
   assert.ok(!/bezel/.test(hint), '裁定 45: the internal word must not reach user-visible copy')
 })
 
-test('the desktop quota-hub hint is byte-equal to the one in doctor.py', () => {
+test('the desktop bezel hint is byte-equal to the one in doctor.py', () => {
   // chatlog keeps doctor-only phrasing ("absent on this machine"), so the drift
   // guard covers the one hint that is a claim about app behaviour and must match
   // wherever the user reads it.

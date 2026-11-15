@@ -1,0 +1,261 @@
+# bezel — 这台机器上的额度网关配置（产品起的就是这一份）
+#
+# 这里**故意不放 mock**。裁定 46 说额度清单只有一份真源、来自网关；R-017 说 mock
+# 模型不许进选择框。上一版这份配置用 `routing.rules: match "*"` 把任何模型都改写成
+# `mock/echo`，于是：网关活着 ≠ 有任何能用的渠道，而 doctor 还会把这种状态报成绿
+# （mock 自己也挂着 `workbuddy/deepseek-chat` 这个 id，见 commit c7bae4a9 之前）。
+# 没有适配的软件就不显示——宁可目录为空，也不要一条假的"成功"。
+#
+# 模型名单不在这里手抄。`workbuddy` hybrid provider 在启动时经
+# `Registry.ensure_models_refreshed()` → `WorkbuddyHybridProvider.refresh_models`
+# → `CliProvider.refresh_models` 从 CLI 自己的声明里拿（这台实测 17 条，
+# 含 hy4-preview / glm-5.3 / kimi-k3-1 等配置里写不出来的 id）。
+# 所以本文件只留：端口、这把本地钥匙、走哪条路线、并发口径。
+#
+# 路线与合规性（2026-10-07 实查）：
+# - 只装得上、又只在这台跑着、且带 headless 入口的桌面额度软件是 WorkBuddy。
+#   它自带终端 CLI（`D:\Software\WorkBuddy\resources\app.asar.unpacked\cli\bin\codebuddy`）。
+#   spawn 自己的 CLI = 吃自己的订阅，不扒 token、不逆向协议。
+# - Cursor 装了但 `%APPDATA%\Cursor` 不存在（没会话），且这个版本没有 CLI 实体；
+#   Marvis 装了在跑，但 UIA 从服务上下文看不见它的窗口；Antigravity 没装，
+#   且 `config.antigravity-desktop.yaml` 自己写着 `agy` 那个 CLI 并不存在。
+# - WorkBuddy 与 CodeBuddy 同一账号积分共享（两家定价页各写了一遍），所以吃的
+#   确实是你桌面订阅那份，不是另开的一笔钱。
+# - 已知限制：CodeBuddy 的凭据是**机器级**的——空的 CODEBUDDY_CONFIG_DIR 照样已
+#   登录。所以"另拿一个隔离账号专门跑聚合"目前做不到，厂商不改行为就不行。
+#
+# `--tools ""` 是刻意的：关掉工具集，一条网关请求才是"一次文本补全"，而不是一个
+# 会读写这台机器文件的完整编码 agent。`gui:` 段整段不写 = 禁用 UI 自动化兜底，
+# 所以这条通道永远不会去抢你的屏幕。
+#
+# 钥匙保持 `sk-local-dev-key`，与 Plobi 侧的默认值（plobi/agents/registry.py
+# `bezel_api_key()` 的兜底）一致——这样产品开箱就能连上自己起的网关，不需要谁再
+# 往环境里钉一遍。端口同理保持 8000：绑端口的是这份文件，别处只该引用它。
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  api_key: sk-local-dev-key
+
+logging:
+  level: INFO
+
+# CLI 要出网到 www.workbuddy.cn；曾照 Cursor 那份认系统代理（HTTP(S)_PROXY=127.0.0.1:7890）。
+# 2026-10-14: 该本地代理未运行，trust_env=true 导致 httpx 把所有上游请求打到死代理 -> ConnectError -> 500。
+# 改为 trust_env: false，httpx 忽略 env 代理走直连，阻断死代理注入。
+trust_env: false
+
+vault:
+  enabled: false          # spawn-CLI 路线不落任何 token，没有需要加密落盘的东西
+
+scheduler:
+  max_retries: 2
+  global_concurrency: 4
+  per_account_concurrency: 1     # 一次一个子进程，一个 CLI 会话不便宜
+  sticky_ttl: 1800
+  strategy: least_fail
+
+routing:
+  # 不再有 match "*"。`workbuddy/<模型>` 由 registry 的"provider/任意名"规则直接命中；
+  # 认不出的名字应当报错，不该被通配悄悄改写成别的东西。
+  rules: []
+
+providers:
+  # 2026-10-14 退役：workbuddy(CLI, --tools "" 纯文本) 腿不再启用。用户拍板
+  # 「UI 与配置里只存在 tools-capable 的 workbuddy/*」——该腿 capabilities.tools=false，
+  # 主循环一发就 400，无存在价值。原 CLI 段（prefer/cli/extra_args/accounts）保留在
+  # git 历史；回滚只需把下面 workbuddy 段换回 CLI 形态并把 registry 映射换回 Hybrid。
+
+  # 桌面订阅那条腿（agy / Google）。10-12 20:3x **打开**：用户拍的目标是
+  # 「整个系统不靠按 token 的 API 也能工作」，而实测只有这条腿带得动工具——
+  # `workbuddy` 那条腿是 `--tools ""` 的纯文本档（`capabilities.tools=false`），主循环一发就 400：
+  #   HTTP 400: model 'workbuddy/hy3' route does not support tools/tool_calls
+  #   (provider capabilities.tools=false). Pick a tools-capable model or drop the tools field.
+  # 硬限制照旧：拿不到那对 OAuth client 参数 ⇒ **不能自己续期**，只能用 agy 续出来、写回本机存储的那枚
+  # access token（这台实测约 60 分钟寿命；`ensure_fresh` 每次派发前重读存储接住续期，
+  # `plobi doctor` 的 `subscription_desktop_store` 一行会说还剩几分钟，过期就报「打开 agy 跑一次」）。
+  # 关掉它：把 enabled 改回 false 并重启网关（providers 在启动时建，见 `bezel/bezel/registry.py`）。
+  # 不写 models：名单由上游 `fetchAvailableModels` 现读（这台实测 20 条）。
+  # ⚠️ 别拿目录第一项当默认——顺序不稳，`antigravity/gemini-pro-agent` 这类条目对
+  #    generateContent+tools 回 `Request contains an invalid argument`。
+  antigravity:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    # 11-01 现核：同一个凭据、同一个模型，prod 那道门 0.3 秒回 429 RESOURCE_EXHAUSTED
+    # （四个模型全一样），daily 这道门 200 并真答了「好」；而账号自己的 quota summary
+    # 四格都还剩 0.98–1.0。所以 prod 那个 429 是**公共门满了**，不是他的额度——原来这里
+    # 写死 prod，卡片就把「门满」说成了「你额度用完」。换 daily；两门互探的兜底在
+    # `providers/apps/antigravity/api.py::_use_the_other_door`。
+    host: https://daily-cloudcode-pa.googleapis.com
+    api_version: v1internal
+    # 不写 refresh_token：这条腿的凭据来自桌面应用自己维护的本机存储
+    # （Windows: Credential Manager `gemini:antigravity`；macOS: Keychain）。
+    # 存储里有活的就用、没有就报「打开 agy 登一次」，不需要任何人粘环境变量。
+    accounts:
+      - { id: desktop-store }
+
+  # 2026-11-02 移出额度栏：codex / claude / opencode（CLI spawn 形态）不再占额度卡片，
+  # 归入外包设置名册（agent/external_offload.py 的 EXTERNAL_AGENTS）。provider 类与
+  # registry.PROVIDER_CLASSES 映射保留，仅 config 不再注册这三条腿。
+  # 额度：kiro / cline 读各自本机凭据，没有统一的本机额度端点，宁可空着也不编一个数。
+
+  # OpenCode Zen（裁定 204）：读本机 OAuth（~/.local/share/opencode/opencode.db 的 credential 表），
+  # 打它自己的 OpenAI 兼容口；模型名取它 /models 的自报清单，上游不报就没有模型，不回退到申报表。
+  # Gemini CLI（裁定 204）：读 ~/.gemini/oauth_creds.json 的 Google OAuth，打 generateContent，
+  # functionCall 翻成 OpenAI tool_calls；登录由 `gemini` 自己做，我们只读它写下的凭据。
+  gemini_api:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    # 只给这条腿挂代理（不靠 TUN、不靠 trust_env）：填 http://127.0.0.1:7890 这类地址；留空＝直连。
+    # 代理只承载 Google 系流量；它挂了只坏这一条腿，不会像 10-14 那样拖垮全部上游。
+    proxy: ""
+
+  opencode_api:
+    enabled: true
+    # 10-31：基座交给类里的默认值——chat 走 `/inference/openai/v1`，名单走 `/inference/v1`。
+    # 原来这里写死的是 `/zen/v1`，而那是被现成实现当"旧基座"迁移掉的一条：非 CLI 流量在上面
+    # 一律按额度耗尽处理（429 FreeUsageLimitError）。要指别处再显式加 base_url / models_url。
+
+  # OpenCode Free（11-09 落地）：走**客户端自带的本地 http 服务**（`opencode service`），
+  # 不是 CLI spawn、也不是 ACP。免费层在裸 http 上是关着的（官方文档原文
+  # 「Free-tier chat models require OpenCode」；直连 `/inference/openai/v1` 恒 429）⇒
+  # 能吃到额度的通道只有客户端自己，而客户端自己就带着一个 http 面
+  # （`127.0.0.1:<port>`，Basic 认证，口令在 `~/.config/opencode/service.json`）。
+  # 端口与口令都是**现读**：端口由 `opencode service status` 读，口令从那个文件读。
+  # 模型名单按**上游自己写的价**裁（`/api/model` 每行的 `cost` 全 0 的那批 = 免费池，
+  # 11-09 实测 43 条里 11 条），不抄一份会过期的名单。
+  # ⚠️ 这条腿拿不到我们的工具：上游**静默忽略**请求体里的 `tools`（塞一个不存在的键
+  #    同样回 200，OpenAPI 全表也没有带 tools 的请求体）⇒ capabilities.tools=false
+  #    ⇒ 模型框里进不去（裁定 204 §5 的闸门不放宽）。工具那条路是让 OpenCode 去调
+  #    我们的 MCP 服务器，归 `WP-QUOTA-LEG-TOOLS-VIA-MCP` 那把刀。
+  # 11-09：**Free 那家已由 magpie 接管**（实测：走 magpie 带得上我们的工具，一个回合真
+  #    回了 `finish_reason=tool_calls`），所以这条腿在这台机器上让位，免得模型框里出现
+  #    两份同一个免费池（我们这份 `tools=false`，只能灰着；它那份可选）。
+  #    **它仍是兜底**：把下面这行改回 `enabled: true`，或者把 magpie 停掉，它立刻接管。
+  #    ⚠️ `config.example.yaml` 与 `profiles/safe.yaml` 里**保持开着**——新机器上还没有
+  #    magpie，那边只有这一条路。
+  opencode_free:
+    enabled: false
+    # 一个回合要跑完客户端自己的 agent，比一次补全慢（实测 ~2 s，纯文本 ~6 s）。
+    timeout: 240
+    # 不写 models：名单由上游现读，读不到就是零条。
+
+  kiro_cli:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    # 10-31：嘴换成它自己的流式 API（`transport: api`，见 providers/apps/kiro/http.py）。
+    # 11-04 现核：目录 7 个具体模型（auto 不在其中，INVALID_MODEL_ID）；model_map 只
+    # 在 CLI spawn 路径消费，api 路径由 _model_id 剥前缀直发，故 models/model_map 直接
+    # 写真实模型 ID，不再用 default 占位。删掉 transport 行就回到 spawn。
+    transport: api
+    timeout: 300
+    models: [kiro_cli/claude-sonnet-4.5, kiro_cli/claude-haiku-4.5, kiro_cli/deepseek-3.2, kiro_cli/minimax-m2.5, kiro_cli/minimax-m2.1, kiro_cli/glm-5, kiro_cli/qwen3-coder-next]
+    model_map:
+      kiro_cli/claude-sonnet-4.5: claude-sonnet-4.5
+      kiro_cli/claude-haiku-4.5: claude-haiku-4.5
+      kiro_cli/deepseek-3.2: deepseek-3.2
+      kiro_cli/minimax-m2.5: minimax-m2.5
+      kiro_cli/minimax-m2.1: minimax-m2.1
+      kiro_cli/glm-5: glm-5
+      kiro_cli/qwen3-coder-next: qwen3-coder-next
+    accounts: [{ id: kiro-default }]
+
+  # Cline 走它自己的 OpenAI 兼容口（`api.cline.bot/api/v1`，10-31 实测 0.7-7.1s 回
+  # tool_calls，见 providers/apps/cline/http.py）：凭据在就是纯 HTTP 腿，没有 ACP spawn
+  # 回退；没凭据时卡片请用户跑 `cline auth`（在窗口里）。登录所需的命令名由 provider
+  # 类常量提供（binary/login_args），config 不再携带 spawn 残留。
+  # 不写 models：名单由这条腿现读，读不到就是零条，不抄一份会过期的。
+  cline_cli:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    timeout: 300
+    accounts: [{ id: cline-default }]
+
+  # Qwen Code 不在这张表里了（用户 10-31 拍）：厂商 2026-04-15 自己关了免费 OAuth，
+  # 而它剩下的那条本来就是 API 形态——阿里云 DashScope 的 key（`coding.dashscope.aliyuncs.com/v1`，
+  # OpenAI 兼容）。所以它是「正常的提供商」，不是「订阅转 API」：走
+  # `plugins/model-providers/alibaba-coding-plan`（key: `ALIBABA_CODING_PLAN_API_KEY` /
+  # `DASHSCOPE_API_KEY`，指国内道用 `ALIBABA_CODING_PLAN_BASE_URL`）。
+  # 这里不再给它留 ACP 腿：一条没有可服务模型的腿占一张卡，正是这套东西要避免的样子。
+
+  # Qoder 走它自己那扇签名的门（`gateway.qoder.com.cn/algo/…`，设备码 PKCE 自登录 + COSY 签名
+  # SSE，10-31 现核：一个回合 1.0 s 回 `tool_calls`）。类表里 `qoder` = `QoderProvider`。
+  # 要退回它原来的 ACP 口（`qodercli --acp --strict-mcp-config`，10-29 实测 0.1.42：
+  # `--strict-mcp-config` 忽略用户自己的 MCP 设置、只挂我们传进去的那台工具服务），
+  # 把 `transport: acp` 加回这一格即可——registry 先看那行再看类表。
+  # 模型名单不抄：10-31 现核 11 条由 `…/algo/api/v2/model/list` 自报（名字取它的 display_name）。
+  # 国际版 Qoder（用户 11-08 拍「CN 与国际两张卡」）。同一个类，region=intl 换主机
+  # （`api.qoder.com` 上 device poll / `/algo/api/v2/model/list` 都回 401 而不是连不上 ⇒
+  # 同一套协议、另一组主机）；凭据落在自己的 `qoder_intl_creds.json`，与 CN 那枚不共享。
+  qoder_intl:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    region: intl
+    display_name: Qoder (International)
+    timeout: 300
+    stream_idle_seconds: 90
+
+  qoder:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    display_name: Qoder
+    model_prefix: qoder
+    # 10-31：换成它自己那扇签名的门（设备码登录 + COSY 签名 SSE，一个回合 1.0 s 回
+    # tool_calls）。ACP 那条要回来只要加一行 `transport: acp`——registry 先看这行再看类表。
+    timeout: 300
+    stream_idle_seconds: 90
+
+  # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。
+  # 2026-10-11 那把桥接的是 agy（Google）；这条是用户 10-12 拍的第二条订阅口——
+  # 它比 agy 那条好用在一处：本地那张 auth 记录里 access 约 28 天、refresh 约 30 天，
+  # 且**我们能自己拿 refresh 去续**（agy 那条不行，只能等桌面 app 跑一次）。
+  # 实测（同一天）：`stream:true` ⇒ `finish_reason=tool_calls`、usage 196/52/248；
+  # `stream:false` ⇒ `400 {"code":11101,"msg":"Non-stream chat request is currently not supported"}`
+  # ——一个 400 而不是 401，同时也证明 bearer 是过了认证的。
+  # 因此 `providers/workbuddy.py::chat()` 现在永远走 SSE 再把增量折回一条 completion。
+  # 凭据不落盘、不进日志、不进 .env：`token_source` 只在运行时从桌面 app 自己的记录里读，
+  # 续期出来的新 token 也只留在内存（那张文件归桌面 app，我们不当第二个写的人）。
+  # 名单不在这儿抄（11-09 改）：厂商目录口已验过（`/v2/enterprises/personal/models`
+  # 回 200），腿自己现读；抄本里那些旧名字（hy4-preview 之类）是厂商已经换掉的。
+  workbuddy:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    base_url: https://www.workbuddy.cn
+    dialect: openai
+    chat_path: /v2/chat/completions
+    token_source: codebuddy_desktop_store
+    header_templates:
+      - { name: "X-Agent-Intent", value: "craft" }
+      - { name: "X-Auth-Refresh-Source", value: "plugin" }
+    # 名单不在这儿抄：这条腿自己现读厂商的目录口
+    # （`GET /v2/enterprises/personal/models`，用桌面端那枚 token，见
+    # `providers/apps/workbuddy/api.py::CATALOG_PATH`）。11-09 18:4x 那三问的根因
+    # 就在这份抄本上：厂商 11-09 现读的名单里已经没有 `hy4-preview`／`hy3-x`／
+    # `minimax-m2.7`，改成了 `hy4free`／`hy4std`（厂商显示名都叫「Hy4」）＋`auto`，
+    # 而抄本里还挂着旧名字（用户原话：「别人Workbuddy都是Hy4了。你还是Hy4 Preview.」）。
+    # 抄本还少说了一件事：厂商每一行都写了**这个模型自己的窗口菜单**
+    # （`contextWindow.supportedLengths`）、自己的上限与输出上限，腿把它们发出去，
+    # 选择框与运行时的上下文预算就不再靠 Plobi 的旧本地表编。
+    accounts:
+      - { id: desktop }
+
+  # 11-09：Magpie —— 本机那个多模型网关（MIT 开源，github.com/yetone/magpie）。
+  # 厂商适配那一层交给它与它的社区插件维护（qoder／workbuddy／zen-free／kiro／cline／
+  # copilot／cursor／devin／grok 在他们那儿都已经是插件了），我们这边只当它是一条腿：
+  # 端口现读它自己的 `~/.config/magpie/settings.json`（默认 3425）；名单与每行的
+  # 窗口／思考档现读 `GET /v1/models`；回合走 `POST /v1/chat/completions`，我们的
+  # key 名叫 `magpie-plobi`（那边的用量按这个名字记在我们名下）。
+  # 这台机器上没装 magpie ⇒ 这条腿没有模型：我们不装它、不登它、也不编一份名单。
+  magpie:
+    enabled: true
+    timeout: 300
+    # 它自己的 CLI 在哪儿由桌面告诉这条腿（`PLOBI_MAGPIE_BINARY`，指向**随包发布**
+    # 的那一份：`resources/magpie/magpie-cli.exe`；开发态是 `build/magpie/`）。
+    # 找不到就当这条腿不在：我们不代下载、不代安装。

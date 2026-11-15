@@ -142,10 +142,10 @@ test('main.ts productQuotaApiKey() is still the ladder this module mirrors', () 
 
 // ── 已知分叉，钉住而不是悄悄抹平（要合并就两处一起改，本行同步更新） ────────────────
 test('the ladder carries the new name and both legacy rungs', () => {
-  // QUOTA_HUB_API_KEY is the new owner; the two old names stay after it so a
+  // BEZEL_API_KEY is the new owner; the two old names stay after it so a
   // user who set either one keeps working through the rename.
-  assert.equal(ENV_ORDER[0], 'QUOTA_HUB_API_KEY')
-  assert.equal(ENV_ORDER[1], 'BEZEL_API_KEY')
+  assert.equal(ENV_ORDER[0], 'BEZEL_API_KEY')
+  assert.equal(ENV_ORDER[1], 'QUOTA_HUB_API_KEY')
   assert.equal(ENV_ORDER[2], 'PLOBI_BEZEL_API_KEY')
   assert.ok(
     mainTs.includes('PLOBI_BEZEL_API_KEY'),

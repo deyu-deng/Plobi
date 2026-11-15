@@ -31,8 +31,8 @@ const VENDOR_LABELS: ReadonlyArray<readonly [string, string]> = [
 /** Internal vocabulary that must never surface as a group title. */
 const INTERNAL_WORDS = /\b(bezel|custom\s*endpoint|custom|endpoint|gateway|aggregator)\b/gi
 
-/** The catalog path that holds the quota-hub row's display word. */
-const QUOTA_HUB_LABEL_KEY = 'settings.nav.providerSubscriptions'
+/** The catalog path that holds the bezel row's display word. */
+const BEZEL_LABEL_KEY = 'settings.nav.providerSubscriptions'
 
 /**
  * The quota hub's display word. It lives in the i18n catalog — hard-coding
@@ -40,9 +40,9 @@ const QUOTA_HUB_LABEL_KEY = 'settings.nav.providerSubscriptions'
  * screen. The fallback is the English word, never the dotted key path.
  */
 export function quotaHubLabel(): string {
-  const label = translateNow(QUOTA_HUB_LABEL_KEY)
+  const label = translateNow(BEZEL_LABEL_KEY)
 
-  return label === QUOTA_HUB_LABEL_KEY ? 'Subscriptions' : label
+  return label === BEZEL_LABEL_KEY ? 'Subscriptions' : label
 }
 
 function titleCaseSlug(slug: string): string {

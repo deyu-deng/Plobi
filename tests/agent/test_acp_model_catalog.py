@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from agent.copilot_acp_client import acp_model_catalog
 
-FAKE = str(Path(__file__).resolve().parents[2] / 'quota_hub' / 'tests' / 'fake_acp_catalog.py')
+FAKE = str(Path(__file__).resolve().parents[2] / 'bezel' / 'tests' / 'fake_acp_catalog.py')
 
 
 def test_a_catalog_is_read_from_the_session_even_after_a_banner():

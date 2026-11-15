@@ -1,0 +1,546 @@
+"""Qoder served over its own signed door — a native API leg, not an ACP session.
+
+Every line-level fact in this module was measured on this machine 2026-10-31 with the
+credential our own card minted (`oauth.run_login`, device-code + PKCE, 30-day lease):
+
+    GET  https://gateway.qoder.com.cn/algo/api/v2/model/list                     → 200, 50 KB
+    POST .../algo/api/v2/service/pro/sse/agent_chat_generation
+             ?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1           → 200, text/event-stream
+
+and that turn came back in **1.0 s with `finish_reason="tool_calls"` and our own tool
+name**, arguments intact, `usage` carrying credits and reasoning tokens. The ACP session
+could never do that: it runs tools on Qoder's side and hands back a finished answer.
+
+The frame envelope is the odd part, and the parser asserts it rather than tolerating it:
+each `data:` line is `{"headers":{...},"body":"<stringified OpenAI chunk>",
+"statusCodeValue":200,"statusCode":"OK"}` — inner is a JSON *string*, not an object — the
+stream ends with `event:finish` (no bare `data: [DONE]` on this path), and a final frame
+of `{firstTokenDuration, serverDuration, totalDuration}` carries no body at all.
+
+Reference for the request body and the error vocabulary: MIT implementations `caigee-cmd/cli2api`
+(© 2026) and `EchoPing/Qoder-2API-Go`, re-measured here; nothing from them runs as a process.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+import uuid
+from collections.abc import AsyncIterator
+from typing import Any
+
+import httpx
+
+from ...base import Account, Capabilities, Credential, Provider, UpstreamError
+from . import cosy, oauth
+
+logger = logging.getLogger("bezel.qoder")
+
+LIST_PATH = "/algo/api/v2/model/list"
+CHAT_PATH = ("/algo/api/v2/service/pro/sse/agent_chat_generation"
+             "?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1")
+DEFAULT_BASE = "https://gateway.qoder.com.cn"
+
+#: The gateway can hold an accepted stream open forever (measured in the reference
+#: project's issue #354), so an idle read is a failure we name, not a hung turn.
+DEFAULT_IDLE_TIMEOUT = 90.0
+#: Renew while >24 h of the lease remain (sub2api-style lead time).
+_REFRESH_SKEW_S = 24 * 3600
+DEFAULT_MAX_OUTPUT = 32000
+DEFAULT_MAX_INPUT = 180000
+
+#: Business codes the reference client maps explicitly; the HTTP status alone lies.
+_CODE_LOGIN_EXPIRED = {"105"}
+_CODE_BUSY = {"10605"}
+
+
+def _latest_user_text(messages: list[dict]) -> str:
+    for msg in reversed(messages or []):
+        if msg.get("role") == "user":
+            content = msg.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                return "".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
+    return ""
+
+
+def _system_text(messages: list[dict]) -> str:
+    return "\n".join(str(m.get("content") or "") for m in messages or [] if m.get("role") == "system")
+
+
+def _number(value: object, fallback: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return fallback
+    return float(value) if value else fallback
+
+
+def frame_inner(frame: object) -> dict | None:
+    """The inner OpenAI chunk of one `data:` frame, or None when the frame carries none.
+
+    Shape is asserted, not guessed: the chunk arrives as a JSON string under `body`.
+    """
+    if not isinstance(frame, dict):
+        return None
+    body = frame.get("body")
+    if isinstance(body, str):
+        if body in ("", "[DONE]"):
+            return None
+        try:
+            inner = json.loads(body)
+        except ValueError:
+            return None
+        return inner if isinstance(inner, dict) else None
+    return frame if isinstance(frame.get("choices"), list) else None
+
+
+def _slug(display_name: str, key: str) -> str:
+    """The human name upstream reports for itself, as a model id.
+
+    The desktop has no name field to read — it derives the label from the id (`model-status-label.ts`:
+    dashes to spaces, title case, vendor rules for `glm-`, `minimax-`…). So the *id* has to carry
+    the name Qoder itself shows, and the routing key (`dfmodel`, `kmodel_latest`) stays internal.
+    Measured 2026-10-31 from the live catalogue: `display_name` is `DeepSeek-V4-Pro`,
+    `Kimi-K3.1-Pro`, `Qwen3.8-Max`, while the key is an internal code nobody reads.
+    """
+    base = re.sub(r"[^a-z0-9.]+", "-", str(display_name or "").lower()).strip("-.")
+    return base or key
+
+
+class QoderProvider(Provider):
+    name = "qoder"
+    display_name = "Qoder"
+    #: No fixed prefix: the card id IS the namespace (a second leg for the international
+    #: account ships as `qoder_intl`, and its ids must start with its own card id).
+    model_prefix = ""
+    _SEED_MODELS: tuple[str, ...] = ()
+
+    def __init__(self, config: dict, http: httpx.AsyncClient) -> None:
+        super().__init__(config, http)
+        # Two account systems, two cards (user 2026-11-08). Region decides the hosts AND
+        # the credential file, so the CN and international logins never share a token.
+        self.region = str(config.get("region") or "cn").strip().lower()
+        # The registry hands every leg its card id; the published namespace is that id
+        # unless the operator named one (the CN card keeps `qoder`).
+        self.name = str(config.get("leg") or config.get("name") or self.name)
+        self.model_prefix = str(config.get("model_prefix") or self.name)
+        self.base = str(config.get("base_url") or oauth.hosts(self.region)["gateway"]).rstrip("/")
+        self.idle_timeout = float(config.get("stream_idle_seconds") or DEFAULT_IDLE_TIMEOUT)
+        self.served_models: tuple[str, ...] = tuple(f"{self.model_prefix}/{m}" for m in config.get("models", ()))
+        #: keyed by the vendor's own model key (`fast`, `kmodel`, ...), filled by refresh_models
+        self._entries: dict[str, dict] = {}
+        #: public id tail (a slug of upstream's own display name) <-> wire key
+        self._key_of: dict[str, str] = {}
+        self._slug_of: dict[str, str] = {}
+        self._sessions: dict[str, cosy.Session] = {}
+
+    # --- presence / verdicts ---------------------------------------------
+    def capabilities(self) -> Capabilities:
+        return Capabilities(stream=True, tools=True)
+
+    def present(self) -> bool:
+        return True
+
+    def signed_in(self) -> tuple[bool, str]:
+        return oauth.signed_in(self.region)
+
+    def credential_health(self) -> tuple[bool, str]:
+        # No exit node is involved: Qoder's edge is reachable from here directly, so the
+        # credential question and the can-it-serve-now question have the same answer.
+        return oauth.signed_in(self.region)
+
+    def login_plan(self) -> dict:
+        return {
+            "kind": "oauth",
+            "name": self.display_name,
+            "runner": lambda on_url=None: oauth.run_login(on_url=on_url, region=self.region),
+        }
+
+    # --- accounts ---------------------------------------------------------
+    async def discover_accounts(self) -> list[Account]:
+        live, _reason = oauth.signed_in(self.region)
+        if not live:
+            self.accounts = []
+            return []
+        cred = oauth.read_credential(self.region) or {}
+        acc = Account(
+            id=f"{self.name}-device",
+            provider=self.name,
+            label=str(cred.get("name") or "Qoder"),
+            cred=Credential(
+                access_token=str(cred.get("token") or ""),
+                refresh_token=str(cred.get("refresh_token") or ""),
+                extra={"uid": str(cred.get("user_id") or "")},
+            ),
+        )
+        self.accounts = [acc]
+        return self.accounts
+
+    def _session(self, acc: Account) -> cosy.Session:
+        cached = self._sessions.get(acc.id)
+        if cached is not None:
+            return cached
+        session = cosy.Session(cosy.Account(
+            uid=str(acc.cred.extra.get("uid") or ""),
+            name=str(acc.label or ""),
+            security_oauth_token=acc.cred.access_token,
+            refresh_token=acc.cred.refresh_token,
+        ))
+        self._sessions[acc.id] = session
+        return session
+
+    async def ensure_fresh(self, acc: Account) -> None:
+        """30-day device lease with JIT renewal (endpoint measured 2026-11-03, HTTP 200).
+
+        Renew while >24 h of the lease remain instead of spending the refresh token only
+        after expiry; a failed refresh degrades to the old "sign in again" verdict.
+        """
+        cred = oauth.read_credential(self.region) or {}
+        stamp = oauth._expiry_epoch(cred.get("expires_at"))
+        if stamp is not None and (stamp - time.time()) > _REFRESH_SKEW_S:
+            acc.cred.access_token = str(cred.get("token") or acc.cred.access_token)
+            acc.cred.refresh_token = str(cred.get("refresh_token") or acc.cred.refresh_token)
+            return
+        tokens = oauth.refresh_credential(self.region)
+        if tokens is None:
+            live, reason = oauth.signed_in(self.region)
+            if live:
+                # Not actually due (clock skew / probe) — keep serving the stored pair.
+                acc.cred.access_token = str(cred.get("token") or acc.cred.access_token)
+                return
+            raise UpstreamError(401, f"qoder refresh failed — sign in again ({reason})", reauth=True)
+        acc.cred.access_token = str(tokens.get("device_token") or tokens.get("token") or "")
+        acc.cred.refresh_token = str(tokens.get("refresh_token") or "")
+        acc.cred.expires_at = oauth._expiry_epoch(tokens.get("expires_at")) or 0.0
+
+    # --- catalogue --------------------------------------------------------
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        url = f"{self.base}{LIST_PATH}"
+        try:
+            await self.ensure_fresh(acc)
+            headers = self._session(acc).headers(body="", raw_url=url, request_id=uuid.uuid4().hex)
+            res = await self.http.get(url, headers=headers)
+            if res.status_code != 200:
+                logger.warning("qoder model list -> HTTP %s", res.status_code)
+                return None
+            payload = res.json()
+        except (UpstreamError, httpx.HTTPError, ValueError) as exc:
+            logger.warning("qoder model list failed: %s: %s", type(exc).__name__, exc)
+            return None
+        rows = payload.get("chat") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            logger.warning("qoder model list carried no chat role (keys=%s)", sorted(payload or {})[:8])
+            return None
+        slugs: list[str] = []
+        self._key_of, self._slug_of = {}, {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("key") or row.get("id") or "")
+            if not key or row.get("enable") is False:
+                continue
+            self._entries[key] = row
+            slug = _slug(str(row.get("display_name") or ""), key)
+            if slug in self._key_of:  # two roles showing the same name
+                slug = f"{slug}-{_slug(key, key)}"
+            self._key_of[slug] = key
+            self._slug_of[key] = slug
+            slugs.append(slug)
+        if not slugs:
+            return None
+        self.served_models = tuple(f"{self.model_prefix}/{s}" for s in slugs)
+        return slugs
+
+    # --- what this model can actually change -------------------------------
+    #: Plobi's effort words, lowest rung first. Qoder uses the same vocabulary in its
+    #: own `thinking_config` (`low` / `medium` / `xhigh`), so no translation is needed.
+    _EFFORT_LADDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+    def tuning(self, model: str) -> dict:
+        """Qoder's own per-model knobs, read out of the catalogue row it wrote.
+
+        Measured 2026-11-01: `Qwen3.8-Max` carries
+        `thinking_config {disabled, enabled {efforts {low, medium(default), xhigh}}}` and
+        `context_config {200K(default), 400K, 1M}` with `is_editable: true`, while `Auto`
+        carries one 200K context and no `is_editable`. So the picker gets exactly the
+        levels the vendor sells for *that* model — and no list is invented where the
+        answer says there is no choice.
+        """
+        entry = self._entries.get(self._key_of.get(
+            (str(model or "")).removeprefix(f"{self.model_prefix}/"), str(model or "")), {}) or {}
+        out: dict[str, Any] = {}
+
+        enabled = (entry.get("thinking_config") or {}).get("enabled") or {}
+        levels = enabled.get("efforts") or {}
+        efforts = [e for e in self._EFFORT_LADDER if e in levels]
+        if efforts:
+            out["efforts"] = efforts
+            default = next((w for w, cfg in levels.items() if isinstance(cfg, dict) and cfg.get("is_default")), "")
+            out["default_effort"] = default if default in efforts else (
+                "medium" if "medium" in efforts else efforts[len(efforts) // 2]
+            )
+
+        choices = (entry.get("context_config") or {}).values()
+        windows = sorted({int(c.get("token_count")) for c in choices
+                          if isinstance(c, dict) and c.get("token_count")})
+        if windows:
+            context: dict[str, Any] = {"max": windows[-1], "choices": windows}
+            for c in (entry.get("context_config") or {}).values():
+                if isinstance(c, dict) and c.get("is_default") and c.get("token_count"):
+                    context["default"] = int(c["token_count"])
+            context["adjustable"] = bool(entry.get("is_editable")) and len(windows) > 1
+            out["context"] = context
+        if isinstance(entry.get("max_input_tokens"), (int, float)):
+            out.setdefault("context", {"max": int(entry["max_input_tokens"])})
+        return out
+
+    # --- request path -----------------------------------------------------
+    def _effort_for(self, entry: dict, asked: str) -> str:
+        """The level to send, clamped to the rungs this model's own row sells.
+
+        `thinking_config.enabled.efforts` is vendor-written per model (measured
+        2026-11-01: Qwen3.8-Max sells low / medium / xhigh, `Auto` writes no
+        thinking_config at all). Asking for a rung it does not sell moves to the
+        nearest one it does instead of sending a word the door would have to guess at.
+        """
+        asked = (asked or "").strip().lower()
+        if not asked:
+            return ""
+        levels = [e for e in self._EFFORT_LADDER
+                  if e in ((entry.get("thinking_config") or {}).get("enabled") or {}).get("efforts", {})]
+        if not levels:
+            return asked
+        if asked in levels:
+            return asked
+        if asked not in self._EFFORT_LADDER:
+            return asked
+        rung = self._EFFORT_LADDER.index(asked)
+        # Nearest rung on the ladder; on a tie the *higher* one wins, because an
+        # unanswered "think more" should not quietly mean "think less".
+        near = min(levels, key=lambda e: (abs(self._EFFORT_LADDER.index(e) - rung),
+                                          -self._EFFORT_LADDER.index(e)))
+        return near
+
+    def _window_for(self, entry: dict, asked: Any) -> int:
+        """The context window to declare, from the model's own `context_config`.
+
+        A number the model does not sell never reaches the door: we keep the vendor's
+        default. The default itself is the model's `is_default` entry, falling back to
+        `max_input_tokens` for rows that publish no menu.
+        """
+        windows = sorted({int(c.get("token_count")) for c in (entry.get("context_config") or {}).values()
+                          if isinstance(c, dict) and c.get("token_count")})
+        default = next((int(c["token_count"]) for c in (entry.get("context_config") or {}).values()
+                        if isinstance(c, dict) and c.get("is_default") and c.get("token_count")), 0)
+        ceiling = int(_number(entry.get("max_input_tokens"), DEFAULT_MAX_INPUT))
+        if not asked:
+            return default or ceiling
+        try:
+            want = int(float(asked))
+        except (TypeError, ValueError):
+            return default or ceiling
+        if windows:
+            if want in windows:
+                return want
+            # Never grant more than was asked: the largest window at or below it, and
+            # only when nothing is that small, the smallest one the model offers.
+            smaller = [w for w in windows if w <= want]
+            return max(smaller) if smaller else min(windows)
+        return min(want, ceiling)
+
+    def _body(self, oai_req: dict, record_id: str) -> tuple[str, dict]:
+        """The gateway's own request shape; returns (upstream model key, body)."""
+        requested = str(oai_req.get("model") or "")
+        prefix = f"{self.model_prefix}/"
+        tail = requested[len(prefix):] if requested.startswith(prefix) else requested
+        # The picker's id is upstream's human name; the door wants its own key. A caller
+        # still holding a raw key keeps working, because an unknown tail routes as-is.
+        key = self._key_of.get(tail, tail)
+        entry = self._entries.get(key, {})
+        messages = oai_req.get("messages") or []
+        prompt = _latest_user_text(messages)
+        effort = self._effort_for(entry, str(oai_req.get("reasoning_effort") or ""))
+        reasoning = bool(entry.get("is_reasoning", True)) and effort not in ("none", "false", "off")
+        parameters: dict[str, Any] = {"max_tokens": int(_number(oai_req.get("max_tokens")
+                                                               or oai_req.get("max_completion_tokens"),
+                                                               DEFAULT_MAX_OUTPUT))}
+        for name in ("temperature", "top_p", "stop", "response_format", "reasoning_effort", "tool_choice"):
+            if oai_req.get(name) is not None:
+                parameters[name] = oai_req[name]
+        if effort:
+            parameters["reasoning_effort"] = effort
+        if oai_req.get("parallel_tool_calls") is not None:
+            parameters["parallel_tool_calls"] = bool(oai_req["parallel_tool_calls"])
+        if entry.get("is_reasoning") is not None or oai_req.get("reasoning_effort") is not None:
+            parameters["enable_thinking"] = reasoning
+        body = {
+            "request_id": str(uuid.uuid4()),
+            "request_set_id": str(uuid.uuid4()),
+            "chat_record_id": record_id,
+            "session_id": record_id,
+            "stream": True,
+            "chat_task": "FREE_INPUT",
+            # The gateway resolves the thinking channel and the routed model from here; an
+            # empty extra block answers without reasoning even when model_config says
+            # otherwise, so both copies carry the key and the flag.
+            "chat_context": {
+                "text": {"type": "text", "text": prompt},
+                "features": [],
+                "extra": {"modelConfig": {"key": key, "is_reasoning": reasoning},
+                          "originalContent": {"type": "text", "text": prompt}},
+                "chatPrompt": "",
+                "imageUrls": None,
+            },
+            "is_reply": False,
+            "is_retry": False,
+            "source": 1,
+            "version": "3",
+            "agent_id": "agent_common",
+            "task_id": "common",
+            "session_type": "qodercli",
+            "aliyun_user_type": "",
+            "model_config": {
+                "key": key, "display_name": key, "model": "", "format": "openai",
+                "is_vl": bool(entry.get("is_vl", True)), "is_reasoning": reasoning,
+                "api_key": "", "url": "", "source": str(entry.get("source") or "system"),
+                # The window this turn runs at, taken from the model's own `context_config`:
+                # a number the row does not sell never reaches the door.
+                "max_input_tokens": self._window_for(entry, oai_req.get("context_length")),
+            },
+            "custom_model": None,
+            "system": _system_text(messages),
+            "messages": messages,
+            "tools": oai_req.get("tools") or [],
+            "parameters": parameters,
+            "business": {
+                "product": "cli", "version": cosy.COSY_VERSION, "type": "agent",
+                "id": str(uuid.uuid4()), "name": prompt[:40] or "chat",
+                "begin_at": int(time.time() * 1000), "stage": "start",
+            },
+        }
+        return key, body
+
+    def _signed_post(self, acc: Account, encoded: str, body: dict, key: str, source: str) -> tuple[str, dict]:
+        url = f"{self.base}{CHAT_PATH}"
+        headers = self._session(acc).headers(body=encoded, raw_url=url, request_id=body["request_id"])
+        headers["Chat-Record-Id"] = body["chat_record_id"]
+        headers["X-Model-Key"] = key
+        headers["X-Model-Source"] = source
+        return url, headers
+
+    async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
+        await self.ensure_fresh(acc)
+        key, body = self._body(oai_req, str(uuid.uuid4()))
+        encoded = cosy.encode_body(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        url, headers = self._signed_post(acc, encoded, body, key, str(body["model_config"]["source"]))
+        timeout = httpx.Timeout(self.http.timeout.read or self.idle_timeout, connect=10.0, read=self.idle_timeout)
+        async with self.http.stream("POST", url, headers=headers, content=encoded.encode("utf-8"),
+                                    timeout=timeout) as res:
+            if res.status_code != 200:
+                await res.aread()
+                raise self._error(res.status_code, res.text)
+            event = "message"
+            async for line in res.aiter_lines():
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                    if event == "finish":
+                        return
+                    if event == "error":
+                        continue
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    return
+                try:
+                    frame = json.loads(payload)
+                except ValueError:
+                    continue
+                status = frame.get("statusCodeValue") if isinstance(frame, dict) else None
+                if isinstance(status, int) and status != 200:
+                    raise self._error(status, json.dumps(frame, ensure_ascii=False)[:400])
+                chunk = frame_inner(frame)
+                if chunk is None:
+                    continue
+                chunk["model"] = oai_req.get("model") or chunk.get("model")
+                chunk.setdefault("object", "chat.completion.chunk")
+                chunk.setdefault("id", body["request_id"])
+                yield chunk
+
+    async def chat(self, acc: Account, oai_req: dict) -> dict:
+        """One turn, assembled from the stream: this door only speaks SSE, and that is
+        also what the reference does for its non-streaming surface."""
+        content: list[str] = []
+        reasoning: list[str] = []
+        calls: dict[int, dict] = {}
+        finish = ""
+        usage: dict = {}
+        created = int(time.time())
+        async for chunk in self.chat_stream(acc, oai_req):
+            if isinstance(chunk.get("usage"), dict):
+                usage = chunk["usage"]
+            for choice in chunk.get("choices") or []:
+                if choice.get("finish_reason"):
+                    finish = str(choice["finish_reason"])
+                delta = choice.get("delta") or {}
+                if isinstance(delta.get("content"), str):
+                    content.append(delta["content"])
+                if isinstance(delta.get("reasoning_content"), str):
+                    reasoning.append(delta["reasoning_content"])
+                for call in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(int(call.get("index") or 0),
+                                            {"id": "", "name": "", "arguments": ""})
+                    function = call.get("function") or {}
+                    slot["id"] = slot["id"] or str(call.get("id") or f"call_{uuid.uuid4().hex[:12]}")
+                    slot["name"] = slot["name"] or str(function.get("name") or "")
+                    slot["arguments"] += str(function.get("arguments") or "")
+        message: dict[str, Any] = {"role": "assistant"}
+        text = "".join(content)
+        if calls:
+            message["content"] = None
+            message["tool_calls"] = [
+                {"id": slot["id"], "type": "function",
+                 "function": {"name": slot["name"], "arguments": slot["arguments"]}}
+                for _index, slot in sorted(calls.items())
+            ]
+        else:
+            message["content"] = text
+        if reasoning:
+            message["reasoning"] = "".join(reasoning)
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            "object": "chat.completion",
+            "created": created,
+            "model": oai_req.get("model"),
+            "choices": [{"index": 0, "message": message, "finish_reason": finish or ("tool_calls" if calls else "stop")}],
+            "usage": usage,
+        }
+
+    def _error(self, status: int, text: str) -> UpstreamError:
+        code = ""
+        retry_after = 0.0
+        try:
+            payload = json.loads(text or "{}")
+        except ValueError:
+            payload = {}
+        if isinstance(payload, dict):
+            code = str(payload.get("code") or payload.get("msgCode") or "")
+            nested = payload.get("data")
+            if isinstance(nested, dict):
+                code = code or str(nested.get("code") or "")
+                retry_after = float(_number(nested.get("retryAfterSeconds"), 0.0))
+        detail = (text or "")[:240]
+        if code in _CODE_LOGIN_EXPIRED or status in (401,):
+            return UpstreamError(401, f"qoder: {detail}", reauth=True)
+        if code in _CODE_BUSY or retry_after:
+            return UpstreamError(429, f"qoder: {detail}", retryable=True,
+                                 cooldown=retry_after or 30.0)
+        if status == 429:
+            return UpstreamError(429, f"qoder: {detail}", retryable=True, cooldown=30.0)
+        if status == 430:
+            return UpstreamError(430, f"qoder: {detail}", retryable=False)
+        if status >= 500:
+            return UpstreamError(status, f"qoder: {detail}", retryable=True, cooldown=5.0)
+        return UpstreamError(status, f"qoder: {detail}", retryable=False)

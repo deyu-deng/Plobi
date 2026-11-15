@@ -1,8 +1,8 @@
 # Plobi 出厂默认「桌面额度」网关配置
 #
-# 这是打包进应用的**模板**：全新安装的机器上没有 quota_hub/config.yaml 时，
+# 这是打包进应用的**模板**：全新安装的机器上没有 bezel/config.yaml 时，
 # electron/main.ts 的 ensureProductBezel() 会把本文件复制到
-# <PLOBI_HOME>/plobi-agent/quota_hub/config.yaml，然后照常拉起 sidecar。
+# <PLOBI_HOME>/plobi-agent/bezel/config.yaml，然后照常拉起 sidecar。
 #
 # 因此这个文件只含「任何机器都成立」的东西：
 # - 回环地址与本地钥匙（必须与主进程 productQuotaApiKey() 的兜底
@@ -13,7 +13,7 @@
 #   oauth_creds.json、kiro/cline 自己的凭据文件）。没有凭据时卡片显示「未登录」，
 #   由用户点 + 走该软件自己的登录 —— 这里绝不写死任何账号。
 #
-# 改这里等于改全世界的默认值，请与 Code/quota_hub/config.yaml 的结构保持同构。
+# 改这里等于改全世界的默认值，请与 Code/bezel/config.yaml 的结构保持同构。
 
 server:
   host: 127.0.0.1

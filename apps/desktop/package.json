@@ -249,8 +249,8 @@
         "to": "backend"
       },
       {
-        "from": "build/quota_hub",
-        "to": "quota_hub"
+        "from": "build/bezel",
+        "to": "bezel"
       },
       {
         "from": "build/magpie",

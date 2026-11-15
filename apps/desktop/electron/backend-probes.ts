@@ -276,7 +276,7 @@ function canImportPlobiCli(
  * @returns {string}
  */
 function bezelRuntimeImportProbe() {
-  return 'import quota_hub.cli'
+  return 'import bezel.cli'
 }
 
 /**

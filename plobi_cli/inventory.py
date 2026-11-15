@@ -40,7 +40,7 @@ from typing import Any, Optional
 #: The local quota hub's own provider slug.  A routing value, never display copy —
 #: 裁定 45.4 keeps the word off the screen, so the renderer only ever *matches*
 #: it (the row it matches is the carrier every hub-backed pick joins against).
-QUOTA_HUB_SLUG = "bezel"
+BEZEL_SLUG = "bezel"
 
 
 # ─── Public types ───────────────────────────────────────────────────────
@@ -226,8 +226,8 @@ def build_models_payload(
     # "This channel is not currently offered by the gateway" for a gateway that
     # was offering 58 — and the switches the hub itself calls "connected"
     # changed nothing in the picker.
-    if not any(str(row.get("slug", "")).lower() == QUOTA_HUB_SLUG for row in rows):
-        hub_row, hub_selectable = _quota_hub_row(ctx.current_provider)
+    if not any(str(row.get("slug", "")).lower() == BEZEL_SLUG for row in rows):
+        hub_row, hub_selectable = _bezel_row(ctx.current_provider)
 
         if hub_row is not None:
             rows.append(hub_row)
@@ -242,7 +242,7 @@ def build_models_payload(
     # 挑的判据是**网关自己的可选清单**，不是目录里那一行带了多少个模型：目录里
     # 那一行可能是完整清单（连不可选的那些也在），而「可选」才是能真跑起来的那批。
     effective_model = ctx.current_model
-    if not effective_model and (ctx.current_provider or "").strip().lower() == QUOTA_HUB_SLUG:
+    if not effective_model and (ctx.current_provider or "").strip().lower() == BEZEL_SLUG:
         selectable = hub_selectable or _hub_selectable_ids()
         if selectable:
             effective_model = selectable[0]
@@ -872,7 +872,7 @@ def _apply_pricing(
                 row["unavailable_models"] = []
 
 
-def _quota_hub_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
+def _bezel_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
     """The quota hub's own catalog row — the carrier every hub-backed pick joins against.
 
     The hub is not one of the user's configured providers: it is this machine's own
@@ -922,22 +922,22 @@ def _quota_hub_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
         from plobi_cli.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
 
         label = next(
-            (entry.label for entry in CANONICAL_PROVIDERS if entry.slug == QUOTA_HUB_SLUG),
+            (entry.label for entry in CANONICAL_PROVIDERS if entry.slug == BEZEL_SLUG),
             "订阅额度",
         )
-        name = _PROVIDER_LABELS.get(QUOTA_HUB_SLUG, label)
+        name = _PROVIDER_LABELS.get(BEZEL_SLUG, label)
     except Exception:  # noqa: BLE001 — the label is cosmetic, the row is not
         name = "订阅额度"
 
     return (
         {
-            "slug": QUOTA_HUB_SLUG,
+            "slug": BEZEL_SLUG,
             "name": name,
-            "is_current": (current_provider or "").strip().lower() == QUOTA_HUB_SLUG,
+            "is_current": (current_provider or "").strip().lower() == BEZEL_SLUG,
             "is_user_defined": False,
             "models": list(ids),
             "total_models": len(ids),
-            "source": "quota-hub",
+            "source": "bezel",
             # The hub answered with a usable catalogue, so this row carries a working
             # credential.  Without it the renderer's own filter drops the row
             # (``authenticated === false``) and the whole subscription leg disappears

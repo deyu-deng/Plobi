@@ -38,7 +38,7 @@ def _local_hub_not_answering(monkeypatch):
     Without this, a machine that happens to run the hub would add one more row
     (the hub's own) and these assertions would answer to the machine rather
     than to the code.  The hub row itself is pinned in
-    ``tests/plobi/test_quota_hub_catalog_row.py``.
+    ``tests/plobi/test_bezel_catalog_row.py``.
     """
     monkeypatch.setattr(
         "plobi_cli.models.hub_selectable_model_ids",

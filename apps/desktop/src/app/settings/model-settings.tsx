@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { AlertTriangle, Loader2 } from '@/lib/icons'
+import { displayModelName } from '@/lib/model-status-label'
 import { cn } from '@/lib/utils'
 import {
   getAuxiliaryModels,
@@ -739,7 +740,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                 <SelectContent>
                   {withActive(selectedProviderModels, selectedModel).map(model => (
                     <SelectItem key={model} value={model}>
-                      {model}
+                      {displayModelName(model)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -895,7 +896,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                         <SelectContent>
                           {withActive(auxDraftProviderModels, auxDraft.model).map(model => (
                             <SelectItem key={model} value={model}>
-                              {model}
+                              {displayModelName(model)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -915,7 +916,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                 }
                 description={
                   <span className="font-mono text-[0.68rem]">
-                    {isAuto ? m.autoUseMain : `${current.provider} · ${current.model || m.providerDefault}`}
+                    {isAuto ? m.autoUseMain : `${current.provider} · ${current.model ? displayModelName(current.model) : m.providerDefault}`}
                   </span>
                 }
                 key={meta.key}
@@ -1072,7 +1073,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                       <SelectContent>
                         {withActive(modelsForProvider(slot.provider), slot.model).map(model => (
                           <SelectItem key={model} value={model}>
-                            {model}
+                            {displayModelName(model)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1094,7 +1095,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                 }
                 description={
                   <span className="font-mono text-[0.68rem]">
-                    {slot.provider} · {slot.model}
+                    {slot.provider} · {displayModelName(slot.model)}
                   </span>
                 }
                 key={`${selectedMoaPreset}-${slot.provider}-${slot.model}-${index}`}
@@ -1152,7 +1153,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                         currentMoaPreset.aggregator.model
                       ).map(model => (
                         <SelectItem key={model} value={model}>
-                          {model}
+                          {displayModelName(model)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1161,7 +1162,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
               }
               description={
                 <span className="font-mono text-[0.68rem]">
-                  {currentMoaPreset.aggregator.provider} · {currentMoaPreset.aggregator.model}
+                  {currentMoaPreset.aggregator.provider} · {displayModelName(currentMoaPreset.aggregator.model)}
                 </span>
               }
               title="Aggregator"

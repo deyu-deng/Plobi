@@ -3,7 +3,7 @@
 Three hops, one contract (`tuning`, written by the leg that read the vendor's own model
 list):
 
-    quota_hub `/v1/models` row  →  plobi.quota.gateway  →  plobi_cli.inventory caps
+    bezel `/v1/models` row  →  plobi.quota.gateway  →  plobi_cli.inventory caps
                                                       ↘  agent.model_metadata window
 
 Two failure shapes this pins, both measured here on 2026-11-01:

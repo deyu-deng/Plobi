@@ -4,7 +4,7 @@
 身份段变了（WP-L1-IDENTITY）也照样命中缓存复用。后果：20260905_155453_fb3b77
 那个老 session 至今背着 9-5 的 Nous / 通用助手人格，永远进不去新身份。
 
-本刀：判定式新增「L1 default + 持久提示缺「Plobi 总秘书」marker」→ 算
+本刀：判定式新增「L1 default + 持久提示缺「Plobi 指挥」marker」→ 算
 过期。L2 / 非 default profile 不动（不动 L2 的合法标记）。早退路径触
 发 ``_build_system_prompt`` 重建——付出一次 prefix-cache miss，付。
 """
@@ -125,7 +125,7 @@ def _make_prompt(model: str, provider: str, body: str) -> str:
 
 
 def test_l1_old_prompt_without_marker_is_stale(cl, monkeypatch):
-    """L1 + 老提示（缺「Plobi 总秘书」）→ matcher False，触发重建。"""
+    """L1 + 老提示（缺「Plobi 指挥」）→ matcher False，触发重建。"""
     # Force the lazy is_l1_default check to return True for the stub agent.
     cl._l1_default_check_cache["impl"] = lambda a: True
     agent = _Agent()
@@ -145,7 +145,7 @@ def test_l1_new_prompt_with_marker_and_same_model_matches(cl, monkeypatch):
     prompt = _make_prompt(
         "deepseek-chat",
         "bezel",
-        "你是本机 Plobi 总秘书（L1）——不是 Nous / MiniMax / 通用 chatbot。",
+        "你是本机 Plobi 指挥（L1）——不是 Nous / MiniMax / 通用 chatbot。",
     )
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
 
@@ -159,7 +159,7 @@ def test_l2_old_prompt_does_not_force_rebuild(cl, monkeypatch):
     prompt = _make_prompt(
         "deepseek-chat",
         "bezel",
-        "You are a project L2. No Plobi 总秘书 marker here.",
+        "You are a project L2. No Plobi 指挥 marker here.",
     )
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
 
@@ -171,7 +171,7 @@ def test_l2_with_marker_is_also_a_match(cl, monkeypatch):
     prompt = _make_prompt(
         "deepseek-chat",
         "bezel",
-        "你说 Plobi 总秘书，因为项目 L2 也强调这个。",
+        "你说 Plobi 指挥，因为项目 L2 也强调这个。",
     )
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
 
@@ -184,7 +184,7 @@ def test_model_rotation_still_trips_for_l1(cl, monkeypatch):
     prompt = _make_prompt(
         "deepseek-chat",
         "bezel",
-        "你是本机 Plobi 总秘书（L1）——不是 Nous。",
+        "你是本机 Plobi 指挥（L1）——不是 Nous。",
     )
     # Model 一致 → True；Model 旋了 → False（与 marker 无关）。
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
@@ -197,7 +197,7 @@ def test_provider_rotation_still_trips_for_l1(cl, monkeypatch):
     prompt = _make_prompt(
         "deepseek-chat",
         "bezel",
-        "你是本机 Plobi 总秘书（L1）——不是 Nous。",
+        "你是本机 Plobi 指挥（L1）——不是 Nous。",
     )
     agent_bezel = _Agent(provider="bezel")
     agent_openai = _Agent(provider="openai")
@@ -225,7 +225,7 @@ def test_marker_constant_matches_plobi_total_secretary():
     """``_L1_IDENTITY_MARKER`` 必须与 SOUL 身份段一字不差——这是 token，不是
     regex。SOUL 改了，这边要同步改。"""
     cl = _load_conversation_loop()
-    assert cl._L1_IDENTITY_MARKER == "Plobi 总秘书"
+    assert cl._L1_IDENTITY_MARKER == "Plobi 指挥"
 
 
 def test_marker_present_in_l1_soul_block():

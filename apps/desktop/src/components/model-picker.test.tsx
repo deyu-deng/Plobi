@@ -100,3 +100,14 @@ describe('ModelPickerDialog group identity', () => {
     expect(errors.mock.calls.flat().join(' ')).not.toMatch(/two children with the same key/)
   })
 })
+
+it('prints the model without its upstream provider prefix', async () => {
+  // 用户 11-14：「UI 上不要带 workbuddy」。上游返回的是 `provider/model` 复合 id，
+  // 那是路由用的字符串，不是给人看的名字——provider 已经单独占一行了。
+  renderPicker(catalog)
+
+  await waitFor(() => expect(document.querySelectorAll('[cmdk-item]')).toHaveLength(3))
+
+  const rows = Array.from(document.querySelectorAll('[cmdk-item]')).map(el => el.textContent ?? '')
+  expect(rows.join(' | ')).not.toContain('workbuddy/')
+})

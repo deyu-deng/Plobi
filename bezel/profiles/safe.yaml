@@ -1,0 +1,191 @@
+# bezel — SAFE profile (recommended default)
+#
+# Only ToS-friendly / local routes:
+#   - mock          (always on; zero network, zero vendor accounts)
+#   - *_cli         (spawn a locally installed & already-authenticated CLI)
+#   - workbuddy     (hybrid: CLI first, GUI only if CLI missing — GUI is gray)
+#
+# Reverse / token-scrape providers (cursor, antigravity HTTP) are OFF here.
+# For research capture see config.example.yaml and set mode carefully.
+#
+# Boot:
+#   bezel start --config profiles/safe.yaml
+#   # or:  set BEZEL_CONFIG=profiles/safe.yaml
+#
+# Env:
+#   BEZEL_KEY   local API key your software sends (Bearer)
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  api_key: ${BEZEL_KEY:-sk-local-dev-key}
+
+logging:
+  level: INFO
+
+trust_env: false
+
+# Vault not required for CLI/mock (CLIs own their own auth). Keep off by default.
+vault:
+  enabled: false
+
+scheduler:
+  max_retries: 3
+  global_concurrency: 32
+  per_account_concurrency: 4
+  sticky_ttl: 1800
+  strategy: least_fail
+
+aliases:
+  # Friendly names for Plobi / Plobi clients
+  plobi/mock: mock/static
+  plobi/echo: mock/echo
+  plobi/fast: antigravity_cli/gemini-3-flash
+  plobi/code: antigravity_cli/gemini-3-pro
+
+routing:
+  rules:
+    # Prefer real CLI flash; fall back to mock when agy is not installed.
+    - match: "auto"
+      providers: [antigravity_cli, mock]
+      model: antigravity_cli/gemini-3-flash
+
+providers:
+
+  # --- always-on local mock (dev / demo / CI) ----------------------------
+  mock:
+    enabled: true
+    mode: static
+    reply: "mock reply"
+    embedding_dim: 8
+    models: ["mock/echo", "mock/static", "mock/embedding"]
+    accounts:
+      - { id: mock-ok, mode: static }
+      - { id: mock-echo, mode: echo }
+
+  # --- compliant CLI seats (auto-disable if binary not on PATH) ----------
+  antigravity_cli:
+    enabled: true
+    binary: agy
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180
+    models:
+      - antigravity_cli/gemini-3-pro
+      - antigravity_cli/gemini-3-flash
+      - antigravity_cli/claude-sonnet-4-6
+    model_map:
+      antigravity_cli/gemini-3-pro: gemini-3-pro
+      antigravity_cli/gemini-3-flash: gemini-3-flash
+      antigravity_cli/claude-sonnet-4-6: claude-sonnet-4-6
+    accounts:
+      - { id: agy-default }
+
+  # --- other subscription CLIs (auto-disable if not installed) -----------
+  codex_cli:
+    enabled: true
+    binary: codex
+    args_template: ["exec", "{model_flag}", "{prompt}", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]
+    model_flag: "--model"
+    timeout: 300
+    models: [codex/gpt-5.4, codex/gpt-5.4-mini, codex/gpt-5.3-codex]
+    model_map: { codex/gpt-5.4: gpt-5.4, codex/gpt-5.4-mini: gpt-5.4-mini, codex/gpt-5.3-codex: gpt-5.3-codex }
+    accounts: [{ id: codex-default }]
+
+  claude_code_cli:
+    enabled: true
+    binary: claude
+    args_template: ["{model_flag}", "-p", "{prompt}", "--output-format", "json"]
+    model_flag: "--model"
+    timeout: 300
+    models: [claude/sonnet-4-6, claude/opus-4-6, claude/haiku-4-5]
+    model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
+    accounts: [{ id: claude-default }]
+
+  # OpenCode Free（11-09）：走**客户端自带的本地 http 服务**（`opencode service`）——
+  # 不是 CLI spawn、也不是 ACP。免费层在裸 http 上是关着的（官方：Free-tier chat models
+  # require OpenCode）⇒ 能吃到额度的通道只有客户端自己，而客户端自己就带着一个 http 面。
+  # 名单按上游自报（`/api/model` 里价为零的那批 = 免费池），不抄名单。
+  opencode_free:
+    enabled: true
+    timeout: 240
+
+  # Magpie（11-09）：本机那个多模型网关（MIT 开源）。厂商适配交给它与它的社区插件
+  # 维护，我们只当它是一条腿：端口现读它自己的 settings.json，名单现读它的
+  # /v1/models。没装 magpie 的机器上这条腿没有模型。
+  magpie:
+    enabled: true
+    timeout: 300
+
+  kiro_cli:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    binary: kiro-cli
+    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [kiro/default]
+    model_map: { kiro/default: "" }
+    accounts: [{ id: kiro-default }]
+
+  cline_cli:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    binary: cline
+    args_template: ["--json", "{model_flag}", "{prompt}"]
+    model_flag: "-m"
+    timeout: 300
+    models: [cline/default]
+    model_map: { cline/default: "" }
+    accounts: [{ id: cline-default }]
+
+  workbuddy:
+    enabled: false
+    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
+    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
+    prefer: cli
+    models:
+      - workbuddy/default
+    cli:
+      binary: workbuddy
+      prompt_flag: "-p"
+      model_flag: "--model"
+      timeout: 180
+      model_map:
+        workbuddy/default: default
+      accounts:
+        - { id: wb-cli-1 }
+    # GUI left empty on purpose in safe profile (opt-in via config.example).
+    gui: {}
+
+  # 2026-11-10：Marvis 的腿**默认关着，也没有卡**（用户 11-10：「Marvis 没有 CLI。
+  # 你都没有跑通。你怎么就上屏了呢？」）——「没跑通的东西不上屏」。等它真有 CLI、
+  # 我们真跑通了，再连卡一起开。
+  marvis_cli:
+    enabled: false
+    binary: openmarvis
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180
+    models:
+      - marvis_cli/default
+    model_map:
+      marvis_cli/default: default
+    accounts:
+      - { id: marvis-default }
+
+  # --- explicitly OFF in safe profile ------------------------------------
+  antigravity:
+    enabled: false
+  cursor:
+    enabled: false
+  workbuddy_api:
+    enabled: false
+  workbuddy_cli:
+    enabled: false
+  workbuddy_gui:
+    enabled: false
+  marvis_gui:
+    enabled: false

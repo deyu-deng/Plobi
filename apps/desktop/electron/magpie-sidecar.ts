@@ -211,7 +211,7 @@ export function resolveMagpieBinary(plobiHome?: string): string | null {
  * The environment magpie runs with, used by BOTH the sidecar and the gateway.
  *
  * `XDG_CONFIG_HOME` is the whole point: magpie writes `$XDG_CONFIG_HOME/magpie`
- * and the gateway (quota_hub) reads the port from there, so pinning it here —
+ * and the gateway (bezel) reads the port from there, so pinning it here —
  * once, in one function — is what keeps the reader and the writer on one
  * directory instead of one on D: and one in the user's home.
  */

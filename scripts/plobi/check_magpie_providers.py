@@ -24,9 +24,9 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-TABLE = REPO / "quota_hub" / "quota_hub" / "providers" / "apps" / "magpie" / "providers.yaml"
+TABLE = REPO / "bezel" / "bezel" / "providers" / "apps" / "magpie" / "providers.yaml"
 BINARY_NAMES = ("magpie-cli.exe", "magpie-cli")
-THEIR_LIST = REPO / "quota_hub" / "quota_hub" / "providers" / "apps" / "magpie" / "their_list.py"
+THEIR_LIST = REPO / "bezel" / "bezel" / "providers" / "apps" / "magpie" / "their_list.py"
 
 
 def their_list_module():

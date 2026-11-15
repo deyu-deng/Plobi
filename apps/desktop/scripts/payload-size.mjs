@@ -35,7 +35,7 @@ export const PAYLOAD_BUDGETS = [
   { key: 'magpie', label: 'magpie（侧车二进制；不含 .magpie-update）', budgetMb: 80, movable: true },
   { key: 'dist', label: 'dist（渲染层产物）', budgetMb: 120, movable: false },
   { key: 'egress', label: 'egress（引擎三件套：bin + Geo 库）', budgetMb: 80, movable: false },
-  { key: 'quota_hub', label: 'quota_hub', budgetMb: 20, movable: false }
+  { key: 'bezel', label: 'bezel', budgetMb: 20, movable: false }
 ]
 
 /** 这些目录/文件不进预算表但会被打进包，列出来只为了"总数说得通"。 */
@@ -128,7 +128,7 @@ export function applyJunkStrip(entries, junk, buildDir = path.join(APP_ROOT, 'bu
 }
 
 export function measure(appRoot = APP_ROOT) {
-  const keys = ['toolchain', 'wheelhouse', 'backend', 'magpie', 'dist', 'egress', 'quota_hub']
+  const keys = ['toolchain', 'wheelhouse', 'backend', 'magpie', 'dist', 'egress', 'bezel']
   const entries = keys.map((key) => {
     // dist 在应用根下，其余都在 build/ 里（electron-builder 的 extraResources 源）。
     const candidates = [path.join(appRoot, 'build', key), path.join(appRoot, key)]

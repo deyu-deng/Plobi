@@ -159,17 +159,17 @@ const TOOLCHAIN_DIR = path.join(DESKTOP_ROOT, 'build', 'toolchain')
 fs.mkdirSync(TOOLCHAIN_DIR, { recursive: true })
 
 // --- the local quota hub (`Desktop Quotas` sidecar) -------------------------
-// The gateway is spawned as `python -m quota_hub start --config <dir>/config.yaml`
+// The gateway is spawned as `python -m bezel start --config <dir>/config.yaml`
 // with cwd=<this dir> (see electron/main.ts startBezelGateway). Shipping the
-// checkout -- the `quota_hub/` package *and* config.yaml beside it -- is what
-// makes a fresh install able to start the hub from `resources/quota_hub`
+// source directory -- the `bezel/` package *and* config.yaml beside it -- is what
+// makes a fresh install able to start the hub from `resources/bezel`
 // instead of falling back to a developer checkout that does not exist.
 //
 // What is NOT copied: caches, virtualenvs, the test suite and build metadata.
-const QUOTA_HUB_SRC = path.join(REPO_ROOT, 'quota_hub')
-const QUOTA_HUB_OUT = path.join(DESKTOP_ROOT, 'build', 'quota_hub')
+const BEZEL_SRC = path.join(REPO_ROOT, 'bezel')
+const BEZEL_OUT = path.join(DESKTOP_ROOT, 'build', 'bezel')
 
-const QUOTA_HUB_SKIP_DIRS = new Set([
+const BEZEL_SKIP_DIRS = new Set([
   '.git',
   '.venv',
   '.venv-bak-broken',
@@ -185,7 +185,7 @@ const QUOTA_HUB_SKIP_DIRS = new Set([
 ])
 
 /** Files the gateway needs at runtime, or the interpreter probe reads. */
-const QUOTA_HUB_RUNTIME_FILES = [
+const BEZEL_RUNTIME_FILES = [
   'config.yaml',
   'config.antigravity-desktop.yaml',
   'pyproject.toml',
@@ -196,7 +196,7 @@ function copyQuotaHub(src, dest) {
   fs.mkdirSync(dest, { recursive: true })
 
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (QUOTA_HUB_SKIP_DIRS.has(entry.name) || entry.name.endsWith('.egg-info')) continue
+    if (BEZEL_SKIP_DIRS.has(entry.name) || entry.name.endsWith('.egg-info')) continue
     const from = path.join(src, entry.name)
     const to = path.join(dest, entry.name)
 
@@ -210,31 +210,31 @@ function copyQuotaHub(src, dest) {
   }
 }
 
-fs.rmSync(QUOTA_HUB_OUT, { recursive: true, force: true })
+fs.rmSync(BEZEL_OUT, { recursive: true, force: true })
 
-if (fs.existsSync(QUOTA_HUB_SRC)) {
-  copyQuotaHub(QUOTA_HUB_SRC, QUOTA_HUB_OUT)
-  const hubPkg = path.join(QUOTA_HUB_OUT, 'quota_hub')
-  const missingHub = QUOTA_HUB_RUNTIME_FILES.filter(f => !fs.existsSync(path.join(QUOTA_HUB_OUT, f)))
-  console.log(`[collect-backend-bundle] wrote ${QUOTA_HUB_OUT}`)
-  console.log(`  size: ${dirSizeMB(QUOTA_HUB_OUT).toFixed(1)} MB`)
+if (fs.existsSync(BEZEL_SRC)) {
+  copyQuotaHub(BEZEL_SRC, BEZEL_OUT)
+  const hubPkg = path.join(BEZEL_OUT, 'bezel')
+  const missingHub = BEZEL_RUNTIME_FILES.filter(f => !fs.existsSync(path.join(BEZEL_OUT, f)))
+  console.log(`[collect-backend-bundle] wrote ${BEZEL_OUT}`)
+  console.log(`  size: ${dirSizeMB(BEZEL_OUT).toFixed(1)} MB`)
   console.log(`  importable package: ${fs.existsSync(path.join(hubPkg, '__init__.py'))}`)
 
   if (missingHub.length) {
     console.warn(`  WARNING: quota hub is missing ${missingHub.join(', ')}`)
   }
 
-  // `python -m quota_hub` needs the package itself, not just the directory.
-  if (!fs.existsSync(path.join(hubPkg, '__main__.py')) || !fs.existsSync(path.join(QUOTA_HUB_OUT, 'config.yaml'))) {
+  // `python -m bezel` needs the package itself, not just the directory.
+  if (!fs.existsSync(path.join(hubPkg, '__main__.py')) || !fs.existsSync(path.join(BEZEL_OUT, 'config.yaml'))) {
     console.warn(
-      '[collect-backend-bundle] WARNING: quota_hub bundle is incomplete (need quota_hub/__main__.py + config.yaml) -- ' +
+      '[collect-backend-bundle] WARNING: bezel bundle is incomplete (need bezel/__main__.py + config.yaml) -- ' +
         'the packaged desktop could not start the Desktop Quotas gateway.'
     )
   }
 } else {
-  fs.mkdirSync(QUOTA_HUB_OUT, { recursive: true })
+  fs.mkdirSync(BEZEL_OUT, { recursive: true })
   console.warn(
-    `[collect-backend-bundle] WARNING: ${QUOTA_HUB_SRC} not found -- resources/quota_hub will be empty and ` +
+    `[collect-backend-bundle] WARNING: ${BEZEL_SRC} not found -- resources/bezel will be empty and ` +
       'Desktop Quotas cannot start on this build.'
   )
 }

@@ -7514,7 +7514,7 @@ async function startPlobi() {
       // one catalogue, one truth). Handing it the base we actually use keeps
       // the two processes on the same hub even when the port is overridden
       // (a dev run beside an installed one, or a test hub).
-      PLOBI_QUOTA_HUB_URL: PRODUCT_QUOTA_BASE,
+      PLOBI_BEZEL_URL: PRODUCT_QUOTA_BASE,
       ...(readyFile ? { PLOBI_DESKTOP_READY_FILE: readyFile } : {})
     }
 
@@ -9676,11 +9676,11 @@ async function ensureChatlogServer(): Promise<void> {
 // render what it serves, never keep its own copy. So the hub's coordinates live
 // here, next to the code that spawns it — the one place that knows the port/key —
 // and are handed to the renderer rather than hardcoded there.
-const PRODUCT_QUOTA_PORT = Number(process.env.PLOBI_QUOTA_HUB_PORT || 8000)
+const PRODUCT_QUOTA_PORT = Number(process.env.PLOBI_BEZEL_PORT || 8000)
 const PRODUCT_QUOTA_BASE = `http://127.0.0.1:${PRODUCT_QUOTA_PORT}/v1`
 
 function productQuotaApiKey(): string {
-  return process.env.QUOTA_HUB_API_KEY || process.env.BEZEL_API_KEY || process.env.PLOBI_BEZEL_API_KEY || 'sk-local-dev-key'
+  return process.env.BEZEL_API_KEY || process.env.QUOTA_HUB_API_KEY || process.env.PLOBI_BEZEL_API_KEY || 'sk-local-dev-key'
 }
 
 // WP-AIGW-KEY-LITERALS (consumer's half, 裁定 94). Both sides of one rule:
@@ -9701,14 +9701,14 @@ function reportBezelKeyReconciliation() {
     // gateway itself is spawned against -- instead of re-deriving `<hub>/config.yaml`
     // here. The two agree while the bundle carries its own config; they part company
     // exactly when it does not. In that case the seed writes to
-    // `PLOBI_HOME/plobi-agent/quota_hub/config.yaml`, the gateway starts on *that*
+    // `PLOBI_HOME/plobi-agent/bezel/config.yaml`, the gateway starts on *that*
     // file and serves fine, while a local `<hub>/config.yaml` rule would keep
     // reporting `NOT CHECKED` about a config nobody is using -- a red the user
     // cannot act on, which is the one thing this check must never produce.
     const cfgPath = bezelDir ? productBezelConfigPath(bezelDir) : null
     check = reconcileGatewayKey(cfgPath && fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null)
     if (!bezelDir) {
-      check = { ...check, summary: `${check.summary}; no quota_hub checkout in this build` }
+      check = { ...check, summary: `${check.summary}; no bundled gateway in this build` }
     }
   } catch (error) {
     // Anything the read itself throws is "we could not look", never "consistent".
@@ -10064,14 +10064,14 @@ function defaultBezelConfigCandidates(): string[] {
 /**
  * Which config file the product hub should run with.
  *
- * An existing `config.yaml` inside the hub checkout always wins -- that is the
+ * An existing `config.yaml` inside the bezel directory always wins -- that is the
  * developer's file, or the one a previous run left behind. When it is missing:
  *
- * - hub in the repo (dev): write next to the code, where a checkout would have it;
- * - hub inside a packaged app: `resources/quota_hub` is install-directory content.
+ * - hub in the repo (dev): write next to the code, where bezel/ would have it;
+ * - hub inside a packaged app: `resources/bezel` is install-directory content.
  *   On a Program Files layout it is not writable by the user at all, and on every
  *   layout an upgrade replaces it. So the config goes to
- *   `<PLOBI_HOME>/plobi-agent/quota_hub/config.yaml` -- the same place the
+ *   `<PLOBI_HOME>/plobi-agent/bezel/config.yaml` -- the same place the
  *   bootstrap clone keeps it -- and the code keeps running from the bundle.
  */
 function productBezelConfigPath(hubDir: string): string {
@@ -10083,18 +10083,18 @@ function productBezelConfigPath(hubDir: string): string {
 
   const packaged = IS_PACKAGED && path.resolve(hubDir).toLowerCase().startsWith(path.resolve(process.resourcesPath).toLowerCase())
 
-  return packaged ? path.join(PLOBI_HOME, 'plobi-agent', 'quota_hub', 'config.yaml') : inHub
+  return packaged ? path.join(PLOBI_HOME, 'plobi-agent', 'bezel', 'config.yaml') : inHub
 }
 
 /**
- * Write the shipped default config when the hub checkout has none, and say so.
+ * Write the shipped default config when bezel/ has none, and say so.
  *
  * A fresh install has no `config.yaml` — before this, the only copy was a
  * developer's file in the repo, so on a user's machine the gateway simply could
  * not start and the whole Desktop Quotas pillar stayed blank with nothing the
  * user could do. Writing the default here is not a workaround: the config is not
  * user data (every leg reads its credentials from that machine's own app store),
- * so the file we write is the same one a checkout would have had.
+ * so the file we write is the same one bezel/ would have had.
  *
  * Never overwrites: a config that exists is somebody's choice, possibly edited.
  */
@@ -10153,9 +10153,9 @@ async function ensureProductBezel(): Promise<void> {
     reportDeferredSubsystem(
       'bezel',
       'red',
-      '找不到内置额度网关（resources/quota_hub 缺失），请重新安装 Plobi'
+      '找不到内置额度网关，请重新安装 Plobi'
     )
-    rememberLog('[sidecar] product bezel: no quota_hub checkout found in this build')
+    rememberLog('[sidecar] product bezel: no bezel sources found in this build')
 
     return
   }
@@ -10259,36 +10259,36 @@ const logBezel = (s: string) => {
   }
 }
 
-// True if `dir` looks like a usable bezel checkout: it exists and contains the
+// True if `dir` looks like a usable bezel source tree: it exists and contains the
 // desktop config we ship. We check for the config (not just the folder) so a
 // stale empty directory doesn't shadow a real one.
 function isBezelDir(dir: string): boolean {
   try {
     return fs.existsSync(path.join(dir, 'config.antigravity-desktop.yaml')) ||
-           fs.existsSync(path.join(dir, 'quota_hub', '__init__.py'))
+           fs.existsSync(path.join(dir, 'bezel', '__init__.py'))
   } catch {
     return false
   }
 }
 
 /**
- * Where the quota-hub checkout lives, or `null` when this build cannot find one.
+ * Where the bezel sources live, or `null` when this build cannot find one.
  *
  * The rungs, top first:
- *  1. `PLOBI_QUOTA_HUB_DIR` / `PLOBI_BEZEL_DIR` — explicit override, wins everywhere
+ *  1. `PLOBI_BEZEL_DIR` / `PLOBI_BEZEL_DIR` — explicit override, wins everywhere
  *     (packaged builds, non-standard layouts, tests).
- *  2. Packaged: `<resources>/quota_hub` — the bundle this app ships
- *     (`extraResources`: `build/quota_hub` → `resources/quota_hub`, gathered by
+ *  2. Packaged: `<resources>/bezel` — the bundle this app ships
+ *     (`extraResources`: `build/bezel` → `resources/bezel`, gathered by
  *     scripts/collect-backend-bundle.mjs). An installed copy must find the hub
  *     *inside itself*: before this rung existed, a fresh install had no
- *     `resources/quota_hub` at all, fell through to a developer path that does
+ *     `resources/bezel` at all, fell through to a developer path that does
  *     not exist on a user's machine, reported `deferred`, and left the whole
  *     Desktop Quotas screen empty — the bug this fixes.
- *  3. Dev layout: apps/desktop -> apps -> repo root -> quota_hub.
- *  4. Walk up from the app path looking for a repo-root `quota_hub/` sibling. This
+ *  3. Dev layout: apps/desktop -> apps -> repo root -> bezel.
+ *  4. Walk up from the app path looking for a repo-root `bezel/` sibling. This
  *     covers running win-unpacked from inside the source tree, where the repo's
  *     checkout carries a working .venv while a bootstrap clone may not.
- *  5. Bootstrap-installed clone (`PLOBI_HOME/plobi-agent/quota_hub`).
+ *  5. Bootstrap-installed clone (`PLOBI_HOME/plobi-agent/bezel`).
  *
  * Returns `null` — never a made-up path — when nothing matched. The old final rung
  * handed back `devPath` unconditionally, so "config missing" and "we looked in a
@@ -10297,44 +10297,44 @@ function isBezelDir(dir: string): boolean {
  */
 function resolveBezelDir(): string | null {
   // 1) Explicit override (for packaged builds or non-standard layouts).
-  const explicitDir = process.env.PLOBI_QUOTA_HUB_DIR || process.env.PLOBI_BEZEL_DIR
+  const explicitDir = process.env.PLOBI_BEZEL_DIR || process.env.PLOBI_BEZEL_DIR
   if (explicitDir) {
     return explicitDir
   }
 
   // 2) Packaged: the hub we ship next to the app's other resources.
   if (IS_PACKAGED) {
-    const packagedDir = path.join(process.resourcesPath, 'quota_hub')
+    const packagedDir = path.join(process.resourcesPath, 'bezel')
     if (isBezelDir(packagedDir)) {
       return packagedDir
     }
-    rememberLog(`[sidecar] packaged quota_hub not usable at ${packagedDir} — falling through`)
+    rememberLog(`[sidecar] packaged bezel not usable at ${packagedDir} — falling through`)
   }
 
-  // 3) Dev layout: apps/desktop -> apps -> repo root -> quota_hub
-  const devPath = path.resolve(app.getAppPath(), '..', '..', 'quota_hub')
+  // 3) Dev layout: apps/desktop -> apps -> repo root -> bezel
+  const devPath = path.resolve(app.getAppPath(), '..', '..', 'bezel')
   if (isBezelDir(devPath)) {
     return devPath
   }
 
-  // 4) Walk up from the app path looking for a repo-root `quota_hub/` sibling.
+  // 4) Walk up from the app path looking for a repo-root `bezel/` sibling.
   let cursor = app.getAppPath()
   for (let i = 0; i < 8; i++) {
     const parent = path.dirname(cursor)
     if (parent === cursor) break
-    const candidate = path.join(parent, 'quota_hub')
+    const candidate = path.join(parent, 'bezel')
     if (isBezelDir(candidate)) {
       return candidate
     }
     cursor = parent
   }
 
-  // 5) Bootstrap-installed backend clone (PLOBI_HOME/plobi-agent/quota_hub).
+  // 5) Bootstrap-installed backend clone (PLOBI_HOME/plobi-agent/bezel).
   //    After first-launch bootstrap the full Plobi repo is cloned into PLOBI_HOME,
   //    so a packaged desktop can find a hub there too.
   const plobiHome = process.env.PLOBI_HOME?.trim()
   if (plobiHome) {
-    const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'quota_hub')
+    const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'bezel')
     if (isBezelDir(bootstrapPath)) {
       return bootstrapPath
     }
@@ -10356,11 +10356,11 @@ function resolveBezelDir(): string | null {
  * `bezel/auth/antigravity_oauth.py:37` on `ModuleNotFoundError: No module named
  * 'httpx'` — a guaranteed failure dressed up as a fallback.
  *
- * Walking *up* from the bezel checkout reaches `<repoRoot>/.venv` (uv-managed 3.13,
+ * Walking *up* from the bezel directory reaches `<repoRoot>/.venv` (uv-managed 3.13,
  * httpx present), which is the interpreter `uv sync` owns and what `cd bezel &&
  * uv run python -m bezel start` uses.
  *
- * @param {string} bezelDir - The bezel checkout that will be the child's cwd.
+ * @param {string} bezelDir - The bezel directory that will be the child's cwd.
  * @returns {{python: null | string, reason: null | string}}
  */
 function resolveBezelInterpreter(bezelDir: string) {
@@ -10585,9 +10585,9 @@ async function startBezelGateway(
   }
 
   // The code directory and the config file are not the same thing once the hub
-  // ships inside the app: the checkout in `resources/quota_hub` is read-only in a
+  // ships inside the app: the copy in `resources/bezel` is read-only in a
   // Program Files layout and is replaced on every upgrade, while the config has
-  // to survive both. `hubDir` is where `python -m quota_hub` must run; `configPath`
+  // to survive both. `hubDir` is where `python -m bezel` must run; `configPath`
   // is whatever file the caller decided the user's settings live in.
   const bezelDir = opts.hubDir ?? path.dirname(configPath)
   // R-051: a gateway we cannot even import must fail *now*, with the reason, rather
@@ -10606,7 +10606,7 @@ async function startBezelGateway(
   // its provider list and its model catalogue, so it has to be up before we ask
   // it anything — and the gateway must talk to the same copy we start.
   const magpie = await ensureMagpieSidecar(PLOBI_HOME)
-  const env = { ...magpieEnv(PLOBI_HOME, magpie.port), PLOBI_HOME, ...resolveSystemProxyEnv(), QUOTA_HUB_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...(magpie.binary ? { PLOBI_MAGPIE_BINARY: magpie.binary } : {}), ...extraEnv }
+  const env = { ...magpieEnv(PLOBI_HOME, magpie.port), PLOBI_HOME, ...resolveSystemProxyEnv(), BEZEL_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...(magpie.binary ? { PLOBI_MAGPIE_BINARY: magpie.binary } : {}), ...extraEnv }
   const baseUrl = `http://127.0.0.1:${opts.port}/v1`
 
   let child: ReturnType<typeof spawn>
@@ -10614,7 +10614,7 @@ async function startBezelGateway(
   try {
     child = spawn(
       python,
-      ['-m', 'quota_hub', 'start', '--config', configPath, '--host', '127.0.0.1', '--port', String(opts.port)],
+      ['-m', 'bezel', 'start', '--config', configPath, '--host', '127.0.0.1', '--port', String(opts.port)],
       hiddenWindowsChildOptions({ cwd: bezelDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
     )
   } catch (err) {
@@ -10696,7 +10696,7 @@ function bezelApiKeyFor(appId: string): string {
  *
  * Only used to explain an empty Desktop Quotas screen ("this is the file the hub
  * needs"), so it is a diagnostic, not a filesystem API: no home directory, no
- * user name, and nothing outside the hub checkout is ever revealed.
+ * user name, and nothing outside the bezel directory is ever revealed.
  */
 function redactHomeInPath(target: string): string {
   const home = app.getPath('home')
@@ -10749,7 +10749,7 @@ ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravit
   const bezelDir = resolveBezelDir()
 
   if (!bezelDir) {
-    return { ok: false, error: 'Local quota hub is missing from this build (resources/quota_hub)' }
+    return { ok: false, error: 'The local quota gateway is missing from this build' }
   }
 
   const configPath = resolveBezelConfig(bezelDir, appId)
@@ -10982,13 +10982,13 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   }
   if (appId === 'cursor') {
     if (!bezelDir) {
-      return { ok: false, error: 'Local quota hub is missing from this build (resources/quota_hub)' }
+      return { ok: false, error: 'The local quota gateway is missing from this build' }
     }
 
     return authCursor(bezelDir)
   }
   // Antigravity used to have a branch of its own here: it started a *second* gateway
-  // (`config.antigravity-desktop.yaml`, its own port) and drove `quota_hub auth
+  // (`config.antigravity-desktop.yaml`, its own port) and drove `bezel auth
   // antigravity` from the shell. The card list and the model picker read the product
   // hub on :8000, which never learned that a login had just happened — measured
   // 2026-10-28: he finished Google sign-in twice and the card stayed a `+`. The hub owns
@@ -11111,7 +11111,7 @@ async function authAntigravity(bezelDir: string): Promise<{
     logBezel('auth: stored Antigravity account found')
   }
 
-  const extraEnv: Record<string, string> = { QUOTA_HUB_KEY: 'sk-local-antigravity' }
+  const extraEnv: Record<string, string> = { BEZEL_KEY: 'sk-local-antigravity' }
 
   if (legacyToken) {
     extraEnv.ANTIGRAVITY_REFRESH_TOKEN = legacyToken
@@ -11149,7 +11149,7 @@ async function authCursor(bezelDir: string): Promise<{
     }
   }
 
-  return finishGatewayAuth('cursor', configPath, { QUOTA_HUB_KEY: 'sk-local-cursor' })
+  return finishGatewayAuth('cursor', configPath, { BEZEL_KEY: 'sk-local-cursor' })
 }
 
 // Whether a local Cursor installation has a session we can read.
@@ -11222,7 +11222,7 @@ function runBezelProbe(
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
-      ['-m', 'quota_hub', 'probe', '--json'],
+      ['-m', 'bezel', 'probe', '--json'],
       hiddenWindowsChildOptions({
         cwd: bezelDir,
         env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' },
@@ -11276,7 +11276,7 @@ function runBezelAuthAntigravity(python: string, bezelDir: string): Promise<bool
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
-      ['-m', 'quota_hub', 'auth', 'antigravity'],
+      ['-m', 'bezel', 'auth', 'antigravity'],
       hiddenWindowsChildOptions({ cwd: bezelDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
     )
 

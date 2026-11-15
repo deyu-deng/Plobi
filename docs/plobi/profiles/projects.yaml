@@ -25,7 +25,7 @@ agents:
   agenda:
     role: l2_agenda
     provider: bezel
-    model: workbuddy/deepseek-chat
+    model: workbuddy/deepseek-v4.1-flash
     mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-l2-resident]
     domains: [schedule, agenda]

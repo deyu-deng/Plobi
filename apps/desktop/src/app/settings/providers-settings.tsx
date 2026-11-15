@@ -376,7 +376,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
   // The chat picker's row filter (`quotaProviders` in store/desktop-quotas) drops the
   // whole hub row when the backend catalog marks it `selectable === false` — the
   // switch must not light next to a dropdown that offers nothing. The card mirrors
-  // the same catalog row (`QUOTA_HUB_ROW` is store-local; the aggregate slug is
+  // the same catalog row (`BEZEL_ROW` is store-local; the aggregate slug is
   // `bezel`). `null` means "no hub row in the catalog", which we leave untouched
   // rather than inventing a verdict.
   const [hubSelectable, setHubSelectable] = useState<null | boolean>(null)

@@ -341,10 +341,10 @@ export function isQuotaAppSlug(slug: string): boolean {
  * string literals — so it is only ever *matched* here, and the value the UI
  * selects is the catalog row's own slug.
  */
-const QUOTA_HUB_ROW = /^bezel$/i
+const BEZEL_ROW = /^bezel$/i
 
 export function findQuotaHubRow(providers: readonly Pick<ModelOptionProvider, 'slug'>[]): string | null {
-  return providers.find(provider => QUOTA_HUB_ROW.test(provider.slug))?.slug ?? null
+  return providers.find(provider => BEZEL_ROW.test(provider.slug))?.slug ?? null
 }
 
 /** The bare ids the hub still says are usable for one app, as backend model ids. */
@@ -386,7 +386,7 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
     provider => provider.selectable !== false && provider.authenticated !== false
   )
 
-  const hubRow = usable.find(provider => QUOTA_HUB_ROW.test(provider.slug))
+  const hubRow = usable.find(provider => BEZEL_ROW.test(provider.slug))
 
   if (!hubRow) {
     return [...usable]

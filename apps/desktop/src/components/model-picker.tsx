@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { requestModelOptions } from '@/lib/model-options'
-import { currentPickerSelection } from '@/lib/model-status-label'
+import { currentPickerSelection, displayModelName } from '@/lib/model-status-label'
 import { remainingPhrase, unavailableOf } from '@/lib/model-unavailable'
 import { normalize } from '@/lib/text'
 import { quotaProviders } from '@/store/desktop-quotas'
@@ -267,7 +267,7 @@ function ModelResults({
                   title={waitingNote ?? undefined}
                   value={`${provider.slug}:${model}`}
                 >
-                  <span className="min-w-0 flex-1 truncate">{model}</span>
+                  <span className="min-w-0 flex-1 truncate">{displayModelName(model)}</span>
                   {locked && (
                     <span className="shrink-0 text-[0.62rem] uppercase tracking-wide opacity-80">{copy.pro}</span>
                   )}
