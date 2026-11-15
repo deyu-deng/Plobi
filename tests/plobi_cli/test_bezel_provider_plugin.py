@@ -3,8 +3,7 @@
 Guards for ``plugins/model-providers/bezel/``:
 
 * ``resolve_provider("bezel")`` no longer raises ``invalid_provider`` (the name
-  is written into 13 agent profiles, ``plobi/routing/models.py`` L2 defaults and
-  the agenda-secretary template).
+  is written into the agent profiles and ``plobi/routing/models.py`` L2 default).
 * Registering it is **purely additive**: every other provider keeps resolving to
   what it resolved to before, and the loopback base URL does not hijack local
   endpoints that belong to other providers (Ollama / vLLM on 127.0.0.1).

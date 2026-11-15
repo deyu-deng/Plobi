@@ -40,7 +40,7 @@ from plobi.agents.registry import (
     agent_askability,
     agent_navigability,
 )
-from plobi.routing.models import L2_COURSE, L2_PROJECT
+from plobi.routing.models import L2_COURSE, PRINCIPAL
 
 
 @pytest.fixture()
@@ -101,7 +101,7 @@ def test_identified_course_row_is_navigable_and_askable(tmp_path, home):
         tmp_path,
         {
             "电工电子学": {
-                "role": L2_PROJECT,
+                "role": PRINCIPAL,
                 "category": "courses",
                 "profile": "l2-course-ee",
             }
@@ -128,7 +128,7 @@ def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
         tmp_path,
         {
             "电工电子学": {
-                "role": L2_PROJECT,
+                "role": PRINCIPAL,
                 "category": "courses",
                 "profile": "l2-course-ee",
             }

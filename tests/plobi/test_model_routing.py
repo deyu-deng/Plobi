@@ -8,8 +8,7 @@ import pytest
 
 from plobi.routing import (
     CONDUCTOR,
-    L2_AGENDA,
-    L2_PROJECT,
+    PRINCIPAL,
     ModelRoute,
     ModelRouter,
     RoutingError,
@@ -20,7 +19,7 @@ def test_defaults_put_the_flagship_on_l1_and_cheap_models_below(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
 
     assert router.resolve(CONDUCTOR).model == "kimi-k3"
-    assert router.resolve(L2_AGENDA).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
+    assert router.resolve(PRINCIPAL).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
     assert router.violations() == []
 
 
@@ -34,19 +33,24 @@ def test_config_overrides_defaults(tmp_path):
     router = ModelRouter.load(path)
     assert router.resolve(CONDUCTOR).qualified == "openai/gpt-5.6"
     # Unspecified roles keep their defaults.
-    assert router.resolve(L2_AGENDA).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
+    assert router.resolve(PRINCIPAL).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
 
 
 # ---------------------------------------------------------------------------
 # 2026-11-14：GUI_ONLY_SURFACES 这套概念删除（用户：「GUI SURFACE 又是什么鬼。
-# 不要了」），模型行按「真实模型名」上屏，退役的 role / provider / 假模型 id
-# 在**读侧**迁移掉，不要求用户手改 models.json。
+# 不要了」），模型行按「真实模型名」上屏。
+#
+# 2026-11-15：连读侧那三张兼容表（``aigw`` → ``bezel`` 的 provider 别名、
+# ``l2_planner`` 退役角色、``workbuddy/deepseek-chat`` 假模型回落）一起删了。
+# 依据是用户同日的裁定——内测版没有真实用户、不为老配置付代价；且核查过真机
+# 家目录没有生产 models.json，命中全在 pytest 临时家。上面三条测试跟着退场，
+# 只剩「模型名显示」与「上游清单校验」这两类还该测。
 # ---------------------------------------------------------------------------
 
 
 def test_display_model_drops_the_upstream_prefix(tmp_path):
     """模型行只留真实模型名；请求层仍是完整复合 id。"""
-    route = ModelRoute(role=L2_AGENDA, provider="bezel", model="workbuddy/deepseek-v4.1-flash")
+    route = ModelRoute(role=PRINCIPAL, provider="bezel", model="workbuddy/deepseek-v4.1-flash")
 
     assert route.display_model == "deepseek-v4.1-flash"
     assert route.upstream == "workbuddy"
@@ -60,49 +64,9 @@ def test_a_plain_model_name_has_no_upstream(tmp_path):
     assert route.upstream == ""
 
 
-def test_the_retired_provider_name_is_migrated_on_read(tmp_path):
-    """``aigw`` → ``bezel``：机器标识改了名，旧配置照读不误。"""
-    path = tmp_path / "models.json"
-    path.write_text(
-        json.dumps({"roles": {L2_AGENDA: {"provider": "aigw", "model": "workbuddy/deepseek-v4.1-flash"}}}),
-        encoding="utf-8",
-    )
-
-    route = ModelRouter.load(path).resolve(L2_AGENDA)
-    assert route.provider == "bezel"
-    assert route.model == "workbuddy/deepseek-v4.1-flash"
-
-
-def test_the_retired_fake_model_id_falls_back_to_the_default(tmp_path):
-    """``workbuddy/deepseek-chat`` 上游从来没有过，不许继续背下去。"""
-    path = tmp_path / "models.json"
-    path.write_text(
-        json.dumps({"roles": {L2_PROJECT: {"provider": "bezel", "model": "workbuddy/deepseek-chat"}}}),
-        encoding="utf-8",
-    )
-
-    route = ModelRouter.load(path).resolve(L2_PROJECT)
-    assert route.provider == "bezel"
-    assert route.model == "workbuddy/deepseek-v4.1-flash"
-
-
-def test_a_retired_role_is_dropped_on_read(tmp_path):
-    """``l2_planner`` 是三档 L2 时代的孤儿角色，读到就丢，不许再参与路由。"""
-    path = tmp_path / "models.json"
-    path.write_text(
-        json.dumps({"roles": {"l2_planner": {"provider": "bezel", "model": "x"}}}),
-        encoding="utf-8",
-    )
-
-    router = ModelRouter.load(path)
-    assert "l2_planner" not in router.routes
-    with pytest.raises(RoutingError):
-        router.resolve("l2_planner")
-
-
 def test_l2_sharing_l1s_model_is_flagged(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
-    router.routes[L2_AGENDA] = ModelRoute(role=L2_AGENDA, provider="moonshot", model="kimi-k3")
+    router.routes[PRINCIPAL] = ModelRoute(role=PRINCIPAL, provider="moonshot", model="kimi-k3")
 
     assert any("shares L1's model" in problem for problem in router.violations())
 
@@ -172,14 +136,14 @@ def test_the_shared_table_wins_over_the_profile_copy(tmp_path, monkeypatch):
 
     root, profile = _two_homes(
         tmp_path,
-        shared_roles={L2_AGENDA: {"provider": "shared", "model": "shared-m"}},
-        profile_roles={L2_AGENDA: {"provider": "stale", "model": "stale-m"}},
+        shared_roles={PRINCIPAL: {"provider": "shared", "model": "shared-m"}},
+        profile_roles={PRINCIPAL: {"provider": "stale", "model": "stale-m"}},
     )
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     monkeypatch.setenv("PLOBI_HOME", str(profile))
 
     assert config_path() == root / "plobi" / "models.json"
-    assert ModelRouter.load().resolve(L2_AGENDA).qualified == "shared/shared-m"
+    assert ModelRouter.load().resolve(PRINCIPAL).qualified == "shared/shared-m"
 
 
 def test_save_writes_one_file_not_a_new_copy(tmp_path, monkeypatch):
@@ -210,13 +174,13 @@ def test_a_fresh_home_falls_back_to_the_shared_copy(tmp_path, monkeypatch):
     profile = root / "profiles" / "kit"
     (profile / "plobi").mkdir(parents=True)
     (profile / "plobi" / "models.json").write_text(
-        json.dumps({"roles": {L2_AGENDA: {"provider": "legacy", "model": "legacy-m"}}}),
+        json.dumps({"roles": {PRINCIPAL: {"provider": "legacy", "model": "legacy-m"}}}),
         encoding="utf-8")
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     monkeypatch.setenv("PLOBI_HOME", str(profile))
 
     assert config_path() == profile / "plobi" / "models.json"
-    assert ModelRouter.load().resolve(L2_AGENDA).qualified == "legacy/legacy-m"
+    assert ModelRouter.load().resolve(PRINCIPAL).qualified == "legacy/legacy-m"
 
 
 def test_a_model_upstream_does_not_list_is_a_violation():
@@ -227,7 +191,7 @@ def test_a_model_upstream_does_not_list_is_a_violation():
     """
     router = ModelRouter(routes={
         CONDUCTOR: ModelRoute(role=CONDUCTOR, provider="moonshot", model="kimi-k3"),
-        L2_PROJECT: ModelRoute(role=L2_PROJECT, provider="bezel", model="workbuddy/deepseek-chat"),
+        PRINCIPAL: ModelRoute(role=PRINCIPAL, provider="bezel", model="workbuddy/deepseek-chat"),
     })
 
     assert router.violations() == [], "没给清单时不许凭空判死（路由层不联网）"
@@ -238,7 +202,7 @@ def test_a_model_upstream_does_not_list_is_a_violation():
 def test_a_model_upstream_lists_passes_the_catalogue_check():
     router = ModelRouter(routes={
         CONDUCTOR: ModelRoute(role=CONDUCTOR, provider="moonshot", model="kimi-k3"),
-        L2_PROJECT: ModelRoute(role=L2_PROJECT, provider="bezel", model="workbuddy/deepseek-v4.1-flash"),
+        PRINCIPAL: ModelRoute(role=PRINCIPAL, provider="bezel", model="workbuddy/deepseek-v4.1-flash"),
     })
 
     assert router.violations(known_models=["workbuddy/deepseek-v4.1-flash"]) == []

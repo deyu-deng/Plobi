@@ -41,8 +41,8 @@ One honest limitation, documented rather than faked:
   which §3.1 defines as the L2 list — L1 is the shell itself, not a row — so
   L1 is excluded here. Flagged in PROGRESS.md so it can be overruled.
 * **POST /api/agents.** Human 配备 (裁定 18): register one ``l2_project``.
-  L1 still auto-spawns only one agenda L2 (S2). A second agenda is 409 /
-  the existing row — never a second spawn. Not M3 execution.
+  No role owns a slot — the only refusals are duplicate names / paths /
+  Mind trees (:func:`registration_blocker`). Not M3 execution.
 """
 
 from __future__ import annotations
@@ -72,8 +72,6 @@ from plobi.agents.registry import (
     CONDUCTOR_ROLE,
     RegistryError,
     default_project_path,
-    find_agenda_agent,
-    is_agenda_entry,
     agent_askability,
     agent_navigability,
     load_registry,
@@ -390,19 +388,21 @@ def totals_for_agent(agent_id: str, *, db_path=None) -> "UsageTotals":
 
 # L1 AGENTS rail labels — id → short human name. Do not surface projects.yaml
 # pipeline slogans (``description``) as the button text (QA P0-2).
-_AGENT_SHORT_NAMES = {
-    "agenda": "日程秘书",
-    "agenda-secretary": "日程秘书",
-    "secretary-agenda": "日程秘书",
-}
+#
+# 2026-11-15：这张表原来只装一条内置角色「日程秘书」（``agenda`` /
+# ``agenda-secretary`` / ``secretary-agenda`` 三个 id 映射到同一个词）。产品不再
+# 替用户预设任何 L2，日程就是名册上 category=butler 的普通一行，短名该由那行的
+# ``display_name`` 决定——硬编码别名反而会让用户自己的 agenda 行顶着别人的名字。
+# 表留着（空表 + 一个落点），下一个真需要固定短名的内置对象再往里加。
+_AGENT_SHORT_NAMES: dict[str, str] = {}
 
 
 def agent_display_name(entry: AgentEntry) -> str:
     """Short label for the L1 AGENTS rail — never the pipeline description.
 
     WP-AGENT-DISPLAY-NAME / 裁定 37.1：先用 ``entry.display_name``（人设的中文 /
-    保留大小写的人名），空时回退 ``entry.name``（小写 slug id）。已知 agenda
-    id 仍享裁定 13 的固定短名「日程秘书」——优先级高于 display_name。
+    保留大小写的人名），空时回退 ``entry.name``（小写 slug id）。固定短名表
+    :data:`_AGENT_SHORT_NAMES` 存在时优先级最高，现在是空的。
 
     ``projects.yaml`` 旧条目没有 display_name 字段——回退到 ``entry.name`` 不
     漂。description 继续存长标语，不承担显示名职责。
@@ -872,16 +872,17 @@ async def list_agents_route(request: Request):
     return {"ok": True, "data": rows}
 
 
-# Human L2 配备 (裁定 18). L1 still may auto-spawn only one agenda L2 (S2).
+# Human L2 配备 (裁定 18).
 _AGENT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-_AGENDA_ROLE = "l2_agenda"
 
 
 def create_agent(body: dict) -> Union[dict, JSONResponse]:
     """Register one human-created L2: upsert → save → spawn → agent_row.
 
-    ``role`` defaults to ``l2_project``. ``l1_secretary`` is rejected. A second
-    agenda L2 is not spawned: same id returns the existing row, a new id is 409.
+    ``role`` defaults to ``l2_project``. ``l1_secretary`` is rejected. No role
+    carries a slot of its own: two rows with the same ``category`` are two
+    ordinary rows, and duplicate *names* are what :func:`registration_blocker`
+    refuses (R-013).
 
     R-012: ``category`` is required (projects/butler/events/research). Legacy
     callers that omit it get a 400 — the desktop always sends one.
@@ -964,8 +965,6 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
 
     registry = get_registry()
     existing = registry.get(agent_id)
-    if existing is not None and is_agenda_entry(existing):
-        return {"ok": True, "data": agent_row(existing)}
     # 桌面不会把密钥读回来（``agent_row`` 不吐这一格），所以一次编辑不该把它抹掉：
     # body 没带这一键时沿用已有那条的覆盖。
     if existing is not None and "secretOverrides" not in body:
@@ -1022,13 +1021,6 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         secret_overrides=secret_overrides,
         registered=registered,
     )
-    creating_agenda = role == _AGENDA_ROLE or is_agenda_entry(proposed)
-    if creating_agenda:
-        found = find_agenda_agent(registry)
-        if found is not None:
-            if found.name == agent_id:
-                return {"ok": True, "data": agent_row(found)}
-            return _error(409, "agenda L2 already exists")
 
     # 重名禁止落在**创建那一刻**（R-013 扩写，用户 2026-10-06：「如果有出现重名的就直接
     # 禁止创建」）。判据只有一份，在 :func:`registration_blocker`——命中已有键、只差

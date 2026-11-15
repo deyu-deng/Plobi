@@ -27,7 +27,7 @@ from plobi_state import SessionDB
 
 L1 = {"role": "l1_secretary", "profile": "default"}
 EE = {"role": "l2_project", "profile": "l2-course-ee", "category": "courses"}
-AGENDA = {"role": "l2_agenda", "profile": "l2-agenda"}
+AGENDA = {"role": "l2_project", "profile": "l2-agenda"}
 
 
 @pytest.fixture

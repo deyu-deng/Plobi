@@ -58,7 +58,7 @@ class _FakeProc:
 def _entry(name: str = "agenda"):
     from plobi.agents.registry import AgentEntry
 
-    return AgentEntry.from_dict(name, {"role": "l2_agenda"})
+    return AgentEntry.from_dict(name, {"role": "l2_project"})
 
 
 @pytest.fixture()
@@ -171,7 +171,7 @@ def test_handle_say_hands_the_new_session_to_the_waker(CH, monkeypatch, tmp_path
     # 收件人解析用真的那一枚太绕，这里直接把它打桩成「解析成功」。
     from plobi.agents.registry import AgentEntry
 
-    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_project"})
     monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "一句话", None))
     seen: list[tuple] = []
 
@@ -192,7 +192,7 @@ def test_a_failed_wake_does_not_turn_say_into_an_error(CH, monkeypatch, tmp_path
     from plobi.agents.registry import AgentEntry
 
     monkeypatch.setenv("PLOBI_TICKET_DB", str(tmp_path / "tickets.db"))
-    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_project"})
     monkeypatch.setattr(CH, "_session_db", lambda: _FakeDB())
     monkeypatch.setattr(CH, "_trace", lambda record: None)
     monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "一句话", None))
@@ -247,7 +247,7 @@ def test_say_refuses_a_reply_to_that_is_not_in_that_screen(CH, monkeypatch):
     """引用一条不在那一屏里的消息：当场拒，不挂空引用。"""
     from plobi.agents.registry import AgentEntry
 
-    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_project"})
 
     class DB:
         def latest_conversational_session_for_agent(self, _a):
@@ -272,7 +272,7 @@ def test_say_refuses_a_reply_to_that_is_not_in_that_screen(CH, monkeypatch):
 def test_say_carries_a_reply_to_that_exists(CH, monkeypatch):
     from plobi.agents.registry import AgentEntry
 
-    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_project"})
     seen: list[dict] = []
 
     class DB:

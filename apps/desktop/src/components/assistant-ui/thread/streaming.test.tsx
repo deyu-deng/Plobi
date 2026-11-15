@@ -631,7 +631,7 @@ describe('assistant-ui streaming renderer', () => {
     const { container } = render(<RunningMessageHarness message={assistantDispatchMessage(true)} />)
 
     await waitFor(() => {
-      expect(container.textContent).toContain('Asking 日程秘书')
+      expect(container.textContent).toContain('Asking 首席')
     })
     expect(container.querySelector('[data-slot="tool-block"]')).toBeTruthy()
   })
@@ -640,7 +640,7 @@ describe('assistant-ui streaming renderer', () => {
     const { container } = render(<RunningMessageHarness message={assistantBriefingMessage(true)} />)
 
     await waitFor(() => {
-      expect(container.textContent).toContain('Asking 日程秘书')
+      expect(container.textContent).toContain('Asking 首席')
       expect(container.textContent).toContain('route=workbuddy')
     })
   })
@@ -649,7 +649,7 @@ describe('assistant-ui streaming renderer', () => {
     const { container } = render(<MessageHarness message={assistantBriefingMessage(false)} />)
 
     await waitFor(() => {
-      expect(container.textContent).toContain('Asked 日程秘书')
+      expect(container.textContent).toContain('Asked agenda')
       expect(container.textContent).toContain('route=fallback')
     })
   })

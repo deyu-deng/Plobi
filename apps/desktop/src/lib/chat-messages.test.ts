@@ -870,8 +870,8 @@ describe('toChatMessages plobi_secretary_ask (WP-G6 transcript → tool-call par
     const part = secretaryToolPart(messages)
     const view = buildToolView(part, '')
 
-    expect(view.title).toBe('Asked 日程秘书')
-    expect(view.subtitle).toContain('日程秘书')
+    expect(view.title).toBe('Asked agenda-secretary')
+    expect(view.subtitle).toContain('agenda-secretary')
     expect(view.subtitle).toContain('write briefing')
     expect(view.subtitle).toContain('route=workbuddy')
     expect(view.detail).toContain('09:00 standup')
@@ -887,7 +887,7 @@ describe('toChatMessages plobi_secretary_ask (WP-G6 transcript → tool-call par
     const part = secretaryToolPart(messages)
     const view = buildToolView(part, '')
 
-    expect(view.title).toBe('Asked 日程秘书')
+    expect(view.title).toBe('Asked agenda-secretary')
     expect(view.subtitle).toContain('write briefing')
     expect(view.subtitle).toContain('route=workbuddy')
     expect(view.detail).toContain('09:00 standup')

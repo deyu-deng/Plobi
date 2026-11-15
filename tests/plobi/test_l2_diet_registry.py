@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from plobi.agents.registry import (
-    L2_PROJECT_DROP_TOOLSETS,
+    PRINCIPAL_DROP_TOOLSETS,
     AgentEntry,
     _active_agent_profile_name,
     _entry_for_profile_in,
@@ -131,21 +131,21 @@ def test_overlay_omits_the_agent_section_when_nothing_is_disabled(monkeypatch):
 def test_diet_writes_the_four_names_into_the_registry_row():
     entry = _entry()
     assert diet_entry_toolsets(entry) is True
-    assert set(entry.disabled_toolsets) == set(L2_PROJECT_DROP_TOOLSETS)
+    assert set(entry.disabled_toolsets) == set(PRINCIPAL_DROP_TOOLSETS)
 
 
 def test_diet_is_idempotent():
     entry = _entry()
     assert diet_entry_toolsets(entry) is True
     assert diet_entry_toolsets(entry) is False
-    assert len(entry.disabled_toolsets) == len(L2_PROJECT_DROP_TOOLSETS)
+    assert len(entry.disabled_toolsets) == len(PRINCIPAL_DROP_TOOLSETS)
 
 
 def test_diet_never_touches_a_users_own_blacklist():
     entry = _entry(disabled_toolsets=("web",))
     assert diet_entry_toolsets(entry) is True
     assert entry.disabled_toolsets[0] == "web"  # 用户自己的排在先，一字不动
-    assert set(entry.disabled_toolsets[1:]) == set(L2_PROJECT_DROP_TOOLSETS)
+    assert set(entry.disabled_toolsets[1:]) == set(PRINCIPAL_DROP_TOOLSETS)
 
 
 def test_diet_refuses_non_project_rows():

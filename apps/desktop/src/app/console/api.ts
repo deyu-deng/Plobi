@@ -336,7 +336,7 @@ const MOCK_OVERVIEW: Record<string, AgentOverview> = {
     agent: {
       id: 'agenda-secretary',
       model: MOCK_L2_MODEL,
-      name: '日程秘书',
+      name: '日程安排',
       status: 'working',
       todayCalls: 37
     },

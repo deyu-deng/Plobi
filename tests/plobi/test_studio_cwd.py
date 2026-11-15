@@ -149,7 +149,7 @@ def test_a_dead_project_path_never_becomes_a_cwd(home):
     assert cfg["terminal"]["cwd"] != str(ghost)
 
 
-@pytest.mark.parametrize("role", ["l2_agenda", "l2_butler"])
+@pytest.mark.parametrize("role", ["l2_project", "l2_butler"])
 def test_butler_and_agenda_rows_get_no_cwd(home, role):
     """契约③：秘书 / 日程那一行没有文件夹绑定 ⇒ 不许把它们按进某个项目的目录。"""
     profile_dir = home / ".plobi" / "profiles" / "l2-agenda"

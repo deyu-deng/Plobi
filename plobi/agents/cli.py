@@ -86,7 +86,7 @@ def _list(registry: AgentRegistry) -> None:
     if not registry.agents:
         print("No resident agents registered.")
         print(f"Registry: {registry.path}")
-        print("Add one:  plobi plobi agents register <name> --role l2_agenda")
+        print("Add one:  plobi plobi agents register <name> --role l2_project --category butler")
         return
 
     problems = registry.routing_problems()

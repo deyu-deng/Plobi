@@ -145,7 +145,7 @@ def test_one_configured_model_reaches_every_agent(root):
     _write_roster(root, {
         # **行键＝身份**（2026-11-05「profile 连根拔」之后）：行内那两格
         # ``name`` / ``profile`` 读盘时被忽略，所以身份只能落在键上。
-        "l2-agenda": _row("l2-agenda", role="l2_agenda"),
+        "l2-agenda": _row("l2-agenda", role="l2_project"),
         "l2-aura": _row("l2-aura"),
         "l2-kit": _row("l2-kit"),
     })
@@ -163,7 +163,7 @@ def test_a_roster_override_moves_only_that_agent(root):
     本身就在造复印件。
     """
     _write_roster(root, {
-        "l2-agenda": _row("l2-agenda", role="l2_agenda"),
+        "l2-agenda": _row("l2-agenda", role="l2_project"),
         "l2-aura": _row("l2-aura"),
         "l2-kit": _row("l2-kit"),
     })

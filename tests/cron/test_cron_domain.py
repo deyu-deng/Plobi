@@ -44,7 +44,7 @@ def _agenda_row(tmp_path: Path, **fields) -> str:
         tmp_path,
         AgentEntry(
             name=RECIPIENT,
-            role="l2_agenda",
+            role="l2_project",
             display_name="日程秘书",
             description="日程采集 → SQLite → 看板 → 钉钉 闭环",
             **fields,
@@ -133,7 +133,7 @@ def test_the_refusal_names_the_real_owner(tmp_path, monkeypatch):
         "PLOBI_PROJECTS_CONFIG",
         _roster(
             tmp_path,
-            AgentEntry(name="agenda", role="l2_agenda", domains=("schedule",)),
+            AgentEntry(name="agenda", role="l2_project", domains=("schedule",)),
             AgentEntry(name="butler", role="l2_butler"),
         ),
     )

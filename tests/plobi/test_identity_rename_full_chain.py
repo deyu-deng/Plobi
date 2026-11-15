@@ -41,7 +41,7 @@ ROSTER_YAML = (
     "    mind_subtree: Dossiers/projects/Aura\n"
     "    description: 名册上的那一行\n"
     "  agenda:\n"
-    "    role: l2_agenda\n"
+    "    role: l2_project\n"
     "    profile: l2-agenda\n"
 )
 
@@ -285,13 +285,16 @@ def test_rename_refuses_while_a_card_is_running(full_home):
 
 
 def test_rename_refuses_reserved_names_and_system_rows(full_home):
-    """判据 6：形状约束沿用名册校验；系统自带那两行不改名。"""
+    """判据 6：形状约束沿用名册校验；``default`` 是保留名。
+
+    2026-11-15：原来这里还有第三段「agenda 那行是系统自带、不让改名」——日程秘书
+    单例随 ``l2_agenda`` 一起删了，名册里再也没有产品预置的行，任何一行都能改名。
+    现在唯一不让改的是指挥那一行，判据在 ``rename_identity`` 里按 ``role`` 拦。
+    """
     with pytest.raises(ValueError):
         profiles_mod.rename_identity("Aura", "  ")
     with pytest.raises(ValueError):
         profiles_mod.rename_identity("Aura", "default")
-    with pytest.raises(ValueError):
-        profiles_mod.rename_identity("agenda", "Butler")
     with pytest.raises(FileExistsError):
         profiles_mod.rename_identity("Aura", "aura")
 
@@ -387,7 +390,7 @@ def test_the_cron_scopes_point_at_the_roster_name_dir(monkeypatch, tmp_path):
     from plobi_cli import web_server
 
     agents = [
-        {"name": "agenda", "profile_name": "l2-agenda", "description": "日程秘书", "role": "l2_agenda"},
+        {"name": "agenda", "profile_name": "l2-agenda", "description": "日程秘书", "role": "l2_project"},
         {"name": "电工电子学", "profile_name": "l2-course-ee", "description": "课", "role": "l2_project"},
     ]
     monkeypatch.setattr("plobi_cli.agent_identity.list_roster_agents", lambda *a, **k: agents)

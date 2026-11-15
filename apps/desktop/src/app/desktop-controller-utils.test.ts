@@ -110,30 +110,28 @@ describe('secretaryShellLabel (WP-G8 / 裁定 13+16)', () => {
     expect(secretaryShellLabel('l1', '总秘书')).toBe('总秘书')
   })
 
-  it('uses the known L2 short name even before agents load', () => {
-    expect(secretaryShellLabel({ l2: 'agenda' }, '总秘书')).toBe('日程秘书')
-    expect(secretaryShellLabel({ l2: 'agenda-secretary' }, '总秘书')).toBe('日程秘书')
+  it('uses the bare row id even before agents load (no built-in alias)', () => {
+    expect(secretaryShellLabel({ l2: 'weekly-review' }, '总秘书')).toBe('weekly-review')
+    expect(secretaryShellLabel({ l2: 'agenda' }, '总秘书')).toBe('agenda')
   })
 
   it('never falls back to 总秘书 on an L2 route', () => {
     expect(secretaryShellLabel({ l2: 'custom-l2' }, '总秘书')).toBe('custom-l2')
   })
 
-  it('prefers the short map over a long agent.name', () => {
-    expect(
-      secretaryShellLabel({ l2: 'agenda' }, '总秘书', [{ id: 'agenda', name: 'Kimi K3' }])
-    ).toBe('日程秘书')
-  })
-
-  it('does not change when a model id is supplied as the unused name', () => {
-    expect(secretaryShortName('agenda', 'workbuddy/deepseek-chat')).toBe('日程秘书')
-    expect(secretaryShellLabel({ l2: 'agenda' }, '总秘书', [{ id: 'agenda', name: 'workbuddy/deepseek-chat' }])).toBe(
-      '日程秘书'
+  it('prefers the live row name over the id', () => {
+    expect(secretaryShellLabel({ l2: 'weekly-review' }, '总秘书', [{ id: 'weekly-review', name: '周报官' }])).toBe(
+      '周报官'
     )
   })
 
-  it('never prints a profile id: l2-agenda resolves to the short label (WP-UI-NO-INTERNALS)', () => {
-    expect(secretaryShortName('l2-agenda', 'l2-agenda')).toBe('日程秘书')
+  it('has no built-in alias: a non-agenda name passes through untouched', () => {
+    expect(secretaryShortName('agenda', 'workbuddy/deepseek-chat')).toBe('workbuddy/deepseek-chat')
+  })
+
+  it('never prints a profile id: l2-agenda resolves to the bare id (WP-UI-NO-INTERNALS)', () => {
+    expect(secretaryShortName('l2-agenda')).toBe('agenda')
+    expect(secretaryShortName('l2-agenda', 'l2-agenda')).toBe('agenda')
   })
 })
 

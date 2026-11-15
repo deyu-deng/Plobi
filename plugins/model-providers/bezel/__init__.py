@@ -2,8 +2,8 @@
 
 ``bezel`` is a user-run, OpenAI-compatible gateway that aggregates quota from
 desktop quota apps (Antigravity / Cursor / Workbuddy) and serves it under one
-local endpoint.  Plobi's L2 default routes, the agenda-secretary template and
-13 agent profiles already carry ``provider: bezel``; before this profile existed
+local endpoint.  Plobi's L2 default route and the agent profiles already carry
+``provider: bezel``; before this profile existed
 that name was unresolvable and ``plobi_cli.auth.resolve_provider()`` raised
 ``Unknown provider 'bezel'.``  Registering the profile here makes the name a
 first-class runtime provider without touching the resolver.

@@ -332,12 +332,12 @@ def test_ask_timeout_after_the_child_wrote_does_not_double_post(CH, monkeypatch,
 
 
 def test_ask_reaches_a_non_project_row_the_role_gate_refuses(CH, monkeypatch, db):
-    """断点①的回归：日程秘书（role=l2_agenda）say 发得出，ask 也必须问得到。
+    """断点①的回归：一个普通 L2（role=l2_project）say 发得出，ask 也必须问得到。
 
     现读旧形状：`say` 的名单 24 行、这一侧 23 行，差的正是 agenda ——0.06 秒就被
     `plobi/agents/registry.py:1142` 那道角色闸拒掉。两枚工具对同一个人不许各判一次。
     """
-    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("agenda", role="l2_agenda"))
+    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("agenda", role="l2_project"))
     db.existing = [{"session_id": "chan_agenda_screen"}]
     got: list = []
     monkeypatch.setattr(CH.AA, "handle_agent_ask",

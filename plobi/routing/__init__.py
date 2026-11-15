@@ -1,11 +1,10 @@
 """Which model each agent tier is allowed to use."""
 
 from .models import (
-    KNOWN_ROLES,
     CONDUCTOR,
-    L2_AGENDA,
+    KNOWN_ROLES,
     L2_COURSE,
-    L2_PROJECT,
+    PRINCIPAL,
     ModelRoute,
     ModelRouter,
     RoutingError,
@@ -14,11 +13,10 @@ from .models import (
 )
 
 __all__ = [
-    "KNOWN_ROLES",
     "CONDUCTOR",
-    "L2_AGENDA",
+    "KNOWN_ROLES",
     "L2_COURSE",
-    "L2_PROJECT",
+    "PRINCIPAL",
     "ModelRoute",
     "ModelRouter",
     "RoutingError",

@@ -69,7 +69,7 @@ def register(registry: AgentRegistry, **entries: dict) -> AgentRegistry:
     return registry
 
 
-AGENDA = {"role": "l2_agenda", "profile": "l2-agenda", "description": "日程秘书"}
+AGENDA = {"role": "l2_project", "profile": "l2-agenda", "description": "日程秘书"}
 SECRETARY = {"role": "l1_secretary", "profile": "master"}
 
 
@@ -102,9 +102,11 @@ def test_l1_joins_the_roster_when_asked_and_keeps_its_own_role(client, _isolated
 
     assert set(by_id) == {"agenda", "secretary"}
     assert by_id["secretary"]["role"] == "l1_secretary"
-    assert by_id["agenda"]["role"] == "l2_agenda"
+    assert by_id["agenda"]["role"] == "l2_project"
     # 平等 = 同一套键，不是「L1 少几格」。
-    assert set(by_id["secretary"]) == set(by_id["agenda"])
+    # 两行形状一致，唯一合法差异是「不可问的理由」——它只挂在不可问的行上。
+    assert set(by_id["secretary"]) - set(by_id["agenda"]) == {"notAskableReason"}
+    assert set(by_id["agenda"]) - set(by_id["secretary"]) == set()
 
 
 def test_agents_shape_matches_typescript_contract(client, _isolated_state):
@@ -123,7 +125,7 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
         "role",
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
-        "askable", "notAskableReason", "navigable",
+        "askable", "navigable",
         # WP-AGENT-MODEL-PICKER-MOUNT 第一档：这一格恒在（bool），没覆盖就是 False
         # —— 前端要靠「缺键」分别「没读数」与「没覆盖」，所以不许被 None 剥掉。
         "modelOverride",
@@ -132,7 +134,8 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
         "projectPath", "projectPaths", "working",
     }
     assert row["id"] == "agenda"
-    assert row["name"] == "日程秘书"
+    # 2026-11-15：短名表随日程秘书单例一起删了，没有 displayName 就回 id。
+    assert row["name"] == "agenda"
     assert row["status"] == "idle"  # no L3 children in flight
     assert row["model"] == "bezel/workbuddy/deepseek-v4.1-flash"  # ADR-0011 default route（deepseek-chat 已退役）
     assert row["todayCalls"] == 0
@@ -140,7 +143,8 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert "profile" not in row
     # 日程秘书走 secretary_ask，所以 askable=false——但左栏完全点得动。
     # 这正是 askable 与 navigable 必须分成两个字段的原因。
-    assert row["askable"] is False
+    assert row["askable"] is True, "l2_project 就是 ASKABLE_ROLE"
+    assert "notAskableReason" not in row, "可问的行不许带不可问的理由"
     assert row["navigable"] is True
     # None 的键在 agent_row 末尾被省略（与 model?/actualModel? 同一口径）
     assert "notNavigableReason" not in row
@@ -165,12 +169,12 @@ def test_agents_name_ignores_pipeline_description_slogan(client, _isolated_state
     register(
         _isolated_state,
         agenda={
-            "role": "l2_agenda",
+            "role": "l2_project",
             "profile": "l2-agenda",
             "description": "日程采集 -> SQLite -> 看板 -> 钉钉 闭环",
         },
     )
-    assert client.get("/api/agents").json()["data"][0]["name"] == "日程秘书"
+    assert client.get("/api/agents").json()["data"][0]["name"] == "agenda"
 
 
 def test_agents_name_never_uses_short_description(client, _isolated_state):
@@ -350,32 +354,40 @@ def test_post_invalid_category_is_400(client, _isolated_state, monkeypatch):
     assert "category" in response.json()["error"]
 
 
-def test_post_existing_agenda_does_not_spawn_second(client, _isolated_state, monkeypatch):
+def test_post_existing_name_does_not_spawn_second(client, _isolated_state, monkeypatch):
+    """同名再来一次＝复用那一行（幂等），不再 spawn 第二个。"""
     """S2: an id that is already the agenda L2 is returned as-is, no respawn."""
     register(_isolated_state, agenda=AGENDA)
     calls = _stub_spawn(_isolated_state, monkeypatch)
     response = client.post(
         "/api/agents",
-        json={"id": "agenda", "role": "l2_agenda", "category": "butler"},
+        json={"id": "agenda", "role": "l2_project", "category": "butler"},
     )
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert response.json()["data"]["id"] == "agenda"
-    assert calls == []
+    assert len(calls) == 1, calls
+    ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
+    assert ids == ["agenda"], "同名重提只更新那一行，不许出现第二个"
 
 
-def test_post_second_agenda_id_is_409(client, _isolated_state, monkeypatch):
+def test_a_second_agent_in_the_same_category_is_allowed(client, _isolated_state, monkeypatch):
+    """2026-11-15：原来这条钉的是「agenda L2 already exists」那道 409 唯一性门——
+    日程秘书曾是产品内置的单例角色，全系统只许有一行。角色不再有坑位之后，同类
+    两行就是两行，只有重名（``registration_blocker``）才拒。
+    """
     register(_isolated_state, agenda=AGENDA)
     calls = _stub_spawn(_isolated_state, monkeypatch)
     response = client.post(
         "/api/agents",
-        json={"id": "agenda-2", "role": "l2_agenda", "category": "butler"},
+        json={"id": "agenda-2", "role": "l2_project", "category": "butler"},
     )
-    assert response.status_code == 409
-    assert response.json()["ok"] is False
-    assert calls == []
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["data"]["id"] == "agenda-2"
+    assert calls, "新建一行必须真的去 spawn"
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
-    assert ids == ["agenda"]
+    assert sorted(ids) == ["agenda", "agenda-2"]
 
 
 # --------------------------------------------------------------------------- #
@@ -995,7 +1007,6 @@ def _stub_agent_materialisation(monkeypatch) -> dict[str, list[str]]:
 
     monkeypatch.setattr(AgentRegistry, "spawn", fake_spawn)
     monkeypatch.setattr("plobi_cli.agent_identity.profile_exists", lambda name: False)
-    monkeypatch.setattr("plobi.agents.registry.ensure_l2_agenda_toolsets", fake_toolsets)
     monkeypatch.setattr("plobi.agents.registry.ensure_conductor_form", lambda: False)
     return calls
 

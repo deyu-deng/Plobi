@@ -25,7 +25,7 @@ ROSTER_YAML = (
     "    profile: aura\n"
     "    description: 名册上的那一行\n"
     "  agenda:\n"
-    "    role: l2_agenda\n"
+    "    role: l2_project\n"
     "    profile: l2-agenda\n"
     "    description: 日程秘书\n"
 )

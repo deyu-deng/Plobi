@@ -281,16 +281,26 @@ def default_state_db(home: Path | None = None) -> Path:
 
 
 def agenda_state_db(home: Path | None = None) -> Path:
-    root = home or plobi_home()
-    profile = "l2-agenda"
-    try:
-        from plobi.agents.registry import find_agenda_agent
+    """名册上那一行 L2 的 ``state.db``。
 
-        entry = find_agenda_agent()
-        if entry is not None:
-            profile = entry.profile_name
-    except Exception:
-        pass
+    2026-11-15：日程不再有专属档位（``l2_agenda`` 已退场，「日程秘书」不再是产品
+    内置角色），所以这里不再找那一个单例，改成按名册取第一行非指挥的 L2；
+    要指定谁，用环境变量 ``PLOBI_E2E_PROFILE`` 给 profile 名。
+    """
+    root = home or plobi_home()
+    profile = os.environ.get("PLOBI_E2E_PROFILE", "").strip()
+    if not profile:
+        try:
+            from plobi.agents.registry import load_registry
+            from plobi.routing import CONDUCTOR
+
+            for entry in load_registry().entries():
+                if entry.role != CONDUCTOR:
+                    profile = entry.profile_name
+                    break
+        except Exception:
+            pass
+    profile = profile or "default"
     try:
         from plobi_cli.agent_identity import get_profile_dir
 

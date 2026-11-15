@@ -443,7 +443,7 @@ describe('countDiffLineStats', () => {
 })
 
 describe('buildToolView plobi_secretary_ask (WP-G5 real JSON)', () => {
-  it('shows 日程秘书 + intent while waiting (args only)', () => {
+  it('shows 首席 + intent while waiting (args only)', () => {
     const view = buildToolView(
       part({
         args: { intent: 'refresh_agenda', user_text: '明天的日常安排是什么' },
@@ -454,12 +454,12 @@ describe('buildToolView plobi_secretary_ask (WP-G5 real JSON)', () => {
     )
 
     expect(view.status).toBe('running')
-    expect(view.title).toBe('Asking 日程秘书')
-    expect(view.subtitle).toContain('日程秘书')
+    expect(view.title).toBe('Asking 首席')
+    expect(view.subtitle).toContain('首席')
     expect(view.subtitle).toContain('refresh agenda')
   })
 
-  it('never says Asked 日程秘书 for a pending mutate_agenda call (WP-L1-MUTATE-CARD)', () => {
+  it('never says Asked 首席 for a pending mutate_agenda call (WP-L1-MUTATE-CARD)', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
       part({
@@ -550,7 +550,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
       ''
     )
 
-    expect(view.title).toBe('Asked 日程秘书')
+    expect(view.title).toBe('Asked agenda')
   })
 
   it('maps agent.id short name and lists agenda.events on refresh', () => {
@@ -584,7 +584,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
     )
 
     expect(view.status).toBe('success')
-    expect(view.title).toBe('Asked 日程秘书')
+    expect(view.title).toBe('Asked agenda')
     expect(view.subtitle).toContain('refresh agenda')
     expect(view.subtitle).toContain('route=fallback')
     expect(view.subtitle).toContain('1 event')
@@ -608,7 +608,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
       ''
     )
 
-    expect(view.title).toBe('Asked 日程秘书')
+    expect(view.title).toBe('Asked agenda-secretary')
     expect(view.subtitle).toContain('no events')
     expect(view.detail).toContain('no events')
   })
@@ -624,7 +624,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
     )
 
     expect(view.status).toBe('running')
-    expect(view.title).toBe('Asking 日程秘书')
+    expect(view.title).toBe('Asking 首席')
     expect(view.subtitle).toContain('write briefing')
     expect(view.subtitle).toContain('route=workbuddy')
   })
@@ -660,7 +660,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
     )
 
     expect(view.status).toBe('success')
-    expect(view.title).toBe('Asked 日程秘书')
+    expect(view.title).toBe('Asked agenda')
     expect(view.subtitle).toContain('write briefing')
     expect(view.subtitle).toContain('route=workbuddy')
     expect(view.detail).toContain('09:00 standup')
@@ -683,7 +683,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
     )
 
     expect(view.status).toBe('error')
-    expect(view.title).toBe('Asked 日程秘书')
+    expect(view.title).toBe('Asked agenda')
     expect(view.subtitle).toContain('chatlog 未启动或 /health 失败，采集不通')
     expect(view.detail).toContain('chatlog 未启动或 /health 失败，采集不通')
   })
@@ -886,7 +886,7 @@ describe('buildToolView plobi_secretary_ask project_status (WP-PROJECT-CARD, 裁
       ''
     )
 
-  it('pending says 查看项目中, not Asked 日程秘书', () => {
+  it('pending says 查看项目中, not Asked 首席', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
       part({ args: { intent: 'project_status' }, result: undefined, toolName: 'plobi_secretary_ask' }),
@@ -953,7 +953,7 @@ describe('buildToolView plobi_secretary_ask project_status (WP-PROJECT-CARD, 裁
       }),
       ''
     )
-    expect(refresh.title).toBe('Asked 日程秘书')
+    expect(refresh.title).toBe('Asked agenda')
 
     const query = buildToolView(
       part({
@@ -1016,7 +1016,7 @@ describe('buildToolView plobi_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 3
       ''
     )
 
-  it('pending says 排出中, not Asked 日程秘书', () => {
+  it('pending says 排出中, not Asked 首席', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
       part({ args: { intent: 'plan_day' }, result: undefined, toolName: 'plobi_secretary_ask' }),
@@ -1052,7 +1052,7 @@ describe('buildToolView plobi_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 3
     expect(view.subtitle).toBe('08:00–09:40 高数课 · 冲突 2')
   })
 
-  it('says 这一天没有可排的项 when items is empty (not Asked 日程秘书)', () => {
+  it('says 这一天没有可排的项 when items is empty (not Asked 首席)', () => {
     setRuntimeI18nLocale('zh')
     const view = plan({ items: [], conflict_count: 0, summary: '明天没有合适项。' })
 
@@ -1109,7 +1109,7 @@ describe('buildToolView plobi_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 3
       }),
       ''
     )
-    expect(refresh.title).toBe('Asked 日程秘书')
+    expect(refresh.title).toBe('Asked agenda')
 
     const query = buildToolView(
       part({
@@ -1166,7 +1166,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda cancel_matching (WP-CA
       ''
     )
 
-  it('pending says 取消课表中, not Asked 日程秘书', () => {
+  it('pending says 取消课表中, not Asked 首席', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
       part({
@@ -1259,7 +1259,7 @@ describe('buildToolView plobi_secretary_ask mutate_agenda cancel_matching (WP-CA
       }),
       ''
     )
-    expect(refresh.title).toBe('Asked 日程秘书')
+    expect(refresh.title).toBe('Asked agenda')
 
     const query = buildToolView(
       part({

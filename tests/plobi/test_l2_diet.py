@@ -8,7 +8,7 @@
 裁定 33.3（项目 L2）：每个 Mind 项目 L2 的 profile config.yaml 必须没
 有 ``terminal`` / ``computer_use`` / ``code_execution`` / ``session_search``，
 且任何 ``plobi-*`` 复合工具集都被剥掉。L2-agenda 不走这条——管家自己
-有 ``ensure_l2_agenda_toolsets`` 单独管 terminal 准入。
+terminal 准入由 diet 自己这一套规则统一管，不再有角色专属的旁路。
 """
 
 from __future__ import annotations
@@ -505,23 +505,6 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
 # ---------------------------------------------------------------------------
 
 
-def test_ensure_l2_agenda_toolsets_still_keeps_terminal(tmp_path):
-    """L2-agenda 走的是 ensure_l2_agenda_toolsets——diet 不该影响它。"""
-    from plobi.agents.registry import ensure_l2_agenda_toolsets
-
-    profile_dir = tmp_path / "l2-agenda-secretary"
-    _write_config(
-        profile_dir,
-        top=["web", "skills"],
-        platforms={"cli": ["web"]},
-    )
-
-    assert ensure_l2_agenda_toolsets(profile_dir) is True
-    cfg = _read_toolsets(profile_dir)
-    assert "terminal" in cfg["toolsets"]
-
-
-# ---------------------------------------------------------------------------
 # SOUL：派工不是工人（裁定 33.2 / 33.3 在 prompt 层的硬规则）
 # ---------------------------------------------------------------------------
 

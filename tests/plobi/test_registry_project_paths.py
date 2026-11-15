@@ -406,7 +406,7 @@ def test_unbound_row_is_untouched(home, tmp_path):
     """Empty binding (the agenda row's shape) is not "stale" — nothing to
     heal, nothing to warn about."""
     path = _registry_file(tmp_path)
-    _write_registry(path, {"agenda": {"role": "l2_agenda", "category": "butler"}})
+    _write_registry(path, {"agenda": {"role": "l2_project", "category": "butler"}})
 
     before = path.read_text(encoding="utf-8")
     reg = AgentRegistry.load(path)

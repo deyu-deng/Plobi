@@ -56,7 +56,7 @@ export interface AgentCreateRequest {
    */
   projectPaths?: string[]
   /** Default `l2_project`. Never `l1_secretary`. */
-  role?: 'l2_agenda' | 'l2_project'
+  role?: 'l2_project'
   /**
    * Human-typed display name, now sent **as typed** (2026-09-16). The backend
    * reads `body["name"]` into its `display` slot; `id` stays the lowercased
@@ -107,7 +107,7 @@ export interface Agent {
   id: string
   /**
    * 名册 role（用户 11-05：L1 也进名册，和五类 L2 分开标、地位平等）。
-   * `l1_secretary` = 主界面本体那一行；`l2_project` / `l2_agenda` / … = 智能体名单。
+   * `l1_secretary` = 主界面本体那一行；`l2_project` = 智能体名单（五类 category 一律挂这一档）。
    * 左栏名单只画 L2，能力页靠它认出「这一行是 L1 自己」，不再靠 profile 猜。
    */
   role?: string

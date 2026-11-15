@@ -196,30 +196,25 @@ export function restartsMouthInPlace(level: null | ShellLevel): boolean {
   return level !== null
 }
 
-/** Known L2 short labels (裁定 13). Never use description / model as identity. */
-const L2_SHORT_NAMES: Record<string, string> = {
-  agenda: '日程秘书',
-  'agenda-secretary': '日程秘书',
-  'secretary-agenda': '日程秘书'
-}
-
+/**
+ * Never use description / model as identity.
+ *
+ * 2026-11-15：这里原来装着一张内置角色短名表（`agenda` / `agenda-secretary` /
+ * `secretary-agenda` → 「日程秘书」）。产品不再替用户预设任何 L2，日程只是名册上
+ * category=butler 的一行，短名该由那行的 display_name / name 决定——硬编码别名会
+ * 让用户自己的行顶着别人的名字（镜像 `plobi/console/router.py` `_AGENT_SHORT_NAMES`，
+ * 那边同样已清空）。
+ */
 export function secretaryShortName(agentId: string, fallbackName?: string): string {
-  const key = agentId.trim().toLowerCase()
   // WP-UI-NO-INTERNALS: the rail must never print a profile id (`l2-agenda`).
-  // Try the id as given, then the profile-stripped form (`l2-agenda` → `agenda`).
-  const mapped = key ? (L2_SHORT_NAMES[key] ?? L2_SHORT_NAMES[key.replace(/^l[12][-_]/, '')]) : undefined
-
-  if (mapped) {
-    return mapped
-  }
-
+  const stripProfilePrefix = (value: string): string => value.replace(/^l[12][-_]/, '')
   const named = (fallbackName || '').trim()
 
   if (named) {
-    return named
+    return stripProfilePrefix(named)
   }
 
-  return agentId.trim()
+  return stripProfilePrefix(agentId.trim())
 }
 
 /**

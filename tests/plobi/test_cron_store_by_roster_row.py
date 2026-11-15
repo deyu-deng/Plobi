@@ -28,7 +28,7 @@ def cron_home(tmp_path, monkeypatch):
     roster.write_text(
         "agents:\n"
         "  agenda:\n"
-        "    role: l2_agenda\n"
+        "    role: l2_project\n"
         "    profile: l2-agenda\n"
         "    description: 日程秘书\n"
         "  Aura:\n"

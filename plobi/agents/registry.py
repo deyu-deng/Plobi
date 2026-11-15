@@ -8,14 +8,18 @@
 
     version: 1
     agents:
-      agenda:
-        role: l2_agenda
-        profile: l2-agenda          # 对应 plobi profile（省略 = 用 agent 名）
+      simulation:
+        role: l2_project
+        profile: simulation         # 对应 plobi profile（省略 = 用 agent 名）
+        category: projects          # 左栏五类之一
         provider: deepseek          # 可选覆盖默认路由；省略 = 用 DEFAULT_ROUTES
         model: deepseek-chat
         mind_subtree: Dossiers/projects/Plobi   # 相对人读面根（L2 直读）
         skills: [morning-report, message-digest]
-        description: 日程闭环 Agent
+        description: 项目分身
+
+``role`` 只有两种值：``l1_secretary``（指挥）与 ``l2_project``（首席）。五类
+``category`` 一律挂首席，差异全在 ``category``，不在 ``role``。
 
 ``spawn`` 做三件事：接好共享层那一份（:meth:`AgentRegistry._ensure_shared_layer`，**不再建分身家**，见 WP-REGISTRY-NO-HOME）、
 把该 agent 的模型路由写进 profile 的 ``plobi/models.json``（ADR-0011 断言绿）、
@@ -1335,7 +1339,7 @@ def has_agent_identity(entry: AgentEntry) -> bool:
     """裁定 192：**身份就是名册这一行本身**——判据是这一行有没有角色路由，不再是盘上有没有一个家。
 
     `l2_course` 是数据记录，故意不进 ``DEFAULT_ROUTES``（`plobi/routing/models.py:31-38`：没有路由
-    就 ``resolve()`` 抛），所以它天然不在这把尺里；`l1_secretary`/`l2_agenda`/`l2_project`
+    就 ``resolve()`` 抛），所以它天然不在这把尺里；`l1_secretary`/`l2_project`
     都有路由，就是能对话的对象。``registered`` 那一格章也要盖上——Mind 投影进来的
     占位行（``registered=False``）不是手下，否则「一个能问的人都没有」那种关门判据会失效。
 
@@ -1905,118 +1909,6 @@ def set_profile_model_override(profile_name: str, provider: str, model: str) -> 
     registry.upsert(replace(entry, provider=provider or "", model=model or ""))
     registry.save()
     return entry.name
-
-
-# ---------------------------------------------------------------------------
-# S2: find or spawn exactly one agenda L2
-# ---------------------------------------------------------------------------
-
-AGENDA_TEMPLATE_NAME = "agenda"
-# 日程 L2 的运行时 slug（内部标识）。2026-11-05 之后它**不再写进条目**
-# （``AgentEntry.profile`` 已删除），slug 由 name ``agenda`` 经
-# ``runtime_slugs.yaml`` 派生成 ``l2-agenda``。常量留给测试与需要这个名字的
-# 调用方对齐。
-AGENDA_TEMPLATE_PROFILE = "l2-agenda"
-AGENDA_TEMPLATE_ROLE = "l2_agenda"
-
-_AGENDA_ROLE_MARKERS = ("l2_agenda", "secretary-agenda")
-
-
-def agenda_template_entry() -> AgentEntry:
-    """The only L2 ``spawn`` is allowed to create for §8.2 S2.
-
-    这里原来硬写着 ``provider="bezel", model="workbuddy/deepseek-chat"``。那是
-    :data:`plobi.routing.models.DEFAULT_ROUTES` 的 L2 兜底抄进了**记录本身**：
-    一旦覆盖写在记录上，那一格就会被写进日程分身的 ``config.yaml``：
-    ``model.provider: bezel``（2026-09-29 实测他的 l2-agenda 那条一度就是这样，被手工
-    纠回 minimax-cn），而 provider 值会成为选择器的分组标题——裁定 45.4 要保留的
-    是**日志与配置里机器读的 id**，不是替用户决定他没用过哪个提供商。日程 L2 的
-    路由账本（profile 的 plobi/models.json）照旧从 DEFAULT_ROUTES 取，不带上屏。
-    """
-    return AgentEntry(
-        name=AGENDA_TEMPLATE_NAME,
-        role=AGENDA_TEMPLATE_ROLE,
-        mind_subtree="Dossiers/projects/Plobi",
-        description="日程采集 → SQLite → 看板 → 钉钉 闭环",
-    )
-
-
-def is_agenda_entry(entry: AgentEntry) -> bool:
-    """True when this registry row is the agenda / 日程 secretary.
-
-    Matches existing ``role`` / description / template names. Does not invent
-    a second registry — callers still go through :class:`AgentRegistry`.
-    """
-    role = (entry.role or "").strip().lower()
-    name = (entry.name or "").strip().lower()
-    profile = entry.profile_name.strip().lower()
-    desc = entry.description or ""
-    if any(marker in role for marker in _AGENDA_ROLE_MARKERS):
-        return True
-    if "日程" in (entry.role or "") or "日程" in desc or "日程" in (entry.name or ""):
-        return True
-    if "secretary-agenda" in name or "secretary-agenda" in profile:
-        return True
-    return False
-
-
-def find_agenda_agent(registry: AgentRegistry | None = None) -> Optional[AgentEntry]:
-    """The **live** agenda L2 row, preferring an exact ``l2_agenda`` role.
-
-    裁定 211：归档 = 退役。已归档的那行**不再占着槽位**——旧形状它照样算，
-    于是用户归档掉产品替他播种的那条之后，连**自己**再建一条都建不成
-    （``POST /api/agents`` 返 409「agenda L2 already exists」，撞的是一条
-    已经退役的行）。
-    """
-    reg = registry or load_registry()
-    found = [entry for entry in reg.live_entries() if is_agenda_entry(entry)]
-    if not found:
-        return None
-    found.sort(key=lambda entry: (0 if entry.role == AGENDA_TEMPLATE_ROLE else 1, entry.name))
-    return found[0]
-
-
-def register_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEntry, bool]:
-    """Put the agenda L2 row in ``projects.yaml`` — and write nothing else.
-
-    The left rail's ``GET /api/agents`` reads that one YAML file, so a visible
-    日程管家 needs the row, not the profile. Materializing ``profiles/l2-agenda``
-    is a separate promise (a directory, ``models.json``, a config), and a boot
-    that makes it on a home whose secretary never ran has built a profile the
-    user never asked for. ``spawned`` is True only when this call registered
-    the template; idempotent, and never touches the filesystem below the YAML.
-    """
-    reg = registry or load_registry()
-    existing = find_agenda_agent(reg)
-    if existing is not None:
-        return existing, False
-
-    # 退役的那条**占着名字**（归档 = 退役，不是删除）。旧形状走到这里会另建一条
-    # ``secretary-agenda``，于是名册里出现两行、都显示「日程秘书」（左栏短名表
-    # 两个 id 映射到同一个词）——用户看着像「又冒出来一个」。
-    # 这里改成**复活**那一条：同一行、同一个身份文件，退役的那位回来上班。
-    from dataclasses import replace as _replace
-
-    retired = next((e for e in reg.entries() if e.archived and is_agenda_entry(e)), None)
-    if retired is not None:
-        revived = _replace(retired, archived=False, archived_at="")
-        reg.upsert(revived)
-        reg.save()
-        return revived, False
-
-    template = agenda_template_entry()
-    if template.name in reg.agents:
-        template = AgentEntry(
-            name="secretary-agenda",
-            role=template.role,
-            provider=template.provider,
-            model=template.model,
-            mind_subtree=template.mind_subtree,
-            description=template.description,
-        )
-    reg.upsert(template)
-    reg.save()
-    return template, True
 
 
 # ---------------------------------------------------------------------------
@@ -2682,7 +2574,7 @@ def apply_l1_mid_toolsets(config: dict) -> bool:
 # 跑命令 / 截屏 / 会话搜索，也不带 plobi-* 复合工具集。L1 的中收逻辑把
 # ``plobi-cli`` / ``terminal`` / ``session_search`` 都视为污染源；这里
 # 复用同一份口径，删掉得彻底——留 terminal 是把 L2 重新变回工人。
-L2_PROJECT_DROP_TOOLSETS = frozenset(
+PRINCIPAL_DROP_TOOLSETS = frozenset(
     {
         "terminal",
         "computer_use",
@@ -2708,7 +2600,7 @@ def _filter_l2_project_toolsets(names, keep=()) -> list[str]:
         n
         for n in names
         if not _is_full_plobi_composite(n)
-        and (n not in L2_PROJECT_DROP_TOOLSETS or n in keep_names)
+        and (n not in PRINCIPAL_DROP_TOOLSETS or n in keep_names)
     ]
 
 
@@ -2909,7 +2801,7 @@ def diet_entry_toolsets(entry: "AgentEntry") -> bool:
     :func:`profile_config_overlay` 叠进 ``agent.disabled_toolsets``
     （``plobi_cli/tools_config.py`` 的既有消费点），不落第二份盘。
 
-    写什么：``L2_PROJECT_DROP_TOOLSETS`` 那四个（terminal / computer_use /
+    写什么：``PRINCIPAL_DROP_TOOLSETS`` 那四个（terminal / computer_use /
     code_execution / session_search——"留 terminal 是把 L2 重新变回工人"）。
     **不写** ``plobi-*`` 复合：它不是用户勾来的，是平台复合，禁它连带禁掉
     里面every healthy leaf；复合的处置归 ``_filter_l2_project_toolsets``
@@ -2927,7 +2819,7 @@ def diet_entry_toolsets(entry: "AgentEntry") -> bool:
         return False
     if entry.category not in ("projects", "research"):
         return False
-    banned = sorted(L2_PROJECT_DROP_TOOLSETS)
+    banned = sorted(PRINCIPAL_DROP_TOOLSETS)
     have = {str(n).casefold() for n in entry.disabled_toolsets}
     missing = [n for n in banned if n.casefold() not in have]
     if not missing:
@@ -2960,57 +2852,6 @@ def _diet_existing_l2_project(entry: "AgentEntry") -> None:
         diet_entry_toolsets(entry)
     except Exception as exc:
         logger.debug("plobi: l2 diet (registry row) skipped for %s: %s", entry.name, exc)
-
-
-def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
-    """Keep terminal available on agenda L2 profiles (do not inherit L1 mid-narrow).
-
-    Reversible: only appends ``terminal`` when neither ``plobi-cli`` nor
-    ``terminal`` is listed. Never rewrites L1/default.
-    """
-    import yaml
-
-    cfg_path = Path(profile_dir) / "config.yaml"
-    if not cfg_path.is_file():
-        return False
-    try:
-        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return False
-    if not isinstance(cfg, dict):
-        return False
-
-    changed = False
-    platforms = cfg.get("platform_toolsets")
-    if not isinstance(platforms, dict):
-        platforms = {}
-        cfg["platform_toolsets"] = platforms
-        changed = True
-    for platform in ("cli", "gateway"):
-        listed = platforms.get(platform)
-        if not isinstance(listed, list):
-            listed = []
-            platforms[platform] = listed
-            changed = True
-        names = [str(n) for n in listed]
-        if "plobi-cli" in names or "terminal" in names:
-            continue
-        listed.append("terminal")
-        changed = True
-
-    top = cfg.get("toolsets")
-    if isinstance(top, list):
-        names = [str(n) for n in top]
-        if "plobi-cli" not in names and "terminal" not in names:
-            top.append("terminal")
-            changed = True
-
-    if not changed:
-        return False
-    cfg_path.write_text(
-        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
-    )
-    return True
 
 
 def ensure_conductor_routing_soul(*, home: Path | str | None = None) -> bool:

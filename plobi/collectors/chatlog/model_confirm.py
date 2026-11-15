@@ -32,7 +32,7 @@ from datetime import date, datetime, time
 from typing import Callable, Optional, Protocol
 
 from plobi.agenda.rules import RuleHit, snippet
-from plobi.routing import L2_AGENDA, ModelRoute, ModelRouter, RoutingError, get_router
+from plobi.routing import PRINCIPAL, ModelRoute, ModelRouter, RoutingError, get_router
 
 from .client import ChatMessage
 from .confirm import Candidate, ConfirmContext, HeuristicConfirmer, _title_from
@@ -305,7 +305,7 @@ class ModelConfirmer:
         *,
         completer: Optional[Completer] = None,
         router: Optional[ModelRouter] = None,
-        role: str = L2_AGENDA,
+        role: str = PRINCIPAL,
         now_factory: Callable[[], datetime] = datetime.now,
     ):
         self._completer = completer

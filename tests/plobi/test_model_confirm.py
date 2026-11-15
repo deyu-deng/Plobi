@@ -27,7 +27,7 @@ from plobi.collectors.chatlog.pipeline import ChatlogPipeline
 from plobi.collectors.chatlog.config import CollectorConfig
 from plobi.collectors.chatlog.state import SeenStore
 from plobi.agenda.service import AgendaService
-from plobi.routing import CONDUCTOR, L2_AGENDA, ModelRoute, ModelRouter, RoutingError
+from plobi.routing import CONDUCTOR, PRINCIPAL, ModelRoute, ModelRouter, RoutingError
 
 NOW = datetime(2026, 8, 25, 10, 0)
 
@@ -71,7 +71,7 @@ def test_confirmer_uses_the_l2_route_not_a_hardcoded_model():
     confirmer = ModelConfirmer(
         completer=completer,
         router=router_with(
-            **{L2_AGENDA: ModelRoute(role=L2_AGENDA, provider="deepseek", model="deepseek-chat")}
+            **{PRINCIPAL: ModelRoute(role=PRINCIPAL, provider="deepseek", model="deepseek-chat")}
         ),
         now_factory=lambda: NOW,
     )
@@ -89,7 +89,7 @@ def test_a_changed_route_changes_which_model_is_called():
     confirmer = ModelConfirmer(
         completer=completer,
         router=router_with(
-            **{L2_AGENDA: ModelRoute(role=L2_AGENDA, provider="moonshot", model="kimi-k3")}
+            **{PRINCIPAL: ModelRoute(role=PRINCIPAL, provider="moonshot", model="kimi-k3")}
         ),
         now_factory=lambda: NOW,
     )
@@ -119,7 +119,7 @@ def test_wiring_the_secretary_here_is_rejected():
 def test_a_missing_route_degrades_to_unresolved_instead_of_raising():
     """The pipeline must keep running even when routing is misconfigured."""
     router = ModelRouter.load()
-    router.routes.pop(L2_AGENDA, None)
+    router.routes.pop(PRINCIPAL, None)
     confirmer = ModelConfirmer(
         completer=RecordingCompleter(),
         router=router,

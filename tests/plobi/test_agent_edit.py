@@ -150,7 +150,7 @@ def test_unknown_keys_are_refused_instead_of_silently_dropped(client, _isolated_
     """
     _seed(_isolated_state)
 
-    response = client.patch("/api/agents/aura", json={"role": "l2_agenda"})
+    response = client.patch("/api/agents/aura", json={"role": "l2_project"})
 
     assert response.status_code == 400
     assert "这一格不改" in response.json()["error"]

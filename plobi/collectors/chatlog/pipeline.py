@@ -250,11 +250,11 @@ class ChatlogPipeline:
         heuristic = HeuristicConfirmer(tier_of=self.config.tier_of)
         try:
             from plobi.quota.route import QuotaAwareCompleter
-            from plobi.routing import L2_AGENDA
+            from plobi.routing import PRINCIPAL
 
             from .model_confirm import FallbackConfirmer, ModelConfirmer
 
-            model = ModelConfirmer(completer=QuotaAwareCompleter(), role=L2_AGENDA)
+            model = ModelConfirmer(completer=QuotaAwareCompleter(), role=PRINCIPAL)
         except Exception as exc:  # pragma: no cover - import/registration seam
             logger.warning(
                 "chatlog: model fallback unavailable (%s); using heuristic only", exc

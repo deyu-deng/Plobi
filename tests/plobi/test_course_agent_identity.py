@@ -32,7 +32,7 @@ from plobi.agents.registry import (
     is_askable_agent,
     profile_name_blocker,
 )
-from plobi.routing.models import DEFAULT_ROUTES, L2_COURSE, L2_PROJECT
+from plobi.routing.models import DEFAULT_ROUTES, L2_COURSE, PRINCIPAL
 
 COURSE = "大学物理（甲）Ⅱ"
 
@@ -49,7 +49,7 @@ def isolated_home(tmp_path, monkeypatch):
 def _course_entry(**over) -> AgentEntry:
     data = {
         "name": COURSE,
-        "role": L2_PROJECT,          # 有运行时的那条路（models.py 注释指定的改法）
+        "role": PRINCIPAL,          # 有运行时的那条路（models.py 注释指定的改法）
         "category": "courses",       # 类型只决定附加设置（裁定 146②(c)）
         # slug 不是可填写的一格（2026-11-05）：这门课在 slug 表里登记过，
         # 派生出来是 l2-course-physics-a2。非 ASCII 名不登记就一个字都派生不出来。
@@ -69,7 +69,7 @@ def test_declared_course_entry_gets_a_nonempty_profile_name():
 def test_an_unregistered_course_name_keeps_profile_name_empty():
     """没登记过的名字 ⇒ 派生不出 slug，回空串。这是负例：
     空串挡着「冒充一格 slug 起后端」。数据条目没有家不是缺陷，blocker 也不该响。"""
-    entry = AgentEntry(name="未登记的中文名", role=L2_PROJECT, category="courses")
+    entry = AgentEntry(name="未登记的中文名", role=PRINCIPAL, category="courses")
 
     assert entry.profile_name == ""
     assert profile_name_blocker(entry)  # 有运行时的角色派生不出名字，得能行动地说

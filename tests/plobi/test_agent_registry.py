@@ -38,7 +38,7 @@ def home(tmp_path, monkeypatch):
 
 
 def _entry(**kw):
-    defaults = dict(name="agenda", role="l2_agenda", model="deepseek-chat")
+    defaults = dict(name="agenda", role="l2_project", model="deepseek-chat")
     defaults.update(kw)
     return AgentEntry(**defaults)
 
@@ -214,7 +214,7 @@ def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
                 "agents": {
                     "agenda": {
                         "name": "agenda",
-                        "role": "l2_agenda",
+                        "role": "l2_project",
                         "skills": ["plobi-l2-resident"],
                         "description": "日程闭环",
                     }
@@ -289,14 +289,14 @@ def test_missing_profile_field_falls_back_to_name(home):
 def test_registry_with_l1_and_l2_is_green(home):
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="l2_agenda", model="deepseek-chat"))
+    reg.upsert(_entry(name="agenda", role="l2_project", model="deepseek-chat"))
     assert reg.routing_problems() == []
 
 
 def test_l2_sharing_l1_model_is_flagged(home):
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="bad", role="l2_agenda", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="bad", role="l2_project", provider="moonshot", model="kimi-k3"))
     problems = reg.routing_problems()
     assert any("shares L1" in p for p in problems)
 
@@ -348,7 +348,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
     """
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="l2_agenda", provider="deepseek", model="deepseek-chat"))
+    reg.upsert(_entry(name="agenda", role="l2_project", provider="deepseek", model="deepseek-chat"))
     reg.save()
 
     _top_level_config(spawn_env, dict(_CONFIGURED_DEFAULT))
@@ -373,8 +373,8 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # 裁 172：那张表是「这一类默认用什么」，**不接收任何一行的覆盖**（名册 24 行里
     # l2_project 占 23 行，折进去就是给一个 Agent 单选 = 整类一起变）。这一行自己的生效值
     # 问 ``route_for``——它仍是 deepseek/deepseek-chat，但只属于 agenda 那一行。
-    assert models["roles"]["l2_agenda"]["provider"] == "bezel"
-    assert models["roles"]["l2_agenda"]["model"] == "workbuddy/deepseek-v4.1-flash"
+    assert models["roles"]["l2_project"]["provider"] == "bezel"
+    assert models["roles"]["l2_project"]["model"] == "workbuddy/deepseek-v4.1-flash"
     agenda_route = reg.route_for(reg.get("agenda"))
     assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")
     # ADR-0011：那张唯一的表断言绿（L1≠L2）
@@ -393,7 +393,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
 def test_spawn_routing_violation_aborts(spawn_env):
     reg = AgentRegistry.load()
     # L1 缺失 → spawn 时 profile 路由表断言失败
-    reg.upsert(_entry(name="agenda", role="l2_agenda", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="agenda", role="l2_project", provider="moonshot", model="kimi-k3"))
     reg.save()
 
     with pytest.raises(RegistryError, match="routing"):
@@ -409,7 +409,7 @@ def test_spawn_unknown_agent_raises(home):
 def test_spawn_reuses_existing_profile(spawn_env):
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="l2_agenda", provider="deepseek", model="deepseek-chat"))
+    reg.upsert(_entry(name="agenda", role="l2_project", provider="deepseek", model="deepseek-chat"))
     reg.save()
 
     reg.spawn("agenda")
@@ -450,7 +450,7 @@ def test_cli_register_then_spawn(spawn_env, capsys, monkeypatch):
     ))
     run_plobi(_Args(
         plobi_action="agents", agents_action="register", name="agenda",
-        role="l2_agenda", provider="deepseek", model="deepseek-chat",
+        role="l2_project", provider="deepseek", model="deepseek-chat",
     ))
 
     run_plobi(_Args(plobi_action="agents", agents_action="spawn", name="agenda"))
@@ -474,7 +474,7 @@ def test_cli_spawn_inline_register(spawn_env, capsys):
     ))
     run_plobi(_Args(
         plobi_action="agents", agents_action="spawn", name="agenda",
-        role="l2_agenda", provider="deepseek", model="deepseek-chat",
+        role="l2_project", provider="deepseek", model="deepseek-chat",
     ))
     out = capsys.readouterr().out
     assert "Spawned agenda" in out
@@ -897,28 +897,17 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     assert _effective_config(home)["model"] == _CONFIGURED_DEFAULT
 
 
-def test_agenda_template_carries_no_model_override(spawn_env, home):
-    """日程秘书模板不许硬写 provider/model —— 它抄的是 DEFAULT_ROUTES 的 L2 兜底，
-    落进那唯一一份配置就是「用户没选过的提供商」+ 一个会当分组标题上屏的 bezel。
+def test_profile_name_derives_from_the_agent_name():
+    """2026-11-15：这里原来还挂着 ``agenda_template_entry()`` 的「模板不许硬写
+    provider/model」测试——模板本身随日程秘书单例一起退场（产品不预设任何 L2）。
+    同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
     """
-    from plobi.agents.registry import AGENDA_TEMPLATE_PROFILE, agenda_template_entry
-
-    template = agenda_template_entry()
-    assert template.has_model_override is False, (template.provider, template.model)
-
-    _top_level_config(home, dict(_CONFIGURED_DEFAULT))
-    profile_dir = _seed_profile_dir(spawn_env, AGENDA_TEMPLATE_PROFILE)
-    reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name=template.name, role=template.role, provider="", model=""))
-    reg.save()
-    reg.spawn(template.name)
-
-    model = _effective_config(home, AGENDA_TEMPLATE_PROFILE)["model"]
-    assert model == _CONFIGURED_DEFAULT
-    rendered = json.dumps(model, ensure_ascii=False)
-    assert "bezel" not in rendered and "workbuddy" not in rendered, rendered
-    assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
+    assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
+def test_profile_name_derives_from_the_agent_name():
+    """2026-11-15：这里原来还挂着 ``agenda_template_entry()`` 的「模板不许硬写
+    provider/model」测试——模板本身随日程秘书单例一起退场（产品不预设任何 L2）。
+    同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
+    """
     assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
     # 11-06：``default`` 是 L1（名册 name ``secretary``）专属的 slug，别人撞上它一律
     # 派生空串＝没有可路由身份（``derive_runtime_slug`` 里那道保留名闸）。

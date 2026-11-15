@@ -32,10 +32,11 @@ from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-# 同 ``CONDUCTOR_ROLE``：常量名读作「指挥」，值仍是名册里的 ``l1_secretary``（裁定 220 第 6 条）。
-CONDUCTOR = "l1_secretary"
-L2_AGENDA = "l2_agenda"
-L2_PROJECT = "l2_project"
+# 常量名读的是**身份档位**（glossary.md 四词），值仍是名册里存着的旧字面量。
+# 值不动是刻意的：名册 25 行真数据 + 251 处代码判据存的都是 ``l1_secretary`` /
+# ``l2_project``，改值等于一次数据迁移，收益为零。名字说人话，值照旧。
+CONDUCTOR = "l1_secretary"   # 指挥
+PRINCIPAL = "l2_project"     # 首席（五类 category 一律挂这一档）
 # ``l2_course``（用户 10-11 拍：五门课要进名册，并且"再加一个角色"）。课业条目是**数据**，
 # 不是分身：它故意**不进 ``DEFAULT_ROUTES``**（没有模型路由 ⇒ ``resolve()`` 会抛 RoutingError）。
 # 三个 ``resolve(entry.role)`` 调用点都验过：``plobi/agents/cli.py:85`` 与
@@ -44,7 +45,7 @@ L2_PROJECT = "l2_project"
 # 作业归属靠的是条目名（``planning.py::_matches_project`` 读 ``evidence.course``），不靠分身。
 L2_COURSE = "l2_course"
 
-KNOWN_ROLES = (CONDUCTOR, L2_AGENDA, L2_PROJECT, L2_COURSE)
+KNOWN_ROLES = (CONDUCTOR, PRINCIPAL, L2_COURSE)
 
 # ``bezel`` is the local OpenAI-compatible gateway (WorkBuddy / OpenCode quota
 # and friends behind one loopback endpoint). L2 generation goes through bezel
@@ -53,43 +54,24 @@ KNOWN_ROLES = (CONDUCTOR, L2_AGENDA, L2_PROJECT, L2_COURSE)
 # and :attr:`ModelRoute.display_model` is the model row.
 #
 # 2026-11-14 用户裁定：**不存在 L2 三角色**。名册里的五类 L2（projects /
-# butler / events / research / courses）是平行的，role 一律是 ``l2_project``，
+# butler / events / research / courses）是平行的，role 一律是 ``PRINCIPAL``，
 # 各自的模型覆盖写在名册行上（裁 42），所以这里只有一格 L2 默认。
-# ``l2_planner`` 是「三档 L2」时代的孤儿角色，零使用者，已随本次清理删除。
-# ``l2_agenda`` 不是预设而是**名册真角色**（S2 只允许一个日程 L2，见
-# ``registry.AGENDA_TEMPLATE_ROLE``），所以它仍在表里。
+# 2026-11-15 收口：``l2_agenda`` / ``l2_planner`` 一并退场。日程不是特权角色，
+# 它是名册上 category=butler 的普通一行；「三档 L2」更是不存在的结构。
+# 从此这张表只有两格：一个指挥、一个首席。
+#
 # The gateway is a model/provider route for L2 generation — it is not an L3
 # agent (ruling 205). Direct ``deepseek`` API routes are retired.
 DEFAULT_ROUTES: dict[str, dict[str, str]] = {
     CONDUCTOR: {"provider": "moonshot", "model": "kimi-k3"},
-    L2_PROJECT: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
-    L2_AGENDA: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
+    PRINCIPAL: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
 }
 
-# 2026-11-14 改名迁移：``aigw`` 曾是本机网关的机器标识，现在叫 ``bezel``。
-# 没有老用户，但**这一台**的 ``models.json`` 是从旧版本写下来的，读侧必须认得
-# 旧值，否则升级后第一次加载会把 provider 解析成一个已经不存在的插件。
-# 迁移只在读侧做，写侧永远只出新值。
-_LEGACY_PROVIDER_ALIASES = {"aigw": "bezel"}
-
-# 同上：这些 role 是退役结构（「三档 L2」）留在配置里的行，读侧直接丢弃。
-_RETIRED_ROLES = frozenset({"l2_planner"})
-
-# ``workbuddy/deepseek-chat`` 当时是被从 DEFAULT_ROUTES 抄进配置的假 id，
-# 上游网关从来没有这个模型（2026-11-13 实测 29 个模型里 deepseek 只有
-# ``deepseek-v4.1-flash`` / ``deepseek-v4-pro``）。撞上它的 route 视同「没配」，
-# 回落到默认，否则又是一条发出去必 404 的死路由。
-_RETIRED_MODELS = frozenset({"workbuddy/deepseek-chat"})
-
-
-def _migrated_provider(provider: str) -> str:
-    """Map a retired provider id onto its current name (``aigw`` → ``bezel``).
-
-    Case-insensitive on the way in, original text preserved when nothing matches:
-    the value is a machine id that lands in logs and ``models.json``, so quietly
-    lowercasing a provider we know nothing about would rewrite the user's file.
-    """
-    return _LEGACY_PROVIDER_ALIASES.get(provider.strip().lower(), provider)
+# 2026-11-15：读侧迁移代码全部退场。上一刀为 ``aigw`` → ``bezel``、假模型 id
+# ``workbuddy/deepseek-chat``、「三档 L2」的 ``l2_planner`` 各留了一张兼容表；用户裁定
+# 「内测版没有用户，不用管老配置文件，不接受为兼容付代价」——所以三张表连同
+# :func:`_migrated_provider` 一起删掉。写侧本来就只出新值，读侧不再替旧值兜底。
+# 真机核查（11-15）：本机没有生产 ``models.json``，只有 pytest 临时目录里的夹具残渣。
 
 
 class RoutingError(ValueError):
@@ -197,21 +179,17 @@ class ModelRouter:
         routes: dict[str, ModelRoute] = {}
         for role, defaults in DEFAULT_ROUTES.items():
             entry = raw.get(role) if isinstance(raw.get(role), dict) else {}
-            provider = _migrated_provider(str(entry.get("provider") or defaults["provider"]))
+            provider = str(entry.get("provider") or defaults["provider"])
             model = str(entry.get("model") or defaults["model"])
-            if model.strip().lower() in _RETIRED_MODELS:
-                # 假 id：这条腿从来没通过，落回默认而不是把它继续背下去。
-                model = defaults["model"]
             routes[role] = ModelRoute(role=role, provider=provider, model=model)
 
-        # Roles the operator invented (extra project agents) are kept as-is,
-        # minus the ones a retired structure left behind.
+        # Roles the operator invented (extra project agents) are kept as-is.
         for role, entry in raw.items():
-            if role in routes or role in _RETIRED_ROLES or not isinstance(entry, dict):
+            if role in routes or not isinstance(entry, dict):
                 continue
             routes[role] = ModelRoute(
                 role=role,
-                provider=_migrated_provider(str(entry.get("provider") or "")),
+                provider=str(entry.get("provider") or ""),
                 model=str(entry.get("model") or ""),
             )
 

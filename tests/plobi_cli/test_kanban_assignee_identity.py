@@ -25,7 +25,7 @@ from plobi_cli import kanban_db as kb
 ROSTER = (
     ("Aura", {"role": "l2_project", "profile": "aura", "category": "projects"}),
     ("大学物理（甲）Ⅱ", {"role": "l2_project", "profile": "l2-course-physics-a2", "category": "courses"}),
-    ("agenda", {"role": "l2_agenda", "profile": "l2-agenda"}),
+    ("agenda", {"role": "l2_project", "profile": "l2-agenda"}),
 )
 
 

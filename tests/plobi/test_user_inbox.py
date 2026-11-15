@@ -96,7 +96,7 @@ def test_say_to_user_lands_in_the_users_screen_and_does_not_wake(CH, monkeypatch
 def test_saying_to_yourself_is_refused(CH, monkeypatch):
     from plobi.agents.registry import AgentEntry
 
-    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_project"})
     monkeypatch.setattr(CH, "current_agent_name", lambda *a, **k: "agenda")
     monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "话", None))
     monkeypatch.setattr(CH, "_session_db", lambda: _FakeDB())

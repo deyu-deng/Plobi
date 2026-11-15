@@ -17,16 +17,17 @@ agents:
     skills: [plobi-morning-report, plobi-message-digest]
     description: L1 日程秘书 — 统筹、决策、派工、收摘要
 
-  # 示例 L2：一个专管日程的角色。**这不是出厂件**——产品不替用户建任何 L2
-  # （裁定 211：首装只有 L1、零 L2、零预置定时任务）；这一行是给你抄过去改的示例。
-  # 要一个专管日程的角色，自己加一条，或让 L1 按你的事建一个。
+  # 示例 L2：一个普通的首席（`role` 一律 `l2_project`，差别只在 `category`）。
+  # **这不是出厂件**——产品不替用户建任何 L2（裁定 211：首装只有 L1、零 L2、
+  # 零预置定时任务）；这一行是给你抄过去改的示例，名字、域、技能都随你的事来。
   # `domains` 这行是域声明的例子：声明了 schedule 之后，派工时填 domain=schedule
   # 就必须落在这一行；不填则完全照旧按名字发。
-  agenda:
-    role: l2_agenda
+  schedule:
+    role: l2_project
+    category: butler
     provider: bezel
     model: workbuddy/deepseek-v4.1-flash
     mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-l2-resident]
-    domains: [schedule, agenda]
-    description: 日程采集 → SQLite → 看板 → 钉钉 闭环
+    domains: [schedule]
+    description: 你说的一件事 → SQLite → 看板 → 消息推送 闭环

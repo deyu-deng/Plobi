@@ -58,7 +58,7 @@ def _root(home) -> Path:
 def _seed_roster(root: Path, name: str, profile: str) -> None:
     """名册写共享层那一份（`default_path()` = `<root>/plobi/projects.yaml`）。"""
     reg = AgentRegistry(root / "plobi" / "projects.yaml")
-    reg.upsert(AgentEntry(name=name, role="l2_agenda"))
+    reg.upsert(AgentEntry(name=name, role="l2_project"))
     reg.save()
 
 

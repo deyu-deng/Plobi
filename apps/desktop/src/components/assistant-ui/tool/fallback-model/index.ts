@@ -622,13 +622,6 @@ function firstStringField(record: Record<string, unknown>, keys: readonly string
   return ''
 }
 
-/** Known L2 short labels (裁定 13) — mirror `plobi/console/router.py` `_AGENT_SHORT_NAMES`. */
-const SECRETARY_AGENT_SHORT_NAMES: Record<string, string> = {
-  agenda: '日程秘书',
-  'agenda-secretary': '日程秘书',
-  'secretary-agenda': '日程秘书'
-}
-
 function secretaryField(
   args: Record<string, unknown>,
   result: Record<string, unknown>,
@@ -677,17 +670,12 @@ function formatSecretaryEventLines(events: unknown[], limit = 12): string {
 }
 
 /**
- * C3 "派给谁": prefer real `agent.id` (+ 裁定 13 short map). Do not rely on the
+ * C3 "派给谁": prefer real `agent.id`. Do not rely on the
  * WP-G1 test-only `agent_name` field; fall back to it only as a last resort.
  */
 function secretaryTarget(args: Record<string, unknown>, result: Record<string, unknown>): string {
   const agent = secretaryAgentRecord(result)
   const id = firstStringField(agent, ['id', 'name']) || firstStringField(result, ['agent_id'])
-  const key = id.trim().toLowerCase()
-
-  if (key && SECRETARY_AGENT_SHORT_NAMES[key]) {
-    return SECRETARY_AGENT_SHORT_NAMES[key]!
-  }
 
   if (id) {
     return id
@@ -701,8 +689,9 @@ function secretaryTarget(args: Record<string, unknown>, result: Record<string, u
     return legacy
   }
 
-  // This tool only routes to the agenda L2 (S2) — waiting state has no agent yet.
-  return '日程秘书'
+  // 等待态还没有具体某个 L2，用档位通称（glossary 四词：L2 = 首席），
+  // 不再写死某个产品内置角色的名字。
+  return '首席'
 }
 
 function secretaryIntentLabel(intent: string): string {

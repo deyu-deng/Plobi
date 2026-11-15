@@ -506,29 +506,28 @@ def test_get_agents_falls_back_to_id_when_display_name_empty(
     assert oldie["name"] == "oldie"
 
 
-def test_get_agents_agenda_overrides_display_name(client, _isolated_state, monkeypatch):
-    """裁定 13：agenda 的固定短名「日程秘书」优先级最高——即使有人误填
-    display_name='日程安排'，左栏仍显示「日程秘书」。"""
-    from plobi.console import router as console_router
+def test_a_row_display_name_wins_over_its_id(client, _isolated_state, monkeypatch):
+    """2026-11-15：原来这条钉的是「agenda 的固定短名『日程秘书』优先级最高」（裁定 13）——
+    即使有人误填 display_name 也压回去。短名表随日程秘书单例一起删了：现在行上写了
+    display_name 就显示它，没写才回 id，中间不再有产品塞进来的别名。
+    """
     from plobi.agents.registry import AgentEntry
+    from plobi.console import router as console_router
 
     reg = console_router.get_registry()
-    # 不通过 POST；直接写一个带自定义 display_name 的 agenda 行。
     reg.upsert(
         AgentEntry(
             name="agenda",
-            role="l2_agenda",
-            category="agenda",
-            display_name="日程安排",  # 误填
+            role="l2_project",
+            category="butler",
+            display_name="日程安排",
             description="日程闭环",
         )
     )
 
-    resp = client.get("/api/agents")
-    rows = resp.json()["data"]
+    rows = client.get("/api/agents").json()["data"]
     agenda = next(r for r in rows if r["id"] == "agenda")
-    # 裁定 13 固定短名赢。
-    assert agenda["name"] == "日程秘书"
+    assert agenda["name"] == "日程安排"
 
 
 def test_create_agent_does_not_strip_name_into_description(client, _isolated_state, monkeypatch):
