@@ -105,6 +105,11 @@ export function OffloadSettings() {
    */
   const launchLogin = useCallback(
     async (agent: OffloadAgent) => {
+      // 还没接派活腿的那几家：没有能拉起的登录命令（它的登录判据没实测过）⇒ 照旧只给安装引导。
+      if (!agent.dispatch_ready) {
+        return
+      }
+
       try {
         await startOffloadLogin(agent.name)
       } catch {
@@ -170,12 +175,34 @@ export function OffloadSettings() {
    *
    * 现在：**探不到 ⇒ 不给开关**，给「＋」＋ 那句「暂无登录状态记录」——
    * **那不是「没登录」**（`loginNo` 说的是「上次连接时显示未登录」，是另一回事、另一句）。
+   *
+   * 11-15 再加一格：**还没接派活腿的那几家**（`dispatch_ready` 为 false）
+   * ⇒ 即便装上了也不给开关（给一颗点不动的开关比不给更坏）。
    */
   const configured = (agent: OffloadAgent): boolean =>
-    agent.installed && agent.logged_in.value === true
+    agent.dispatch_ready && agent.installed && agent.logged_in.value === true
 
-  /** 这一格能不能开：装上了、且**没判成没登录**。探不到（None）也照旧给开关。 */
-  const usable = (agent: OffloadAgent): boolean => agent.installed && agent.logged_in.value !== false
+  /** 这一格能不能开：装上了、**接了派活腿**、且没判成没登录。探不到（None）也照旧给开关。 */
+  const usable = (agent: OffloadAgent): boolean =>
+    agent.dispatch_ready && agent.installed && agent.logged_in.value !== false
+
+  /**
+   * 打开这一家的官方下载页（新用户的第一扇门）。
+   *
+   * 走 `window.plobiDesktop.openExternal`（系统浏览器）——不自己开窗。
+   */
+  const openDownloadPage = async (url: string): Promise<void> => {
+    if (!url) {
+      return
+    }
+
+    if (window.plobiDesktop?.openExternal) {
+      await window.plobiDesktop.openExternal(url)
+      return
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 
   // 机器细节（二进制、版本、旗标、会话号、后端给的原因、今天几轮花了多少）进悬停提示：
   // 屏上只留「这是什么」——状态由控件的形状说话，坏了才在控件旁一颗红点。
@@ -186,6 +213,8 @@ export function OffloadSettings() {
       loginText(agent),
       // 这一格的证据原话（谁说的、说了什么）——机器细节进悬停，不上屏。
       agent.logged_in.detail,
+      // 「怎么装」那一族的说明（未实测／还没接派活腿）也进悬停，不上屏。
+      agent.install?.note ?? '',
       agent.why_not,
       agent.resume_supported ? s.resumeYes : s.resumeNo,
       agent.last_round?.external_session ? `${s.sessionId} ${agent.last_round.external_session}` : '',
@@ -229,17 +258,20 @@ export function OffloadSettings() {
           const isConfigured = configured(agent)
 
           // 自己关掉的那一格不标红、也不搬后端「主人把它关了」那句上屏——那时该说的是「这格是关的」。
-          const reason = !usable(agent)
-            ? agent.installed
-              ? agent.logged_in.value === false
-                ? s.loginNo
-                : s.loginUnknown
-              : s.notInstalled
-            : !agent.enabled
-              ? ''
-              : agent.can_use
+          // 还没接派活腿的那几家：原因就是「还没接派活腿」（悬停里说，屏上不写状态句）。
+          const reason = !agent.dispatch_ready
+            ? agent.why_not
+            : !usable(agent)
+              ? agent.installed
+                ? agent.logged_in.value === false
+                  ? s.loginNo
+                  : s.loginUnknown
+                : s.notInstalled
+              : !agent.enabled
                 ? ''
-                : agent.why_not
+                : agent.can_use
+                  ? ''
+                  : agent.why_not
 
           // 「坏了」＝开着却服务不了这一回合：控件不变（开关仍然可点），旁边多一颗红点，
           // 原因进悬停（11-07 统一令：形状说话，坏了才红点）。
@@ -280,14 +312,45 @@ export function OffloadSettings() {
               }
               below={
                 /* 只留「点开加号之后的那句引导」——那是这颗控件的内容，不是状态句。
-                   机器细节、原因与用量都在悬停里（`agentTip`）。 */
+                   机器细节、原因与用量都在悬停里（`agentTip`）。
+
+                   未装的那一家：给**它自己**的安装命令与官方下载页
+                   （用户 11-15 13:0x：全新电脑上第一次点「+」时，没下载就引导下载）；
+                   表里没有这一族事实的那几家 ⇒ 照旧那句泛泛的话，**不编一条命令**。 */
                 guide === agent.name ? (
                   <p className={CAPTION} role="note">
-                    {!agent.installed
-                      ? s.installGuide
-                      : agent.logged_in.value === false
-                        ? s.loginGuide
-                        : s.loginUnknown}
+                    {!agent.installed || !agent.dispatch_ready ? (
+                      agent.install ? (
+                        <>
+                          {agent.install.command ? (
+                            <>
+                              {s.installCommand}：<code className="font-mono">{agent.install.command}</code>
+                            </>
+                          ) : null}
+                          {agent.install.homepage ? (
+                            <>
+                              {' '}
+                              <button
+                                className="underline underline-offset-2"
+                                onClick={() => void openDownloadPage(agent.install?.homepage ?? '')}
+                                type="button"
+                              >
+                                {s.installPage}
+                              </button>
+                            </>
+                          ) : null}
+                          <br />
+                          <span>{s.installThen}</span>
+                          {agent.dispatch_ready ? null : <span className="ml-1">{s.notWired}</span>}
+                        </>
+                      ) : (
+                        s.installGuide
+                      )
+                    ) : agent.logged_in.value === false ? (
+                      s.loginGuide
+                    ) : (
+                      s.loginUnknown
+                    )}
                   </p>
                 ) : null
               }

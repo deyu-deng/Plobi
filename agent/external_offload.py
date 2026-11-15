@@ -96,6 +96,8 @@ from agent.vendor_registry import (  # noqa: F401  （re-export：公共形状�
     QWEN_YOLO_ENV,
     EXTERNAL_AGENTS,
     ExternalAgentSpec,
+    INSTALL_SPECS,
+    InstallSpec,
 )
 
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"

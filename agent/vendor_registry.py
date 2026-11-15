@@ -415,6 +415,31 @@ class SessionSpec:
 
 
 @dataclasses.dataclass(frozen=True)
+class InstallSpec:
+    """一家**怎么装**（用户 11-15 13:0x：「假设用户的是全新的电脑。只下了我们的 Plobi。
+    用户第一次点配置的『+』的时候。没有下载就引导用户下载相关软件并引导登录。」）。
+
+    这一族事实是**给新用户的第一扇门**：它回答「怎么把它装上」，
+    通道表（:class:`ExternalAgentSpec`）回答「装好之后怎么把活交给它」。
+    两件事分开记，**不许把没实测过的派活事实混进来**。
+    """
+
+    #: 装它的那条命令（人话，可复制到终端跑）。空 = 这一家没有可复制的命令（只给官方页）。
+    command: str = ""
+    #: 包名（npm／pypi）—— 查得到版本的那种事实。
+    package: str = ""
+    #: 官方下载页（点开就是下载或下载说明）。
+    homepage: str = ""
+    #: 装完之后它的命令叫什么（人认得出来的那一个）。
+    binary: str = ""
+    #: 一句说明（有什么坑、为什么给这一条）。
+    note: str = ""
+    #: 这条安装事实**是不是现核过的**（11-15 现核：npm registry／PyPI／官网探活）。
+    #: False ⇒ 必须带一句「照官方文档写的，没在本机实测过」。
+    verified: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
 class VendorRow:
     """**真源表的一行**：一家外部软件的全部「这一家特有」的事实。
 
@@ -430,6 +455,10 @@ class VendorRow:
     #: 这一家**能不能派活**（进外包通道那一栏）。False = 只读它的会话，还没接进通道
     #: （Marvis、Cursor 就是这一档：它们有自己的会话，但没接成外包目标）。
     offloadable: bool = True
+
+    # ── 装 ─────────────────────────────────────────────────────────────
+    #: 这一家**怎么装**（新用户的第一扇门：点「+」时屏上给的就是它）。
+    install: InstallSpec = dataclasses.field(default_factory=InstallSpec)
 
     # ── 通道 ─────────────────────────────────────────────────────────────
     permission_modes: tuple[str, ...] = ()
@@ -506,6 +535,7 @@ class VendorRow:
 VENDOR_ROWS: tuple[VendorRow, ...] = (
     VendorRow(
         id=AGENT_CODEBUDDY,
+        install=InstallSpec(command="npm i -g @tencent-ai/codebuddy-code", package="@tencent-ai/codebuddy-code", homepage="https://cnb.cool/codebuddy/codebuddy-code", binary="codebuddy", verified=True),
         binary_name="codebuddy",
         command_env=COMMAND_ENV,
         extra_args_env=EXTRA_ARGS_ENV,
@@ -545,6 +575,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_AGY,
+        install=InstallSpec(command="", homepage="", binary="agy", verified=False, note="这台机器上装的是便携目录里的 Antigravity CLI（agy）；官方安装包本刀没核到链接 ⇒ 不给一条可能是错的命令"),
         binary_name="agy",
         command_env=AGY_COMMAND_ENV,
         extra_args_env=AGY_EXTRA_ARGS_ENV,
@@ -603,6 +634,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="marvis",
+        install=InstallSpec(command="", homepage="", binary="marvis", verified=False, note="桌面版软件，没有命令行安装包 ⇒ 这一格不给安装引导"),
         binary_name="marvis",
         command_env="",
         extra_args_env="",
@@ -655,6 +687,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id="cursor",
+        install=InstallSpec(command="irm 'https://cursor.com/install?win32=true' | iex", homepage="https://cursor.com/docs/cli/overview", binary="agent", verified=True, note="Cursor CLI 装完的命令叫 agent（官方文档现读）；这台机器上只有编辑器，那个命令不叫 agent"),
         binary_name="cursor",
         command_env="",
         extra_args_env="",
@@ -706,6 +739,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id=AGENT_CLINE,
+        install=InstallSpec(command="npm i -g cline", package="cline", homepage="https://cline.bot", binary="cline", verified=True),
         binary_name="cline",
         command_env=CLINE_COMMAND_ENV,
         extra_args_env=CLINE_EXTRA_ARGS_ENV,
@@ -723,6 +757,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_GEMINI,
+        install=InstallSpec(command="npm i -g @google/gemini-cli", package="@google/gemini-cli", homepage="https://github.com/google-gemini/gemini-cli", binary="gemini", verified=True),
         binary_name="gemini",
         command_env=GEMINI_COMMAND_ENV,
         extra_args_env=GEMINI_EXTRA_ARGS_ENV,
@@ -759,6 +794,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_OPENCODE,
+        install=InstallSpec(command="", homepage="https://opencode.ai/docs", binary="opencode", verified=True, note="官方安装脚本（见官网）。这台机器上是 v2.0.32 的独立构建，npm 上的 opencode-ai 停在 1.19.5 ⇒ 版本对不上，所以不给 npm 那条"),
         binary_name="opencode",
         command_env=OPENCODE_COMMAND_ENV,
         extra_args_env=OPENCODE_EXTRA_ARGS_ENV,
@@ -832,6 +868,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_CODEX,
+        install=InstallSpec(command="npm i -g @openai/codex", package="@openai/codex", homepage="https://github.com/openai/codex", binary="codex", verified=True),
         binary_name="codex",
         command_env=CODEX_COMMAND_ENV,
         extra_args_env=CODEX_EXTRA_ARGS_ENV,
@@ -848,6 +885,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_CLAUDE,
+        install=InstallSpec(command="npm i -g @anthropic-ai/claude-code", package="@anthropic-ai/claude-code", homepage="https://github.com/anthropics/claude-code", binary="claude", verified=True),
         binary_name="claude",
         command_env=CLAUDE_COMMAND_ENV,
         extra_args_env=CLAUDE_EXTRA_ARGS_ENV,
@@ -861,6 +899,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_QODER,
+        install=InstallSpec(command="", package="@qoder-ai/qodercli", homepage="", binary="qodercli", verified=False, note="这台机器上是 node 全局包 @qoder-ai/qodercli；registry 上查不到这一家 ⇒ 不给一条可能是错的命令"),
         binary_name="qodercli",
         command_env=QODER_COMMAND_ENV,
         extra_args_env=QODER_EXTRA_ARGS_ENV,
@@ -902,6 +941,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_KIRO,
+        install=InstallSpec(command="", homepage="https://kiro.dev/docs", binary="kiro-cli", verified=True, note="官方安装器（**不在 npm**：registry 上的 kiro-cli 是别的东西，命令叫 kirox）"),
         binary_name="kiro-cli",
         command_env=KIRO_COMMAND_ENV,
         extra_args_env=KIRO_EXTRA_ARGS_ENV,
@@ -921,6 +961,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_QWEN,
+        install=InstallSpec(command="npm i -g @qwen-code/qwen-code", package="@qwen-code/qwen-code", homepage="https://github.com/QwenLM/qwen-code", binary="qwen", verified=True),
         binary_name="qwen",
         command_env=QWEN_COMMAND_ENV,
         extra_args_env=QWEN_EXTRA_ARGS_ENV,
@@ -939,6 +980,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_COPILOT,
+        install=InstallSpec(command="npm i -g @github/copilot", package="@github/copilot", homepage="https://github.com/github/copilot-cli", binary="copilot", verified=True),
         binary_name="copilot",
         command_env=COPILOT_COMMAND_ENV,
         extra_args_env=COPILOT_EXTRA_ARGS_ENV,
@@ -966,6 +1008,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_KILO,
+        install=InstallSpec(command="npm i -g @kilocode/cli", package="@kilocode/cli", homepage="https://github.com/Kilo-Org/kilocode", binary="kilo", verified=True),
         binary_name="kilo",
         command_env=KILO_COMMAND_ENV,
         extra_args_env=KILO_EXTRA_ARGS_ENV,
@@ -987,6 +1030,104 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         acp_note="11-14 现核：给了会话（登录着）",
         resume_note=NO_RESUME_FLAG,
     ),
+
+    # ── 只知道怎么装、还没接派活腿的那几家 ──────────────────────────────
+    #
+    # 用户 11-15 13:0x：假设用户装的是一台**全新的电脑**，只装了 Plobi ⇒
+    # 屏上要能看见这些家，并给出**它们各自**的下载与登录引导。
+    #
+    # **它们不进通道表**（``offloadable=False``）：派活腿（怎么起它、权限档、
+    # 登录判据）本刀**没有实测过**，写进去就是把猜的当事实 ⇒ 屏上只给安装引导，
+    # 装好之后这一格仍然是「＋」，并照实说「还没接派活腿」。
+
+    VendorRow(
+        id="amp",
+        binary_name="amp",
+        command_env="PLOBI_OFFLOAD_AMP_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_AMP_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="npm i -g @sourcegraph/amp",
+            package="@sourcegraph/amp",
+            homepage="https://ampcode.com/docs",
+            binary="amp",
+            verified=True,
+            note="这一家还没接派活腿：装好之后这里只给安装与登录引导",
+        ),
+    ),
+    VendorRow(
+        id="iflow",
+        binary_name="iflow",
+        command_env="PLOBI_OFFLOAD_IFLOW_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_IFLOW_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="npm i -g @iflow-ai/iflow-cli",
+            package="@iflow-ai/iflow-cli",
+            homepage="https://github.com/iflow-ai/iflow-cli",
+            binary="iflow",
+            verified=True,
+            note="这一家还没接派活腿：装好之后这里只给安装与登录引导",
+        ),
+    ),
+    VendorRow(
+        id="aider",
+        binary_name="aider",
+        command_env="PLOBI_OFFLOAD_AIDER_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_AIDER_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="pip install aider-install && aider-install",
+            package="aider-install",
+            homepage="https://aider.chat",
+            binary="aider",
+            verified=True,
+            note="这一家还没接派活腿：装好之后这里只给安装与登录引导",
+        ),
+    ),
+    VendorRow(
+        id="goose",
+        binary_name="goose",
+        command_env="PLOBI_OFFLOAD_GOOSE_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_GOOSE_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="",
+            homepage="https://block.github.io/goose",
+            binary="goose",
+            verified=True,
+            note="官方安装脚本（见官网）。这一家还没接派活腿",
+        ),
+    ),
+    VendorRow(
+        id="crush",
+        binary_name="crush",
+        command_env="PLOBI_OFFLOAD_CRUSH_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_CRUSH_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="",
+            homepage="https://github.com/charmbracelet/crush",
+            binary="crush",
+            verified=True,
+            note="官方安装方式见仓库 README（PyPI 上那个同名包是另一个库，不是它）。这一家还没接派活腿",
+        ),
+    ),
+    VendorRow(
+        id="droid",
+        binary_name="droid",
+        command_env="PLOBI_OFFLOAD_DROID_COMMAND",
+        extra_args_env="PLOBI_OFFLOAD_DROID_EXTRA_ARGS",
+        offloadable=False,
+        install=InstallSpec(
+            command="",
+            homepage="https://app.factory.ai/cli",
+            binary="droid",
+            verified=True,
+            note="官方脚本（见官网）。这一家还没接派活腿",
+        ),
+    ),
+
 )
 
 
@@ -1047,6 +1188,30 @@ def portable_fallbacks(rows: Rows = VENDOR_ROWS) -> dict[str, str]:
             for row in rows if row.offloadable and row.portable_fallback}
 
 
+
+def install_specs(rows: Rows = VENDOR_ROWS) -> dict[str, InstallSpec]:
+    """**出口表五**：安装事实（一家怎么装）。
+
+    用户 11-15 13:0x：「假设用户的是全新的电脑。只下了我们的 Plobi。用户第一次点配置的『+』的时候。
+    没有下载就引导用户下载相关软件并引导登录。」⇒ 这一张表回答「怎么装它」；
+    通道表回答「装好之后怎么把活交给它」。**两件事分开记**：
+    派活腿没实测过的那些家，这一格照样有，但它们**不进通道表**。
+    """
+    return {row.id: row.install
+            for row in rows if row.install.command or row.install.homepage}
+
+
+def roster(rows: Rows = VENDOR_ROWS) -> tuple[str, ...]:
+    """**屏上名册**：能派活的在前，其余（有官方下载页的候选）在后。
+
+    屏上要能看见「还没接派活腿的那几家」——新用户第一次点「+」时，
+    得能看见它们并拿到它们各自的下载引导。
+    """
+    ready = tuple(row.id for row in rows if row.offloadable)
+    rest = tuple(row.id for row in rows
+                 if not row.offloadable and (row.install.command or row.install.homepage))
+    return ready + rest
+
 def vendor_row(vendor: str) -> Optional[VendorRow]:
     """认不出的一家 ⇒ ``None``，由调用方决定怎么报——不猜一个默认的。"""
     key = (vendor or "").strip().lower()
@@ -1063,6 +1228,7 @@ RESUME_ARGV: dict[str, tuple[str, ...]] = resume_argv_map()
 SESSION_SPECS: dict[str, SessionSpec] = session_specs()
 LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = login_probe_map()
 PORTABLES_FALLBACK: dict[str, str] = portable_fallbacks()
+INSTALL_SPECS: dict[str, InstallSpec] = install_specs()
 
 
 # ── 落点解析（表里的候选怎么变成一条真路径）────────────────────────────────

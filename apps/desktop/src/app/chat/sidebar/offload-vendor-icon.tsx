@@ -34,13 +34,20 @@ const VENDOR_GLYPHS: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
  */
 const VENDOR_LABELS: Record<string, string> = {
   agy: 'Antigravity',
+  // 11-15 新增：六家**只装不派活**的候选（用户 11-15 13:0x：全新电脑上屏上要能看见它们）。
+  aider: 'Aider',
+  amp: 'Amp',
   claude: 'Claude Code',
   cline: 'Cline',
   codebuddy: 'CodeBuddy',
   codex: 'Codex',
   copilot: 'GitHub Copilot CLI',
+  crush: 'Crush',
   cursor: 'Cursor',
+  droid: 'Droid',
   gemini: 'Gemini CLI',
+  goose: 'Goose',
+  iflow: 'iFlow',
   kilo: 'Kilo Code',
   kiro: 'Kiro',
   marvis: 'Marvis',

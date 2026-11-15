@@ -351,6 +351,10 @@ export interface Translations {
       setup: string
       switchOff: string
       installGuide: string
+      installCommand: string
+      installPage: string
+      installThen: string
+      notWired: string
       loginGuide: string
       notInstalled: string
       sessionsTitle: string

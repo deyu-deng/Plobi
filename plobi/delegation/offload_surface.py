@@ -98,6 +98,18 @@ def _start_acp_sweep(vendors: list[str]) -> None:
     threading.Thread(target=_run, name="plobi-offload-acp-sweep", daemon=True).start()
 
 
+def _which(binary: str) -> str:
+    """找得到它的命令吗（找得到才算装上了；Windows 上 ``which`` 会按 PATHEXT 找 ``.cmd``）。"""
+    import shutil
+
+    if not binary:
+        return ""
+    try:
+        return shutil.which(binary) or ""
+    except OSError:
+        return ""
+
+
 def _version_of(binary: str, scrub: tuple[str, ...]) -> str:
     """`--version` 那一格：读不到就空串（空是读数，不拿占位充）。"""
     import os
@@ -176,6 +188,26 @@ def _login_evidence(last: dict[str, Any], local: Optional[bool] = None,
     return {"value": None, "source": "last-run", "detail": "上一趟没带回话，判不出登录态"}
 
 
+def _install_payload(vendor: str) -> Optional[dict[str, Any]]:
+    """这一家**怎么装**（用户 11-15 13:0x：全新电脑上第一次点「+」时给的就是它）。
+
+    表里没有这一族的 ⇒ 返回 ``None``（屏上照旧说那句泛泛的话，**不编一条命令**）。
+    """
+    from agent.vendor_registry import INSTALL_SPECS
+
+    spec = INSTALL_SPECS.get(vendor)
+    if spec is None:
+        return None
+    return {
+        "command": spec.command,
+        "package": spec.package,
+        "homepage": spec.homepage,
+        "binary": spec.binary,
+        "note": spec.note,
+        "verified": spec.verified,
+    }
+
+
 def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
     """一家外部软件一行。**能不能用**只问 `availability()`；**为什么**原样带出。"""
     from tools.offload_tools import agent_roster
@@ -240,6 +272,9 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
             "enabled": bool(getattr(base, "allowed", True)),
             "why_not": why_not,
             "resume_supported": bool(resume_argv),
+            # 这一家**能不能派活**（真源表那一行说了算）＋**怎么装**（新用户的第一扇门）。
+            "dispatch_ready": True,
+            "install": _install_payload(name),
             "today": {
                 "rounds": len(day_rows),
                 "total_usd": amount,
@@ -254,6 +289,47 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
                 "answer_excerpt": str(last.get("answer_excerpt") or ""),
                 "external_session": str(last.get("external_session") or ""),
             } if last else None,
+        })
+
+    # ── 还没接派活腿的那几家（用户 11-15 13:0x）────────────────────────
+    #
+    # 假设用户装的是一台**全新的电脑**，只装了 Plobi ⇒ 屏上要能看见这些家，
+    # 点「+」时给出**它们各自**的下载引导（装好之后那一格仍然是「＋」，
+    # 并照实说「还没接派活腿」——派活腿本刀没实测过，不许给一颗点不动的开关）。
+    from agent.vendor_registry import INSTALL_SPECS, VENDOR_ROWS
+
+    for row in VENDOR_ROWS:
+        if row.offloadable or row.id not in INSTALL_SPECS:
+            continue
+        spec = INSTALL_SPECS[row.id]
+        binary = _which(spec.binary or row.binary_name)
+        rows.append({
+            "name": row.id,
+            "installed": bool(binary),
+            "binary": binary,
+            "version": "",
+            "logged_in": {
+                "value": None,
+                "source": "unknown",
+                "detail": "这一家还没接派活腿：登录判据没实测过 ⇒ 探不到，不判没登录。",
+            },
+            "login_hint": False,
+            "permission_flag": "",
+            "permission_modes": [],
+            "capabilities": {},
+            "can_use": False,
+            "enabled": True,
+            "why_not": "这一家还没接派活腿",
+            "resume_supported": False,
+            "dispatch_ready": False,
+            "install": _install_payload(row.id),
+            "today": {
+                "rounds": 0,
+                "total_usd": None,
+                "cost_status": "",
+                "last_ts": "",
+            },
+            "last_round": None,
         })
 
     # 还有几家没探（答案落地后那一格自己就从「＋」长成开关）。

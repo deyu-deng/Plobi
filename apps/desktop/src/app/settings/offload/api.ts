@@ -23,6 +23,19 @@ export interface OffloadLastRound {
   external_session: string
 }
 
+export interface OffloadInstall {
+  /** 装它的那条命令（人话，可复制到终端跑）。空 = 没有可复制的命令，只给官方页。 */
+  command: string
+  package: string
+  /** 官方下载页（点开就下载或看下载说明）。 */
+  homepage: string
+  binary: string
+  /** 一句说明（有什么坑）。机器细节，进悬停。 */
+  note: string
+  /** 这条安装事实是不是现核过的（false ⇒ 照官方文档写的，没在本机实测过）。 */
+  verified: boolean
+}
+
 export interface OffloadAgent {
   name: string
   installed: boolean
@@ -39,6 +52,15 @@ export interface OffloadAgent {
   /** 主人是否允许把活交给它（设置里那格开关）。默认允许；关了只影响派活，不改可用性判据。 */
   enabled: boolean
   resume_supported: boolean
+  /**
+   * 这一家**能不能派活**（真源表那一行说了算）。
+   *
+   * false = 屏上看得见、能拿到下载引导，但**还没接派活腿** ⇒ 装好了也还是「＋」，
+   * 不给一颗点不动的开关（用户 11-15 13:0x：全新电脑上第一次点「+」时给下载引导）。
+   */
+  dispatch_ready: boolean
+  /** 这一家**怎么装**（新用户的第一扇门）。null = 表里没有这一族事实 ⇒ 不编命令。 */
+  install: OffloadInstall | null
   today: { rounds: number; total_usd: number | null; cost_status: string; last_ts: string }
   last_round: OffloadLastRound | null
 }

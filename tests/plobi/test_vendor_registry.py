@@ -185,3 +185,67 @@ def test_a_session_vendor_that_is_not_offloadable_stays_out_of_the_channel_table
         assert vendor not in vr.EXTERNAL_AGENTS
         assert vendor not in vr.OFFLOAD_CONTRACT
         assert vendor in vr.SESSION_SPECS
+
+
+# ── 第五张出口表：安装事实（用户 11-15 13:0x）─────────────────────────
+
+def test_adding_one_row_grows_the_install_table_too():
+    """加一行 ⇒ **安装事实那张表**也长出这一家。
+
+    用户 11-15 13:0x：「假设用户的是全新的电脑……用户第一次点配置的『+』的时候。
+    没有下载就引导用户下载相关软件并引导登录。」⇒ 「怎么装它」也是同一张表派生出来的。
+    """
+    rows = vr.VENDOR_ROWS + (
+        vr.VendorRow(
+            id="acme",
+            binary_name="acme",
+            command_env="PLOBI_OFFLOAD_ACME_COMMAND",
+            extra_args_env="PLOBI_OFFLOAD_ACME_EXTRA_ARGS",
+            install=vr.InstallSpec(command="npm i -g acme", homepage="https://example.invalid/acme"),
+        ),
+    )
+
+    grown = vr.install_specs(rows)
+
+    assert "acme" in grown
+    assert grown["acme"].command == "npm i -g acme"
+
+
+def test_the_install_table_is_exactly_what_the_one_table_derives():
+    for name, derive, current in OUTLET_TABLES + (("安装事实表", vr.install_specs, vr.INSTALL_SPECS),):
+        assert current == derive(vr.VENDOR_ROWS), f"{name}：与真源表对不上"
+
+
+def test_every_install_row_has_a_command_or_an_official_page():
+    """装不了、也没有官方页的那一家 ⇒ 不进安装事实表（屏上照旧说那句泛泛的话，不编命令）。"""
+    for vendor, spec in vr.INSTALL_SPECS.items():
+        assert spec.command or spec.homepage, f"{vendor}：既没有命令也没有官方页"
+
+
+def test_an_unverified_install_fact_says_so_in_words():
+    """照官方文档写的（没实测过）必须带一句说明——不许把猜的当事实。"""
+    for vendor, spec in vr.INSTALL_SPECS.items():
+        if not spec.verified:
+            assert spec.note, f"{vendor}：没实测过的安装事实却没有一句说明"
+
+
+def test_the_install_only_vendors_stay_out_of_the_channel_tables():
+    """**只装不派活**的那几家不进通道表／契约表（派活腿没实测过 ⇒ 不许进派活面）。"""
+    install_only = {vid for vid, spec in vr.INSTALL_SPECS.items()
+                    if vid not in vr.EXTERNAL_AGENTS}
+
+    assert install_only, "表里应当有几家只装不派活的候选"
+
+    for vendor in install_only:
+        assert vendor not in vr.EXTERNAL_AGENTS
+        assert vendor not in vr.OFFLOAD_CONTRACT
+        # 但屏上名册看得见它们（新用户第一次点「+」时要能拿到下载引导）。
+        assert vendor in vr.roster()
+
+
+def test_the_channel_table_shape_did_not_change():
+    """加了安装事实**不许**改通道表的形状（``ExternalAgentSpec`` 字段与默认值照旧）。"""
+    fields = set(vr.ExternalAgentSpec.__dataclass_fields__)
+
+    assert "install" not in fields
+    assert vr.EXTERNAL_AGENTS["codebuddy"].binary_name == "codebuddy"

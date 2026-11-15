@@ -31,6 +31,8 @@ const payload: OffloadPayload = {
   agents: [
     {
       name: 'qoder',
+      dispatch_ready: true,
+      install: { command: '', package: '', homepage: '', binary: 'qodercli', note: '这台机器上是 node 全局包 @qoder-ai/qodercli；registry 上查不到这一家', verified: false },
       installed: true,
       binary: 'D:/Runtimes/Languages/Node/qodercli.cmd',
       version: '1.1.75',
@@ -55,6 +57,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'codebuddy',
+      dispatch_ready: true,
+      install: { command: 'npm i -g @tencent-ai/codebuddy-code', package: '@tencent-ai/codebuddy-code', homepage: 'https://cnb.cool/codebuddy/codebuddy-code', binary: 'codebuddy', note: '', verified: true },
       installed: true,
       binary: 'C:/bin/codebuddy.exe',
       version: '2.161.4',
@@ -72,6 +76,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'agy',
+      dispatch_ready: true,
+      install: null,
       installed: false,
       binary: '',
       version: '',
@@ -89,6 +95,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'kiro',
+      dispatch_ready: true,
+      install: { command: '', package: '', homepage: 'https://kiro.dev/docs', binary: 'kiro-cli', note: '官方安装器（不在 npm）', verified: true },
       installed: true,
       binary: 'C:/Users/Turtlelet/AppData/Local/Kiro-Cli/kiro-cli.exe',
       version: '2.35.1',
@@ -106,6 +114,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'qwen',
+      dispatch_ready: true,
+      install: { command: 'npm i -g @qwen-code/qwen-code', package: '@qwen-code/qwen-code', homepage: 'https://github.com/QwenLM/qwen-code', binary: 'qwen', note: '', verified: true },
       installed: true,
       binary: 'D:/Runtimes/Languages/Node/qwen.cmd',
       version: '0.26.0',
@@ -118,6 +128,32 @@ const payload: OffloadPayload = {
       enabled: true,
       why_not: '',
       resume_supported: false,
+      today: { rounds: 0, total_usd: null, cost_status: 'unknown', last_ts: '' },
+      last_round: null
+    },
+    {
+      name: 'amp',
+      installed: false,
+      binary: '',
+      version: '',
+      logged_in: { value: null, source: 'unknown', detail: '这一家还没接派活腿' },
+      login_hint: false,
+      permission_flag: '',
+      permission_modes: [],
+      capabilities: {},
+      can_use: false,
+      enabled: true,
+      why_not: '这一家还没接派活腿',
+      resume_supported: false,
+      dispatch_ready: false,
+      install: {
+        command: 'npm i -g @sourcegraph/amp',
+        package: '@sourcegraph/amp',
+        homepage: 'https://ampcode.com/docs',
+        binary: 'amp',
+        note: '这一家还没接派活腿：装好之后这里只给安装与登录引导',
+        verified: true
+      },
       today: { rounds: 0, total_usd: null, cost_status: 'unknown', last_ts: '' },
       last_round: null
     }
@@ -172,9 +208,10 @@ describe('settings → offload', () => {
     // 没配好（qoder 未登录、agy 未安装）右边是加号，不是开关。
     // 11-14 起还有第三种「没配好」：**探不到登录态**（kiro / qwen 的 logged_in 是 null）——
     // 探不到 ≠ 没登录，但它同样不配开关，所以也落在加号这一侧（不是亮着的假开关）。
+    // 11-15 再加一种：**还没接派活腿**的那几家（amp）——同样只给「＋」，不给点不动的开关。
     const setupButtons = screen.getAllByLabelText(/Not set up yet/)
 
-    expect(setupButtons.length).toBe(4)
+    expect(setupButtons.length).toBe(5)
 
     fireEvent.click(setupButtons[0])
 
@@ -276,4 +313,35 @@ describe('settings → offload', () => {
     expect(tips.some(tip => tip.includes(payload.agents[0].why_not))).toBe(true)
     expect(tips.some(tip => tip.includes('not installed on this machine'))).toBe(true)
   })
+  // 用户 11-15 13:0x：「假设用户的是全新的电脑。只下了我们的 Plobi。用户第一次点配置的『+』的时候。
+  // 没有下载就引导用户下载相关软件并引导登录。」
+  it('未装的那家点「+」给的是**它自己**的安装命令与下载页，不是那句泛泛的话', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Amp')).toBeTruthy())
+
+    fireEvent.click(screen.getByLabelText(/Not set up yet.*amp/))
+
+    await waitFor(() => expect(screen.getByText('npm i -g @sourcegraph/amp')).toBeTruthy())
+    expect(screen.getByText('Open download page')).toBeTruthy()
+    // 泛泛那一句**不出现**（有它自己的事实就不给泛泛的话）。
+    expect(screen.queryByText(/Not found on this machine/)).toBeNull()
+  })
+
+  it('还没接派活腿的那家：给安装引导、不给开关、也不去拉起登录命令', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('Amp')).toBeTruthy())
+
+    // 那一格是「＋」，不是开关（给一颗点不动的开关比不给更坏）。
+    expect(screen.getByLabelText(/Not set up yet.*amp/)).toBeTruthy()
+    expect(screen.queryByLabelText(/Allow handing work to it · amp/)).toBeNull()
+
+    fireEvent.click(screen.getByLabelText(/Not set up yet.*amp/))
+
+    await waitFor(() => expect(screen.getByText('This one is not wired for dispatch yet.')).toBeTruthy())
+    // 还没接派活腿 ⇒ 没有能拉起的登录命令 ⇒ 不去拉起（不假装）。
+    expect(startOffloadLogin).not.toHaveBeenCalledWith('amp')
+  })
+
 })

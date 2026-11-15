@@ -205,3 +205,46 @@ def test_rows_carry_one_decision_and_the_evidence_behind_it(monkeypatch):
     assert by_name["qoder"]["last_round"]["answer_excerpt"].startswith("Not logged in")
     assert by_name["codebuddy"]["can_use"] is True
     assert "Providers" in payload["note"]
+
+
+# ── 安装事实那一格（用户 11-15 13:0x）────────────────────────────────
+
+def test_every_row_carries_its_install_facts_and_dispatch_readiness():
+    """每一行都带 ``install`` 与 ``dispatch_ready``（屏上靠它们决定给不给开关）。"""
+    payload = offload_surface.external_agent_rows()
+
+    assert payload["agents"]
+    for row in payload["agents"]:
+        assert "install" in row
+        assert "dispatch_ready" in row
+        assert isinstance(row["dispatch_ready"], bool)
+
+
+def test_the_vendors_that_only_know_how_to_install_are_on_screen_without_a_switch():
+    """**只装不派活**的那几家：屏上看得见（给下载引导），但**不给开关**。"""
+    payload = offload_surface.external_agent_rows()
+    by_name = {row["name"]: row for row in payload["agents"]}
+
+    for vendor in ("amp", "iflow", "aider", "goose", "crush", "droid"):
+        assert vendor in by_name, f"{vendor}：屏上名册里没有这一家"
+        row = by_name[vendor]
+        assert row["dispatch_ready"] is False
+        assert row["can_use"] is False
+        # 探不到登录态（**不判成没登录**）：这一家还没接派活腿 ⇒ 没实测过登录判据。
+        assert row["logged_in"]["value"] is None
+
+
+def test_the_install_facts_of_a_row_are_the_ones_in_the_source_table():
+    """屏上给的那条安装命令，就是真源表里那一行写的（**不许屏上另抄一份**）。"""
+    from agent.vendor_registry import INSTALL_SPECS
+
+    payload = offload_surface.external_agent_rows()
+    by_name = {row["name"]: row for row in payload["agents"]}
+
+    for vendor, spec in INSTALL_SPECS.items():
+        if vendor not in by_name:
+            continue
+        install = by_name[vendor]["install"]
+        assert install is not None
+        assert install["command"] == spec.command
+        assert install["homepage"] == spec.homepage
