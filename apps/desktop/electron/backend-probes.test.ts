@@ -12,7 +12,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import {
-  aigwProbeVerdict,
+  bezelProbeVerdict,
   canImportPlobiCli,
   plobiProbeVerdict,
   plobiRuntimeImportProbe,
@@ -106,7 +106,7 @@ test('verifyPlobiCli swallows timeouts (does not throw)', () => {
 // (loaded machine, scanned disk, cold interpreter) trips our deadline -- and
 // the fallback for "broken" is a full reinstall bootstrap, 20+ minutes of
 // uv/python/git/node stages on Windows. So the Plobi probe trusts a timeout
-// and only rejects on a real failure; the aigw probe keeps the opposite
+// and only rejects on a real failure; the bezel probe keeps the opposite
 // policy, because ITS fallback is an explainable `deferred` row.
 // ---------------------------------------------------------------------------
 
@@ -136,10 +136,10 @@ test('the Plobi probe trusts a timeout -- a slow venv is not a broken venv', () 
   assert.equal(plobiProbeVerdict('fail'), false)
 })
 
-test('the aigw probe declines a timeout -- its fallback is a deferred row, not a reinstall', () => {
-  assert.equal(aigwProbeVerdict('pass'), true)
-  assert.equal(aigwProbeVerdict('timeout'), false)
-  assert.equal(aigwProbeVerdict('fail'), false)
+test('the bezel probe declines a timeout -- its fallback is a deferred row, not a reinstall', () => {
+  assert.equal(bezelProbeVerdict('pass'), true)
+  assert.equal(bezelProbeVerdict('timeout'), false)
+  assert.equal(bezelProbeVerdict('fail'), false)
 })
 
 test('verifyPlobiCli trusts a command that only times out', () => {

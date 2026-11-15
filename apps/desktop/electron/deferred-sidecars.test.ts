@@ -54,7 +54,7 @@ test('the ledger seeds a row for every deferred subsystem before any probe runs'
   const ledger = createDeferredSubsystemLedger({ now: () => 7 })
   const rows = ledger.rows()
 
-  assert.deepEqual(rows.map(row => row.id).sort(), ['aigw', 'chatlog'])
+  assert.deepEqual(rows.map(row => row.id).sort(), ['bezel', 'chatlog'])
   assert.ok(rows.every(row => row.state === 'probing'))
   assert.ok(rows.every(row => row.observed.length > 0))
   assert.ok(rows.every(row => row.timestamp === 7))
@@ -63,20 +63,20 @@ test('the ledger seeds a row for every deferred subsystem before any probe runs'
 test('an observation replaces the row instead of accumulating a second one', () => {
   const ledger = createDeferredSubsystemLedger({ now: () => 42 })
 
-  ledger.record('aigw', { observed: 'connection refused', state: 'deferred' })
-  ledger.record('aigw', { observed: 'healthy on :8000', state: 'ready' })
+  ledger.record('bezel', { observed: 'connection refused', state: 'deferred' })
+  ledger.record('bezel', { observed: 'healthy on :8000', state: 'ready' })
 
   const rows = ledger.rows()
 
   assert.equal(rows.length, 2, 'one row per subsystem, never one per event')
-  assert.equal(rows.find(row => row.id === 'aigw')?.state, 'ready')
-  assert.equal(rows.find(row => row.id === 'aigw')?.timestamp, 42)
+  assert.equal(rows.find(row => row.id === 'bezel')?.state, 'ready')
+  assert.equal(rows.find(row => row.id === 'bezel')?.timestamp, 42)
 })
 
 test('a failed probe downgrades the row but never hides what was observed', () => {
   // doctor.py rule: "a deferred row that hides what it found is indistinguishable
   // from a skipped check".
-  const row = deferredDetail(observation('aigw', 'deferred', 'http://127.0.0.1:8000 unreachable (no listener)'))
+  const row = deferredDetail(observation('bezel', 'deferred', 'http://127.0.0.1:8000 unreachable (no listener)'))
 
   assert.match(row, /http:\/\/127\.0\.0\.1:8000 unreachable \(no listener\)/)
   assert.match(row, /不是故障/)
@@ -111,7 +111,7 @@ test('an unknown subsystem cannot acquire a row', () => {
       .rows()
       .map(row => row.id)
       .sort(),
-    ['aigw', 'chatlog']
+    ['bezel', 'chatlog']
   )
 })
 
@@ -119,7 +119,7 @@ test('rows() order is stable so the two renderings cannot disagree', () => {
   const ledger = createDeferredSubsystemLedger()
 
   ledger.record('chatlog', { observed: 'x', state: 'deferred' })
-  ledger.record('aigw', { observed: 'y', state: 'deferred' })
+  ledger.record('bezel', { observed: 'y', state: 'deferred' })
 
   const first = ledger.rows()
   const second = ledger.rows()
@@ -130,7 +130,7 @@ test('rows() order is stable so the two renderings cannot disagree', () => {
   )
   assert.deepEqual(
     first.map(row => row.id),
-    ['aigw', 'chatlog']
+    ['bezel', 'chatlog']
   )
 })
 
@@ -191,9 +191,9 @@ test('desktop deferred wording matches scripts/plobi/doctor.py exactly', () => {
 
   // Substitute the same values on both sides and compare the rendered strings.
   const observed = 'http://127.0.0.1:8000 unreachable (no listener)'
-  const hint = definitionFor('aigw')?.enableHint ?? ''
+  const hint = definitionFor('bezel')?.enableHint ?? ''
   const fromPython = `${observed} — ${suffix[1]}${hint}`
-  const fromDesktop = deferredDetail(observation('aigw', 'deferred', observed))
+  const fromDesktop = deferredDetail(observation('bezel', 'deferred', observed))
 
   assert.equal(fromDesktop, fromPython)
 })
@@ -238,7 +238,7 @@ test('red is a state the ledger can actually hold, and it is worded as a fault',
 })
 
 test('a red row with no recorded observation still says it is a fault', () => {
-  const red = deferredDetail({ ...observation('aigw', 'ready', ''), observed: '', state: 'red' })
+  const red = deferredDetail({ ...observation('bezel', 'ready', ''), observed: '', state: 'red' })
 
   assert.match(red, /此服务启动失败/)
   assert.match(red, /如何手动启动：/)
@@ -279,15 +279,15 @@ test('red and deferred coexist in the union and are rendered by different branch
 test('a red row that starts answering turns ready on the same row, without a second one', () => {
   const ledger = createDeferredSubsystemLedger()
 
-  ledger.record('aigw', { observed: 'answered 500 on /healthz', state: 'red' })
-  ledger.record('aigw', { observed: 'healthy on :8000', state: 'ready' })
+  ledger.record('bezel', { observed: 'answered 500 on /healthz', state: 'red' })
+  ledger.record('bezel', { observed: 'healthy on :8000', state: 'ready' })
 
   const rows = ledger.rows()
-  const aigw = rows.find(row => row.id === 'aigw')
+  const bezel = rows.find(row => row.id === 'bezel')
 
   assert.equal(rows.length, 2, 'a state change replaces the row, it never adds an event row')
-  assert.equal(aigw?.state, 'ready')
-  assert.equal(aigw?.detail, 'healthy on :8000')
+  assert.equal(bezel?.state, 'ready')
+  assert.equal(bezel?.detail, 'healthy on :8000')
 })
 
 // ── Profile backends: the framelet crash loop ───────────────────────────────
@@ -312,7 +312,7 @@ test('a profile backend gets a lazily-created red row that quotes the CLI itself
       .rows()
       .map(row => row.id)
       .sort(),
-    ['aigw', 'chatlog'],
+    ['bezel', 'chatlog'],
     'no profile row exists before anything was attempted'
   )
 
@@ -341,7 +341,7 @@ test('an unknown id still cannot acquire a row now that profile ids are dynamic'
       .rows()
       .map(row => row.id)
       .sort(),
-    ['aigw', 'chatlog']
+    ['bezel', 'chatlog']
   )
 })
 
@@ -520,11 +520,11 @@ test('clear() only reports a real change, so a healthy backend stays silent', ()
 // ── 裁定 (2026-09-29) 「改成不可执行的说明，由软件自行拉起」 ─────────────────
 
 test('the quota hub enable hint is a statement, not a command the user is handed', () => {
-  const hint = definitionFor('aigw')?.enableHint ?? ''
+  const hint = definitionFor('bezel')?.enableHint ?? ''
 
   assert.match(hint, /Plobi 会在需要时自动启动该服务/)
   assert.ok(!/cd |uv run|python -m|\$ /.test(hint), 'a runnable-looking line is what made this read as TODO')
-  assert.ok(!/aigw/.test(hint), '裁定 45: the internal word must not reach user-visible copy')
+  assert.ok(!/bezel/.test(hint), '裁定 45: the internal word must not reach user-visible copy')
 })
 
 test('the desktop quota-hub hint is byte-equal to the one in doctor.py', () => {
@@ -532,16 +532,16 @@ test('the desktop quota-hub hint is byte-equal to the one in doctor.py', () => {
   // guard covers the one hint that is a claim about app behaviour and must match
   // wherever the user reads it.
   const doctorSource = fs.readFileSync(DOCTOR_PATH, 'utf8')
-  const block = /"aigw": \(([\s\S]*?)\n\s*\),/.exec(doctorSource)
+  const block = /"bezel": \(([\s\S]*?)\n\s*\),/.exec(doctorSource)
 
-  assert.ok(block, 'doctor.py must still carry an aigw entry in DEFERRED_ENABLE_HINTS')
+  assert.ok(block, 'doctor.py must still carry an bezel entry in DEFERRED_ENABLE_HINTS')
 
   const doctorHint = [...block[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)]
     .map(match => match[1])
     .join('')
     .trim()
 
-  assert.equal(definitionFor('aigw')?.enableHint, doctorHint)
+  assert.equal(definitionFor('bezel')?.enableHint, doctorHint)
 })
 
 test('后置服务意外退出走有界重拉：间隔翻倍、到顶就停、成功或本意关闭就清零', () => {

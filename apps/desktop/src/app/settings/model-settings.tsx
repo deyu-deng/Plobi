@@ -140,10 +140,10 @@ const NO_PROVIDERS: readonly ModelOptionProvider[] = [{ name: '—', slug: '', m
 /**
  * Provider rows for the main-model picker.
  *
- * The quota hub (`aigw`) is routing plumbing, not a vendor the user picks. When
+ * The quota hub (`bezel`) is routing plumbing, not a vendor the user picks. When
  * the shell has pushed at least one connected quota app, replace the hub row
  * with one row per software (`WorkBuddy`, `Antigravity`) — all still routing to
- * `aigw` but carrying a unique `ui_key` so the Select can tell them apart.
+ * `bezel` but carrying a unique `ui_key` so the Select can tell them apart.
  * Before the first frame (or when no app is connected) keep one neutral
  * fallback row instead of showing the internal hub name.
  */
@@ -314,7 +314,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   )
 
   // A hub frame can arrive after the model list. If the current selection still
-  // holds the raw routing slug (`aigw`), move it to the matching software row
+  // holds the raw routing slug (`bezel`), move it to the matching software row
   // instead of leaving a value the Select no longer offers.
   useEffect(() => {
     if (!selectedProvider) {

@@ -22,7 +22,7 @@ const onboarding = atom({ manual: false })
 vi.mock('@/plobi', () => ({
   disconnectOAuthProvider: (providerId: string) => disconnectOAuthProvider(providerId),
   getEnvVars: () => getEnvVars(),
-  // providers-settings 在挂载时会问一次「aigw 这一行让不让选」（readHubSelectable），
+  // providers-settings 在挂载时会问一次「bezel 这一行让不让选」（readHubSelectable），
   // 以前这个 mock 只给了三个键，于是每条用例都先抛一个 No "getGlobalModelOptions" export。
   getGlobalModelOptions: () => Promise.resolve({ providers: [] as Array<{ selectable?: boolean; slug: string }> }),
   listOAuthProviders: () => listOAuthProviders()

@@ -73,7 +73,7 @@ def test_failover_writes_one_row_per_attempt(ledger):
             raise boom
         return "2"
 
-    pool = _Pool([_source("workbuddy", "aigw"), _source("zhipu-air", "cheap_api")])
+    pool = _Pool([_source("workbuddy", "bezel"), _source("zhipu-air", "cheap_api")])
     assert QuotaAwareCompleter(pool=pool, send=send)("go", route=None) == "2"
 
     rows = _rows(ledger)
@@ -118,7 +118,7 @@ def test_a_broken_ledger_cannot_break_the_spend(ledger, monkeypatch):
 def test_summary_answers_did_we_call_which_source_how_many_times(ledger):
     usage_ledger.record(source="zhipu-air", kind="cheap_api", ok=True, usage={"total_tokens": 10})
     usage_ledger.record(source="zhipu-air", kind="cheap_api", ok=False, error_class="TimeoutError")
-    usage_ledger.record(source="workbuddy", kind="aigw", ok=True, usage={"total_tokens": 5})
+    usage_ledger.record(source="workbuddy", kind="bezel", ok=True, usage={"total_tokens": 5})
 
     summary = usage_ledger.summarize(_rows(ledger))
     assert summary["rows"] == 3
@@ -143,8 +143,8 @@ def test_a_stub_source_cannot_break_the_spend(ledger):
 def test_an_empty_reply_fails_over_instead_of_being_returned(ledger):
     """空货不是答案。返回 ``""`` 给调用方等于让它把「什么都没回来」当成「跑完了一轮」——
     今晚那份 0 块的计划就是这么判死的。"""
-    pool = _Pool([_source("zhipu-air"), _source("workbuddy", kind="aigw"),
-                  _source("workbuddy", kind="aigw")])
+    pool = _Pool([_source("zhipu-air"), _source("workbuddy", kind="bezel"),
+                  _source("workbuddy", kind="bezel")])
     replies = iter(["", "  ", "42"])
 
     reply = QuotaAwareCompleter(pool=pool, send=lambda prompt, source: next(replies))("go", route=None)

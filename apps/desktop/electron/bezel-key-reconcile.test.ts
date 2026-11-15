@@ -1,14 +1,14 @@
 /**
- * Tests for electron/aigw-key-reconcile.ts  +  the cross-language parity table.
+ * Tests for electron/bezel-key-reconcile.ts  +  the cross-language parity table.
  *
- * Run with: node --test electron/aigw-key-reconcile.test.ts
+ * Run with: node --test electron/bezel-key-reconcile.test.ts
  * (Wired into npm test:desktop:platforms in package.json.)
  *
  * Two jobs. The first is the ordinary one: what the reconciler reports. The
  * second is 裁定 94's: this TS parser and `plobi/agents/registry.py`'s
  * `gateway_declared_api_key()` are two parsers for one file, so they are pinned
  * to a single byte-for-byte table. Python's side carries the same table in
- * `tests/plobi/test_aigw_key_parse_parity.py`. Deliberate cost, accepted by
+ * `tests/plobi/test_bezel_key_parse_parity.py`. Deliberate cost, accepted by
  * 裁定 94: change Python's parsing semantics without updating both tables and a
  * test goes red -- that is the point, not a tax.
  *
@@ -33,7 +33,7 @@ import {
   fingerprintKey,
   reconcileGatewayKey,
   usedGatewayKey,
-} from './aigw-key-reconcile'
+} from './bezel-key-reconcile'
 import { KEY_RECONCILE_ROW_ID, createDeferredSubsystemLedger } from './deferred-sidecars'
 
 const DECLARED = 'sk-local-dev-key'
@@ -46,16 +46,16 @@ const configWith = (key: string) =>
  * Measured against `gateway_declared_api_key()` on this machine, not copied from
  * a comment. `''` is Python's "declares nothing usable" (missing file, missing
  * block, missing key and an empty scalar all collapse to it, and the caller then
- * falls back to `AIGW_DEV_DEFAULT_API_KEY`).
+ * falls back to `BEZEL_DEV_DEFAULT_API_KEY`).
  */
 const PARITY: Array<[string, string, Record<string, string>, string]> = [
-  ['placeholder-caps', '${AIGW_KEY:-sk-from-placeholder}', {}, 'sk-from-placeholder'],
-  ['placeholder-lower', '${aigw_key:-X}', {}, '${aigw_key:-X}'],
-  ['brace-in-default', '${AIGW_KEY:-a}b}', {}, '${AIGW_KEY:-a}b}'],
+  ['placeholder-caps', '${BEZEL_KEY:-sk-from-placeholder}', {}, 'sk-from-placeholder'],
+  ['placeholder-lower', '${bezel_key:-X}', {}, '${bezel_key:-X}'],
+  ['brace-in-default', '${BEZEL_KEY:-a}b}', {}, '${BEZEL_KEY:-a}b}'],
   ['double-quoted', "''k''", {}, 'k'],
   ['empty-string', '""', {}, ''],
   ['plain', 'sk-local-dev-key', {}, 'sk-local-dev-key'],
-  ['placeholder-env-set', '${AIGW_KEY:-fallback}', { AIGW_KEY: 'from-env' }, 'from-env'],
+  ['placeholder-env-set', '${BEZEL_KEY:-fallback}', { BEZEL_KEY: 'from-env' }, 'from-env'],
   ['trailing-comment', `${DECLARED}  # rotated 2026-10-08`, {}, DECLARED],
 ]
 
@@ -107,9 +107,9 @@ test('an empty declared value is "no declaration", not a mismatch (裁定 94 ite
 })
 
 test('reconcile goes red when the environment carries a different key', () => {
-  const r = reconcileGatewayKey(configWith(DECLARED), { AIGW_API_KEY: OTHER })
+  const r = reconcileGatewayKey(configWith(DECLARED), { BEZEL_API_KEY: OTHER })
   assert.equal(r.match, false)
-  assert.equal(r.usedSource, 'env:AIGW_API_KEY')
+  assert.equal(r.usedSource, 'env:BEZEL_API_KEY')
   assert.match(r.summary, /MISMATCH/)
 })
 
@@ -121,15 +121,15 @@ test('an unreadable config is NOT CHECKED, never a pass, and never a fake mismat
 })
 
 test('no field returned by reconcile carries key material', () => {
-  const dump = JSON.stringify(reconcileGatewayKey(configWith(DECLARED), { AIGW_API_KEY: OTHER }))
+  const dump = JSON.stringify(reconcileGatewayKey(configWith(DECLARED), { BEZEL_API_KEY: OTHER }))
   assert.ok(!dump.includes(DECLARED), 'summary leaked the declared key')
   assert.ok(!dump.includes(OTHER), 'summary leaked the shell key')
   assert.ok(dump.includes(fingerprintKey(OTHER)), 'fingerprints are the point of the report')
 })
 
-test('the shell ladder keeps AIGW_API_KEY ahead of PLOBI_AIGW_API_KEY', () => {
-  assert.equal(usedGatewayKey({ AIGW_API_KEY: 'first', PLOBI_AIGW_API_KEY: 'second' }).source, 'env:AIGW_API_KEY')
-  assert.equal(usedGatewayKey({ PLOBI_AIGW_API_KEY: 'second' }).source, 'env:PLOBI_AIGW_API_KEY')
+test('the shell ladder keeps BEZEL_API_KEY ahead of PLOBI_BEZEL_API_KEY', () => {
+  assert.equal(usedGatewayKey({ BEZEL_API_KEY: 'first', PLOBI_BEZEL_API_KEY: 'second' }).source, 'env:BEZEL_API_KEY')
+  assert.equal(usedGatewayKey({ PLOBI_BEZEL_API_KEY: 'second' }).source, 'env:PLOBI_BEZEL_API_KEY')
 })
 
 // ── 镜像钉住（裁定 94 第 1 条后半）：main.ts 那份手抄必须与本模块同字面量 ──────────
@@ -145,11 +145,11 @@ test('the ladder carries the new name and both legacy rungs', () => {
   // QUOTA_HUB_API_KEY is the new owner; the two old names stay after it so a
   // user who set either one keeps working through the rename.
   assert.equal(ENV_ORDER[0], 'QUOTA_HUB_API_KEY')
-  assert.equal(ENV_ORDER[1], 'AIGW_API_KEY')
-  assert.equal(ENV_ORDER[2], 'PLOBI_AIGW_API_KEY')
+  assert.equal(ENV_ORDER[1], 'BEZEL_API_KEY')
+  assert.equal(ENV_ORDER[2], 'PLOBI_BEZEL_API_KEY')
   assert.ok(
-    mainTs.includes('PLOBI_AIGW_API_KEY'),
-    'main.ts 不再认 PLOBI_AIGW_API_KEY —— 那就与本表与 Python 名单一起统一，别只改一边',
+    mainTs.includes('PLOBI_BEZEL_API_KEY'),
+    'main.ts 不再认 PLOBI_BEZEL_API_KEY —— 那就与本表与 Python 名单一起统一，别只改一边',
   )
 })
 
@@ -196,7 +196,7 @@ test('main.ts reports under the exported id, not a hand-typed string', () => {
     "main.ts 必须用 ./deferred-sidecars 导出的那个 id 常量上报，别再手写字符串",
   )
   assert.ok(
-    !/reportDeferredSubsystem\(\s*['"]aigw-key['"]\s*,/.test(mainTs),
+    !/reportDeferredSubsystem\(\s*['"]bezel-key['"]\s*,/.test(mainTs),
     'main.ts 里又写回字面量了：常量和 ledger 的登记表可能不同步',
   )
 })

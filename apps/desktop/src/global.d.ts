@@ -308,7 +308,7 @@ declare global {
         // returns the most-installed themes.
         searchMarketplace: (query: string) => Promise<DesktopMarketplaceSearchItem[]>
       }
-      // Plobi Gateway (aigw) — local desktop-quota aggregator.
+      // Plobi Gateway (bezel) — local desktop-quota aggregator.
       plobiGateway: {
         start: () => Promise<{ ok: boolean; running: boolean; baseUrl?: string; pid?: number | null; error?: string }>
         stop: () => Promise<{ ok: boolean; running: boolean }>
@@ -702,7 +702,7 @@ export interface DesktopCloudAgentSignInResult {
   connected: boolean
 }
 
-// R-051 — one row per subsystem R-047 postponed (aigw :8000, chatlog :5030).
+// R-051 — one row per subsystem R-047 postponed (bezel :8000, chatlog :5030).
 // Owned by the MAIN process ledger in electron/deferred-sidecars.ts, which mirrors
 // the `deferred` fourth status of scripts/plobi/doctor.py. The renderer never
 // derives these; it renders what it was told, so the tray menu and the boot

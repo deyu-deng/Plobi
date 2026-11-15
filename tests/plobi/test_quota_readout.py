@@ -61,9 +61,9 @@ def _outcome(sources, state=gateway.CatalogState.OK, detail="ok"):
     return gateway.GatewayOutcome(state, sources, detail, NOW)
 
 
-def _aigw_source(selectable=True, live=True, live_reason="ok", unselectable=""):
+def _bezel_source(selectable=True, live=True, live_reason="ok", unselectable=""):
     return {
-        "kind": "aigw",
+        "kind": "bezel",
         "model": "workbuddy/glm-5.3",
         "models": ["workbuddy/glm-5.3"],
         "base_url": "http://127.0.0.1:8000/v1",
@@ -83,7 +83,7 @@ def _aigw_source(selectable=True, live=True, live_reason="ok", unselectable=""):
 def test_leg_says_it_is_usable_from_the_catalogs_own_flags():
     legs = readout.readout(
         pool=_FakePool(["workbuddy"]),
-        fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        fetch=lambda base, key: _outcome({"workbuddy": _bezel_source()}),
         health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": 12.5, "records": 3, "files": 1, "skipped_no_timestamp": 0, "detail": ""},
@@ -101,7 +101,7 @@ def test_remaining_is_empty_on_every_leg_and_says_why_not_read():
         pool=_FakePool(["workbuddy", "zhipu-air"],
                        [SourceStatus("zhipu-air", "cheap_api", HealthStatus.DEGRADED, None,
                                      "configured but balance probe not wired", NOW)]),
-        fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        fetch=lambda base, key: _outcome({"workbuddy": _bezel_source()}),
         health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0,
@@ -145,7 +145,7 @@ def test_unselectable_leg_is_reported_with_the_vendors_reason_not_a_guess():
     legs = readout.readout(
         pool=_FakePool(["workbuddy"]),
         fetch=lambda base, key: _outcome(
-            {"workbuddy": _aigw_source(selectable=False, live=False, live_reason="credential_expired",
+            {"workbuddy": _bezel_source(selectable=False, live=False, live_reason="credential_expired",
                                        unselectable="credential_expired")}),
         health=lambda base, key: _health(),
         ledger_rows=[],
@@ -177,7 +177,7 @@ def test_verdict_offers_a_leg_when_at_least_one_is_up():
         pool=_FakePool(["workbuddy", "zhipu-air"],
                        [SourceStatus("zhipu-air", "cheap_api", HealthStatus.UNAVAILABLE, None,
                                      "no credential configured", NOW)]),
-        fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        fetch=lambda base, key: _outcome({"workbuddy": _bezel_source()}),
         health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": 4.0, "records": 1, "files": 1, "skipped_no_timestamp": 0, "detail": ""},
@@ -206,7 +206,7 @@ def test_readout_touches_no_network_when_the_four_seams_are_injected(monkeypatch
     monkeypatch.setattr(readout, "fetch_health", _no_network)
     report = readout.readout(
         pool=_FakePool(["workbuddy"]),
-        fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        fetch=lambda base, key: _outcome({"workbuddy": _bezel_source()}),
         health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0, "detail": ""},
@@ -280,7 +280,7 @@ def test_gateway_quota_snapshot_reports_lowest_bucket_percent():
         }
     ]
 
-    reading = readout.remaining("antigravity", kind="aigw", accounts=accounts, now=NOW)
+    reading = readout.remaining("antigravity", kind="bezel", accounts=accounts, now=NOW)
 
     assert reading.remaining == 18.0
     assert reading.unit == readout.UNIT_PERCENT

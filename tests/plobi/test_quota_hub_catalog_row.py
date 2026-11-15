@@ -1,7 +1,7 @@
 """网关那一行必须在后端目录里 —— 桌面选择框就是拿它做接头的。
 
 现场（2026-11-08 本机现核）：网关在 `:8000` 上答了 **58** 个可选 id，而
-`model.options`（`explicit_only=1`）的 payload 里**一行 `aigw` 都没有**。后果有两处，
+`model.options`（`explicit_only=1`）的 payload 里**一行 `bezel` 都没有**。后果有两处，
 都在同一根上：
 
 * 桌面选择框按 `quotaProviders()`（`store/desktop-quotas.ts`）把网关那一行**克隆**成
@@ -10,7 +10,7 @@
 * 切换时 `hubProviderSlug()` 去目录里找那一行，找不到 ⇒ 报 `not_offered`
   （「该通道当前未在网关中列出」）—— 而网关明明在列 58 条。那句话在撒谎。
 
-修法不是让用户去 `config.yaml` 里手写 `providers.aigw`：网关是这台机器自己的本地服务
+修法不是让用户去 `config.yaml` 里手写 `providers.bezel`：网关是这台机器自己的本地服务
 （裁定 46：额度清单只有一份真源、来自网关；裁定 81：钥匙由网关自己的配置声明），
 它不需要用户声明才可路由，但它的**那一行**必须在目录里。
 
@@ -58,9 +58,9 @@ def _ctx() -> ConfigContext:
 def hub_answers(monkeypatch):
     """网关在答：接缝换成假应答，钥匙与端点也钉死（不读本机 env）。"""
     monkeypatch.setattr(
-        "plobi.agents.registry.aigw_base_url", lambda: "http://127.0.0.1:8000/v1"
+        "plobi.agents.registry.bezel_base_url", lambda: "http://127.0.0.1:8000/v1"
     )
-    monkeypatch.setattr("plobi.agents.registry.aigw_api_key", lambda: "sk-test")
+    monkeypatch.setattr("plobi.agents.registry.bezel_api_key", lambda: "sk-test")
     monkeypatch.setattr(
         "plobi_cli.models.hub_selectable_model_ids",
         lambda api_key, base_url, **kwargs: list(HUB_IDS),
@@ -75,9 +75,9 @@ def hub_answers(monkeypatch):
 def hub_silent(monkeypatch):
     """网关不应答（没起、被拒、端点不通）：接缝回 ``None``。"""
     monkeypatch.setattr(
-        "plobi.agents.registry.aigw_base_url", lambda: "http://127.0.0.1:8000/v1"
+        "plobi.agents.registry.bezel_base_url", lambda: "http://127.0.0.1:8000/v1"
     )
-    monkeypatch.setattr("plobi.agents.registry.aigw_api_key", lambda: "sk-test")
+    monkeypatch.setattr("plobi.agents.registry.bezel_api_key", lambda: "sk-test")
     monkeypatch.setattr(
         "plobi_cli.models.hub_selectable_model_ids",
         lambda api_key, base_url, **kwargs: None,
@@ -193,7 +193,7 @@ def test_a_silent_hub_leaves_no_row_and_claims_nothing(hub_silent):
 
 
 def test_a_configured_hub_row_is_not_duplicated(hub_answers):
-    """用户自己在 `config.yaml` 里写过 `providers.aigw` 时，目录里只留一行。
+    """用户自己在 `config.yaml` 里写过 `providers.bezel` 时，目录里只留一行。
 
     那一行是用户自己的声明（可能指着别处），不许被我们再补一行同名的那把它盖掉。
     """

@@ -40,7 +40,7 @@ if (-not (Test-Path $Config)) {
     exit 1
 }
 
-function Get-AigwPort {
+function Get-BezelPort {
     param([string]$ConfigPath)
     $inServer = $false
     foreach ($raw in Get-Content -Path $ConfigPath -Encoding UTF8) {
@@ -102,7 +102,7 @@ function Get-ProcessCommandLine {
     return ""
 }
 
-function Stop-AigwListeners {
+function Stop-BezelListeners {
     param([int]$Port)
     $listenerPids = @(Get-PortListenerPids -Port $Port)
     if ($listenerPids.Count -eq 0) {
@@ -149,7 +149,7 @@ function Stop-AigwListeners {
     Write-Host "Recycle: :$Port is free"
 }
 
-function Resolve-AigwPython {
+function Resolve-BezelPython {
     param([string]$RepoRoot)
     $venvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
     if (Test-Path $venvPython) {
@@ -158,7 +158,7 @@ function Resolve-AigwPython {
     return "python"
 }
 
-function Get-AigwKeyReconciliation {
+function Get-BezelKeyReconciliation {
     <#
     .SYNOPSIS
         Ask the gateway's own declaration what key it accepts, and compare it
@@ -185,7 +185,7 @@ function Get-AigwKeyReconciliation {
     # stop.  The snippet stays on one line and uses only single quotes so that
     # Windows PowerShell 5.1 can pass it as a single native argument without
     # mangling embedded quotes.
-    $snippet = "import sys,json,hashlib;sys.path.insert(0,sys.argv[1]);from pathlib import Path;from plobi.agents.registry import gateway_declared_api_key,aigw_api_key,aigw_credential_source;declared=gateway_declared_api_key(Path(sys.argv[2]));used=aigw_api_key();source=aigw_credential_source();fp=(lambda v:hashlib.sha256(v.encode('utf-8')).hexdigest()[:12]);ok=bool(declared) and used==declared;print(json.dumps({'verdict':('NOT_CHECKED' if not declared else ('MATCH' if ok else 'MISMATCH')),'used_source':source,'used_fp':fp(used),'declared_fp':(fp(declared) if declared else None),'key':(used if ok else None)}))"
+    $snippet = "import sys,json,hashlib;sys.path.insert(0,sys.argv[1]);from pathlib import Path;from plobi.agents.registry import gateway_declared_api_key,bezel_api_key,bezel_credential_source;declared=gateway_declared_api_key(Path(sys.argv[2]));used=bezel_api_key();source=bezel_credential_source();fp=(lambda v:hashlib.sha256(v.encode('utf-8')).hexdigest()[:12]);ok=bool(declared) and used==declared;print(json.dumps({'verdict':('NOT_CHECKED' if not declared else ('MATCH' if ok else 'MISMATCH')),'used_source':source,'used_fp':fp(used),'declared_fp':(fp(declared) if declared else None),'key':(used if ok else None)}))"
 
     $reason = ""
     $payload = $null
@@ -220,7 +220,7 @@ function Get-AigwKeyReconciliation {
             UsedFp      = "unresolved"
             DeclaredFp  = $null
             Key         = $null
-            Marker      = "AIGW_KEY_VERDICT=NOT_CHECKED gateway_config=$ConfigPath reason=$reason"
+            Marker      = "BEZEL_KEY_VERDICT=NOT_CHECKED gateway_config=$ConfigPath reason=$reason"
             Detail      = "quota hub key NOT CHECKED: could not read the gateway's declared server.api_key from $ConfigPath ($reason). Not probing with a key nobody declared, and not assuming this script's key matches."
         }
     }
@@ -238,7 +238,7 @@ function Get-AigwKeyReconciliation {
                 UsedFp     = $usedFp
                 DeclaredFp = $declaredFp
                 Key        = $key
-                Marker     = "AIGW_KEY_VERDICT=MATCH script_source=$usedSource script_fp=$usedFp gateway_fp=$declaredFp gateway_config=$ConfigPath"
+                Marker     = "BEZEL_KEY_VERDICT=MATCH script_source=$usedSource script_fp=$usedFp gateway_fp=$declaredFp gateway_config=$ConfigPath"
                 Detail     = "quota hub key ok: this script sends $usedSource fp=$usedFp and the gateway declares fp=$declaredFp in $ConfigPath"
             }
         }
@@ -249,7 +249,7 @@ function Get-AigwKeyReconciliation {
                 UsedFp     = $usedFp
                 DeclaredFp = $declaredFp
                 Key        = $null
-                Marker     = "AIGW_KEY_VERDICT=MISMATCH script_source=$usedSource script_fp=$usedFp gateway_fp=$declaredFp gateway_config=$ConfigPath"
+                Marker     = "BEZEL_KEY_VERDICT=MISMATCH script_source=$usedSource script_fp=$usedFp gateway_fp=$declaredFp gateway_config=$ConfigPath"
                 Detail     = "quota hub key MISMATCH: the gateway uses server.api_key in $ConfigPath (fp=$declaredFp) but this script uses $usedSource (fp=$usedFp). Refusing to probe: one of the two is stale, and the 401 you would get reads like a dead key."
             }
         }
@@ -260,14 +260,14 @@ function Get-AigwKeyReconciliation {
                 UsedFp     = $usedFp
                 DeclaredFp = $null
                 Key        = $null
-                Marker     = "AIGW_KEY_VERDICT=NOT_CHECKED script_source=$usedSource script_fp=$usedFp gateway_config=$ConfigPath reason=no readable server.api_key"
+                Marker     = "BEZEL_KEY_VERDICT=NOT_CHECKED script_source=$usedSource script_fp=$usedFp gateway_config=$ConfigPath reason=no readable server.api_key"
                 Detail     = "quota hub key NOT CHECKED: $ConfigPath declares no server.api_key this script can read (it uses $usedSource fp=$usedFp). Not treating 'cannot tell' as 'agrees', and not probing with a hardcoded fallback."
             }
         }
     }
 }
 
-function Show-AigwModels {
+function Show-BezelModels {
     param(
         [int]$Port,
         [string]$Key
@@ -287,10 +287,10 @@ function Show-AigwModels {
     }
 }
 
-$python = Resolve-AigwPython -RepoRoot $repoRoot
+$python = Resolve-BezelPython -RepoRoot $repoRoot
 
 if ($KeyCheck) {
-    $check = Get-AigwKeyReconciliation -ConfigPath $Config -PythonExe $python -RepoRoot $repoRoot
+    $check = Get-BezelKeyReconciliation -ConfigPath $Config -PythonExe $python -RepoRoot $repoRoot
     Write-Host $check.Marker
     Write-Host $check.Detail
     if ($check.Verdict -ne "MATCH") {
@@ -300,22 +300,22 @@ if ($KeyCheck) {
     exit 0
 }
 
-$port = Get-AigwPort -ConfigPath $Config
+$port = Get-BezelPort -ConfigPath $Config
 if ($Recycle -and (Test-LocalPortListening -Port $port)) {
-    Stop-AigwListeners -Port $port
+    Stop-BezelListeners -Port $port
 }
 if (Test-LocalPortListening -Port $port) {
     Write-Host "已在跑 :$port — skip start, probing /v1/models"
     # Reconcile before probing: the probe's whole diagnostic value is that it
     # authenticates with the key the gateway actually accepts.
-    $check = Get-AigwKeyReconciliation -ConfigPath $Config -PythonExe $python -RepoRoot $repoRoot
+    $check = Get-BezelKeyReconciliation -ConfigPath $Config -PythonExe $python -RepoRoot $repoRoot
     Write-Host $check.Marker
     Write-Host $check.Detail
     if ($check.Verdict -ne "MATCH") {
         Write-Error "quota hub health check refused: the key this script would send ($($check.Verdict)) is not the key the gateway declares in $Config"
         exit 1
     }
-    Show-AigwModels -Port $port -Key $check.Key
+    Show-BezelModels -Port $port -Key $check.Key
     exit 0
 }
 

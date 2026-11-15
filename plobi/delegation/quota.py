@@ -1,7 +1,7 @@
 """Quota circuit breaker for delegation (B4 ships the seam).
 
 B4 delivers the seam plus one default provider: a configured daily budget. B3
-plugs the real sources (cheap API + aigw aggregation) in through
+plugs the real sources (cheap API + bezel aggregation) in through
 :func:`register_provider` — nothing here has to change for that.
 
 Unknown quota never blocks. A provider reporting ``None`` (no telemetry yet)

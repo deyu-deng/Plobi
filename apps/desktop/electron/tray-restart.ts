@@ -125,7 +125,7 @@ const TREE_PATTERNS: RegExp[] = [
   /\bconcurrently\b[^\n]*dev:electron/i,
   /\bvite\b[^\n]*(5174|--host)/i,
   /plobi_quota_mcp_server/i,
-  /(?:^|[\\/])(chatlog|aigw)\.exe\b/i
+  /(?:^|[\\/])(chatlog|bezel)\.exe\b/i
 ]
 
 export function isOwnPlobiProcess(entry: ProcessEntry, selfPid: number): boolean {

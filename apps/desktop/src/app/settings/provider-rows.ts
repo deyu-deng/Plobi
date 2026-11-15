@@ -6,23 +6,23 @@ import { humanizeProviderRows, quotaHubLabel } from '../shell/model-provider-lab
 /**
  * Provider rows for the main-model picker.
  *
- * The quota hub (`aigw`) is routing plumbing, not a vendor the user picks. When
+ * The quota hub (`bezel`) is routing plumbing, not a vendor the user picks. When
  * the shell has pushed at least one connected quota app, replace the hub row
  * with one row per software (`WorkBuddy`, `Antigravity`) — all still routing to
- * `aigw` but carrying a unique `ui_key` so the Select can tell them apart.
+ * `bezel` but carrying a unique `ui_key` so the Select can tell them apart.
  * Before the first frame (or when no app is connected) keep one neutral
  * fallback row instead of showing the internal hub name.
  */
 export function mainProviderRows(providers: readonly ModelOptionProvider[]): ModelOptionProvider[] {
   const rows = quotaProviders(providers)
-  // 正则在渲染层是允许的形状（见 aigw-visibility.guard.test.ts：正则/注释/标识符
+  // 正则在渲染层是允许的形状（见 bezel-visibility.guard.test.ts：正则/注释/标识符
   // 都到不了 DOM），字符串字面量不是。hub 的 slug 只用来做机器比对与拼 ui_key，
   // 一次都不进文案。
-  const HUB_SLUG = /^aigw$/i
+  const HUB_SLUG = /^bezel$/i
   const isHub = (slug?: null | string) => HUB_SLUG.test((slug ?? '').trim())
   const hasQuotaGroups = rows.some(row => isHub(row.slug))
   const hub = providers.find(provider => isHub(provider.slug))
-  // ui_key 的前缀必须继续是 hub 自己的 slug（下游按 `aigw::` 前缀认行），
+  // ui_key 的前缀必须继续是 hub 自己的 slug（下游按 `bezel::` 前缀认行），
   // 取运行时的值而不是再写一遍字面量。
   const hubKeyPrefix = hub?.slug ?? 'hub'
 

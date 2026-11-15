@@ -22,15 +22,15 @@ from providers import get_provider_profile
 
 
 @pytest.fixture(scope="module")
-def aigw_profile():
-    profile = get_provider_profile("aigw")
+def bezel_profile():
+    profile = get_provider_profile("bezel")
     assert profile is not None, "the quota gateway profile must stay registered"
     return profile
 
 
-class TestAigwEffortOnTheWire:
-    def test_a_chosen_level_travels_as_the_openai_field(self, aigw_profile):
-        extra_body, top_level = aigw_profile.build_api_kwargs_extras(
+class TestBezelEffortOnTheWire:
+    def test_a_chosen_level_travels_as_the_openai_field(self, bezel_profile):
+        extra_body, top_level = bezel_profile.build_api_kwargs_extras(
             reasoning_config={"enabled": True, "effort": "high"}
         )
 
@@ -38,36 +38,36 @@ class TestAigwEffortOnTheWire:
         assert extra_body == {}, "no provider-private envelope on our own door"
 
     @pytest.mark.parametrize("effort", ["minimal", "low", "medium", "high", "xhigh", "max"])
-    def test_every_level_plobi_writes_is_accepted(self, aigw_profile, effort):
+    def test_every_level_plobi_writes_is_accepted(self, bezel_profile, effort):
         """The vocabulary is `plobi_constants.VALID_REASONING_EFFORTS`, not a subset."""
-        _extra, top = aigw_profile.build_api_kwargs_extras(
+        _extra, top = bezel_profile.build_api_kwargs_extras(
             reasoning_config={"enabled": True, "effort": effort}
         )
 
         assert top == {"reasoning_effort": effort}, top
 
-    def test_thinking_off_sends_no_level(self, aigw_profile):
+    def test_thinking_off_sends_no_level(self, bezel_profile):
         """"Off" is the absence of a level, not a level: the leg keeps the vendor's own."""
-        _extra, top = aigw_profile.build_api_kwargs_extras(reasoning_config={"enabled": False})
+        _extra, top = bezel_profile.build_api_kwargs_extras(reasoning_config={"enabled": False})
 
         assert top == {}, top
 
     @pytest.mark.parametrize("config", [None, {}, {"enabled": True}, {"enabled": True, "effort": ""},
                                         {"enabled": True, "effort": "impossible"}])
-    def test_nothing_is_invented_when_no_level_was_named(self, aigw_profile, config):
-        _extra, top = aigw_profile.build_api_kwargs_extras(reasoning_config=config)
+    def test_nothing_is_invented_when_no_level_was_named(self, bezel_profile, config):
+        _extra, top = bezel_profile.build_api_kwargs_extras(reasoning_config=config)
 
         assert top == {}, top
 
 
-class TestAigwThroughTheTransport:
+class TestBezelThroughTheTransport:
     """The whole path: profile → the kwargs a request is actually built with."""
 
     def test_the_level_reaches_the_hub_request(self):
         from agent.transports import get_transport
 
         transport = get_transport("chat_completions")
-        profile = get_provider_profile("aigw")
+        profile = get_provider_profile("bezel")
 
         kwargs = transport.build_kwargs(
             model="antigravity/claude-opus-5-5",
@@ -96,7 +96,7 @@ class TestAigwThroughTheTransport:
         from agent.transports import get_transport
 
         transport = get_transport("chat_completions")
-        profile = get_provider_profile("aigw")
+        profile = get_provider_profile("bezel")
 
         kwargs = transport.build_kwargs(
             model="qoder/qwen3.8-max",
@@ -112,7 +112,7 @@ class TestAigwThroughTheTransport:
         assert "context_length" not in kwargs, "not an SDK argument — the call would TypeError"
         assert kwargs["extra_body"]["context_length"] == 400000, kwargs
 
-    def test_nothing_the_profile_adds_is_outside_the_sdks_signature(self, aigw_profile):
+    def test_nothing_the_profile_adds_is_outside_the_sdks_signature(self, bezel_profile):
         """The invariant my own regression broke: top-level kwargs must be real parameters.
 
         Checked against the installed client itself, so the day the SDK drops a name this
@@ -125,14 +125,14 @@ class TestAigwThroughTheTransport:
         accepted = set(inspect.signature(Completions.create).parameters)
         accepted -= {"self", "extra_headers", "extra_query", "extra_body", "timeout"}
 
-        _extra, top = aigw_profile.build_api_kwargs_extras(
+        _extra, top = bezel_profile.build_api_kwargs_extras(
             reasoning_config={"enabled": True, "effort": "high"}, context_length=200000
         )
 
         assert set(top) <= accepted, (sorted(set(top) - accepted), sorted(accepted)[:8])
 
-    def test_a_profile_that_is_not_given_a_window_says_nothing(self, aigw_profile):
-        extra_body, top = aigw_profile.build_api_kwargs_extras(
+    def test_a_profile_that_is_not_given_a_window_says_nothing(self, bezel_profile):
+        extra_body, top = bezel_profile.build_api_kwargs_extras(
             reasoning_config={"enabled": True, "effort": "high"}, context_length=None
         )
 
@@ -140,8 +140,8 @@ class TestAigwThroughTheTransport:
         assert extra_body == {}, extra_body
 
     @pytest.mark.parametrize("junk", [0, -1, "400000", True, 1.5])
-    def test_a_number_we_cannot_budget_with_is_not_sent(self, aigw_profile, junk):
+    def test_a_number_we_cannot_budget_with_is_not_sent(self, bezel_profile, junk):
         """`model.context_length` is user-written, so junk reaches here sometimes."""
-        _extra, top = aigw_profile.build_api_kwargs_extras(context_length=junk)
+        _extra, top = bezel_profile.build_api_kwargs_extras(context_length=junk)
 
         assert "context_length" not in top, top

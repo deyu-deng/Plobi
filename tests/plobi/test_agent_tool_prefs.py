@@ -29,7 +29,7 @@ def root(tmp_path, monkeypatch):
         (base / "profiles" / name).mkdir(parents=True)
     (base / "config.yaml").write_text(
         "model:\n"
-        "  provider: aigw\n"
+        "  provider: bezel\n"
         "  default: workbuddy/configured-once\n"
         "skills:\n"
         "  disabled: [global-off-skill]\n"
@@ -197,7 +197,7 @@ def test_agent_scoped_skill_listing_reads_global_source(root):
 # ---------------------------------------------------------------------------
 
 
-def _switch_result(provider="aigw", model="workbuddy/picked"):
+def _switch_result(provider="bezel", model="workbuddy/picked"):
     return SimpleNamespace(target_provider=provider, new_model=model, base_url="")
 
 
@@ -220,7 +220,7 @@ def test_gateway_model_persist_routes_to_roster_for_agent_session(root, monkeypa
     server._persist_model_switch(_switch_result(), session)
 
     # 记在名册行：这个 Agent 记住自己的选择。
-    assert written.get("roster") == ("l2-aura", "aigw", "workbuddy/picked")
+    assert written.get("roster") == ("l2-aura", "bezel", "workbuddy/picked")
     # 共享 config 的全局默认没被一个分身的选择刷掉。
     assert "global" not in written
 

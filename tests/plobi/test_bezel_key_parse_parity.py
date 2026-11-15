@@ -1,7 +1,7 @@
 """跨语言对照（裁定 94 第 1 条）：Python 侧这一半表。
 
-TS 那一半在 `apps/desktop/electron/aigw-key-reconcile.test.ts`，同一批用例、同一批期望值。
-两个解析器读同一个文件（`aigw/config.yaml` 的 `server.api_key`），只要有一侧改了语义而
+TS 那一半在 `apps/desktop/electron/bezel-key-reconcile.test.ts`，同一批用例、同一批期望值。
+两个解析器读同一个文件（`bezel/config.yaml` 的 `server.api_key`），只要有一侧改了语义而
 没同步这张表，就会有一侧红 —— 这是裁定 94 明确接受的成本，不是税。
 
 值全部现测于 `gateway_declared_api_key()`（2026-10-08，本机），不是从注释抄的。
@@ -13,17 +13,17 @@ from pathlib import Path
 
 import pytest
 
-from plobi.agents.registry import AIGW_DEV_DEFAULT_API_KEY, gateway_declared_api_key
+from plobi.agents.registry import BEZEL_DEV_DEFAULT_API_KEY, gateway_declared_api_key
 
 # (name, api_key 标量, 环境, 期望解析值)
 PARITY = [
-    ("placeholder-caps", "${AIGW_KEY:-sk-from-placeholder}", {}, "sk-from-placeholder"),
-    ("placeholder-lower", "${aigw_key:-X}", {}, "${aigw_key:-X}"),
-    ("brace-in-default", "${AIGW_KEY:-a}b}", {}, "${AIGW_KEY:-a}b}"),
+    ("placeholder-caps", "${BEZEL_KEY:-sk-from-placeholder}", {}, "sk-from-placeholder"),
+    ("placeholder-lower", "${bezel_key:-X}", {}, "${bezel_key:-X}"),
+    ("brace-in-default", "${BEZEL_KEY:-a}b}", {}, "${BEZEL_KEY:-a}b}"),
     ("double-quoted", "''k''", {}, "k"),
     ("empty-string", '""', {}, ""),
     ("plain", "sk-local-dev-key", {}, "sk-local-dev-key"),
-    ("placeholder-env-set", "${AIGW_KEY:-fallback}", {"AIGW_KEY": "from-env"}, "from-env"),
+    ("placeholder-env-set", "${BEZEL_KEY:-fallback}", {"BEZEL_KEY": "from-env"}, "from-env"),
     ("trailing-comment", "sk-local-dev-key  # rotated 2026-10-08", {}, "sk-local-dev-key"),
 ]
 
@@ -36,7 +36,7 @@ PARITY_WHOLE_FILE = [
 
 
 def _declared(scalar: str, env: dict[str, str], monkeypatch) -> str:
-    for k in ("AIGW_KEY",):
+    for k in ("BEZEL_KEY",):
         monkeypatch.delenv(k, raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
@@ -66,4 +66,4 @@ def test_missing_file_is_indistinguishable_from_declaring_nothing(tmp_path):
     TS 测试里，别哪天被"统一"掉。
     """
     assert gateway_declared_api_key(tmp_path / "nope.yaml") == ""
-    assert (AIGW_DEV_DEFAULT_API_KEY or "x") == "sk-local-dev-key"
+    assert (BEZEL_DEV_DEFAULT_API_KEY or "x") == "sk-local-dev-key"

@@ -40,7 +40,7 @@ from typing import Any, Optional
 #: The local quota hub's own provider slug.  A routing value, never display copy —
 #: 裁定 45.4 keeps the word off the screen, so the renderer only ever *matches*
 #: it (the row it matches is the carrier every hub-backed pick joins against).
-QUOTA_HUB_SLUG = "aigw"
+QUOTA_HUB_SLUG = "bezel"
 
 
 # ─── Public types ───────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ def build_models_payload(
     # 裁定 46: the hub's catalogue is the single source of truth for the
     # subscription legs, and the hub is this machine's own local service — not
     # something the user has to declare in config.yaml to be routable (the
-    # `model-providers/aigw` profile resolves its key and base URL by itself,
+    # `model-providers/bezel` profile resolves its key and base URL by itself,
     # 裁定 81).  Its row is what the desktop's picker joins against, so it is
     # added here — AFTER the explicit-only filter, because that filter asks
     # "did the user configure this provider?" and the hub is not an answer to
@@ -322,10 +322,10 @@ def _hub_selectable_ids() -> list[str]:
     reported as "you have no models".
     """
     try:
-        from plobi.agents.registry import aigw_api_key, aigw_base_url
+        from plobi.agents.registry import bezel_api_key, bezel_base_url
         from plobi_cli.models import hub_selectable_model_ids
 
-        ids = hub_selectable_model_ids(aigw_api_key(), aigw_base_url())
+        ids = hub_selectable_model_ids(bezel_api_key(), bezel_base_url())
     except Exception:  # noqa: BLE001 — a missing piece means "no answer", not a crash
         return []
 
@@ -400,7 +400,7 @@ def _apply_capabilities(rows: list[dict]) -> None:
     no-op on models that ignore it, whereas hiding it from a capable-but-
     uncatalogued model is the worse failure.
 
-    For the subscription gateway (`aigw`) the hub itself answers, per model, which
+    For the subscription gateway (`bezel`) the hub itself answers, per model, which
     thinking levels and which context windows that model really has, and those keys
     ride along — a level the vendor does not sell must not be offered.
     """
@@ -424,19 +424,19 @@ def _apply_capabilities(rows: list[dict]) -> None:
         # (user, 2026-11-08 21:3x). A leg the user can fix does not: its models are
         # not offered at all (「我配置不了就不应该出现在这个模型框里面呀」).
         hub_waiting: dict[str, dict] = {}
-        if slug.lower() == "aigw":
+        if slug.lower() == "bezel":
             try:
-                from plobi.agents.registry import aigw_api_key, aigw_base_url
+                from plobi.agents.registry import bezel_api_key, bezel_base_url
                 from plobi.quota.gateway import catalog_tuning
 
-                hub_tuning = catalog_tuning(aigw_base_url(), aigw_api_key()) or {}
+                hub_tuning = catalog_tuning(bezel_base_url(), bezel_api_key()) or {}
             except Exception:
                 hub_tuning = {}
             try:
-                from plobi.agents.registry import aigw_api_key, aigw_base_url
+                from plobi.agents.registry import bezel_api_key, bezel_base_url
                 from plobi_cli.models import hub_waiting_models
 
-                hub_waiting = hub_waiting_models(aigw_api_key(), aigw_base_url()) or {}
+                hub_waiting = hub_waiting_models(bezel_api_key(), bezel_base_url()) or {}
             except Exception:
                 hub_waiting = {}
 
@@ -579,7 +579,7 @@ def _filter_explicit_provider_rows(rows: list[dict], ctx: ConfigContext) -> list
         # PROVIDER_REGISTRY (those rows are built with ``is_user_defined=False``,
         # so without this line the config entry would be honoured for the
         # credential and then silently filtered out of every explicit picker).
-        # Measured 2026-10-20: ``providers.aigw`` in config.yaml, but the picker
+        # Measured 2026-10-20: ``providers.bezel`` in config.yaml, but the picker
         # only ever got ``wb-gateway`` — and with no hub row the desktop's
         # quota-backed picks could not be joined back to a provider at all.
         if slug in declared:
@@ -651,7 +651,7 @@ def _drop_unusable_credential_rows(rows: list[dict], ctx: ConfigContext) -> list
             # exports the variable must not outvote the config file. Without
             # this, a provider configured *only* through config.yaml vanished
             # from every picker the moment the shell stopped exporting its env
-            # var (measured 2026-10-20 on ``providers.aigw``).
+            # var (measured 2026-10-20 on ``providers.bezel``).
             kept.append(row)
             continue
         try:
@@ -878,7 +878,7 @@ def _quota_hub_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
     The hub is not one of the user's configured providers: it is this machine's own
     local gateway (the desktop starts it), and 裁定 46 makes its catalogue the single
     source of truth for the subscription legs.  It therefore needs no ``config.yaml``
-    entry to be routable — the ``model-providers/aigw`` profile resolves its key and
+    entry to be routable — the ``model-providers/bezel`` profile resolves its key and
     base URL on its own (裁定 81) — but it DID need a row in this payload, because that
     row is what the desktop's picker joins against: without it the subscription models
     never reach the picker, and a switch the hub itself calls "connected" changes
@@ -910,10 +910,10 @@ def _quota_hub_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
     # The verdict rides on `capabilities[model].unavailable` (`_apply_capabilities`),
     # which is the one channel that carries it.
     try:
-        from plobi.agents.registry import aigw_api_key, aigw_base_url
+        from plobi.agents.registry import bezel_api_key, bezel_base_url
         from plobi_cli.models import hub_waiting_models as _waiting
 
-        waiting_ids = list(_waiting(aigw_api_key(), aigw_base_url()).keys())
+        waiting_ids = list(_waiting(bezel_api_key(), bezel_base_url()).keys())
     except Exception:  # noqa: BLE001 — no waiting models is a normal state
         waiting_ids = []
     ids = list(ids) + [mid for mid in waiting_ids if mid not in set(ids)]

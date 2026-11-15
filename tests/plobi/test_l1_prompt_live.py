@@ -105,7 +105,7 @@ class _Agent:
         self,
         *,
         model: str = "deepseek-chat",
-        provider: str = "aigw",
+        provider: str = "bezel",
         profile: str = "default",
     ):
         self.model = model
@@ -131,7 +131,7 @@ def test_l1_old_prompt_without_marker_is_stale(cl, monkeypatch):
     agent = _Agent()
     old_prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "You are a helpful assistant from Nous Research.\n"
         "# 你是 Nous Research 的一个 AI 助手。\n",
     )
@@ -144,7 +144,7 @@ def test_l1_new_prompt_with_marker_and_same_model_matches(cl, monkeypatch):
     agent = _Agent()
     prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "你是本机 Plobi 总秘书（L1）——不是 Nous / MiniMax / 通用 chatbot。",
     )
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
@@ -158,7 +158,7 @@ def test_l2_old_prompt_does_not_force_rebuild(cl, monkeypatch):
     # 也仍 match（L2 不被身份规则打成 False）。
     prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "You are a project L2. No Plobi 总秘书 marker here.",
     )
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
@@ -170,7 +170,7 @@ def test_l2_with_marker_is_also_a_match(cl, monkeypatch):
     agent = _Agent(profile="l2-Plobi")
     prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "你说 Plobi 总秘书，因为项目 L2 也强调这个。",
     )
     assert cl._stored_prompt_matches_runtime(agent, prompt) is True
@@ -183,7 +183,7 @@ def test_model_rotation_still_trips_for_l1(cl, monkeypatch):
     rotated = _Agent(model="kimi-k3")
     prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "你是本机 Plobi 总秘书（L1）——不是 Nous。",
     )
     # Model 一致 → True；Model 旋了 → False（与 marker 无关）。
@@ -196,12 +196,12 @@ def test_provider_rotation_still_trips_for_l1(cl, monkeypatch):
     cl._l1_default_check_cache["impl"] = lambda a: True
     prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "你是本机 Plobi 总秘书（L1）——不是 Nous。",
     )
-    agent_aigw = _Agent(provider="aigw")
+    agent_bezel = _Agent(provider="bezel")
     agent_openai = _Agent(provider="openai")
-    assert cl._stored_prompt_matches_runtime(agent_aigw, prompt) is True
+    assert cl._stored_prompt_matches_runtime(agent_bezel, prompt) is True
     assert cl._stored_prompt_matches_runtime(agent_openai, prompt) is False
 
 
@@ -251,7 +251,7 @@ def test_real_l1_default_profile_triggers_stale_for_old_prompt(cl, l1_budget):
 
     old_prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "You are Nous Research's helpful assistant.\n",
     )
     assert cl._stored_prompt_matches_runtime(agent, old_prompt) is False
@@ -268,7 +268,7 @@ def test_real_l2_agent_is_not_affected_by_identity_rule(cl, l1_budget):
 
     old_prompt = _make_prompt(
         "deepseek-chat",
-        "aigw",
+        "bezel",
         "You are the L2 assistant for Prism.",
     )
     assert cl._stored_prompt_matches_runtime(agent, old_prompt) is True

@@ -24,13 +24,13 @@ def _load():
 D = _load()
 
 
-def test_parse_aigw_port_reads_server_block():
+def test_parse_bezel_port_reads_server_block():
     text = "logging:\n  level: INFO\nserver:\n  host: 127.0.0.1\n  port: 9123\n"
-    assert D.parse_aigw_port(text) == 9123
+    assert D.parse_bezel_port(text) == 9123
 
 
-def test_parse_aigw_port_defaults():
-    assert D.parse_aigw_port("foo: bar\n") == D.DEFAULT_AIGW_PORT
+def test_parse_bezel_port_defaults():
+    assert D.parse_bezel_port("foo: bar\n") == D.DEFAULT_BEZEL_PORT
 
 
 def test_check_chatlog_green(monkeypatch):
@@ -89,7 +89,7 @@ def test_check_chatlog_stays_red_when_answered_wrongly(monkeypatch):
     assert row["color"] == D.RED
 
 
-def test_check_aigw_is_not_green_for_the_gateway_demo_channel(monkeypatch):
+def test_check_bezel_is_not_green_for_the_gateway_demo_channel(monkeypatch):
     """这条钉死一个实测复现过的假绿：mock 通道也供 workbuddy/deepseek-chat。
 
     旧实现按 id 前缀判渠道，于是零真渠道的网关被报成绿——正是 R-048 说的「把没接
@@ -104,13 +104,13 @@ def test_check_aigw_is_not_green_for_the_gateway_demo_channel(monkeypatch):
                      {"id": "workbuddy/deepseek-chat", "provider": "mock"}]},
         ),
     )
-    row = D.check_aigw("http://127.0.0.1:8000/v1")
+    row = D.check_bezel("http://127.0.0.1:8000/v1")
     assert row["color"] == D.YELLOW
     assert row["apps"] == []
     assert "no quota app wired" in row["detail"]
 
 
-def test_check_aigw_green_only_when_a_real_provider_is_served(monkeypatch):
+def test_check_bezel_green_only_when_a_real_provider_is_served(monkeypatch):
     monkeypatch.setattr(
         D,
         "http_get_json",
@@ -120,32 +120,32 @@ def test_check_aigw_green_only_when_a_real_provider_is_served(monkeypatch):
                      {"id": "workbuddy/glm-5.3", "provider": "workbuddy"}]},
         ),
     )
-    row = D.check_aigw("http://127.0.0.1:8000/v1")
+    row = D.check_bezel("http://127.0.0.1:8000/v1")
     assert row["color"] == D.GREEN
     assert row["apps"] == ["workbuddy"]
 
 
-def test_check_aigw_does_not_guess_a_channel_from_the_id(monkeypatch):
+def test_check_bezel_does_not_guess_a_channel_from_the_id(monkeypatch):
     """没有 provider 字段的条目按「不是渠道」处理——宁可黄，不许靠 id 前缀猜绿。"""
     monkeypatch.setattr(
         D,
         "http_get_json",
         lambda url, timeout=2.5, headers=None: (200, {"data": [{"id": "workbuddy/x"}]}),
     )
-    assert D.check_aigw("http://127.0.0.1:8000/v1")["color"] == D.YELLOW
+    assert D.check_bezel("http://127.0.0.1:8000/v1")["color"] == D.YELLOW
 
 
-def test_check_aigw_deferred_when_no_listener(monkeypatch):
+def test_check_bezel_deferred_when_no_listener(monkeypatch):
     monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5, headers=None: (None, None))
-    row = D.check_aigw("http://127.0.0.1:8000/v1")
+    row = D.check_bezel("http://127.0.0.1:8000/v1")
     assert row["color"] == D.DEFERRED
     assert "unreachable" in row["detail"]
     assert row["url"] == "http://127.0.0.1:8000/v1/models"
 
 
-def test_check_aigw_stays_red_when_answered_wrongly(monkeypatch):
+def test_check_bezel_stays_red_when_answered_wrongly(monkeypatch):
     monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5, headers=None: (500, None))
-    row = D.check_aigw("http://127.0.0.1:8000/v1")
+    row = D.check_bezel("http://127.0.0.1:8000/v1")
     assert row["color"] == D.RED
 
 
@@ -283,7 +283,7 @@ def test_deferred_ids_all_have_an_enable_hint_and_no_windows_launcher():
     ``.ps1`` launcher is advice nobody on this machine can follow — that is how
     the old red rows lied.
     """
-    assert D.DEFERRED_CAPABILITY_IDS == {"chatlog", "aigw", "collect", "whitelist_eff"}
+    assert D.DEFERRED_CAPABILITY_IDS == {"chatlog", "bezel", "collect", "whitelist_eff"}
     for check_id in D.DEFERRED_CAPABILITY_IDS:
         hint = D.DEFERRED_ENABLE_HINTS[check_id]
         assert hint.strip()
@@ -508,10 +508,10 @@ def test_quota_liveness_absent_from_catalog_is_not_red(monkeypatch):
 
 
 def test_quota_liveness_does_not_invent_evidence_for_derived_sources(monkeypatch):
-    """aigw 派生源同 base_url 同 key：探一次只等于重探网关，不许造出"证明了单个 app"的行。"""
+    """bezel 派生源同 base_url 同 key：探一次只等于重探网关，不许造出"证明了单个 app"的行。"""
     _sources(monkeypatch, {
         "zhipu-air": {"kind": "cheap_api", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN, "model": "glm-4-air"},
-        "workbuddy": {"kind": "aigw", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN, "model": "workbuddy/glm-5.3-flash"},
+        "workbuddy": {"kind": "bezel", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN, "model": "workbuddy/glm-5.3-flash"},
     })
     seen: list[str] = []
 
@@ -677,7 +677,7 @@ def test_quota_liveness_names_derived_apps_without_faking_evidence(monkeypatch):
         {
             **_cheap(),
             "workbuddy": {
-                "kind": "aigw",
+                "kind": "bezel",
                 "model": "workbuddy/deepseek-chat",
                 "base_url": "http://127.0.0.1:8000/v1",
                 "api_key": "sk-hub",
@@ -694,7 +694,7 @@ def test_quota_liveness_names_derived_apps_without_faking_evidence(monkeypatch):
     monkeypatch.setattr(D, "_models_probe", probe)
     row = D.check_quota_liveness()
 
-    assert "aigw" in row["detail"] and "派生" in row["detail"]
+    assert "bezel" in row["detail"] and "派生" in row["detail"]
     # One probe for the one cheap source; the derived app is NOT probed as if it
     # were independent evidence.
     assert len(calls) == 1
@@ -720,17 +720,17 @@ def test_every_red_quota_row_carries_an_actionable_fix(monkeypatch, tmp_path):
 
 
 # --- WP-SUBSCRIPTION-TOOLCALL-BRIDGE: the desktop-subscription leg's own row ---
-def test_aigw_leg_enabled_reads_the_declared_switch():
+def test_bezel_leg_enabled_reads_the_declared_switch():
     text = ("routing:\n  rules: []\n"
             "providers:\n  workbuddy:\n    enabled: true\n"
             "  antigravity:\n    # enabled: true\n    enabled: false\n    host: x\n"
             "  other:\n    enabled: true\n")
-    assert D.aigw_leg_enabled(text, "antigravity") is False
-    assert D.aigw_leg_enabled(text, "workbuddy") is True
-    assert D.aigw_leg_enabled(text, "nosuch") is None
-    assert D.aigw_leg_enabled("routing:\n  rules: []\n", "antigravity") is None
+    assert D.bezel_leg_enabled(text, "antigravity") is False
+    assert D.bezel_leg_enabled(text, "workbuddy") is True
+    assert D.bezel_leg_enabled(text, "nosuch") is None
+    assert D.bezel_leg_enabled("routing:\n  rules: []\n", "antigravity") is None
     # a leg with no `enabled:` key is not a declaration of false either way
-    assert D.aigw_leg_enabled("providers:\n  antigravity:\n    host: x\n", "antigravity") is None
+    assert D.bezel_leg_enabled("providers:\n  antigravity:\n    host: x\n", "antigravity") is None
 
 
 def _sub_status(present=True, left=None):
@@ -743,7 +743,7 @@ def _sub_status(present=True, left=None):
 def _sub_row(monkeypatch, tmp_path, status, cfg="providers:\n  antigravity:\n    enabled: false\n"):
     path = tmp_path / "config.yaml"
     path.write_text(cfg, encoding="utf-8")
-    monkeypatch.setattr(D, "AIGW_CONFIG_CANDIDATES", (path,))
+    monkeypatch.setattr(D, "BEZEL_CONFIG_CANDIDATES", (path,))
     monkeypatch.setattr(D, "_desktop_token_status", lambda: status)
     return D.check_subscription_desktop_store()
 
@@ -781,7 +781,7 @@ def test_subscription_row_absent_is_yellow_not_red(monkeypatch, tmp_path):
 def test_subscription_row_never_reds_when_the_probe_itself_fails(monkeypatch, tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text("providers:\n  antigravity:\n    enabled: false\n", encoding="utf-8")
-    monkeypatch.setattr(D, "AIGW_CONFIG_CANDIDATES", (path,))
+    monkeypatch.setattr(D, "BEZEL_CONFIG_CANDIDATES", (path,))
 
     def _boom():
         raise OSError("credential store locked")

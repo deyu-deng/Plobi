@@ -26,7 +26,7 @@ dev = [
 
 [project.scripts]
 quota-hub = "quota_hub.cli:main"
-aigw = "quota_hub.cli:main"   # compatibility alias for existing scripts
+bezel = "quota_hub.cli:main"   # compatibility alias for existing scripts
 
 [build-system]
 requires = ["setuptools>=68"]

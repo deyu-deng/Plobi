@@ -3,7 +3,7 @@
 These tests exist to keep two contracts honest:
 
 - ADR-0010 — only the clipped snippet reaches the model, never the raw message.
-- ADR-0011 — confirmation is L2 work; L1 and GUI-only surfaces are rejected.
+- ADR-0011 — confirmation is L2 work; the L1 flagship is rejected.
 """
 
 from __future__ import annotations
@@ -116,26 +116,13 @@ def test_wiring_the_secretary_here_is_rejected():
     assert confirmer.confirm(message("明天下午三点开会"), hit) is None
 
 
-def test_a_gui_only_surface_is_rejected():
-    confirmer = ModelConfirmer(
-        completer=RecordingCompleter(),
-        router=router_with(
-            **{L2_AGENDA: ModelRoute(role=L2_AGENDA, provider="marvis", model="gui")}
-        ),
-        now_factory=lambda: NOW,
-    )
-
-    with pytest.raises(RoutingError, match="GUI-only"):
-        confirmer.route()
-
-
-def test_a_broken_route_degrades_to_unresolved_instead_of_raising():
+def test_a_missing_route_degrades_to_unresolved_instead_of_raising():
     """The pipeline must keep running even when routing is misconfigured."""
+    router = ModelRouter.load()
+    router.routes.pop(L2_AGENDA, None)
     confirmer = ModelConfirmer(
         completer=RecordingCompleter(),
-        router=router_with(
-            **{L2_AGENDA: ModelRoute(role=L2_AGENDA, provider="marvis", model="gui")}
-        ),
+        router=router,
         now_factory=lambda: NOW,
     )
 

@@ -33,7 +33,7 @@ function catalog(models: string[], capabilities?: Record<string, unknown>) {
       capabilities,
       models,
       name: 'Local Quota Hub',
-      slug: 'aigw',
+      slug: 'bezel',
       total_models: models.length
     }
   ]
@@ -140,7 +140,7 @@ describe('ModelMenuPanel — a model that is only waiting', () => {
     await waitFor(() => {
       // The pick keeps the hub's slug (that is the routing identity) and the
       // joined id the catalog speaks.
-      expect(onSelectModel).toHaveBeenCalledWith({ model: 'opencode_api/big-pickle', provider: 'aigw' })
+      expect(onSelectModel).toHaveBeenCalledWith({ model: 'opencode_api/big-pickle', provider: 'bezel' })
     })
   })
 })

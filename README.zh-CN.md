@@ -54,7 +54,7 @@ Plobi 是一款桌面 AI 智能体，将您免费额度内的 AI 工具 —— C
 - **故障转移路由** —— 当服务商异常或额度用尽时自动切换来源
 - **管家提醒** —— 定时晨报、待办摘要与额度预警通知
 
-### 本地 AI 网关（aigw）
+### 本地 AI 网关（bezel）
 - 运行于 `localhost` 的 OpenAI 兼容 `/v1/chat/completions` 端点
 - 三种集成模式：spawn-CLI（合规）、GUI 自动化、逆向 API
 - 粘性会话、熔断、限流、加密凭据保险库
@@ -151,7 +151,7 @@ export OPENAI_BASE_URL=https://api.example.com/v1
 │  └─────────┘  └──────────┘  └───────┬───────┘  │
 │                                     │           │
 │  ┌─────────────┐  ┌────────────┐   │           │
-│  │ Quota Pool  │  │  aigw      │←──┘           │
+│  │ Quota Pool  │  │  bezel      │←──┘           │
 │  │ (health)    │  │ (routing)  │               │
 │  └─────────────┘  └─────┬──────┘               │
 └──────────────────────────┼──────────────────────┘
@@ -166,7 +166,7 @@ export OPENAI_BASE_URL=https://api.example.com/v1
 
 ```
 ├── agent/              # 核心 Agent 运行时（LangGraph）
-├── aigw/               # 本地 AI 网关（OpenAI 兼容）
+├── bezel/               # 本地 AI 网关（OpenAI 兼容）
 ├── apps/desktop/       # Electron 桌面应用
 ├── plobi/             # Plobi 专属模块
 │   ├── agenda/         # 日程服务与采集器

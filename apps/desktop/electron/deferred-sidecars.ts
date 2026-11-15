@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // R-051 — the honest status ledger for the two subsystems that a since-revoked postponement pushed to the
-// last tier: the aigw quota gateway (:8000) and the chatlog WeChat collector
+// last tier: the bezel quota gateway (:8000) and the chatlog WeChat collector
 // (:5030).
 //
 // Product context: 「先不要做采集的功能了……等应用打磨得比较完整了，我才会提供数据的」
@@ -96,12 +96,12 @@ export interface DeferredSubsystemRow extends DeferredSubsystemDefinition {
 }
 
 const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
-  aigw: {
-    // Byte-equal to the `aigw` entry in doctor.py's DEFERRED_ENABLE_HINTS — a
+  bezel: {
+    // Byte-equal to the `bezel` entry in doctor.py's DEFERRED_ENABLE_HINTS — a
     // test pins it, because this is a claim about app behaviour and it must say
     // the same thing wherever the user reads it.
     enableHint: 'Plobi 会在需要时自动启动该服务，无需手动操作',
-    id: 'aigw',
+    id: 'bezel',
     name: {
       en: 'Local Quota Service',
       ja: 'ローカルクォータサービス',
@@ -202,7 +202,7 @@ function profileBackendRowId(profile: string): string {
  * only exists at the moment the shell is about to send a key, and a row that said
  * "still probing" forever would be its own kind of silence.
  */
-export const KEY_RECONCILE_ROW_ID = 'aigw-key'
+export const KEY_RECONCILE_ROW_ID = 'bezel-key'
 
 /** Same shape as the quota hub hint: the app owns the lifecycle, nothing to run. */
 const KEY_RECONCILE_ENABLE_HINT =
@@ -332,7 +332,7 @@ function createDeferredSubsystemLedger({
      *
      * A `backend:<profile>` row is created by its first observation, since the
      * set of profiles this machine attempts is runtime data — as is the moment
-     * the shell first tries to send a key, which creates `aigw-key`. Any other
+     * the shell first tries to send a key, which creates `bezel-key`. Any other
      * unknown id is still refused.
      */
     record(

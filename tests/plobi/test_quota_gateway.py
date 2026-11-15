@@ -29,10 +29,10 @@ from plobi.quota.gateway import (
     sources_from_catalog,
 )
 from plobi.quota.pool import GATEWAY_RETRY_SECONDS, QuotaPool
-from plobi.quota.sources import AigwSource, CheapApiSource, HealthStatus
+from plobi.quota.sources import BezelSource, CheapApiSource, HealthStatus
 
 # Captured shape from the running gateway (uvicorn on 127.0.0.1:8000). The mock
-# entry serving a workbuddy/ id is real, not invented — see aigw/config.yaml.
+# entry serving a workbuddy/ id is real, not invented — see bezel/config.yaml.
 LIVE_CATALOG = {
     "object": "list",
     "data": [
@@ -123,7 +123,7 @@ def test_one_source_per_app_with_all_its_models():
     assert seen == 4
     assert set(sources) == {"antigravity", "cursor"}
     ant = sources["antigravity"]
-    assert ant["kind"] == "aigw"
+    assert ant["kind"] == "bezel"
     assert ant["derived"] is True
     assert ant["base_url"] == "http://h/v1"
     assert sorted(ant["models"]) == [
@@ -237,7 +237,7 @@ def test_registered_sources_survive_a_failed_read():
     calls: list = []
     pool = _pool({"base_url": "http://h/v1", "api_key": "k", "enabled": True})
     pool.refresh_gateway(fetch=lambda b, k, **kw: _outcome(CatalogState.OK, {
-        "antigravity": {"kind": "aigw", "model": "antigravity/x", "base_url": b,
+        "antigravity": {"kind": "bezel", "model": "antigravity/x", "base_url": b,
                         "api_key": k, "derived": True}
     }))
     assert "antigravity" in pool.sources
@@ -254,16 +254,16 @@ def test_registered_sources_survive_a_failed_read():
 def test_catalog_removal_drops_only_derived_sources():
     pool = _pool({"base_url": "http://h/v1", "api_key": "k", "enabled": True})
     pool.refresh_gateway(fetch=lambda b, k, **kw: _outcome(CatalogState.OK, {
-        "antigravity": {"kind": "aigw", "model": "antigravity/x", "base_url": b,
+        "antigravity": {"kind": "bezel", "model": "antigravity/x", "base_url": b,
                         "api_key": k, "derived": True},
-        "cursor": {"kind": "aigw", "model": "cursor/auto", "base_url": b,
+        "cursor": {"kind": "bezel", "model": "cursor/auto", "base_url": b,
                    "api_key": k, "derived": True},
     }))
     assert {"antigravity", "cursor"} <= set(pool.sources)
     assert "zhipu-air" in pool.order
 
     pool.refresh_gateway(force=True, fetch=lambda b, k, **kw: _outcome(CatalogState.OK, {
-        "cursor": {"kind": "aigw", "model": "cursor/auto", "base_url": b,
+        "cursor": {"kind": "bezel", "model": "cursor/auto", "base_url": b,
                    "api_key": k, "derived": True},
     }))
     assert set(pool.sources) == {"zhipu-air", "cursor"}
@@ -276,7 +276,7 @@ def test_probe_and_resolve_never_fetch():
     calls: list = []
     pool = _pool({"base_url": "http://h/v1", "api_key": "k", "enabled": True})
     pool.refresh_gateway(fetch=_counting(calls, _outcome(CatalogState.OK, {
-        "antigravity": {"kind": "aigw", "model": "antigravity/x", "base_url": "http://h/v1",
+        "antigravity": {"kind": "bezel", "model": "antigravity/x", "base_url": "http://h/v1",
                         "api_key": "k", "derived": True}
     })))
     calls.clear()
@@ -321,7 +321,7 @@ def test_failed_read_retries_before_the_ttl_expires():
 def test_disabled_gateway_clears_derived_and_says_why():
     pool = _pool({"base_url": "http://h/v1", "api_key": "k", "enabled": True})
     pool.refresh_gateway(fetch=lambda b, k, **kw: _outcome(CatalogState.OK, {
-        "antigravity": {"kind": "aigw", "model": "antigravity/x", "base_url": b,
+        "antigravity": {"kind": "bezel", "model": "antigravity/x", "base_url": b,
                         "api_key": k, "derived": True}
     }))
     pool.gateway = {"base_url": "http://h/v1", "enabled": False}
@@ -365,7 +365,7 @@ def test_missing_endpoint_is_reported_not_raised():
 
 def test_derived_source_probes_degraded_never_healthy():
     """存在 ≠ 能用：catalog 只证明适配器注册过，不证明一次对话能跑通。"""
-    src = AigwSource(
+    src = BezelSource(
         "antigravity", model="antigravity/x", base_url="http://h/v1", api_key="k",
         derived=True,
     )
@@ -376,7 +376,7 @@ def test_derived_source_probes_degraded_never_healthy():
 
 
 def test_derived_source_without_credential_is_unavailable():
-    src = AigwSource("antigravity", model="antigravity/x", derived=True)
+    src = BezelSource("antigravity", model="antigravity/x", derived=True)
     assert src.probe().health is HealthStatus.UNAVAILABLE
 
 
@@ -384,9 +384,9 @@ def test_build_sources_marks_only_gateway_entries_derived():
     from plobi.quota.sources import build_sources
 
     built = build_sources({"sources": {
-        "antigravity": {"kind": "aigw", "model": "a/x", "base_url": "http://h/v1",
+        "antigravity": {"kind": "bezel", "model": "a/x", "base_url": "http://h/v1",
                         "api_key": "k", "derived": True, "capabilities": {"tools": True}},
-        "workbuddy": {"kind": "aigw", "model": "w/y", "base_url": "http://h/v1", "api_key": "k"},
+        "workbuddy": {"kind": "bezel", "model": "w/y", "base_url": "http://h/v1", "api_key": "k"},
     }})
     assert built["antigravity"].derived is True
     assert built["antigravity"].capabilities == {"tools": True}
@@ -398,11 +398,11 @@ def test_build_sources_marks_only_gateway_entries_derived():
 
 
 def test_gateway_settings_honors_the_documented_env(monkeypatch):
-    """``PLOBI_AIGW_URL`` 是既有真源；额度池必须跟着它，而不是另读一套。"""
+    """``PLOBI_BEZEL_URL`` 是既有真源；额度池必须跟着它，而不是另读一套。"""
     from plobi.quota.config import gateway_settings
 
-    monkeypatch.setenv("PLOBI_AIGW_URL", "http://127.0.0.1:9111/v1")
-    monkeypatch.setenv("AIGW_API_KEY", "sk-from-env")
+    monkeypatch.setenv("PLOBI_BEZEL_URL", "http://127.0.0.1:9111/v1")
+    monkeypatch.setenv("BEZEL_API_KEY", "sk-from-env")
     settings = gateway_settings({})
     assert settings["base_url"] == "http://127.0.0.1:9111/v1"
     assert settings["api_key"] == "sk-from-env"
@@ -434,7 +434,7 @@ def test_load_routes_legacy_desktop_entries_to_the_gateway(monkeypatch, tmp_path
     cfg.write_text(
         "sources:\n"
         "  zhipu-air: {kind: cheap_api, model: glm-5.3-flash}\n"
-        "  antigravity: {kind: aigw, model: antigravity/gemini-3-pro}\n",
+        "  antigravity: {kind: bezel, model: antigravity/gemini-3-pro}\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("PLOBI_QUOTA_CONFIG", str(cfg))
@@ -466,7 +466,7 @@ class _FakeResponse:
 
 def _send_probe(monkeypatch, base_url):
     from plobi.quota.route import _default_send
-    from plobi.quota.sources import AigwSource
+    from plobi.quota.sources import BezelSource
 
     seen = {}
 
@@ -475,7 +475,7 @@ def _send_probe(monkeypatch, base_url):
         return _FakeResponse({"choices": [{"message": {"role": "assistant", "content": "pong"}}]})
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-    src = AigwSource("workbuddy", model="workbuddy/glm-5.3", base_url=base_url, api_key="k")
+    src = BezelSource("workbuddy", model="workbuddy/glm-5.3", base_url=base_url, api_key="k")
     out = _default_send("hi", src)
     return out, seen["url"]
 

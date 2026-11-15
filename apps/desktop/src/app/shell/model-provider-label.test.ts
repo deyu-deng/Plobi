@@ -10,9 +10,9 @@ function provider(overrides: Partial<ModelOptionProvider> & { slug: string }): M
 }
 
 describe('humanizeProviderName', () => {
-  it('maps aigw-aggregated software to its brand (slug or name match)', () => {
+  it('maps bezel-aggregated software to its brand (slug or name match)', () => {
     expect(humanizeProviderName(provider({ slug: 'workbuddy', name: 'anything' }))).toBe('WorkBuddy')
-    expect(humanizeProviderName(provider({ slug: 'whatever', name: 'AIGW · Antigravity' }))).toBe('Antigravity')
+    expect(humanizeProviderName(provider({ slug: 'whatever', name: 'BEZEL · Antigravity' }))).toBe('Antigravity')
     expect(humanizeProviderName(provider({ slug: 'qoder', name: 'Qoder' }))).toBe('Qoder')
   })
 
@@ -23,26 +23,26 @@ describe('humanizeProviderName', () => {
   })
 
   it('strips internal vocabulary when the gateway sends an unknown name', () => {
-    expect(humanizeProviderName(provider({ slug: 'proxy-x', name: 'AIGW Custom Endpoint (proxy-x)' }))).toBe(
+    expect(humanizeProviderName(provider({ slug: 'proxy-x', name: 'BEZEL Custom Endpoint (proxy-x)' }))).toBe(
       '(proxy-x)'
     )
   })
 
   it('falls back to the slug so groups are never untitled', () => {
-    expect(humanizeProviderName(provider({ slug: 'my-gateway', name: 'AIGW' }))).toBe('My Gateway')
+    expect(humanizeProviderName(provider({ slug: 'my-gateway', name: 'BEZEL' }))).toBe('My Gateway')
   })
 
   it('the quota hub folds into the catalog word — in every interface language', () => {
     // 这一支原来写死「订阅额度」（日文与繁中界面上也是中文），而且那条正则里
     // 混进两枚控制字符（`39020bf8` 带进来的），英文那一半永远不命中 ⇒
     // 「Local Quota Hub」会原样上屏。现在两半都活了，文案走 i18n 目录。
-    expect(humanizeProviderName(provider({ slug: 'aigw', name: 'Local Quota Hub' }))).toBe('Subscriptions')
-    expect(humanizeProviderName(provider({ slug: 'aigw', name: '本地额度网关' }))).toBe('Subscriptions')
+    expect(humanizeProviderName(provider({ slug: 'bezel', name: 'Local Quota Hub' }))).toBe('Subscriptions')
+    expect(humanizeProviderName(provider({ slug: 'bezel', name: '本地额度网关' }))).toBe('Subscriptions')
 
     setRuntimeI18nLocale('ja')
 
     try {
-      expect(humanizeProviderName(provider({ slug: 'aigw', name: 'Local Quota Hub' }))).toBe('サブスクリプション')
+      expect(humanizeProviderName(provider({ slug: 'bezel', name: 'Local Quota Hub' }))).toBe('サブスクリプション')
     } finally {
       setRuntimeI18nLocale('en')
     }
@@ -54,7 +54,7 @@ describe('humanizeProviders', () => {
     const out = humanizeProviders([
       provider({ slug: 'mock', name: 'Mock', models: ['mock/echo', 'mock/fail'] }),
       provider({ slug: 'deepseek', name: 'CUSTOM ENDPOINT', models: ['deepseek/deepseek-chat', 'mock/echo'] }),
-      provider({ slug: 'workbuddy', name: 'AIGW', models: ['workbuddy/kimi-k3'] }),
+      provider({ slug: 'workbuddy', name: 'BEZEL', models: ['workbuddy/kimi-k3'] }),
       provider({ slug: 'empty-after-filter', models: ['mock/static'] })
     ])
 

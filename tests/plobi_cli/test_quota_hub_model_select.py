@@ -1,15 +1,15 @@
 """订阅额度那条腿的模型，得真的选得上 —— 以及没选时后端自己挑一条。
 
 现场（用户 11-10 18:37「我在这个模型选择框里面死活选不上。magpie的模型是怎么回事呢？」）：
-后端给模型框的那份 payload 里，magpie 那 29 个 id 一个不少地挂在 `aigw` 这一行上，
+后端给模型框的那份 payload 里，magpie 那 29 个 id 一个不少地挂在 `bezel` 这一行上，
 渲染层也照着网关的判决把它们克隆成每条腿一组（用户看得到 OPENCODE-ZEN-FREE 那一组）。
-点了却切不过去，红的是一句 **"Unknown provider 'aigw'"**。
+点了却切不过去，红的是一句 **"Unknown provider 'bezel'"**。
 
 根因不在屏上，在后端有**两份 provider 解析器**：
 
 * ``plobi_cli/auth.py`` 读**插件注册表**（``providers/``，每个
-  ``plugins/model-providers/*`` 调 ``register_provider``）——``aigw`` 在那里；
-* ``plobi_cli/providers.py`` 读 **models.dev ＋ PLOBI_OVERLAYS**——``aigw`` 不在。
+  ``plugins/model-providers/*`` 调 ``register_provider``）——``bezel`` 在那里；
+* ``plobi_cli/providers.py`` 读 **models.dev ＋ PLOBI_OVERLAYS**——``bezel`` 不在。
 
 于是同一个名字，一半认得一半不认得：凭据那半认得（所以网关能路由），切换那半
 不认得（所以每一刀都死在 ``resolve_provider_full`` �� — 模型框里的行带着网关的
@@ -68,14 +68,14 @@ HUB_WAITING = {
 
 
 def test_the_hub_resolves_through_the_plugin_registry():
-    """`aigw` 只由插件注册 ⇒ 这一格必须答得出它的端点与钥匙名。
+    """`bezel` 只由插件注册 ⇒ 这一格必须答得出它的端点与钥匙名。
 
     端点与钥匙名都从插件那份 profile 读，**不在这里再抄一遍**——抄一遍就有两处
     真源，改一处就漂一处。
     """
     pdef = resolve_provider_full(QUOTA_HUB_SLUG, {}, [])
 
-    assert pdef is not None, "网关那条腿解析不出来 ⇒ --provider aigw 必红"
+    assert pdef is not None, "网关那条腿解析不出来 ⇒ --provider bezel 必红"
     assert pdef.id == QUOTA_HUB_SLUG
     assert pdef.base_url.startswith("http://127.0.0.1:"), pdef.base_url
     assert pdef.api_key_env_vars, "钥匙名得从插件那份 profile 来"
@@ -137,7 +137,7 @@ def test_an_alias_still_resolves_to_the_same_place():
 
 
 def test_switching_to_a_hub_model_succeeds(monkeypatch):
-    """点一个网关的模型 ⇒ 切得过去，不再是「Unknown provider 'aigw'」。"""
+    """点一个网关的模型 ⇒ 切得过去，不再是「Unknown provider 'bezel'」。"""
     _stub_the_network(monkeypatch)
 
     result = switch_model(
@@ -180,9 +180,9 @@ def test_the_hub_model_id_survives_the_switch(monkeypatch):
 def _hub_answers(monkeypatch):
     """网关在答：接缝换成假应答，钥匙与端点钉死（不读本机 env）。"""
     monkeypatch.setattr(
-        "plobi.agents.registry.aigw_base_url", lambda: "http://127.0.0.1:8000/v1"
+        "plobi.agents.registry.bezel_base_url", lambda: "http://127.0.0.1:8000/v1"
     )
-    monkeypatch.setattr("plobi.agents.registry.aigw_api_key", lambda: "sk-test")
+    monkeypatch.setattr("plobi.agents.registry.bezel_api_key", lambda: "sk-test")
     monkeypatch.setattr(
         "plobi_cli.models.hub_selectable_model_ids",
         lambda api_key, base_url, **kwargs: list(HUB_SELECTABLE),
@@ -282,9 +282,9 @@ def test_a_silent_hub_picks_nothing(monkeypatch):
     挑不出来不是「你没有模型」——那是网关那一帧自己的规矩，这里也得守。
     """
     monkeypatch.setattr(
-        "plobi.agents.registry.aigw_base_url", lambda: "http://127.0.0.1:8000/v1"
+        "plobi.agents.registry.bezel_base_url", lambda: "http://127.0.0.1:8000/v1"
     )
-    monkeypatch.setattr("plobi.agents.registry.aigw_api_key", lambda: "sk-test")
+    monkeypatch.setattr("plobi.agents.registry.bezel_api_key", lambda: "sk-test")
     monkeypatch.setattr(
         "plobi_cli.models.hub_selectable_model_ids",
         lambda api_key, base_url, **kwargs: None,
@@ -304,7 +304,7 @@ def test_a_silent_hub_picks_nothing(monkeypatch):
 def _stub_the_network(monkeypatch) -> None:
     """切换那条路上的两处网络接缝：凭据解析与模型校验。
 
-    真机上这两处分别去问网关与厂商；本档只关心「解析得出 aigw」这一件事，
+    真机上这两处分别去问网关与厂商；本档只关心「解析得出 bezel」这一件事，
     不该去花额度，也不该让答案随机器变。
     """
     monkeypatch.setattr(

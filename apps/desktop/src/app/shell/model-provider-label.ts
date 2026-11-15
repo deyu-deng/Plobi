@@ -3,12 +3,12 @@ import type { ModelOptionProvider } from '@/types/plobi'
 
 /**
  * R-017 — humanize the model selector. The gateway's /v1/models catalog speaks
- * in internal vocabulary (`AIGW`, `CUSTOM ENDPOINT`, `mock/...`); users get
+ * in internal vocabulary (`BEZEL`, `CUSTOM ENDPOINT`, `mock/...`); users get
  * software/vendor names instead. Display-only: slugs are preserved so model
  * switching, presets and visibility keys keep their stable identity.
  */
 
-const AIGW_SOFTWARE_PROVIDERS: ReadonlyArray<readonly [RegExp, string]> = [
+const BEZEL_SOFTWARE_PROVIDERS: ReadonlyArray<readonly [RegExp, string]> = [
   [/workbuddy/i, 'WorkBuddy'],
   [/antigravity/i, 'Antigravity'],
   [/\bqoder\b/i, 'Qoder']
@@ -29,7 +29,7 @@ const VENDOR_LABELS: ReadonlyArray<readonly [string, string]> = [
 ]
 
 /** Internal vocabulary that must never surface as a group title. */
-const INTERNAL_WORDS = /\b(aigw|custom\s*endpoint|custom|endpoint|gateway|aggregator)\b/gi
+const INTERNAL_WORDS = /\b(bezel|custom\s*endpoint|custom|endpoint|gateway|aggregator)\b/gi
 
 /** The catalog path that holds the quota-hub row's display word. */
 const QUOTA_HUB_LABEL_KEY = 'settings.nav.providerSubscriptions'
@@ -69,15 +69,15 @@ export function humanizeProviderName(provider: Pick<ModelOptionProvider, 'name' 
   const slug = (provider.slug ?? '').trim()
   const name = (provider.name ?? '').trim()
 
-  // 1. aigw-aggregated software keeps its own brand (WorkBuddy / Antigravity).
-  for (const [pattern, label] of AIGW_SOFTWARE_PROVIDERS) {
+  // 1. bezel-aggregated software keeps its own brand (WorkBuddy / Antigravity).
+  for (const [pattern, label] of BEZEL_SOFTWARE_PROVIDERS) {
     if (pattern.test(slug) || pattern.test(name)) {
       return label
     }
   }
 
   // 2. The routing plumbing is not a vendor, whatever the gateway called itself.
-  //    Measured 2026-10-28: `providers.aigw.name` read "Local Quota Hub" and showed up
+  //    Measured 2026-10-28: `providers.bezel.name` read "Local Quota Hub" and showed up
   //    verbatim on a surface that had no per-software clone to fall back on. The
   //    gateway rename is fixed at the source too; this is the belt-and-braces so a
   //    future name like "本地额度网关" cannot reach a screen either.

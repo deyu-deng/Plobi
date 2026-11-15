@@ -29,7 +29,7 @@ from cron import jobs
 
 DRIFT_TEXT = (
     "RuntimeError: Skipped to prevent unintended spend: global inference config drifted "
-    "since this job was created (provider 'aigw' -> 'custom'; model 'workbuddy/hy3' -> "
+    "since this job was created (provider 'bezel' -> 'custom'; model 'workbuddy/hy3' -> "
     "'workbuddy/space-bunny'), and this job is unpinned. No inference call was made."
 )
 
@@ -61,7 +61,7 @@ def test_a_drift_refusal_leaves_a_structured_field_on_the_record(home):
     row = jobs.get_job(job["id"])
     assert row["last_status"] == "error"
     axes = {(a["axis"], a["from"], a["to"]) for a in row["last_drift"]["axes"]}
-    assert axes == {("provider", "aigw", "custom"), ("model", "workbuddy/hy3", "workbuddy/space-bunny")}
+    assert axes == {("provider", "bezel", "custom"), ("model", "workbuddy/hy3", "workbuddy/space-bunny")}
 
 
 def test_an_ordinary_failure_does_not_fake_a_drift(home):

@@ -179,7 +179,7 @@ def _resolve_source(
             if pool_url and not merged.get("base_url"):
                 merged["base_url"] = pool_url
     # kind / model 缺省兜底
-    merged.setdefault("kind", default.get("kind", "aigw"))
+    merged.setdefault("kind", default.get("kind", "bezel"))
     merged.setdefault("model", default.get("model", ""))
     return merged
 
@@ -188,9 +188,9 @@ def gateway_settings(file_cfg: Optional[dict[str, Any]] = None) -> dict[str, Any
     """Resolve how to reach the gateway + which derived apps to keep out.
 
     ``base_url`` / ``api_key`` are read from the agents layer
-    (``plobi.agents.registry.aigw_base_url()`` / ``aigw_api_key()``) — the *same*
-    single source ``plugins/model-providers/aigw`` already uses, including the
-    legacy ``PLOBI_QUOTA_AIGW_*`` aliases. Deliberately not re-implemented here.
+    (``plobi.agents.registry.bezel_base_url()`` / ``bezel_api_key()``) — the *same*
+    single source ``plugins/model-providers/bezel`` already uses, including the
+    legacy ``PLOBI_QUOTA_BEZEL_*`` aliases. Deliberately not re-implemented here.
 
     The lazy import avoids an import cycle (the agents layer reaches back into
     the pool), and a failure is surfaced as a warning rather than swallowed: an
@@ -211,9 +211,9 @@ def gateway_settings(file_cfg: Optional[dict[str, Any]] = None) -> dict[str, Any
     base_url = ""
     api_key = ""
     try:
-        from plobi.agents.registry import aigw_api_key, aigw_base_url
+        from plobi.agents.registry import bezel_api_key, bezel_base_url
 
-        base_url, api_key = aigw_base_url(), aigw_api_key()
+        base_url, api_key = bezel_base_url(), bezel_api_key()
     except Exception as exc:  # pragma: no cover — depends on the installed runtime
         logger.warning("plobi quota: gateway endpoint unreadable (%s)", exc)
     return {
@@ -291,7 +291,7 @@ def load() -> dict[str, Any]:
         name
         for name, scfg in raw_sources.items()
         if name not in DEFAULT_SOURCES and isinstance(scfg, dict)
-        and str(scfg.get("kind") or "aigw") != "cheap_api"
+        and str(scfg.get("kind") or "bezel") != "cheap_api"
     )
     if stale:
         logger.warning(

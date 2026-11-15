@@ -531,7 +531,7 @@ export function useMessageStream({
   })
 
   // failAssistantMessage is exposed so the desktop-quota send path (which
-  // bypasses the gateway event stream) can finalize an aigw stream failure
+  // bypasses the gateway event stream) can finalize an bezel stream failure
   // through the same state mutation the gateway event handler uses.
   return {
     appendAssistantDelta,

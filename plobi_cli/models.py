@@ -2468,25 +2468,25 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     normalized = normalize_provider(provider)
     if normalized == "openrouter":
         return model_ids(force_refresh=force_refresh)
-    if normalized == "aigw":
+    if normalized == "bezel":
         # The quota hub answers for itself which legs can serve a turn.
         api_key, base_url = "", ""
         try:
-            # Same source the aigw provider profile itself uses. Resolving through
+            # Same source the bezel provider profile itself uses. Resolving through
             # the credential pool instead pointed at a stale `http://127.0.0.1:8000`
             # that today is held by an unrelated http.server (404), which read as
             # "the hub is down" while the hub was in fact answering elsewhere.
-            from plobi.agents.registry import aigw_api_key, aigw_base_url
+            from plobi.agents.registry import bezel_api_key, bezel_base_url
 
-            api_key = (aigw_api_key() or "").strip()
-            base_url = (aigw_base_url() or "").strip()
+            api_key = (bezel_api_key() or "").strip()
+            base_url = (bezel_base_url() or "").strip()
         except Exception:  # noqa: BLE001
             api_key = base_url = ""
         if not base_url:
             try:
                 from plobi_cli.auth import resolve_api_key_provider_credentials
 
-                creds = resolve_api_key_provider_credentials("aigw")
+                creds = resolve_api_key_provider_credentials("bezel")
                 api_key = api_key or str(creds.get("api_key") or "").strip()
                 base_url = str(creds.get("base_url") or "").strip()
             except Exception:  # noqa: BLE001
@@ -2908,7 +2908,7 @@ def _load_provider_models_cache() -> dict:
             return {}
         # The hub's catalog is never a cached answer (see `cached_provider_model_ids`);
         # drop the entry a previous build wrote so it cannot come back.
-        if data.pop("aigw", None) is not None:
+        if data.pop("bezel", None) is not None:
             _save_provider_models_cache(data)
         return data
     except Exception:
@@ -2942,13 +2942,13 @@ def cached_provider_model_ids(
         return []
 
     # The quota hub is its own live authority, so its catalog is never cached.
-    # Measured 2026-10-27: the hub was NOT running and `provider_model_ids("aigw")`
+    # Measured 2026-10-27: the hub was NOT running and `provider_model_ids("bezel")`
     # correctly answered with nothing, yet the picker still offered 35 hub models
     # read straight out of `$PLOBI_HOME/provider_models_cache.json` — 17 of which
     # were already dead (expired credential, text-only transport) even while the hub
     # WAS up. A cached hub list is a promise the hub did not just make.
-    if normalized == "aigw":
-        return provider_model_ids("aigw")
+    if normalized == "bezel":
+        return provider_model_ids("bezel")
 
     cache = _load_provider_models_cache()
     fp = _credential_fingerprint(normalized)

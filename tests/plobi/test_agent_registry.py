@@ -337,8 +337,8 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # 裁 172：那张表是「这一类默认用什么」，**不接收任何一行的覆盖**（名册 24 行里
     # l2_project 占 23 行，折进去就是给一个 Agent 单选 = 整类一起变）。这一行自己的生效值
     # 问 ``route_for``——它仍是 deepseek/deepseek-chat，但只属于 agenda 那一行。
-    assert models["roles"]["l2_agenda"]["provider"] == "aigw"
-    assert models["roles"]["l2_agenda"]["model"] == "workbuddy/deepseek-chat"
+    assert models["roles"]["l2_agenda"]["provider"] == "bezel"
+    assert models["roles"]["l2_agenda"]["model"] == "workbuddy/deepseek-v4.1-flash"
     agenda_route = reg.route_for(reg.get("agenda"))
     assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")
     # ADR-0011：那张唯一的表断言绿（L1≠L2）
@@ -629,7 +629,7 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
 
 # ---------------------------------------------------------------------------
 # 可解析闸门：底座认不出来的 provider **不进那一个家的生效 model 节**
-# （症状：桌面点进分身 → 「Unknown provider 'aigw'. Check 'plobi model' …」）
+# （症状：桌面点进分身 → 「Unknown provider 'bezel'. Check 'plobi model' …」）
 # 闸门原样还在（:func:`plobi.agents.registry.profile_config_overlay`），只是位置从
 # "spawn 落盘那一节" 挪到了"读时叠这一节"，所以②那条的 warning 要从一次读取里收。
 # ---------------------------------------------------------------------------
@@ -810,11 +810,11 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     """注册表那条记录没写 provider/model 时，那个分身生效的模型＝顶层「配一次」那一份。
 
     反例（本次修掉的病症）：新落的 Framelet / Plobi 两条被盖成
-    ``provider: aigw`` + ``default: workbuddy/deepseek-chat``，而 ``base_url`` 还是
+    ``provider: bezel`` + ``default: workbuddy/deepseek-chat``，而 ``base_url`` 还是
     克隆来的 minimax —— 一个自相矛盾的三元组，用户从没选过它。它来自
     :data:`plobi.routing.models.DEFAULT_ROUTES` 的硬编码兜底：省略覆盖被当成了
     「用默认路由」，而那个默认路由和「用户当前配置的默认模型」不是一回事
-    （``e9b6034`` 把 aigw 注册成真 provider 后，可解析闸门也不再拦它）。
+    （``e9b6034`` 把 bezel 注册成真 provider 后，可解析闸门也不再拦它）。
     机制换了（裁 166 / ADR-0013）之后这一格是**读时**判的：行上没声明 ⇒ 整节覆盖都不给，
     于是生效值逐字等于顶层那一份，而不是"某处落盘的值没被改写"。
     """
@@ -832,7 +832,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     model = _effective_config(home, _slug_of(result))["model"]
     assert model == _CONFIGURED_DEFAULT, "分身被盖上了它没被选择的模型"
     rendered = json.dumps(model, ensure_ascii=False)
-    assert "aigw" not in rendered, rendered
+    assert "bezel" not in rendered, rendered
     assert "workbuddy" not in rendered, rendered
     assert result["routing_ok"] is True
     # 家里既没有配置文件、也没有路由表复印件（两样都只有共享层那一份）。
@@ -850,7 +850,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     _seed_profile_dir(spawn_env, "ctrl")
     provider = _resolvable_provider_name()
     reg.upsert(
-        _entry(name="ctrl", role="l2_planner", provider=provider, model="a-chosen-model",)
+        _entry(name="ctrl", role="l2_project", provider=provider, model="a-chosen-model",)
     )
     reg.save()
     reg.spawn("ctrl")
@@ -863,7 +863,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
 
 def test_agenda_template_carries_no_model_override(spawn_env, home):
     """日程秘书模板不许硬写 provider/model —— 它抄的是 DEFAULT_ROUTES 的 L2 兜底，
-    落进那唯一一份配置就是「用户没选过的提供商」+ 一个会当分组标题上屏的 aigw。
+    落进那唯一一份配置就是「用户没选过的提供商」+ 一个会当分组标题上屏的 bezel。
     """
     from plobi.agents.registry import AGENDA_TEMPLATE_PROFILE, agenda_template_entry
 
@@ -881,7 +881,7 @@ def test_agenda_template_carries_no_model_override(spawn_env, home):
     model = _effective_config(home, AGENDA_TEMPLATE_PROFILE)["model"]
     assert model == _CONFIGURED_DEFAULT
     rendered = json.dumps(model, ensure_ascii=False)
-    assert "aigw" not in rendered and "workbuddy" not in rendered, rendered
+    assert "bezel" not in rendered and "workbuddy" not in rendered, rendered
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
     assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
     # 11-06：``default`` 是 L1（名册 name ``secretary``）专属的 slug，别人撞上它一律

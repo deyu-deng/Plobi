@@ -28,13 +28,12 @@ import os
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
 L1_SECRETARY = "l1_secretary"
 L2_AGENDA = "l2_agenda"
-L2_PLANNER = "l2_planner"
 L2_PROJECT = "l2_project"
 # ``l2_course``（用户 10-11 拍：五门课要进名册，并且"再加一个角色"）。课业条目是**数据**，
 # 不是分身：它故意**不进 ``DEFAULT_ROUTES``**（没有模型路由 ⇒ ``resolve()`` 会抛 RoutingError）。
@@ -44,23 +43,52 @@ L2_PROJECT = "l2_project"
 # 作业归属靠的是条目名（``planning.py::_matches_project`` 读 ``evidence.course``），不靠分身。
 L2_COURSE = "l2_course"
 
-KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PLANNER, L2_PROJECT, L2_COURSE)
+KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PROJECT, L2_COURSE)
 
-# Surfaces whose quota cannot be converted into an API key. They belong to the
-# offload (L3) column as external AI software, not to L1/L2 model routes;
-# wiring one to L1 would make the secretary depend on GUI automation.
-GUI_ONLY_SURFACES = ("marvis", "cursor", "antigravity-gui", "workbuddy", "gui")
-
-# ``aigw`` is the local OpenAI-compatible gateway (WorkBuddy quota etc.).
-# L2 generation goes through aigw model ids like ``workbuddy/deepseek-chat``.
-# The local quota gateway is a model/provider route for L2 generation — it is
-# not an L3 agent (ruling 205). Direct ``deepseek`` API routes are retired.
+# ``bezel`` is the local OpenAI-compatible gateway (WorkBuddy / OpenCode quota
+# and friends behind one loopback endpoint). L2 generation goes through bezel
+# model ids like ``workbuddy/deepseek-v4.1-flash``; the first path segment names
+# the software that actually serves the leg — that is the picker's provider row,
+# and :attr:`ModelRoute.display_model` is the model row.
+#
+# 2026-11-14 用户裁定：**不存在 L2 三角色**。名册里的五类 L2（projects /
+# butler / events / research / courses）是平行的，role 一律是 ``l2_project``，
+# 各自的模型覆盖写在名册行上（裁 42），所以这里只有一格 L2 默认。
+# ``l2_planner`` 是「三档 L2」时代的孤儿角色，零使用者，已随本次清理删除。
+# ``l2_agenda`` 不是预设而是**名册真角色**（S2 只允许一个日程 L2，见
+# ``registry.AGENDA_TEMPLATE_ROLE``），所以它仍在表里。
+# The gateway is a model/provider route for L2 generation — it is not an L3
+# agent (ruling 205). Direct ``deepseek`` API routes are retired.
 DEFAULT_ROUTES: dict[str, dict[str, str]] = {
     L1_SECRETARY: {"provider": "moonshot", "model": "kimi-k3"},
-    L2_AGENDA: {"provider": "aigw", "model": "workbuddy/deepseek-chat"},
-    L2_PLANNER: {"provider": "aigw", "model": "workbuddy/deepseek-chat"},
-    L2_PROJECT: {"provider": "aigw", "model": "workbuddy/deepseek-chat"},
+    L2_PROJECT: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
+    L2_AGENDA: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
 }
+
+# 2026-11-14 改名迁移：``aigw`` 曾是本机网关的机器标识，现在叫 ``bezel``。
+# 没有老用户，但**这一台**的 ``models.json`` 是从旧版本写下来的，读侧必须认得
+# 旧值，否则升级后第一次加载会把 provider 解析成一个已经不存在的插件。
+# 迁移只在读侧做，写侧永远只出新值。
+_LEGACY_PROVIDER_ALIASES = {"aigw": "bezel"}
+
+# 同上：这些 role 是退役结构（「三档 L2」）留在配置里的行，读侧直接丢弃。
+_RETIRED_ROLES = frozenset({"l2_planner"})
+
+# ``workbuddy/deepseek-chat`` 当时是被从 DEFAULT_ROUTES 抄进配置的假 id，
+# 上游网关从来没有这个模型（2026-11-13 实测 29 个模型里 deepseek 只有
+# ``deepseek-v4.1-flash`` / ``deepseek-v4-pro``）。撞上它的 route 视同「没配」，
+# 回落到默认，否则又是一条发出去必 404 的死路由。
+_RETIRED_MODELS = frozenset({"workbuddy/deepseek-chat"})
+
+
+def _migrated_provider(provider: str) -> str:
+    """Map a retired provider id onto its current name (``aigw`` → ``bezel``).
+
+    Case-insensitive on the way in, original text preserved when nothing matches:
+    the value is a machine id that lands in logs and ``models.json``, so quietly
+    lowercasing a provider we know nothing about would rewrite the user's file.
+    """
+    return _LEGACY_PROVIDER_ALIASES.get(provider.strip().lower(), provider)
 
 
 class RoutingError(ValueError):
@@ -124,16 +152,29 @@ class ModelRoute:
         return self.model or self.provider
 
     @property
-    def is_gui_surface(self) -> bool:
-        provider = (self.provider or "").lower().strip()
-        model = (self.model or "").lower().strip()
-        # aigw exposes desktop-quota model ids (e.g. workbuddy/*) as an OpenAI-
-        # compatible API. That is a model route for L2 generation — not a
-        # HID/GUI surface and not an L3 agent.
-        if provider == "aigw":
-            return False
-        blob = f"{provider} {model}"
-        return any(surface in blob for surface in GUI_ONLY_SURFACES)
+    def upstream(self) -> str:
+        """The software that actually serves this leg (``workbuddy/x`` → workbuddy).
+
+        The gateway's model ids are ``<upstream>/<model>``. That first segment is
+        what the picker shows as the *provider* row; the gateway slug itself is
+        plumbing and never reaches a list row (README 裁定 45.4).
+        """
+        head, sep, _rest = (self.model or "").partition("/")
+        return head.strip().lower() if sep else ""
+
+    @property
+    def display_model(self) -> str:
+        """The model row text: the real model name, without the upstream prefix.
+
+        2026-11-14 用户拍：模型名上屏不要带 ``workbuddy``。带上之后那一行读起来
+        像第二个提供商名（当时框里是 ``workbuddy/hy4free``），而甲/乙两案里他
+        选了乙 —— 只留真实模型名。请求层不受影响：发出去的仍是完整复合 id
+        （:attr:`model`），剥前缀只发生在渲染层。
+        """
+        head, sep, rest = (self.model or "").partition("/")
+        if sep and rest:
+            return rest
+        return self.model or ""
 
 
 @dataclass
@@ -155,19 +196,21 @@ class ModelRouter:
         routes: dict[str, ModelRoute] = {}
         for role, defaults in DEFAULT_ROUTES.items():
             entry = raw.get(role) if isinstance(raw.get(role), dict) else {}
-            routes[role] = ModelRoute(
-                role=role,
-                provider=str(entry.get("provider") or defaults["provider"]),
-                model=str(entry.get("model") or defaults["model"]),
-            )
+            provider = _migrated_provider(str(entry.get("provider") or defaults["provider"]))
+            model = str(entry.get("model") or defaults["model"])
+            if model.strip().lower() in _RETIRED_MODELS:
+                # 假 id：这条腿从来没通过，落回默认而不是把它继续背下去。
+                model = defaults["model"]
+            routes[role] = ModelRoute(role=role, provider=provider, model=model)
 
-        # Roles the operator invented (extra project agents) are kept as-is.
+        # Roles the operator invented (extra project agents) are kept as-is,
+        # minus the ones a retired structure left behind.
         for role, entry in raw.items():
-            if role in routes or not isinstance(entry, dict):
+            if role in routes or role in _RETIRED_ROLES or not isinstance(entry, dict):
                 continue
             routes[role] = ModelRoute(
                 role=role,
-                provider=str(entry.get("provider") or ""),
+                provider=_migrated_provider(str(entry.get("provider") or "")),
                 model=str(entry.get("model") or ""),
             )
 
@@ -209,8 +252,17 @@ class ModelRouter:
     def is_l1(self, role: str) -> bool:
         return role == L1_SECRETARY
 
-    def violations(self) -> list[str]:
-        """Contract checks. Empty list means the routing obeys ADR-0011."""
+    def violations(self, known_models: Optional[Iterable[str]] = None) -> list[str]:
+        """Contract checks. Empty list means the routing obeys ADR-0011.
+
+        ``known_models`` is the upstream catalogue when the caller already has
+        one in hand (settings page, doctor). Passing it turns "the id looks
+        plausible" into "the id was actually listed", which is the check that
+        was missing when ``workbuddy/deepseek-chat`` sat in three routes for two
+        months: nothing here ever asked upstream whether the model existed.
+        Left as ``None`` the check is skipped — pure routing code must not go
+        near the network just to answer a validity question.
+        """
         problems: list[str] = []
 
         l1 = self.routes.get(L1_SECRETARY)
@@ -218,17 +270,18 @@ class ModelRouter:
             problems.append("l1_secretary has no model configured")
             return problems
 
-        if l1.is_gui_surface:
-            problems.append(
-                f"l1_secretary points at a GUI-only surface ({l1.qualified}); "
-                "those belong to the offload (L3) column"
-            )
+        catalogue: Optional[set[str]] = None
+        if known_models is not None:
+            catalogue = {m.strip() for m in known_models if m and m.strip()}
 
         for role, route in self.routes.items():
             if role == L1_SECRETARY:
                 continue
             if not route.configured:
                 problems.append(f"{role} has no model configured")
+                continue
+            if catalogue is not None and route.model not in catalogue:
+                problems.append(f"{role} points at {route.model!r}, which upstream does not list")
                 continue
             if route.qualified == l1.qualified:
                 problems.append(
@@ -238,8 +291,8 @@ class ModelRouter:
 
         return problems
 
-    def assert_valid(self) -> None:
-        problems = self.violations()
+    def assert_valid(self, known_models: Optional[Iterable[str]] = None) -> None:
+        problems = self.violations(known_models)
         if problems:
             raise RoutingError("; ".join(problems))
 

@@ -9015,7 +9015,7 @@ def test_config_set_context_on_a_session_updates_the_live_agents_window(monkeypa
         base_url="http://127.0.0.1:8000/v1",
         context_compressor=_Comp(),
         model="qoder/qwen3.8-max",
-        provider="aigw",
+        provider="bezel",
         _cached_system_prompt="stale",
         _config_context_length=None,
     )

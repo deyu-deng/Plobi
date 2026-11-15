@@ -118,8 +118,8 @@ class TestAppendModelSwitchMarkerRole:
             "agent": SimpleNamespace(_session_db=db),
         }
 
-        _append_model_switch_marker(session, model="workbuddy/hy3-x", provider="aigw")
-        _append_model_switch_marker(session, model="workbuddy/hy3", provider="aigw")
+        _append_model_switch_marker(session, model="workbuddy/hy3-x", provider="bezel")
+        _append_model_switch_marker(session, model="workbuddy/hy3", provider="bezel")
 
         assert db.method_calls == [], f"切换通知仍然碰了会话库：{db.method_calls}"
         # 但正在跑的这一轮必须仍然知道腿换了，否则它答「我用的是哪条腿」会拿旧值。

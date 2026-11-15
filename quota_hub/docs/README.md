@@ -254,7 +254,7 @@ pip install -e .                       # 安装依赖 + 注册 `quota_hub` 命�
 # 可选：pip install ".[vault,discover,protobuf]"
 
 cp config.example.yaml config.yaml     # 按需填写（见下方 vault / routing / cloudcode）
-export AIGW_KEY=sk-your-local-key
+export BEZEL_KEY=sk-your-local-key
 
 quota_hub start                             # 等价于 uvicorn quota_hub.main:app
 ```
@@ -406,7 +406,7 @@ quota_hub workbuddy-dump [--title "WorkBuddy"] [--depth 8] # (Windows) 抓 Workb
 
 **运维最佳实践**
 1. **绝对只绑本地**：保持 `server.host: 127.0.0.1`。若需跨机，请放反向代理后并强制鉴权，**不要**直接 `0.0.0.0` 暴露。
-2. **强 api_key**：`AIGW_KEY` 用高熵随机串，别用默认值。下游只放你自己的软件。
+2. **强 api_key**：`BEZEL_KEY` 用高熵随机串，别用默认值。下游只放你自己的软件。
 3. **加密 Vault**：开 `vault.enabled: true`。优先 `backend: keyring`，避免在多用户机器上用明文文件密钥。
 4. **dry-run 优先**：`discover` / 任何会启动第三方 App 或写凭证的操作，先不加 `--yes` 看清楚要执行什么。
 5. **小流量灰度**：先用单个账号、低频调用验证链路，再开账号池；留意 `health` 变 `dead`（`quota_hub status`）。

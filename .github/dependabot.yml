@@ -43,16 +43,16 @@ updates:
   #   所以这不是"没用"，是"每轮必然报红"——留着就是又一处"看着有、实际不可信"的闸门。
   # Python 依赖按 AGENTS.md《Dependency Pinning Policy》第 4 条走手动 `uv lock`。
 
-  # aigw 是裸 requirements.txt，没有锁文件（这个 Dependabot 解析得动）
+  # bezel 是裸 requirements.txt，没有锁文件（这个 Dependabot 解析得动）
   - package-ecosystem: "pip"
-    directory: "/aigw"
+    directory: "/bezel"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 3
     commit-message:
-      prefix: "deps(aigw)"
+      prefix: "deps(bezel)"
     groups:
-      aigw_minor_patch:
+      bezel_minor_patch:
         update-types: ["minor", "patch"]
 
   # 三处 npm 锁文件各自一条：Dependabot 要求 directory 指向含 lockfile 的目录

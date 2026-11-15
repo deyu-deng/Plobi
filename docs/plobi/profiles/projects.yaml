@@ -24,7 +24,7 @@ agents:
   # 就必须落在这一行；不填则完全照旧按名字发。
   agenda:
     role: l2_agenda
-    provider: aigw
+    provider: bezel
     model: workbuddy/deepseek-chat
     mind_subtree: Dossiers/projects/Plobi
     skills: [plobi-l2-resident]

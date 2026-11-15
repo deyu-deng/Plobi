@@ -99,7 +99,7 @@ describe('AgentModelPicker', () => {
         copy={copy}
         onPick={vi.fn()}
         overrides={{}}
-        providers={[provider('aigw', ['deepseek-chat'])]}
+        providers={[provider('bezel', ['deepseek-chat'])]}
       />
     )
 
@@ -109,7 +109,7 @@ describe('AgentModelPicker', () => {
       )
     ).toEqual([
       FOLLOW_DEFAULT,
-      'aigw/deepseek-chat'
+      'bezel/deepseek-chat'
     ])
   })
 
@@ -141,8 +141,8 @@ describe('AgentModelPicker', () => {
 describe('flattenModelOptions', () => {
   it('qualifies every model with its provider and drops duplicates', () => {
     expect(
-      flattenModelOptions([provider('workbuddy', ['hy3', 'hy3']), provider('aigw', ['deepseek-chat'])])
-    ).toEqual(['workbuddy/hy3', 'aigw/deepseek-chat'])
+      flattenModelOptions([provider('workbuddy', ['hy3', 'hy3']), provider('bezel', ['deepseek-chat'])])
+    ).toEqual(['workbuddy/hy3', 'bezel/deepseek-chat'])
   })
 
   it('skips a provider that surfaced no models instead of inventing a row', () => {

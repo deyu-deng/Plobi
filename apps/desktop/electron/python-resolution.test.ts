@@ -51,29 +51,29 @@ test('interpreterRoots: walks up from the subsystem checkout, then appends extra
     extraRoots: ['/home/me/.plobi/plobi-agent'],
     maxWalkUp: 2,
     pathModule: path.posix,
-    startDir: '/repo/aigw'
+    startDir: '/repo/bezel'
   })
 
-  assert.deepEqual(roots, ['/repo/aigw', '/repo', '/', '/home/me/.plobi/plobi-agent'])
+  assert.deepEqual(roots, ['/repo/bezel', '/repo', '/', '/home/me/.plobi/plobi-agent'])
 })
 
 test('interpreterRoots: stops at the filesystem root instead of looping', () => {
-  const roots = interpreterRoots({ maxWalkUp: 20, pathModule: path.posix, startDir: '/aigw' })
+  const roots = interpreterRoots({ maxWalkUp: 20, pathModule: path.posix, startDir: '/bezel' })
 
   assert.equal(roots[roots.length - 1], '/')
   assert.equal(roots.filter(root => root === '/').length, 1)
 })
 
-test('interpreterCandidates: the aigw checkout reaches the repo root venv (R-051)', () => {
-  // This is the exact regression. `resolveAigwPython` used to probe only
-  // <aigwDir>/.venv, which on this macOS checkout contains a Windows Scripts/
+test('interpreterCandidates: the bezel checkout reaches the repo root venv (R-051)', () => {
+  // This is the exact regression. `resolveBezelPython` used to probe only
+  // <bezelDir>/.venv, which on this macOS checkout contains a Windows Scripts/
   // tree copied off the decommissioned box — so it fell through to
   // /usr/bin/python3 and the child died on `ModuleNotFoundError: httpx`.
   const candidates = interpreterCandidates({
     env: {},
     platform: POSIX,
     pathModule: path.posix,
-    startDir: '/repo/aigw'
+    startDir: '/repo/bezel'
   })
 
   const repoVenv = path.posix.join('/repo', '.venv', 'bin', 'python')
@@ -157,7 +157,7 @@ test('resolveProjectInterpreter: a system Python is NOT a fallback rung', () => 
     env: {},
     exists: () => false,
     platform: POSIX,
-    startDir: '/repo/aigw',
+    startDir: '/repo/bezel',
     usable: () => true
   })
 
@@ -169,9 +169,9 @@ test('resolveProjectInterpreter: failure carries a human-readable reason, not an
   const resolution = resolveProjectInterpreter({
     env: {},
     exists: () => false,
-    label: 'the aigw gateway',
+    label: 'the bezel gateway',
     platform: POSIX,
-    startDir: '/repo/aigw',
+    startDir: '/repo/bezel',
     usable: () => true
   })
 
@@ -179,20 +179,20 @@ test('resolveProjectInterpreter: failure carries a human-readable reason, not an
   assert.equal(typeof resolution.reason, 'string')
   assert.ok((resolution.reason ?? '').length > 20, 'reason must be displayable, not a sentinel')
   assert.match(resolution.reason ?? '', /uv sync/)
-  assert.match(resolution.reason ?? '', /aigw gateway/)
+  assert.match(resolution.reason ?? '', /bezel gateway/)
 })
 
 test('describeInterpreterFailure: distinguishes "no venv" from "venv cannot import"', () => {
   const missing = describeInterpreterFailure({
     existingCandidates: [],
-    label: 'the aigw gateway',
+    label: 'the bezel gateway',
     probeFailed: false,
     roots: ['/repo']
   })
 
   const stale = describeInterpreterFailure({
     existingCandidates: ['/repo/.venv/bin/python'],
-    label: 'the aigw gateway',
+    label: 'the bezel gateway',
     probeFailed: true,
     roots: ['/repo']
   })

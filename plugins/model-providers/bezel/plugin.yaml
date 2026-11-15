@@ -1,0 +1,5 @@
+name: bezel-provider
+kind: model-provider
+version: 1.0.0
+description: Local quota gateway (bezel) — OpenAI-compatible, quota-backed channels
+author: Plobi

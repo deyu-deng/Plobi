@@ -1,10 +1,10 @@
 """Quota pool + routing strategy (B3 core).
 
 A :class:`QuotaPool` owns the source registry, probes each source, and picks the
-source an L2 loop should spend against — cheap-first, aigw-fallback, skipping
+source an L2 loop should spend against — cheap-first, bezel-fallback, skipping
 anything unhealthy. It also wires every source into B4's :class:`QuotaCircuit`
 so the delegation guard's dollar breaker sees the cheap-API balance while the
-aigw sources stay "unknown" (never block).
+bezel sources stay "unknown" (never block).
 
 Failover is real, not decorative: :meth:`mark_failed` flips a source to
 UNAVAILABLE immediately, so the next :meth:`resolve` walks on to the next
@@ -268,7 +268,7 @@ class QuotaPool:
         """Register every source into B4's ``QuotaCircuit``.
 
         ``cheap_api`` sources report a real dollar balance (the breaker trips on
-        it); ``aigw`` sources report ``None`` (unknown → the breaker allows, per
+        it); ``bezel`` sources report ``None`` (unknown → the breaker allows, per
         B4's seam contract — health gating lives here, not in the breaker).
         """
         for source in self.sources.values():

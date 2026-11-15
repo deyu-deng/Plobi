@@ -1331,7 +1331,7 @@ def has_agent_identity(entry: AgentEntry) -> bool:
     """裁定 192：**身份就是名册这一行本身**——判据是这一行有没有角色路由，不再是盘上有没有一个家。
 
     `l2_course` 是数据记录，故意不进 ``DEFAULT_ROUTES``（`plobi/routing/models.py:31-38`：没有路由
-    就 ``resolve()`` 抛），所以它天然不在这把尺里；`l1_secretary`/`l2_agenda`/`l2_planner`/`l2_project`
+    就 ``resolve()`` 抛），所以它天然不在这把尺里；`l1_secretary`/`l2_agenda`/`l2_project`
     都有路由，就是能对话的对象。``registered`` 那一格章也要盖上——Mind 投影进来的
     占位行（``registered=False``）不是手下，否则「一个能问的人都没有」那种关门判据会失效。
 
@@ -1912,10 +1912,10 @@ _AGENDA_ROLE_MARKERS = ("l2_agenda", "secretary-agenda")
 def agenda_template_entry() -> AgentEntry:
     """The only L2 ``spawn`` is allowed to create for §8.2 S2.
 
-    这里原来硬写着 ``provider="aigw", model="workbuddy/deepseek-chat"``。那是
+    这里原来硬写着 ``provider="bezel", model="workbuddy/deepseek-chat"``。那是
     :data:`plobi.routing.models.DEFAULT_ROUTES` 的 L2 兜底抄进了**记录本身**：
     一旦覆盖写在记录上，那一格就会被写进日程分身的 ``config.yaml``：
-    ``model.provider: aigw``（2026-09-29 实测他的 l2-agenda 那条一度就是这样，被手工
+    ``model.provider: bezel``（2026-09-29 实测他的 l2-agenda 那条一度就是这样，被手工
     纠回 minimax-cn），而 provider 值会成为选择器的分组标题——裁定 45.4 要保留的
     是**日志与配置里机器读的 id**，不是替用户决定他没用过哪个提供商。日程 L2 的
     路由账本（profile 的 plobi/models.json）照旧从 DEFAULT_ROUTES 取，不带上屏。
@@ -2338,46 +2338,46 @@ PENDING_STATUSES: tuple[str, ...] = ("pending",)
 
 
 # ---------------------------------------------------------------------------
-# WP-BE-7: aigw 端点解析（quota 腿与 aigw profile 共用这一份）
+# WP-BE-7: bezel 端点解析（quota 腿与 bezel profile 共用这一份）
 # ---------------------------------------------------------------------------
 
-AIGW_DEFAULT_BASE = "http://127.0.0.1:8000/v1"
+BEZEL_DEFAULT_BASE = "http://127.0.0.1:8000/v1"
 
-# The only list of env var *names* for this endpoint — the ``model-providers/aigw``
+# The only list of env var *names* for this endpoint — the ``model-providers/bezel``
 # profile and ``scripts/plobi/doctor.py`` import it instead of writing their own.
-AIGW_URL_ENV_VARS: tuple[str, ...] = (
+BEZEL_URL_ENV_VARS: tuple[str, ...] = (
     "PLOBI_QUOTA_HUB_URL",
-    "PLOBI_AIGW_URL",
-    "PLOBI_QUOTA_AIGW_URL",
+    "PLOBI_BEZEL_URL",
+    "PLOBI_QUOTA_BEZEL_URL",
 )
 
 
-def aigw_base_url() -> str:
-    for env_var in AIGW_URL_ENV_VARS:
+def bezel_base_url() -> str:
+    for env_var in BEZEL_URL_ENV_VARS:
         value = (os.environ.get(env_var) or "").strip()
         if value:
             return value.rstrip("/")
-    return AIGW_DEFAULT_BASE.rstrip("/")
+    return BEZEL_DEFAULT_BASE.rstrip("/")
 
 
 # Single definition point for the local quota gateway's credential
-# (WP-AIGW-CRED-SOURCE / 裁定 81).  Order, and only order:
-#   1. an explicit env var, in ``AIGW_KEY_ENV_VARS`` precedence;
-#   2. the gateway's own configured key (``aigw/config.yaml`` → ``server.api_key``);
+# (WP-BEZEL-CRED-SOURCE / 裁定 81).  Order, and only order:
+#   1. an explicit env var, in ``BEZEL_KEY_ENV_VARS`` precedence;
+#   2. the gateway's own configured key (``bezel/config.yaml`` → ``server.api_key``);
 #   3. the development default that ships with the gateway config.
-# Anything that needs "which key do we send to aigw" calls :func:`aigw_api_key` —
-# the agents layer, the ``model-providers/aigw`` profile (as the api-key
+# Anything that needs "which key do we send to bezel" calls :func:`bezel_api_key` —
+# the agents layer, the ``model-providers/bezel`` profile (as the api-key
 # resolver's declared fallback), ``scripts/plobi/doctor.py`` and
 # ``plobi.quota.config``.  None of them re-implements this chain.
-AIGW_KEY_ENV_VARS: tuple[str, ...] = (
+BEZEL_KEY_ENV_VARS: tuple[str, ...] = (
     "QUOTA_HUB_API_KEY",
-    "AIGW_API_KEY",
-    "PLOBI_QUOTA_AIGW_KEY",
+    "BEZEL_API_KEY",
+    "PLOBI_QUOTA_BEZEL_KEY",
 )
-AIGW_DEV_DEFAULT_API_KEY = "sk-local-dev-key"
-AIGW_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "quota_hub" / "config.yaml"
+BEZEL_DEV_DEFAULT_API_KEY = "sk-local-dev-key"
+BEZEL_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "quota_hub" / "config.yaml"
 
-# ``api_key: ${AIGW_KEY:-sk-local-dev-key}`` is a valid form in the gateway's own
+# ``api_key: ${BEZEL_KEY:-sk-local-dev-key}`` is a valid form in the gateway's own
 # config (the gateway expands it at startup), so the reader expands it too —
 # otherwise we would send the placeholder text verbatim.
 _GATEWAY_KEY_PLACEHOLDER = re.compile(r"^\$\{([A-Z0-9_]+):-([^}]*)\}$")
@@ -2387,11 +2387,11 @@ def gateway_declared_api_key(config_path: Path | None = None) -> str:
     """Return the key the gateway is configured to accept, or ``""``.
 
     Reads only ``server.api_key`` from the gateway config with no YAML
-    dependency (the same no-dep reading ``parse_aigw_port`` in ``doctor.py``
+    dependency (the same no-dep reading ``parse_bezel_port`` in ``doctor.py``
     does).  Missing file, missing key or unreadable file all mean "the gateway
     declares nothing" — the caller decides the fallback.
     """
-    path = config_path or AIGW_GATEWAY_CONFIG_PATH
+    path = config_path or BEZEL_GATEWAY_CONFIG_PATH
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -2419,12 +2419,12 @@ def gateway_declared_api_key(config_path: Path | None = None) -> str:
     return ""
 
 
-def aigw_credential_source() -> str:
-    """Label of where :func:`aigw_api_key` would read its value from.
+def bezel_credential_source() -> str:
+    """Label of where :func:`bezel_api_key` would read its value from.
 
     Observability without the secret: callers log and report this, never the key.
     """
-    for env_var in AIGW_KEY_ENV_VARS:
+    for env_var in BEZEL_KEY_ENV_VARS:
         if (os.environ.get(env_var) or "").strip():
             return f"env:{env_var}"
     if gateway_declared_api_key():
@@ -2432,12 +2432,12 @@ def aigw_credential_source() -> str:
     return "development default"
 
 
-def aigw_api_key() -> str:
-    for env_var in AIGW_KEY_ENV_VARS:
+def bezel_api_key() -> str:
+    for env_var in BEZEL_KEY_ENV_VARS:
         value = (os.environ.get(env_var) or "").strip()
         if value:
             return value
-    return gateway_declared_api_key() or AIGW_DEV_DEFAULT_API_KEY
+    return gateway_declared_api_key() or BEZEL_DEV_DEFAULT_API_KEY
 
 
 MASTER_TOOLSET_NAME = "plobi_core"

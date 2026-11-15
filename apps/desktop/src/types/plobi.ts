@@ -253,7 +253,7 @@ export interface ModelOptionProvider {
   slug: string
   /** UI-only stable key when several display groups share one routing slug
    *  (e.g. the local quota hub exposes WorkBuddy and Antigravity under the
-   *  same `aigw` route). Never send this to the backend; use `slug`. */
+   *  same `bezel` route). Never send this to the backend; use `slug`. */
   ui_key?: string
   total_models?: number
   warning?: string

@@ -9,7 +9,7 @@ import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 // Desktop Quotas — connected-app registry (renderer-side, persisted)
 //
 // The user activates a closed-source desktop app (Antigravity, Workbuddy) on
-// their machine; the local aigw hub (the hidden Local Quota Hub) aggregates the
+// their machine; the local bezel hub (the hidden Local Quota Hub) aggregates the
 // quota those subscriptions already pay for and serves it as an OpenAI-compatible
 // catalog. This store keeps the hub's *verdict per app per model*, and
 // `quotaProviders()` turns it into the rows the chat model selector shows.
@@ -30,9 +30,9 @@ export interface ConnectedDesktopApp {
   connected: boolean
   /** Model ids the hub currently reports as *selectable* (tools-capable + live credential). */
   models: string[]
-  /** aigw OpenAI-compatible base URL, e.g. http://127.0.0.1:8019/v1 */
+  /** bezel OpenAI-compatible base URL, e.g. http://127.0.0.1:8019/v1 */
   baseUrl?: string
-  /** aigw api key (sk-...) */
+  /** bezel api key (sk-...) */
   apiKey?: string
   /**
    * Why each dropped model is dropped (`unselectable_reason` from the hub, e.g.
@@ -341,7 +341,7 @@ export function isQuotaAppSlug(slug: string): boolean {
  * string literals — so it is only ever *matched* here, and the value the UI
  * selects is the catalog row's own slug.
  */
-const QUOTA_HUB_ROW = /^aigw$/i
+const QUOTA_HUB_ROW = /^bezel$/i
 
 export function findQuotaHubRow(providers: readonly Pick<ModelOptionProvider, 'slug'>[]): string | null {
   return providers.find(provider => QUOTA_HUB_ROW.test(provider.slug))?.slug ?? null

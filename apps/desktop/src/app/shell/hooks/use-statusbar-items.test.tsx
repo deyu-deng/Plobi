@@ -54,8 +54,8 @@ describe('状态栏那一行说人话（WP-DEFERRED-PLAINTEXT-RENDER）', () => 
   })
 
   it('四段里除了名字，还带着「观察到什么」和「怎么回来」两句人话', () => {
-    const view = render(<DeferredLedgerRow copy={copy} row={row({ id: 'aigw-x', state: 'red' })} />)
-    const text = view.getByTestId('deferred-row-aigw-x').textContent ?? ''
+    const view = render(<DeferredLedgerRow copy={copy} row={row({ id: 'bezel-x', state: 'red' })} />)
+    const text = view.getByTestId('deferred-row-bezel-x').textContent ?? ''
 
     // 名字那一格由 `deferredRowLabel` 按当前语言挑（jsdom 默认 en），两种都该是同一个 sidecar
     expect(text).toMatch(/chatlog/)

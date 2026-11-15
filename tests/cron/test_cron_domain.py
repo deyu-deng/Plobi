@@ -93,7 +93,7 @@ def _fire(job, home, *, docs: list | None = None):
             return_value={
                 "api_key": "test-key",
                 "base_url": "https://example.invalid/v1",
-                "provider": "aigw",
+                "provider": "bezel",
                 "api_mode": "chat_completions",
             },
         ),

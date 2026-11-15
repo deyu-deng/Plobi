@@ -4,7 +4,7 @@
 single ``PLOBI_L2_CHAT_URL`` endpoint. B3 makes that spend *source-aware*:
 
 - :func:`resolve_l2_endpoint` returns the endpoint of the source the pool picks
-  (cheap-first, aigw-fallback, skip-unavailable);
+  (cheap-first, bezel-fallback, skip-unavailable);
 - :class:`QuotaAwareCompleter` is a drop-in completer that wraps a per-source
   ``send`` and does real failover — when a source errors, it is marked failed
   and the next candidate is tried, up to ``max_attempts``.
@@ -36,7 +36,7 @@ _DEFAULT_TIMEOUT = 20.0
 #: gateway, on three different models. One flat 20 s bound therefore timed out
 #: *every* desktop-quota spend, and because a timeout is swallowed into
 #: ``None`` the failure was silent. HTTP-backed cheap APIs keep the short bound.
-_KIND_TIMEOUTS = {"aigw": 120.0}
+_KIND_TIMEOUTS = {"bezel": 120.0}
 
 
 def _cost_of(usage: dict) -> float | None:

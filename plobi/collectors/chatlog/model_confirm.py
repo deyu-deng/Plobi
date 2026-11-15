@@ -316,9 +316,14 @@ class ModelConfirmer:
     def route(self) -> ModelRoute:
         """The model route this confirmer will use.
 
-        Raises :class:`RoutingError` when the role is L1 or points at a GUI-only
-        surface — both would violate ADR-0011 and both are operator mistakes,
-        so they fail loudly rather than silently degrading.
+        Raises :class:`RoutingError` when the role is L1 — that would violate
+        ADR-0011 and is an operator mistake, so it fails loudly rather than
+        silently degrading.
+
+        2026-11-14：这里原来还有一道「GUI-only surface」否决。那是某个 Agent
+        把「桌面软件的 GUI 自动化面不能当模型腿」理解成一整套 ``GUI_ONLY_SURFACES``
+        常量后追加的，用户裁定「不要了」—— 网关的哑路由本来就不该出现 GUI slug，
+        即便出现也是路由表配置问题，不是这一层要拦的事。
         """
         router = self._router or get_router()
         if router.is_l1(self._role):
@@ -326,13 +331,7 @@ class ModelConfirmer:
                 f"{self._role} is the secretary; ADR-0011 forbids routing "
                 "per-message confirmation through L1"
             )
-        route = router.resolve(self._role)
-        if route.is_gui_surface:
-            raise RoutingError(
-                f"{self._role} points at a GUI-only surface ({route.qualified}); "
-                "those belong to L3 workers"
-            )
-        return route
+        return router.resolve(self._role)
 
     def confirm(
         self,

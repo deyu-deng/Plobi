@@ -460,9 +460,9 @@ def _plugin_provider_def(canonical: str) -> Optional[ProviderDef]:
     plugin registry, this module read only models.dev + the overlays.  A
     provider that lived in one of them was invisible to the other.
 
-    ``aigw`` — the local quota hub — is the case that bites today: it is
-    registered by ``plugins/model-providers/aigw`` and by nothing else, so
-    ``--provider aigw`` answered *"Unknown provider 'aigw'"* while the model
+    ``bezel`` — the local quota hub — is the case that bites today: it is
+    registered by ``plugins/model-providers/bezel`` and by nothing else, so
+    ``--provider bezel`` answered *"Unknown provider 'bezel'"* while the model
     picker's rows all carry that very slug (裁定 45.4 keeps the word off the
     screen; the routing value is still the hub's).  Every hub-backed pick
     therefore died at the switch step — the row was there, the pick was not.

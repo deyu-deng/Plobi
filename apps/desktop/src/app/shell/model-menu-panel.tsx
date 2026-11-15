@@ -120,7 +120,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
     : null
 
   // R-017: display-only humanization — mock fixtures are filtered, internal
-  // group vocabulary (AIGW / CUSTOM ENDPOINT) becomes software/vendor names.
+  // group vocabulary (BEZEL / CUSTOM ENDPOINT) becomes software/vendor names.
   // Slugs survive untouched so switching/presets keep their identity.
   const providers = humanizeProviders(quotaProviders(modelOptions.data?.providers ?? []))
 

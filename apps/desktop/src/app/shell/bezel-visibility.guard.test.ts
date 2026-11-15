@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { TRANSLATIONS } from '@/i18n/catalog'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 裁定 45 第②半 (§45.4, Docs/ARCH-RULINGS_2026-09-08.md): 「aigw」may be resolved at
+// 裁定 45 第②半 (§45.4, Docs/ARCH-RULINGS_2026-09-08.md): 「bezel」may be resolved at
 // runtime and logged, but it must never appear in text a user reads on screen.
 // `src/app/shell/model-provider-label.ts:30` already calls it "internal vocabulary
 // that must never surface"; this file turns that sentence into a guard.
@@ -15,12 +15,12 @@ import { TRANSLATIONS } from '@/i18n/catalog'
 // The rule the four assertions below actually implement, stated honestly:
 //
 //   1. every i18n message value (all four locales, message *functions* included —
-//      their source is what the rendered line is built from) must not contain `aigw`;
+//      their source is what the rendered line is built from) must not contain `bezel`;
 //   2. every STRING LITERAL in the renderer (`src/**`, non-test) must not contain
-//      `aigw` — comments, identifiers and regex literals are exempt because none of
+//      `bezel` — comments, identifiers and regex literals are exempt because none of
 //      them can reach the DOM by themselves, and
 //   3. every string literal in the main process (`electron/**`, non-test) that is not
-//      part of a log call must not contain `aigw`, EXCEPT the checked-in allow-list
+//      part of a log call must not contain `bezel`, EXCEPT the checked-in allow-list
 //      below (a ledger id, a Python module name, a filename on disk). Those are
 //      machine-read identifiers per §45.4, not display copy.
 //
@@ -28,7 +28,7 @@ import { TRANSLATIONS } from '@/i18n/catalog'
 //   * a provider id/label arriving at *runtime* from the Python backend (picker rows
 //     whose `name` comes over IPC). That path belongs to `humanizeProviderName`,
 //     covered by ./model-provider-label.test.ts.
-//   * text assembled at render time from a variable that holds `aigw` — a literal
+//   * text assembled at render time from a variable that holds `bezel` — a literal
 //     scan cannot see through indirection.
 //   * log output, `plobi/` Python, `doctor.py` row ids and config values: exempt by
 //     ruling (「日志不是屏幕文案」), not by oversight.
@@ -36,7 +36,7 @@ import { TRANSLATIONS } from '@/i18n/catalog'
 
 const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
-const FORBIDDEN = /aigw/i
+const FORBIDDEN = /bezel/i
 
 interface StringLiteral {
   /** 1-based line the literal starts on. */
@@ -117,7 +117,7 @@ function stringLiterals(source: string): StringLiteral[] {
 }
 
 /** Log-call detection window: a wrapped call puts the literal a line or two below the logger. */
-const LOG_CALL = /rememberLog\(|logAigw\(|console\.(log|warn|error)|logger\.|process\.stdout\.write/
+const LOG_CALL = /rememberLog\(|logBezel\(|console\.(log|warn|error)|logger\.|process\.stdout\.write/
 
 function fileLines(file: string): string[] {
   return fs.readFileSync(file, 'utf8').split('\n')
@@ -136,17 +136,17 @@ function isLogLine(lines: string[], line: number): boolean {
  * hint into a statement about what the app does by itself, so do not re-add it.
  */
 const ALLOWED_LITERALS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
-  { pattern: /^aigw$/, reason: 'machine-read sidecar ledger id (reportDeferredSubsystem / DEFERRED_SUBSYSTEMS key)' },
-  { pattern: /^aigw-key$/, reason: 'machine-read sidecar ledger id of the key-reconcile row (KEY_RECONCILE_ROW_ID)' },
-  { pattern: /^import aigw\.cli$/, reason: 'Python module name used by the interpreter liveness probe' },
-  { pattern: /^aigw-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' },
+  { pattern: /^bezel$/, reason: 'machine-read sidecar ledger id (reportDeferredSubsystem / DEFERRED_SUBSYSTEMS key)' },
+  { pattern: /^bezel-key$/, reason: 'machine-read sidecar ledger id of the key-reconcile row (KEY_RECONCILE_ROW_ID)' },
+  { pattern: /^import bezel\.cli$/, reason: 'Python module name used by the interpreter liveness probe' },
+  { pattern: /^bezel-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' },
   {
-    pattern: /^aigw-config\.default\.yaml$/,
+    pattern: /^bezel-config\.default\.yaml$/,
     reason: 'filename of the default gateway config on disk (electron-builder ships it into resources/)'
   },
-  { pattern: /^\.\/aigw-key-reconcile$/, reason: 'TypeScript module path the main process imports (filename on disk)' },
-  { pattern: /^AIGW_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' },
-  { pattern: /^PLOBI_AIGW_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' }
+  { pattern: /^\.\/bezel-key-reconcile$/, reason: 'TypeScript module path the main process imports (filename on disk)' },
+  { pattern: /^BEZEL_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' },
+  { pattern: /^PLOBI_BEZEL_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' }
 ]
 
 function allowedLiteral(text: string): boolean {
@@ -210,17 +210,17 @@ function i18nStrings(value: unknown, locale: string, trail: string[]): string[] 
   return []
 }
 
-describe('裁定 45.4 guard — "aigw" must never be user-visible text', () => {
+describe('裁定 45.4 guard — "bezel" must never be user-visible text', () => {
   it('the scanner flags the word inside a string literal and ignores it inside comments', () => {
-    const sample = `const a = 'aigw quota hub' // aigw in a line comment\n/* aigw in a block */\nconst b = "clean"\n`
+    const sample = `const a = 'bezel quota hub' // bezel in a line comment\n/* bezel in a block */\nconst b = "clean"\n`
     const hits = stringLiterals(sample).filter(literal => FORBIDDEN.test(literal.text))
 
     expect(hits).toHaveLength(1)
-    expect(hits[0]?.text).toBe('aigw quota hub')
+    expect(hits[0]?.text).toBe('bezel quota hub')
     expect(hits[0]?.line).toBe(1)
   })
 
-  it('no i18n message value, in any locale, contains "aigw"', () => {
+  it('no i18n message value, in any locale, contains "bezel"', () => {
     const violations = Object.entries(TRANSLATIONS)
       .flatMap(([locale, tree]) => i18nStrings(tree, locale, []))
       .filter(entry => FORBIDDEN.test(entry))
@@ -228,11 +228,11 @@ describe('裁定 45.4 guard — "aigw" must never be user-visible text', () => {
     expect(violations).toEqual([])
   })
 
-  it('no string literal in the renderer sources contains "aigw"', () => {
+  it('no string literal in the renderer sources contains "bezel"', () => {
     expect(violatingLiterals('src', { skipLogLines: false })).toEqual([])
   })
 
-  it('no non-log string literal in the main process contains "aigw" beyond the machine-read allow-list', () => {
+  it('no non-log string literal in the main process contains "bezel" beyond the machine-read allow-list', () => {
     expect(violatingLiterals('electron', { skipLogLines: true })).toEqual([])
   })
 })

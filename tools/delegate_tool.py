@@ -1216,7 +1216,7 @@ def _build_child_agent(
         # credential path without a replacement), so delegated children would
         # send "Authorization: Bearer None" and the gateway answers 401 invalid
         # api key. Fall back to the target provider's configured key from
-        # config (e.g. the local aigw gateway's sk-local-dev-key). The provider
+        # config (e.g. the local bezel gateway's sk-local-dev-key). The provider
         # must match so we never inject a foreign provider's credential.
         effective_api_key = _fallback_provider_api_key(effective_provider)
     # Bug #20558 / PR #20563: api_mode must NOT be inherited when the child uses a
@@ -3227,7 +3227,7 @@ def _resolve_child_credential_pool(
 
 def _fallback_provider_api_key(provider: Optional[str]) -> Optional[str]:
     """Resolve the configured api_key for a provider when the parent agent
-    carries none (e.g. the local aigw gateway's ``sk-local-dev-key``).
+    carries none (e.g. the local bezel gateway's ``sk-local-dev-key``).
 
     Read-only lookup into the shared config's ``providers.<name>.api_key``;
     returns None when the provider is unknown or unset so callers keep the

@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from plobi.agents.registry import aigw_api_key, aigw_base_url  # noqa: E402
+from plobi.agents.registry import bezel_api_key, bezel_base_url  # noqa: E402
 from plobi_cli import models as model_catalog  # noqa: E402
 from plobi_cli.inventory import build_models_payload, load_picker_context  # noqa: E402
 
@@ -42,8 +42,8 @@ def check(ok: bool, label: str, detail: str = "") -> None:
 
 
 def main() -> int:
-    base = aigw_base_url()
-    key = (aigw_api_key() or "").strip()
+    base = bezel_base_url()
+    key = (bezel_api_key() or "").strip()
     print(f"hub: {base}")
 
     selectable = model_catalog.hub_selectable_model_ids(key, base)
@@ -53,7 +53,7 @@ def main() -> int:
     check(bool(selectable), "hub offers at least one usable model", f"{len(selectable)} ids")
     check(len(set(selectable)) == len(selectable), "hub offers no duplicate id")
 
-    catalog = model_catalog.provider_model_ids("aigw")
+    catalog = model_catalog.provider_model_ids("bezel")
     check(
         sorted(catalog) == sorted(selectable),
         "the model catalog equals the hub's selectable view",
@@ -88,7 +88,7 @@ def main() -> int:
     )
     check(bool(picker_rows), "the picker keeps at least one row")
 
-    hub_row = next((row for row in picker_rows if (row.get("slug") or "") == "aigw"), None)
+    hub_row = next((row for row in picker_rows if (row.get("slug") or "") == "bezel"), None)
     check(hub_row is not None, "the quota hub has a row in the picker")
     if hub_row is not None:
         names = hub_row.get("models") or []
@@ -102,7 +102,7 @@ def main() -> int:
     model = (payload.get("model") or "").strip()
     check(bool(provider and model), "the default selection resolves", f"{provider} / {model}")
     check(
-        provider != "aigw" or model in set(selectable),
+        provider != "bezel" or model in set(selectable),
         "the default selection is usable",
         f"{provider} / {model}",
     )

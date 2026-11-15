@@ -13,7 +13,7 @@ from plobi.quota.pool import (
     set_quota_pool,
 )
 from plobi.quota.sources import (
-    AigwSource,
+    BezelSource,
     CheapApiSource,
     HealthStatus,
     QuotaSource,
@@ -23,7 +23,7 @@ from plobi.quota.sources import (
 )
 
 __all__ = [
-    "AigwSource",
+    "BezelSource",
     "CatalogState",
     "CheapApiSource",
     "DEFAULT_ORDER",

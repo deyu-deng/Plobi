@@ -1,7 +1,7 @@
 # Plobi 出厂默认「桌面额度」网关配置
 #
 # 这是打包进应用的**模板**：全新安装的机器上没有 quota_hub/config.yaml 时，
-# electron/main.ts 的 ensureProductAigw() 会把本文件复制到
+# electron/main.ts 的 ensureProductBezel() 会把本文件复制到
 # <PLOBI_HOME>/plobi-agent/quota_hub/config.yaml，然后照常拉起 sidecar。
 #
 # 因此这个文件只含「任何机器都成立」的东西：

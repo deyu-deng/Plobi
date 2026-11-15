@@ -6,14 +6,21 @@ import json
 
 import pytest
 
-from plobi.routing import L1_SECRETARY, L2_AGENDA, ModelRoute, ModelRouter, RoutingError
+from plobi.routing import (
+    L1_SECRETARY,
+    L2_AGENDA,
+    L2_PROJECT,
+    ModelRoute,
+    ModelRouter,
+    RoutingError,
+)
 
 
 def test_defaults_put_the_flagship_on_l1_and_cheap_models_below(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
 
     assert router.resolve(L1_SECRETARY).model == "kimi-k3"
-    assert router.resolve(L2_AGENDA).qualified == "aigw/workbuddy/deepseek-chat"
+    assert router.resolve(L2_AGENDA).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
     assert router.violations() == []
 
 
@@ -27,28 +34,70 @@ def test_config_overrides_defaults(tmp_path):
     router = ModelRouter.load(path)
     assert router.resolve(L1_SECRETARY).qualified == "openai/gpt-5.6"
     # Unspecified roles keep their defaults.
-    assert router.resolve(L2_AGENDA).qualified == "aigw/workbuddy/deepseek-chat"
+    assert router.resolve(L2_AGENDA).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
 
 
-def test_l1_may_not_point_at_a_gui_only_surface(tmp_path):
-    router = ModelRouter.load(tmp_path / "missing.json")
-    router.routes[L1_SECRETARY] = ModelRoute(role=L1_SECRETARY, provider="marvis", model="gui")
-
-    problems = router.violations()
-    assert any("GUI-only" in problem for problem in problems)
-
-    with pytest.raises(RoutingError):
-        router.assert_valid()
+# ---------------------------------------------------------------------------
+# 2026-11-14：GUI_ONLY_SURFACES 这套概念删除（用户：「GUI SURFACE 又是什么鬼。
+# 不要了」），模型行按「真实模型名」上屏，退役的 role / provider / 假模型 id
+# 在**读侧**迁移掉，不要求用户手改 models.json。
+# ---------------------------------------------------------------------------
 
 
-def test_aigw_workbuddy_model_is_not_a_gui_surface(tmp_path):
-    """L2 via aigw workbuddy/* is an API model route, not HID or an L3 agent."""
-    route = ModelRoute(
-        role=L2_AGENDA, provider="aigw", model="workbuddy/deepseek-chat"
+def test_display_model_drops_the_upstream_prefix(tmp_path):
+    """模型行只留真实模型名；请求层仍是完整复合 id。"""
+    route = ModelRoute(role=L2_AGENDA, provider="bezel", model="workbuddy/deepseek-v4.1-flash")
+
+    assert route.display_model == "deepseek-v4.1-flash"
+    assert route.upstream == "workbuddy"
+    assert route.model == "workbuddy/deepseek-v4.1-flash", "请求层不许被剥前缀"
+
+
+def test_a_plain_model_name_has_no_upstream(tmp_path):
+    route = ModelRoute(role=L1_SECRETARY, provider="moonshot", model="kimi-k3")
+
+    assert route.display_model == "kimi-k3"
+    assert route.upstream == ""
+
+
+def test_the_retired_provider_name_is_migrated_on_read(tmp_path):
+    """``aigw`` → ``bezel``：机器标识改了名，旧配置照读不误。"""
+    path = tmp_path / "models.json"
+    path.write_text(
+        json.dumps({"roles": {L2_AGENDA: {"provider": "aigw", "model": "workbuddy/deepseek-v4.1-flash"}}}),
+        encoding="utf-8",
     )
-    assert route.is_gui_surface is False
-    router = ModelRouter.load(tmp_path / "missing.json")
-    assert router.violations() == []
+
+    route = ModelRouter.load(path).resolve(L2_AGENDA)
+    assert route.provider == "bezel"
+    assert route.model == "workbuddy/deepseek-v4.1-flash"
+
+
+def test_the_retired_fake_model_id_falls_back_to_the_default(tmp_path):
+    """``workbuddy/deepseek-chat`` 上游从来没有过，不许继续背下去。"""
+    path = tmp_path / "models.json"
+    path.write_text(
+        json.dumps({"roles": {L2_PROJECT: {"provider": "bezel", "model": "workbuddy/deepseek-chat"}}}),
+        encoding="utf-8",
+    )
+
+    route = ModelRouter.load(path).resolve(L2_PROJECT)
+    assert route.provider == "bezel"
+    assert route.model == "workbuddy/deepseek-v4.1-flash"
+
+
+def test_a_retired_role_is_dropped_on_read(tmp_path):
+    """``l2_planner`` 是三档 L2 时代的孤儿角色，读到就丢，不许再参与路由。"""
+    path = tmp_path / "models.json"
+    path.write_text(
+        json.dumps({"roles": {"l2_planner": {"provider": "bezel", "model": "x"}}}),
+        encoding="utf-8",
+    )
+
+    router = ModelRouter.load(path)
+    assert "l2_planner" not in router.routes
+    with pytest.raises(RoutingError):
+        router.resolve("l2_planner")
 
 
 def test_l2_sharing_l1s_model_is_flagged(tmp_path):
@@ -168,3 +217,28 @@ def test_a_fresh_home_falls_back_to_the_shared_copy(tmp_path, monkeypatch):
 
     assert config_path() == profile / "plobi" / "models.json"
     assert ModelRouter.load().resolve(L2_AGENDA).qualified == "legacy/legacy-m"
+
+
+def test_a_model_upstream_does_not_list_is_a_violation():
+    """给了上游清单就按清单查：这才是 ``workbuddy/deepseek-chat`` 该被抓住的地方。
+
+    这次漏检的根因不是没写校验，是**从来没有把上游真实模型列表喂进来**——
+    ``violations()`` 只看结构（非空、别撞 L1），一个语法合法的假 id 能一路绿。
+    """
+    router = ModelRouter(routes={
+        L1_SECRETARY: ModelRoute(role=L1_SECRETARY, provider="moonshot", model="kimi-k3"),
+        L2_PROJECT: ModelRoute(role=L2_PROJECT, provider="bezel", model="workbuddy/deepseek-chat"),
+    })
+
+    assert router.violations() == [], "没给清单时不许凭空判死（路由层不联网）"
+    problems = router.violations(known_models=["workbuddy/deepseek-v4.1-flash", "workbuddy/hy4free"])
+    assert any("workbuddy/deepseek-chat" in p for p in problems)
+
+
+def test_a_model_upstream_lists_passes_the_catalogue_check():
+    router = ModelRouter(routes={
+        L1_SECRETARY: ModelRoute(role=L1_SECRETARY, provider="moonshot", model="kimi-k3"),
+        L2_PROJECT: ModelRoute(role=L2_PROJECT, provider="bezel", model="workbuddy/deepseek-v4.1-flash"),
+    })
+
+    assert router.violations(known_models=["workbuddy/deepseek-v4.1-flash"]) == []

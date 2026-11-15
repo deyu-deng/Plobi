@@ -41,7 +41,7 @@ LOOKUP_LEVELS = 3
 
 FAMILY_TOKEN = re.compile(r"`([^`]+)`")
 
-# 与 Docs 版同一颗雷（10-12 21:2x）：族列里「**不认领也不改** `Code/aigw/config.yaml`」的那个 X
+# 与 Docs 版同一颗雷（10-12 21:2x）：族列里「**不认领也不改** `Code/bezel/config.yaml`」的那个 X
 # **不是认领**。整列扫反引号时它会被当成认领，于是三条在派格被判成同占一个独占文件——
 # 额度线那笔 Code 提交就是这么被拦下的。截断规则与 `Docs/scripts/check_docs_layout.py` 逐字同一份，
 # 两扇门不许各自长出一套「什么算认领」。

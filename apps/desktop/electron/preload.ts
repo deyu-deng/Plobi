@@ -309,8 +309,8 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
     fetchMarketplace: id => ipcRenderer.invoke('plobi:vscode-theme:fetch', id),
     searchMarketplace: query => ipcRenderer.invoke('plobi:vscode-theme:search', query)
   },
-  // Plobi Gateway (aigw) — local desktop-quota aggregator. Lets the renderer
-  // spawn / stop / query the user's own aigw OpenAI-compatible gateway.
+  // Plobi Gateway (bezel) — local desktop-quota aggregator. Lets the renderer
+  // spawn / stop / query the user's own bezel OpenAI-compatible gateway.
   plobiGateway: {
     start: () => ipcRenderer.invoke('plobi-gateway:start'),
     stop: () => ipcRenderer.invoke('plobi-gateway:stop'),

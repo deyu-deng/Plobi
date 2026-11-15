@@ -2076,7 +2076,7 @@ class TestBuildAssistantMessage:
 
     def test_streaming_only_reasoning_promoted_to_reasoning_content(self, agent):
         """Refs #16844 / #16884. Streaming-only providers (glm, MiniMax,
-        gpt-5.x via aigw, Anthropic via openai-compat shims) accumulate
+        gpt-5.x via bezel, Anthropic via openai-compat shims) accumulate
         reasoning through delta chunks but never expose
         ``reasoning_content`` as a top-level attribute on the finalized
         message — only ``reasoning`` (or the internal accumulator).

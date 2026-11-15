@@ -28,7 +28,7 @@ class NorthStar:
     - execution/collaboration board → optional kanban mirror
     - 24/7 messaging → gateway + cron (not reimplemented here)
     - desktop shell → existing Electron preview rail via bus + HTTP
-    - free-tier protocol surfaces → aigw (Antigravity), HID only when needed
+    - free-tier protocol surfaces → bezel (Antigravity), HID only when needed
     """
 
     def __init__(self) -> None:
@@ -167,7 +167,7 @@ class NorthStar:
         )
         return {**result, "task_id": task_id}
 
-    # ----- compute (HID + aigw routing) -----
+    # ----- compute (HID + bezel routing) -----
 
     def compute(
         self,

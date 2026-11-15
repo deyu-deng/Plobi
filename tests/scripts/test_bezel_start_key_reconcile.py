@@ -21,7 +21,7 @@ They drive the real PowerShell script through `powershell.exe -File`, but only i
 `-KeyCheck` mode: that path reads a config file and asks the interpreter, it does
 not open a socket, does not start the gateway, and does not send a chat request.
 Every config it reads is a file in a pytest tmp dir, so the real
-`aigw/config.yaml` never has to be edited to prove the contract.
+`bezel/config.yaml` never has to be edited to prove the contract.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ _PS1 = _REPO_ROOT / "scripts" / "plobi" / "quota_hub_start.ps1"
 
 # Env vars that feed the key this script resolves.  Every run starts from a
 # cleaned env so a developer's real credential cannot decide a verdict.
-_KEY_ENV_VARS = ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY", "AIGW_KEY")
+_KEY_ENV_VARS = ("BEZEL_API_KEY", "PLOBI_QUOTA_BEZEL_KEY", "BEZEL_KEY")
 
 # Test-only stand-ins.  Asserting that these never appear in the output is how
 # the tests prove the script does not leak what it read.
@@ -49,7 +49,7 @@ FAKE_DECLARED = "sk-test-declared-aaaa"
 FAKE_ROTATED = "sk-test-rotated-bbbb"
 FAKE_STALE_ENV = "sk-test-stale-env-cccc"
 FAKE_PLACEHOLDER_DEFAULT = "sk-test-placeholder-default-dddd"
-PLACEHOLDER_ENV = "WP_AIGW_KEYLITERALS_VAR"
+PLACEHOLDER_ENV = "WP_BEZEL_KEYLITERALS_VAR"
 
 _PWSH = shutil.which("powershell.exe") or shutil.which("powershell")
 
@@ -146,11 +146,11 @@ def test_matching_key_is_reconciled_and_passes(tmp_path: Path):
     """Script key == gateway declaration → exit 0, and the fingerprint the script
     reports is the one the shared reader produces for that config."""
     config = write_config(tmp_path, "match.yaml", f"server:\n  api_key: {FAKE_DECLARED}\n")
-    result = run_key_check(config, env_extra={"AIGW_API_KEY": FAKE_DECLARED})
+    result = run_key_check(config, env_extra={"BEZEL_API_KEY": FAKE_DECLARED})
 
     out = output_of(result)
     assert result.returncode == 0, out
-    assert "AIGW_KEY_VERDICT=MATCH" in out
+    assert "BEZEL_KEY_VERDICT=MATCH" in out
     assert f"gateway_fp={fp(FAKE_DECLARED)}" in out
     assert f"script_fp={fp(FAKE_DECLARED)}" in out
     assert declared_by_the_shared_reader(config) == FAKE_DECLARED
@@ -175,7 +175,7 @@ def test_placeholder_is_expanded_by_that_same_reader(tmp_path: Path, monkeypatch
     monkeypatch.setenv(PLACEHOLDER_ENV, FAKE_ROTATED)
     result = run_key_check(
         config,
-        env_extra={PLACEHOLDER_ENV: FAKE_ROTATED, "AIGW_API_KEY": FAKE_ROTATED},
+        env_extra={PLACEHOLDER_ENV: FAKE_ROTATED, "BEZEL_API_KEY": FAKE_ROTATED},
     )
 
     out = output_of(result)
@@ -194,8 +194,8 @@ def test_rotated_gateway_key_goes_red_even_with_no_env_override(tmp_path: Path):
 
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=MISMATCH" in out
-    assert "AIGW_KEY_VERDICT=MATCH" not in out
+    assert "BEZEL_KEY_VERDICT=MISMATCH" in out
+    assert "BEZEL_KEY_VERDICT=MATCH" not in out
     assert f"gateway_fp={fp(FAKE_ROTATED)}" in out
     assert declared_by_the_shared_reader(config) == FAKE_ROTATED
     # Both sides named: which file the gateway declares in, which rung the script used.
@@ -207,15 +207,15 @@ def test_rotated_gateway_key_goes_red_even_with_no_env_override(tmp_path: Path):
 
 def test_stale_env_override_goes_red_and_names_both_sources(tmp_path: Path):
     """An explicit env value that no longer matches the declaration goes red and
-    names `env:AIGW_API_KEY` against the gateway's config, so the operator knows
+    names `env:BEZEL_API_KEY` against the gateway's config, so the operator knows
     which of the two to fix."""
     config = write_config(tmp_path, "stale.yaml", f"server:\n  api_key: {FAKE_DECLARED}\n")
-    result = run_key_check(config, env_extra={"AIGW_API_KEY": FAKE_STALE_ENV})
+    result = run_key_check(config, env_extra={"BEZEL_API_KEY": FAKE_STALE_ENV})
 
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=MISMATCH" in out
-    assert "script_source=env:AIGW_API_KEY" in out
+    assert "BEZEL_KEY_VERDICT=MISMATCH" in out
+    assert "script_source=env:BEZEL_API_KEY" in out
     assert f"script_fp={fp(FAKE_STALE_ENV)}" in out
     assert f"gateway_fp={fp(FAKE_DECLARED)}" in out
     assert FAKE_DECLARED not in out
@@ -226,14 +226,14 @@ def test_config_without_a_declaration_is_not_checked_and_never_a_pass(tmp_path: 
     """Nothing to reconcile against → NOT_CHECKED + non-zero.  "Cannot tell" must
     not be read as "agrees" (R-053 / 裁定 81)."""
     config = write_config(tmp_path, "nokey.yaml", "server:\n  host: 127.0.0.1\n  port: 8123\n")
-    result = run_key_check(config, env_extra={"AIGW_API_KEY": FAKE_DECLARED})
+    result = run_key_check(config, env_extra={"BEZEL_API_KEY": FAKE_DECLARED})
 
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=NOT_CHECKED" in out
+    assert "BEZEL_KEY_VERDICT=NOT_CHECKED" in out
     assert "NOT CHECKED" in out
-    assert "AIGW_KEY_VERDICT=MATCH" not in out
-    assert "aigw key ok" not in out
+    assert "BEZEL_KEY_VERDICT=MATCH" not in out
+    assert "bezel key ok" not in out
     assert declared_by_the_shared_reader(config) == ""
 
 
@@ -246,24 +246,24 @@ def test_empty_declaration_is_not_checked_and_not_called_a_mismatch(tmp_path: Pa
     TypeScript called the same file a MISMATCH.
     """
     config = write_config(tmp_path, "empty.yaml", 'server:\n  api_key: ""\n')
-    result = run_key_check(config, env_extra={"AIGW_API_KEY": FAKE_DECLARED})
+    result = run_key_check(config, env_extra={"BEZEL_API_KEY": FAKE_DECLARED})
 
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=NOT_CHECKED" in out
-    assert "AIGW_KEY_VERDICT=MISMATCH" not in out
+    assert "BEZEL_KEY_VERDICT=NOT_CHECKED" in out
+    assert "BEZEL_KEY_VERDICT=MISMATCH" not in out
     assert declared_by_the_shared_reader(config) == ""
 
 
 def test_unreadable_gateway_config_is_not_checked(tmp_path: Path):
     """A config that cannot be decoded is a read failure, not a match."""
     config = write_config(tmp_path, "garbage.yaml", b"server:\n  api_key: \xff\xfe\x00broken\n")
-    result = run_key_check(config, env_extra={"AIGW_API_KEY": FAKE_DECLARED})
+    result = run_key_check(config, env_extra={"BEZEL_API_KEY": FAKE_DECLARED})
 
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=NOT_CHECKED" in out
-    assert "AIGW_KEY_VERDICT=MATCH" not in out
+    assert "BEZEL_KEY_VERDICT=NOT_CHECKED" in out
+    assert "BEZEL_KEY_VERDICT=MATCH" not in out
 
 
 def test_unreachable_declaration_reader_is_not_checked(tmp_path: Path):
@@ -281,14 +281,14 @@ def test_unreachable_declaration_reader_is_not_checked(tmp_path: Path):
 
     result = run_key_check(
         config,
-        env_extra={"AIGW_API_KEY": FAKE_DECLARED},
+        env_extra={"BEZEL_API_KEY": FAKE_DECLARED},
         script_path=script_copy,
         strip_path=True,
     )
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=NOT_CHECKED" in out
-    assert "AIGW_KEY_VERDICT=MATCH" not in out
+    assert "BEZEL_KEY_VERDICT=NOT_CHECKED" in out
+    assert "BEZEL_KEY_VERDICT=MATCH" not in out
     assert FAKE_DECLARED not in out
 
 
@@ -303,13 +303,13 @@ def test_silent_native_spawn_failure_is_not_checked(tmp_path: Path):
     """
     config = write_config(tmp_path, "match.yaml", f"server:\n  api_key: {FAKE_DECLARED}\n")
     result = run_key_check(
-        config, env_extra={"AIGW_API_KEY": FAKE_DECLARED}, drop_pathext=True
+        config, env_extra={"BEZEL_API_KEY": FAKE_DECLARED}, drop_pathext=True
     )
 
     out = output_of(result)
     assert result.returncode != 0, out
-    assert "AIGW_KEY_VERDICT=NOT_CHECKED" in out
-    assert "AIGW_KEY_VERDICT=MATCH" not in out
+    assert "BEZEL_KEY_VERDICT=NOT_CHECKED" in out
+    assert "BEZEL_KEY_VERDICT=MATCH" not in out
     assert FAKE_DECLARED not in out
 
 
@@ -330,7 +330,7 @@ def test_no_hardcoded_bearer_literal_survives_in_the_script():
         "from a literal starting with `sk-`"
     )
     assert re.search(r'Authorization\s*=\s*"Bearer \$Key"', source), (
-        "Show-AigwModels should authenticate with the reconciled $Key it was "
+        "Show-BezelModels should authenticate with the reconciled $Key it was "
         "handed, so the probe and the gateway cannot disagree silently"
     )
 
@@ -345,7 +345,7 @@ def test_script_reconciles_through_the_shared_reader_not_a_second_parser():
     verdicts — folding "could not read" into a pass is what this gate prevents.
     """
     source = _PS1.read_text(encoding="utf-8")
-    for symbol in ("gateway_declared_api_key", "aigw_api_key", "aigw_credential_source"):
+    for symbol in ("gateway_declared_api_key", "bezel_api_key", "bezel_credential_source"):
         assert symbol in source, f"expected the script to go through {symbol}()"
     offenders = [
         line
@@ -357,7 +357,7 @@ def test_script_reconciles_through_the_shared_reader_not_a_second_parser():
         f"declared value instead: {offenders}"
     )
     for verdict in ("MATCH", "MISMATCH", "NOT_CHECKED"):
-        assert f"AIGW_KEY_VERDICT={verdict}" in source, (
+        assert f"BEZEL_KEY_VERDICT={verdict}" in source, (
             f"verdict {verdict} is missing from the reconcile output; a two-way "
             "verdict turns 'could not read' into a silent pass"
         )

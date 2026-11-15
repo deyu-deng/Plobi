@@ -685,7 +685,7 @@ def refresh_agenda(
 
     Raises :class:`ChatlogDead` when chatlog is not healthy. Does not invent
     events. Uncertain new messages still go through the pipeline confirmer
-    (H2: heuristic, then existing ``model_confirm`` — not aigw).
+    (H2: heuristic, then existing ``model_confirm`` — not bezel).
     """
     pipe = pipeline or ChatlogPipeline()
     if not chatlog_is_healthy(pipe.client):

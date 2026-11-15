@@ -1137,8 +1137,8 @@ def test_dead_key_provider_is_still_findable_for_setup(monkeypatch):
 
 
 def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch):
-    """``providers.aigw`` 写在 config.yaml 里（base_url + 内联 api_key + models），
-    它的凭据池却只剩一条 ``env:AIGW_API_KEY`` —— 那个变量在跑后端的环境里没有。
+    """``providers.bezel`` 写在 config.yaml 里（base_url + 内联 api_key + models），
+    它的凭据池却只剩一条 ``env:BEZEL_API_KEY`` —— 那个变量在跑后端的环境里没有。
 
     两条过滤都会把它吃掉：`_drop_unusable_credential_rows`（env: 源解析不到 ⇒ 丢）
     与 `_filter_explicit_provider_rows`（注册表行 `is_user_defined=False` ⇒ 丢）。
@@ -1148,13 +1148,13 @@ def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch
     """
     from plobi_cli.inventory import ConfigContext
 
-    monkeypatch.delenv("AIGW_API_KEY", raising=False)
+    monkeypatch.delenv("BEZEL_API_KEY", raising=False)
     ctx = ConfigContext(
         current_provider="wb-gateway",
         current_model="workbuddy/space-bunny",
         current_base_url="http://127.0.0.1:8000/v1",
         user_providers={
-            "aigw": {
+            "bezel": {
                 "base_url": "http://127.0.0.1:8000/v1",
                 "api_key": "sk-local-dev-key",
                 "models": ["workbuddy/space-bunny"],
@@ -1170,7 +1170,7 @@ def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch
     rows = [
         {
             "slug": "wb-gateway",
-            "name": "WorkBuddy (aigw)",
+            "name": "WorkBuddy (bezel)",
             "models": ["workbuddy/space-bunny"],
             "total_models": 1,
             "is_current": True,
@@ -1179,7 +1179,7 @@ def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch
         },
         # 注册表那条：same slug 也在 PROVIDER_REGISTRY 里 ⇒ is_user_defined=False
         {
-            "slug": "aigw",
+            "slug": "bezel",
             "name": "Local Quota Hub",
             "models": ["workbuddy/space-bunny"],
             "total_models": 1,
@@ -1189,10 +1189,10 @@ def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch
         },
     ]
     dead_env = {
-        "_for": "aigw",
+        "_for": "bezel",
         "id": "76ae78",
-        "label": "AIGW_API_KEY",
-        "source": "env:AIGW_API_KEY",
+        "label": "BEZEL_API_KEY",
+        "source": "env:BEZEL_API_KEY",
         "last_status": "ok",
         "secret_fingerprint": "sha256:c9a3e7c96041c053",
     }
@@ -1200,5 +1200,5 @@ def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch
         payload = build_models_payload(ctx, explicit_only=True, picker_hints=True)
 
     slugs = [r["slug"] for r in payload["providers"]]
-    assert "aigw" in slugs, f"the hub row vanished again: {slugs}"
+    assert "bezel" in slugs, f"the hub row vanished again: {slugs}"
     assert "wb-gateway" in slugs

@@ -1,7 +1,7 @@
 {
  "command": "python scripts/plobi/electron_test_win.py run && ... check --from-log <日志>",
  "files": {
-  "electron/aigw-key-reconcile.test.ts": {
+  "electron/bezel-key-reconcile.test.ts": {
    "cases": 23,
    "exit_code": 0,
    "fail_cases": [],

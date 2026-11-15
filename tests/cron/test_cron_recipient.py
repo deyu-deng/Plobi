@@ -91,7 +91,7 @@ def _fire(job, home, *, docs: list | None = None):
             return_value={
                 "api_key": "test-key",
                 "base_url": "https://example.invalid/v1",
-                "provider": "aigw",
+                "provider": "bezel",
                 "api_mode": "chat_completions",
             },
         ) as resolve_provider,
@@ -279,7 +279,7 @@ def test_a_pinned_row_does_not_trip_the_provider_drift_guard(
     )
 
     success, error, agent_cls, _script, _resolve = _fire(
-        _job(provider_snapshot="aigw", model_snapshot="workbuddy/hy3"), home
+        _job(provider_snapshot="bezel", model_snapshot="workbuddy/hy3"), home
     )
 
     assert success is True, error
@@ -289,7 +289,7 @@ def test_a_pinned_row_does_not_trip_the_provider_drift_guard(
 def test_an_unpinned_job_still_trips_the_drift_guard(home):
     """闸门还在咬另一半：没有收件人覆盖、全局默认漂了，照旧一个钱都不花（#44585）。"""
     success, error, agent_cls, _script, _resolve = _fire(
-        _job(provider_snapshot="aigw", model_snapshot="workbuddy/hy3"), home
+        _job(provider_snapshot="bezel", model_snapshot="workbuddy/hy3"), home
     )
 
     assert success is False

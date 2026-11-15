@@ -1,6 +1,6 @@
 /**
  * Pure lifecycle policy for the desktop shell — the decisions that keep the
- * Python backend, cron and the chatlog/aigw sidecars alive after the user
+ * Python backend, cron and the chatlog/bezel sidecars alive after the user
  * closes the window, and the small amount of state the tray + autostart
  * toggle need. Side-effect-free so these user-facing guarantees are
  * unit-testable without booting Electron; main.ts owns Tray, BrowserWindow
@@ -16,7 +16,7 @@ interface QuitFlags {
 
 /**
  * Closing the primary window parks it in the tray instead of ending the
- * process, so everything the desktop spawned (backend, cron, chatlog, aigw)
+ * process, so everything the desktop spawned (backend, cron, chatlog, bezel)
  * keeps running. Three things override that: an explicit user quit; a hand-off
  * to a detached installer/updater script, which needs this process — and the
  * file locks it holds — gone before it can swap the bundle; and a missing tray,
@@ -181,7 +181,7 @@ export const DEV_AUTOSTART_FILENAME = 'plobi_desktop_autostart.vbs'
  * Only used when the app isn't packaged: an installed build owns "launch at
  * login" through app.setLoginItemSettings, but a dev run has no installer to
  * register with, so we drop a hidden-window launcher in the user's Startup
- * folder — the same WScript.Shell pattern the existing chatlog / aigw
+ * folder — the same WScript.Shell pattern the existing chatlog / bezel
  * autostart scripts use. Window style 0 keeps the console hidden; the Electron
  * window is what the user is meant to see (and PLOBI_DESKTOP_START_HIDDEN
  * keeps even that in the tray on a cold boot).

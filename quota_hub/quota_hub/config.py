@@ -18,7 +18,7 @@ _SAFE_PROFILE = _PKG_ROOT / "profiles" / "safe.yaml"
 def _env_value(name: str, default: str = "") -> str:
     value = os.environ.get(name)
     if value is None and name.startswith("QUOTA_HUB_"):
-        value = os.environ.get("AIGW_" + name[len("QUOTA_HUB_"):])
+        value = os.environ.get("BEZEL_" + name[len("QUOTA_HUB_"):])
     return value if value is not None else default
 
 

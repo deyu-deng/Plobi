@@ -53,7 +53,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     # 顶层那一份：用户「配一次」的那个值住在这里。
     (plobi / "config.yaml").write_text(
-        "model:\n  provider: aigw\n  default: workbuddy/top-one\n", encoding="utf-8"
+        "model:\n  provider: bezel\n  default: workbuddy/top-one\n", encoding="utf-8"
     )
     from plobi_cli import config as cfg
 

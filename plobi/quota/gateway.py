@@ -11,10 +11,10 @@ load-bearing:
 
 * Group by the ``provider`` field, **not** by the ``<app>/`` id prefix. The mock
   provider currently serves ``workbuddy/deepseek-chat`` (see
-  ``aigw/config.yaml``), so prefix-matching reads a fake channel as a real one.
+  ``bezel/config.yaml``), so prefix-matching reads a fake channel as a real one.
 * ``capabilities`` is a *claim about the adapter*, not proof a chat round-trip
   works. A derived source is therefore at best DEGRADED (「存在 ≠ 能用」,
-  ``aigw/docs/README.md`` 诚实清单).
+  ``bezel/docs/README.md`` 诚实清单).
 
 Three outcomes are kept distinct on purpose — 埋雷清单 R-048 forbids both folding
 a fault into "not wired yet" and painting "not wired yet" as a fault:
@@ -117,7 +117,7 @@ def sources_from_catalog(
     #: its context windows, its output cap). The hub writes it; we only carry it.
     tuning: dict[str, dict[str, Any]] = {}
     # 可用性不由我们再判一遍：目录里每条模型已经带了 `live/selectable` 与各自的 reason
-    # （写入方是 `aigw/registry.py:230-232`，判据在 provider 那一侧，如 `workbuddy.py:102`）。
+    # （写入方是 `bezel/registry.py:230-232`，判据在 provider 那一侧，如 `workbuddy.py:102`）。
     # 这里只按 provider 汇总，R-108 那一格要用它回答"这条腿现在能不能用"。
     availability: dict[str, dict[str, Any]] = {}
     seen = 0
@@ -161,7 +161,7 @@ def sources_from_catalog(
     for provider, entries in grouped.items():
         model, caps = _pick_model(entries)
         sources[provider] = {
-            "kind": "aigw",
+            "kind": "bezel",
             "model": model,
             "models": [m for m, _ in sorted(entries, key=lambda e: e[0])],
             "base_url": base_url,

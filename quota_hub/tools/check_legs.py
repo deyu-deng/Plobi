@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from plobi.agents.registry import aigw_api_key, aigw_base_url  # noqa: E402
+from plobi.agents.registry import bezel_api_key, bezel_base_url  # noqa: E402
 import httpx  # noqa: E402
 
 
@@ -38,9 +38,9 @@ def main() -> int:
     ap.add_argument("--turn", action="store_true", help="send one real turn per leg (spends quota)")
     args = ap.parse_args()
 
-    base = aigw_base_url().rstrip("/")
+    base = bezel_base_url().rstrip("/")
     root = base[:-3] if base.endswith("/v1") else base
-    key = aigw_api_key()
+    key = bezel_api_key()
     print(f"hub: {base}")
 
     with httpx.Client() as client:

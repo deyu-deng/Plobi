@@ -1137,7 +1137,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
         msg["reasoning_content"] = reasoning_text or " "
 
     # Additive fallback (refs #16844, #16884). Streaming-only providers
-    # (glm, MiniMax, gpt-5.x via aigw, Anthropic via openai-compat shims)
+    # (glm, MiniMax, gpt-5.x via bezel, Anthropic via openai-compat shims)
     # accumulate reasoning through ``delta.reasoning_content`` chunks
     # but never land it on the message object as a top-level attribute,
     # so neither branch above fires and the chain-of-thought is stored

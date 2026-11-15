@@ -74,11 +74,11 @@ def test_the_hub_catalog_is_never_read_from_disk_cache(monkeypatch):
     monkeypatch.setattr(
         models,
         "_load_provider_models_cache",
-        lambda: {"aigw": {"fp": models._credential_fingerprint("aigw"), "models": ["dead/model"], "ts": 9e12}},
+        lambda: {"bezel": {"fp": models._credential_fingerprint("bezel"), "models": ["dead/model"], "ts": 9e12}},
     )
 
-    assert models.cached_provider_model_ids("aigw") == []
-    assert calls == ["aigw"]
+    assert models.cached_provider_model_ids("bezel") == []
+    assert calls == ["bezel"]
 
 
 def test_signed_out_acp_legs_cached_catalog_does_not_survive(monkeypatch):

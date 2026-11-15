@@ -268,20 +268,20 @@ def test_two_live_lines_claiming_same_file_is_a_hard_conflict(tmp_path: Path) ->
 def test_negation_clause_is_not_a_claim(tmp_path: Path) -> None:
     """10-12 21:2x 真被拦下的那笔 Code 提交：族列里「不认领也不改 `X`」的 X 不算认领。
 
-    ALPHA 真认领 `Code/aigw/config.yaml`，BETA / GAMMA 只在豁免说明里提到同一个独占文件。
+    ALPHA 真认领 `Code/bezel/config.yaml`，BETA / GAMMA 只在豁免说明里提到同一个独占文件。
     修之前这三家都被判成占它 → 认不出前缀那一档报「两条在派线同时认领」，一笔本来干净的
     提交被拦住（当事人既不绕 SKIP_ARCH_GATES 也不用 --no-verify，只能来找我翻格）。
     """
-    repo = _repo(tmp_path, {"aigw/config.yaml": "x\n"})
+    repo = _repo(tmp_path, {"bezel/config.yaml": "x\n"})
     reg = _register(
         tmp_path,
         HEADER
-        + _row("WP-ALPHA", "`Code/aigw/config.yaml`")
-        + _row("WP-BETA", "`Code/scripts/b_only.py`；**不认领也不改** `Code/aigw/config.yaml`")
-        + _row("WP-GAMMA", "`Code/agent/insights.py`；**只读不改** `Code/aigw/config.yaml`"),
+        + _row("WP-ALPHA", "`Code/bezel/config.yaml`")
+        + _row("WP-BETA", "`Code/scripts/b_only.py`；**不认领也不改** `Code/bezel/config.yaml`")
+        + _row("WP-GAMMA", "`Code/agent/insights.py`；**只读不改** `Code/bezel/config.yaml`"),
     )
 
-    _stage(repo, "aigw/config.yaml")
+    _stage(repo, "bezel/config.yaml")
     proc = _run(repo, reg)
 
     assert proc.returncode == 0, f"豁免说明里的路径不许算认领：{proc.stdout}{proc.stderr}"
@@ -308,15 +308,15 @@ def test_negation_cut_keeps_earlier_claims(tmp_path: Path) -> None:
 
 def test_negation_clause_does_not_unclaim_the_real_owner(tmp_path: Path) -> None:
     """另一个方向的对照组：别人写豁免，不许把真认领方那格也一起清空。"""
-    repo = _repo(tmp_path, {"aigw/config.yaml": "x\n"})
+    repo = _repo(tmp_path, {"bezel/config.yaml": "x\n"})
     reg = _register(
         tmp_path,
         HEADER
-        + _row("WP-ALPHA", "`Code/aigw/config.yaml`")
-        + _row("WP-GAMMA", "`Code/agent/insights.py`；**不认领也不改** `Code/aigw/config.yaml`"),
+        + _row("WP-ALPHA", "`Code/bezel/config.yaml`")
+        + _row("WP-GAMMA", "`Code/agent/insights.py`；**不认领也不改** `Code/bezel/config.yaml`"),
     )
 
-    _stage(repo, "aigw/config.yaml")
+    _stage(repo, "bezel/config.yaml")
     proc = _run(repo, reg, WP_COMMIT="[WP-GAMMA] 嘴上说不改还是签了")
 
     assert proc.returncode != 0, f"{proc.stdout}{proc.stderr}"

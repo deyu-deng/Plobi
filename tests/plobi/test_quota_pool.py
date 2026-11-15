@@ -17,7 +17,7 @@ from plobi.quota.route import (
     spend_timeout,
 )
 from plobi.quota.sources import (
-    AigwSource,
+    BezelSource,
     CheapApiSource,
     HealthStatus,
     SourceStatus,
@@ -40,7 +40,7 @@ def _src(name, kind, health=HealthStatus.HEALTHY, detail="test"):
     if kind == "cheap_api":
         src = CheapApiSource(name, model="m", base_url="http://x/v1", api_key="k")
     else:
-        src = AigwSource(name, model="m", base_url="http://x/v1", api_key="k")
+        src = BezelSource(name, model="m", base_url="http://x/v1", api_key="k")
     src._probe_fn = lambda s: SourceStatus(
         s.name, s.kind, health, None, detail, time.time()
     )
@@ -64,7 +64,7 @@ def test_config_owns_no_desktop_quota_sources():
     """裁定 46: 桌面额度源名单的唯一真源是网关，配置里不许再存一份硬编副本。
 
     这条是判据而不是快照——将来加第三个 ``cheap_api`` 源不会弄红它，而任何人把
-    ``kind: aigw`` 写回 ``DEFAULT_SOURCES``（也就是把第二份清单搬回来）会当场红。
+    ``kind: bezel`` 写回 ``DEFAULT_SOURCES``（也就是把第二份清单搬回来）会当场红。
     """
     assert DEFAULT_SOURCES  # 便宜档仍归本配置管
     assert {cfg["kind"] for cfg in DEFAULT_SOURCES.values()} == {"cheap_api"}
@@ -75,14 +75,14 @@ def test_build_sources_dispatches_by_kind():
     cfg = {
         "sources": {
             "zhipu-air": {"kind": "cheap_api", "model": "glm-5.3-flash", "base_url": "u", "api_key": "k"},
-            "antigravity": {"kind": "aigw", "model": "antigravity/gemini-3-pro", "base_url": "u", "api_key": "k"},
-            "workbuddy": {"kind": "aigw", "model": "workbuddy/deepseek-chat", "base_url": "u", "api_key": "k"},
+            "antigravity": {"kind": "bezel", "model": "antigravity/gemini-3-pro", "base_url": "u", "api_key": "k"},
+            "workbuddy": {"kind": "bezel", "model": "workbuddy/deepseek-chat", "base_url": "u", "api_key": "k"},
         }
     }
     sources = build_sources(cfg)
     assert isinstance(sources["zhipu-air"], CheapApiSource)
-    assert isinstance(sources["antigravity"], AigwSource)
-    assert isinstance(sources["workbuddy"], AigwSource)
+    assert isinstance(sources["antigravity"], BezelSource)
+    assert isinstance(sources["workbuddy"], BezelSource)
 
 
 def test_resolve_source_env_overrides_file():
@@ -207,8 +207,8 @@ def test_probe_all_reports_three_statuses():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.DEGRADED),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.DEGRADED),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     statuses = pool.probe_all()
@@ -231,8 +231,8 @@ def test_resolve_cheap_first():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.HEALTHY),
-            "workbuddy": ("aigw", HealthStatus.HEALTHY),
+            "antigravity": ("bezel", HealthStatus.HEALTHY),
+            "workbuddy": ("bezel", HealthStatus.HEALTHY),
         }
     )
     assert pool.resolve().name == "zhipu-air"
@@ -242,8 +242,8 @@ def test_resolve_skips_unavailable():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.UNAVAILABLE),
-            "antigravity": ("aigw", HealthStatus.HEALTHY),
-            "workbuddy": ("aigw", HealthStatus.HEALTHY),
+            "antigravity": ("bezel", HealthStatus.HEALTHY),
+            "workbuddy": ("bezel", HealthStatus.HEALTHY),
         }
     )
     assert pool.resolve().name == "antigravity"
@@ -254,8 +254,8 @@ def test_resolve_prefers_healthy_over_degraded():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.DEGRADED),
-            "antigravity": ("aigw", HealthStatus.HEALTHY),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.HEALTHY),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     assert pool.resolve().name == "antigravity"
@@ -265,8 +265,8 @@ def test_resolve_falls_back_to_degraded():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.UNAVAILABLE),
-            "antigravity": ("aigw", HealthStatus.DEGRADED),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.DEGRADED),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     assert pool.resolve().name == "antigravity"
@@ -276,8 +276,8 @@ def test_resolve_none_when_all_unavailable():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.UNAVAILABLE),
-            "antigravity": ("aigw", HealthStatus.UNAVAILABLE),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.UNAVAILABLE),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     assert pool.resolve() is None
@@ -287,8 +287,8 @@ def test_mark_failed_triggers_failover():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.HEALTHY),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.HEALTHY),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     assert pool.resolve().name == "zhipu-air"
@@ -313,12 +313,12 @@ def test_wire_circuit_cheap_api_balance_trips():
     assert "zhipu-air" in verdict.reason
 
 
-def test_wire_circuit_aigw_unknown_allows():
-    src = AigwSource("antigravity", model="m", base_url="http://x/v1", api_key="k")
+def test_wire_circuit_bezel_unknown_allows():
+    src = BezelSource("antigravity", model="m", base_url="http://x/v1", api_key="k")
     circuit = QuotaCircuit()
     pool = QuotaPool({"antigravity": src}, order=["antigravity"])
     pool.wire_circuit(circuit)
-    # aigw source reports no dollar balance → breaker sees "unknown" → allow.
+    # bezel source reports no dollar balance → breaker sees "unknown" → allow.
     assert src.remaining_usd() is None
     verdict = circuit.check()
     assert verdict.allowed is True
@@ -340,8 +340,8 @@ def test_alert_statuses_threshold_degraded():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.DEGRADED),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.DEGRADED),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     pool.probe_all()
@@ -353,8 +353,8 @@ def test_alert_statuses_marks_failed():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.DEGRADED),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.DEGRADED),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     pool.probe_all()
@@ -370,8 +370,8 @@ def test_resolve_l2_endpoint_returns_source_endpoint():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.DEGRADED),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.DEGRADED),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     ep = resolve_l2_endpoint(pool)
@@ -384,8 +384,8 @@ def test_quota_aware_completer_failover():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.HEALTHY),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.HEALTHY),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     calls = []
@@ -406,8 +406,8 @@ def test_quota_aware_completer_none_when_exhausted():
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.UNAVAILABLE),
-            "antigravity": ("aigw", HealthStatus.UNAVAILABLE),
-            "workbuddy": ("aigw", HealthStatus.UNAVAILABLE),
+            "antigravity": ("bezel", HealthStatus.UNAVAILABLE),
+            "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
     completer = QuotaAwareCompleter(pool, max_attempts=3)
@@ -447,9 +447,9 @@ def test_spend_timeout_is_per_kind():
     """A spawn-CLI desktop channel is not a 20-second request. Measured on this
     machine 2026-10-07: 43.2s / 43.4s for the bare CLI, 41.1–62.2s through the
     gateway. The old flat bound timed out every desktop-quota spend."""
-    aigw = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k", derived=True)
+    bezel = BezelSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k", derived=True)
     cheap = CheapApiSource("zhipu-air", model="m", base_url="http://h/v1", api_key="k")
-    assert spend_timeout(aigw) > spend_timeout(cheap)
+    assert spend_timeout(bezel) > spend_timeout(cheap)
     assert spend_timeout(cheap) == 20.0
 
 
@@ -457,9 +457,9 @@ def test_default_send_uses_the_kind_specific_bound(monkeypatch):
     payload = {"choices": [{"message": {"role": "assistant", "content": "收到"}}]}
 
     seen = _capture_urlopen(monkeypatch, payload)
-    aigw = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k", derived=True)
-    assert _default_send("hi", aigw) == "收到"
-    assert seen["timeout"] == spend_timeout(aigw)
+    bezel = BezelSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k", derived=True)
+    assert _default_send("hi", bezel) == "收到"
+    assert seen["timeout"] == spend_timeout(bezel)
     assert seen["url"] == "http://h/v1/chat/completions"
 
     cheap = CheapApiSource("zhipu-air", model="m", base_url="http://h/v1", api_key="k")
@@ -469,7 +469,7 @@ def test_default_send_uses_the_kind_specific_bound(monkeypatch):
 
 def test_explicit_timeout_still_wins(monkeypatch):
     seen = _capture_urlopen(monkeypatch, {"choices": [{"message": {"content": "ok"}}]})
-    src = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
+    src = BezelSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
     _default_send("hi", src, timeout=3.0)
     assert seen["timeout"] == 3.0
 
@@ -478,14 +478,14 @@ def test_empty_completion_is_a_failure_not_an_answer(monkeypatch):
     """网关已经把"CLI 退出 0 但什么都没打印"判成 502；一个空的 200 说明上游退化了，
     不许当成"模型选择沉默"往上报。"""
     _capture_urlopen(monkeypatch, {"choices": [{"message": {"content": "   "}}]})
-    src = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
+    src = BezelSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
     with pytest.raises(RuntimeError, match="empty completion"):
         _default_send("hi", src)
 
 
 def test_missing_choices_is_a_failure_too(monkeypatch):
     _capture_urlopen(monkeypatch, {"choices": []})
-    src = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
+    src = BezelSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
     with pytest.raises(RuntimeError):
         _default_send("hi", src)
 
@@ -495,7 +495,7 @@ def test_completer_fails_over_off_a_blank_channel(monkeypatch):
     pool = _pool(
         **{
             "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
-            "antigravity": ("aigw", HealthStatus.HEALTHY),
+            "antigravity": ("bezel", HealthStatus.HEALTHY),
         }
     )
     _capture_urlopen(monkeypatch, {"choices": [{"message": {"content": ""}}]})

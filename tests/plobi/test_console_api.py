@@ -134,7 +134,7 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert row["id"] == "agenda"
     assert row["name"] == "日程秘书"
     assert row["status"] == "idle"  # no L3 children in flight
-    assert row["model"] == "aigw/workbuddy/deepseek-chat"  # ADR-0011 default route
+    assert row["model"] == "bezel/workbuddy/deepseek-chat"  # ADR-0011 default route
     assert row["todayCalls"] == 0
     # profile 连根拔（11-05）：行上连键都不许再有——谁把它加回来这里就红。
     assert "profile" not in row
@@ -719,7 +719,7 @@ def test_quota_summary_envelope(client, monkeypatch, tmp_path):
 
     statuses = [
         SourceStatus("zhipu-air", "cheap_api", HealthStatus.HEALTHY, 1.25, "ok", 123.0),
-        SourceStatus("antigravity", "aigw", HealthStatus.DEGRADED, None, "not verified", 123.0),
+        SourceStatus("antigravity", "bezel", HealthStatus.DEGRADED, None, "not verified", 123.0),
     ]
     monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool(statuses))
     monkeypatch.setattr(console_router, "default_db_path", lambda: tmp_path / "missing.db")

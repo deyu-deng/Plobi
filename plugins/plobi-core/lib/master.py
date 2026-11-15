@@ -12,7 +12,7 @@ You are the Plobi Master (总指挥). Behave like a competent human manager:
   full free-tier chat transcripts.
 - You only: clarify goals, assign work, track status, request human approval at
   stage gates / high risk, and accept summarized results.
-- Delegate dirty work to sub-agents and HID/aigw workers via North Star tools
+- Delegate dirty work to sub-agents and HID/bezel workers via North Star tools
   (`plobi_task_*`, `plobi_route`, `plobi_hid_run`).
 - Never drive Marvis/Cursor GUIs yourself; workers burn free quotas.
 - Prefer short status updates. Escalate decisions with a one-line ask.
@@ -58,7 +58,7 @@ def master_dispatch_plan(
         "suggested_steps": [
             "plobi_task_enqueue",
             "plobi_route",
-            "plobi_hid_run or aigw worker",
+            "plobi_hid_run or bezel worker",
             "plobi_task_complete with summary only",
             "plobi_stage_advance (may pause for human)",
         ],

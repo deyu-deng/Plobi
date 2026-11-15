@@ -109,7 +109,7 @@ def test_empty_model_name_never_reaches_the_provider(isolated_home, monkeypatch)
     """
     _write_config(
         isolated_home,
-        "model:\n  provider: aigw\n",
+        "model:\n  provider: bezel\n",
     )
     _fresh_modules()
 
@@ -204,11 +204,11 @@ def test_desktop_pre_describe_runs_on_the_session_leg(tmp_path, monkeypatch):
     out = server._enrich_with_attached_images(
         "看这个",
         [_png(tmp_path)],
-        provider="aigw",
+        provider="bezel",
         model="workbuddy/deepseek-v4.1-flash",
     )
 
-    assert seen["provider"] == "aigw"
+    assert seen["provider"] == "bezel"
     assert seen["model"] == "workbuddy/deepseek-v4.1-flash"
     assert "a blue rectangle" in out
 
@@ -231,7 +231,7 @@ def test_pre_describe_failure_carries_the_real_cause(tmp_path, monkeypatch):
     out = server._enrich_with_attached_images(
         "看这个",
         [_png(tmp_path)],
-        provider="aigw",
+        provider="bezel",
         model="workbuddy/deepseek-v4.1-flash",
     )
 
@@ -251,7 +251,7 @@ def test_pre_describe_exception_carries_the_real_cause(tmp_path, monkeypatch):
     out = server._enrich_with_attached_images(
         "看这个",
         [_png(tmp_path)],
-        provider="aigw",
+        provider="bezel",
         model="workbuddy/deepseek-v4.1-flash",
     )
 
@@ -271,14 +271,14 @@ def test_hint_names_the_tool_only_when_it_is_in_the_table(tmp_path, monkeypatch)
     without_tool = server._enrich_with_attached_images(
         "看这个",
         [_png(tmp_path)],
-        provider="aigw",
+        provider="bezel",
         model="workbuddy/deepseek-v4.1-flash",
         vision_tool_available=False,
     )
     with_tool = server._enrich_with_attached_images(
         "看这个",
         [_png(tmp_path)],
-        provider="aigw",
+        provider="bezel",
         model="workbuddy/deepseek-v4.1-flash",
         vision_tool_available=True,
     )
@@ -333,7 +333,7 @@ def test_check_vision_counts_a_reachable_provider(monkeypatch):
     from tools import vision_tools
 
     monkeypatch.setattr(
-        aux, "resolve_vision_provider_client", lambda *a, **k: ("aigw", None, None)
+        aux, "resolve_vision_provider_client", lambda *a, **k: ("bezel", None, None)
     )
     monkeypatch.setattr(aux, "vision_provider_reachable", lambda: True)
     assert vision_tools.check_vision_requirements() is True

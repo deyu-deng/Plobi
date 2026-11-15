@@ -68,7 +68,7 @@ def _add_entry_args(parser) -> None:
     parser.add_argument(
         "--role",
         default=None,
-        help="Agent role (l1_secretary / l2_agenda / l2_planner / l2_project / custom)",
+        help="Agent role (l1_secretary / l2_agenda / l2_project / l2_course / custom)",
     )
     parser.add_argument(
         "--profile",

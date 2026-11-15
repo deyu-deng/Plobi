@@ -1814,7 +1814,7 @@ describe('usePromptActions hub-backed model routing (a pick is a backend model)'
       }
     })
     // What the picker selects: the hub provider's own slug and the joined id.
-    $currentProvider.set('aigw')
+    $currentProvider.set('bezel')
     $currentModel.set('antigravity/gemini-3-pro')
     $messages.set([])
   })
@@ -1826,7 +1826,7 @@ describe('usePromptActions hub-backed model routing (a pick is a backend model)'
   })
 
   // The turn the user complained about: a hub-backed model used to stream
-  // straight from aigw in the renderer, which kept the transcript in memory and
+  // straight from bezel in the renderer, which kept the transcript in memory and
   // lost it on restart. It is an ordinary backend model now, so `prompt.submit`
   // owns it — persistence, memory and tool calls come with that.
   it('sends a hub-backed turn through prompt.submit, not the hub stream', async () => {

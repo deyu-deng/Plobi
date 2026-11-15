@@ -56,7 +56,7 @@ export interface AgentCreateRequest {
    */
   projectPaths?: string[]
   /** Default `l2_project`. Never `l1_secretary`. */
-  role?: 'l2_agenda' | 'l2_planner' | 'l2_project'
+  role?: 'l2_agenda' | 'l2_project'
   /**
    * Human-typed display name, now sent **as typed** (2026-09-16). The backend
    * reads `body["name"]` into its `display` slot; `id` stays the lowercased
@@ -276,7 +276,7 @@ export interface Artifact {
 /**
  * L2 model name for mock data. Single source of truth so the model name
  * is not duplicated across mock data + test fixtures. ADR-0011 specifies
- * L2 uses "便宜模型或 aigw 聚合额度"; the actual default is in backend
+ * L2 uses "便宜模型或 bezel 聚合额度"; the actual default is in backend
  * config, this constant only governs mock/test data.
  */
 export const MOCK_L2_MODEL = 'deepseek/deepseek-chat'

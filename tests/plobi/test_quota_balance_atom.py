@@ -26,9 +26,9 @@ def _health(accounts=None, state=gateway.CatalogState.OK, detail="health ok"):
     return readout.HealthOutcome(state, accounts or {}, detail, NOW)
 
 
-def _aigw_source(provider="workbuddy"):
+def _bezel_source(provider="workbuddy"):
     return {
-        "kind": "aigw",
+        "kind": "bezel",
         "model": f"{provider}/glm-5.3",
         "models": [f"{provider}/glm-5.3"],
         "base_url": "http://127.0.0.1:8000/v1",
@@ -74,7 +74,7 @@ def test_bool_never_becomes_a_dollar_amount():
 
 def test_gateway_rate_limit_number_is_read_but_never_called_money():
     got = readout.remaining(
-        "antigravity", kind="aigw",
+        "antigravity", kind="bezel",
         accounts=[{"id": "a1", "state": "ok", "fail": 0, "quota": {"remaining": "14"}}],
         probe_state="answered", now=NOW,
     )
@@ -86,7 +86,7 @@ def test_gateway_rate_limit_number_is_read_but_never_called_money():
 
 def test_a_dollar_field_outranks_the_request_window():
     got = readout.remaining(
-        "antigravity", kind="aigw",
+        "antigravity", kind="bezel",
         accounts=[{"id": "a1", "quota": {"remaining": "14", "usd": "2.50"}}],
         probe_state="answered", now=NOW,
     )
@@ -96,7 +96,7 @@ def test_a_dollar_field_outranks_the_request_window():
 def test_multi_account_reports_the_smallest_and_says_so():
     """合数（求和？取最小？）是产品决定，这一格不许自己发明一种。"""
     got = readout.remaining(
-        "antigravity", kind="aigw",
+        "antigravity", kind="bezel",
         accounts=[{"id": "a1", "quota": {"remaining": "40"}},
                   {"id": "a2", "quota": {"remaining": "6"}},
                   {"id": "a3", "quota": {"remaining": "9"}}],
@@ -108,7 +108,7 @@ def test_multi_account_reports_the_smallest_and_says_so():
 
 def test_a_field_that_is_present_but_not_a_number_stays_none():
     got = readout.remaining(
-        "antigravity", kind="aigw",
+        "antigravity", kind="bezel",
         accounts=[{"id": "a1", "quota": {"remaining": "unlimited"}}],
         probe_state="answered", now=NOW,
     )
@@ -118,11 +118,11 @@ def test_a_field_that_is_present_but_not_a_number_stays_none():
 
 
 def test_writer_present_but_quiet_is_not_the_same_answer_as_no_writer():
-    quiet = readout.remaining("antigravity", kind="aigw",
+    quiet = readout.remaining("antigravity", kind="bezel",
                               accounts=[{"id": "a1", "quota": {}}],
                               probe_state="answered", now=NOW)
     assert quiet.remaining is None and quiet.reason == readout.REASON_NOT_REPORTED
-    nobody = readout.remaining("workbuddy", kind="aigw",
+    nobody = readout.remaining("workbuddy", kind="bezel",
                                accounts=[{"id": "b1", "quota": {}}],
                                probe_state="answered", now=NOW)
     assert nobody.remaining is None and nobody.reason == readout.REASON_NO_WRITER
@@ -256,8 +256,8 @@ def test_fetch_health_sends_the_key_as_a_header_not_in_the_url():
 def _legs_report(*, accounts=None, state=gateway.CatalogState.OK, legs=None):
     return readout.readout(
         pool=_FakePool(["antigravity", "workbuddy"]),
-        fetch=lambda base, key: _outcome({"antigravity": _aigw_source("antigravity"),
-                                          "workbuddy": _aigw_source("workbuddy")}),
+        fetch=lambda base, key: _outcome({"antigravity": _bezel_source("antigravity"),
+                                          "workbuddy": _bezel_source("workbuddy")}),
         health=lambda base, key: _health({"antigravity": accounts or [], "workbuddy": []}, state),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0,

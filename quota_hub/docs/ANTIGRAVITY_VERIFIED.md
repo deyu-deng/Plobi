@@ -45,11 +45,11 @@ RESULT: PASS
 ### 3b. 完整网关 REST 接口（OpenAI 兼容）
 ```
 $ export ANTIGRAVITY_REFRESH_TOKEN='<composite>'
-$ export AIGW_KEY=sk-local-antigravity
+$ export BEZEL_KEY=sk-local-antigravity
 $ python -m quota_hub start --config config.antigravity.yaml --port 8020
 
 $ curl -X POST http://127.0.0.1:8020/v1/chat/completions \
-    -H "Authorization: Bearer $AIGW_KEY" \
+    -H "Authorization: Bearer $BEZEL_KEY" \
     -d '{"model":"antigravity/gemini-3-flash","messages":[{"role":"user","content":"Reply with exactly: GATEWAY_OK"}]}'
 
 MODEL    : antigravity/gemini-3-flash
@@ -77,7 +77,7 @@ RESULT   : PASS
 ```bash
 cd quota_hub
 export ANTIGRAVITY_REFRESH_TOKEN='<composite token — 运行时获取，勿提交>'
-export AIGW_KEY=sk-local-antigravity
+export BEZEL_KEY=sk-local-antigravity
 python -m quota_hub start --config config.antigravity.yaml
 # 监听 127.0.0.1:8019，提供 /v1/models /v1/chat/completions /healthz
 ```

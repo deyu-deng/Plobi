@@ -29,7 +29,7 @@ beforeAll(() => {
 // self-sustaining loop is the 2026-10-26 "一打开模型选择框整个聊天框就一直闪".
 const catalog: ModelOptionProvider[] = [
   { models: ['glm-5.2'], name: 'Z.AI', slug: 'zai' },
-  { models: ['workbuddy/hy3', 'workbuddy_api/hy3'], name: 'Local Quota Hub', slug: 'aigw' }
+  { models: ['workbuddy/hy3', 'workbuddy_api/hy3'], name: 'Local Quota Hub', slug: 'bezel' }
 ]
 
 function gatewayReturning(providers: ModelOptionProvider[]) {
@@ -46,7 +46,7 @@ async function renderPicker(providers: ModelOptionProvider[]) {
       <ModelPickerDialog
         contentClassName=""
         currentModel="workbuddy/hy3"
-        currentProvider="aigw"
+        currentProvider="bezel"
         gw={gw}
         onOpenChange={() => {}}
         onSelect={() => {}}

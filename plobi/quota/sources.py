@@ -1,14 +1,14 @@
-"""Quota sources (B3): cheap API + aigw aggregation.
+"""Quota sources (B3): cheap API + bezel aggregation.
 
 A ``QuotaSource`` is one thing the L2 loop can spend against. It implements B4's
 ``QuotaProvider`` protocol (``name`` + ``remaining_usd()``), so the same object
 can be handed to ``QuotaCircuit.register()``. It adds what B4 deliberately left
-out — a health probe — because aigw's GUI quotas have **no dollar balance** to
+out — a health probe — because bezel's GUI quotas have **no dollar balance** to
 report: they are only ever healthy / degraded / unavailable.
 
 诚实约束（对应 slice-map B3 禁区）：
 - ``cheap_api`` 源（zhipu air）能查真实余额 → ``remaining_usd()`` 返回真实值；
-- ``aigw`` 源（antigravity / workbuddy 免费额度）查不到精确余额 → ``remaining_usd()``
+- ``bezel`` 源（antigravity / workbuddy 免费额度）查不到精确余额 → ``remaining_usd()``
   返回 ``None``（B4 seam 的 "unknown, not empty" 语义），只有 ``probe()`` 报健康度；
 - 默认探针不伪造状态：未配置凭据 → UNAVAILABLE；配置了但未真机验证 → DEGRADED。
   只有注入真实 ``probe_fn``（真机接线时）才可能 HEALTHY。
@@ -71,7 +71,7 @@ class QuotaSource:
     """Base. Subclasses decide how to probe and whether a balance exists."""
 
     name: str = "source"
-    kind: str = "aigw"  # cheap_api | aigw
+    kind: str = "bezel"  # cheap_api | bezel
 
     def __init__(
         self,
@@ -203,8 +203,8 @@ class CheapApiSource(QuotaSource):
         )
 
 
-class AigwSource(QuotaSource):
-    """A desktop app's free quota served through the local aigw gateway.
+class BezelSource(QuotaSource):
+    """A desktop app's free quota served through the local bezel gateway.
 
     No dollar balance exists — only health (token valid / account schedulable).
     ``remaining_usd()`` is always ``None`` (unknown), per the B4 seam contract.
@@ -228,7 +228,7 @@ class AigwSource(QuotaSource):
         derived: bool = False,
     ) -> None:
         super().__init__(
-            name, kind="aigw", model=model,
+            name, kind="bezel", model=model,
             base_url=base_url, api_key=api_key, probe_fn=probe_fn,
         )
         self.models = list(models or ([model] if model else []))
@@ -236,11 +236,11 @@ class AigwSource(QuotaSource):
         self.derived = derived
 
     def _default_probe(self) -> SourceStatus:
-        # aigw 的 antigravity / workbuddy 真机未跑通；诚实标注 DEGRADED。
+        # bezel 的 antigravity / workbuddy 真机未跑通；诚实标注 DEGRADED。
         if not self.configured:
             return SourceStatus(
                 self.name, self.kind, HealthStatus.UNAVAILABLE, None,
-                "aigw gateway not configured", time.time(),
+                "bezel gateway not configured", time.time(),
             )
         if self.derived:
             return SourceStatus(
@@ -249,7 +249,7 @@ class AigwSource(QuotaSource):
             )
         return SourceStatus(
             self.name, self.kind, HealthStatus.DEGRADED, None,
-            "aigw upstream not verified on this machine", time.time(),
+            "bezel upstream not verified on this machine", time.time(),
         )
 
 
@@ -257,7 +257,7 @@ def build_sources(config: dict) -> dict[str, QuotaSource]:
     """Build the source pool from ``config.load()`` output."""
     sources: dict[str, QuotaSource] = {}
     for name, scfg in config.get("sources", {}).items():
-        kind = scfg.get("kind", "aigw")
+        kind = scfg.get("kind", "bezel")
         common = {
             "model": str(scfg.get("model") or ""),
             "base_url": str(scfg.get("base_url") or ""),
@@ -266,7 +266,7 @@ def build_sources(config: dict) -> dict[str, QuotaSource]:
         if kind == "cheap_api":
             sources[name] = CheapApiSource(name, **common)
         else:
-            sources[name] = AigwSource(
+            sources[name] = BezelSource(
                 name,
                 **common,
                 models=scfg.get("models") or None,

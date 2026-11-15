@@ -2066,7 +2066,7 @@ def get_model_context_length(
     3. Local server query (for local endpoints)
     4. Anthropic /v1/models API (API-key users only, not OAuth)
     5. Provider-aware lookups (before generic OpenRouter cache):
-       a0. Quota hub (`aigw`): the window each model's own vendor list published.
+       a0. Quota hub (`bezel`): the window each model's own vendor list published.
        a. Copilot live /models API
        b. Nous: live /v1/models probe first (authoritative), then OR
           cache fallback with suffix/version normalisation.  Only
@@ -2316,12 +2316,12 @@ def get_model_context_length(
     # deepseek-3.2). These numbers are what decides when Plobi compresses, and before
     # this step the subscription legs fell through the whole probe chain to the 256K
     # fallback — a guess, on a model whose real window the vendor had already told us.
-    if effective_provider == "aigw":
+    if effective_provider == "bezel":
         try:
-            from plobi.agents.registry import aigw_api_key, aigw_base_url
+            from plobi.agents.registry import bezel_api_key, bezel_base_url
             from plobi.quota.gateway import catalog_tuning
 
-            knobs = catalog_tuning(aigw_base_url(), aigw_api_key()).get(model) or {}
+            knobs = catalog_tuning(bezel_base_url(), bezel_api_key()).get(model) or {}
             window = (knobs.get("context") or {}).get("max")
             if isinstance(window, int) and window > 0:
                 return window

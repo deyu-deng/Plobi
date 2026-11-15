@@ -38,7 +38,7 @@ providers:
   # 免费池：他们那边免个人 key（键填 public），所以它没有登录这一步。
   opencode-zen-free:
     upstream: opencode-zen-free
-    name: OpenCode Zen Free
+    name: OpenCode Free
     card: true
     login: api
 

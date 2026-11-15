@@ -174,7 +174,7 @@ class AntigravityProvider(Provider):
         `run_bootstrap` starts the loopback server, opens the browser itself, and
         stores the refresh token under PLOBI_HOME without printing it, which is the
         same boundary the desktop's existing Antigravity path relies on
-        (`electron/main.ts` → `aigw auth antigravity`). Handing the callable to the
+        (`electron/main.ts` → `bezel auth antigravity`). Handing the callable to the
         hub's login manager keeps one click path for every leg while leaving the
         PKCE details here, where they belong.
         """

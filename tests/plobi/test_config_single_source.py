@@ -40,7 +40,7 @@ def root(tmp_path, monkeypatch):
     for name in ("l2-agenda", "l2-aura", "l2-kit"):
         (base / "profiles" / name).mkdir(parents=True)
     (base / "config.yaml").write_text(
-        "model:\n  provider: aigw\n  default: workbuddy/configured-once\n", encoding="utf-8"
+        "model:\n  provider: bezel\n  default: workbuddy/configured-once\n", encoding="utf-8"
     )
     monkeypatch.setenv("PLOBI_HOME", str(base))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(base / "plobi" / "projects.yaml"))
@@ -152,7 +152,7 @@ def test_one_configured_model_reaches_every_agent(root):
 
     values = [_effective_model(root / "profiles" / p) for p in ("l2-agenda", "l2-aura", "l2-kit")]
 
-    assert values == [{"provider": "aigw", "default": "workbuddy/configured-once"}] * 3
+    assert values == [{"provider": "bezel", "default": "workbuddy/configured-once"}] * 3
 
 
 def test_a_roster_override_moves_only_that_agent(root):
@@ -339,7 +339,7 @@ def test_skills_external_dirs_survive_the_isolation(root):
     shared.mkdir()
     (root / "config.yaml").write_text(
         yaml.safe_dump(
-            {"model": {"provider": "aigw", "default": "workbuddy/configured-once"},
+            {"model": {"provider": "bezel", "default": "workbuddy/configured-once"},
              "skills": {"external_dirs": [str(shared)]}},
             sort_keys=False,
         ),

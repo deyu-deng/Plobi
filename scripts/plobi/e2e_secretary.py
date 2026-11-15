@@ -5,7 +5,7 @@ active profile (no new REST). Unit tests mock ``send_turn``.
 
     python scripts/plobi/e2e_secretary.py --json
     python scripts/plobi/e2e_secretary.py --repeat 10 --json
-    python scripts/plobi/e2e_secretary.py --direct --json   # no plobi -z; real chatlog + aigw
+    python scripts/plobi/e2e_secretary.py --direct --json   # no plobi -z; real chatlog + bezel
     python scripts/plobi/e2e_secretary.py --no-live   # score helpers only
 
 Exit: 0 pass · 1 assertion/routing fail · 2 could not run (env/model).
@@ -322,7 +322,7 @@ def send_turn_oneshot(text: str, *, timeout: int = 180) -> str:
 def run_direct_pair(
     ask: Callable[..., dict[str, Any]] | None = None,
 ) -> list[TurnScore]:
-    """Call ``run_secretary_ask`` twice — real chatlog + aigw, no plobi -z."""
+    """Call ``run_secretary_ask`` twice — real chatlog + bezel, no plobi -z."""
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     if ask is None:
@@ -467,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--direct",
         action="store_true",
-        help="skip plobi -z; call run_secretary_ask (real chatlog + aigw)",
+        help="skip plobi -z; call run_secretary_ask (real chatlog + bezel)",
     )
     args = parser.parse_args(argv)
     if args.no_live and not args.direct:

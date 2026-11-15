@@ -261,8 +261,8 @@
         "to": "magpie-plugins"
       },
       {
-        "from": "electron/aigw-config.default.yaml",
-        "to": "aigw-config.default.yaml"
+        "from": "electron/bezel-config.default.yaml",
+        "to": "bezel-config.default.yaml"
       },
       {
         "from": "build/wheelhouse",

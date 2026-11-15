@@ -41,8 +41,8 @@ const ELECTRON_DIR = path.dirname(fileURLToPath(import.meta.url))
 
 import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './backend-command'
 import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
-import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
-import { reconcileGatewayKey } from './aigw-key-reconcile'
+import { canImportBezelCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
+import { reconcileGatewayKey } from './bezel-key-reconcile'
 import {
   compareMagpieVersion,
   fetchLatestRelease,
@@ -263,7 +263,7 @@ if (USER_DATA_OVERRIDE) {
 const DEV_SERVER = process.env.PLOBI_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged || Boolean(process.env.PLOBI_DESKTOP_IS_PACKAGED)
 // WP-TRAY-SLIM — 托盘诊断明细默认不进菜单，无论 dev 还是打包态（用户只该看到健康摘要
-// 与操作项）。只有显式 PLOBI_TRAY_DEBUG=1 才把 aigw-key 对账行、detail tooltip 与
+// 与操作项）。只有显式 PLOBI_TRAY_DEBUG=1 才把 bezel-key 对账行、detail tooltip 与
 // egress 全量 rows 放回托盘；完整诊断明细始终落在 logs/desktop.log。
 const TRAY_DEBUG = process.env.PLOBI_TRAY_DEBUG === '1' || process.env.PLOBI_TRAY_DEBUG === 'true'
 
@@ -1064,7 +1064,7 @@ let lastDesktopLogFlushWarnAt = 0
 let nativeThemeListenerInstalled = false
 
 // R-051 — the single source of truth for the two subsystems R-047 pushed to the
-// last tier (aigw :8000, chatlog :5030). Declared here, next to bootProgressState,
+// last tier (bezel :8000, chatlog :5030). Declared here, next to bootProgressState,
 // so the very first boot payload already carries both rows as `probing`: a
 // subsystem that was never reached must read as "not checked yet", never as
 // absent. Both surfaces — the tray menu and the renderer — read rows() from this
@@ -1078,7 +1078,7 @@ let bootProgressState = {
   phase: 'idle',
   progress: 0,
   running: false,
-  // R-051 — the deferred-subsystem rows (aigw :8000, chatlog :5030). This is the
+  // R-051 — the deferred-subsystem rows (bezel :8000, chatlog :5030). This is the
   // SAME array the tray menu renders; see ./deferred-sidecars.ts and
   // refreshTrayMenu(). One ledger, two renderings, never two status systems.
   // Seeded from the ledger so both rows are on screen as `probing` from the very
@@ -2328,7 +2328,7 @@ function writeShellSettings(patch) {
 
 // Dev checkouts have no installer to own "launch at login", so the tray toggle
 // drops a hidden-window WScript launcher in the user's Startup folder instead —
-// the same pattern as the existing chatlog / aigw autostart scripts. Packaged
+// the same pattern as the existing chatlog / bezel autostart scripts. Packaged
 // builds register with the OS through app.setLoginItemSettings.
 const STARTUP_FOLDER = IS_WINDOWS
   ? path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
@@ -7613,7 +7613,7 @@ async function startPlobi() {
       error: null
     })
 
-    // R-019 MVP: product sidecars (chatlog :5030 + aigw :8000). Never block boot.
+    // R-019 MVP: product sidecars (chatlog :5030 + bezel :8000). Never block boot.
     ensureLocalSidecars()
 
     return {
@@ -8842,7 +8842,7 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
     }
 
     // Close parks the window in the tray instead of ending the process, so the
-    // Python backend plus every sidecar it spawned (chatlog, aigw) keep
+    // Python backend plus every sidecar it spawned (chatlog, bezel) keep
     // running. Only an explicit quit or an updater hand-off really closes.
     event.preventDefault()
 
@@ -9249,7 +9249,7 @@ ipcMain.handle('plobi:boot-progress:get', async () => bootProgressState)
 ipcMain.handle('plobi:bootstrap:get', async () => getBootstrapState())
 
 // --- Product sidecars (R-019 MVP) -------------------------------------------
-// Desktop boot owns chatlog (:5030) and the shared product aigw (:8000).
+// Desktop boot owns chatlog (:5030) and the shared product bezel (:8000).
 // Distinct from per-app Desktop Quota gateways (8019/8020/8021). Soft-fail only
 // — a red sidecar must never block the Plobi backend or the window.
 let chatlogChild: ReturnType<typeof spawn> | null = null
@@ -9267,7 +9267,7 @@ let chatlogTeardownByUs = false
  * same row to `ready` immediately. This is the desktop mirror of
  * `deferred_row()` in scripts/plobi/doctor.py.
  *
- * @param {string} id - 'aigw' | 'chatlog'
+ * @param {string} id - 'bezel' | 'chatlog'
  * @param {'deferred'|'probing'|'ready'} state
  * @param {string} observed - the observed outcome, shown verbatim in the UI
  */
@@ -9296,7 +9296,7 @@ function reportDeferredSubsystem(id, state, observed) {
  * fresh connect. During early boot the system proxy transition is exactly the
  * wrong thing to consult for a 127.0.0.1 probe — it can swallow the request and
  * turn a healthy gateway into a false "did not become healthy in time". This is
- * the single helper used for every aigw healthz read in this file.
+ * the single helper used for every bezel healthz read in this file.
  */
 function probeLocalHttpDirect(url: string, timeoutMs = 2000, headers: Record<string, string> = {}): Promise<boolean> {
   return new Promise(resolve => {
@@ -9330,7 +9330,7 @@ function probeLocalHttpDirect(url: string, timeoutMs = 2000, headers: Record<str
 
 /**
  * TCP reachability probe for a loopback listener. Port-first judgement in the
- * aigw health poll: "is anything listening yet" is answered by a raw connect
+ * bezel health poll: "is anything listening yet" is answered by a raw connect
  * (immune to proxy / HTTP semantics), and only then is /healthz asked over HTTP.
  */
 function probeLocalPort(port: number, timeoutMs = 1500, host = '127.0.0.1'): Promise<boolean> {
@@ -9680,7 +9680,7 @@ const PRODUCT_QUOTA_PORT = Number(process.env.PLOBI_QUOTA_HUB_PORT || 8000)
 const PRODUCT_QUOTA_BASE = `http://127.0.0.1:${PRODUCT_QUOTA_PORT}/v1`
 
 function productQuotaApiKey(): string {
-  return process.env.QUOTA_HUB_API_KEY || process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
+  return process.env.QUOTA_HUB_API_KEY || process.env.BEZEL_API_KEY || process.env.PLOBI_BEZEL_API_KEY || 'sk-local-dev-key'
 }
 
 // WP-AIGW-KEY-LITERALS (consumer's half, 裁定 94). Both sides of one rule:
@@ -9693,11 +9693,11 @@ function productQuotaApiKey(): string {
 // There is no fs.watch on `config.yaml`, and nothing is cached: "reconcile again"
 // means the *next send* re-reads the bytes from disk, not that an edit becomes
 // red on its own. Say it that way in any report.
-function reportAigwKeyReconciliation() {
+function reportBezelKeyReconciliation() {
   let check
   try {
-    const aigwDir = resolveAigwDir()
-    // One source, one answer. Ask `productAigwConfigPath` -- the same function the
+    const bezelDir = resolveBezelDir()
+    // One source, one answer. Ask `productBezelConfigPath` -- the same function the
     // gateway itself is spawned against -- instead of re-deriving `<hub>/config.yaml`
     // here. The two agree while the bundle carries its own config; they part company
     // exactly when it does not. In that case the seed writes to
@@ -9705,9 +9705,9 @@ function reportAigwKeyReconciliation() {
     // file and serves fine, while a local `<hub>/config.yaml` rule would keep
     // reporting `NOT CHECKED` about a config nobody is using -- a red the user
     // cannot act on, which is the one thing this check must never produce.
-    const cfgPath = aigwDir ? productAigwConfigPath(aigwDir) : null
+    const cfgPath = bezelDir ? productBezelConfigPath(bezelDir) : null
     check = reconcileGatewayKey(cfgPath && fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null)
-    if (!aigwDir) {
+    if (!bezelDir) {
       check = { ...check, summary: `${check.summary}; no quota_hub checkout in this build` }
     }
   } catch (error) {
@@ -9736,7 +9736,7 @@ function reportAigwKeyReconciliation() {
 async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; apiKey: string; baseUrl: string; blocked: Record<string, string>; id: string; models: string[] }>> {
   // Reconcile first, then send: this is one of the two places the shell hands
   // its key to the hub.
-  reportAigwKeyReconciliation()
+  reportBezelKeyReconciliation()
   try {
     const res = await fetch(`${PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')}/v1/models`, {
       headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
@@ -9749,7 +9749,7 @@ async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; ap
       // just empty" (裁定 94 item 4), so the auth-shaped statuses are reported
       // against the reconciliation instead of disappearing.
       if (res.status === 401 || res.status === 403) {
-        const check = reportAigwKeyReconciliation()
+        const check = reportBezelKeyReconciliation()
         reportDeferredSubsystem(
           KEY_RECONCILE_ROW_ID,
           'red',
@@ -9854,7 +9854,7 @@ async function broadcastProductQuotaApps(): Promise<void> {
 // The renderer must not open the hub connection itself. A POST carrying
 // `Authorization` plus `application/json` is not a CORS-"simple" request, so
 // Chromium preflights it — and the hub serves no CORS layer at all (nothing in
-// aigw's app adds an Access-Control-Allow-Origin), so the preflight fails and
+// bezel's app adds an Access-Control-Allow-Origin), so the preflight fails and
 // the turn dies as "Failed to fetch" before a single token is spent. Node has
 // no same-origin policy, so the socket belongs here; the hub key stays here too
 // instead of being handed out to every window.
@@ -10000,7 +10000,7 @@ function startQuotaAppsPolling(): void {
 
 startQuotaAppsPolling()
 
-// AIGW red→ready self-heal: boot can paint aigw red when the gateway is merely
+// BEZEL red→ready self-heal: boot can paint bezel red when the gateway is merely
 // slow to answer (cold interpreter start / proxy-transition swallow) and nothing
 // after boot re-checks it — the "gateway did not become healthy in time" toast
 // then sits on the tray forever. Poll quietly every 30s; only a row that is
@@ -10008,16 +10008,16 @@ startQuotaAppsPolling()
 // to ready (mirrors the chatlog poll's ready flip above). R-051 is preserved:
 // a no-config row (deferred) is never touched, and a genuinely unreachable hub
 // stays red until it really answers.
-const AIGW_RECOVER_POLL_MS = 30_000
-let aigwRecoverTimer: ReturnType<typeof setInterval> | null = null
+const BEZEL_RECOVER_POLL_MS = 30_000
+let bezelRecoverTimer: ReturnType<typeof setInterval> | null = null
 
-function startAigwRecoverPolling(): void {
-  if (aigwRecoverTimer) {
+function startBezelRecoverPolling(): void {
+  if (bezelRecoverTimer) {
     return
   }
 
-  aigwRecoverTimer = setInterval(() => {
-    const row = deferredSidecarLedger.rows().find(r => r.id === 'aigw')
+  bezelRecoverTimer = setInterval(() => {
+    const row = deferredSidecarLedger.rows().find(r => r.id === 'bezel')
     if (!row || row.state !== 'red') {
       return
     }
@@ -10025,14 +10025,14 @@ function startAigwRecoverPolling(): void {
     void (async () => {
       const ok = await probeLocalHttp(`${PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')}/healthz`)
       if (ok) {
-        reportDeferredSubsystem('aigw', 'ready', '本地额度服务已恢复（:8000 已应答）')
-        rememberLog('[sidecar] product aigw recovered on :8000 — ledger row flipped red→ready')
+        reportDeferredSubsystem('bezel', 'ready', '本地额度服务已恢复（:8000 已应答）')
+        rememberLog('[sidecar] product bezel recovered on :8000 — ledger row flipped red→ready')
       }
     })()
-  }, AIGW_RECOVER_POLL_MS)
+  }, BEZEL_RECOVER_POLL_MS)
 }
 
-startAigwRecoverPolling()
+startBezelRecoverPolling()
 
 function stopQuotaAppsPolling(): void {
   if (!quotaAppsPollTimer) {
@@ -10044,20 +10044,20 @@ function stopQuotaAppsPolling(): void {
 }
 
 /**
- * The default gateway config this app ships (`extraResources`: electron/aigw-config.default.yaml
- * → `resources/aigw-config.default.yaml`), in the order worth trying.
+ * The default gateway config this app ships (`extraResources`: electron/bezel-config.default.yaml
+ * → `resources/bezel-config.default.yaml`), in the order worth trying.
  */
-function defaultAigwConfigCandidates(): string[] {
+function defaultBezelConfigCandidates(): string[] {
   return [
     // Packaged: electron-builder copies it to the resources root.
-    path.join(process.resourcesPath, 'aigw-config.default.yaml'),
-    // Dev: dist/electron-main.mjs -> ../electron/aigw-config.default.yaml, and the
+    path.join(process.resourcesPath, 'bezel-config.default.yaml'),
+    // Dev: dist/electron-main.mjs -> ../electron/bezel-config.default.yaml, and the
     // source tree itself when the app path is the desktop package.
     // The main is bundled as ESM, where `__dirname` does not exist — asking for it
     // threw `__dirname is not defined` and took the whole gateway down with it
     // (the packaged path above hits first, which is why only the dev run saw it).
-    path.resolve(ELECTRON_DIR, '..', 'electron', 'aigw-config.default.yaml'),
-    path.join(app.getAppPath(), 'electron', 'aigw-config.default.yaml')
+    path.resolve(ELECTRON_DIR, '..', 'electron', 'bezel-config.default.yaml'),
+    path.join(app.getAppPath(), 'electron', 'bezel-config.default.yaml')
   ]
 }
 
@@ -10074,7 +10074,7 @@ function defaultAigwConfigCandidates(): string[] {
  *   `<PLOBI_HOME>/plobi-agent/quota_hub/config.yaml` -- the same place the
  *   bootstrap clone keeps it -- and the code keeps running from the bundle.
  */
-function productAigwConfigPath(hubDir: string): string {
+function productBezelConfigPath(hubDir: string): string {
   const inHub = path.join(hubDir, 'config.yaml')
 
   if (fs.existsSync(inHub)) {
@@ -10098,8 +10098,8 @@ function productAigwConfigPath(hubDir: string): string {
  *
  * Never overwrites: a config that exists is somebody's choice, possibly edited.
  */
-function seedDefaultAigwConfig(configPath: string): boolean {
-  const candidates = defaultAigwConfigCandidates()
+function seedDefaultBezelConfig(configPath: string): boolean {
+  const candidates = defaultBezelConfigCandidates()
   const template = candidates.find(candidate => {
     try {
       return fs.existsSync(candidate)
@@ -10109,7 +10109,7 @@ function seedDefaultAigwConfig(configPath: string): boolean {
   })
 
   if (!template) {
-    rememberLog(`[sidecar] no default aigw config template found (looked in ${candidates.join(', ')})`)
+    rememberLog(`[sidecar] no default bezel config template found (looked in ${candidates.join(', ')})`)
 
     return false
   }
@@ -10122,58 +10122,58 @@ function seedDefaultAigwConfig(configPath: string): boolean {
     }
 
     fs.copyFileSync(template, configPath)
-    rememberLog(`[sidecar] wrote default aigw config ${configPath} from ${template}`)
+    rememberLog(`[sidecar] wrote default bezel config ${configPath} from ${template}`)
 
     return true
   } catch (error) {
-    rememberLog(`[sidecar] could not write default aigw config at ${configPath}: ${(error as Error).message}`)
+    rememberLog(`[sidecar] could not write default bezel config at ${configPath}: ${(error as Error).message}`)
 
     return false
   }
 }
 
-async function ensureProductAigw(): Promise<void> {
+async function ensureProductBezel(): Promise<void> {
   if (
     (await probeLocalHttp('http://127.0.0.1:8000/healthz')) ||
     (await probeLocalHttp('http://127.0.0.1:8000/v1/models'))
   ) {
-    reportDeferredSubsystem('aigw', 'ready', 'answered on :8000 before boot reached the sidecars')
-    rememberLog('[sidecar] product aigw already healthy on :8000')
+    reportDeferredSubsystem('bezel', 'ready', 'answered on :8000 before boot reached the sidecars')
+    rememberLog('[sidecar] product bezel already healthy on :8000')
     // Already up — still hand the catalog to the renderer so a hub that started
     // before the window subscribed doesn't leave the selector empty.
     void broadcastProductQuotaApps()
     return
   }
 
-  const hubDir = resolveAigwDir()
+  const hubDir = resolveBezelDir()
 
   // No hub anywhere: this build cannot start Desktop Quotas, and pretending it is
   // merely "deferred" would leave the user staring at an empty list. Report it.
   if (!hubDir) {
     reportDeferredSubsystem(
-      'aigw',
+      'bezel',
       'red',
       '找不到内置额度网关（resources/quota_hub 缺失），请重新安装 Plobi'
     )
-    rememberLog('[sidecar] product aigw: no quota_hub checkout found in this build')
+    rememberLog('[sidecar] product bezel: no quota_hub checkout found in this build')
 
     return
   }
 
-  const configPath = productAigwConfigPath(hubDir)
+  const configPath = productBezelConfigPath(hubDir)
 
-  if (!fs.existsSync(configPath) && !seedDefaultAigwConfig(configPath)) {
-    reportDeferredSubsystem('aigw', 'red', `缺少额度网关配置且无法生成默认配置：${configPath}`)
-    rememberLog(`[sidecar] product aigw config missing at ${configPath} and no template could be written`)
+  if (!fs.existsSync(configPath) && !seedDefaultBezelConfig(configPath)) {
+    reportDeferredSubsystem('bezel', 'red', `缺少额度网关配置且无法生成默认配置：${configPath}`)
+    rememberLog(`[sidecar] product bezel config missing at ${configPath} and no template could be written`)
 
     return
   }
 
   // The other place the shell hands its key out (裁定 94 item 4): the hub is
   // started with it, so it reconciles first too.
-  reportAigwKeyReconciliation()
+  reportBezelKeyReconciliation()
   const apiKey = productQuotaApiKey()
-  const result = await startAigwGateway('product', configPath, {}, {
+  const result = await startBezelGateway('product', configPath, {}, {
     port: PRODUCT_QUOTA_PORT,
     apiKey,
     timeoutMs: 60000,
@@ -10182,8 +10182,8 @@ async function ensureProductAigw(): Promise<void> {
   })
 
   if (result.ok) {
-    reportDeferredSubsystem('aigw', 'ready', `本地额度服务已就绪`)
-    rememberLog(`[sidecar] product aigw ready on :8000 pid=${result.pid ?? '?'}`)
+    reportDeferredSubsystem('bezel', 'ready', `本地额度服务已就绪`)
+    rememberLog(`[sidecar] product bezel ready on :8000 pid=${result.pid ?? '?'}`)
     // The hub just came up: derive + push its catalog so the model selector
     // populates itself. Fire-and-forget — a slow CLI discovery must not stall
     // the boot ledger's ready flip.
@@ -10195,15 +10195,15 @@ async function ensureProductAigw(): Promise<void> {
     // RED, not deferred: the config EXISTS at this point (the no-config path
     // returned earlier as `deferred`), so a gateway that config promises but
     // never delivers is a fault the user has to see.
-    reportDeferredSubsystem('aigw', 'red', result.error || 'gateway did not become healthy in time')
-    rememberLog(`[sidecar] product aigw failed: ${result.error || 'unknown'}`)
+    reportDeferredSubsystem('bezel', 'red', result.error || 'gateway did not become healthy in time')
+    rememberLog(`[sidecar] product bezel failed: ${result.error || 'unknown'}`)
   }
 }
 
 /** Fire-and-forget; safe to call on every backend.ready. */
 function ensureLocalSidecars(): void {
   // Both `ensure*` helpers already report their own legitimate deferrals from
-  // inside (chatlog: no binary; aigw: no gateway config) and `return` there. So
+  // inside (chatlog: no binary; bezel: no gateway config) and `return` there. So
   // reaching either catch below means the probe itself raised — an unhandled
   // throw in code that was genuinely trying to bring the service up. Same
   // judgement as doctor.py's reachable-but-non-200 rule: that is RED, not
@@ -10212,57 +10212,57 @@ function ensureLocalSidecars(): void {
     reportDeferredSubsystem('chatlog', 'red', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] chatlog ensure error: ${error instanceof Error ? error.message : String(error)}`)
   })
-  void ensureProductAigw().catch(error => {
-    reportDeferredSubsystem('aigw', 'red', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
-    rememberLog(`[sidecar] aigw ensure error: ${error instanceof Error ? error.message : String(error)}`)
+  void ensureProductBezel().catch(error => {
+    reportDeferredSubsystem('bezel', 'red', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
+    rememberLog(`[sidecar] bezel ensure error: ${error instanceof Error ? error.message : String(error)}`)
   })
 }
 
-// --- Plobi Gateway (aigw) — local desktop-quota aggregator -----------------
-// Bridges the user's own aigw (OpenAI-compatible HTTP gateway) into onboarding
-// as a first-class "Use Plobi Gateway" option. aigw is spawned as a child
+// --- Plobi Gateway (bezel) — local desktop-quota aggregator -----------------
+// Bridges the user's own bezel (OpenAI-compatible HTTP gateway) into onboarding
+// as a first-class "Use Plobi Gateway" option. bezel is spawned as a child
 // process here; the renderer drives Start/Stop/Status and points the local
 // endpoint at it. Fully separate from the core plobi_cli backend so a failure
 // here never breaks the app's normal boot path.
-// Per-app aigw gateway children, keyed by appId (e.g. 'antigravity', 'workbuddy').
-// Each desktop-quota app runs its own aigw process on a dedicated port so the
+// Per-app bezel gateway children, keyed by appId (e.g. 'antigravity', 'workbuddy').
+// Each desktop-quota app runs its own bezel process on a dedicated port so the
 // OAuth-based Antigravity route and the token-less Workbuddy route stay isolated
 // and can be connected/disconnected independently.
-const aigwChildren = new Map<string, any>()
-function getAigwChild(appId: string): any {
-  return aigwChildren.get(appId) ?? null
+const bezelChildren = new Map<string, any>()
+function getBezelChild(appId: string): any {
+  return bezelChildren.get(appId) ?? null
 }
-function setAigwChild(appId: string, child: any): void {
-  aigwChildren.set(appId, child)
+function setBezelChild(appId: string, child: any): void {
+  bezelChildren.set(appId, child)
 }
-function clearAigwChild(appId: string): void {
-  aigwChildren.delete(appId)
+function clearBezelChild(appId: string): void {
+  bezelChildren.delete(appId)
 }
 
-// The aigw child's stdout/stderr. console.log alone is NOT enough: a packaged
+// The bezel child's stdout/stderr. console.log alone is NOT enough: a packaged
 // main process's console goes nowhere, so every gateway startup failure — the
 // 2026-10-19 `h2` ImportError that surfaced only as a bare 20-second "gateway
 // did not become healthy in time" — was invisible in every log file. Mirror it
 // into desktop.log, the file the status ledger's red rows point the user at.
-const logAigw = (s: string) => {
+const logBezel = (s: string) => {
   try {
     for (const line of s.split('\n')) {
       if (!line.trim()) {
         continue
       }
 
-      console.log(`[aigw] ${line.trimEnd()}`)
-      rememberLog(`[aigw] ${line.trimEnd()}`)
+      console.log(`[bezel] ${line.trimEnd()}`)
+      rememberLog(`[bezel] ${line.trimEnd()}`)
     }
   } catch {
     /* ignore */
   }
 }
 
-// True if `dir` looks like a usable aigw checkout: it exists and contains the
+// True if `dir` looks like a usable bezel checkout: it exists and contains the
 // desktop config we ship. We check for the config (not just the folder) so a
 // stale empty directory doesn't shadow a real one.
-function isAigwDir(dir: string): boolean {
+function isBezelDir(dir: string): boolean {
   try {
     return fs.existsSync(path.join(dir, 'config.antigravity-desktop.yaml')) ||
            fs.existsSync(path.join(dir, 'quota_hub', '__init__.py'))
@@ -10275,7 +10275,7 @@ function isAigwDir(dir: string): boolean {
  * Where the quota-hub checkout lives, or `null` when this build cannot find one.
  *
  * The rungs, top first:
- *  1. `PLOBI_QUOTA_HUB_DIR` / `PLOBI_AIGW_DIR` — explicit override, wins everywhere
+ *  1. `PLOBI_QUOTA_HUB_DIR` / `PLOBI_BEZEL_DIR` — explicit override, wins everywhere
  *     (packaged builds, non-standard layouts, tests).
  *  2. Packaged: `<resources>/quota_hub` — the bundle this app ships
  *     (`extraResources`: `build/quota_hub` → `resources/quota_hub`, gathered by
@@ -10295,9 +10295,9 @@ function isAigwDir(dir: string): boolean {
  * directory that cannot exist here" were the same message, and nothing upstream
  * could tell them apart. Callers must now say what they do without a hub.
  */
-function resolveAigwDir(): string | null {
+function resolveBezelDir(): string | null {
   // 1) Explicit override (for packaged builds or non-standard layouts).
-  const explicitDir = process.env.PLOBI_QUOTA_HUB_DIR || process.env.PLOBI_AIGW_DIR
+  const explicitDir = process.env.PLOBI_QUOTA_HUB_DIR || process.env.PLOBI_BEZEL_DIR
   if (explicitDir) {
     return explicitDir
   }
@@ -10305,7 +10305,7 @@ function resolveAigwDir(): string | null {
   // 2) Packaged: the hub we ship next to the app's other resources.
   if (IS_PACKAGED) {
     const packagedDir = path.join(process.resourcesPath, 'quota_hub')
-    if (isAigwDir(packagedDir)) {
+    if (isBezelDir(packagedDir)) {
       return packagedDir
     }
     rememberLog(`[sidecar] packaged quota_hub not usable at ${packagedDir} — falling through`)
@@ -10313,7 +10313,7 @@ function resolveAigwDir(): string | null {
 
   // 3) Dev layout: apps/desktop -> apps -> repo root -> quota_hub
   const devPath = path.resolve(app.getAppPath(), '..', '..', 'quota_hub')
-  if (isAigwDir(devPath)) {
+  if (isBezelDir(devPath)) {
     return devPath
   }
 
@@ -10323,7 +10323,7 @@ function resolveAigwDir(): string | null {
     const parent = path.dirname(cursor)
     if (parent === cursor) break
     const candidate = path.join(parent, 'quota_hub')
-    if (isAigwDir(candidate)) {
+    if (isBezelDir(candidate)) {
       return candidate
     }
     cursor = parent
@@ -10335,7 +10335,7 @@ function resolveAigwDir(): string | null {
   const plobiHome = process.env.PLOBI_HOME?.trim()
   if (plobiHome) {
     const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'quota_hub')
-    if (isAigwDir(bootstrapPath)) {
+    if (isBezelDir(bootstrapPath)) {
       return bootstrapPath
     }
   }
@@ -10344,47 +10344,47 @@ function resolveAigwDir(): string | null {
 }
 
 /**
- * R-051 — resolve the interpreter for the aigw gateway through the SAME ladder as
- * the main backend (./python-resolution.ts), gated by `canImportAigwCli` instead of
+ * R-051 — resolve the interpreter for the bezel gateway through the SAME ladder as
+ * the main backend (./python-resolution.ts), gated by `canImportBezelCli` instead of
  * `canImportPlobiCli`.
  *
- * This is the exact bug the old shape caused on macOS: `Code/aigw/.venv` holds only
+ * This is the exact bug the old shape caused on macOS: `Code/bezel/.venv` holds only
  * a Windows `Scripts/` tree copied off the decommissioned box, so the two POSIX
  * candidates never existed, the bootstrap-clone rung existed but was skipped by the
  * walk order, and the final unguarded `findSystemPython()` returned
  * `/usr/bin/python3` (CommandLineTools 3.9). The child then died at
- * `aigw/auth/antigravity_oauth.py:37` on `ModuleNotFoundError: No module named
+ * `bezel/auth/antigravity_oauth.py:37` on `ModuleNotFoundError: No module named
  * 'httpx'` — a guaranteed failure dressed up as a fallback.
  *
- * Walking *up* from the aigw checkout reaches `<repoRoot>/.venv` (uv-managed 3.13,
- * httpx present), which is the interpreter `uv sync` owns and what `cd aigw &&
- * uv run python -m aigw start` uses.
+ * Walking *up* from the bezel checkout reaches `<repoRoot>/.venv` (uv-managed 3.13,
+ * httpx present), which is the interpreter `uv sync` owns and what `cd bezel &&
+ * uv run python -m bezel start` uses.
  *
- * @param {string} aigwDir - The aigw checkout that will be the child's cwd.
+ * @param {string} bezelDir - The bezel checkout that will be the child's cwd.
  * @returns {{python: null | string, reason: null | string}}
  */
-function resolveAigwInterpreter(aigwDir: string) {
+function resolveBezelInterpreter(bezelDir: string) {
   const resolution = resolveProjectInterpreter({
     extraRoots: [path.join(PLOBI_HOME, 'plobi-agent')],
     label: 'the local quota hub',
     platform: process.platform,
-    startDir: aigwDir,
-    usable: (python: string) => canImportAigwCli(python, { cwd: aigwDir })
+    startDir: bezelDir,
+    usable: (python: string) => canImportBezelCli(python, { cwd: bezelDir })
   })
 
   if (!resolution.python && resolution.reason) {
-    rememberLog(`[python] no usable interpreter for aigw at ${aigwDir}: ${resolution.reason}`)
+    rememberLog(`[python] no usable interpreter for bezel at ${bezelDir}: ${resolution.reason}`)
   }
 
   return resolution
 }
 
-function resolveAigwConfig(aigwDir: string, appId?: string): string {
+function resolveBezelConfig(bezelDir: string, appId?: string): string {
   // When an explicit appId is given and its dedicated desktop config exists,
   // prefer it so the Desktop Quotas connect flow and the auto-start resume
   // path use the same per-app gateway config.
   if (appId) {
-    const appCfg = path.join(aigwDir, `config.${appId}-desktop.yaml`)
+    const appCfg = path.join(bezelDir, `config.${appId}-desktop.yaml`)
     if (fs.existsSync(appCfg)) {
       return appCfg
     }
@@ -10392,39 +10392,39 @@ function resolveAigwConfig(aigwDir: string, appId?: string): string {
   // Otherwise prefer an explicit local config.yaml; fall back to the
   // ToS-safe profile (mock + CLI only) so first-run onboarding does not
   // enable reverse / token-scrape providers by default.
-  const preferred = path.join(aigwDir, 'config.yaml')
+  const preferred = path.join(bezelDir, 'config.yaml')
   if (fs.existsSync(preferred)) {
     return preferred
   }
-  const safe = path.join(aigwDir, 'profiles', 'safe.yaml')
+  const safe = path.join(bezelDir, 'profiles', 'safe.yaml')
   if (fs.existsSync(safe)) {
     return safe
   }
   return preferred
 }
 
-// --- aigw composite-token persistence -------------------------------------
-// The composite "rt|projectId|mpid" token minted by `aigw auth antigravity`
+// --- bezel composite-token persistence -------------------------------------
+// The composite "rt|projectId|mpid" token minted by `bezel auth antigravity`
 // used to live only in a transient env var (and, in our testing, /tmp). That
 // meant every app restart forced a re-login. We persist it to userData instead:
 // per-user, never synced to iCloud, outside any git repo, so the gateway can
 // self-heal after a restart with zero user awareness. Stored 0o600.
-function aigwTokenFilePath(): string {
-  return path.join(app.getPath('userData'), 'aigw-token.txt')
+function bezelTokenFilePath(): string {
+  return path.join(app.getPath('userData'), 'bezel-token.txt')
 }
 
-function persistAigwToken(token: string): boolean {
+function persistBezelToken(token: string): boolean {
   try {
-    fs.writeFileSync(aigwTokenFilePath(), token, { mode: 0o600 })
+    fs.writeFileSync(bezelTokenFilePath(), token, { mode: 0o600 })
     return true
   } catch {
     return false
   }
 }
 
-function loadAigwToken(): string | undefined {
+function loadBezelToken(): string | undefined {
   try {
-    const p = aigwTokenFilePath()
+    const p = bezelTokenFilePath()
     if (!fs.existsSync(p)) return undefined
     const t = fs.readFileSync(p, 'utf8').trim()
     return t || undefined
@@ -10434,7 +10434,7 @@ function loadAigwToken(): string | undefined {
 }
 
 // Whether the user's `agy` CLI (Antigravity / Google Cloud Code) is installed
-// and resolvable on PATH. Mirrors the resolution aigw itself uses
+// and resolvable on PATH. Mirrors the resolution bezel itself uses
 // (shutil.which, which honours PATHEXT on Windows), so a gateway started here
 // will find the same binary the provider spawns.
 function isAgyOnPath(): boolean {
@@ -10451,16 +10451,16 @@ function isAgyOnPath(): boolean {
   }
 }
 
-// Spawn the aigw gateway with a specific config + extra env, then poll its
+// Spawn the bezel gateway with a specific config + extra env, then poll its
 // health endpoint until ready (or time out). Best-effort: returns ok:false with
 // a baseUrl of undefined on failure so callers can treat the gateway as
 // optional. The renderer still shows the connected app's models from its own
 // persisted store even when the gateway isn't up yet.
 // On Windows, desktop GUI apps do NOT inherit the system proxy as environment
-// variables. aigw's httpx client honours HTTP(S)_PROXY env vars (trust_env),
+// variables. bezel's httpx client honours HTTP(S)_PROXY env vars (trust_env),
 // so without this it would try to reach Google directly and fail with
 // ConnectError. Read the WinHTTP/IE proxy from the registry and forward it to
-// the aigw child process (and its OAuth bootstrap) as env vars.
+// the bezel child process (and its OAuth bootstrap) as env vars.
 function resolveSystemProxyEnv(): Record<string, string> {
   const out: Record<string, string> = {}
   if (process.platform !== 'win32') return out
@@ -10527,27 +10527,27 @@ function resolveSystemProxyEnv(): Record<string, string> {
 }
 
 // Self-heal budget for the local hub. Measured 2026-10-28 in the live desktop log:
-// `aigw product (8000) exited with code 1073807364`, and from then on every poll logged
+// `bezel product (8000) exited with code 1073807364`, and from then on every poll logged
 // "product quota catalog unavailable (TypeError: fetch failed)" — the picker had no
 // quota models until the whole app was restarted, because the exit handler only logged.
 // A hub that dies mid-run is a child process, not a product state: bring it back, at
 // most three times per ten minutes, and forget the budget once it answers healthz again.
-const AIGW_RESTART_WINDOW_MS = 10 * 60_000
-const AIGW_RESTART_MAX = 3
-const AIGW_RESTART_DELAY_MS = 5_000
-const aigwRestartBudget: Record<string, { count: number; first: number }> = {}
+const BEZEL_RESTART_WINDOW_MS = 10 * 60_000
+const BEZEL_RESTART_MAX = 3
+const BEZEL_RESTART_DELAY_MS = 5_000
+const bezelRestartBudget: Record<string, { count: number; first: number }> = {}
 
-function mayRestartAigw(appId: string): boolean {
+function mayRestartBezel(appId: string): boolean {
   const now = Date.now()
-  const slot = aigwRestartBudget[appId]
+  const slot = bezelRestartBudget[appId]
 
-  if (!slot || now - slot.first > AIGW_RESTART_WINDOW_MS) {
-    aigwRestartBudget[appId] = { count: 1, first: now }
+  if (!slot || now - slot.first > BEZEL_RESTART_WINDOW_MS) {
+    bezelRestartBudget[appId] = { count: 1, first: now }
 
     return true
   }
 
-  if (slot.count >= AIGW_RESTART_MAX) {
+  if (slot.count >= BEZEL_RESTART_MAX) {
     return false
   }
 
@@ -10556,7 +10556,7 @@ function mayRestartAigw(appId: string): boolean {
   return true
 }
 
-async function startAigwGateway(
+async function startBezelGateway(
   appId: string,
   configPath: string,
   extraEnv: Record<string, string>,
@@ -10569,7 +10569,7 @@ async function startAigwGateway(
   // If a gateway for this app is already running, reuse it instead of spawning
   // a second process that would fail to bind the same port (e.g. a repeated
   // connect click). Only reuse when it actually answers healthz.
-  const existing = getAigwChild(appId)
+  const existing = getBezelChild(appId)
   if (existing !== null && !existing.killed) {
     const existingBase = `http://127.0.0.1:${opts.port}/v1`
     try {
@@ -10589,11 +10589,11 @@ async function startAigwGateway(
   // Program Files layout and is replaced on every upgrade, while the config has
   // to survive both. `hubDir` is where `python -m quota_hub` must run; `configPath`
   // is whatever file the caller decided the user's settings live in.
-  const aigwDir = opts.hubDir ?? path.dirname(configPath)
+  const bezelDir = opts.hubDir ?? path.dirname(configPath)
   // R-051: a gateway we cannot even import must fail *now*, with the reason, rather
   // than spawning an interpreter that dies on the first import and burns the whole
   // health-poll timeout. The reason string is what the deferred ledger shows.
-  const { python, reason } = resolveAigwInterpreter(aigwDir)
+  const { python, reason } = resolveBezelInterpreter(bezelDir)
 
   if (!python) {
     return { ok: false, error: reason || 'no usable Python interpreter for the local quota hub' }
@@ -10601,7 +10601,7 @@ async function startAigwGateway(
 
   // Prefer an explicitly-passed token (e.g. from the auth flow); fall back to a
   // previously persisted one so a restart can self-heal without re-login.
-  const token = extraEnv.ANTIGRAVITY_REFRESH_TOKEN ?? loadAigwToken() ?? ''
+  const token = extraEnv.ANTIGRAVITY_REFRESH_TOKEN ?? loadBezelToken() ?? ''
   // magpie is the vendor layer behind the subscription legs: the gateway reads
   // its provider list and its model catalogue, so it has to be up before we ask
   // it anything — and the gateway must talk to the same copy we start.
@@ -10615,17 +10615,17 @@ async function startAigwGateway(
     child = spawn(
       python,
       ['-m', 'quota_hub', 'start', '--config', configPath, '--host', '127.0.0.1', '--port', String(opts.port)],
-      hiddenWindowsChildOptions({ cwd: aigwDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
+      hiddenWindowsChildOptions({ cwd: bezelDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
     )
   } catch (err) {
     return { ok: false, error: `failed to spawn the local quota hub: ${String(err)}` }
   }
 
-  child.stdout?.on('data', (d: Buffer) => logAigw(d.toString()))
-  child.stderr?.on('data', (d: Buffer) => logAigw(d.toString()))
+  child.stdout?.on('data', (d: Buffer) => logBezel(d.toString()))
+  child.stderr?.on('data', (d: Buffer) => logBezel(d.toString()))
   child.on('exit', (code: number | null) => {
-    clearAigwChild(appId)
-    logAigw(`aigw ${appId} (${opts.port}) exited with code ${code}`)
+    clearBezelChild(appId)
+    logBezel(`bezel ${appId} (${opts.port}) exited with code ${code}`)
 
     // Only the product hub carries the picker's quota models; a per-app gateway is
     // started on demand by a click, and that click is its retry. Quitting means the
@@ -10634,24 +10634,24 @@ async function startAigwGateway(
       return
     }
 
-    if (!mayRestartAigw(appId)) {
-      logAigw(`aigw ${appId}: left down — ${AIGW_RESTART_MAX} restarts inside 10 min already`)
+    if (!mayRestartBezel(appId)) {
+      logBezel(`bezel ${appId}: left down — ${BEZEL_RESTART_MAX} restarts inside 10 min already`)
 
       return
     }
 
-    logAigw(`aigw ${appId}: restarting in ${AIGW_RESTART_DELAY_MS / 1000}s`)
+    logBezel(`bezel ${appId}: restarting in ${BEZEL_RESTART_DELAY_MS / 1000}s`)
 
     setTimeout(() => {
-      void startAigwGateway(appId, configPath, extraEnv, opts).then(result => {
+      void startBezelGateway(appId, configPath, extraEnv, opts).then(result => {
         if (!result.ok) {
-          logAigw(`aigw ${appId}: restart failed — ${result.error ?? 'unknown'}`)
+          logBezel(`bezel ${appId}: restart failed — ${result.error ?? 'unknown'}`)
         }
       })
-    }, AIGW_RESTART_DELAY_MS)
+    }, BEZEL_RESTART_DELAY_MS)
   })
 
-  setAigwChild(appId, child)
+  setBezelChild(appId, child)
 
   // Poll healthz until ready. Port-first: a raw TCP connect answers "is the
   // listener up at all" without riding any proxy; only when the port answers do
@@ -10668,7 +10668,7 @@ async function startAigwGateway(
 
       if (ok) {
         // It answers again: this is a fresh run, not a crash loop.
-        delete aigwRestartBudget[appId]
+        delete bezelRestartBudget[appId]
 
         return { ok: true, baseUrl, pid: child.pid ?? null }
       }
@@ -10680,14 +10680,14 @@ async function startAigwGateway(
   return { ok: false, error: 'gateway did not become healthy in time', baseUrl, pid: child.pid ?? null }
 }
 
-const AIGW_PORT = 8019
+const BEZEL_PORT = 8019
 // Per-app gateway ports / api keys. Antigravity keeps the legacy 8019; Workbuddy
 // gets its own 8020 so the two routes never contend for a port / key.
-const AIGW_APP_PORTS: Record<string, number> = { antigravity: 8019, workbuddy: 8020, cursor: 8021 }
-function aigwPortFor(appId: string): number {
-  return AIGW_APP_PORTS[appId] ?? AIGW_PORT
+const BEZEL_APP_PORTS: Record<string, number> = { antigravity: 8019, workbuddy: 8020, cursor: 8021 }
+function bezelPortFor(appId: string): number {
+  return BEZEL_APP_PORTS[appId] ?? BEZEL_PORT
 }
-function aigwApiKeyFor(appId: string): string {
+function bezelApiKeyFor(appId: string): string {
   return `sk-local-${appId}`
 }
 
@@ -10710,13 +10710,13 @@ function redactHomeInPath(target: string): string {
 
 ipcMain.handle('plobi-gateway:config-path', async () => {
   try {
-    const hubDir = resolveAigwDir()
+    const hubDir = resolveBezelDir()
 
     if (!hubDir) {
       return { configPath: null, hubFound: false }
     }
 
-    return { configPath: redactHomeInPath(productAigwConfigPath(hubDir)), hubFound: true }
+    return { configPath: redactHomeInPath(productBezelConfigPath(hubDir)), hubFound: true }
   } catch (error) {
     rememberLog(`[sidecar] plobi-gateway:config-path failed: ${(error as Error).message}`)
 
@@ -10725,9 +10725,9 @@ ipcMain.handle('plobi-gateway:config-path', async () => {
 })
 
 ipcMain.handle('plobi-gateway:status', async (_event, appId: string = 'antigravity') => {
-  const child = getAigwChild(appId)
+  const child = getBezelChild(appId)
   const running = child !== null && !child.killed
-  const port = aigwPortFor(appId)
+  const port = bezelPortFor(appId)
 
   return {
     running,
@@ -10738,30 +10738,30 @@ ipcMain.handle('plobi-gateway:status', async (_event, appId: string = 'antigravi
 })
 
 ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravity') => {
-  const port = aigwPortFor(appId)
-  const apiKey = aigwApiKeyFor(appId)
-  const existing = getAigwChild(appId)
+  const port = bezelPortFor(appId)
+  const apiKey = bezelApiKeyFor(appId)
+  const existing = getBezelChild(appId)
 
   if (existing !== null && !existing.killed) {
     return { ok: true, running: true, baseUrl: `http://127.0.0.1:${port}/v1` }
   }
 
-  const aigwDir = resolveAigwDir()
+  const bezelDir = resolveBezelDir()
 
-  if (!aigwDir) {
+  if (!bezelDir) {
     return { ok: false, error: 'Local quota hub is missing from this build (resources/quota_hub)' }
   }
 
-  const configPath = resolveAigwConfig(aigwDir, appId)
+  const configPath = resolveBezelConfig(bezelDir, appId)
 
   if (!fs.existsSync(configPath)) {
     return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   // Reuse a previously persisted composite token so Start after a restart works
-  // without the user re-running `aigw auth`.
-  const token = loadAigwToken()
-  const gw = await startAigwGateway(
+  // without the user re-running `bezel auth`.
+  const token = loadBezelToken()
+  const gw = await startBezelGateway(
     appId,
     configPath,
     { ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}) },
@@ -10775,10 +10775,10 @@ ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravit
 })
 
 ipcMain.handle('plobi-gateway:stop', async (_event, appId?: string) => {
-  const ids = appId ? [appId] : [...aigwChildren.keys()]
+  const ids = appId ? [appId] : [...bezelChildren.keys()]
 
   for (const id of ids) {
-    const child = getAigwChild(id)
+    const child = getBezelChild(id)
 
     if (child) {
       try {
@@ -10787,7 +10787,7 @@ ipcMain.handle('plobi-gateway:stop', async (_event, appId?: string) => {
         /* ignore */
       }
 
-      clearAigwChild(id)
+      clearBezelChild(id)
     }
   }
 
@@ -10969,7 +10969,7 @@ async function installViaHub(appId: string): Promise<{
 ipcMain.handle('plobi-gateway:install', async (_event, appId: string) => installViaHub(appId))
 
 ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
-  const aigwDir = resolveAigwDir()
+  const bezelDir = resolveBezelDir()
 
   if (appId === 'workbuddy') {
     // WorkBuddy is magpie's provider now (2026-11-09 全量迁移): the hub runs
@@ -10981,11 +10981,11 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
     return authViaHub(appId)
   }
   if (appId === 'cursor') {
-    if (!aigwDir) {
+    if (!bezelDir) {
       return { ok: false, error: 'Local quota hub is missing from this build (resources/quota_hub)' }
     }
 
-    return authCursor(aigwDir)
+    return authCursor(bezelDir)
   }
   // Antigravity used to have a branch of its own here: it started a *second* gateway
   // (`config.antigravity-desktop.yaml`, its own port) and drove `quota_hub auth
@@ -11050,20 +11050,20 @@ ipcMain.handle('plobi-auth:catalog', async () => fetchAuthCatalog())
 
 // Antigravity: Google OAuth (browser login) → persist composite refresh token →
 // start the token-based gateway on 8019.
-async function authAntigravity(aigwDir: string): Promise<{
+async function authAntigravity(bezelDir: string): Promise<{
   ok: boolean
   baseUrl?: string
   models?: string[]
   code?: string
   error?: string
 }> {
-  const configPath = path.join(aigwDir, 'config.antigravity-desktop.yaml')
+  const configPath = path.join(bezelDir, 'config.antigravity-desktop.yaml')
 
   if (!fs.existsSync(configPath)) {
     return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
-  const { python, reason } = resolveAigwInterpreter(aigwDir)
+  const { python, reason } = resolveBezelInterpreter(bezelDir)
 
   if (!python) {
     return { ok: false, code: 'NO_INTERPRETER', error: reason || 'no usable Python interpreter for the local quota hub' }
@@ -11071,13 +11071,13 @@ async function authAntigravity(aigwDir: string): Promise<{
 
 
   // Reuse a legacy token only if the user already had one. New OAuth runs no
-  // longer print the token: `aigw auth` stores it under PLOBI_HOME and the
+  // longer print the token: `bezel auth` stores it under PLOBI_HOME and the
   // provider discovers it on startup. That keeps the secret out of stdout/logs
   // and out of this process's own token file.
-  const legacyToken = loadAigwToken()
+  const legacyToken = loadBezelToken()
 
   if (hasStoredAntigravityAccount()) {
-    const probe = await runAigwProbe(python, aigwDir)
+    const probe = await runBezelProbe(python, bezelDir)
 
     if (!probe.ok) {
       return {
@@ -11089,18 +11089,18 @@ async function authAntigravity(aigwDir: string): Promise<{
   }
 
   if (!hasStoredAntigravityAccount()) {
-    logAigw('auth: no stored Antigravity account — opening Google sign-in')
+    logBezel('auth: no stored Antigravity account — opening Google sign-in')
 
     try {
-      const ok = await runAigwAuthAntigravity(python, aigwDir)
+      const ok = await runBezelAuthAntigravity(python, bezelDir)
 
       if (!ok) {
         return { ok: false, code: 'AUTH_FAILED', error: 'Antigravity OAuth authentication failed or was cancelled.' }
       }
 
-      logAigw('auth: OAuth account stored; gateway will discover it from PLOBI_HOME')
+      logBezel('auth: OAuth account stored; gateway will discover it from PLOBI_HOME')
     } catch (err: any) {
-      logAigw(`auth: aigw auth antigravity error: ${err?.message ?? err}`)
+      logBezel(`auth: bezel auth antigravity error: ${err?.message ?? err}`)
       return {
         ok: false,
         code: 'AUTH_ERROR',
@@ -11108,7 +11108,7 @@ async function authAntigravity(aigwDir: string): Promise<{
       }
     }
   } else {
-    logAigw('auth: stored Antigravity account found')
+    logBezel('auth: stored Antigravity account found')
   }
 
   const extraEnv: Record<string, string> = { QUOTA_HUB_KEY: 'sk-local-antigravity' }
@@ -11123,7 +11123,7 @@ async function authAntigravity(aigwDir: string): Promise<{
 // Cursor: no OAuth — it rides on the user's already-logged-in Cursor session
 // (token + machine ids read from %APPDATA%\Cursor\User\globalStorage). Detect
 // the local Cursor data, then start the gateway on 8021.
-async function authCursor(aigwDir: string): Promise<{
+async function authCursor(bezelDir: string): Promise<{
   ok: boolean
   baseUrl?: string
   models?: string[]
@@ -11131,14 +11131,14 @@ async function authCursor(aigwDir: string): Promise<{
   installHint?: string
   error?: string
 }> {
-  const configPath = path.join(aigwDir, 'config.cursor-desktop.yaml')
+  const configPath = path.join(bezelDir, 'config.cursor-desktop.yaml')
 
   if (!fs.existsSync(configPath)) {
     return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   const found = detectLocalCursor()
-  logAigw(`auth: cursor local detection -> ${found ? 'found' : 'none'}`)
+  logBezel(`auth: cursor local detection -> ${found ? 'found' : 'none'}`)
 
   if (!found) {
     return {
@@ -11175,12 +11175,12 @@ async function finishGatewayAuth(
   configPath: string,
   extraEnv: Record<string, string>
 ): Promise<{ ok: boolean; baseUrl?: string; models?: string[]; error?: string }> {
-  const port = aigwPortFor(appId)
-  const apiKey = aigwApiKeyFor(appId)
+  const port = bezelPortFor(appId)
+  const apiKey = bezelApiKeyFor(appId)
 
-  logAigw(`auth: starting ${appId} gateway (${configPath})`)
+  logBezel(`auth: starting ${appId} gateway (${configPath})`)
 
-  const gw = await startAigwGateway(appId, configPath, extraEnv, { port, apiKey, timeoutMs: 60000 })
+  const gw = await startBezelGateway(appId, configPath, extraEnv, { port, apiKey, timeoutMs: 60000 })
 
   if (!gw.ok) {
     return { ok: false, error: gw.error || 'local quota hub failed to start' }
@@ -11191,7 +11191,7 @@ async function finishGatewayAuth(
   return { ok: true, baseUrl: gw.baseUrl, models: models ?? [] }
 }
 
-// Fetch the live model catalog for one app from its aigw gateway's /v1/models.
+// Fetch the live model catalog for one app from its bezel gateway's /v1/models.
 async function fetchGatewayModels(baseUrl: string, apiKey: string, appId: string): Promise<string[] | null> {
   try {
     const res = await fetch(`${baseUrl.replace(/\/v1$/, '')}/v1/models`, {
@@ -11215,16 +11215,16 @@ async function fetchGatewayModels(baseUrl: string, apiKey: string, appId: string
   }
 }
 
-function runAigwProbe(
+function runBezelProbe(
   python: string,
-  aigwDir: string
+  bezelDir: string
 ): Promise<{ ok: boolean; advice?: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
       ['-m', 'quota_hub', 'probe', '--json'],
       hiddenWindowsChildOptions({
-        cwd: aigwDir,
+        cwd: bezelDir,
         env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false
@@ -11269,15 +11269,15 @@ function hasStoredAntigravityAccount(): boolean {
   }
 }
 
-// Run `aigw auth antigravity` and wait for it to store the account. The token
+// Run `bezel auth antigravity` and wait for it to store the account. The token
 // is never parsed from stdout: it lives in PLOBI_HOME/plobi/antigravity_accounts.json
 // with owner-only permissions, and the provider discovers it from there.
-function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<boolean> {
+function runBezelAuthAntigravity(python: string, bezelDir: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
       ['-m', 'quota_hub', 'auth', 'antigravity'],
-      hiddenWindowsChildOptions({ cwd: aigwDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
+      hiddenWindowsChildOptions({ cwd: bezelDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
     )
 
     let stdout = ''
@@ -11286,18 +11286,18 @@ function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<boolea
     child.stdout?.on('data', (d: Buffer) => {
       const chunk = d.toString()
       stdout += chunk
-      logAigw(`[aigw-auth] ${chunk.trimEnd()}`)
+      logBezel(`[bezel-auth] ${chunk.trimEnd()}`)
     })
 
     child.stderr?.on('data', (d: Buffer) => {
       const chunk = d.toString()
       stderr += chunk
-      logAigw(`[aigw-auth:err] ${chunk.trimEnd()}`)
+      logBezel(`[bezel-auth:err] ${chunk.trimEnd()}`)
     })
 
     // Timeout after 5 minutes (user may need time to complete Google sign-in)
     const timeout = setTimeout(() => {
-      logAigw('auth: aigw auth antigravity timed out after 5 minutes')
+      logBezel('auth: bezel auth antigravity timed out after 5 minutes')
       try { child.kill() } catch { /* ignore */ }
       reject(new Error('Authentication timed out — please try again.'))
     }, 300_000)
@@ -13260,9 +13260,9 @@ app.on('before-quit', () => {
     chatlogChild = null
   }
 
-  for (const [appId, child] of [...aigwChildren.entries()]) {
+  for (const [appId, child] of [...bezelChildren.entries()]) {
     stopBackendChild(child)
-    clearAigwChild(appId)
+    clearBezelChild(appId)
   }
 
   // magpie is the vendor layer behind the quota legs: it goes down with us.

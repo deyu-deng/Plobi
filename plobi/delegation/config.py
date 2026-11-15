@@ -28,7 +28,7 @@ DEFAULTS: dict[str, Any] = {
     # Master switch — off means the guard only observes, never blocks.
     "guard_enabled": True,
     # Quota breaker. B4 ships the seam + this budget default; B3 plugs in the
-    # real sources (cheap API + aigw) without touching this file.
+    # real sources (cheap API + bezel) without touching this file.
     "quota_enabled": True,
     "quota_daily_budget_usd": 5.0,
     # True = degrade to allow when the breaker trips (never block on quota).

@@ -11,7 +11,7 @@ const catalog: ModelOptionProvider[] = [
   {
     models: ['workbuddy/hy3', 'antigravity/gemini-3-pro'],
     name: 'Local Quota Hub',
-    slug: 'aigw'
+    slug: 'bezel'
   }
 ]
 
@@ -24,7 +24,7 @@ describe('mainProviderRows', () => {
     const rows = mainProviderRows(catalog)
 
     expect(rows.map(row => row.name)).toEqual(['Z.AI', 'Subscriptions'])
-    expect(rows.find(row => row.name === 'Subscriptions')?.ui_key).toBe('aigw::Subscriptions')
+    expect(rows.find(row => row.name === 'Subscriptions')?.ui_key).toBe('bezel::Subscriptions')
   })
 
   it('the hub row speaks the interface language, not a hard-coded Chinese word', () => {
@@ -42,10 +42,10 @@ describe('mainProviderRows', () => {
   })
 
   it("never lets the gateway own name reach a row, even with no software connected", () => {
-    // Measured 2026-10-28: `providers.aigw.name` read "Local Quota Hub" and showed up
+    // Measured 2026-10-28: `providers.bezel.name` read "Local Quota Hub" and showed up
     // on a surface without a per-software clone. The source is renamed; this pins the
     // renderer so the next such name cannot slip through either.
-    const rows = mainProviderRows([{ models: ['workbuddy/hy3'], name: 'Local Quota Hub', slug: 'aigw' }])
+    const rows = mainProviderRows([{ models: ['workbuddy/hy3'], name: 'Local Quota Hub', slug: 'bezel' }])
 
     expect(rows.map(row => row.name)).not.toContain('Local Quota Hub')
     expect(rows.some(row => /quota hub/i.test(row.name))).toBe(false)
@@ -57,11 +57,11 @@ describe('mainProviderRows', () => {
     const rows = mainProviderRows(catalog)
     const workbuddy = rows.find(row => row.name === 'WorkBuddy')
 
-    expect(workbuddy?.slug).toBe('aigw')
+    expect(workbuddy?.slug).toBe('bezel')
     // The row's identity is the hub APP ID, not its display name: two legs of one
     // software humanize to the same brand by design, and a name-based key made the
     // picker groups collide (2026-10-26 flicker).
-    expect(workbuddy?.ui_key).toBe('aigw::workbuddy')
+    expect(workbuddy?.ui_key).toBe('bezel::workbuddy')
     expect(rows.some(row => row.name === 'Local Quota Hub')).toBe(false)
   })
 
@@ -75,14 +75,14 @@ describe('mainProviderRows', () => {
       {
         models: ['workbuddy/hy3', 'workbuddy_api/hy3', 'antigravity/gemini-3-pro'],
         name: 'Local Quota Hub',
-        slug: 'aigw'
+        slug: 'bezel'
       }
     ]
 
-    const rows = mainProviderRows(bothLegs).filter(row => row.slug === 'aigw')
+    const rows = mainProviderRows(bothLegs).filter(row => row.slug === 'bezel')
 
     expect(rows).toHaveLength(2)
     expect(rows.map(row => row.name)).toEqual(['WorkBuddy', 'WorkBuddy'])
-    expect(new Set(rows.map(row => row.ui_key))).toEqual(new Set(['aigw::workbuddy', 'aigw::workbuddy_api']))
+    expect(new Set(rows.map(row => row.ui_key))).toEqual(new Set(['bezel::workbuddy', 'bezel::workbuddy_api']))
   })
 })

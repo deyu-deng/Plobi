@@ -377,13 +377,13 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
   // whole hub row when the backend catalog marks it `selectable === false` — the
   // switch must not light next to a dropdown that offers nothing. The card mirrors
   // the same catalog row (`QUOTA_HUB_ROW` is store-local; the aggregate slug is
-  // `aigw`). `null` means "no hub row in the catalog", which we leave untouched
+  // `bezel`). `null` means "no hub row in the catalog", which we leave untouched
   // rather than inventing a verdict.
   const [hubSelectable, setHubSelectable] = useState<null | boolean>(null)
 
   const readHubSelectable = useCallback(() => {
     void getGlobalModelOptions().then(({ providers }) => {
-      const hubRow = (providers ?? []).find(p => /^aigw$/i.test(p.slug))
+      const hubRow = (providers ?? []).find(p => /^bezel$/i.test(p.slug))
       setHubSelectable(hubRow ? hubRow.selectable !== false : null)
     })
   }, [])
@@ -523,7 +523,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
 
   // --- The switch ---
   // Connect once and the hub keeps this app wired up on every launch from then
-  // on (`WP-AIGW-BOOTSYNC`), which is the whole point of a subscription leg: you log
+  // on (`WP-BEZEL-BOOTSYNC`), which is the whole point of a subscription leg: you log
   // in once over there. Turning it off is therefore not "log out" — Plobi owns no
   // credential for a CodeBuddy/WorkBuddy subscription — it is the user saying
   // *stop routing through this*. So it flips one flag on the store record, and
@@ -595,7 +595,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
 
         // The frame's row-level honesty: a hub row that answered with zero selectable
         // models is exactly "selectable === false" in the picker's words; the backend
-        // catalog's `aigw` aggregate carries the same flag for the whole hub.
+        // catalog's `bezel` aggregate carries the same flag for the whole hub.
         const legUsable = Boolean(record?.answered === true && (record.models?.length ?? 0) > 0)
         const hubUsable = hubSelectable !== false
 

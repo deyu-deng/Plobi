@@ -62,7 +62,7 @@ UNIT_CREDITS = "credits"
 UNIT_PERCENT = "percent"
 
 #: 网关账号对象 `quota` 里可能出现的字段，按"越像钱越优先"排；命中第一个真读数就停。
-#: `remaining` 这一位是 `aigw/aigw/providers/antigravity.py:610-613` 从
+#: `remaining` 这一位是 `bezel/bezel/providers/antigravity.py:610-613` 从
 #: `x-ratelimit-remaining` 抄进来的**字符串**，语义是这一轮限流窗口还剩几次请求。
 GATEWAY_QUOTA_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("usd", UNIT_USD, "美元余额"),
@@ -311,7 +311,7 @@ def remaining(
             return BalanceReading(name, kind, direct, UNIT_USD, REASON_READ,
                                   "源自己报得出一个美元余额", "probed", ev, now)
 
-    if kind == "aigw":
+    if kind == "bezel":
         rows = list(accounts or [])
         snapshot = _quota_snapshot(rows)
         if snapshot is not None:
@@ -338,9 +338,9 @@ def remaining(
                 continue
             number, chosen = min(numbers, key=lambda item: item[0])
             whose = str((chosen or {}).get("id") or "")
-            writer = ("｜写入方 aigw/aigw/providers/antigravity.py:610-613，"
+            writer = ("｜写入方 bezel/bezel/providers/antigravity.py:610-613，"
                       "取的是响应头 x-ratelimit-remaining" if unit == UNIT_REQUESTS else "")
-            ev["remaining"] = ("aigw/aigw/main.py:265-278 的 /healthz → 账号对象 quota."
+            ev["remaining"] = ("bezel/bezel/main.py:265-278 的 /healthz → 账号对象 quota."
                                + field_name + (f"（账号 {whose}）" if whose else "") + writer)
             unit_note = label + ("；**熔断按钱决定时不能拿这一位当钱**" if unit == UNIT_REQUESTS else "")
             spread = f"（{len(numbers)} 家报了这一位，交最小的一家 {number}）" if len(numbers) > 1 else ""
@@ -353,16 +353,16 @@ def remaining(
                                   f"`quota` 里出现过 {sorted(set(seen_fields))}，值不是个数，不替它解释",
                                   probe_state, ev, now)
         if name.lower() in GATEWAY_QUOTA_WRITERS:
-            ev["remaining"] = "aigw/aigw/providers/antigravity.py:610-613（写入方在，但依赖上游回那个头）"
+            ev["remaining"] = "bezel/bezel/providers/antigravity.py:610-613（写入方在，但依赖上游回那个头）"
             return BalanceReading(name, kind, None, "", REASON_NOT_REPORTED,
                                   "这一家有写入方，但这一次账号对象里的 `quota` 是空的"
                                   "（上游没回 `x-ratelimit-remaining`，或网关刚起还没打过一次上游）",
                                   probe_state, ev, now)
-        ev["remaining"] = ("aigw/aigw/main.py:277 有 quota 槽位；全仓唯一写入方是 "
-                           "aigw/aigw/providers/antigravity.py:610-613")
+        ev["remaining"] = ("bezel/bezel/main.py:277 有 quota 槽位；全仓唯一写入方是 "
+                           "bezel/bezel/providers/antigravity.py:610-613")
         return BalanceReading(name, kind, None, "", REASON_NO_WRITER,
                               "网关账号对象里 `quota` 这一位只有 "
-                              "`aigw/providers/antigravity.py:610-613` 一处会填（读 `x-ratelimit-remaining`），"
+                              "`bezel/providers/antigravity.py:610-613` 一处会填（读 `x-ratelimit-remaining`），"
                               f"`{name}` 没有写入方 ⇒ 恒为 `{{}}`",
                               probe_state, ev, now)
 
@@ -602,7 +602,7 @@ def readout(
             now=now,
         )
 
-        if kind == "aigw":
+        if kind == "bezel":
             credit = credits(name)
             spent, unit, source_tag = credit["credits"], "credits", "vendor_transcript_credit"
             if spent is None:

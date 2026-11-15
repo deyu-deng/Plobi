@@ -44,13 +44,13 @@ function catalog(hubModels: string[] = []): ModelOptionProvider[] {
       authenticated: true,
       models: hubModels,
       name: 'Local Quota Hub',
-      slug: 'aigw',
+      slug: 'bezel',
       total_models: hubModels.length
     } as ModelOptionProvider
   ]
 }
 
-const rows = (hubModels: string[]) => quotaProviders(catalog(hubModels)).filter(row => row.slug === 'aigw')
+const rows = (hubModels: string[]) => quotaProviders(catalog(hubModels)).filter(row => row.slug === 'bezel')
 
 /** The hub row with the per-model verdicts the backend attaches to it. */
 function catalogWithCapabilities(hubModels: string[], capabilities?: Record<string, unknown>) {
@@ -61,7 +61,7 @@ function catalogWithCapabilities(hubModels: string[], capabilities?: Record<stri
       capabilities,
       models: hubModels,
       name: 'Local Quota Hub',
-      slug: 'aigw',
+      slug: 'bezel',
       total_models: hubModels.length
     } as ModelOptionProvider
   ]
@@ -82,7 +82,7 @@ describe('quotaProviders', () => {
 
     const [row] = rows(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3', 'antigravity/gemini-3-pro'])
 
-    expect(row?.slug).toBe('aigw')
+    expect(row?.slug).toBe('bezel')
     expect(row?.name).toBe('Workbuddy')
     expect(row?.models).toEqual(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3'])
     expect(row?.total_models).toBe(2)
@@ -93,7 +93,7 @@ describe('quotaProviders', () => {
   it('keeps the rest of the catalog untouched', () => {
     markConnected({ id: 'workbuddy_api', models: ['glm-5.3'] })
 
-    expect(quotaProviders(catalog(['workbuddy_api/glm-5.3'])).map(row => row.slug)).toEqual(['openai', 'aigw'])
+    expect(quotaProviders(catalog(['workbuddy_api/glm-5.3'])).map(row => row.slug)).toEqual(['openai', 'bezel'])
   })
 
   it('drops a channel the hub does not vouch for, even though the backend lists it', () => {
@@ -185,7 +185,7 @@ describe('quotaProviders', () => {
     // never be what the picker shows.
     markConnected({ id: 'opencode_api', models: ['big-pickle'] })
 
-    const row = quotaProviders(catalog(['opencode_api/big-pickle'])).find(r => r.slug === 'aigw')
+    const row = quotaProviders(catalog(['opencode_api/big-pickle'])).find(r => r.slug === 'bezel')
 
     expect(row?.name).toBe('OpenCode Zen')
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
@@ -225,7 +225,7 @@ describe('a model that is only waiting', () => {
           unavailable: { reason: 'quota_exhausted', retry_after_seconds: 1754 }
         }
       })
-    ).filter(r => r.slug === 'aigw')
+    ).filter(r => r.slug === 'bezel')
 
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
   })
@@ -244,7 +244,7 @@ describe('a model that is only waiting', () => {
           unavailable: { reason: 'credential_expired' }
         }
       })
-    ).filter(r => r.slug === 'aigw')
+    ).filter(r => r.slug === 'bezel')
 
     expect(row?.models ?? []).toEqual([])
   })
@@ -261,7 +261,7 @@ describe('a model that is only waiting', () => {
           unavailable: { reason: 'quota_exhausted', retry_after_seconds: 1754 }
         }
       })
-    ).filter(r => r.slug === 'aigw')
+    ).filter(r => r.slug === 'bezel')
 
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
   })
@@ -270,7 +270,7 @@ describe('a model that is only waiting', () => {
     markConnected({ id: 'opencode_api', models: ['big-pickle'], name: 'OpenCode Free' })
 
     const [row] = quotaProviders(catalogWithCapabilities(['opencode_api/big-pickle'])).filter(
-      r => r.slug === 'aigw'
+      r => r.slug === 'bezel'
     )
 
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
@@ -339,7 +339,7 @@ describe('hub verdict frames', () => {
 
 describe('findQuotaHubRow', () => {
   it('returns the backend row that routes hub-backed picks', () => {
-    expect(findQuotaHubRow(catalog(['workbuddy_api/hy3']))).toBe('aigw')
+    expect(findQuotaHubRow(catalog(['workbuddy_api/hy3']))).toBe('bezel')
     expect(findQuotaHubRow([catalog()[0]])).toBeNull()
   })
 
@@ -579,11 +579,11 @@ describe('quota store hygiene', () => {
     markConnected({ id: 'workbuddy_api', models: ['hy3'], name: 'Workbuddy' })
 
     const rows = quotaProviders(catalog(['workbuddy/hy3', 'workbuddy_api/hy3'])).filter(
-      row => row.slug === 'aigw'
+      row => row.slug === 'bezel'
     )
 
     expect(rows).toHaveLength(2)
-    expect(rows.map(row => row.ui_key)).toEqual(['aigw::workbuddy', 'aigw::workbuddy_api'])
+    expect(rows.map(row => row.ui_key)).toEqual(['bezel::workbuddy', 'bezel::workbuddy_api'])
     expect(new Set(rows.map(row => row.ui_key)).size).toBe(2)
   })
 })

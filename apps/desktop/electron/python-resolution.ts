@@ -7,21 +7,21 @@ import path from 'node:path'
 // Before this, two resolvers disagreed with each other:
 //   * `findPythonForRoot()`  (main backend) — `<root>/.venv`, `<root>/venv`,
 //     then an UNGATED `findSystemPython()`.
-//   * `resolveAigwPython()`  (aigw gateway)  — `<aigwDir>/.venv`, then the
+//   * `resolveBezelPython()`  (bezel gateway)  — `<bezelDir>/.venv`, then the
 //     bootstrap clone's venv, then the same ungated `findSystemPython()`.
 //
 // Both last rungs are the bug this module removes. On a macOS checkout the
 // project interpreter is `<repoRoot>/.venv` (uv-managed, 3.13, httpx present),
 // while PATH's `python3` is `/usr/bin/python3` — CommandLineTools 3.9 with
-// nothing installed into it. `resolveAigwPython` never looked at the repo root
-// (the aigw checkout has no `.venv/bin`, only a Windows `.venv/Scripts` copied
+// nothing installed into it. `resolveBezelPython` never looked at the repo root
+// (the bezel checkout has no `.venv/bin`, only a Windows `.venv/Scripts` copied
 // off the decommissioned box), so it fell straight through to 3.9 and the
 // child died on `ModuleNotFoundError: No module named 'httpx'`. That is a
 // guaranteed-failure fallback, not a fallback at all.
 //
 // The rule encoded here: prefer the project virtualenv (which is what `uv sync`
 // owns), walking up from the subsystem checkout so `<repoRoot>/.venv` is found
-// from `<repoRoot>/aigw`; only ever hand back an interpreter that the caller's
+// from `<repoRoot>/bezel`; only ever hand back an interpreter that the caller's
 // usability probe accepts; and when nothing qualifies, return a *reason* the UI
 // can show instead of a doomed argv.
 //
@@ -63,7 +63,7 @@ function venvInterpreterCandidates(
 
 /**
  * Candidate roots in priority order: the subsystem checkout itself, then its
- * parents up to `maxWalkUp` (so `<repoRoot>/aigw` reaches `<repoRoot>`), then
+ * parents up to `maxWalkUp` (so `<repoRoot>/bezel` reaches `<repoRoot>`), then
  * any explicitly supplied extra roots (e.g. `$PLOBI_HOME/plobi-agent`).
  */
 function interpreterRoots({

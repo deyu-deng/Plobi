@@ -1,4 +1,4 @@
-"""Compute routing: HID primary, aigw bypass."""
+"""Compute routing: HID primary, bezel bypass."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Optional
 @dataclass
 class RouteDecision:
     surface: str
-    path: str  # hid | aigw | local | blocked
+    path: str  # hid | bezel | local | blocked
     reason: str
     fallback: Optional[str] = None
 
@@ -26,15 +26,15 @@ class ComputeRouter:
         ),
         "antigravity": RouteDecision(
             surface="antigravity",
-            path="aigw",
-            reason="Protocol-adapted via aigw (OpenDesign-style); not HID primary",
+            path="bezel",
+            reason="Protocol-adapted via bezel (OpenDesign-style); not HID primary",
             fallback="hid",
         ),
         "cursor": RouteDecision(
             surface="cursor",
             path="hid",
-            reason="Exploratory HID; aigw reverse path incomplete",
-            fallback="aigw",
+            reason="Exploratory HID; bezel reverse path incomplete",
+            fallback="bezel",
         ),
         "browser": RouteDecision(
             surface="browser",
@@ -44,8 +44,8 @@ class ComputeRouter:
         ),
         "workbuddy": RouteDecision(
             surface="workbuddy",
-            path="aigw",
-            reason="Desktop quota via aigw when available",
+            path="bezel",
+            reason="Desktop quota via bezel when available",
             fallback="hid",
         ),
         "master": RouteDecision(
@@ -58,7 +58,7 @@ class ComputeRouter:
 
     def route(self, surface: str, *, prefer: Optional[str] = None) -> RouteDecision:
         key = (surface or "").strip().lower()
-        if prefer in {"hid", "aigw", "local"}:
+        if prefer in {"hid", "bezel", "local"}:
             base = self.RULES.get(key) or RouteDecision(key or "unknown", prefer, "explicit prefer")
             return RouteDecision(
                 surface=base.surface,
@@ -72,7 +72,7 @@ class ComputeRouter:
             surface=key or "unknown",
             path="hid",
             reason="unknown surface — default HID worker",
-            fallback="aigw",
+            fallback="bezel",
         )
 
     def table(self) -> dict:

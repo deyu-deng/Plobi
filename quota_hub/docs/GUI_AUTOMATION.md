@@ -62,7 +62,7 @@ workbuddy_gui:        # 或 workbuddy.gui: 段（hybrid 模式）
 ```bash
 quota_hub start
 curl http://127.0.0.1:8000/v1/chat/completions \
-  -H "Authorization: Bearer $AIGW_KEY" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BEZEL_KEY" -H "Content-Type: application/json" \
   -d '{"model":"marvis_gui/default","messages":[{"role":"user","content":"hi"}]}'
 ```
 正常情况下：网关把 prompt 打进聊天框 → 按 `send_key` 提交 → 轮询回复区直到稳定

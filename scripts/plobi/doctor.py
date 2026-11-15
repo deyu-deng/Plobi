@@ -1,4 +1,4 @@
-"""Plobi environment doctor — chatlog / aigw / DingTalk / profile (C line).
+"""Plobi environment doctor — chatlog / bezel / DingTalk / profile (C line).
 
 One command, one status table. Exit 0 when nothing is red — ``deferred`` rows
 do NOT fail the run (see :data:`DEFERRED`).
@@ -31,15 +31,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # fresh checkout can report handset access without installing anything.
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-AIGW_CONFIG_CANDIDATES = (
+BEZEL_CONFIG_CANDIDATES = (
     REPO_ROOT / "quota_hub" / "config.yaml",
     REPO_ROOT / "quota_hub" / "config.example.yaml",
-    REPO_ROOT / "aigw" / "config.yaml",
-    REPO_ROOT / "aigw" / "config.example.yaml",
+    REPO_ROOT / "bezel" / "config.yaml",
+    REPO_ROOT / "bezel" / "config.example.yaml",
 )
 CHATLOG_HEALTH_PATHS = ("/health", "/api/v1/health")
 DEFAULT_CHATLOG_URL = "http://127.0.0.1:5030"
-DEFAULT_AIGW_PORT = 8000
+DEFAULT_BEZEL_PORT = 8000
 NORTH_STAR = "plobi_core"
 #: Plugin *manifest* name — the key ``plugins.enabled`` lists, distinct from the
 #: toolset name above (the two differ by ``-`` vs ``_`` and are easy to swap).
@@ -83,7 +83,7 @@ DEFERRED_ENABLE_HINTS: dict[str, str] = {
     "chatlog": (
         "无需手动操作——应用需要时自动启动该服务"
     ),
-    "aigw": (
+    "bezel": (
         "Plobi 会在需要时自动启动该服务，无需手动操作"
     ),
     "collect": (
@@ -104,7 +104,7 @@ DEFERRED_SOURCE_ID: dict[str, Optional[str]] = {
     "chatlog": "wechat",
     "collect": "wechat",
     "whitelist_eff": "wechat",
-    "aigw": None,
+    "bezel": None,
 }
 
 DEFERRED_SUFFIX = "稍后自动启动 — 不是故障：需要时会自动运行并恢复正常。如何手动启动："
@@ -158,7 +158,7 @@ def deferred_row(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
     """
     hint = DEFERRED_ENABLE_HINTS[check_id]
     # "Enable:" promised *steps* in front of a hint that is frequently a
-    # statement — the aigw row reads "Plobi 会在需要时自动启动该服务", so an imperative
+    # statement — the bezel row reads "Plobi 会在需要时自动启动该服务", so an imperative
     # label contradicted the sentence after it. The prefix is an explanation of
     # the path back to green, which is true for both shapes (real steps for
     # chatlog, a statement for the app-owned service). Wording is byte-pinned to
@@ -390,8 +390,8 @@ def apply_env_files(home: Path | None = None) -> list[str]:
     return loaded
 
 
-def parse_aigw_port(config_text: str) -> int:
-    """Read ``server.port`` from aigw YAML without requiring PyYAML."""
+def parse_bezel_port(config_text: str) -> int:
+    """Read ``server.port`` from bezel YAML without requiring PyYAML."""
     in_server = False
     for raw in config_text.splitlines():
         line = raw.split("#", 1)[0].rstrip()
@@ -406,56 +406,56 @@ def parse_aigw_port(config_text: str) -> int:
             match = re.match(r"^\s+port:\s*(\d+)\s*$", line)
             if match:
                 return int(match.group(1))
-    return DEFAULT_AIGW_PORT
+    return DEFAULT_BEZEL_PORT
 
 
-def aigw_base_from_env_or_config() -> str:
-    from plobi.agents.registry import AIGW_URL_ENV_VARS
+def bezel_base_from_env_or_config() -> str:
+    from plobi.agents.registry import BEZEL_URL_ENV_VARS
 
-    for key in AIGW_URL_ENV_VARS:
+    for key in BEZEL_URL_ENV_VARS:
         raw = (os.environ.get(key) or "").strip()
         if raw:
             return raw.rstrip("/")
-    for path in AIGW_CONFIG_CANDIDATES:
+    for path in BEZEL_CONFIG_CANDIDATES:
         if path.is_file():
-            port = parse_aigw_port(path.read_text(encoding="utf-8"))
+            port = parse_bezel_port(path.read_text(encoding="utf-8"))
             return f"http://127.0.0.1:{port}/v1"
-    return f"http://127.0.0.1:{DEFAULT_AIGW_PORT}/v1"
+    return f"http://127.0.0.1:{DEFAULT_BEZEL_PORT}/v1"
 
 
 # The credential itself is NOT resolved here.  ``plobi.agents.registry`` holds the
 # one order (explicit env vars → the gateway's own configured key → the shipped
 # development default); this table only reports on it, so a rotated
-# ``aigw/config.yaml`` key cannot leave doctor and the runtime disagreeing
-# (WP-AIGW-CRED-SOURCE / 裁定 81).
-def aigw_api_key() -> str:
-    from plobi.agents.registry import aigw_api_key as _shared
+# ``bezel/config.yaml`` key cannot leave doctor and the runtime disagreeing
+# (WP-BEZEL-CRED-SOURCE / 裁定 81).
+def bezel_api_key() -> str:
+    from plobi.agents.registry import bezel_api_key as _shared
 
     return _shared()
 
 
-def aigw_credential_source() -> str:
+def bezel_credential_source() -> str:
     """Which source the credential above would come from — a label, never a value."""
-    from plobi.agents.registry import aigw_credential_source as _shared
+    from plobi.agents.registry import bezel_credential_source as _shared
 
     return _shared()
 
 
-def aigw_key_conflict() -> str:
+def bezel_key_conflict() -> str:
     """Return a one-line explanation when the key we send is not the gateway's.
 
     ``""`` means aligned.  Never includes either value — only which two sources
     disagree, because a mismatch is a 401 the operator can fix.
     """
-    from plobi.agents.registry import AIGW_GATEWAY_CONFIG_PATH, gateway_declared_api_key
+    from plobi.agents.registry import BEZEL_GATEWAY_CONFIG_PATH, gateway_declared_api_key
 
     declared = gateway_declared_api_key()
-    sending = aigw_api_key()
+    sending = bezel_api_key()
     if not declared or not sending or declared == sending:
         return ""
     return (
-        f"sending {aigw_credential_source()}, but "
-        f"{AIGW_GATEWAY_CONFIG_PATH} declares a different server.api_key"
+        f"sending {bezel_credential_source()}, but "
+        f"{BEZEL_GATEWAY_CONFIG_PATH} declares a different server.api_key"
     )
 
 
@@ -649,10 +649,10 @@ def check_quota_liveness() -> dict[str, Any]:
         return {"id": "quota_liveness", "color": GREEN, "detail": "额度池里没有源可探"}
 
     cheap = sorted(
-        (name, src) for name, src in sources.items() if str(src.get("kind") or "") != "aigw"
+        (name, src) for name, src in sources.items() if str(src.get("kind") or "") != "bezel"
     )
     derived = sorted(
-        name for name, src in sources.items() if str(src.get("kind") or "") == "aigw"
+        name for name, src in sources.items() if str(src.get("kind") or "") == "bezel"
     )
 
     color = GREEN
@@ -708,7 +708,7 @@ def check_quota_liveness() -> dict[str, Any]:
         # per app that would look like evidence (裁定 81: no silent skips, no fake green).
         sample = "、".join(derived[:3]) + ("…" if len(derived) > 3 else "")
         parts.append(
-            f"aigw 派生 {len(derived)} 源（{sample}）：同 base_url 同 key，探一次只等于重探网关，"
+            f"bezel 派生 {len(derived)} 源（{sample}）：同 base_url 同 key，探一次只等于重探网关，"
             f"per-app 存活要真流量才能证"
         )
 
@@ -721,10 +721,10 @@ def check_quota_liveness() -> dict[str, Any]:
     }
 
 
-def aigw_leg_enabled(config_text: str, leg: str) -> bool | None:
-    """Read ``providers.<leg>.enabled`` from aigw YAML without requiring PyYAML.
+def bezel_leg_enabled(config_text: str, leg: str) -> bool | None:
+    """Read ``providers.<leg>.enabled`` from bezel YAML without requiring PyYAML.
 
-    ``None`` means the leg is not declared at all. aigw's registry treats an
+    ``None`` means the leg is not declared at all. bezel's registry treats an
     *absent* ``enabled`` as true, but an absent **leg** means it is not wired —
     callers must say which of the two they found instead of guessing.
     """
@@ -768,7 +768,7 @@ def check_subscription_desktop_store() -> dict[str, Any]:
     """Lifetime of the desktop app's subscription token (no network, no spend,
     and it never reads a token value).
 
-    Code `85328dfe` made aigw able to use the access token Antigravity renews and
+    Code `85328dfe` made bezel able to use the access token Antigravity renews and
     writes back on Windows, so "can this leg answer" is settled. The one failure
     left is that **we cannot renew it ourselves** (no OAuth client pair), which is
     why this row reports minutes, not reachability. Yellow rather than red
@@ -785,9 +785,9 @@ def check_subscription_desktop_store() -> dict[str, Any]:
         }
 
     leg = None
-    for path in AIGW_CONFIG_CANDIDATES:
+    for path in BEZEL_CONFIG_CANDIDATES:
         if path.is_file():
-            leg = aigw_leg_enabled(path.read_text(encoding="utf-8"), "antigravity")
+            leg = bezel_leg_enabled(path.read_text(encoding="utf-8"), "antigravity")
             break
     wired = (
         "已挂进网关的 providers（会进选路）"
@@ -852,12 +852,12 @@ def check_chatlog(base_url: str = DEFAULT_CHATLOG_URL) -> dict[str, Any]:
     }
 
 
-def _aigw_quota_apps(rows: list[Any]) -> tuple[list[str], list[str]]:
+def _bezel_quota_apps(rows: list[Any]) -> tuple[list[str], list[str]]:
     """Split a gateway catalog into (model ids, real quota apps).
 
     Grouping is by the ``provider`` field, **not** by the ``<app>/`` id prefix.
     This is not a style choice: the gateway's mock channel serves
-    ``workbuddy/deepseek-chat`` (see ``aigw/config.yaml``), so prefix matching
+    ``workbuddy/deepseek-chat`` (see ``bezel/config.yaml``), so prefix matching
     reports a demo channel as a real one and the row goes green with zero actual
     quota. Same rule ``plobi.quota.gateway`` derives by.
     """
@@ -879,13 +879,13 @@ def _aigw_quota_apps(rows: list[Any]) -> tuple[list[str], list[str]]:
     return ids, sorted(apps)
 
 
-def check_aigw(base_url: str | None = None) -> dict[str, Any]:
-    base = (base_url or aigw_base_from_env_or_config()).rstrip("/")
+def check_bezel(base_url: str | None = None) -> dict[str, Any]:
+    base = (base_url or bezel_base_from_env_or_config()).rstrip("/")
     models_url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
-    conflict = aigw_key_conflict()
+    conflict = bezel_key_conflict()
     code, payload = http_get_json(
         models_url,
-        headers={"Authorization": f"Bearer {aigw_api_key()}"},
+        headers={"Authorization": f"Bearer {bezel_api_key()}"},
     )
     if code is None:
         # No listener at all. Deferral covers "not started yet"; an
@@ -896,22 +896,22 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
             # comparison does, and it would otherwise stay invisible until the
             # gateway is up and answers 401.
             detail = f"{detail}; {conflict}"
-        return deferred_row("aigw", detail, url=models_url)
+        return deferred_row("bezel", detail, url=models_url)
     if code == 401:
         # The one failure mode this row used to describe as a bare number.
         return {
-            "id": "aigw",
+            "id": "bezel",
             "color": RED,
             "detail": (
                 f"{models_url} HTTP 401 — the gateway rejected our credential"
                 + (f" ({conflict})" if conflict else " (no gateway config to compare against)")
             ),
             "url": models_url,
-            "credential": aigw_credential_source(),
+            "credential": bezel_credential_source(),
         }
     if code != 200 or payload is None:
         return {
-            "id": "aigw",
+            "id": "bezel",
             "color": RED,
             "detail": f"{models_url} HTTP {code}" + (f"; {conflict}" if conflict else ""),
             "url": models_url,
@@ -922,7 +922,7 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
         rows = payload
     else:
         rows = []
-    ids, apps = _aigw_quota_apps(rows if isinstance(rows, list) else [])
+    ids, apps = _bezel_quota_apps(rows if isinstance(rows, list) else [])
     if conflict:
         # It answered, so *this* gateway takes the key we send — but the config
         # in the tree says otherwise. Not green: the next gateway started from
@@ -941,13 +941,13 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
         verdict = "empty catalog"
         color = YELLOW
     return {
-        "id": "aigw",
+        "id": "bezel",
         "color": color,
         "detail": f"{models_url} {len(ids)} models; {verdict}",
         "url": models_url,
         "models": ids[:20],
         "apps": apps,
-        "credential": aigw_credential_source(),
+        "credential": bezel_credential_source(),
     }
 
 
@@ -1448,7 +1448,7 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
     apply_env_files()
     rows = [
         check_chatlog(),
-        check_aigw(),
+        check_bezel(),
         check_credential_refs(),
         check_quota_liveness(),
         check_subscription_desktop_store(),
@@ -1512,8 +1512,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"PLOBI_HOME={plobi_home()}")
         print(format_table(rows))
-        parsed = urlparse(aigw_base_from_env_or_config())
-        print(f"aigw probe host={parsed.hostname} port={parsed.port or DEFAULT_AIGW_PORT}")
+        parsed = urlparse(bezel_base_from_env_or_config())
+        print(f"bezel probe host={parsed.hostname} port={parsed.port or DEFAULT_BEZEL_PORT}")
     return worst_exit(rows)
 
 

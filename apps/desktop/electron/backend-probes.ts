@@ -202,7 +202,7 @@ function plobiProbeVerdict(outcome: ProbeOutcome): boolean {
 }
 
 /**
- * How an aigw probe verdict is read -- deliberately the OPPOSITE policy.
+ * How an bezel probe verdict is read -- deliberately the OPPOSITE policy.
  *
  * This rung's fallback is an explainable `deferred` row (the gateway has
  * its own health poll), not a reinstall. So a timeout here means "don't
@@ -212,7 +212,7 @@ function plobiProbeVerdict(outcome: ProbeOutcome): boolean {
  * @param {ProbeOutcome} outcome
  * @returns {boolean}
  */
-function aigwProbeVerdict(outcome: ProbeOutcome): boolean {
+function bezelProbeVerdict(outcome: ProbeOutcome): boolean {
   return outcome === 'pass'
 }
 
@@ -265,36 +265,36 @@ function canImportPlobiCli(
 }
 
 /**
- * Python snippet that proves an interpreter can actually load the aigw
- * gateway, as opposed to merely existing. `aigw.cli` is the module that pulls
+ * Python snippet that proves an interpreter can actually load the bezel
+ * gateway, as opposed to merely existing. `bezel.cli` is the module that pulls
  * in the OAuth providers and therefore httpx -- the exact import chain that
  * raised `ModuleNotFoundError: No module named 'httpx'` on macOS when the
  * desktop resolved the CommandLineTools 3.9 interpreter (R-051). Probing
- * `<python> -m aigw --help` would be slower and would also parse config; a
+ * `<python> -m bezel --help` would be slower and would also parse config; a
  * plain import is enough to separate "has the dependencies" from "does not".
  *
  * @returns {string}
  */
-function aigwRuntimeImportProbe() {
+function bezelRuntimeImportProbe() {
   return 'import quota_hub.cli'
 }
 
 /**
- * Return true iff `pythonPath` can import aigw's CLI module, run with *cwd*
- * pointing at the aigw checkout so `-m aigw` / `import aigw` resolve the local
+ * Return true iff `pythonPath` can import bezel's CLI module, run with *cwd*
+ * pointing at the bezel checkout so `-m bezel` / `import bezel` resolve the local
  * package exactly the way the gateway spawn does.
  *
- * Used by R-051's aigw interpreter resolution: a candidate venv that fails
+ * Used by R-051's bezel interpreter resolution: a candidate venv that fails
  * this probe is skipped instead of spawned, turning a 20-second health-poll
  * timeout into an immediate, explainable `deferred` row.
  *
  * @param {string} pythonPath - Absolute path to a python binary.
  * @param {object} [opts]
- * @param {string} [opts.cwd] - Directory to probe from (the aigw checkout).
+ * @param {string} [opts.cwd] - Directory to probe from (the bezel checkout).
  * @param {object} [opts.env] - Extra environment for the probe.
  * @returns {boolean}
  */
-function canImportAigwCli(
+function canImportBezelCli(
   pythonPath: string,
   opts: { cwd?: string; env?: Record<string, string>; timeoutMs?: number } = {}
 ) {
@@ -302,7 +302,7 @@ function canImportAigwCli(
     return false
   }
 
-  return aigwProbeVerdict(importProbeOutcome(pythonPath, aigwRuntimeImportProbe(), opts))
+  return bezelProbeVerdict(importProbeOutcome(pythonPath, bezelRuntimeImportProbe(), opts))
 }
 
 
@@ -346,9 +346,9 @@ function verifyPlobiCli(
 
 
 export {
-  aigwRuntimeImportProbe,
-  aigwProbeVerdict,
-  canImportAigwCli,
+  bezelRuntimeImportProbe,
+  bezelProbeVerdict,
+  canImportBezelCli,
   canImportPlobiCli,
   plobiProbeVerdict,
   plobiRuntimeImportProbe,

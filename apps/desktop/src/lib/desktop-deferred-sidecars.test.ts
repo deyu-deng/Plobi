@@ -31,11 +31,11 @@ function row(overrides: Partial<DesktopDeferredSubsystem> & { id: string }): Des
   // `name`/`enableHint` are fixed defaults, so an explicit override of any field has
   // to win over them. `id` therefore needs no explicit key — the spread carries it.
   return {
-    enableHint: 'cd aigw && uv run python -m aigw start --config config.yaml',
+    enableHint: 'cd bezel && uv run python -m bezel start --config config.yaml',
     name: { en: 'Local Quota Hub', zh: '本地额度网关' },
     detail: overrides.detail ?? `${overrides.observed ?? ''} — deferred by R-047`,
     observed: overrides.observed ?? 'unreachable (no listener)',
-    port: overrides.id === 'aigw' ? 8000 : 5030,
+    port: overrides.id === 'bezel' ? 8000 : 5030,
     state: overrides.state ?? 'deferred',
     timestamp: overrides.timestamp ?? 1,
     ...overrides
@@ -56,26 +56,26 @@ describe('readDeferredLedgerView', () => {
     // folds `red` back into `deferred` (or reads both off one filter), this is the
     // assertion that fails, because the two lists are built from two states.
     const view = readDeferredLedgerView([
-      row({ id: 'aigw', state: 'deferred' }),
+      row({ id: 'bezel', state: 'deferred' }),
       redRow({ id: 'chatlog' }),
       row({ id: 'gateway', state: 'ready' }),
       row({ id: 'probe', state: 'probing' })
     ])
 
-    expect(view.deferred.map(item => item.id)).toEqual(['aigw'])
+    expect(view.deferred.map(item => item.id)).toEqual(['bezel'])
     expect(view.red.map(item => item.id)).toEqual(['chatlog'])
-    expect(view.noted.map(item => item.id).sort()).toEqual(['aigw', 'chatlog'])
+    expect(view.noted.map(item => item.id).sort()).toEqual(['bezel', 'chatlog'])
     expect(view.noted).not.toEqual(view.deferred)
   })
 
   it('notes nothing when every row is ready or still probing', () => {
     const view = readDeferredLedgerView([
-      row({ id: 'aigw', state: 'ready' }),
+      row({ id: 'bezel', state: 'ready' }),
       row({ id: 'chatlog', state: 'probing' })
     ])
 
     expect(view.noted).toEqual([])
-    expect(deferredStatusbarCount([row({ id: 'aigw', state: 'ready' }), row({ id: 'chatlog', state: 'probing' })])).toBe(
+    expect(deferredStatusbarCount([row({ id: 'bezel', state: 'ready' }), row({ id: 'chatlog', state: 'probing' })])).toBe(
       0
     )
   })
@@ -88,7 +88,7 @@ describe('readDeferredLedgerView', () => {
   it('counts exactly the rows the statusbar dot speaks for', () => {
     expect(
       deferredStatusbarCount([
-        row({ id: 'aigw', state: 'deferred' }),
+        row({ id: 'bezel', state: 'deferred' }),
         redRow({ id: 'chatlog' }),
         row({ id: 'gateway', state: 'ready' })
       ])
@@ -116,14 +116,14 @@ describe('readDeferredLedgerView', () => {
 
 describe('planDeferredSubsystemNotices', () => {
   it('announces each RED row once', () => {
-    const plan = planDeferredSubsystemNotices([redRow({ id: 'aigw' }), redRow({ id: 'chatlog' })], [])
+    const plan = planDeferredSubsystemNotices([redRow({ id: 'bezel' }), redRow({ id: 'chatlog' })], [])
 
-    expect(plan.show.map(item => item.id)).toEqual(['aigw', 'chatlog'])
+    expect(plan.show.map(item => item.id)).toEqual(['bezel', 'chatlog'])
     expect(plan.dismiss).toEqual([])
   })
 
   it('raises NO card for a deferred row: a postponement is not a fault', () => {
-    const plan = planDeferredSubsystemNotices([row({ id: 'aigw' }), row({ id: 'chatlog' })], [])
+    const plan = planDeferredSubsystemNotices([row({ id: 'bezel' }), row({ id: 'chatlog' })], [])
 
     expect(plan.show).toEqual([])
     expect(plan.dismiss).toEqual([])
@@ -131,7 +131,7 @@ describe('planDeferredSubsystemNotices', () => {
 
   it('does not re-announce a fault that is already on screen', () => {
     // A chatty broadcast must not flood the notification stack (it caps at 4).
-    const plan = planDeferredSubsystemNotices([redRow({ id: 'aigw' })], [deferredNoticeId('aigw')])
+    const plan = planDeferredSubsystemNotices([redRow({ id: 'bezel' })], [deferredNoticeId('bezel')])
 
     expect(plan.show).toEqual([])
     expect(plan.dismiss).toEqual([])
@@ -139,7 +139,7 @@ describe('planDeferredSubsystemNotices', () => {
 
   it('ignores rows that are probing or ready', () => {
     const plan = planDeferredSubsystemNotices(
-      [row({ id: 'aigw', state: 'ready', observed: 'healthy on :8000' }), row({ id: 'chatlog', state: 'probing' })],
+      [row({ id: 'bezel', state: 'ready', observed: 'healthy on :8000' }), row({ id: 'chatlog', state: 'probing' })],
       []
     )
 
@@ -148,25 +148,25 @@ describe('planDeferredSubsystemNotices', () => {
 
   it('withdraws the notice the moment the subsystem is actually alive', () => {
     // doctor.py rule 3 — "真活着立刻变绿". The toast must not outlive the fault.
-    const plan = planDeferredSubsystemNotices([row({ id: 'aigw', state: 'ready' })], [deferredNoticeId('aigw')])
+    const plan = planDeferredSubsystemNotices([row({ id: 'bezel', state: 'ready' })], [deferredNoticeId('bezel')])
 
-    expect(plan.dismiss).toEqual([deferredNoticeId('aigw')])
+    expect(plan.dismiss).toEqual([deferredNoticeId('bezel')])
     expect(plan.show).toEqual([])
   })
 
   it('withdraws a card for a fault that was downgraded to a deferral, without showing a new one', () => {
     // The transition main.ts now makes on boot: red -> deferred (operator removed
     // the binary). The card must go away and must NOT be replaced by a card.
-    const plan = planDeferredSubsystemNotices([row({ id: 'aigw', state: 'deferred' })], [deferredNoticeId('aigw')])
+    const plan = planDeferredSubsystemNotices([row({ id: 'bezel', state: 'deferred' })], [deferredNoticeId('bezel')])
 
-    expect(plan.dismiss).toEqual([deferredNoticeId('aigw')])
+    expect(plan.dismiss).toEqual([deferredNoticeId('bezel')])
     expect(plan.show).toEqual([])
   })
 
   it('never withdraws a notification it does not own', () => {
-    const plan = planDeferredSubsystemNotices([], ['some-other-toast', deferredNoticeId('aigw')])
+    const plan = planDeferredSubsystemNotices([], ['some-other-toast', deferredNoticeId('bezel')])
 
-    expect(plan.dismiss).toEqual([deferredNoticeId('aigw')])
+    expect(plan.dismiss).toEqual([deferredNoticeId('bezel')])
   })
 })
 
@@ -176,13 +176,13 @@ describe('reportDeferredSubsystems', () => {
   })
 
   it('raises a persistent warning notice for a red row, split into the two R-082 tiers', () => {
-    reportDeferredSubsystems([redRow({ id: 'aigw', observed: 'no usable Python interpreter' })])
+    reportDeferredSubsystems([redRow({ id: 'bezel', observed: 'no usable Python interpreter' })])
 
     const notices = $notifications.get()
 
     expect(notices).toHaveLength(1)
     expect(notices[0].kind).toBe('warning')
-    expect(notices[0].id).toBe(deferredNoticeId('aigw'))
+    expect(notices[0].id).toBe(deferredNoticeId('bezel'))
     expect(notices[0].title).toContain('Local Quota Hub')
     // Ports are internal detail — the user-facing title must not expose them.
     expect(notices[0].title).not.toContain('8000')
@@ -225,17 +225,17 @@ describe('reportDeferredSubsystems', () => {
   })
 
   it('is idempotent across repeat broadcasts', () => {
-    reportDeferredSubsystems([redRow({ id: 'aigw' })])
-    reportDeferredSubsystems([redRow({ id: 'aigw' })])
+    reportDeferredSubsystems([redRow({ id: 'bezel' })])
+    reportDeferredSubsystems([redRow({ id: 'bezel' })])
 
     expect($notifications.get()).toHaveLength(1)
   })
 
   it('clears the notice when the row turns ready, and the dot goes quiet with it', () => {
-    reportDeferredSubsystems([redRow({ id: 'aigw' })])
+    reportDeferredSubsystems([redRow({ id: 'bezel' })])
     expect($notifications.get()).toHaveLength(1)
 
-    const ready = [row({ id: 'aigw', state: 'ready', observed: 'healthy on :8000' })]
+    const ready = [row({ id: 'bezel', state: 'ready', observed: 'healthy on :8000' })]
 
     reportDeferredSubsystems(ready)
 
@@ -245,7 +245,7 @@ describe('reportDeferredSubsystems', () => {
 
   it('never touches the boot state, so the window still reaches chat', () => {
     // The whole point: both sidecars broken, main conversation unaffected.
-    reportDeferredSubsystems([redRow({ id: 'aigw' }), redRow({ id: 'chatlog' })])
+    reportDeferredSubsystems([redRow({ id: 'bezel' }), redRow({ id: 'chatlog' })])
 
     expect($notifications.get().every(notice => notice.kind !== 'error')).toBe(true)
   })
@@ -260,7 +260,7 @@ describe('reportDeferredSubsystems', () => {
 
 describe('deferredRowLabel', () => {
   it('picks the tray language matching the active locale', () => {
-    const subject = row({ id: 'aigw' })
+    const subject = row({ id: 'bezel' })
 
     expect(deferredRowLabel(subject, 'zh')).toBe('本地额度网关')
     expect(deferredRowLabel(subject, 'zh-hant')).toBe('本地额度网关')
@@ -272,7 +272,7 @@ describe('deferredRowLabel', () => {
     // 主进程现在把四语都发过来（`electron/deferred-sidecars.ts`），
     // 旧主进程没有的那两语回落英文，不留空。
     const subject = row({
-      id: 'aigw',
+      id: 'bezel',
       name: {
         en: 'Local Quota Service',
         ja: 'ローカルクォータサービス',

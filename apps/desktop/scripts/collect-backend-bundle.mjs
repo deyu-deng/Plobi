@@ -160,7 +160,7 @@ fs.mkdirSync(TOOLCHAIN_DIR, { recursive: true })
 
 // --- the local quota hub (`Desktop Quotas` sidecar) -------------------------
 // The gateway is spawned as `python -m quota_hub start --config <dir>/config.yaml`
-// with cwd=<this dir> (see electron/main.ts startAigwGateway). Shipping the
+// with cwd=<this dir> (see electron/main.ts startBezelGateway). Shipping the
 // checkout -- the `quota_hub/` package *and* config.yaml beside it -- is what
 // makes a fresh install able to start the hub from `resources/quota_hub`
 // instead of falling back to a developer checkout that does not exist.

@@ -552,7 +552,7 @@ def default_llm_call(route: Any = None) -> Callable[[str], Any]:
     from plobi.quota.route import QuotaAwareCompleter
 
     # 现核（10-16 11:0x）：这份材料 + 这条口令在 workbuddy/hy3 上跑完 **113.6 秒**、回 1902 字，
-    # 而 `route.py` 给 aigw 那条的默认超时是 **120 秒**——排程这一发是贴着天花板跑的，
+    # 而 `route.py` 给 bezel 那条的默认超时是 **120 秒**——排程这一发是贴着天花板跑的，
     # 稍微慢一点就被判成"这条腿死了"（今天那三发就是这么挂的）。所以这一发单独给预算，
     # 不去动那个全局默认值（那是所有 L2 便宜路共用的，放宽它等于放宽所有事）。
     completer = QuotaAwareCompleter(timeout=PLANNING_TIMEOUT_SECONDS)

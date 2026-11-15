@@ -124,7 +124,7 @@ def test_the_picker_row_carries_the_levels_and_the_window(monkeypatch):
 
     _patch_catalog(monkeypatch, catalog_tuning("http://x", open_url=_opener(CATALOG)))
     rows = [
-        {"slug": "aigw", "name": "订阅额度", "models": [
+        {"slug": "bezel", "name": "订阅额度", "models": [
             "antigravity/claude-opus-5-5", "antigravity/gpt-oss-120b-medium",
             "kiro_cli/deepseek-3.2", "workbuddy/glm-5.3"]},
         {"slug": "openrouter", "name": "OpenRouter", "models": ["anthropic/claude-opus-4.8"]},
@@ -181,7 +181,7 @@ def test_a_vendor_menu_goes_through_untouched(monkeypatch):
                         "default": 200000, "max": 1000000},
         },
     })
-    rows = [{"slug": "aigw", "name": "订阅额度", "models": ["qoder/qwen3.8-max"]}]
+    rows = [{"slug": "bezel", "name": "订阅额度", "models": ["qoder/qwen3.8-max"]}]
 
     inventory._apply_capabilities(rows)
 
@@ -197,7 +197,7 @@ def test_a_ceiling_with_one_rung_left_has_no_menu(monkeypatch):
     from plobi_cli import inventory
 
     _patch_catalog(monkeypatch, {"tiny/tiny-1": {"context": {"max": 16384}}})
-    rows = [{"slug": "aigw", "name": "订阅额度", "models": ["tiny/tiny-1"]}]
+    rows = [{"slug": "bezel", "name": "订阅额度", "models": ["tiny/tiny-1"]}]
 
     inventory._apply_capabilities(rows)
 
@@ -227,14 +227,14 @@ def test_the_published_window_is_what_plobi_budgets_the_conversation_against(mon
     })
 
     assert get_model_context_length(
-        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="aigw"
+        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="bezel"
     ) == 1000000
     assert get_model_context_length(
-        "kiro_cli/deepseek-3.2", base_url="http://127.0.0.1:8000/v1", provider="aigw"
+        "kiro_cli/deepseek-3.2", base_url="http://127.0.0.1:8000/v1", provider="bezel"
     ) == 164000
     # A model the hub has no answer for is not a reason to claim a window.
     assert get_model_context_length(
-        "antigravity/unknown-9", base_url="http://127.0.0.1:8000/v1", provider="aigw"
+        "antigravity/unknown-9", base_url="http://127.0.0.1:8000/v1", provider="bezel"
     ) != 1000000
 
 
@@ -247,7 +247,7 @@ def test_a_hub_that_is_down_does_not_change_the_window_resolution(monkeypatch):
     monkeypatch.setattr(gateway, "catalog_tuning", raisey)
 
     answered = get_model_context_length(
-        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="aigw"
+        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="bezel"
     )
 
     assert isinstance(answered, int) and answered > 0, "the fallback chain still answers"
