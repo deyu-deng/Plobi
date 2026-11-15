@@ -131,7 +131,10 @@ export const VENDOR_ORDER = [
   'opencode',
   'kiro',
   'copilot',
-  'qoder-cn'
+  'qoder-cn',
+  'gemini',
+  'kilo',
+  'cline'
 ]
 
 export function groupByVendor(sessions: readonly ExternalSession[]): VendorGroup[] {

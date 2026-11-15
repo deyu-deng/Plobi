@@ -51,13 +51,23 @@ def homes(tmp_path, monkeypatch):
     monkeypatch.setattr(es, "kiro_root", lambda: kiro)
     monkeypatch.setattr(es, "copilot_db", lambda: copilot / "session-store.db")
     monkeypatch.setattr(es, "qoder_cn_root", lambda: qoder_cn)
+    # 11-15 再接的三家（Gemini CLI／Kilo Code／Cline）——落点同样按名字调。
+    gemini = tmp_path / "gemini"
+    kilo = tmp_path / "kilo"
+    cline = tmp_path / "cline"
+    for directory in (gemini, kilo, cline):
+        directory.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(es, "gemini_root", lambda: gemini)
+    monkeypatch.setattr(es, "kilo_db", lambda: kilo / "kilo.db")
+    monkeypatch.setattr(es, "cline_root", lambda: cline)
     es._ALL_CACHE.update({"at": 0.0, "rows": []})
     es._META_CACHE.clear()
 
     return SimpleNamespace(qoder=qoder, codebuddy=codebuddy, marvis=marvis, home=home,
                            cursor=tmp_path / "cursor-home", agy=tmp_path / "agy-home",
                            opencode=opencode, kiro=kiro, copilot=copilot,
-                           qoder_cn=qoder_cn)
+                           qoder_cn=qoder_cn, gemini=gemini, kilo=kilo,
+                           cline=cline)
 
 
 def qoder_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
@@ -367,7 +377,95 @@ def qoder_cn_session(root: Path, project: str, session_id: str, *, prompt: str, 
         json.dumps({"sessionId": session_id, "updatedAt": updated}), encoding="utf-8")
 
 
-def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
+def gemini_session(root: Path, session_id: str, *, project: str, prompt: str,
+                    updated: str = "2026-10-25T08:38:10.360Z") -> None:
+    """按**真机**的形状建一条 Gemini CLI 会话（11-15 现读）。
+
+    真机上是 ``tmp/<项目>/chats/session-<时间>-<短号>.jsonl``：
+    **会话号在首记录里**（``sessionId``），文件名只有短号；
+    工作目录在旁挂那个小文件里（``.project_root``，一行一个路径）；
+    人说的那一句在**上下文块之后**（那一大段 ``<session_context>`` 是机器给的上下文）。
+    """
+    slug = es.project_key(project)
+    directory = root / slug / "chats"
+    directory.mkdir(parents=True, exist_ok=True)
+    (root / slug / ".project_root").write_text(project, encoding="utf-8")
+    records = [
+        {"sessionId": session_id, "projectHash": "abc", "startTime": updated,
+         "lastUpdated": updated, "kind": "main"},
+        {"id": "m1", "timestamp": updated, "type": "user",
+         "content": [{"text": f"<session_context>\n一段上下文\n</session_context>\n\n{prompt}"}]},
+        {"$set": {"lastUpdated": updated}},
+    ]
+    (directory / f"session-2026-10-25T08-38-{session_id[:8]}.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+
+
+def kilo_session(root: Path, session_id: str, *, title: str, project: str, prompt: str,
+                 reply: str, stamp: int = 1794137771556) -> None:
+    """按**真机**的形状建一个 Kilo Code 库（11-15 现读）。
+
+    - ``session`` 表：id／title／directory／time_*（epoch 毫秒）；
+    - ``message`` 表：只说**谁说的**（``data`` 是一段 JSON，里面写着 ``role``）；
+    - ``part`` 表：正文在块里（``data`` 是一段 JSON，里面写着 ``text``）。
+    """
+    db = root / "kilo.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(db)
+    con.executescript(
+        "create table session (id text, project_id text, title text, directory text,"
+        " time_created integer, time_updated integer);"
+        "create table message (id text, session_id text, time_created integer,"
+        " time_updated integer, data text);"
+        "create table part (id text, message_id text, session_id text, time_created integer,"
+        " time_updated integer, data text);"
+    )
+    con.execute("insert into session values (?,?,?,?,?,?)",
+                (session_id, "global", title, project, stamp, stamp))
+    con.execute("insert into message values (?,?,?,?,?)",
+                (f"msg_{session_id}_1", session_id, stamp, stamp,
+                 json.dumps({"role": "user", "time": {"created": stamp}}, ensure_ascii=False)))
+    con.execute("insert into part values (?,?,?,?,?,?)",
+                (f"prt_{session_id}_1", f"msg_{session_id}_1", session_id, stamp, stamp,
+                 json.dumps({"type": "text", "text": prompt}, ensure_ascii=False)))
+    con.execute("insert into message values (?,?,?,?,?)",
+                (f"msg_{session_id}_2", session_id, stamp + 100, stamp + 100,
+                 json.dumps({"role": "assistant", "time": {"created": stamp + 100}}, ensure_ascii=False)))
+    con.execute("insert into part values (?,?,?,?,?,?)",
+                (f"prt_{session_id}_2", f"msg_{session_id}_2", session_id, stamp + 100, stamp + 100,
+                 json.dumps({"type": "text", "text": reply}, ensure_ascii=False)))
+    con.commit()
+    con.close()
+
+
+def cline_session(root: Path, session_id: str, *, prompt: str, project: str, reply: str,
+                  updated: str = "2026-11-08T13:50:55.528Z") -> None:
+    """按**真机**的形状建一条 Cline 会话（11-15 现读）。
+
+    **每个会话一个目录**，里面两份 JSON：``<会话号>.json``（元数据：cwd／起止时间／
+    prompt）＋ ``<会话号>.messages.json``（消息数组：role／content 块／ts）。
+    人说的那一句裹在 ``<user_input mode="act">`` 里。
+    """
+    directory = root / session_id
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{session_id}.json").write_text(json.dumps({
+        "version": 1, "session_id": session_id, "source": "cli",
+        "started_at": updated, "ended_at": updated, "status": "completed",
+        "provider": "cline", "model": "a-model", "cwd": project,
+        "prompt": f'<user_input mode="act">{prompt}</user_input>',
+    }, ensure_ascii=False), encoding="utf-8")
+    (directory / f"{session_id}.messages.json").write_text(json.dumps({
+        "version": 1, "updated_at": updated, "agent": "lead", "sessionId": session_id,
+        "messages": [
+            {"id": "1", "role": "user", "ts": 1794148301589,
+             "content": [{"type": "text", "text": f'<user_input mode="act">{prompt}</user_input>'}]},
+            {"id": "2", "role": "assistant", "ts": 1794148309508,
+             "content": [{"type": "thinking", "thinking": "这段心里话不该上屏"},
+                         {"type": "text", "text": reply}]},
+        ],
+    }, ensure_ascii=False), encoding="utf-8")
+
+
     assert es.project_key(r"D:\Projects\Sindri") == "D--Projects-Sindri"
     assert es.project_key("D:/Projects/Sindri") == "D--Projects-Sindri"
 
@@ -1000,6 +1098,64 @@ def test_the_qoder_cn_build_is_read_as_its_own_guest_and_not_merged_into_qoder(h
     assert out["ok"] is True
     assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
     assert out["data"]["messages"][1]["text"] == "了解了。"
+
+
+def test_gemini_takes_the_id_the_project_and_the_words_from_where_they_really_are(homes):
+    """Gemini CLI：会话号在**首记录**里，工作目录在旁挂那个小文件里，人话在上下文块**之后**。"""
+    gemini_session(homes.gemini, "a0487221-00d8-4744-a32c-6611b309bae0",
+                   project=r"D:\Projects\Plobi\Plobi-Desktop\Code", prompt="看一眼这个仓库")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "gemini"}
+
+    assert "a0487221-00d8-4744-a32c-6611b309bae0" in rows
+    assert rows["a0487221-00d8-4744-a32c-6611b309bae0"]["title"] == "看一眼这个仓库"
+    assert rows["a0487221-00d8-4744-a32c-6611b309bae0"]["project"] == r"D:\Projects\Plobi\Plobi-Desktop\Code"
+    assert rows["a0487221-00d8-4744-a32c-6611b309bae0"]["updated_at"].startswith("20")
+
+    out = es.read_transcript("gemini", "a0487221-00d8-4744-a32c-6611b309bae0")
+    assert out["ok"] is True
+    # 上下文那一大段是机器话 ⇒ 不上屏；只留人说的那一句。
+    assert [m["text"] for m in out["data"]["messages"]] == ["看一眼这个仓库"]
+
+
+def test_kilo_reads_the_session_row_and_the_parts_behind_the_messages(homes):
+    """Kilo Code：会话层 ``session`` 表；正文层**两张表**（消息 ＋ 块）。"""
+    kilo_session(homes.kilo, "ses_e450e0792ffe2oJ9DbIMWM4v0v", title="验收一下",
+                 project=r"D:\Temp\kilo-probe", prompt="读任务书", reply="done")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "kilo"}
+
+    assert "ses_e450e0792ffe2oJ9DbIMWM4v0v" in rows
+    assert rows["ses_e450e0792ffe2oJ9DbIMWM4v0v"]["title"] == "验收一下"
+    assert rows["ses_e450e0792ffe2oJ9DbIMWM4v0v"]["project"] == r"D:\Temp\kilo-probe"
+
+    out = es.read_transcript("kilo", "ses_e450e0792ffe2oJ9DbIMWM4v0v")
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    assert out["data"]["messages"][0]["text"] == "读任务书"
+    assert out["data"]["messages"][1]["text"] == "done"
+
+
+def test_cline_reads_the_meta_json_and_the_messages_json(homes):
+    """Cline：**每个会话一个目录**，里面两份 JSON；人话裹在 ``<user_input mode="act">`` 里。"""
+    cline_session(homes.cline, "1794148298933_whqlm", prompt="建一个 hello.txt",
+                  project=r"C:\Users\Turtlelet\AppData\Local\Temp", reply="建好了")
+
+    rows = {item["id"]: item for item in es.all_sessions() if item["vendor"] == "cline"}
+
+    assert "1794148298933_whqlm" in rows
+    assert rows["1794148298933_whqlm"]["title"] == "建一个 hello.txt"
+    assert rows["1794148298933_whqlm"]["project"].endswith("AppData\\Local\\Temp")
+    assert rows["1794148298933_whqlm"]["updated_at"].startswith("20")
+
+    out = es.read_transcript("cline", "1794148298933_whqlm")
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    # 包裹剥掉；心里话（thinking 块）不上屏。
+    assert out["data"]["messages"][0]["text"] == "建一个 hello.txt"
+    assert out["data"]["messages"][1]["text"] == "建好了"
+    assert "心里话" not in json.dumps(out, ensure_ascii=False)
+
 
 
 def test_the_three_new_guests_do_not_disturb_the_six_that_were_already_read(homes):

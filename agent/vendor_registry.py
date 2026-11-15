@@ -282,6 +282,8 @@ class SessionSpec:
     #: jsonl 的摆法：``project-dir``（``<根>/<项目>/<会话号>.jsonl``，Qoder 那一族）／
     #: ``flat``（``<根>/<会话号>.jsonl``，kiro 那一族：会话直接躺在根下，没有项目目录）。
     layout: str = "project-dir"
+    #: jsonl 摆法里正文那层的**子目录**（gemini：``chats/``；其余为空）。
+    jsonl_subdir: str = ""
     #: 这一家在「会话来源」那一列里的次序（照屏上现在的顺序；不加就排最后）。
     order: int = 0
 
@@ -325,6 +327,9 @@ class SessionSpec:
     #: 取标题时剥掉的那层包裹（``<user_query>``）：厂商把**人说的那一句**裹在里面，
     #: 外面还压着一层系统提醒（``<system-reminder>``）⇒ 不剥就是一串机器话。
     title_strip_wrapper: str = ""
+    #: 剥完那层包裹**取哪一边**：``inside``（人话在包裹里面：agy／cline）／
+    #: ``outside``（人话在包裹**后面**：gemini——那一大段是上下文，人话才在它后头）。
+    strip_wrapper_mode: str = "inside"
     #: 这些值**不算标题**（kiro 的 ``[user]``／``None`` 是占位：它自己没起出名字）
     #: ⇒ 换一个来源取（先退到 jsonl 里那句人话，再退到会话号）。
     title_placeholder_values: tuple[str, ...] = ()
@@ -392,6 +397,16 @@ class SessionSpec:
     #: 时间怎么归一：``raw``（原样）／``epoch-s``（epoch **秒**）／``epoch-ms``／``local``（ISO→本地串）。
     ts_mode: str = "raw"
 
+    # ── jsonl 那一族：会话号／项目／时间从哪来 ─────────────────────────
+    #: **首记录**那一族：会话号从 jsonl 第一条记录的那一格取（gemini 的 ``sessionId``）；
+    #: 空 = 会话号＝文件名。
+    header_id_field: str = ""
+    #: 时间从首记录的那一格取（gemini 的 ``lastUpdated``）；空 = 走 ``updated_mode``。
+    header_updated_field: str = ""
+    #: 工作目录从旁挂的**小文件**里取（gemini 的 ``.project_root``，一行一个路径）；
+    #: 相对会话目录。
+    project_file: str = ""
+
     # ── 旁挂元数据（sidecar）那一族 ─────────────────────────────────────
     #
     # 有些家把**会话本身的元数据**写在正文文件旁边的一个 JSON 里（kiro：
@@ -426,6 +441,38 @@ class SessionSpec:
     transcript_content_column: str = ""
     transcript_order_column: str = ""
     transcript_ts_column: str = ""
+    # ── 「每会话一个目录、里面两个 JSON」那一族（cline）────────────────
+    #: 那份元数据 JSON 的文件名（相对会话目录）。
+    meta_glob: str = ""
+    #: 元数据里会话号／标题／工作目录／时间各在哪一格。
+    meta_id_field: str = ""
+    meta_title_field: str = ""
+    meta_project_field: str = ""
+    meta_updated_field: str = ""
+    #: 时间那一格空着时退到这一格（cline 的 ``ended_at`` 空了就看 ``started_at``）。
+    meta_updated_fallback_field: str = ""
+    #: 正文那份 JSON 的文件名（相对会话目录）。
+    messages_glob: str = ""
+    #: 正文里消息数组在哪一格；消息的 role／正文／时间各在哪一格。
+    messages_field: str = ""
+    message_role_field: str = ""
+    message_content_field: str = ""
+    message_ts_field: str = ""
+    #: 消息时间怎么归一：``local``（ISO）／``epoch-ms``（epoch 毫秒）。
+    message_ts_mode: str = "local"
+
+    #: 正文那两张表（``sqlite-parts``：消息表 ＋ 块表）——kilo 把正文拆成两表：
+    #: 消息表只说**谁说的**，正文在块表里（每块一行）。
+    transcript_part_table: str = ""
+    transcript_part_message_column: str = ""
+    transcript_part_content_column: str = ""
+    transcript_part_order_column: str = ""
+    #: 消息表里**这条消息自己的 id**（块表靠它挂上去；kilo 是 ``id``）。
+    transcript_message_id_column: str = ""
+    #: 消息那一列是**一段 JSON**：角色在哪一格（kilo 的 ``data`` 里写着 ``role``）。
+    transcript_data_column: str = ""
+    transcript_role_field: str = ""
+
     #: **角色编在列名里**那一族（copilot 的 ``turns`` 表）：一行一个 turn，
     #: 人说的那一句与它答的那一句各占一列 ⇒ 两列名都写在这张表里。
     turn_user_column: str = ""
@@ -805,6 +852,39 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         acp_args=("--acp",),
         acp_note="11-14 现核：给了会话（登录着）",
         resume_note=NO_RESUME_FLAG,
+        # ── 会话腿（11-15 现读）─────────────────────────────────────────
+        # ``~/.cline/data/sessions/<会话号>/``：**每个会话一个目录**，
+        # 里面两份 JSON——``<会话号>.json``（元数据：cwd／起止时间／prompt）
+        # ＋ ``<会话号>.messages.json``（消息数组）。
+        session=SessionSpec(
+            vendor=AGENT_CLINE,
+            shape="json-session-dir",
+            transcript_shape="json-messages",
+            order=12,
+            root_rule=PathRule(
+                candidates=("home:.cline|data/sessions",),
+                pick="first",
+            ),
+            root_resolver="cline_root",
+            meta_glob="*.json",
+            meta_id_field="session_id",
+            meta_title_field="prompt",
+            meta_project_field="cwd",
+            meta_updated_field="ended_at",
+            meta_updated_fallback_field="started_at",
+            messages_glob="*.messages.json",
+            messages_field="messages",
+            message_role_field="role",
+            message_content_field="content",
+            message_ts_field="ts",
+            user_text_mode="block-list",
+            assistant_text_mode="block-list",
+            message_ts_mode="epoch-ms",
+            title_strip_wrapper="user_input",
+            strip_wrapper="user_input",
+            strip_wrapper_roles=("user",),
+            sendable_mode="never",
+        ),
     ),
     VendorRow(
         id=AGENT_GEMINI,
@@ -842,6 +922,41 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         acp_note="11-14 现核：拒了，原话是「Gemini API key is missing or not configured.」"
                  "——不是认证类措辞 ⇒ 探不到，不判「没登录」",
         resume_note=NO_RESUME_FLAG,
+        # ── 会话腿（11-15 现读）─────────────────────────────────────────
+        # ``~/.gemini/tmp/<项目>/chats/session-<时间>-<短号>.jsonl``：
+        # **会话号在首记录里**（``sessionId``），文件名只是 ``session-<时间>-<短号>``；
+        # 工作目录在旁挂那个小文件里（``.project_root``，一行一个路径）；
+        # 人说的那一句裹在 ``<session_context>`` 里 ⇒ 不剥就是一段机器话。
+        session=SessionSpec(
+            vendor=AGENT_GEMINI,
+            shape="jsonl-dir",
+            transcript_shape="jsonl-dialogue",
+            order=10,
+            jsonl_subdir="chats",
+            root_rule=PathRule(
+                candidates=("home:.gemini|tmp",),
+                pick="first",
+            ),
+            root_resolver="gemini_root",
+            header_id_field="sessionId",
+            header_updated_field="lastUpdated",
+            project_file=".project_root",
+            title_source="jsonl-role",
+            title_role="user",
+            title_strip_wrapper="session_context",
+            strip_wrapper_mode="outside",
+            # 人话在那一大段上下文**之后** ⇒ 正文也按同一口径剥。
+            strip_wrapper="session_context",
+            strip_wrapper_roles=("user",),
+            project_mode="none",
+            updated_mode="mtime",
+            accept_types=("user",),
+            role_from_type=True,
+            content_path="content",
+            ts_field="timestamp",
+            transcript_glob="*/chats/session-*-{session_id8}.jsonl",
+            sendable_mode="never",
+        ),
     ),
     VendorRow(
         id=AGENT_OPENCODE,
@@ -1191,6 +1306,49 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         acp_args=("acp",),
         acp_note="11-14 现核：给了会话（登录着）",
         resume_note=NO_RESUME_FLAG,
+        # ── 会话腿（11-15 现读）─────────────────────────────────────────
+        # ``~/.local/share/kilo/kilo.db``：会话层 ``session`` 表；
+        # 正文层**两张表**：``message``（只说谁说的）＋ ``part``（正文在块里）。
+        session=SessionSpec(
+            vendor=AGENT_KILO,
+            shape="sqlite-rows",
+            transcript_shape="sqlite-parts",
+            order=11,
+            db_rule=PathRule(
+                candidates=("home:.local/share/kilo|kilo.db",),
+                pick="first",
+            ),
+            db_resolver="kilo_db",
+            readable_mode="db-exists",
+            missing_reason="没找到 Kilo Code 的会话库",
+            id_column="id",
+            title_source="column",
+            title_column="title",
+            title_norm="first-line",
+            project_mode="column",
+            project_column="directory",
+            updated_mode="column-epoch-ms",
+            updated_column="time_updated",
+            table="session",
+            order_by="time_updated desc",
+            transcript_table="message",
+            transcript_id_column="session_id",
+            transcript_order_column="time_created",
+            transcript_ts_column="time_created",
+            transcript_ts_mode="epoch",
+            transcript_data_column="data",
+            transcript_role_field="role",
+            transcript_part_table="part",
+            transcript_part_message_column="message_id",
+            transcript_part_content_column="data",
+            transcript_part_order_column="time_created",
+            transcript_message_id_column="id",
+            # 块那一列是一段 JSON，正文在 ``text`` 那一格。
+            user_text_mode="json-field",
+            assistant_text_mode="json-field",
+            user_text_field="text",
+            sendable_mode="never",
+        ),
     ),
 
     # ── 只知道怎么装、还没接派活腿的那几家 ──────────────────────────────

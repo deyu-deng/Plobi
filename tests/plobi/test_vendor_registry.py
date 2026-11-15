@@ -177,14 +177,14 @@ def test_the_session_specs_cover_every_vendor_that_has_sessions():
     """
     assert list(vr.SESSION_SPECS) == [
         "qoder", "codebuddy", "marvis", "cursor", "agy", "opencode",
-        "kiro", "copilot", "qoder-cn",
+        "kiro", "copilot", "qoder-cn", "gemini", "kilo", "cline",
     ]
     for vendor, spec in vr.SESSION_SPECS.items():
         assert spec.vendor == vendor
-        assert spec.shape in ("jsonl-dir", "sqlite-rows", "sqlite-kv-json")
+        assert spec.shape in ("jsonl-dir", "sqlite-rows", "sqlite-kv-json", "json-session-dir")
         assert spec.transcript_shape in (
             "jsonl-dialogue", "jsonl-steps", "sqlite-dialogue", "sqlite-kv-json",
-            "sqlite-turn-pairs")
+            "sqlite-turn-pairs", "sqlite-parts", "json-messages")
 
 
 def test_the_three_new_guests_are_registered_as_data_not_as_code_branches():

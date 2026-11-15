@@ -50,6 +50,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
@@ -159,6 +160,35 @@ def copilot_db() -> Path:
     """GitHub Copilot 的会话库（SQLite，只读）。"""
     spec = _spec("copilot")
     return resolve_path(spec.db_rule) if spec else Path()
+
+
+def gemini_root() -> Path:
+    """Gemini CLI 的会话目录（``<家>/.gemini/tmp``）。
+
+    11-15 现读：会话落在 ``tmp/<项目>/chats/session-<时间>-<短号>.jsonl``，
+    **会话号在首记录里**（``sessionId``），工作目录在旁挂那个小文件里
+    （``.project_root``）。
+    """
+    spec = _spec("gemini")
+    return resolve_path(spec.root_rule) if spec else Path()
+
+
+def kilo_db() -> Path:
+    """Kilo Code 的会话库（SQLite，只读）。
+
+    11-15 现读：会话层 ``session`` 表；正文层**两张表**——``message`` ＋ ``part``。
+    """
+    spec = _spec("kilo")
+    return resolve_path(spec.db_rule) if spec else Path()
+
+
+def cline_root() -> Path:
+    """Cline 的会话目录（``<家>/.cline/data/sessions``）。
+
+    11-15 现读：**每个会话一个目录**，里面两份 JSON（元数据 ＋ 消息数组）。
+    """
+    spec = _spec("cline")
+    return resolve_path(spec.root_rule) if spec else Path()
 
 
 def marvis_db() -> Path:
@@ -273,6 +303,7 @@ def _block_text(content: Any, spec=None) -> str:
 
     **块里那两格的名字由表写**（``content_block_kind_field``／``content_block_text_field``）：
     kiro 的块把类型写在 ``kind``、正文写在 ``data``（不是 ``type``／``text``）。
+    也有家**根本不写块类型**（gemini：块里只有 ``text``）⇒ 有正文那一格就算正文。
     """
     if isinstance(content, str):
         return content.strip()
@@ -283,7 +314,9 @@ def _block_text(content: Any, spec=None) -> str:
         for block in content:
             if not isinstance(block, dict):
                 continue
-            if block.get(kind_field) in ("text", "input_text", "output_text"):
+            kind = block.get(kind_field)
+            if kind in ("text", "input_text", "output_text") or (
+                    kind is None and text_field in block):
                 value = block.get(text_field)
                 if isinstance(value, str) and value.strip():
                     parts.append(value.strip())
@@ -291,7 +324,6 @@ def _block_text(content: Any, spec=None) -> str:
         return "\n".join(parts).strip()
 
     return ""
-
 
 def _mtime_iso(path: Path) -> str:
     try:
@@ -359,26 +391,15 @@ def _clamp_text(text: str, limit: int = MAX_TRANSCRIPT_CHARS) -> str:
 
 
 def _entry(directory: Path, jsonl: Path, *, project: str, title: str, updated: str,
-           sendable: bool) -> dict[str, Any]:
+           sendable: bool, session_id: str = "") -> dict[str, Any]:
     return {
-        "id": jsonl.stem,
+        "id": session_id or jsonl.stem,
         "project": project,
         "sendable": sendable,
         "title": (title or jsonl.stem).splitlines()[0][:120],
         "updated_at": _local_stamp(updated) or _mtime_iso(jsonl),
         "vendor": "",
     }
-
-
-# ── 通用会话读取器：一个入口，三种形状 ─────────────────────────────────
-#
-# **加一家 provider ⇒ 只在真源表加一行**（落在哪儿、字段怎么映射、用哪一种读法），
-# 这里**不许**再出现「按厂商分叉」的代码。
-#
-# 六家原先各一套手写逻辑（Qoder／CodeBuddy 各一个扫目录的，Marvis／agy／OpenCode
-# 各一个查库的，Cursor 一个读 KV 大块的）；现在共用下面三个读取器，
-# 差异全在表里那一行（``agent/vendor_registry.py::SessionSpec``）。
-
 
 def _sendable_for(spec, project: str) -> bool:
     """这一家的会话能不能把话送进去（表里写：永远不能／有项目目录才能／问能力表）。"""
@@ -489,7 +510,8 @@ def _jsonl_title(records: Sequence[dict[str, Any]], spec) -> str:
             continue
         text = _record_text(record, spec)
         if spec.title_strip_wrapper:
-            text = _strip_wrapper(text, spec.title_strip_wrapper)
+            text = _strip_wrapper(text, spec.title_strip_wrapper,
+                                 getattr(spec, "strip_wrapper_mode", "inside"))
         if text:
             return text
     return ""
@@ -706,8 +728,31 @@ def _sidecar_updated(sidecar: dict[str, Any], spec) -> str:
     return ""
 
 
+def _project_file(spec, directory: Path) -> str:
+    """工作目录写在旁挂那个**小文件**里（gemini 的 ``.project_root``，一行一个路径）。"""
+    if not spec.project_file:
+        return ""
+    try:
+        text = (directory / spec.project_file).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0] if lines else ""
+
+
+def _header_updated(spec, header: dict[str, Any]) -> str:
+    """时间写在**首记录**那一格（gemini 的 ``lastUpdated``）。"""
+    if not spec.header_updated_field:
+        return ""
+    value = header.get(spec.header_updated_field)
+    if isinstance(value, (str, int, float)) and str(value).strip():
+        return _local_stamp(value)
+
+    return ""
+
+
 def _read_jsonl_dir(spec) -> list[dict[str, Any]]:
-    """读法一：目录里一堆 ``*.jsonl``（Qoder、CodeBuddy、kiro、Qoder 中国版）。"""
+    """读法一：目录里一堆 ``*.jsonl``（Qoder、CodeBuddy、kiro、gemini）。"""
     root = _resolved(spec.root_resolver, spec.root_rule)
     if not root.is_dir():
         return []
@@ -717,20 +762,34 @@ def _read_jsonl_dir(spec) -> list[dict[str, Any]]:
     directories = ([root] if spec.layout == "flat"
                    else [item for item in root.iterdir() if item.is_dir()])
     for directory in directories:
-        for jsonl in directory.glob("*.jsonl"):
+        # 正文那层可能再套一个子目录（gemini：``chats/``）。
+        holder = directory / spec.jsonl_subdir if spec.jsonl_subdir else directory
+        if not holder.is_dir():
+            continue
+        for jsonl in holder.glob("*.jsonl"):
             if not SESSION_ID_RE.match(jsonl.stem):
                 continue
 
             def build(jsonl=jsonl, directory=directory) -> dict[str, Any]:
                 records = _records_head(jsonl)
+                header = records[0] if records else {}
                 sidecar = _sidecar(spec, directory, jsonl.stem)
-                project = _sidecar_project(sidecar, spec) or _jsonl_project(records, spec)
+                session_id = jsonl.stem
+                if spec.header_id_field:
+                    value = header.get(spec.header_id_field)
+                    if isinstance(value, str) and value.strip():
+                        session_id = value.strip()
+                project = (_project_file(spec, directory)
+                           or _sidecar_project(sidecar, spec)
+                           or _jsonl_project(records, spec))
                 # 标题：先看它自己起的（旁挂文件里那个），没有才退到 jsonl 那句人话。
                 title = _sidecar_title(sidecar, spec) or _jsonl_title(records, spec)
-                updated = _sidecar_updated(sidecar, spec) or _jsonl_updated(spec, directory, jsonl)
+                updated = (_header_updated(spec, header)
+                           or _sidecar_updated(sidecar, spec)
+                           or _jsonl_updated(spec, directory, jsonl))
 
                 return {
-                    **_entry(directory, jsonl, project=project,
+                    **_entry(directory, jsonl, session_id=session_id, project=project,
                              title=title,
                              updated=updated,
                              sendable=_sendable_for(spec, project)),
@@ -740,7 +799,6 @@ def _read_jsonl_dir(spec) -> list[dict[str, Any]]:
             out.append(_cached_meta(jsonl, build))
 
     return out
-
 
 def _read_sqlite_rows(spec) -> list[dict[str, Any]]:
     """读法二：一张表若干列（Marvis、agy、OpenCode）。"""
@@ -871,18 +929,68 @@ def _read_sqlite_kv_json(spec) -> list[dict[str, Any]]:
     return out
 
 
+def _read_json_file(path: Path) -> dict[str, Any]:
+    """读一份 JSON 对象（解不开就当没有——**不编一个值**）。"""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_json_session_dir(spec) -> list[dict[str, Any]]:
+    """读法四：**每个会话一个目录**，里面两份 JSON（cline）。
+
+    元数据那份是 ``<会话号>.json``，正文那份是 ``<会话号>.messages.json``；
+    认元数据时**跳过正文那份**（它的文件名也匹配 ``*.json``）。
+    """
+    root = _resolved(spec.root_resolver, spec.root_rule)
+    if not root.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    for directory in sorted(root.iterdir()):
+        if not directory.is_dir():
+            continue
+        for meta_file in sorted(directory.glob(spec.meta_glob)):
+            if spec.messages_glob and fnmatch(meta_file.name, spec.messages_glob):
+                continue
+            payload = _read_json_file(meta_file)
+            if not payload:
+                continue
+            session_id = str(payload.get(spec.meta_id_field) or "").strip()
+            if not SESSION_ID_RE.match(session_id):
+                continue
+            title = _norm_title(payload.get(spec.meta_title_field), spec.title_norm)
+            if spec.title_strip_wrapper:
+                title = _strip_wrapper(title, spec.title_strip_wrapper)
+            project = str(payload.get(spec.meta_project_field) or "").strip()
+            updated = _local_stamp(payload.get(spec.meta_updated_field))
+            if not updated:
+                updated = _local_stamp(payload.get(spec.meta_updated_fallback_field))
+            out.append({
+                "id": session_id,
+                "project": project,
+                "sendable": _sendable_for(spec, project),
+                "title": (title or session_id).splitlines()[0][:120],
+                "updated_at": updated,
+                "vendor": spec.vendor,
+            })
+
+    return out
+
+
 def read_sessions(spec) -> list[dict[str, Any]]:
-    """**通用会话读取器**：一个入口，三种形状（真源表里写哪一种）。"""
+    """**通用会话读取器**：一个入口，四种形状（真源表里写哪一种）。"""
     if spec.shape == "jsonl-dir":
         return _read_jsonl_dir(spec)
     if spec.shape == "sqlite-rows":
         return _read_sqlite_rows(spec)
     if spec.shape == "sqlite-kv-json":
         return _read_sqlite_kv_json(spec)
+    if spec.shape == "json-session-dir":
+        return _read_json_session_dir(spec)
     return []
-
-
-# ── 发现与来源 ────────────────────────────────────────────────────────────
 
 def all_sessions() -> list[dict[str, Any]]:
     now = time.time()
@@ -915,7 +1023,8 @@ def session_sources() -> list[dict[str, Any]]:
     sources: list[dict[str, Any]] = []
     for vendor, spec in SESSION_SPECS.items():
         db = _resolved(spec.db_resolver, spec.db_rule) if spec.db_rule.candidates else None
-        root = (_resolved(spec.root_resolver, spec.root_rule) if spec.shape == "jsonl-dir"
+        root = (_resolved(spec.root_resolver, spec.root_rule)
+                if spec.shape in ("jsonl-dir", "json-session-dir")
                 else (db.parent if db is not None else Path()))
         readable = True
         reason = ""
@@ -1360,22 +1469,45 @@ def _in_agent_scope(agent_name: str, vendor: str, session_id: str) -> bool:
 # * ``jsonl-steps`` —— 一行一个 step，类型各映射一种角色（agy）；
 # * ``sqlite-dialogue`` —— 一张消息表（Marvis、OpenCode）；
 # * ``sqlite-kv-json`` —— 与会话同一个 KV 大块（Cursor）；
-# * ``sqlite-turn-pairs`` —— 一行一个 turn，**角色编在列名里**（Copilot）。
+# ── 通用正文读取器：一个入口，七种形状 ─────────────────────────────────
+#
+# 正文（transcript）跟会话列表一样：**落点与读法写在真源表里**，
+# 这里只有共用实现。七种形状：
+#
+# * ``jsonl-dialogue`` —— 一行一条，``type``／``role`` 分派（Qoder、CodeBuddy、kiro、gemini）；
+# * ``jsonl-steps`` —— 一行一个 step，类型各映射一种角色（agy）；
+# * ``sqlite-dialogue`` —— 一张消息表（Marvis、OpenCode）；
+# * ``sqlite-kv-json`` —— 与会话同一个 KV 大块（Cursor）；
+# * ``sqlite-turn-pairs`` —— 一行一个 turn，**角色编在列名里**（Copilot）；
+# * ``sqlite-parts`` —— **两张表**：消息表 ＋ 块表（Kilo Code）；
+# * ``json-messages`` —— 一份 JSON 里的**消息数组**（Cline）。
 
 
-def _strip_wrapper(text: str, wrapper: str) -> str:
-    """用户输入外面裹着几段元数据（``<USER_REQUEST>``／``<USER_SETTINGS_CHANGE>``…），
-    只取人真正说的那一段；没有包裹就整段留用。"""
-    tag = wrapper.strip().strip("<>")
+def _strip_wrapper(text: str, wrapper: str, mode: str = "inside") -> str:
+    """用户输入外面裹着几段元数据（``<USER_REQUEST>``／``<user_input mode="act">``…），
+    只取人真正说的那一段；没有包裹就整段留用。
+
+    **标签可以带属性**：厂商写成 ``<user_input mode="act">`` 时，按标签名找就行
+    （找的是 ``<user_input`` 开头、``>`` 收尾的那一段）。
+
+    **取哪一边由表写**（``mode``）：
+
+    - ``inside`` —— 人话在包裹**里面**（agy 的 ``<USER_REQUEST>``、cline 的 ``<user_input>``）；
+    - ``outside`` —— 人话在包裹**后面**（gemini：那一大段是上下文，人话才在它后头）。
+    """
+    tag = wrapper.strip().strip("<>").split()[0].strip("<>") if wrapper.strip() else ""
     closing = f"</{tag}>"
-    if tag and f"<{tag}>" in text and closing in text:
-        start = text.index(f"<{tag}>") + len(tag) + 2
-        end = text.index(closing, start)
-        return text[start:end].strip()
+    if tag:
+        match = re.search(rf"<{re.escape(tag)}\b[^>]*>", text)
+        if match and closing in text:
+            start = match.end()
+            end = text.index(closing, start)
+            if mode == "outside":
+                return text[end + len(closing):].strip()
+            return text[start:end].strip()
     if text.startswith("<") and ">" in text:
         return ""
     return text.strip()
-
 
 def _epoch_seconds_stamp(value: Any) -> str:
     """epoch **秒** → 本地时间串（kiro 的 ``data.meta.timestamp`` 是秒，不是毫秒）。"""
@@ -1406,7 +1538,8 @@ def _jsonl_stamp(spec, value: Any) -> str:
 def _transcript_jsonl_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
     """正文形状一：jsonl，一行一句对话。"""
     root = _resolved(spec.root_resolver, spec.root_rule)
-    pattern = spec.transcript_glob.format(session_id=session_id)
+    pattern = spec.transcript_glob.format(session_id=session_id,
+                                             session_id8=session_id[:8])
     for jsonl in root.glob(pattern):
         messages: list[dict[str, Any]] = []
         for record in _records(jsonl):
@@ -1416,6 +1549,9 @@ def _transcript_jsonl_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
             if role not in ("user", "assistant"):
                 continue
             text = _record_text(record, spec)
+            if spec.strip_wrapper and role in spec.strip_wrapper_roles:
+                text = _strip_wrapper(text, spec.strip_wrapper,
+                                      getattr(spec, "strip_wrapper_mode", "inside"))
             if text:
                 raw_ts = (_dig(record, spec.ts_path) if spec.ts_path
                           else record.get(spec.ts_field))
@@ -1441,7 +1577,8 @@ def _transcript_jsonl_steps(spec, session_id: str) -> list[dict[str, Any]]:
             continue
         text = str(record.get("content") or "")
         if spec.strip_wrapper and role in spec.strip_wrapper_roles:
-            text = _strip_wrapper(text, spec.strip_wrapper)
+            text = _strip_wrapper(text, spec.strip_wrapper,
+                                  getattr(spec, "strip_wrapper_mode", "inside"))
         if role in spec.skip_contents_roles and text in spec.skip_contents:
             continue
         if not text:
@@ -1452,7 +1589,7 @@ def _transcript_jsonl_steps(spec, session_id: str) -> list[dict[str, Any]]:
 
 
 def _transcript_text(spec, role: str, raw: Any) -> str:
-    """正文那一格怎么取字（表里写：原样／JSON 里那一格／JSON 里那几块）。"""
+    """正文那一格怎么取字（表里写：原样／JSON 里那一格／JSON 里那几块／块列表）。"""
     mode = spec.user_text_mode if role == "user" else spec.assistant_text_mode
     if mode == "json-field":
         data = _json_payload(raw)
@@ -1472,8 +1609,15 @@ def _transcript_text(spec, role: str, raw: Any) -> str:
                 return "\n".join(chunks)
         value = data.get("text") if isinstance(data, dict) else None
         return value.strip() if isinstance(value, str) else ""
+    if mode == "block-list":
+        # **块列表**：那一格本身就是 ``[{"type":"text","text":…}, …]``（cline）。
+        chunks = [
+            str(part.get("text")).strip()
+            for part in (raw if isinstance(raw, list) else [])
+            if isinstance(part, dict) and isinstance(part.get("text"), str) and part.get("text").strip()
+        ]
+        return "\n".join(chunks).strip()
     return str(raw or "").strip()
-
 
 def _transcript_sqlite_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
     """正文形状三：一张消息表（取**最后**几条就够，别把整段历史吞进列表页）。"""
@@ -1562,8 +1706,90 @@ def _transcript_sqlite_turn_pairs(spec, session_id: str) -> list[dict[str, Any]]
     return messages[-MAX_MESSAGES:]
 
 
+def _transcript_sqlite_parts(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状七：**两张表**——消息表只说**谁说的**，正文在块表里（kilo）。"""
+    db = _resolved(spec.db_resolver, spec.db_rule)
+    if not db.is_file():
+        return []
+    sql = (f"select {spec.transcript_message_id_column}, {spec.transcript_data_column}, "
+           f"{spec.transcript_ts_column} from {spec.transcript_table} "
+           f"where {spec.transcript_id_column} = ? order by {spec.transcript_order_column}")
+    part_sql = (f"select {spec.transcript_part_message_column}, "
+                f"{spec.transcript_part_content_column} from {spec.transcript_part_table} "
+                f"where {spec.transcript_id_column} = ? order by {spec.transcript_part_order_column}")
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = con.execute(sql, (session_id,)).fetchall()
+            parts: dict[str, list[Any]] = {}
+            for message_id, content in con.execute(part_sql, (session_id,)).fetchall():
+                parts.setdefault(str(message_id), []).append(content)
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+    messages: list[dict[str, Any]] = []
+    for message_id, raw, created in rows:
+        data = _json_payload(raw)
+        role = str(data.get(spec.transcript_role_field) or "") if isinstance(data, dict) else ""
+        if role not in ("user", "assistant"):
+            continue
+        stamp = (_local_stamp(created) if spec.transcript_ts_mode == "local"
+                 else _epoch_stamp(created))
+        text = ""
+        for chunk in parts.get(str(message_id), []):
+            piece = _transcript_text(spec, role, chunk)
+            if piece:
+                text = (text + "\n" + piece).strip() if text else piece
+        if not text:
+            continue
+        messages.append({"role": role, "text": _clamp_text(text), "ts": stamp})
+
+    return messages[-MAX_MESSAGES:]
+
+
+def _transcript_json_messages(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状六：一份 JSON 里的**消息数组**（cline 的 ``*.messages.json``）。"""
+    root = _resolved(spec.root_resolver, spec.root_rule)
+    if not root.is_dir():
+        return []
+    for directory in sorted(root.iterdir()):
+        if not directory.is_dir():
+            continue
+        for messages_file in sorted(directory.glob(spec.messages_glob)):
+            payload = _read_json_file(messages_file)
+            if not payload:
+                continue
+            if str(payload.get("sessionId") or "") != session_id:
+                continue
+            items = payload.get(spec.messages_field)
+            if not isinstance(items, list):
+                return []
+            messages: list[dict[str, Any]] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                role = str(item.get(spec.message_role_field) or "")
+                if role not in ("user", "assistant"):
+                    continue
+                text = _transcript_text(spec, role, item.get(spec.message_content_field))
+                if spec.strip_wrapper and role in spec.strip_wrapper_roles:
+                    text = _strip_wrapper(text, spec.strip_wrapper)
+                if not text:
+                    continue
+                raw_ts = item.get(spec.message_ts_field)
+                stamp = (_epoch_stamp(raw_ts) if spec.message_ts_mode == "epoch-ms"
+                         else _local_stamp(raw_ts))
+                messages.append({"role": role, "text": _clamp_text(text), "ts": stamp})
+
+            return messages
+
+    return []
+
+
 def read_transcript_messages(spec, session_id: str) -> list[dict[str, Any]]:
-    """**通用正文读取器**：一个入口，五种形状（真源表里写哪一种）。"""
+    """**通用正文读取器**：一个入口，七种形状（真源表里写哪一种）。"""
     shape = spec.transcript_shape
     if shape == "jsonl-dialogue":
         return _transcript_jsonl_dialogue(spec, session_id)
@@ -1575,8 +1801,11 @@ def read_transcript_messages(spec, session_id: str) -> list[dict[str, Any]]:
         return _transcript_kv_json(spec, session_id)
     if shape == "sqlite-turn-pairs":
         return _transcript_sqlite_turn_pairs(spec, session_id)
+    if shape == "sqlite-parts":
+        return _transcript_sqlite_parts(spec, session_id)
+    if shape == "json-messages":
+        return _transcript_json_messages(spec, session_id)
     return []
-
 
 def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
     session = _locate(vendor, session_id)

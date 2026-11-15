@@ -116,6 +116,10 @@ VENDORS: dict[str, VendorCapabilities] = {
     "copilot": VendorCapabilities(vendor="copilot", label="GitHub Copilot CLI"),
     # Qoder 中国版：另一件安装（`product: qodercn`）⇒ 单列一家，不并进 qoder。
     "qoder-cn": VendorCapabilities(vendor="qoder-cn", label="Qoder 中国版"),
+    # 11-15 再接会话腿的三家（都**只读**：回跳旗标没实测过）。
+    "gemini": VendorCapabilities(vendor="gemini", label="Gemini CLI"),
+    "kilo": VendorCapabilities(vendor="kilo", label="Kilo Code"),
+    "cline": VendorCapabilities(vendor="cline", label="Cline"),
 }
 
 

@@ -29,10 +29,11 @@ def test_the_six_vendors_are_the_only_truth_and_the_text_is_generated():
     """
     assert caps.vendor_names() == (
         "qoder", "codebuddy", "marvis", "cursor", "agy", "opencode",
-        "kiro", "copilot", "qoder-cn",
+        "kiro", "copilot", "qoder-cn", "gemini", "kilo", "cline",
     )
     assert caps.vendor_list_text() == (
         "qoder / codebuddy / marvis / cursor / agy / opencode / kiro / copilot / qoder-cn"
+        " / gemini / kilo / cline"
     )
 
 
