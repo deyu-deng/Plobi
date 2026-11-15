@@ -344,7 +344,15 @@ def build_argv(agent: str, binary: str, task: str, flags: tuple[str, ...],
 
     排法不是风格问题：Qoder 的提示词是变长位置参数，选项排在它后面就等于没传。
     """
-    spec = agent_spec(agent) or EXTERNAL_AGENTS[AGENT_CODEBUDDY]
+    spec = agent_spec(agent)
+    if spec is None:
+        # 认不出的家 ⇒ 说清，不**静默落到别家**（`WP-GUEST-CALL-ATOMIC`，11-15）。
+        # 早先这里 `or EXTERNAL_AGENTS[AGENT_CODEBUDDY]`：认不出就悄悄按另一家拼 argv，
+        # 与 `agent_spec` 的 docstring（「不猜一个默认的」）对着干。
+        raise ValueError(
+            f"不认得的外部 Agent：{agent!r}"
+            f"（认得：{'、'.join(sorted(EXTERNAL_AGENTS)) or '一个都没有'}）"
+        )
     slots = {"{task}": (task,), "{flags}": tuple(flags), "{extra}": tuple(extra)}
     argv: list[str] = [binary]
     for token in spec.argv_template:
@@ -879,16 +887,27 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(description="Offload one task to a local external agent")
     parser.add_argument("--task", required=True)
-    parser.add_argument("--agent", default=AGENT_CODEBUDDY, choices=tuple(EXTERNAL_AGENTS))
+    # 默认那家＝**本机真正可用的那一家**（`WP-GUEST-CALL-ATOMIC`）：原先写死一家，
+    # 本机装的不是它就必然失败。留空＝让本模块去问那份清单（与工具面同一处真源）。
+    parser.add_argument("--agent", default="", choices=("",) + tuple(EXTERNAL_AGENTS))
     parser.add_argument("--cwd", default="")
     parser.add_argument("--permission-mode", default="")
     parser.add_argument("--timeout", type=float, default=900.0)
     args = parser.parse_args(argv)
 
+    agent = args.agent.strip()
+    if not agent:
+        from tools.offload_tools import default_guest
+
+        agent, why_not = default_guest()
+        if not agent:
+            print(json.dumps({"ok": False, "error": why_not}, ensure_ascii=False))
+            return 2
+
     result = run_task(
         args.task,
         cwd=args.cwd or None,
-        agent=args.agent,
+        agent=agent,
         permission_mode=args.permission_mode or None,
         timeout=args.timeout,
     )

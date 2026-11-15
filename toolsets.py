@@ -421,7 +421,8 @@ TOOLSETS = {
             "external_sessions_scan", "external_sessions_mark",
             "external_sessions_rename", "external_sessions_archive", "external_sessions_delete",
             # 11-08 补：三枚**通用原子**会话工具（说得上话 / 记模型预设 / 记权限档）。
-            # 它们同样只挂在运行期注册表上 ⇒ 这张静态表漏了它们，quiet 那种进程看不见。
+            # 它们在运行期注册表上才有 ⇒ 这张静态表**也**得列出它们，quiet 那种
+            # 没触发工具发现的进程才看得见（与上面那两枚同一个理由）。
             "external_session_send", "external_session_model", "external_session_permission",
         ],
         "includes": [],

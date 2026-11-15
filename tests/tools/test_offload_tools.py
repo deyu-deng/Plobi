@@ -422,3 +422,161 @@ def test_copilot_is_judged_by_credential_and_token_while_kilo_is_judged_by_its_a
         "env:COPILOT_GITHUB_TOKEN", "env:GH_TOKEN", "env:GITHUB_TOKEN", "cred:copilot",
     )
     assert ot._LOGIN_EVIDENCE["kilo"] == ("~/.local/share/kilo/auth.json",)
+
+
+# ── 默认那家（WP-GUEST-CALL-ATOMIC，11-15） ─────────────────────────────────
+
+
+class TestTheDefaultGuestIsTheOneThatActuallyWorks:
+    """「留空＝用默认那家」＝**本机真正可用的那一家**，不是写死的一家。
+
+    写死那家（原先是 CodeBuddy）的后果：本机装的不是它 ⇒ 必然失败，而且那句错把
+    用户引向一个他**没装**的东西。
+    """
+
+    def test_the_default_is_the_first_guest_that_can_use(self, monkeypatch):
+        from plobi.delegation.offload import ExternalAgent
+
+        roster = [
+            ExternalAgent(name="codebuddy", installed=False, channel_ready=False),
+            ExternalAgent(name="qoder", installed=True, logged_in=True, channel_ready=True),
+        ]
+        monkeypatch.setattr(ot, "agent_roster", lambda: roster)
+
+        name, why_not = ot.default_guest()
+
+        assert name == "qoder"
+        assert why_not == ""
+
+    def test_a_guest_that_is_installed_but_not_logged_in_is_not_the_default(self, monkeypatch):
+        from plobi.delegation.offload import ExternalAgent
+
+        roster = [ExternalAgent(name="agy", installed=True, logged_in=False, channel_ready=True)]
+        monkeypatch.setattr(ot, "agent_roster", lambda: roster)
+
+        name, why_not = ot.default_guest()
+
+        assert name == ""
+        assert "agy" in why_not and "没登录" in why_not
+
+    def test_with_nothing_installed_the_sentence_says_so(self, monkeypatch):
+        monkeypatch.setattr(ot, "agent_roster", lambda: [])
+
+        name, why_not = ot.default_guest()
+
+        assert name == ""
+        assert "没有装" in why_not
+
+    def test_run_without_agent_hands_it_to_the_usable_guest(self, monkeypatch, tmp_path):
+        """**判据 1**：不带 agent 参数调一次 ⇒ 交出去的是那台真能用的。"""
+        import agent.external_offload as channel
+        from plobi.delegation.offload import ExternalAgent
+
+        captured: Dict[str, Any] = {}
+
+        def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
+                          reply_to=""):
+            captured["agent"] = agent
+            return FakeChannelResult(agent=agent or "")
+
+        class FakeLedger:
+            def append(self, row, *, brief):
+                pass
+
+        roster = [
+            ExternalAgent(name="codebuddy", installed=False, channel_ready=False),
+            ExternalAgent(name="qoder", installed=True, logged_in=True, channel_ready=True,
+                          permission_flag="--permission-mode=bypass_permissions"),
+        ]
+        monkeypatch.setattr(channel, "run_task", fake_run_task)
+        monkeypatch.setattr(channel, "default_workdir", lambda: tmp_path / "offload")
+        monkeypatch.setattr(ot, "RoundLedger", FakeLedger)
+        monkeypatch.setattr(ot, "agent_roster", lambda: roster)
+
+        body = json.loads(ot._handle_run({"task": "把 demo 的 today.py 写完",
+                                          "cwd": "D:/Projects/Demo"}))
+
+        assert captured["agent"] == "qoder"
+        assert body["agent"] == "qoder"
+
+    def test_run_without_agent_and_without_any_guest_says_it_in_plain_words(self, monkeypatch):
+        monkeypatch.setattr(ot, "agent_roster", lambda: [])
+
+        body = json.loads(ot._handle_run({"task": "把 demo 的 today.py 写完"}))
+
+        assert body["ok"] is False
+        assert "没有装" in body["error"]
+        assert "codebuddy" not in body["error"], "不许把用户引向一台他没装的软件"
+
+    def test_a_named_guest_still_wins_over_the_default(self, monkeypatch, tmp_path):
+        """点名的那家照旧优先（**别顺手把点名也改了**）。"""
+        import agent.external_offload as channel
+        from plobi.delegation.offload import ExternalAgent
+
+        captured: Dict[str, Any] = {}
+
+        def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
+                          reply_to=""):
+            captured["agent"] = agent
+            return FakeChannelResult(agent=agent or "")
+
+        class FakeLedger:
+            def append(self, row, *, brief):
+                pass
+
+        roster = [ExternalAgent(name="codebuddy", installed=True, logged_in=True,
+                                channel_ready=True)]
+        monkeypatch.setattr(channel, "run_task", fake_run_task)
+        monkeypatch.setattr(channel, "default_workdir", lambda: tmp_path / "offload")
+        monkeypatch.setattr(ot, "RoundLedger", FakeLedger)
+        monkeypatch.setattr(ot, "agent_roster", lambda: roster)
+
+        body = json.loads(ot._handle_run({"task": "写完 today.py", "agent": "codebuddy"}))
+
+        assert captured["agent"] == "codebuddy"
+        assert body["agent"] == "codebuddy"
+
+
+class TestTheChannelDoesNotGuessAGuest:
+    """通道那侧：**认不出的家不许静默落到别家**（同一个口径，两处都要守）。"""
+
+    def test_build_argv_refuses_an_unknown_guest(self):
+        import agent.external_offload as channel
+
+        with pytest.raises(ValueError) as excinfo:
+            channel.build_argv("nope", "nope.exe", "干活", (), ())
+
+        assert "nope" in str(excinfo.value)
+
+    def test_the_cli_without_agent_uses_the_usable_guest(self, monkeypatch, capsys):
+        import agent.external_offload as channel
+
+        captured: Dict[str, Any] = {}
+
+        class _Result(FakeChannelResult):
+            def as_dict(self):
+                return {"ok": True, "agent": captured.get("agent", "")}
+
+        def fake_run_task(task, *, cwd=None, agent="", permission_mode=None, timeout=900.0,
+                          reply_to=""):
+            captured["agent"] = agent
+            return _Result(agent=agent or "")
+
+        monkeypatch.setattr(channel, "run_task", fake_run_task)
+        monkeypatch.setattr(ot, "default_guest", lambda: ("qoder", ""))
+
+        code = channel.main(["--task", "干点活"])
+
+        assert code == 0
+        assert captured["agent"] == "qoder"
+
+    def test_the_cli_without_any_guest_says_so_and_stops(self, monkeypatch, capsys):
+        import agent.external_offload as channel
+
+        monkeypatch.setattr(ot, "default_guest",
+                            lambda: ("", "本机一台外部 AI 软件都没有装：先装一台再来派活。"))
+
+        code = channel.main(["--task", "干点活"])
+
+        assert code == 2
+        assert "没有装" in capsys.readouterr().out

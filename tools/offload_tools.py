@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from agent.vendor_registry import login_hints_map
 from plobi.delegation.external_capabilities import (
@@ -259,6 +259,37 @@ def agent_roster() -> List[ExternalAgent]:
     return roster
 
 
+def pickable_guests() -> List[Dict[str, Any]]:
+    """本机**现在能用**的客席（各带能力与权限档）。
+
+    判据只有一条：:func:`plobi.delegation.offload.availability`（清单与工具共用它，
+    裁 94 同族）——这里只做**筛**，不重判一次。
+    """
+    return [row for row in selectable(agent_roster()) if row.get("can_use")]
+
+
+def default_guest() -> Tuple[str, str]:
+    """**默认那家**：本机真正可用的那一家。
+
+    回 ``(名字, 一句人话)``：名字为空 ⇒ 本机一台可用的都没有，第二格是
+    「装了谁、为什么现在不能用」——**不替用户点名一台他没装的**。
+
+    为什么不再写死某一家（``WP-GUEST-CALL-ATOMIC``，11-15）：原先「留空＝用默认那家」
+    对着的是**硬编码的一家** ⇒ 本机装的不是它就必然失败，那句错还把用户引向一个他
+    没装的东西。真的默认＝**本机可用清单里的第一行**（登记顺序 ⇒ 可预期）。
+    """
+    rows = pickable_guests()
+    if rows:
+        return str(rows[0]["name"]), ""
+    everything = selectable(agent_roster())
+    if not everything:
+        return "", "本机一台外部 AI 软件都没有装：先装一台再来派活。"
+    detail = "；".join(
+        f"{row['name']}（{row.get('why_not') or '现在不可用'}）" for row in everything
+    )
+    return "", f"本机没有一台现在能用的外部 AI 软件：{detail}。"
+
+
 def classify_failure(error: str) -> str:
     """通道那一句英文错 → 判据 4 要求的四个**分得开**的失败码之一。
 
@@ -325,7 +356,14 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
     if not task:
         return json.dumps({"ok": False, "error": "task 是空的：不知道要交什么过去。"}, ensure_ascii=False)
 
-    agent_name = str(args.get("agent") or channel.AGENT_CODEBUDDY).strip()
+    agent_name = str(args.get("agent") or "").strip()
+    if not agent_name:
+        # 「留空＝用默认那家」＝**本机真正可用的那一家**（`WP-GUEST-CALL-ATOMIC`）。
+        # 原先这里写死一家 ⇒ 本机装的不是它就必然失败，那句错还把用户引向一个他没装的东西。
+        agent_name, why_not = default_guest()
+        if not agent_name:
+            return json.dumps({"ok": False, "error": why_not, "asked": task[:280]},
+                              ensure_ascii=False)
     cwd = str(args.get("cwd") or "").strip()
     roster = {a.name: a for a in agent_roster()}
     agent = roster.get(agent_name)
