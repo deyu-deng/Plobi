@@ -22,46 +22,73 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-ROLES: dict[str, dict[str, Any]] = {
-    "file": {
-        "label": "文件",
-        "mark": "文",
-        "toolsets": ["file"],
-        "duty": (
-            "你是文件与资料专家：只负责读、整理、写文件（资料汇总、格式转换、按目录归档）。"
-            "不跑命令、不联网。做完把产出路径与一句结论交回去。"
-        ),
-    },
-    "browser": {
-        "label": "浏览器",
-        "mark": "浏",
-        "toolsets": ["browser", "web"],
-        "duty": (
-            "你是浏览器专家：只负责打开网页、点按、抄下页面上的事实（含来源 URL 与抓取时间）。"
-            "不改本地文件、不跑命令；抄不到就说抄不到。"
-        ),
-    },
-    "software": {
-        "label": "软件",
-        "mark": "软",
-        "toolsets": ["terminal", "file"],
-        "duty": (
-            "你是软件与脚本专家：只负责装/跑/修本机软件与脚本，交付时给命令、退出码与原始输出。"
-            "不联网找资料、不改网页。"
-        ),
-    },
-    "computer": {
-        "label": "电脑",
-        "mark": "电",
-        "toolsets": ["terminal", "computer_use"],
-        "duty": (
-            "你是电脑运维专家：只负责本机的系统设置、进程与窗口操作；动作前先说你要动什么，"
-            "破坏性操作一律先问。"
-        ),
-    },
+#: 名手的分类只有这一处真源：**键与顺序**（2026-11-15 收口）。
+#:
+#: 以前「键、中文名、职责、工具面」四件事挤在一个 ``ROLES`` 字典里，前端另抄一份
+#: ``EXPERT_ROLES`` 和一份 ``ExpertRoleKey`` 联合类型：加一类要改三处，漏一处就得到
+#: 一行永远点不开的空行。现在拆成四张同键的平表——``TRADES`` 定键与序、``LABELS`` 定
+#: 中文名、``DUTIES`` 定职责、``TOOLSETS`` 定工具面；``ROLES`` 只是它们的派生视图，
+#: **别在 ``ROLES`` 里写内容**。前端那份镜像在 ``apps/desktop/src/shared/expert-trades.ts``，
+#: 键集合与顺序由 ``expert-trades.test.ts`` 与这张表锁死。
+TRADES: tuple[str, ...] = ("file", "browser", "software", "computer")
+
+#: 中文名（左栏那一格的字在 ``MARKS``）。只给人看，不上模型。
+LABELS: dict[str, str] = {
+    "file": "文件",
+    "browser": "浏览器",
+    "software": "软件",
+    "computer": "电脑",
 }
 
-ORDER = ("file", "browser", "software", "computer")
+MARKS: dict[str, str] = {
+    "file": "文",
+    "browser": "浏",
+    "software": "软",
+    "computer": "电",
+}
+
+#: 一句话职责：盖在任务书最前面，子智能体一睁眼就知道自己是谁。
+#: 裁定 223：开头用**名手**这个角色名（它是这一跳的身份），「专家」留在对象名里。
+DUTIES: dict[str, str] = {
+    "file": (
+        "你是名手（文件与资料）：只负责读、整理、写文件（资料汇总、格式转换、按目录归档）。"
+        "不跑命令、不联网。做完把产出路径与一句结论交回去。"
+    ),
+    "browser": (
+        "你是名手（浏览器）：只负责打开网页、点按、抄下页面上的事实（含来源 URL 与抓取时间）。"
+        "不改本地文件、不跑命令；抄不到就说抄不到。"
+    ),
+    "software": (
+        "你是名手（软件与脚本）：只负责装/跑/修本机软件与脚本，交付时给命令、退出码与原始输出。"
+        "不联网找资料、不改网页。"
+    ),
+    "computer": (
+        "你是名手（电脑运维）：只负责本机的系统设置、进程与窗口操作；动作前先说你要动什么，"
+        "破坏性操作一律先问。"
+    ),
+}
+
+#: 工具面：只看该看的工具，别把整个工具箱背过去。
+TOOLSETS: dict[str, list[str]] = {
+    "file": ["file"],
+    "browser": ["browser", "web"],
+    "software": ["terminal", "file"],
+    "computer": ["terminal", "computer_use"],
+}
+
+#: 派生视图（键 → 上面几表的一项）：runner 与 router 读它，内容不在这里写。
+ROLES: dict[str, dict[str, Any]] = {
+    key: {
+        "label": LABELS[key],
+        "mark": MARKS[key],
+        "toolsets": list(TOOLSETS[key]),
+        "duty": DUTIES[key],
+    }
+    for key in TRADES
+}
+
+#: 旧名，等价于 ``TRADES``；新代码直接读 ``TRADES``。
+ORDER = TRADES
 
 
 def role_spec(key: str) -> Optional[dict[str, Any]]:
@@ -70,7 +97,10 @@ def role_spec(key: str) -> Optional[dict[str, Any]]:
 
 
 def role_rows() -> list[dict[str, Any]]:
-    """给人看的名册（设置/说明用）：键、名字、职责、工具面。"""
+    """给人看的名册（设置/说明用）：键、名字、职责、工具面。
+
+    顺序只读 ``TRADES``——前端把它当唯一真相（``expert-trades.test.ts`` 对表）。
+    """
     return [
         {
             "key": key,
@@ -79,7 +109,7 @@ def role_rows() -> list[dict[str, Any]]:
             "duty": ROLES[key]["duty"],
             "toolsets": list(ROLES[key]["toolsets"]),
         }
-        for key in ORDER
+        for key in TRADES
     ]
 
 

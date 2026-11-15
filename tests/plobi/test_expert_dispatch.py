@@ -28,7 +28,9 @@ def test_expert_preset_prefixes_the_duty_and_narrows_the_toolsets():
     tasks = [{"goal": "把三份资料折成一份汇总", "expert": "file"}]
 
     assert _apply_expert_presets(tasks) == ""
-    assert "你是文件与资料专家" in tasks[0]["goal"]
+    # 裁定 223：职责句开头用角色名「名手」（这一跳的身份），「专家」仍是对象名。
+    assert "你是名手（文件与资料）" in tasks[0]["goal"]
+    assert "你是文件与资料专家" not in tasks[0]["goal"]
     assert tasks[0]["goal"].rstrip().endswith("把三份资料折成一份汇总")
     assert tasks[0]["toolsets"] == ["file"]
     # 11-04 用户：「L3 也可以自己调用普通子代理」——专家是 orchestrator，不是叶子。
@@ -131,7 +133,8 @@ def test_single_task_expert_reaches_the_child(monkeypatch):
 
     assert captured["expert"] == "software"
     assert captured["toolsets"] == ["terminal", "file"]
-    assert "你是软件与脚本专家" in captured["goal"]
+    assert "你是名手（软件与脚本）" in captured["goal"]
+    assert "你是软件与脚本专家" not in captured["goal"]
     assert captured["goal"].rstrip().endswith("跑一遍构建脚本")
 
 
