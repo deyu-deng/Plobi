@@ -186,16 +186,52 @@ def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
 
 def test_round_trip_preserves_entries(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="agenda", skills=("a", "b"), description="日程闭环"))
+    # 正面那格 `skills:` 已退役（`WP-AGENT-CAPABILITIES`，11-15：它写了不生效）⇒
+    # 这里改钉**还在的**那一份黑名单，判据仍是「存取一圈不丢东西」。
+    reg.upsert(_entry(name="agenda", disabled_skills=("a", "b"), description="日程闭环"))
     reg.upsert(_entry(name="srtp", role="l2_project"))
     path = reg.save()
 
     assert path.is_file()
     reloaded = AgentRegistry.load(path)
     assert set(reloaded.names()) == {"agenda", "srtp"}
-    assert reloaded.get("agenda").skills == ("a", "b")
+    assert reloaded.get("agenda").disabled_skills == ("a", "b")
     assert reloaded.get("agenda").description == "日程闭环"
     assert reloaded.get("srtp").profile_name == "srtp"
+
+
+def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
+    """旧名册里写着 `skills:` ⇒ 读盘时忽略、下一次写回自然抹掉（不用手改数据）。"""
+    import yaml
+
+    home.mkdir(parents=True, exist_ok=True)
+    path = home / ".plobi" / "plobi" / "projects.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "agents": {
+                    "agenda": {
+                        "name": "agenda",
+                        "role": "l2_agenda",
+                        "skills": ["plobi-l2-resident"],
+                        "description": "日程闭环",
+                    }
+                },
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    reg = AgentRegistry.load()
+    entry = reg.get("agenda")
+    assert entry is not None
+    assert not hasattr(entry, "skills"), "正面那格退役了，别又长回来"
+
+    reg.save()
+    assert "skills" not in path.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

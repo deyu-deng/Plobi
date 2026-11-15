@@ -37,7 +37,7 @@ def _agenda_entry(name: str = "agenda") -> AgentEntry:
         name=name,
         role="l2_agenda",
         mind_subtree="Surface/dossiers/projects/Plobi",
-        skills=("plobi-l2-resident",),
+        # 正面那格 `skills:` 已退役（`WP-AGENT-CAPABILITIES`，11-15）⇒ 模板不再带它。
         description="日程采集 → SQLite → 看板 → 钉钉 闭环",
     )
 

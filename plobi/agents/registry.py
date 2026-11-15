@@ -486,7 +486,13 @@ class AgentEntry:
     provider: str = ""  # 可选覆盖；空 = 默认路由
     model: str = ""  # 可选覆盖；空 = 默认路由
     mind_subtree: str = ""  # 相对 MIND_ROOT 的项目子树（L2 直读）
-    skills: tuple[str, ...] = ()
+    # ⚠ **这一格退役了**（2026-11-15，`WP-AGENT-CAPABILITIES`）：它原是正面清单
+    # 「这个 Agent 会哪些技能」，来自 `WP-AGENT-GLOBAL-TOOL-SOURCE`（那把刀定的口径是
+    # 「全局真源 ＋ per-agent 开关」）。但 2026-10-19 口径改成**减法**之后，正面那一格
+    # **没有任何消费点**——写了不生效（名册里唯一写着它的是 agenda 那一行）。
+    # ⇒ 留着它＝留一格「以为配了、其实没配」的假开关 ⇒ 退役：读盘时忽略，
+    # 下一次 ``save()`` 会把那一行键自然抹掉（数据不用手改）。
+    # **现行口径只有下面三份黑名单**（全局真源 ＋ 这一行只减不增）。
     description: str = ""
     # 这段描述是**自动生成**的（还没被人确认）。描述的落点搬到共享层之后
     # （裁 42／178 乙案）真源就是名册行上这一格——左栏与卡片读的就是它。
@@ -636,8 +642,6 @@ class AgentEntry:
             data["model"] = self.model
         if self.mind_subtree:
             data["mind_subtree"] = self.mind_subtree
-        if self.skills:
-            data["skills"] = list(self.skills)
         if self.disabled_skills:
             data["disabled_skills"] = list(self.disabled_skills)
         if self.disabled_toolsets:
@@ -687,9 +691,6 @@ class AgentEntry:
     def from_dict(cls, name: str, raw: dict) -> "AgentEntry":
         if not isinstance(raw, dict):
             raise RegistryError(f"agent {name!r}: entry must be a mapping")
-        skills = raw.get("skills") or []
-        if isinstance(skills, str):
-            skills = [skills]
         pace = raw.get("pace")
         if pace is not None and not isinstance(pace, dict):
             raise RegistryError(f"agent {name!r}: pace must be a mapping")
@@ -721,7 +722,8 @@ class AgentEntry:
             provider=str(raw.get("provider") or ""),
             model=str(raw.get("model") or ""),
             mind_subtree=str(raw.get("mind_subtree") or ""),
-            skills=tuple(str(s) for s in skills),
+            # 正面那格 `skills:` **退役**（`WP-AGENT-CAPABILITIES`，11-15）：老名册里
+            # 写着它 ⇒ 静默忽略（不报错、不当开关），下一次写回自然抹掉。
             disabled_skills=tuple(
                 str(s) for s in (raw.get("disabled_skills") or ()) if str(s).strip()
             ),
@@ -1848,6 +1850,15 @@ def _active_agent_profile_name() -> str:
     return home.name
 
 
+def active_agent_name() -> str:
+    """当前进程正在替哪个 Agent 干活（**名册 name**）；不是分身会话 → ``''``。
+
+    给「问能力集」那一层用（:mod:`plobi.agents.capabilities`）——它要报的是
+    「**这个** Agent 现在能调什么」，身份只从这一处取（裁 180：名册 name 才是身份）。
+    """
+    return _active_agent_profile_name()
+
+
 def agent_disabled_sets(profile_name: str = "") -> dict:
     """这一个 Agent 的三份工具黑名单；不是分身 / 查无此行 → 全空。
 
@@ -1926,7 +1937,6 @@ def agenda_template_entry() -> AgentEntry:
         name=AGENDA_TEMPLATE_NAME,
         role=AGENDA_TEMPLATE_ROLE,
         mind_subtree="Dossiers/projects/Plobi",
-        skills=("plobi-l2-resident",),
         description="日程采集 → SQLite → 看板 → 钉钉 闭环",
     )
 
@@ -2002,7 +2012,6 @@ def register_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentE
             provider=template.provider,
             model=template.model,
             mind_subtree=template.mind_subtree,
-            skills=template.skills,
             description=template.description,
         )
     reg.upsert(template)
@@ -2278,7 +2287,6 @@ def ensure_mind_project_agents(
             provider="",
             model="",
             mind_subtree=f"{relative}/{entry.name}",
-            skills=(),
             description=description,
             pace=None,
             category=category,
@@ -3175,8 +3183,8 @@ def build_l2_identity_soul_block(
     lines += [
         "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",
         "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，不要拿别的项目的进度顶。",
-        "- **职责不是从共享记忆里挑一个来当**。账本里写着别人的分工——比如总秘书那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位，不是你的。上面没写你的职责，就照项目归属说话；说不准就问用户一句，不要自己认领一个头衔。",
-        "- 你**不是**本机 Plobi 总秘书（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。跨项目的派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）——**本项目内部的统筹是你自己的**；不要转述调度器的角色，不要替别的项目作答，也不要自称总秘书。",
+        "- **职责不是从共享记忆里挑一个来当**。账本里写着别人的分工——比如指挥那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位，不是你的。上面没写你的职责，就照项目归属说话；说不准就问用户一句，不要自己认领一个头衔。",
+        "- 你**不是**本机 Plobi 指挥（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。跨项目的派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）——**本项目内部的统筹是你自己的**；不要转述调度器的角色，不要替别的项目作答，也不要自称总秘书。",
     ]
     if persona_written:
         lines.append(

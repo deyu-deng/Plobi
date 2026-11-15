@@ -26,13 +26,22 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
     # （裁 178 乙案／ADR-0013），而 ``args`` 上从来没有这枚旗（``--profile`` 不在
     # register 的 parser 里）——传下去只是把退役名字再写一遍。11-05 名册把这一格改成
     # 由 ``name`` 派生的运行时 slug 之后，这一行会变成 ``TypeError`` 直接崩掉登记。
+    # ``--skills`` 这一格**退役**（`WP-AGENT-CAPABILITIES`，11-15）：它原是正面清单
+    # 「这个 Agent 会哪些技能」，但名册现行口径是**减法**（只记关掉了哪些）⇒ 正面那格
+    # 从来不生效。旗标留着（老脚本还在传它），但**不再写进名册**，并当场说清。
+    declared = tuple(getattr(args, "skills", None) or ())
+    if declared:
+        print(
+            "注意：`--skills` 这一格退役了——名册只记「这个 Agent 关掉了哪些」，"
+            "正面那格从来不生效 ⇒ 这次登记没有写它。"
+            "要限制这个 Agent 的技能，在设置里逐个关（`plobi skills`）。"
+        )
     return AgentEntry(
         name=name,
         role=getattr(args, "role", None) or "l2_project",
         provider=getattr(args, "provider", None) or "",
         model=getattr(args, "model", None) or "",
         mind_subtree=getattr(args, "mind_subtree", None) or "",
-        skills=tuple(getattr(args, "skills", None) or ()),
         description=getattr(args, "description", None) or "",
         registered=True,
     )

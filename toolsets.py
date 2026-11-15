@@ -39,6 +39,8 @@ _PLOBI_CORE_TOOLS = [
     "vision_analyze", "image_generate",
     # Skills
     "skills_list", "skill_view", "skill_manage",
+    # Capabilities（`WP-AGENT-CAPABILITIES`）：**问**自己现在能调什么——只读那一把
+    "agent_capabilities",
     # Browser automation（16b 起只剩一把 `browser_exec` ＋ 裸 CDP 那把 `browser_cdp`；
     # 旧那十几把点击类已停止注册，能力一条没丢——都在 `browser_exec` 的 helper 集里）
     "browser_exec", "browser_cdp",
@@ -177,7 +179,16 @@ TOOLSETS = {
         "tools": ["skills_list", "skill_view", "skill_manage"],
         "includes": []
     },
-    
+
+    # Capabilities（`WP-AGENT-CAPABILITIES`，11-15）：**这把只读**，答的是
+    # 「这个 Agent 现在能自主调什么」——技能／工具门类／MCP 服务器三样并排报出来。
+    # 它不进 Tools 页的可勾选清单（不是开关，是**问**的那一把）。
+    "capabilities": {
+        "description": "Report what an agent can currently call on its own (skills, toolsets, MCP servers)",
+        "tools": ["agent_capabilities"],
+        "includes": []
+    },
+
     "browser": {
         "description": "Browser automation for web interaction (navigate, click, type, scroll, iframes, hold-click) with web search for finding URLs",
         "tools": [
