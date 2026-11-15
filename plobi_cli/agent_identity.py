@@ -1531,8 +1531,8 @@ def plan_identity_rename(old_name: str, new_name: str) -> Tuple[dict, List[dict]
     registry, entry = _roster_row(old_canon)
     if entry is None:
         raise FileNotFoundError(f"Profile '{old_canon}' does not exist.")
-    if entry.role == "l1_secretary" or entry.name == "agenda":
-        raise ValueError("总秘书与日程秘书那两行不改名（系统自带的身份）。")
+    if entry.role == "l1_secretary":
+        raise ValueError("指挥那一行不改名（系统自带身份；没有别的预设身份了）。")
     for other in registry.entries():
         if other.name != entry.name and other.name.casefold() == new_key.casefold():
             raise ValueError(

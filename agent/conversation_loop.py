@@ -466,7 +466,7 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
     Stale = one of:
     1. Model / Provider line changed (model / provider rotated by the user).
     2. Identity drift: agent is the L1 default-profile secretary **and** the
-       persisted prompt does not declare the new Plobi 总秘书 identity
+       persisted prompt does not declare the new Plobi 指挥 identity
        (WP-L1-PROMPT-LIVE / 裁定 40). When this trips, the conversation-loop
        falls back to ``_build_system_prompt`` so the next turn runs the
        fresh identity — at the cost of one prefix-cache miss. Long-lived
@@ -511,7 +511,7 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
 # rephrase of the SOUL still keeps the L1 marker recognisable. If you
 # change this token, also update ``L1_SOUL_BLOCK`` (the token must remain
 # present) and the assertion in ``test_l1_prompt_live.py``.
-_L1_IDENTITY_MARKER = "Plobi 总秘书"
+_L1_IDENTITY_MARKER = "Plobi 指挥"
 
 # Lazy import so we don't pull l1_budget into every conversation-loop call
 # path when the agent is L2 / non-default.
@@ -520,7 +520,7 @@ _l1_default_check_cache = {"impl": None}
 
 def _l1_identity_is_stale(agent, prompt: str) -> bool:
     """True iff ``agent`` is the L1 default secretary and the persisted
-    prompt does not declare the Plobi 总秘书 identity marker.
+    prompt does not declare the Plobi 指挥 identity marker.
 
     False for L2 / non-default / agents with a blank prompt (the early-return
     branch is never reached with a blank ``stored_prompt`` so this is the

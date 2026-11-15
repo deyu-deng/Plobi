@@ -24,7 +24,7 @@ from . import store
 logger = logging.getLogger(__name__)
 
 CHECKIN_PROMPT = (
-    "你是 Plobi 秘书。下面是系统观察到的真实差异（JSON）和当前作息/节奏配置。"
+    "你是 Plobi 指挥。下面是系统观察到的真实差异（JSON）和当前作息/节奏配置。"
     "把它们起草成最多 {max_questions} 个给用户的问题：每个问题必须基于其中一条"
     "差异并以（依据：<event id 或 plan id 或项目名>）结尾；不要寒暄、不要编造"
     "系统没观察到的内容。每行一个问题，不要额外解释：\n\n{brief}"

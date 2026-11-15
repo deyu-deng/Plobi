@@ -387,7 +387,7 @@ def resolve_target(name: str, *, registry=None, entries=None):
 # ---------------------------------------------------------------------------
 
 
-def compose_question(question: str, *, entry, asker: str = "总秘书") -> str:
+def compose_question(question: str, *, entry, asker: str = "指挥") -> str:
     """Attribution header + the owner's original words, as plain prose.
 
     The 分身 needs to know who is asking and that this is a live question, not
@@ -747,7 +747,7 @@ def handle_agent_ask(args: dict, *, entry=None, resume_session: str = "", asker:
     limit = budget.seconds
     try:
         argv, env, cwd = build_child_command(
-            entry, compose_question(question, entry=entry, asker=asker or "总秘书"),
+            entry, compose_question(question, entry=entry, asker=asker or "指挥"),
             asked_by=f"l1:{kwargs.get('task_id') or kwargs.get('session_id') or ''}".rstrip(":") or "l1",
             resume_session=resume_session,
         )

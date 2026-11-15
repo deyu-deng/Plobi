@@ -60,7 +60,7 @@ SUPPORTED_LABELS = ("refresh_agenda", "write_briefing")
 _REWRITE_TEMPLATE = (
     "{original}\n"
     "\n"
-    "[§8.2 硬路由 · 本回合强制] 上面这句话命中总秘书冻结话术，必须严格按序执行：\n"
+    "[§8.2 硬路由 · 本回合强制] 上面这句话命中指挥冻结话术，必须严格按序执行：\n"
     "1. 第一动作只能是调用工具 ask，把这句话原话交给日程秘书："
     "to 填日程秘书那一行、parts 就一段原话（{original}）。"
     "不要先写 memory，不要用 session_search / terminal / clarify 顶替，"
