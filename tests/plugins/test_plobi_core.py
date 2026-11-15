@@ -174,8 +174,12 @@ def test_register_deep_tool_and_secretary_surface(ns):
     # 传提示词，只更新自己那张授权票的六态。它单独注册（不挂
     # check_channel_available），所以排在两枚嘴之后、门类工具之前。
     assert registered[2] == "ticket_report", registered
+    # 裁定 222：第四枚是**旁路读口**，同样不是嘴——只 SELECT，不发提示词、
+    # 不改票、不叫醒人。它也不挂 check_channel_available（名册空时票仍可能
+    # 来自 webhook／L2→L3，照样要能读），所以紧跟 ticket_report。
+    assert registered[3] == "tickets", registered
     assert "plobi" not in registered, registered
-    assert registered[3:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
+    assert registered[4:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
 
 
 def test_boot_get_north_star(tmp_home):

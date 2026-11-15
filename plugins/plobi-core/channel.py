@@ -192,6 +192,44 @@ TICKET_REPORT_SCHEMA = {
     },
 }
 
+#: 读口（裁定 222）。**也不是第三枚嘴**：只 SELECT，不发提示词、不改票、不叫醒人。
+#: 裁定 183 管的是「Agent 之间说话的嘴」，这一枚两头都不碰——它只回答
+#: 「我派出去那几件分别到哪了」，在此之前派完就进入未知状态，只能干等。
+TICKETS_SCHEMA = {
+    "name": "tickets",
+    "description": (
+        "看你派出去的那些活到哪了——**只读**：不发消息、不改票、不叫醒任何人。\n"
+        "不给 `ticket_id`：列你自己发起的那些，最新在前；每张带最近一次结构化回执"
+        "（六态之一 + 一句话 + 谁报的）。\n"
+        "给了 `ticket_id`：只看那一张，连它最近的回执一起给。\n"
+        "看得见的范围只有两种——你发起的、派给你的；别人那一摊看不到。\n"
+        "要问对方话用 `ask`；要继续说用 `say`；要报自己的进展用 `ticket_report`。"
+        "这一枚只管读。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "ticket_id": {"type": "string", "description": "只看这一张票（可选）。"},
+            "status": {
+                "type": "string",
+                "enum": ["observed", "active", "done", "failed", "revoked"],
+                "description": "按票的生命周期过滤（可选）。active=还在跑，done/failed=已收口。",
+            },
+            "leg": {
+                "type": "string",
+                "enum": ["router", "expert", "offload", "trigger"],
+                "description": "按这一跳的类型过滤（可选）：router=Agent 之间、expert=专家腿、offload=外包、trigger=外部事件。",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "description": "最多列几张（默认 20，上限 50）。",
+            },
+        },
+    },
+}
+
 
 # ── 每一跳的授权票（裁定 216：跳无关，不是执行边界专用）──────────────────
 
@@ -742,6 +780,107 @@ def handle_ticket_report(args: dict, **kwargs) -> str:
     return _result(
         True, mode="ticket_report", ticket_id=ticket_id, state=state,
         ticket_status=ticket.status if ticket else "", reporter=reporter,
+    )
+
+
+def _iso_ts(value: Any) -> str:
+    """票里的时间是 unix 浮点；给人读的字段一律转本地可读 iso（没有就空串）。"""
+    try:
+        ts = float(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if ts <= 0:
+        return ""
+    return datetime.fromtimestamp(ts).replace(microsecond=0).isoformat()
+
+
+def _may_read_ticket(ticket, me: str) -> bool:
+    """看得见的只有两种：我发起的、派给我的（裁定 222）。
+
+    别的一律看不到——读口本身不该成为越权看别人那一摊的后门。
+    """
+    if not me:
+        return False
+    if str(getattr(ticket, "parent_agent", "") or "") == me:
+        return True
+    refs = getattr(ticket, "refs", None) or {}
+    return str(refs.get("recipient", "") or "") == me
+
+
+def _report_view(row: Optional[dict]) -> Optional[dict]:
+    if not row:
+        return None
+    return {
+        "state": str(row.get("state") or ""),
+        "note": str(row.get("note") or ""),
+        "by": str(row.get("reporter") or ""),
+        "at": _iso_ts(row.get("created_at")),
+    }
+
+
+def _ticket_view(ticket, ledger, *, with_reports: int = 0) -> dict:
+    refs = dict(getattr(ticket, "refs", None) or {})
+    view = {
+        "ticket_id": ticket.id,
+        "leg": ticket.leg,
+        "status": ticket.status,
+        "goal": ticket.goal,
+        "to": str(refs.get("recipient", "") or ""),
+        "mode": str(refs.get("mode", "") or ""),
+        "domain": str(refs.get("domain", "") or ""),
+        "thread_id": str(refs.get("thread_id", "") or ""),
+        "created_at": _iso_ts(ticket.created_at),
+        "updated_at": _iso_ts(ticket.updated_at),
+        "last_report": _report_view(ledger.latest_report(ticket.id)),
+    }
+    if with_reports > 0:
+        view["reports"] = [_report_view(r) for r in ledger.list_reports(ticket.id, limit=with_reports)]
+    return view
+
+
+def handle_tickets(args: dict, **kwargs) -> str:
+    """读口（裁定 222）：只 SELECT。**不调 _transition / report_state / open_ticket**，
+    也**不调 _deliver / wake**——它既不改票，也不向任何人发提示词。"""
+    args = args if isinstance(args, dict) else {}
+    try:
+        from plobi.delegation.tickets import TicketLedger, VALID_STATUSES
+
+        ledger = TicketLedger()
+    except Exception as exc:  # noqa: BLE001
+        return _result(False, error=f"授权层读不出来：{exc}")
+
+    me = current_agent_name(kwargs.get("session_id") or "")
+    ticket_id = str(args.get("ticket_id") or "").strip()
+    if ticket_id:
+        ticket = ledger.get(ticket_id)
+        if ticket is None:
+            return _result(False, error=f"找不到授权票 {ticket_id}。")
+        if not _may_read_ticket(ticket, me):
+            # 不回任何内容：连 goal 都不该漏给不相干的人。
+            return _result(False, error=f"票 {ticket_id} 既不是你发起的、也不是派给你的，看不到。")
+        return _result(
+            True, mode="tickets", caller=me,
+            ticket=_ticket_view(ticket, ledger, with_reports=10),
+        )
+
+    status = str(args.get("status") or "").strip().lower()
+    if status and status not in VALID_STATUSES:
+        return _result(False, error=f"不认识的状态 {status!r}。", states=sorted(VALID_STATUSES))
+    leg = str(args.get("leg") or "").strip().lower()
+    try:
+        limit = int(args.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(50, limit))
+
+    rows = [
+        t for t in ledger.list_tickets(status=status, leg=leg, limit=limit * 3)
+        if _may_read_ticket(t, me)
+    ][:limit]
+    return _result(
+        True, mode="tickets", caller=me, count=len(rows),
+        tickets=[_ticket_view(t, ledger) for t in rows],
+        hint="" if rows else "你名下还没有派出去过的活。",
     )
 
 

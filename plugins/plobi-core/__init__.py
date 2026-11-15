@@ -167,6 +167,17 @@ def register(ctx) -> None:
         emoji="\u2713",
     )
 
+    # 裁定 222：读口同样是旁路——只 SELECT，不发提示词、不改票，所以也不挂
+    # check_channel_available（名册空时票仍可能来自 webhook／L2→L3，照样要能读）。
+    ctx.register_tool(
+        name=CH.TICKETS_SCHEMA["name"],
+        toolset="channel",
+        schema=CH.TICKETS_SCHEMA,
+        handler=CH.handle_tickets,
+        description=CH.TICKETS_SCHEMA["description"],
+        emoji="\U0001f50d",
+    )
+
     for name, toolset, area, action, description, props, required in _DOMAIN_TOOLS:
         ctx.register_tool(
             name=name,
