@@ -178,6 +178,19 @@ def register(ctx) -> None:
         emoji="\U0001f50d",
     )
 
+    # 裁定 224：停口同样是旁路——**会改状态**（把票冻成 revoked），但不向任何
+    # Agent 发提示词、只动自己发起的那一张票。所以它跟 ticket_report 是同类，
+    # 不是第三枚嘴；也不挂 check_channel_available（名册空时票仍可能来自
+    # webhook／L2→L3，照样要能撤）。
+    ctx.register_tool(
+        name=CH.TICKET_REVOKE_SCHEMA["name"],
+        toolset="channel",
+        schema=CH.TICKET_REVOKE_SCHEMA,
+        handler=CH.handle_ticket_revoke,
+        description=CH.TICKET_REVOKE_SCHEMA["description"],
+        emoji="\u2718",
+    )
+
     for name, toolset, area, action, description, props, required in _DOMAIN_TOOLS:
         ctx.register_tool(
             name=name,

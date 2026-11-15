@@ -231,6 +231,33 @@ TICKETS_SCHEMA = {
 }
 
 
+#: 裁定 224：停口。跟 ``ticket_report`` 一样是**旁路状态通道**，不是第三枚嘴——
+#: 它不向任何 Agent 发提示词，只把自己那张票冻成 ``revoked``。分工：收件方
+#: 放弃用 ``ticket_report(state="dropped")``，发起方叫停用这一枚。
+TICKET_REVOKE_SCHEMA = {
+    "name": "ticket_revoke",
+    "description": (
+        "叫停你派出去的一件活——**只撤你自己发起的那张票**，不改别人的票、"
+        "不向任何人发消息。\n"
+        "撤完这一跳就冻结：同一条 thread 上后续再 `say` / `ask`，新票照样开成 "
+        "`revoked`，执行层不替收件人起轮。\n"
+        "**不追杀已经在跑的那一轮**（话已经送到了），它管的是之后。\n"
+        "看进展用 `tickets`；报自己的状态用 `ticket_report`。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "ticket_id": {"type": "string", "description": "要撤的那张授权票的票号（必填）。"},
+            "reason": {
+                "type": "string",
+                "description": "为什么撤（可选，写进票的撤销原因，最多 300 字）。",
+            },
+        },
+        "required": ["ticket_id"],
+    },
+}
+
+
 # ── 每一跳的授权票（裁定 216：跳无关，不是执行边界专用）──────────────────
 
 
@@ -881,6 +908,56 @@ def handle_tickets(args: dict, **kwargs) -> str:
         True, mode="tickets", caller=me, count=len(rows),
         tickets=[_ticket_view(t, ledger) for t in rows],
         hint="" if rows else "你名下还没有派出去过的活。",
+    )
+
+
+def handle_ticket_revoke(args: dict, **kwargs) -> str:
+    """停口（裁定 224）：**只撤自己发起的那张票**，不发提示词、不动别的票。
+
+    与 ``ticket_report`` 同属旁路状态通道，不是第三枚嘴：这里没有 ``_deliver``
+    / ``_deliver_to_user`` / ``wake_agent``，也不往 ``ticket_reports`` 插一条
+    ——撤销是发起方的动作，不该伪装成收件人的六态回执。
+
+    **边界照实**：撤销不追杀已经在跑的那一轮（话已经送到了）。它冻的是这一跳
+    及其后续：``record_router`` 沿 ``reply_to`` 继承 thread 时，若上一张票是
+    ``revoked``，新票同样开成 ``revoked``，``_round_allowed`` 再挡住起轮。
+    """
+    args = args if isinstance(args, dict) else {}
+    ticket_id = str(args.get("ticket_id") or "").strip()
+    if not ticket_id:
+        return _result(False, error="没给票号（`ticket_id` 不能空）。")
+    try:
+        from plobi.delegation.tickets import TicketLedger
+
+        ledger = TicketLedger()
+    except Exception as exc:  # noqa: BLE001
+        return _result(False, error=f"授权层读不出来：{exc}")
+
+    me = current_agent_name(kwargs.get("session_id") or "")
+    ticket = ledger.get(ticket_id)
+    if ticket is None:
+        return _result(False, error=f"找不到授权票 {ticket_id}。")
+    if not me or str(ticket.parent_agent or "") != me:
+        # 不回内容：越权者连这张票的 goal 都不该看到。
+        return _result(False, error=f"票 {ticket_id} 不是你发起的，只有发起方能撤。")
+    if ticket.status == "revoked":
+        return _result(
+            True, mode="ticket_revoke", caller=me, ticket_id=ticket_id,
+            status="revoked", already_revoked=True,
+        )
+    if ticket.status in ("done", "failed"):
+        return _result(
+            False, error=f"票 {ticket_id} 已经收口（{ticket.status}）；撤销管的是还在跑的那一跳。",
+        )
+
+    reason = str(args.get("reason") or "")[:300]
+    if not ledger.revoke(ticket_id, reason=reason):
+        return _result(False, error=f"没撤成（票 {ticket_id}）。")
+    updated = ledger.get(ticket_id)
+    return _result(
+        True, mode="ticket_revoke", caller=me, ticket_id=ticket_id,
+        status=updated.status if updated else "revoked", reason=reason,
+        note="这一跳已冻结；同一条 thread 后续再派，执行层不会替收件人起轮。",
     )
 
 
