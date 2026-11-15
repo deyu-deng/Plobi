@@ -350,3 +350,20 @@ def test_a_vendor_without_those_knobs_keeps_the_old_title_path():
     assert spec.title_record_type == ""
     assert spec.title_record_field == ""
     assert spec.title_strip_wrapper == ""
+
+
+def test_every_install_only_vendor_opens_a_door_for_a_new_machine():
+    """**只装不派活**的每一家都要能拿到「怎么装它」——新用户的第一扇门不许是空的。
+
+    用户 11-15 13:0x：「假设用户的是一台全新的电脑……用户第一次点配置的『+』的时候。
+    没有下载就引导用户下载相关软件并引导登录。」
+
+    ⇒ 这一格要么给**命令**、要么给**官方页**；且都要照实说「还没接派活腿」
+    （那一格装好之后仍然是「＋」，不给一颗点不动的开关）。
+    """
+    for row in vr.VENDOR_ROWS:
+        if row.offloadable or row.id not in vr.INSTALL_SPECS:
+            continue
+        spec = vr.INSTALL_SPECS[row.id]
+        assert spec.command or spec.homepage, f"{row.id}\uff1a\u65e2\u6ca1\u6709\u547d\u4ee4\u4e5f\u6ca1\u6709\u5b98\u65b9\u9875"
+        assert "\u8fd8\u6ca1\u63a5\u6d3e\u6d3b\u817f" in spec.note, f"{row.id}\uff1anote \u91cc\u6ca1\u5199\u660e\u300c\u8fd8\u6ca1\u63a5\u6d3e\u6d3b\u817f\u300d"

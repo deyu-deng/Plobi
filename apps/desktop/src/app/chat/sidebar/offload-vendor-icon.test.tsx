@@ -64,4 +64,45 @@ describe('offload vendor icon', () => {
     expect(vendorLabelFor('somefuturetool')).toBe('somefuturetool')
     expect(vendorLabelFor('')).toBe('')
   })
+
+  // 11-15：ACP 官方注册表收录的那批客席接进屏上名册（只装不派活）——
+  // 屏上写品牌名，**不露内部 id**（机器词不上屏）。
+  it('新加的那批候选客席上屏写品牌名，不露内部 id', () => {
+    const ids = [
+    'agoragentic',
+    'auggie',
+    'autohand',
+    'bob',
+    'cortex-code',
+    'corust',
+    'crow-cli',
+    'deepagents',
+    'devin',
+    'dimcode',
+    'dirac',
+    'fast-agent',
+    'glm',
+    'grok',
+    'harn',
+    'junie',
+    'kimchi',
+    'kimi',
+    'kimi-code',
+    'minion-code',
+    'vibe',
+    'muse-code',
+    'nova',
+    'pi',
+    'poolside',
+    'sigit',
+    'stakpak',
+    'vtcode',
+    ]
+
+    for (const id of ids) {
+      expect(vendorLabelFor(id)).not.toBe(id)
+      expect(vendorLabelFor(id).length).toBeGreaterThan(0)
+    }
+  })
+
 })
