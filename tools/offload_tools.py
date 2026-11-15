@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from agent.vendor_registry import login_hints_map
 from plobi.delegation.external_capabilities import (
     PERMISSION_LEVELS,
     capabilities,
@@ -54,14 +55,10 @@ TOOLSET = "offload"
 
 #: 各外部 Agent 自带的"最放开档"旋钮在 `agent/external_offload.permission_flags` 里；
 #: 这里只留**登录态**的本地探针（不跑它、不花钱）。
+#:
 #: 各家外部 Agent 的**登录痕迹**落点（只探在不在，**不读内容**——里面是凭据）。
 #:
-#: 11-08 现读修正（这台机器上的真实落点，探针路径与旧版两处不符）：
-#: - **agy 的 OAuth 不在 `~/.agy/`**：它落在 `~/.gemini/antigravity-cli/antigravity-oauth-token`
-#:   （11-06 更新）＋ Windows 凭据管理器那条 `gemini:antigravity`。旧表指的那两个路径这台没有，
-#:   于是 agy 恒判「未登录」——**一个已装好、已登录、能跑的目标被白扔**。
-#: - **gemini** 的 OAuth 在 `~/.gemini/oauth_creds.json`；**cline** 的在
-#:   `~/.cline/data/settings/providers.json`（键里有 `providers.cline`）。
+#: **真源在 `agent/vendor_registry.py`**（一行一家 ⇒ 加一家只改那一处），这里是它的派生表。
 #:
 #: 探针取**保守方向**：指名位置里没有凭据 ⇒ 判「未登录」，不判「探不到所以能用」
 #: ——清单把一个点了必失败的东西列成可用，是这条刀明令禁止的形状。
@@ -69,40 +66,7 @@ TOOLSET = "offload"
 #: 不是它没登录；`availability()` 只看 `False` 才拦，`None` 不拦（见 `offload.py`）。
 #: 今天 opencode / kiro 就在这一档：盘上找不到它们的凭据落点（它们可能走自己的账号体系），
 #: 而纸上的 10-30 实测记着 kiro 那一轮**自己跑工具并答对了当前时间**。
-_LOGIN_EVIDENCE: dict[str, tuple[str, ...]] = {
-    "codebuddy": ("~/.codebuddy/local_storage",),
-    "qoder": ("~/.qoder/.auth",),
-    # 11-08 21:5x 实测：**光有文件 ≠ 登上了**。
-    # - agy 的令牌结构是 `{token: {access_token, refresh_token, expiry, ...}, auth_method, id_token}`，
-    #   `token.expiry` = 2026-11-05T17:59:05Z（**已过期**）⇒ 真跑回 `Authentication required`。
-    #   ⇒ 这一条要**读那一个过期字段**：过期就是没登录。
-    "agy": ("json-expiry:~/.gemini/antigravity-cli/antigravity-oauth-token#token.expiry",),
-    # gemini：`~/.gemini/oauth_creds.json` **是另一个产品（Antigravity）的凭据**，
-    #   Gemini CLI 自己不认它（11-08 真跑回 `Please set an Auth method in your ...settings.json
-    #   or specify one of the following environment variables ...: GEMINI_API_KEY,
-    #   GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA`）⇒ 留着它就是那一句假话。
-    #   Gemini CLI 自己的落点是 `~/.gemini/settings.json` 的 `auth.selectedType`
-    #   （官方：`oauth-personal`）或那三个环境变量之一。
-    "gemini": (
-        "json-field:~/.gemini/settings.json#auth.selectedType=oauth-personal",
-        "json-field:~/.gemini/settings.json#auth.selectedType=gemini-api-key",
-        "env:GEMINI_API_KEY",
-        "env:GOOGLE_GENAI_USE_VERTEXAI",
-        "env:GOOGLE_GENAI_USE_GCA",
-    ),
-    "cline": ("~/.cline/data/settings/providers.json",),
-    "qwen": ("~/.qwen/oauth_creds.json",),
-    # 11-08：copilot 的登录痕迹**不在文件里**——OAuth token 进**系统凭据库**（Windows 凭据管理器），
-    # PAT 走三个环境变量（官方 `copilot login --help` 写明这三条途径与优先级）。
-    # 它没有「不烧额度又能报登录态」的子命令（`sessions`／`mcp`／`skill`／`instruction` 都不报），
-    # 所以登录态只能靠本地证据判：三条环境变量与凭据库都没有 ⇒ **没登录**（这一格不许假装能用）。
-    "copilot": ("env:COPILOT_GITHUB_TOKEN", "env:GH_TOKEN", "env:GITHUB_TOKEN", "cred:copilot"),
-    # 11-08 18:0x 实跑打脸过一次：**kilo 的「免费层」也要账号**
-    # （`kilo run --auto --model kilo/~anthropic/claude-haiku-latest` ⇒ `PAID_MODEL_AUTH_REQUIRED`，
-    #  提示词原文是「You need to sign in to use this model.」）⇒ 它没有「不登录也能用」的档，
-    #  登录痕迹就落在 `kilo auth list` 自己打印的那个文件上（`~\.local\share\kilo\auth.json`）。
-    "kilo": ("~/.local/share/kilo/auth.json",),
-}
+_LOGIN_EVIDENCE: dict[str, tuple[str, ...]] = login_hints_map()
 
 
 def _windows_credential_hits(needle: str) -> Optional[bool]:
