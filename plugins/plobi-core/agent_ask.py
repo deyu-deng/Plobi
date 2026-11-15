@@ -337,7 +337,7 @@ def resolve_target(name: str, *, registry=None, entries=None):
 
     if not needle:
         raise AskRefusal(
-            f"要问哪一个 L2 Agent？现在能问的有：{_roster_hint(entries)}", available
+            f"要问哪一个 首席？现在能问的有：{_roster_hint(entries)}", available
         )
 
     hits = _collapse_same_home(
@@ -378,7 +378,7 @@ def resolve_target(name: str, *, registry=None, entries=None):
             available,
         )
     raise AskRefusal(
-        f"没有「{name}」这个项目 / 课程的 L2 Agent。现在能问的有：{_roster_hint(entries)}", available
+        f"没有「{name}」这个项目 / 课程的 首席。现在能问的有：{_roster_hint(entries)}", available
     )
 
 
@@ -731,7 +731,7 @@ def handle_agent_ask(args: dict, *, entry=None, resume_session: str = "", asker:
             entries = askable_entries()
         except Exception as exc:  # an unreadable roster ≠ a broken turn
             logger.warning("plobi_agent_ask: registry unreadable: %s", exc)
-            return tool_error("读不到项目 / 课程的 L2 Agent 名册，这次问不了。", ok=False)
+            return tool_error("读不到项目 / 课程的 首席 名册，这次问不了。", ok=False)
 
         try:
             entry = resolve_target(name, entries=entries)

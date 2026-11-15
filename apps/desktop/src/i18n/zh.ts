@@ -2383,8 +2383,8 @@ export const zh: Translations = {
       research: '研究',
       courses: '课程'
     },
-    chiefSecretary: '总秘书',
-    backToSecretary: '返回总秘书',
+    chiefSecretary: '指挥',
+    backToSecretary: '返回指挥',
     mainlineSession: '主线',
     bypassSessions: '旁路会话',
     collapseRail: '收起智能体栏',
@@ -2794,7 +2794,7 @@ export const zh: Translations = {
     placeholderStarting: '正在启动 Plobi…',
     placeholderReconnecting: '正在重新连接 Plobi…',
     placeholderFollowUp: '发送后续消息',
-    secretaryL1Placeholder: '对总秘书说…',
+    secretaryL1Placeholder: '对指挥说…',
     secretaryL2Placeholder: name => `对${name}说…`,
     newSessionPlaceholders: [
       '要构建什么？',

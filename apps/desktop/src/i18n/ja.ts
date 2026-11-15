@@ -2127,8 +2127,8 @@ export const ja = defineLocale({
       research: 'リサーチ',
       courses: '科目'
     },
-    chiefSecretary: '総秘書',
-    backToSecretary: '総秘書に戻る',
+    chiefSecretary: '指揮者',
+    backToSecretary: '指揮者に戻る',
     mainlineSession: 'メインスレッド',
     bypassSessions: 'その他のセッション',
     collapseRail: 'エージェント欄を折りたたむ',
@@ -2538,7 +2538,7 @@ export const ja = defineLocale({
     placeholderStarting: 'Plobi を起動中...',
     placeholderReconnecting: 'Plobi に再接続中…',
     placeholderFollowUp: 'フォローアップを送信',
-    secretaryL1Placeholder: '総秘書に話す…',
+    secretaryL1Placeholder: '指揮者に話す…',
     secretaryL2Placeholder: name => `${name}に話す…`,
     newSessionPlaceholders: [
       '何を作りますか？',

@@ -2066,8 +2066,8 @@ export const zhHant = defineLocale({
       research: '研究',
       courses: '課程'
     },
-    chiefSecretary: '總秘書',
-    backToSecretary: '返回總秘書',
+    chiefSecretary: '指揮',
+    backToSecretary: '返回指揮',
     mainlineSession: '主線',
     bypassSessions: '旁路會話',
     collapseRail: '收起智慧代理欄',
@@ -2472,7 +2472,7 @@ export const zhHant = defineLocale({
     placeholderStarting: '正在啟動 Plobi...',
     placeholderReconnecting: '正在重新連線至 Plobi…',
     placeholderFollowUp: '傳送後續訊息',
-    secretaryL1Placeholder: '對總秘書說…',
+    secretaryL1Placeholder: '對指揮說…',
     secretaryL2Placeholder: name => `對${name}說…`,
     newSessionPlaceholders: [
       '要建立什麼？',
