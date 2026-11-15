@@ -90,55 +90,61 @@ TRUNCATED_MARK = "……（后面截断了）"
 
 # ── 各家的根目录 ──────────────────────────────────────────────────────────
 
-def qoder_root() -> Path:
-    override = os.environ.get("QODER_CONFIG_DIR", "").strip()
-    base = Path(os.path.expanduser(override)) if override else Path.home() / ".qoder"
+# ── 各家的根目录与库文件：落点规矩在真源表里 ─────────────────────────────
+#
+# 这一族原先是六套手写路径（每家一个函数、规矩各自抄一遍）。现在**规矩在真源表**
+# （``agent/vendor_registry.py`` 的 ``SessionSpec``：候选怎么排、取哪一个），
+# 这里只留**兼容面**：模块级那几个函数名还在（别处与测试都按名字调），
+# 内容一律从表里读。
 
-    return base / "projects"
+from agent.vendor_registry import SESSION_SPECS, resolve_path  # noqa: E402
+
+
+def _spec(vendor: str):
+    """这一家的会话规格（真源表里那一行）。"""
+    return SESSION_SPECS.get(vendor)
+
+
+def _resolved(name: str, rule) -> Path:
+    """按名字去调那几只模块级函数（它们读的就是表里那条规矩）。
+
+    **为什么绕这一下**：别线（与测试）会 monkeypatch ``opencode_db`` 那种函数；
+    通用读取器要是自己算路径，那只补丁就白打了 ⇒ 这里按名字取，补丁照样生效。
+    """
+    resolver = globals().get(name or "")
+    if callable(resolver):
+        return resolver()
+    return resolve_path(rule)
+
+
+def qoder_root() -> Path:
+    """Qoder 的会话目录（``<家>/.qoder/projects``）。"""
+    spec = _spec("qoder")
+    return resolve_path(spec.root_rule) if spec else Path()
 
 
 def codebuddy_root() -> Path:
-    override = os.environ.get("CODEBUDDY_CONFIG_DIR", "").strip()
-    base = Path(os.path.expanduser(override)) if override else Path.home() / ".codebuddy"
-
-    return base / "projects"
+    """CodeBuddy 的会话目录（``<家>/.codebuddy/projects``）。"""
+    spec = _spec("codebuddy")
+    return resolve_path(spec.root_rule) if spec else Path()
 
 
 def marvis_db() -> Path:
-    override = os.environ.get("MARVIS_HOME", "").strip()
-    base = Path(os.path.expanduser(override)) if override else Path.home() / ".marvis"
-
-    return base / "database" / "data.db"
-
-
-def cursor_root() -> Path:
-    return Path.home() / ".cursor" / "projects"
+    """Marvis 的会话库（SQLite，只读）。"""
+    spec = _spec("marvis")
+    return resolve_path(spec.db_rule) if spec else Path()
 
 
 def cursor_db() -> Path:
     """Cursor 的 composer 存在 VS Code 那套 ``state.vscdb`` 里（只读打开）。"""
-    override = os.environ.get("CURSOR_HOME", "").strip()
-    if override:
-        return Path(os.path.expanduser(override)) / "User" / "globalStorage" / "state.vscdb"
-    candidates = []
-    for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("APPDATA")):
-        if base:
-            candidates.append(Path(base) / "Cursor" / "User" / "globalStorage" / "state.vscdb")
-    candidates.append(Path("D:/Data/AppData/Cursor/User/globalStorage/state.vscdb"))
-    candidates.append(Path.home() / ".cursor" / "User" / "globalStorage" / "state.vscdb")
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-
-    return candidates[0]
+    spec = _spec("cursor")
+    return resolve_path(spec.db_rule) if spec else Path()
 
 
 def agy_db() -> Path:
     """agy（Antigravity CLI）的会话摘要库。"""
-    override = os.environ.get("AGY_HOME", "").strip()
-    base = Path(os.path.expanduser(override)) if override else Path.home() / ".gemini" / "antigravity-cli"
-
-    return base / "conversation_summaries.db"
+    spec = _spec("agy")
+    return resolve_path(spec.db_rule) if spec else Path()
 
 
 def opencode_db() -> Path:
@@ -148,23 +154,14 @@ def opencode_db() -> Path:
     候选顺序＝环境变量 override → ``XDG_DATA_HOME`` 规矩 → 各平台默认，取**第一个存在的**。
     找不到就交回第一个候选（调用方按「没有」处理），不编一个路径出来。
     """
-    candidates: list[Path] = []
-    override = os.environ.get("OPENCODE_HOME", "").strip()
-    if override:
-        candidates.append(Path(os.path.expanduser(override)) / "opencode.db")
-    xdg = os.environ.get("XDG_DATA_HOME", "").strip()
-    if xdg:
-        candidates.append(Path(os.path.expanduser(xdg)) / "opencode" / "opencode.db")
-    home = Path.home()
-    if sys.platform == "darwin":
-        candidates.append(home / "Library" / "Application Support" / "opencode" / "opencode.db")
-    else:
-        candidates.append(home / ".local" / "share" / "opencode" / "opencode.db")
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+    spec = _spec("opencode")
+    return resolve_path(spec.db_rule) if spec else Path()
 
-    return candidates[0]
+
+def agy_brain_root() -> Path:
+    """agy（Antigravity CLI）的会话正文根：``brain/<会话号>/.system_generated/logs/``。"""
+    spec = _spec("agy")
+    return resolve_path(spec.transcript_root_rule) if spec else Path()
 
 
 
@@ -335,166 +332,213 @@ def _entry(directory: Path, jsonl: Path, *, project: str, title: str, updated: s
     }
 
 
-# ── Qoder ─────────────────────────────────────────────────────────────────
+# ── 通用会话读取器：一个入口，三种形状 ─────────────────────────────────
+#
+# **加一家 provider ⇒ 只在真源表加一行**（落在哪儿、字段怎么映射、用哪一种读法），
+# 这里**不许**再出现「按厂商分叉」的代码。
+#
+# 六家原先各一套手写逻辑（Qoder／CodeBuddy 各一个扫目录的，Marvis／agy／OpenCode
+# 各一个查库的，Cursor 一个读 KV 大块的）；现在共用下面三个读取器，
+# 差异全在表里那一行（``agent/vendor_registry.py::SessionSpec``）。
 
-def _qoder_project(records: Sequence[dict[str, Any]]) -> str:
-    for record in records:
-        if record.get("type") == "workspace-directories":
-            directories = record.get("directories")
-            if isinstance(directories, list):
-                for item in directories:
-                    if isinstance(item, str) and item.strip():
-                        return item.strip()
 
+def _sendable_for(spec, project: str) -> bool:
+    """这一家的会话能不能把话送进去（表里写：永远不能／有项目目录才能／问能力表）。"""
+    if spec.sendable_mode == "has-project":
+        return bool(project)
+    if spec.sendable_mode == "capability":
+        return spec.vendor in SENDABLE
+    return False
+
+
+def _record_matches(record: dict[str, Any], spec) -> bool:
+    """这一条算不算一句对话（表里写收哪几种类型／角色）。"""
+    if spec.accept_types and str(record.get("type") or "") not in spec.accept_types:
+        return False
+    if spec.accept_roles and str(record.get("role") or "") not in spec.accept_roles:
+        return False
+    return True
+
+
+def _record_role(record: dict[str, Any], spec) -> str:
+    """一条记录是谁说的（表里写角色在哪一格：``type`` 自己，还是 ``role`` 那一格）。"""
+    if spec.role_from_type:
+        return str(record.get("type") or "")
+    return str(record.get("role") or "")
+
+
+def _record_text(record: dict[str, Any], spec) -> str:
+    """一条记录里的正文（表里写它在哪一格，取不到时退到哪一格）。"""
+    current: Any = record
+    for part in spec.content_path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            current = None
+            break
+        current = current[part]
+    if current is None and spec.content_fallback:
+        current = record.get(spec.content_fallback)
+    return _block_text(current)
+
+
+def _jsonl_project(records: Sequence[dict[str, Any]], spec) -> str:
+    """项目／工作目录（表里写从哪一格取）。"""
+    if spec.project_mode == "jsonl-workspace":
+        for record in records:
+            if record.get("type") == "workspace-directories":
+                directories = record.get("directories")
+                if isinstance(directories, list):
+                    for item in directories:
+                        if isinstance(item, str) and item.strip():
+                            return item.strip()
+        return ""
+    if spec.project_mode == "jsonl-field":
+        for record in records:
+            value = record.get(spec.project_field)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     return ""
 
 
-def _qoder_title(records: Sequence[dict[str, Any]]) -> str:
+def _jsonl_title(records: Sequence[dict[str, Any]], spec) -> str:
+    """标题＝第一条那个角色说的话（表里写角色是哪一格、是哪一种）。"""
     for record in records:
-        if record.get("type") != "user":
+        if not _record_matches(record, spec):
             continue
-        message = record.get("message")
-        text = _block_text(message.get("content") if isinstance(message, dict) else record.get("content"))
+        if _record_role(record, spec) != spec.title_role:
+            continue
+        text = _record_text(record, spec)
         if text:
             return text
-
     return ""
 
 
-def _qoder_updated(session_dir: Path, jsonl: Path) -> str:
-    try:
-        payload = json.loads((session_dir / "state.json").read_text(encoding="utf-8"))
-        value = payload.get("updatedAt") or payload.get("createdAt")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    except (OSError, json.JSONDecodeError):
-        pass
-
+def _jsonl_updated(spec, directory: Path, jsonl: Path) -> str:
+    """时间（表里写从哪儿取：文件修改时间／会话目录里的 ``state.json``）。"""
+    if spec.updated_mode == "state-json":
+        try:
+            payload = json.loads((directory / jsonl.stem / "state.json").read_text(encoding="utf-8"))
+            value = payload.get("updatedAt") or payload.get("createdAt")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
     return _mtime_iso(jsonl)
 
 
-def _qoder_sessions() -> list[dict[str, Any]]:
-    root = qoder_root()
-    if not root.is_dir():
-        return []
-    out: list[dict[str, Any]] = []
-    for directory in root.iterdir():
-        if not directory.is_dir():
-            continue
-        for jsonl in directory.glob("*.jsonl"):
-            if not SESSION_ID_RE.match(jsonl.stem):
-                continue
-
-            def build(jsonl=jsonl, directory=directory) -> dict[str, Any]:
-                records = _records_head(jsonl)
-                project = _qoder_project(records)
-
-                return {
-                    **_entry(directory, jsonl, project=project, title=_qoder_title(records),
-                             updated=_qoder_updated(directory / jsonl.stem, jsonl), sendable=bool(project)),
-                    "vendor": VENDOR_QODER,
-                }
-
-            out.append(_cached_meta(jsonl, build))
-
-    return out
-
-
-# ── CodeBuddy ─────────────────────────────────────────────────────────────
-
-def _codebuddy_sessions() -> list[dict[str, Any]]:
-    root = codebuddy_root()
-    if not root.is_dir():
-        return []
-    out: list[dict[str, Any]] = []
-    for directory in root.iterdir():
-        if not directory.is_dir():
-            continue
-        for jsonl in directory.glob("*.jsonl"):
-            if not SESSION_ID_RE.match(jsonl.stem):
-                continue
-
-            def build(jsonl=jsonl) -> dict[str, Any]:
-                records = _records_head(jsonl)
-                project = ""
-                title = ""
-                for record in records:
-                    if not project and isinstance(record.get("cwd"), str) and record["cwd"].strip():
-                        project = record["cwd"].strip()
-                    if not title and record.get("role") == "user" and record.get("type") == "message":
-                        title = _block_text(record.get("content"))
-
-                return {
-                    **_entry(directory, jsonl, project=project, title=title,
-                             updated=_mtime_iso(jsonl), sendable=False),
-                    "vendor": VENDOR_CODEBUDDY,
-                }
-
-            out.append(_cached_meta(jsonl, build))
-
-    return out
-
-
-# ── Marvis（SQLite，只读）──────────────────────────────────────────────────
-
-def _marvis_first_user_line(con: sqlite3.Connection, conversation_id: str) -> str:
-    """Marvis 的会话名多半是**项目名**（Plobi／SRTP／Quota），不是人说的第一句话。
-
-    屏上先看第一句话（跟别家同一形状），项目名另放一格（``source_title``），不丢信息。
-    读不到第一句就交回空串，让调用方退回会话名。
-    """
-    try:
-        row = con.execute(
-            "select content from messages where conversation_id = ? and role = 'user' "
-            "and content is not null order by message_seq limit 1",
-            (conversation_id,),
-        ).fetchone()
-    except sqlite3.Error:
+def _norm_title(value: Any, norm: str) -> str:
+    """标题怎么归一（表里写：原样／只留第一行）。"""
+    text = "" if value is None else str(value)
+    if not text.strip():
         return ""
-    text = str(row[0] if row else "").strip()
-    if not text:
-        return ""
-
-    return text.splitlines()[0][:120]
+    if norm == "first-line":
+        return text.splitlines()[0][:120]
+    return text[:120]
 
 
-def _marvis_sessions() -> list[dict[str, Any]]:
-    db = marvis_db()
-    if not db.is_file():
-        return []
-    out: list[dict[str, Any]] = []
-    try:
-        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+def _json_payload(raw: Any) -> Any:
+    """一格里的 JSON（解不开就当没有）。"""
+    data: Any = raw
+    if isinstance(raw, (str, bytes)):
         try:
-            rows = con.execute(
-                "select conversation_id, title, updated_at from conversations order by updated_at desc"
-            ).fetchall()
-            spoken = {row[0]: _marvis_first_user_line(con, row[0]) for row in rows}
-        finally:
-            con.close()
+            data = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
+    return data
+
+
+def _text_from_cell(mode: str, field: str, raw: Any) -> str:
+    """一格里的正文怎么取（表里写：原样／JSON 里那一格）。"""
+    if mode == "json-field":
+        data = _json_payload(raw)
+        value = data.get(field) if isinstance(data, dict) else None
+        return value.strip() if isinstance(value, str) else ""
+    return str(raw or "").strip()
+
+
+def _first_user_line(con, spec, session_id: str) -> str:
+    """去消息表取第一句人话（表里写那张表、那一列、怎么取字）。"""
+    first = spec.first_user
+    if first is None:
+        return ""
+    sql = (f"select {first.content_column} from {first.table} "
+           f"where {first.id_column} = ? and {first.role_column} = ?")
+    if first.require_content:
+        sql += f" and {first.content_column} is not null"
+    sql += f" order by {first.order_column} limit 1"
+    try:
+        row = con.execute(sql, (session_id, first.role_value)).fetchone()
     except sqlite3.Error:
+        return ""
+    text = _text_from_cell(first.text_mode, first.text_field, row[0] if row else "")
+    return text.splitlines()[0][:120] if text else ""
+
+
+def _sqlite_title(spec, spoken: str, values: dict[str, Any], session_id: str) -> str:
+    """标题：先看人说的第一句，再看它自己起的名字，再退回会话号。"""
+    if spec.title_source == "first-user" and spoken:
+        return spoken
+    own = _norm_title(values.get("title"), spec.title_norm)
+    if own:
+        return own
+    fallback = _norm_title(values.get("title_fallback"), spec.title_norm)
+    if fallback:
+        return fallback
+    return session_id[:120]
+
+
+def _sqlite_project(spec, raw: Any) -> str:
+    """项目／工作目录（表里写：哪一列／一列 JSON 列表）。"""
+    if spec.project_mode == "column":
+        return str(raw or "").strip()
+    if spec.project_mode == "json-uri-list":
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except (json.JSONDecodeError, TypeError):
+            return ""
+        if isinstance(parsed, list) and parsed:
+            return _file_uri_to_path(str(parsed[0]))
+    return ""
+
+
+def _sqlite_updated(spec, raw: Any) -> str:
+    """时间（表里写：本地 ISO／epoch 毫秒）。"""
+    if spec.updated_mode == "column-local":
+        return _local_stamp(raw)
+    if spec.updated_mode == "column-epoch-ms":
+        return _epoch_stamp(raw)
+    return ""
+
+
+def _kv_messages(data: dict[str, Any], spec) -> list[dict[str, Any]]:
+    """大块里的对话（表里写对话在哪、顺序在哪、气泡类型怎么分派）。"""
+    cmap = data.get(spec.kv_map_key)
+    if not isinstance(cmap, dict):
         return []
-    for conversation_id, title, updated_at in rows:
-        if not isinstance(conversation_id, str) or not SESSION_ID_RE.match(conversation_id):
+    order = [
+        str(item.get("bubbleId"))
+        for item in (data.get(spec.kv_order_key) or [])
+        if isinstance(item, dict) and item.get("bubbleId")
+    ] or list(cmap.keys())
+    roles = {kind: role for kind, role in spec.kv_role_types}
+    messages: list[dict[str, Any]] = []
+    for bubble_id in order:
+        bubble = cmap.get(bubble_id)
+        if not isinstance(bubble, dict):
             continue
-        out.append({
-            "id": conversation_id,
-            # Marvis **不记这条会话在哪个目录**（11-08 现读：库里的 metadata、工具调用参数、
-            # AppData 下那圈目录，三处都没有工作目录这一格）⇒ 留空，归属交给 L2 按标题判。
-            # **不从产物名反推**——那是猜，猜出来的目录会把「有关/无关」判反。
-            "project": "",
-            "sendable": False,
-            "title": spoken.get(conversation_id, "") or str(title or conversation_id)[:120],
-            # Marvis 自己的会话名（多半是项目名）：屏上先看 title，这一格不丢信息。
-            "source_title": str(title or "").splitlines()[0][:120] if title else "",
-            "updated_at": _local_stamp(updated_at),
-            "vendor": VENDOR_MARVIS,
-        })
+        role = roles.get(bubble.get("type"), "")
+        if not role:
+            continue
+        text = ""
+        for key in spec.kv_text_keys:
+            value = bubble.get(key)
+            if isinstance(value, str) and value.strip():
+                text = value
+                break
+        if text:
+            messages.append({"role": role, "text": text.strip(), "ts": ""})
 
-    return out
+    return messages
 
-
-# ── Cursor（state.vscdb 里的 composerData，只读）───────────────────────────
 
 def _file_uri_to_path(uri: str) -> str:
     """``file:///d%3A/Projects/Plobi`` → ``d:\\Projects\\Plobi``；读不出就原样。"""
@@ -510,7 +554,8 @@ def _file_uri_to_path(uri: str) -> str:
     return text
 
 
-def _cursor_workspace_path(db: Path, workspace_id: str) -> str:
+def _workspace_path(db: Path, spec, workspace_id: str) -> str:
+    """工作区那一列指的是 ``workspaceStorage/<id>/workspace.json`` 里的一格。"""
     if not workspace_id:
         return ""
     candidate = db.parent.parent / "workspaceStorage" / workspace_id / "workspace.json"
@@ -518,7 +563,7 @@ def _cursor_workspace_path(db: Path, workspace_id: str) -> str:
         payload = json.loads(candidate.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return ""
-    for key in ("folder", "workspace", "configuration"):
+    for key in spec.workspace_json_keys:
         value = payload.get(key) if isinstance(payload, dict) else None
         if isinstance(value, str) and value.strip():
             return _file_uri_to_path(value)
@@ -526,74 +571,156 @@ def _cursor_workspace_path(db: Path, workspace_id: str) -> str:
     return ""
 
 
-def _cursor_messages(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Cursor 的对话在 ``conversationMap`` 里；顺序以 ``fullConversationHeadersOnly`` 为准。"""
-    cmap = data.get("conversationMap")
-    if not isinstance(cmap, dict):
+def _read_jsonl_dir(spec) -> list[dict[str, Any]]:
+    """读法一：目录里一堆 ``*.jsonl``（Qoder、CodeBuddy）。"""
+    root = _resolved(spec.root_resolver, spec.root_rule)
+    if not root.is_dir():
         return []
-    order = [
-        str(item.get("bubbleId"))
-        for item in (data.get("fullConversationHeadersOnly") or [])
-        if isinstance(item, dict) and item.get("bubbleId")
-    ] or list(cmap.keys())
-    messages: list[dict[str, Any]] = []
-    for bubble_id in order:
-        bubble = cmap.get(bubble_id)
-        if not isinstance(bubble, dict):
+    out: list[dict[str, Any]] = []
+    for directory in root.iterdir():
+        if not directory.is_dir():
             continue
-        kind = bubble.get("type")
-        role = "user" if kind in (1, "user") else "assistant" if kind in (2, "assistant") else ""
-        if not role:
+        for jsonl in directory.glob("*.jsonl"):
+            if not SESSION_ID_RE.match(jsonl.stem):
+                continue
+
+            def build(jsonl=jsonl, directory=directory) -> dict[str, Any]:
+                records = _records_head(jsonl)
+                project = _jsonl_project(records, spec)
+
+                return {
+                    **_entry(directory, jsonl, project=project,
+                             title=_jsonl_title(records, spec),
+                             updated=_jsonl_updated(spec, directory, jsonl),
+                             sendable=_sendable_for(spec, project)),
+                    "vendor": spec.vendor,
+                }
+
+            out.append(_cached_meta(jsonl, build))
+
+    return out
+
+
+def _read_sqlite_rows(spec) -> list[dict[str, Any]]:
+    """读法二：一张表若干列（Marvis、agy、OpenCode）。"""
+    db = _resolved(spec.db_resolver, spec.db_rule)
+    if not db.is_file():
+        return []
+    columns: list[str] = []
+    index: dict[str, int] = {}
+
+    def add(key: str, column: str) -> None:
+        if not column:
+            return
+        if column not in columns:
+            columns.append(column)
+        index[key] = columns.index(column)
+
+    add("id", spec.id_column)
+    add("title", spec.title_column)
+    add("title_fallback", spec.title_fallback_column)
+    add("project", spec.project_column)
+    add("updated", spec.updated_column)
+    sql = f"select {', '.join(columns)} from {spec.table}"
+    if spec.order_by:
+        sql += f" order by {spec.order_by}"
+    out: list[dict[str, Any]] = []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = con.execute(sql).fetchall()
+            spoken = ({row[0]: _first_user_line(con, spec, row[0]) for row in rows}
+                      if spec.first_user else {})
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+    for row in rows:
+        values = {key: row[pos] for key, pos in index.items()}
+        session_id = str(values.get("id") or "")
+        if not SESSION_ID_RE.match(session_id):
             continue
-        text = bubble.get("text") or bubble.get("richText") or ""
-        if isinstance(text, str) and text.strip():
-            messages.append({"role": role, "text": text.strip(), "ts": ""})
+        title = _sqlite_title(spec, spoken.get(session_id, ""), values, session_id)
+        project = _sqlite_project(spec, values.get("project"))
+        entry: dict[str, Any] = {
+            "id": session_id,
+            "project": project,
+            "sendable": _sendable_for(spec, project),
+            "title": title,
+        }
+        if spec.emit_source_title:
+            # 它自己起的会话名（多半是人写的标题）：另放一格，不丢信息。
+            entry["source_title"] = _norm_title(values.get("title"), "first-line")
+        entry["updated_at"] = _sqlite_updated(spec, values.get("updated"))
+        entry["vendor"] = spec.vendor
+        out.append(entry)
 
-    return messages
+    return out
 
 
-def _cursor_sessions() -> list[dict[str, Any]]:
-    """Cursor 的对话在 ``composerData:<id>`` 里。
+def _read_sqlite_kv_json(spec) -> list[dict[str, Any]]:
+    """读法三：表头行 ＋ 一段 JSON 大块（Cursor）。
 
     **这台机器上读不出**（11-08 现读）：``composerHeaders`` 6 条全是 ``empty-window`` 的草稿
     或已归档，唯一那条真会话的 ``conversationMap`` 是空的 ⇒ 返回 0 条。
     这是**照实**：库在，但没有留下可读的对话——不是「它没有对话」，也不是「读坏了」。
     """
-    db = cursor_db()
+    db = _resolved(spec.db_resolver, spec.db_rule)
     if not db.is_file():
         return []
+    columns: list[str] = []
+    index: dict[str, int] = {}
+
+    def add(key: str, column: str) -> None:
+        if not column:
+            return
+        if column not in columns:
+            columns.append(column)
+        index[key] = columns.index(column)
+
+    add("id", spec.id_column)
+    add("workspace", spec.workspace_column)
+    add("updated", spec.updated_column)
+    add("updated_fallback", spec.updated_fallback_column)
+    add("archived", spec.archived_column)
+    sql = f"select {', '.join(columns)} from {spec.headers_table}"
     out: list[dict[str, Any]] = []
     try:
         con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
         try:
-            headers = con.execute(
-                "select composerId, workspaceId, createdAt, lastUpdatedAt, isArchived from composerHeaders"
-            ).fetchall()
-            for composer_id, workspace_id, created, updated, archived in headers:
-                session_id = str(composer_id or "")
-                if archived or not SESSION_ID_RE.match(session_id):
+            for row in con.execute(sql).fetchall():
+                values = {key: row[pos] for key, pos in index.items()}
+                session_id = str(values.get("id") or "")
+                if values.get("archived"):
                     continue
-                if session_id.startswith("draft-") or session_id == "empty-state-draft":
+                if not SESSION_ID_RE.match(session_id):
                     continue
-                row = con.execute(
-                    "select value from cursorDiskKV where key = ?", (f"composerData:{session_id}",)
+                if any(session_id.startswith(prefix) for prefix in spec.skip_id_prefixes):
+                    continue
+                if session_id in spec.skip_ids:
+                    continue
+                blob = con.execute(
+                    f"select value from {spec.kv_table} where key = ?",
+                    (f"{spec.kv_key_prefix}{session_id}",),
                 ).fetchone()
-                if not row:
+                if not blob:
                     continue
-                data = json.loads(row[0])
-                messages = _cursor_messages(data)
+                data = json.loads(blob[0])
+                messages = _kv_messages(data, spec)
                 first_user = next((m["text"] for m in messages if m["role"] == "user"), "")
                 if not first_user:
                     continue
-                stamp = updated or created
-                when = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(int(stamp) / 1000)) if stamp else ""
+                stamp = values.get("updated") or values.get("updated_fallback")
+                when = (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(int(stamp) / 1000))
+                        if stamp else "")
+                project = _workspace_path(db, spec, str(values.get("workspace") or ""))
                 out.append({
                     "id": session_id,
-                    "project": _cursor_workspace_path(db, str(workspace_id or "")),
-                    "sendable": False,
+                    "project": project,
+                    "sendable": _sendable_for(spec, project),
                     "title": first_user.splitlines()[0][:120],
                     "updated_at": when,
-                    "vendor": VENDOR_CURSOR,
+                    "vendor": spec.vendor,
                 })
         finally:
             con.close()
@@ -603,205 +730,15 @@ def _cursor_sessions() -> list[dict[str, Any]]:
     return out
 
 
-# ── agy（Antigravity CLI，会话摘要库）──────────────────────────────────────
-
-def _agy_sessions() -> list[dict[str, Any]]:
-    db = agy_db()
-    if not db.is_file():
-        return []
-    try:
-        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
-        try:
-            rows = con.execute(
-                "select conversation_id, title, preview, last_modified_time, workspace_uris "
-                "from conversation_summaries order by last_modified_time desc"
-            ).fetchall()
-        finally:
-            con.close()
-    except sqlite3.Error:
-        return []
-    out: list[dict[str, Any]] = []
-    for conversation_id, title, preview, updated, uris in rows:
-        session_id = str(conversation_id or "")
-        if not SESSION_ID_RE.match(session_id):
-            continue
-        project = ""
-        try:
-            parsed = json.loads(uris) if isinstance(uris, str) else uris
-            if isinstance(parsed, list) and parsed:
-                project = _file_uri_to_path(str(parsed[0]))
-        except (json.JSONDecodeError, TypeError):
-            project = ""
-        out.append({
-            "id": session_id,
-            "project": project,
-            "sendable": False,
-            "title": str(title or preview or session_id)[:120],
-            "updated_at": _local_stamp(updated),
-            "vendor": VENDOR_AGY,
-        })
-
-    return out
-
-
-def agy_brain_root() -> Path:
-    """agy（Antigravity CLI）的会话正文根：``brain/<会话号>/.system_generated/logs/``。"""
-    override = os.environ.get("AGY_HOME", "").strip()
-    base = Path(os.path.expanduser(override)) if override else Path.home() / ".gemini" / "antigravity-cli"
-
-    return base / "brain"
-
-
-def _agy_user_text(content: str) -> str:
-    """agy 的用户输入外面裹着几段元数据（``<USER_REQUEST>``／``<USER_SETTINGS_CHANGE>``…），
-    只取人真正说的那一段；没有包裹就整段留用。"""
-    text = str(content or "")
-    if "<USER_REQUEST>" in text and "</USER_REQUEST>" in text:
-        start = text.index("<USER_REQUEST>") + len("<USER_REQUEST>")
-        end = text.index("</USER_REQUEST>", start)
-        return text[start:end].strip()
-    if text.startswith("<") and ">" in text:
-        return ""
-    return text.strip()
-
-
-def _agy_transcript(session_id: str) -> list[dict[str, Any]]:
-    """agy 的对话在 ``.system_generated/logs/transcript.jsonl``（一行一条 step）。"""
-    path = agy_brain_root() / session_id / ".system_generated" / "logs" / "transcript.jsonl"
-    if not path.is_file():
-        return []
-    messages: list[dict[str, Any]] = []
-    for record in _records(path):
-        kind = record.get("type")
-        if kind == "USER_INPUT":
-            text = _agy_user_text(record.get("content"))
-            if text:
-                messages.append({"role": "user", "text": text, "ts": str(record.get("created_at") or "")})
-        elif kind == "PLANNER_RESPONSE":
-            text = str(record.get("content") or "").strip()
-            if text and text != "None":
-                messages.append({"role": "assistant", "text": text, "ts": str(record.get("created_at") or "")})
-
-    return messages
-
-
-# ── OpenCode（SQLite，只读）──────────────────────────────────────────────
-
-def _opencode_message_text(message_type: str, raw: Any) -> str:
-    """一条消息的正文（`session_message.data` 是一段 JSON 串）。
-
-    - user：``{"text": "...", "time": …}``；
-    - assistant：``{"content": [{"type": "text", "text": "…"}, {"type": "reasoning", …}]}``
-      ——**只取 text 那几块**：reasoning 与 tool 不是「说的话」，不上屏（与别家同一形状）。
-    """
-    data: Any = raw
-    if isinstance(raw, (str, bytes)):
-        try:
-            data = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return ""
-    if not isinstance(data, dict):
-        return ""
-    if message_type == "user":
-        text = data.get("text")
-        return text.strip() if isinstance(text, str) else ""
-    parts = data.get("content")
-    if isinstance(parts, list):
-        chunks = [
-            part.get("text").strip()
-            for part in parts
-            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
-        ]
-        chunks = [chunk for chunk in chunks if chunk]
-        if chunks:
-            return "\n".join(chunks)
-    text = data.get("text")
-    return text.strip() if isinstance(text, str) else ""
-
-
-def _opencode_first_user_line(con: sqlite3.Connection, session_id: str) -> str:
-    """第一条用户消息的首行。
-
-    与 Marvis 同一形状：屏上先看**人说的第一句**，OpenCode 自己起的会话名另放一格。
-    """
-    try:
-        row = con.execute(
-            "select data from session_message where session_id = ? and type = 'user' order by seq limit 1",
-            (session_id,),
-        ).fetchone()
-    except sqlite3.Error:
-        return ""
-    text = _opencode_message_text("user", row[0] if row else "")
-    if not text:
-        return ""
-    return text.splitlines()[0][:120]
-
-
-def _opencode_sessions() -> list[dict[str, Any]]:
-    db = opencode_db()
-    if not db.is_file():
-        return []
-    out: list[dict[str, Any]] = []
-    try:
-        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
-        try:
-            rows = con.execute(
-                "select id, title, directory, time_updated from session_v2 order by time_updated desc"
-            ).fetchall()
-            spoken = {row[0]: _opencode_first_user_line(con, row[0]) for row in rows}
-        finally:
-            con.close()
-    except sqlite3.Error:
-        return []
-    for session_id, title, directory, updated in rows:
-        if not isinstance(session_id, str) or not SESSION_ID_RE.match(session_id):
-            continue
-        own = str(title or "").splitlines()[0][:120] if title else ""
-        out.append({
-            "id": session_id,
-            # OpenCode **记这条会话在哪个目录**（`session_v2.directory`）⇒ 归属能按目录判，
-            # 与 Marvis 那一格留空不同。
-            "project": str(directory or "").strip(),
-            "sendable": VENDOR_OPENCODE in SENDABLE,
-            "title": spoken.get(session_id) or own or session_id[:120],
-            # 它自己起的会话名（多是人写的标题）：另放一格，不丢信息。
-            "source_title": own,
-            "updated_at": _epoch_stamp(updated),
-            "vendor": VENDOR_OPENCODE,
-        })
-
-    return out
-
-
-def _opencode_transcript(session_id: str) -> list[dict[str, Any]]:
-    db = opencode_db()
-    if not db.is_file():
-        return []
-    try:
-        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
-        try:
-            rows = con.execute(
-                "select type, data, time_created from session_message where session_id = ? "
-                "and type in ('user','assistant') order by seq desc limit ?",
-                (session_id, MAX_MESSAGES),
-            ).fetchall()
-        finally:
-            con.close()
-    except sqlite3.Error:
-        return []
-
-    messages: list[dict[str, Any]] = []
-    for message_type, data, created in reversed(rows):
-        text = _opencode_message_text(message_type, data)
-        if not text:
-            continue
-        messages.append({
-            "role": "user" if message_type == "user" else "assistant",
-            "text": _clamp_text(text),
-            "ts": _epoch_stamp(created),
-        })
-
-    return messages
+def read_sessions(spec) -> list[dict[str, Any]]:
+    """**通用会话读取器**：一个入口，三种形状（真源表里写哪一种）。"""
+    if spec.shape == "jsonl-dir":
+        return _read_jsonl_dir(spec)
+    if spec.shape == "sqlite-rows":
+        return _read_sqlite_rows(spec)
+    if spec.shape == "sqlite-kv-json":
+        return _read_sqlite_kv_json(spec)
+    return []
 
 
 # ── 发现与来源 ────────────────────────────────────────────────────────────
@@ -815,16 +752,10 @@ def all_sessions() -> list[dict[str, Any]]:
     # 以前整份 `all_sessions()` 就抛 ⇒ `session_sources()` 抛 ⇒ 左栏「外部会话」整格 500。
     # （现读的真样本：agy 那家读 `last_modified_time` 时越界，`OSError [Errno 22]`。）
     # ⇒ 现在逐家兜住：**这一家少几条或一条没有，其余五家照常出数**。
-    for reader in (
-        _qoder_sessions,
-        _codebuddy_sessions,
-        _marvis_sessions,
-        _cursor_sessions,
-        _agy_sessions,
-        _opencode_sessions,
-    ):
+    # （读取器本身在真源表里：``SESSION_SPECS`` 一家一行 ⇒ 加一家不用改这个函数。）
+    for spec in SESSION_SPECS.values():
         try:
-            sessions.extend(reader())
+            sessions.extend(read_sessions(spec))
         except Exception:  # noqa: BLE001 - 一家读不动不是整格的理由
             continue
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
@@ -836,54 +767,38 @@ def all_sessions() -> list[dict[str, Any]]:
 
 def session_sources() -> list[dict[str, Any]]:
     """设置那一屏要看的：这台上每家外部软件、会话在哪、读不读得动、能不能说。"""
-    counts = {VENDOR_QODER: 0, VENDOR_CODEBUDDY: 0, VENDOR_MARVIS: 0, VENDOR_CURSOR: 0,
-              VENDOR_AGY: 0, VENDOR_OPENCODE: 0}
+    counts: dict[str, int] = {}
     for item in all_sessions():
         counts[item["vendor"]] = counts.get(item["vendor"], 0) + 1
 
-    def source(vendor: str, root: Path, *, readable: bool, reason: str) -> dict[str, Any]:
-        return {
+    sources: list[dict[str, Any]] = []
+    for vendor, spec in SESSION_SPECS.items():
+        db = _resolved(spec.db_resolver, spec.db_rule) if spec.db_rule.candidates else None
+        root = (_resolved(spec.root_resolver, spec.root_rule) if spec.shape == "jsonl-dir"
+                else (db.parent if db is not None else Path()))
+        readable = True
+        reason = ""
+        if spec.readable_mode == "db-exists":
+            # 库在 = 读得动；库不在 ⇒ 照实说没找到，**不说成「它没有对话」**。
+            readable = bool(db is not None and db.is_file())
+            reason = "" if readable else spec.missing_reason
+        elif spec.readable_mode == "db-and-sessions":
+            # 库在但一条会话都没有 ⇒ 照实说没留下（它装了、库在，只是里面没有可读的内容）。
+            readable = bool(db is not None and db.is_file())
+            reason = "" if readable else spec.missing_reason
+            if readable and not counts.get(vendor, 0):
+                readable = False
+                reason = spec.empty_reason
+        sources.append({
             "readable": readable,
             "reason": reason,
             "root": str(root),
             "sessions": counts.get(vendor, 0),
             "sendable": vendor in SENDABLE,
             "vendor": vendor,
-        }
+        })
 
-    cursor = cursor_db()
-    agy = agy_db()
-    opencode = opencode_db()
-
-    # Cursor：库在 ≠ 读得到。**照实说「这台没留下」**——不假装读得到，
-    # 也不说成「它没有对话」（它装了、库在，只是里面没有可读的内容）。
-    cursor_readable = cursor.is_file()
-    cursor_reason = "" if cursor_readable else "没找到 Cursor 的 state.vscdb"
-    if cursor_readable and not counts.get(VENDOR_CURSOR, 0):
-        cursor_readable = False
-        cursor_reason = "Cursor 这台机器上没留下可读的对话"
-
-    # OpenCode 同理：库在但一条会话都没有 ⇒ 照实说没留下。
-    opencode_readable = opencode.is_file()
-    opencode_reason = "" if opencode_readable else "没找到 OpenCode 的会话库"
-    if opencode_readable and not counts.get(VENDOR_OPENCODE, 0):
-        opencode_readable = False
-        opencode_reason = "OpenCode 这台机器上没留下可读的对话"
-
-    return [
-        source(VENDOR_QODER, qoder_root(), readable=True, reason=""),
-        source(VENDOR_CODEBUDDY, codebuddy_root(), readable=True, reason=""),
-        source(VENDOR_MARVIS, marvis_db().parent, readable=True, reason=""),
-        source(VENDOR_CURSOR, cursor.parent,
-               readable=cursor_readable,
-               reason=cursor_reason),
-        source(VENDOR_AGY, agy.parent,
-               readable=agy.is_file(),
-               reason="" if agy.is_file() else "没找到 agy 的会话摘要库"),
-        source(VENDOR_OPENCODE, opencode.parent,
-               readable=opencode_readable,
-               reason=opencode_reason),
-    ]
+    return sources
 
 
 # ── Plobi 侧的会话账本：改名 / 置顶 / 归档 / 删除（回收站）────────────────
@@ -1295,52 +1210,116 @@ def _in_agent_scope(agent_name: str, vendor: str, session_id: str) -> bool:
     return related is not False
 
 
-def _qoder_transcript(session_id: str) -> list[dict[str, Any]]:
-    for jsonl in qoder_root().glob(f"*/{session_id}.jsonl"):
+# ── 通用正文读取器：一个入口，四种形状 ─────────────────────────────────
+#
+# 正文（transcript）跟会话列表一样：**落点与读法写在真源表里**，
+# 这里只有共用实现。四种形状：
+#
+# * ``jsonl-dialogue`` —— 一行一条，``type``／``role`` 分派（Qoder、CodeBuddy）；
+# * ``jsonl-steps`` —— 一行一个 step，类型各映射一种角色（agy）；
+# * ``sqlite-dialogue`` —— 一张消息表（Marvis、OpenCode）；
+# * ``sqlite-kv-json`` —— 与会话同一个 KV 大块（Cursor）。
+
+
+def _strip_wrapper(text: str, wrapper: str) -> str:
+    """用户输入外面裹着几段元数据（``<USER_REQUEST>``／``<USER_SETTINGS_CHANGE>``…），
+    只取人真正说的那一段；没有包裹就整段留用。"""
+    tag = wrapper.strip().strip("<>")
+    closing = f"</{tag}>"
+    if tag and f"<{tag}>" in text and closing in text:
+        start = text.index(f"<{tag}>") + len(tag) + 2
+        end = text.index(closing, start)
+        return text[start:end].strip()
+    if text.startswith("<") and ">" in text:
+        return ""
+    return text.strip()
+
+
+def _transcript_jsonl_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状一：jsonl，一行一句对话。"""
+    root = _resolved(spec.root_resolver, spec.root_rule)
+    pattern = spec.transcript_glob.format(session_id=session_id)
+    for jsonl in root.glob(pattern):
         messages: list[dict[str, Any]] = []
         for record in _records(jsonl):
-            if record.get("type") not in ("user", "assistant"):
+            if not _record_matches(record, spec):
                 continue
-            message = record.get("message")
-            text = _block_text(message.get("content") if isinstance(message, dict) else record.get("content"))
+            role = _record_role(record, spec)
+            if role not in ("user", "assistant"):
+                continue
+            text = _record_text(record, spec)
             if text:
-                messages.append({"role": record["type"], "text": text, "ts": str(record.get("timestamp") or "")})
+                messages.append({"role": role, "text": text, "ts": str(record.get(spec.ts_field) or "")})
 
         return messages
 
     return []
 
 
-def _codebuddy_transcript(session_id: str) -> list[dict[str, Any]]:
-    for jsonl in codebuddy_root().glob(f"*/{session_id}.jsonl"):
-        messages: list[dict[str, Any]] = []
-        for record in _records(jsonl):
-            if record.get("type") != "message" or record.get("role") not in ("user", "assistant"):
-                continue
-            text = _block_text(record.get("content"))
-            if text:
-                messages.append({"role": record["role"], "text": text, "ts": str(record.get("timestamp") or "")})
+def _transcript_jsonl_steps(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状二：jsonl，一行一个 step（类型 → 角色，映射写在表里）。"""
+    root = _resolved(spec.transcript_root_resolver, spec.transcript_root_rule)
+    path = root / spec.transcript_glob.format(session_id=session_id)
+    if not path.is_file():
+        return []
+    roles = dict(spec.step_roles)
+    messages: list[dict[str, Any]] = []
+    for record in _records(path):
+        role = roles.get(str(record.get("type") or ""))
+        if not role:
+            continue
+        text = str(record.get("content") or "")
+        if spec.strip_wrapper and role in spec.strip_wrapper_roles:
+            text = _strip_wrapper(text, spec.strip_wrapper)
+        if role in spec.skip_contents_roles and text in spec.skip_contents:
+            continue
+        if not text:
+            continue
+        messages.append({"role": role, "text": text, "ts": str(record.get("created_at") or "")})
 
-        return messages
-
-    return []
+    return messages
 
 
-def _marvis_transcript(session_id: str) -> list[dict[str, Any]]:
-    db = marvis_db()
+def _transcript_text(spec, role: str, raw: Any) -> str:
+    """正文那一格怎么取字（表里写：原样／JSON 里那一格／JSON 里那几块）。"""
+    mode = spec.user_text_mode if role == "user" else spec.assistant_text_mode
+    if mode == "json-field":
+        data = _json_payload(raw)
+        value = data.get(spec.user_text_field) if isinstance(data, dict) else None
+        return value.strip() if isinstance(value, str) else ""
+    if mode == "json-parts":
+        data = _json_payload(raw)
+        parts = data.get("content") if isinstance(data, dict) else None
+        if isinstance(parts, list):
+            chunks = [
+                part.get("text").strip()
+                for part in parts
+                if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+            ]
+            chunks = [chunk for chunk in chunks if chunk]
+            if chunks:
+                return "\n".join(chunks)
+        value = data.get("text") if isinstance(data, dict) else None
+        return value.strip() if isinstance(value, str) else ""
+    return str(raw or "").strip()
+
+
+def _transcript_sqlite_dialogue(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状三：一张消息表（取**最后**几条就够，别把整段历史吞进列表页）。"""
+    db = _resolved(spec.db_resolver, spec.db_rule)
     if not db.is_file():
         return []
+    sql = (f"select {spec.transcript_role_column}, {spec.transcript_content_column}, "
+           f"{spec.transcript_ts_column} from {spec.transcript_table} "
+           f"where {spec.transcript_id_column} = ? "
+           f"and {spec.transcript_role_column} in ('user','assistant')")
+    if spec.require_transcript_content:
+        sql += f" and {spec.transcript_content_column} is not null"
+    sql += f" order by {spec.transcript_order_column} desc limit ?"
     try:
         con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
         try:
-            # 取**最后** MAX_MESSAGES 条就够（有一会话九千多条，整段读会卡住左栏）；
-            # 反向取走索引（conversation_id, message_seq），不整表排序。
-            rows = con.execute(
-                "select role, content, created_at from messages where conversation_id = ? "
-                "and role in ('user','assistant') and content is not null "
-                "order by message_seq desc limit ?",
-                (session_id, MAX_MESSAGES),
-            ).fetchall()
+            rows = con.execute(sql, (session_id, MAX_MESSAGES)).fetchall()
         finally:
             con.close()
     except sqlite3.Error:
@@ -1348,50 +1327,57 @@ def _marvis_transcript(session_id: str) -> list[dict[str, Any]]:
 
     messages: list[dict[str, Any]] = []
     for role, content, created in reversed(rows):
-        text = str(content or "").strip()
+        text = _transcript_text(spec, str(role), content)
         if not text:
             continue
-        messages.append({"role": role, "text": _clamp_text(text), "ts": _local_stamp(created)})
+        stamp = (_local_stamp(created) if spec.transcript_ts_mode == "local" else _epoch_stamp(created))
+        messages.append({"role": str(role), "text": _clamp_text(text), "ts": stamp})
 
     return messages
 
 
-def _cursor_transcript(session_id: str) -> list[dict[str, Any]]:
-    db = cursor_db()
+def _transcript_kv_json(spec, session_id: str) -> list[dict[str, Any]]:
+    """正文形状四：与会话同一个 KV 大块（Cursor 的 bubbles）。"""
+    db = _resolved(spec.db_resolver, spec.db_rule)
     if not db.is_file():
         return []
     try:
         con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
         try:
             row = con.execute(
-                "select value from cursorDiskKV where key = ?", (f"composerData:{session_id}",)
+                f"select value from {spec.kv_table} where key = ?",
+                (f"{spec.kv_key_prefix}{session_id}",),
             ).fetchone()
         finally:
             con.close()
     except sqlite3.Error:
         return []
 
-    return _cursor_messages(json.loads(row[0])) if row else []
+    return _kv_messages(json.loads(row[0]), spec) if row else []
+
+
+def read_transcript_messages(spec, session_id: str) -> list[dict[str, Any]]:
+    """**通用正文读取器**：一个入口，四种形状（真源表里写哪一种）。"""
+    shape = spec.transcript_shape
+    if shape == "jsonl-dialogue":
+        return _transcript_jsonl_dialogue(spec, session_id)
+    if shape == "jsonl-steps":
+        return _transcript_jsonl_steps(spec, session_id)
+    if shape == "sqlite-dialogue":
+        return _transcript_sqlite_dialogue(spec, session_id)
+    if shape == "sqlite-kv-json":
+        return _transcript_kv_json(spec, session_id)
+    return []
 
 
 def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
     session = _locate(vendor, session_id)
     if session is None:
         return {"ok": False, "status": 404, "error": "没发现这条会话"}
-    if vendor == VENDOR_QODER:
-        messages = _qoder_transcript(session_id)
-    elif vendor == VENDOR_CODEBUDDY:
-        messages = _codebuddy_transcript(session_id)
-    elif vendor == VENDOR_MARVIS:
-        messages = _marvis_transcript(session_id)
-    elif vendor == VENDOR_CURSOR:
-        messages = _cursor_transcript(session_id)
-    elif vendor == VENDOR_AGY:
-        messages = _agy_transcript(session_id)
-    elif vendor == VENDOR_OPENCODE:
-        messages = _opencode_transcript(session_id)
-    else:
+    spec = SESSION_SPECS.get(vendor)
+    if spec is None:
         return {"ok": False, "status": 400, "error": "这家外部软件的会话还读不了"}
+    messages = read_transcript_messages(spec, session_id)
 
     return {
         "ok": True,

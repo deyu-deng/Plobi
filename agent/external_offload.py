@@ -35,127 +35,75 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-#: Modes CodeBuddy's own ``--help`` lists. Which one really answers zero prompts
-#: is a measured fact, not a reading comprehension result — see the task brief.
-PERMISSION_MODES = ("acceptEdits", "bypassPermissions", "default", "plan", "dontAsk", "auto")
+#: 厂商事实的**真源表**在 ``agent/vendor_registry.py``（加一家只改那一处）。
+#: 这里只做一件事：把那边的公共形状**原样 re-export** 出去——
+#: ``from agent import external_offload as channel`` 的调用方一个字都不用改。
+from agent.vendor_registry import (  # noqa: F401  （re-export：公共形状不许动）
+    AGENT_AGY,
+    AGENT_CLINE,
+    AGENT_CODEBUDDY,
+    AGENT_CODEX,
+    AGENT_CLAUDE,
+    AGENT_COPILOT,
+    AGENT_GEMINI,
+    AGENT_KILO,
+    AGENT_KIRO,
+    AGENT_OPENCODE,
+    AGENT_QODER,
+    AGENT_QWEN,
+    AGY_COMMAND_ENV,
+    AGY_EXTRA_ARGS_ENV,
+    AGY_SKIP_ENV,
+    CLAUDE_COMMAND_ENV,
+    CLAUDE_EXTRA_ARGS_ENV,
+    CLAUDE_SKIP_ENV,
+    CLINE_COMMAND_ENV,
+    CLINE_EXTRA_ARGS_ENV,
+    CLINE_YOLO_ENV,
+    CODEX_AUTO_ENV,
+    CODEX_COMMAND_ENV,
+    CODEX_EXTRA_ARGS_ENV,
+    COMMAND_ENV,
+    COPILOT_ALLOW_ALL_ENV,
+    COPILOT_COMMAND_ENV,
+    COPILOT_EXTRA_ARGS_ENV,
+    DEFAULT_PERMISSION_MODE,
+    DEFAULT_QODER_PERMISSION_MODE,
+    EXTRA_ARGS_ENV,
+    GEMINI_COMMAND_ENV,
+    GEMINI_EXTRA_ARGS_ENV,
+    GEMINI_YOLO_ENV,
+    KILO_AUTO_ENV,
+    KILO_COMMAND_ENV,
+    KILO_EXTRA_ARGS_ENV,
+    KIRO_COMMAND_ENV,
+    KIRO_EXTRA_ARGS_ENV,
+    KIRO_TRUST_ENV,
+    LOGIN_PROBE_ARGV,
+    OPENCODE_AUTO_ENV,
+    OPENCODE_COMMAND_ENV,
+    OPENCODE_EXTRA_ARGS_ENV,
+    PERMISSION_MODE_ENV,
+    PERMISSION_MODES,
+    PORTABLES_FALLBACK,
+    QODER_COMMAND_ENV,
+    QODER_EXTRA_ARGS_ENV,
+    QODER_PERMISSION_MODE_ENV,
+    QODER_PERMISSION_MODES,
+    QODER_SDK_ENV,
+    QWEN_COMMAND_ENV,
+    QWEN_EXTRA_ARGS_ENV,
+    QWEN_YOLO_ENV,
+    EXTERNAL_AGENTS,
+    ExternalAgentSpec,
+)
 
-#: The default is the mode that was MEASURED to actually do the work, not the one
-#: that merely sounds permissive. ``dontAsk`` was the first guess here and it is
-#: "do not ask — deny": two product-path runs at 22:2x and 19:0x both exited 0,
-#: burned ~114,700 input tokens, wrote zero artifacts, and the agent's own reply
-#: was that Write/Bash/PowerShell were denied. ``bypassPermissions`` is the mode
-#: that produced real files (``fib.py`` + ``out.txt``) with zero approvals.
-DEFAULT_PERMISSION_MODE = "bypassPermissions"
-
-PERMISSION_MODE_ENV = "PLOBI_OFFLOAD_CODEBUDDY_PERMISSION_MODE"
-COMMAND_ENV = "PLOBI_OFFLOAD_CODEBUDDY_COMMAND"
-EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CODEBUDDY_EXTRA_ARGS"
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"
-
-#: agy has no permission-mode ladder — one switch auto-approves everything, the
-#: absence of it prompts. Which way a run went is therefore a single boolean, and
-#: it still comes from config so a channel can be dialled back to restricted.
-AGY_SKIP_ENV = "PLOBI_OFFLOAD_AGY_SKIP_PERMISSIONS"
-AGY_COMMAND_ENV = "PLOBI_OFFLOAD_AGY_COMMAND"
-AGY_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_AGY_EXTRA_ARGS"
 
 #: Where an offload child finds the proxy. Deliberately NOT a literal
 #: 127.0.0.1:7890 — that is this box's dev-time Clash port and changes with the
 #: network. Unset, we fall through to the repo's ONE proxy reader.
 PROXY_ENV = "PLOBI_OFFLOAD_PROXY"
-
-AGENT_CODEBUDDY = "codebuddy"
-AGENT_AGY = "agy"
-AGENT_QODER = "qoder"
-#: 裁定 205：ACP 腿（工具在上游闭环执行、回来是文本）不进模型清单，归这一栏。
-#: 它们本来就在本机装好、也已登录过——外包这一栏才是它们该出现的地方。
-AGENT_OPENCODE = "opencode"
-AGENT_CLINE = "cline"
-AGENT_GEMINI = "gemini"
-#: 11-02 移出额度栏（quota_hub/config.yaml 不再注册这三条 spawn CLI 腿）：codex / claude
-#: 归外包这一栏。提示词形状沿用 2026-10-25 接入时对它们各自 `--help` 的实测记录
-#: （config 里的 args_template），外包通道多走的是权限旗标那一档。
-AGENT_CODEX = "codex"
-AGENT_CLAUDE = "claude"
-#: 11-08 现核：这两家在这台都装着，而且都是**自己会跑工具的完整 agent**
-#: （`kiro-cli --version` = 2.35.1、`qwen --version` = 0.26.0）⇒ 按裁定 205 的口径，
-#: 它们该出现在外包这一栏（模型选择框那一侧走不了工具闭环的才是它们）。
-#: argv 形状来自它们自己 `--help`，不抄别家的：
-#: - kiro：`kiro-cli chat [OPTIONS] [INPUT]`，`--no-interactive` 一次性、`-a/--trust-all-tools` 放工具；
-#:   它的 `--output-format` 帮助里写明**只作用于 list 命令** ⇒ 不传给 chat，回包按文本读。
-#: - qwen：提示词是**位置参数**（`-p/--prompt` 官方标了 deprecated）⇒ 末位放任务；
-#:   `-o json` 出机器读的回包，`--approval-mode yolo` 放开（`-y` 同义）。
-AGENT_KIRO = "kiro"
-AGENT_QWEN = "qwen"
-KIRO_COMMAND_ENV = "PLOBI_OFFLOAD_KIRO_COMMAND"
-KIRO_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_KIRO_EXTRA_ARGS"
-KIRO_TRUST_ENV = "PLOBI_OFFLOAD_KIRO_TRUST_ALL_TOOLS"
-QWEN_COMMAND_ENV = "PLOBI_OFFLOAD_QWEN_COMMAND"
-QWEN_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_QWEN_EXTRA_ARGS"
-QWEN_YOLO_ENV = "PLOBI_OFFLOAD_QWEN_YOLO"
-#: 11-08 18:0x 实装并现核这两家（版本号是装完当场 `--version` 读到的）：
-#: **Copilot CLI 1.0.107**（`@github/copilot`）与 **Kilo Code CLI 7.8.27**（`@kilocode/cli`，MIT）。
-#: - copilot：`copilot -p <text>` 是一次性非交互（跑完就退）；放开工具是 `--allow-all-tools`
-#:   （它自己那枚；非交互模式**不能问**，没放开的工具请求会被直接拒掉）；
-#:   `--silent` 让回包只留回答正文（默认文本里混着统计）。登录走 `copilot login`（浏览器 OAuth），
-#:   token 进**系统凭据库** ⇒ 它没有「不烧额度又能报登录态」的子命令，登录态只能靠本地证据判
-#:   （见 `tools/offload_tools.py` 的 `env:`／`cred:` 两类证据）。
-#: - kilo：`kilo run <message>` 的提示词是**变长位置参数** ⇒ 选项必须排在它前面；
-#:   放开那一枚是 `--auto`（auto-approve permissions that are not explicitly denied）——
-#:   **不是 `--yolo`**：官方仓有那个 issue，7.8.27 的 `kilo run --help` 里没有 ⇒ 以本机 help 为准。
-#:   它还有**免费模型层**（`kilo models` 能列出 `kilo/~…`）⇒ 不该被判成「没登录」。
-AGENT_COPILOT = "copilot"
-AGENT_KILO = "kilo"
-COPILOT_COMMAND_ENV = "PLOBI_OFFLOAD_COPILOT_COMMAND"
-COPILOT_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_COPILOT_EXTRA_ARGS"
-COPILOT_ALLOW_ALL_ENV = "PLOBI_OFFLOAD_COPILOT_ALLOW_ALL"
-KILO_COMMAND_ENV = "PLOBI_OFFLOAD_KILO_COMMAND"
-KILO_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_KILO_EXTRA_ARGS"
-KILO_AUTO_ENV = "PLOBI_OFFLOAD_KILO_AUTO"
-CODEX_COMMAND_ENV = "PLOBI_OFFLOAD_CODEX_COMMAND"
-CODEX_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CODEX_EXTRA_ARGS"
-#: `codex exec --help`：`--full-auto` = 自动批准所有权限请求（沙箱内写文件 OK）。
-CODEX_AUTO_ENV = "PLOBI_OFFLOAD_CODEX_FULL_AUTO"
-CLAUDE_COMMAND_ENV = "PLOBI_OFFLOAD_CLAUDE_COMMAND"
-CLAUDE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CLAUDE_EXTRA_ARGS"
-#: `claude --help`：`--dangerously-skip-permissions` = 跳过全部权限提示（官方措辞）。
-CLAUDE_SKIP_ENV = "PLOBI_OFFLOAD_CLAUDE_SKIP_PERMISSIONS"
-CLINE_COMMAND_ENV = "PLOBI_OFFLOAD_CLINE_COMMAND"
-CLINE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CLINE_EXTRA_ARGS"
-CLINE_YOLO_ENV = "PLOBI_OFFLOAD_CLINE_YOLO"
-GEMINI_COMMAND_ENV = "PLOBI_OFFLOAD_GEMINI_COMMAND"
-GEMINI_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_GEMINI_EXTRA_ARGS"
-GEMINI_YOLO_ENV = "PLOBI_OFFLOAD_GEMINI_YOLO"
-OPENCODE_COMMAND_ENV = "PLOBI_OFFLOAD_OPENCODE_COMMAND"
-OPENCODE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_OPENCODE_EXTRA_ARGS"
-#: `opencode run --help` 现核（v2.0.32）：`--auto` = 自动批准未被显式拒绝的权限。
-OPENCODE_AUTO_ENV = "PLOBI_OFFLOAD_OPENCODE_AUTO"
-#: 这台机器上它住在便携目录、不在 PATH（`D:\_POLICY` 的 Portables 约定）；
-#: 别处没有这两个文件时 is_file() 为假，等价于没装。
-PORTABLES_FALLBACK = {
-    "opencode": "D:/Portables/cli/opencode/opencode.exe",
-    # 11-08 18:0x 装的两个 npm 包：装在便携目录、不在 PATH
-    # （`npm install -g --prefix D:\Portables\cli\<name>`）。它们是 `.cmd` 垫片，
-    # Windows 起进程时 `spawn_argv` 会包成 `cmd /c`（否则 CreateProcess 认不得）。
-    "copilot": "D:/Portables/cli/copilot/copilot.cmd",
-    "kilo": "D:/Portables/cli/kilo/kilo.cmd",
-}
-
-#: Qoder CLI 那一家的结构性事实。命令名是 `qodercli`（`qoder` 那个垫片会先经过
-#: `~/.qoder/entry/qoder-dispatcher.ps1` 再回到 `qodercli`，两条都认，但表里只写一个真名）。
-QODER_COMMAND_ENV = "PLOBI_OFFLOAD_QODER_COMMAND"
-QODER_PERMISSION_MODE_ENV = "PLOBI_OFFLOAD_QODER_PERMISSION_MODE"
-QODER_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_QODER_EXTRA_ARGS"
-#: 它自己 `--help` 列的档位。**拼写与 CodeBuddy 不是一套**（`bypass_permissions` vs
-#: `bypassPermissions`），所以每家各有一份名单，谁也不许拿另一家的名单去校验。
-QODER_PERMISSION_MODES = ("default", "accept_edits", "bypass_permissions", "dont_ask", "auto")
-#: 默认给**最保守那一档**，不是最开的那一档。CodeBuddy 那边默认放开是有实测依据的
-#: （放开才真写文件）；Qoder 这边没测过，未测就选最开的档＝拿他的仓库当试验场。
-DEFAULT_QODER_PERMISSION_MODE = "default"
-#: Qoder Desktop 起子进程时带这三个变量。CLI 一看到就认定自己是被人从 Agent SDK 里起的，
-#: 直接要求 `--print --input-format stream-json --output-format stream-json` 并拒绝普通调用
-#: （`sdk_invalid_args`）。所以派给它的活必须在把这份环境交出去之前把它们洗掉。
-QODER_SDK_ENV = ("QODER_AGENT_SDK_ENTRYPOINT", "QODER_AGENT_SDK_DAEMON", "QODER_AGENT_SDK_VERSION")
 
 #: Where an offload may NOT run: the four repositories on this box.
 FORBIDDEN_CWD_NAMES = ("Plobi-Desktop", "Plobi-Harmony-App", "Code", "Docs")
@@ -217,158 +165,6 @@ def _which_prefer_executable(name: str) -> str:
         if found:
             return found
     return shutil.which(name) or ""
-
-
-@dataclasses.dataclass(frozen=True)
-class ExternalAgentSpec:
-    """一家外部 AI 软件「怎么被起来」的结构性事实。
-
-    为什么是一张表而不是 `if agent == …` 的梯子：第三家进来时，梯子要在
-    :func:`resolve_command` / :func:`permission_flags` / :func:`extra_args` 三个函数里
-    各加一条分支，漏一处就是「这家悄悄用了那家的旗标」——CodeBuddy 的
-    `bypassPermissions` 拼到 Qoder 上根本不是一个合法档位，正是这一类。
-    差异收在一格里，公共层只认表。
-    """
-
-    name: str
-    binary_name: str
-    command_env: str
-    extra_args_env: str
-    permission_modes: tuple[str, ...] = ()
-    default_permission_mode: str = ""
-    permission_mode_env: str = ""
-    #: `eq` → `--permission-mode=x`（CodeBuddy）；`sep` → `--permission-mode x`（Qoder）。
-    permission_shape: str = "eq"
-    permission_prefix: tuple[str, ...] = ()
-    #: 没有阶梯的那一家（agy）：只有一个开关，配置为真 ⇒ 给这一串旗标。
-    skip_flag: tuple[str, ...] = ()
-    skip_permissions_env: str = ""
-    #: 这一家**官方那条登录命令**（空 = 没有能一键拉起的登录流程）。
-    #: 只登记那种「跑起来自己开浏览器、人点一下同意就行」的；**需要终端交互的不登记**
-    #: （kilo 的 `auth login` 要人挑 provider：后台起一个没有 TTY 的交互进程只会卡死）。
-    login_argv: tuple[str, ...] = ()
-    #: 把环境交给子进程之前要洗掉的变量（Qoder 见 :data:`QODER_SDK_ENV`）。
-    scrub_env: tuple[str, ...] = ()
-    #: 「exit 0 但没落盘 ⇒ 它其实没干活」这条判据**适用于哪几家**。
-    #: CodeBuddy 与 agy 是实测出来的（`dontAsk` 那两跑：exit 0、烧 114k token、零产出，
-    #: 因为它压根不能写）；Qoder 还没测过，而 10-22 现读它**读了文件并答对了内容**、
-    #: 只是没写文件——对它套这条判据会把一次成功的只读活判成失败。未测 ⇒ 不启用。
-    artifact_required: bool = True
-    #: argv 的排法。`{task}` 是提示词，其余按序展开，空的自动丢掉。
-    #: CodeBuddy / agy 是**实测跑通**的形状，一个字不改；Qoder 的提示词是变长位置参数
-    #: （`[query...]`），写在它后面的选项会被吞进提示词本身——10-22 实测：
-    #: `--output-format json` 没生效（回包是散文）、`--permission-mode` 也没生效
-    #: （它想写文件时被权限层当场拒掉）。所以这一家必须把选项排在提示词**之前**。
-    argv_template: tuple[str, ...] = ("-p", "{task}", "--output-format", "json", "{flags}", "{extra}")
-
-
-EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
-    AGENT_CODEBUDDY: ExternalAgentSpec(
-        AGENT_CODEBUDDY, "codebuddy", COMMAND_ENV, EXTRA_ARGS_ENV,
-        permission_modes=PERMISSION_MODES, default_permission_mode=DEFAULT_PERMISSION_MODE,
-        permission_mode_env=PERMISSION_MODE_ENV, permission_prefix=("-y",),
-    ),
-    AGENT_AGY: ExternalAgentSpec(
-        AGENT_AGY, "agy", AGY_COMMAND_ENV, AGY_EXTRA_ARGS_ENV,
-        skip_flag=("--dangerously-skip-permissions",), skip_permissions_env=AGY_SKIP_ENV,
-    ),
-    AGENT_CLINE: ExternalAgentSpec(
-        AGENT_CLINE, "cline", CLINE_COMMAND_ENV, CLINE_EXTRA_ARGS_ENV,
-        # 现核 v：`cline [options] [command] [prompt]`，提示词是位置参数，`--json` 出机器读的流，
-        # `-y/--yolo` 自动批准"有限的"工具集（厂商自己的措辞，别读成全放开）。
-        skip_flag=("-y",), skip_permissions_env=CLINE_YOLO_ENV,
-        artifact_required=False,
-        argv_template=("--json", "{flags}", "{extra}", "{task}"),
-    ),
-    AGENT_GEMINI: ExternalAgentSpec(
-        AGENT_GEMINI, "gemini", GEMINI_COMMAND_ENV, GEMINI_EXTRA_ARGS_ENV,
-        # 现核：`-p/--prompt` 才是非交互；不加它就是交互 CLI（会把子进程挂住）。
-        skip_flag=("-y",), skip_permissions_env=GEMINI_YOLO_ENV,
-        artifact_required=False,
-        # `--skip-trust`（现核 11-08 21:5x：它自己的 `--help` 写明
-        # 「Trust the current workspace for this session」）——**只有 gemini 有这枚旗标**：
-        # 不加它，它在非受信目录里会回
-        # `Approval mode overridden to "default" because the current folder is not trusted`，
-        # 于是我们写的放开档位被它自己按回去（11-08 真跑实测）。
-        # ⚠ `-p` 后面**只能跟提示词本身**：gemini 回 `Cannot use both a positional prompt
-        # and the --prompt (-p) flag together` ⇒ 提示词不许再当位置参数补一遍。
-        argv_template=("-p", "{task}", "--skip-trust", "{flags}", "{extra}"),
-    ),
-    AGENT_OPENCODE: ExternalAgentSpec(
-        AGENT_OPENCODE, "opencode", OPENCODE_COMMAND_ENV, OPENCODE_EXTRA_ARGS_ENV,
-        # `run [flags] [<message...>]`：消息是变长位置参数，旗标必须排在它前面。
-        skip_flag=("--auto",), skip_permissions_env=OPENCODE_AUTO_ENV,
-        # 没测过它是否"exit 0 但没落盘"，所以不套那条判据（与 Qoder 同理）。
-        artifact_required=False,
-        argv_template=("run", "--format", "json", "{flags}", "{extra}", "{task}"),
-    ),
-    AGENT_CODEX: ExternalAgentSpec(
-        AGENT_CODEX, "codex", CODEX_COMMAND_ENV, CODEX_EXTRA_ARGS_ENV,
-        # `exec [flags] [prompt]`：提示词是位置参数；`--json` 出机器读的流，
-        # `--skip-git-repo-check` 让它在非 git 的私有 cwd 也能跑。外包要写产物，
-        # 所以不沿用网关那格的 `--sandbox read-only`。
-        skip_flag=("--full-auto",), skip_permissions_env=CODEX_AUTO_ENV,
-        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
-        artifact_required=False,
-        argv_template=("exec", "--json", "--skip-git-repo-check", "{flags}", "{extra}", "{task}"),
-    ),
-    AGENT_CLAUDE: ExternalAgentSpec(
-        AGENT_CLAUDE, "claude", CLAUDE_COMMAND_ENV, CLAUDE_EXTRA_ARGS_ENV,
-        # `claude -p "prompt" --output-format json`：与默认 argv_template 一致，不另写。
-        skip_flag=("--dangerously-skip-permissions",), skip_permissions_env=CLAUDE_SKIP_ENV,
-        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
-        artifact_required=False,
-    ),
-    AGENT_QODER: ExternalAgentSpec(
-        AGENT_QODER, "qodercli", QODER_COMMAND_ENV, QODER_EXTRA_ARGS_ENV,
-        permission_modes=QODER_PERMISSION_MODES,
-        default_permission_mode=DEFAULT_QODER_PERMISSION_MODE,
-        permission_mode_env=QODER_PERMISSION_MODE_ENV, permission_shape="sep",
-        scrub_env=QODER_SDK_ENV, artifact_required=False,
-        argv_template=("{flags}", "--output-format", "json", "{extra}", "-p", "{task}"),
-    ),
-    AGENT_KIRO: ExternalAgentSpec(
-        AGENT_KIRO, "kiro-cli", KIRO_COMMAND_ENV, KIRO_EXTRA_ARGS_ENV,
-        # `kiro-cli chat [OPTIONS] [INPUT]`：`--no-interactive` 一次性（不进 TUI），
-        # `-a/--trust-all-tools` 是它自己那一枚放开开关（不是 cline 的 `-y`，也不是 opencode 的 `--auto`）。
-        # 它的 `--output-format` 帮助里写明**只作用于 list 命令** ⇒ 不传给 chat：回包按文本读，
-        # 金额保持"未知"（None）而不是编一个 0。
-        skip_flag=("--trust-all-tools",), skip_permissions_env=KIRO_TRUST_ENV,
-        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
-        artifact_required=False,
-        argv_template=("chat", "--no-interactive", "{flags}", "{extra}", "{task}"),
-    ),
-    AGENT_QWEN: ExternalAgentSpec(
-        AGENT_QWEN, "qwen", QWEN_COMMAND_ENV, QWEN_EXTRA_ARGS_ENV,
-        # `qwen [OPTIONS] [query...]`：提示词是**位置参数**（`-p` 官方标了 deprecated）⇒ 末位放任务；
-        # `-o json` 出机器读的回包；`--approval-mode yolo` 放开（`-y` 同义开关）。
-        skip_flag=("--approval-mode", "yolo"), skip_permissions_env=QWEN_YOLO_ENV,
-        artifact_required=False,
-        argv_template=("-o", "json", "{flags}", "{extra}", "{task}"),
-    ),
-    AGENT_COPILOT: ExternalAgentSpec(
-        AGENT_COPILOT, "copilot", COPILOT_COMMAND_ENV, COPILOT_EXTRA_ARGS_ENV,
-        # `copilot -p <text>`：`-p` 的值必须**紧跟其后** ⇒ `-p` 只能排在末位。
-        # `--allow-all-tools` 是它自己那枚放开开关（`--allow-all`／`--yolo` 连路径与 URL 一起开，更宽）。
-        # `--silent` 只输出回答正文——默认文本里混着统计，回包要干净。
-        skip_flag=("--allow-all-tools",), skip_permissions_env=COPILOT_ALLOW_ALL_ENV,
-        # `copilot login` 是浏览器 OAuth（`--web-flow`；远程环境才用 `--device-code`）⇒
-        # 它是**这一族里唯一能一键拉起登录**的一家（授权那一下仍然要主人自己做）。
-        login_argv=("login", "--web-flow"),
-        # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
-        artifact_required=False,
-        argv_template=("{flags}", "--silent", "{extra}", "-p", "{task}"),
-    ),
-    AGENT_KILO: ExternalAgentSpec(
-        AGENT_KILO, "kilo", KILO_COMMAND_ENV, KILO_EXTRA_ARGS_ENV,
-        # `kilo run [message..]`：提示词是**变长位置参数** ⇒ 选项全排它前面
-        # （排在后面会被吞进提示词本身，这一族已经吃过一次亏）。
-        # 放开那一枚是 `--auto`；**不是 `--yolo`**（7.8.27 的 help 里没有那枚）。
-        skip_flag=("--auto",), skip_permissions_env=KILO_AUTO_ENV,
-        artifact_required=False,
-        argv_template=("run", "{flags}", "{extra}", "{task}"),
-    ),
-}
 
 
 def agent_spec(agent: str) -> Optional[ExternalAgentSpec]:
@@ -571,20 +367,6 @@ def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
         return portable
     return ""
 
-
-#: 各厂商自己的「我登没登」探针。**列模型 / doctor 都比"看凭据目录非空"可靠**——
-#: 2026-10-22 实测：存在性那一套对 `codebuddy`/`qoder` 都报 True，而同一时刻 Qoder CLI
-#: 自己回的是「Not logged in · Please run /login」。三条都不烧 token。
-LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = {
-    AGENT_QODER: ("--list-models",),
-    AGENT_CODEBUDDY: ("doctor",),
-    AGENT_AGY: ("models",),
-    # 11-08：kilo 的探针是 `auth list`——**不是** `models`（列模型不需要登录，
-    # 拿它当探针会把「没登录」判成「能用」：真跑 `kilo run --auto` 报的是
-    # `PAID_MODEL_AUTH_REQUIRED`／「You need to sign in to use this model.」，
-    # 连 `kilo/~…` 那一层也要账号）。
-    AGENT_KILO: ("auth", "list"),
-}
 
 LOGIN_PROBE_TIMEOUT_S = 45.0
 

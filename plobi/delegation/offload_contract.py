@@ -66,7 +66,7 @@ from typing import Any, Optional
 #: 见 :func:`_looks_like_auth_refusal`）。
 ACP_AUTH_ERROR_CODE = -32000
 
-#: 认证类措辞。与额度线那一支（``quota_hub/quota_hub/acp.py``）同一口径。
+#: 认证类措辞。与额度线那一支（``bezel/bezel/acp.py``）同一口径。
 _AUTH_MARKERS = ("authentication required", "call authenticate", "not authenticated", "not logged in")
 
 #: 一次握手给多少秒。实测 qwen 3.0s、cline 2.4s、kiro 8.4s、copilot 10.5s、qoder 12s 没回话。
@@ -76,137 +76,15 @@ DEFAULT_TIMEOUT_SECONDS = 12.0
 #: 但也不能短到每次开屏都重跑一遍握手（每家 2–12s）。
 CACHE_TTL_SECONDS = 1800.0
 
-#: 这一家还没有实测过的回跳旗标时，写的就是这一句（**不许拿看起来像的名字顶上去**）。
-NO_RESUME_FLAG = "这一家还没有实测过的回跳旗标"
-
-
-@dataclasses.dataclass(frozen=True)
-class VendorContract:
-    """一家外部软件在**契约表**里的那一行。
-
-    只收「散在别处、且别处会漂」的那几样事实：ACP 怎么起、回跳旗标、会话落在哪。
-    通道怎么起、权限档、登录命令那些已经在 ``agent/external_offload.py`` 那张表里，
-    本表按 id 与它对齐，**不重复**。
-    """
-
-    id: str
-    #: 官方 ACP 注册表（``agentclientprotocol/registry``）里的 id。空 = 官方注册表里没有这一家。
-    acp_registry_id: str = ""
-    #: 起 ACP 模式的旗标（跟本机那个入口命令配着用）。空 = 没法用 ACP 问它。
-    acp_args: tuple[str, ...] = ()
-    #: 这一家 ACP 那一支**现核到哪一步**（给日志与 tooltip，不上屏）。
-    acp_note: str = ""
-    #: 回跳到它自己那条会话的旗标（``{session_id}`` 是唯一允许被替换的槽位）。
-    resume_argv: tuple[str, ...] = ()
-    #: 没实测过的那家，这里写明「这一家还没有实测过的回跳旗标」。
-    resume_note: str = ""
-    #: 它的会话在本机哪儿（``plobi/delegation/external_sessions.py`` 里那个读取器的键）。
-    session_source: str = ""
-
-
-OFFLOAD_CONTRACT: dict[str, VendorContract] = {
-    "codebuddy": VendorContract(
-        "codebuddy",
-        acp_registry_id="codebuddy-code",
-        acp_args=("--acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
-        resume_argv=("--resume", "{session_id}", "--open"),
-        resume_note="",
-        session_source="codebuddy",
-    ),
-    "agy": VendorContract(
-        "agy",
-        acp_registry_id="antigravity-acp",
-        acp_args=("acp",),
-        acp_note="11-14 现核：没回话 ⇒ 探不到（官方注册表里它是二进制形态，本机这一支的旗标没试出来）",
-        resume_argv=("--conversation", "{session_id}"),
-        resume_note="",
-        session_source="agy",
-    ),
-    "cline": VendorContract(
-        "cline",
-        acp_registry_id="cline",
-        acp_args=("--acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "gemini": VendorContract(
-        "gemini",
-        acp_registry_id="gemini",
-        acp_args=("--acp",),
-        acp_note="11-14 现核：拒了，原话是「Gemini API key is missing or not configured.」"
-                 "——不是认证类措辞 ⇒ 探不到，不判「没登录」",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "opencode": VendorContract(
-        "opencode",
-        acp_registry_id="opencode",
-        acp_args=("acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
-        session_source="opencode",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "codex": VendorContract(
-        "codex",
-        acp_registry_id="",
-        acp_args=(),
-        acp_note="官方 ACP 注册表里没有这一家 ⇒ 没法用 ACP 问它，登录态只能靠别的证据",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "claude": VendorContract(
-        "claude",
-        acp_registry_id="",
-        acp_args=(),
-        acp_note="官方 ACP 注册表里没有这一家 ⇒ 没法用 ACP 问它，登录态只能靠别的证据",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "qoder": VendorContract(
-        "qoder",
-        acp_registry_id="qoder",
-        acp_args=("--acp",),
-        acp_note="11-14 现核：12s 没回话（它起得慢）⇒ 探不到",
-        resume_argv=("--resume", "{session_id}"),
-        resume_note="",
-        session_source="qoder",
-    ),
-    "kiro": VendorContract(
-        "kiro",
-        acp_registry_id="kiro",
-        acp_args=("acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "qwen": VendorContract(
-        "qwen",
-        acp_registry_id="qwen-code",
-        acp_args=("--acp",),
-        acp_note="11-14 现核：拒了，原话是「Authentication required: Use Qwen Code CLI to authenticate first.」"
-                 "⇒ 它自己说没登录",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "copilot": VendorContract(
-        "copilot",
-        acp_registry_id="github-copilot-cli",
-        acp_args=("--acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-    "kilo": VendorContract(
-        "kilo",
-        acp_registry_id="kilo",
-        acp_args=("acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
-        session_source="",
-        resume_note=NO_RESUME_FLAG,
-    ),
-}
+#: 契约表本体在**真源表**里（``agent/vendor_registry.py``：一行一家，四张出口表都由它派生）。
+#: 这里只 re-export —— 调用方（``plobi/console/router.py``、``tools/offload_tools.py``…）
+#: 认的还是 ``plobi.delegation.offload_contract.OFFLOAD_CONTRACT``，公共形状一个字不改。
+from agent.vendor_registry import (  # noqa: E402  （re-export：公共形状不许动）
+    NO_RESUME_FLAG,
+    OFFLOAD_CONTRACT,
+    VendorContract,
+    resume_argv_map as _resume_argv_map,
+)
 
 
 def contract_for(vendor: str) -> Optional[VendorContract]:
@@ -218,12 +96,9 @@ def resume_argv_map() -> dict[str, tuple[str, ...]]:
     """回跳旗标那张表：**只有实测过的那几家**才有。
 
     没实测过的旗标不许照着别家的形状编一个——那会让主人点一下跳到别的地方去。
+    真源在 ``agent/vendor_registry.py``（一行一家），这里只是它的一张派生表。
     """
-    return {
-        vendor: spec.resume_argv
-        for vendor, spec in OFFLOAD_CONTRACT.items()
-        if spec.resume_argv
-    }
+    return _resume_argv_map()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -344,7 +219,7 @@ def _looks_like_auth_refusal(err: Any) -> bool:
     ——那是「这条 ACP 腿要 API key」，**不是**「那家软件没登录」（它自己的 OAuth 登录
     可能好着）。把它说成「没登录」就是在说假话。
 
-    与额度线那一支（``quota_hub/quota_hub/acp.py``）同一口径。
+    与额度线那一支（``bezel/bezel/acp.py``）同一口径。
     """
     if not isinstance(err, dict):
         return False
