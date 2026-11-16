@@ -47,6 +47,14 @@ MUTATING_TOOL_NAMES = frozenset(
         # 日程那枚写手与 `pool_mark` 同一类：一条一件、逐条留痕，循环守卫要认得出它在改东西
         # （`agenda_read` 反过来不进这张名单——它什么也不改）。
         "agenda_write",
+        # 信源那一族（WP-SOURCE-TOOLS）：四把**改动**工具——翻开关、改频率、落配置、
+        # 触发一轮采集。前三把改的是**这一条信源自己的配置**（与设置屏同一份真源），
+        # 第四把把采到的东西写进池。循环守卫要认得出它们在改东西。
+        # （`source_list` / `source_read` 反过来不进这张名单——它们什么也不改。）
+        "source_enable",
+        "source_set_cadence",
+        "source_configure",
+        "source_collect",
         "skill_manage",
         # 浏览器那一族 16b 起收成一把 `browser_exec`（写 Python 驱动真浏览器）：
         # 它什么都能改（点、输入、导航），循环守卫必须认得出它在改东西。

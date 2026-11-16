@@ -57,6 +57,12 @@ _PLOBI_CORE_TOOLS = [
     # 是每个角色都需要的（WP-POOL-READ-ANY / 用户 10-19「给所有 Agent 配备一个
     # 通用地读取信息的工具」），按 role 过滤就是把它重新变成特权入口。
     "pool_read", "pool_mark",
+    # 信源那一族（WP-SOURCE-TOOLS）：看见每条信源现在的读数、翻它的开关、改它的频率、
+    # 落它的配置，**以及自己触发一轮采集**（用户 11-16 19:3x：「我希望给Agent一个自己
+    # 触发某个信源采集的原子工具」）。与池那两枚同一 rung：读自己家的信源、动手让它采一次，
+    # 不是哪个角色的特权——按 role 过滤就把这件事重新变成特权入口。
+    "source_list", "source_read", "source_enable", "source_set_cadence",
+    "source_configure", "source_collect",
     # 日程的读手与写手（WP-AGENDA-ATOMS / 裁定 185）。同一 rung、同一理由：
     # 「看得见自己家的日程、也改得动」不是秘书的特权，是每个角色都需要的手——课程 Agent
     # 要读课表才能问作业，项目 Agent 要知道今天哪几块是它的。而**写**这一枚刻意给到所有角色：
@@ -232,6 +238,15 @@ TOOLSETS = {
     "pool": {
         "description": "Structured information collected by the source collectors (read + mark)",
         "tools": ["pool_read", "pool_mark"],
+        "includes": []
+    },
+
+    "sources": {
+        "description": ("The source face: see what each collector is doing, switch one on/off, set how "
+                        "often to pull it, write its config, or trigger one collection round now "
+                        "(read + write)"),
+        "tools": ["source_list", "source_read", "source_enable", "source_set_cadence",
+                  "source_configure", "source_collect"],
         "includes": []
     },
 
