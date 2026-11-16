@@ -941,15 +941,23 @@ def test_profile_name_derives_from_the_agent_name():
     同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
     """
     assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
-def test_profile_name_derives_from_the_agent_name():
-    """2026-11-15：这里原来还挂着 ``agenda_template_entry()`` 的「模板不许硬写
-    provider/model」测试——模板本身随日程秘书单例一起退场（产品不预设任何 L2）。
-    同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
-    """
-    assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
     # 11-06：``default`` 是 L1（名册 name ``secretary``）专属的 slug，别人撞上它一律
     # 派生空串＝没有可路由身份（``derive_runtime_slug`` 里那道保留名闸）。
     assert AgentEntry(name="Default", role="principal").profile_name == ""
     assert AgentEntry(name="secretary", role="conductor").profile_name == "default"
     # 空值不许炸（未设 profile 的老行）
     assert AgentEntry(name="", role="principal").profile_name == ""
+
+def test_reserved_slug_names_are_one_list_written_twice_not_two_lists():
+    """两份保留名清单是**同一件事的两次内联**，故意的：``plobi/agents/registry.py``
+    在 ``plobi`` 层，import ``plobi_cli`` 就是分层倒错，所以它抄一份；建造期那道门
+    在 ``plobi_cli/agent_identity.py``。两份一漂移，就是「建的时候拦了、路由时没拦」
+    或者反过来——2026-11-16 复查的那批保留名 400（errors.log 累计 648 次）正是这类
+    判据错位的现场：门被架在了读侧，而不是清单不一致。
+
+    不合并，但必须逐字相等；这条测试就是那个「逐字」。
+    """
+    from plobi.agents.registry import _RUNTIME_SLUG_RESERVED
+    from plobi_cli.agent_identity import _RESERVED_NAMES
+
+    assert _RUNTIME_SLUG_RESERVED == _RESERVED_NAMES

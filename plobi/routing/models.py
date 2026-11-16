@@ -243,10 +243,11 @@ class ModelRouter:
         """Contract checks. Empty list means the routing obeys ADR-0011.
 
         ``known_models`` is the upstream catalogue when the caller already has
-        one in hand (settings page, doctor). Passing it turns "the id looks
-        plausible" into "the id was actually listed", which is the check that
-        was missing when ``workbuddy/deepseek-chat`` sat in three routes for two
-        months: nothing here ever asked upstream whether the model existed.
+        one in hand (the settings page on the path where it just fetched the
+        catalogue). Passing it turns "the id looks plausible" into "the id was
+        actually listed", which is the check that was missing when
+        ``workbuddy/deepseek-chat`` sat in three routes for two months: nothing
+        here ever asked upstream whether the model existed.
         Left as ``None`` the check is skipped — pure routing code must not go
         near the network just to answer a validity question.
         """
