@@ -11540,9 +11540,10 @@ ipcMain.handle('plobi:requestMicrophoneAccess', async () => {
 
 // Re-route remote-profile session requests to the owning remote backend. Returns
 // `undefined` when not interceptable (caller takes the normal local path), else
-// the response. Reads tag the profile as ?profile=<name>; mutations carry it in
-// request.profile. Either way, a remote profile's session lives only on its
-// remote host, so the request must go there (where it serves its own state.db).
+// the response. Reads tag the owner agent as ?agent=<name>（老调用方仍带
+// ?profile=，两者同值）; mutations carry it in request.profile. Either way, a
+// remote agent's session lives only on its remote host, so the request must go
+// there (where it serves its own state.db).
 //   GET    /api/agents/sessions          → splice each remote agent's rows in
 //   GET    /api/sessions/{id}[/messages] → read from remote
 //   DELETE /api/sessions/{id}            → delete on remote
@@ -11585,14 +11586,17 @@ async function interceptSessionRequestForRemote(request) {
     return mergeRemoteProfileSessions(searchParams, remoteProfiles)
   }
 
-  // Per-session read/mutation. Owner is in ?profile= (reads) or request.profile
-  // (mutations). Two remote shapes:
+  // Per-session read/mutation. Owner is in ?agent= (reads；老调用方带
+  // ?profile=，0.3.1 后端只认旧名) or request.profile (mutations). Two remote
+  // shapes:
   //  - per-profile override: route to that profile's own remote, sans profile
   //    param (it serves its own state.db natively).
-  //  - global remote mode: ONE backend serves every profile via ?profile=, so
-  //    route there and KEEP the profile param so it opens the right state.db.
+  //  - global remote mode: ONE backend serves every agent via ?agent=/`?profile=`，
+  //    so route there and KEEP the identity param so it opens the right state.db.
   if (/^\/api\/sessions\/[^/]+(\/messages)?$/.test(pathname)) {
-    const profile = (searchParams.get('profile') || request.profile || '').trim()
+    // 读取序与后端 request_agent() 同一份：?agent= → ?profile= → request.profile。
+    // 双写窗口里两个 query 名同值，先读新名不改变任何既有行为，只是不再让旧名占首位。
+    const profile = (searchParams.get('agent') || searchParams.get('profile') || request.profile || '').trim()
 
     if (!profile) {
       return undefined
@@ -11613,9 +11617,12 @@ async function interceptSessionRequestForRemote(request) {
     }
 
     if (globalRemoteActive()) {
-      // Single global backend: keep ?profile= so it opens the right state.db.
+      // Single global backend: keep the identity on the query so it opens the
+      // right state.db —— `?agent=` 主名、`?profile=` 同值双写（装着的 0.3.1
+      // 后端只认旧名，升级窗口两边都不失联）。
       const sep = pathname.includes('?') ? '&' : '?'
-      const path = `${pathname}${sep}profile=${encodeURIComponent(profile)}`
+      const owner = new URLSearchParams({ agent: profile, profile })
+      const path = `${pathname}${sep}${owner.toString()}`
 
       if (method === 'GET') {
         return fetchJsonForProfile(null, path)
@@ -11634,11 +11641,12 @@ async function interceptSessionRequestForRemote(request) {
 
 const rowsOf = data => (Array.isArray(data?.sessions) ? data.sessions : [])
 
-// A remote profile's session list, read from its remote host and tagged with the
-// desktop-facing profile name (the remote's /api/sessions doesn't know it).
+// A remote agent's session list, read from its remote host and tagged with the
+// desktop-facing agent name (the remote's /api/sessions doesn't know it).
 async function remoteSessionList(profile, searchParams) {
   const qs = new URLSearchParams(searchParams)
   qs.delete('profile') // remote serves its own db; no cross-profile read there
+  qs.delete('agent') // 同一个理由：新名一并摘掉，否则远端会当成「只看这个 agent」
   const data = await fetchJsonForProfile(profile, `/api/sessions?${qs}`)
 
   for (const s of rowsOf(data)) {
@@ -11736,7 +11744,7 @@ ipcMain.handle('plobi:api', async (_event, request) => {
   // ensureBackend(null) 恒回主后端：删除分身家后的 tornDownProfile 特判随之
   // 失去意义（不再需要为删除让路去选进程），但 prepareProfileDeleteRequest
   // 的其余副作用保留。身份经 X-Plobi-Agent 请求头带下去（后端
-  // request_profile() 读它；query ?profile= 那条 global-remote 路由仍由
+  // request_agent() 读它；query ?agent= 那条 global-remote 路由仍由
   // pathWithGlobalRemoteProfile 追加，两条同语义、header 优先）。
   await prepareProfileDeleteRequest(request)
 
@@ -11747,7 +11755,7 @@ ipcMain.handle('plobi:api', async (_event, request) => {
   // HTTP 头的值只许 latin-1，而名册身份可以是中文课程名（这台 25 条里 11 条是）。把那样的名字
   // 塞进 `X-Plobi-Agent`，Node 在请求发出前就抛 `Invalid character in header content`——坏的
   // 不是"这一格没身份"，是整座 `plobi:api` 桥（11-05 底栏那一屏就是这样空成 Direct 的）。
-  // 后端 `request_profile()` 两条同语义（header → `?profile=`），非 ASCII 就退到带得住的那条。
+  // 后端 `request_agent()` 两条同语义（header → `?agent=` → `?profile=`），非 ASCII 就退到带得住的那条。
   const headerSafeProfile = /^[\x20-\x7e]*$/.test(String(profile ?? '').trim())
 
   const requestPath = pathWithGlobalRemoteProfile(request.path, profile, {
