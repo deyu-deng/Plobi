@@ -32,7 +32,7 @@ const EVERY_TODAY = [
 ]
 
 /** 点开就是一整屏的那几枚（其余在栏里只开一小张面板）。 */
-const OVERLAY_IDS = ['system:settings', 'agents', 'cron', 'agenda', 'mind-pending']
+const OVERLAY_IDS = ['system:settings', 'agents', 'cron', 'agenda']
 
 describe('左栏底部那一组', () => {
   it('顺序照单子：设置打头，整屏的在前、面板的在后', () => {
@@ -41,7 +41,6 @@ describe('左栏底部那一组', () => {
       'agents',
       'cron',
       'agenda',
-      'mind-pending',
       'gateway-health',
       'egress'
     ])
@@ -60,7 +59,10 @@ describe('左栏底部那一组', () => {
       'running-timer',
       'session-timer',
       'version-backend',
-      'version-client'
+      'version-client',
+      // 写脑待批那一枚 11-16 搬进对话卡抬头了（`WP-MIND-CONSENT-EVENTS`）：
+      // 它要是自己又挤回底部这一组，入口就有两处、计数对不上。
+      'mind-pending'
     ]) {
       expect(ids, `${dropped} 又回到底部这一组了`).not.toContain(dropped)
     }
@@ -74,7 +76,6 @@ describe('左栏底部那一组', () => {
       'agents',
       'cron',
       'agenda',
-      'mind-pending',
       'gateway-health'
     ])
 

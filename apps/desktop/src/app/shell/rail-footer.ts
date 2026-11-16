@@ -29,7 +29,9 @@ export const RAIL_FOOTER_IDS: readonly string[] = [
   'agents',
   'cron',
   'agenda',
-  'mind-pending',
+  // 写脑待批那一枚**不在这一列**（`WP-MIND-CONSENT-EVENTS`）：用户 11-16 21:4x 拍定
+  // 「放在左侧栏底部的一个图标里面…我打算删掉这个图标」⇒ 入口搬进对话卡抬头
+  // （`app/shell/mind-pending-button.tsx`），与票面待批并排。要点头的东西在说话那张卡上。
   // 点开是一小张面板的
   'gateway-health',
   'egress'

@@ -94,6 +94,6 @@ describe('对话卡右上角那枚档案图标', () => {
       peekOpen: false
     })
 
-    expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'edge'])
+    expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
   })
 })

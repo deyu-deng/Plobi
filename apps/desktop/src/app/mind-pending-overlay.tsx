@@ -128,8 +128,11 @@ export function MindPendingOverlay() {
                     ) : null}
                   </div>
                   {/* 三枚矢量图标，对齐票面那组：接纳 / 驳回 / 评论。
-                      四语键被在派格认领，本刀不碰 i18n；label 复用现有键、图标自身表意。 */}
-                  <div className="flex shrink-0 gap-1">
+                      四语键被在派格认领，本刀不碰 i18n；label 复用现有键、图标自身表意。
+                      用户 11-16 21:4x 拍定（规格 §8 第 1 条）：三平行，但**点评论弹一个小输入框**
+                      ——不是占掉一整行。「评论＋顺手点头」是最自然的动作，所以评论写下的
+                      那一刻就落盘（`pending_feedback`），不靠这个框存在。 */}
+                  <div className="relative flex shrink-0 gap-1">
                     <Button
                       aria-label={m.approve}
                       disabled={Boolean(busy) || item.expired}
@@ -163,6 +166,44 @@ export function MindPendingOverlay() {
                     >
                       <MessageSquareText aria-hidden className="size-4" />
                     </Button>
+                    {commentFor === item.id ? (
+                      <div
+                        className="border-border bg-popover absolute top-full right-0 z-20 mt-1 w-64 rounded-md border p-2 shadow-md"
+                        data-testid="mind-pending-comment-box"
+                      >
+                        <input
+                          autoFocus
+                          className="border-border bg-background w-full rounded-md border px-2 py-1 text-sm"
+                          onChange={e => setCommentText(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && commentText.trim() && !busy) {
+                              void comment(item.id)
+                            }
+                          }}
+                          placeholder={t.workbench.office.notePlaceholder}
+                          value={commentText}
+                        />
+                        <div className="mt-1 flex items-center justify-end gap-1">
+                          <Button
+                            onClick={() => {
+                              setCommentFor(null)
+                              setCommentText('')
+                            }}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            {t.common.cancel}
+                          </Button>
+                          <Button
+                            disabled={Boolean(busy) || !commentText.trim()}
+                            onClick={() => void comment(item.id)}
+                            size="sm"
+                          >
+                            {t.common.save}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 {/* 要点头就得看见要写什么：默认折叠，点开看具体正文。 */}
@@ -181,25 +222,6 @@ export function MindPendingOverlay() {
                 ) : item.summary ? (
                   <div className="text-muted-foreground mt-1 truncate text-xs" title={item.summary}>
                     {item.summary}
-                  </div>
-                ) : null}
-                {commentFor === item.id ? (
-                  <div className="mt-2 flex gap-2">
-                    <input
-                      className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1 text-sm"
-                      onChange={e => setCommentText(e.target.value)}
-                      placeholder={t.workbench.office.notePlaceholder}
-                      value={commentText}
-                    />
-                    <Button
-                      aria-label={t.common.save}
-                      disabled={Boolean(busy) || !commentText.trim()}
-                      onClick={() => void comment(item.id)}
-                      size="sm"
-                      title={t.common.save}
-                    >
-                      <Check aria-hidden className="size-4" />
-                    </Button>
                   </div>
                 ) : null}
               </li>

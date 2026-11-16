@@ -19,6 +19,7 @@ import { cardDragProps } from './card-drag'
 import { CardEdgeControlButtons, type CardEdgeControls } from './card-edge-controls'
 import { PendingTicketsButton } from './pending-tickets'
 import { TopBarIconButton } from './top-bar-icon-button'
+import { MindPendingButton } from './mind-pending-button'
 
 /**
  * 对话卡自己的抬头（用户 10-31：对话界面太空，顶栏像 Qoder 一样显示当前 Agent 名）。
@@ -107,6 +108,9 @@ export function chatTopBarRailEntries(deps: {
       )
     },
     { id: 'pending', render: () => <PendingTicketsButton /> },
+    // 写脑待批那一条（`WP-MIND-CONSENT-EVENTS`）：原来只在左栏底部角标与设置页里，
+    // 用户 11-16 21:4x 拍定搬到对话卡（规格 §8 第 2 条）。只加这一条记录，壳子不动。
+    { id: 'mind-pending', render: () => <MindPendingButton /> },
     { id: 'edge', render: () => <CardEdgeControlButtons controls={deps.edgeControls} /> }
   ]
 }

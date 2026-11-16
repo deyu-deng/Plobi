@@ -15,7 +15,6 @@ import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { LiveDuration } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { $agendaPendingCount } from '@/store/agenda'
-import { $mindPendingCount, setMindPendingOpen } from '@/store/mind-pending'
 import { $desktopBoot } from '@/store/boot'
 import {
   $busy,
@@ -110,7 +109,6 @@ export function useStatusbarItems({
   const turnStartedAt = useStore($turnStartedAt)
   const subagentsBySession = useStore($subagentsBySession)
   const agendaPendingCount = useStore($agendaPendingCount)
-  const mindPendingCount = useStore($mindPendingCount)
   const updateStatus = useStore($updateStatus)
   const updateApply = useStore($updateApply)
   const backendUpdateStatus = useStore($backendUpdateStatus)
@@ -372,18 +370,9 @@ export function useStatusbarItems({
         to: AGENDA_ROUTE,
         variant: 'action'
       },
-      {
-        // 写进脑之前要点的那一下（WP-MIND-PENDING-VISIBLE）：过去只有 CLI 看得见，
-        // 于是摘要每天进闸、六小时作废、没人点头。计数进状态栏，点开就是那一屏。
-        className: cn(mindPendingCount > 0 && 'text-amber-500 hover:text-amber-500'),
-        detail: mindPendingCount > 0 ? t.mindPending.count(mindPendingCount) : undefined,
-        icon: <Codicon name="book" size="0.75rem" />,
-        id: 'mind-pending',
-        label: t.mindPending.label,
-        onSelect: () => setMindPendingOpen(true),
-        title: t.mindPending.open,
-        variant: 'action'
-      },
+      // 写脑待批那一颗**已挪走**（`WP-MIND-CONSENT-EVENTS`，用户 11-16 21:4x 拍定）：
+      // 它原来挂在左栏底部，用户说「放在左侧栏底部的一个图标里面…我打算删掉这个图标」
+      // ⇒ 入口搬进对话卡抬头那一列（`mind-pending-button.tsx`），计数仍由浮层那支轮询喂 store。
       // 整机出口那一格（用户 11-01：控制不该住在设置页）。形状与面板都在本线那一档里，
       // 这里只挂一行——被占文件只留挂载那条规矩。
       egressRailItem(t.settings.network.title)
@@ -391,7 +380,6 @@ export function useStatusbarItems({
     [
       agendaPendingCount,
       agentsOpen,
-      mindPendingCount,
       t,
       commandCenterOpen,
       copy,
