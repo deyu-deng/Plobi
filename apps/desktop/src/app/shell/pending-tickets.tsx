@@ -34,24 +34,40 @@ function sourceIcon(ticket: DispatchTicket): IconComponent {
   return Bell
 }
 
-async function fetchPending(): Promise<DispatchTicket[]> {
-  const body = await window.plobiDesktop.api<{
-    data?: { tickets?: DispatchTicket[] }, error?: string, ok: boolean
-  }>({ path: '/api/tickets?status=observed&leg=trigger&limit=50' })
+type InboxItem = DispatchTicket & { one_line?: string }
+type DecisionKind = 'accept' | 'reject' | 'comment'
 
-  if (!body?.ok) {
-    throw new Error(body?.error || 'load failed')
+async function fetchPending(): Promise<InboxItem[]> {
+  const [observed, reports] = await Promise.all([
+    window.plobiDesktop.api<{
+      data?: { tickets?: DispatchTicket[] }, error?: string, ok: boolean
+    }>({ path: '/api/tickets?status=observed&leg=trigger&limit=50' }),
+    window.plobiDesktop.api<{
+      data?: { tickets?: Array<{ id: string, goal: string, leg: string, state: string, one_line: string, status: string }> },
+      error?: string, ok: boolean
+    }>({ path: '/api/tickets/escalations?limit=50' })
+  ])
+
+  if (!observed?.ok) {
+    throw new Error(observed?.error || 'load failed')
   }
 
-  return body.data?.tickets ?? []
+  const escalated: InboxItem[] = reports?.ok
+    ? (reports.data?.tickets ?? []).map(row => ({
+      id: row.id, goal: row.goal, leg: row.leg, status: row.status,
+      one_line: row.one_line, refs: {}, triggered_by: 'report'
+    }) as unknown as InboxItem)
+    : []
+
+  return [...escalated, ...(observed.data?.tickets ?? [])]
 }
 
-function decide(id: string, action: 'activate' | 'revoke', reason?: string): Promise<void> {
+function decide(id: string, kind: DecisionKind, comment = ''): Promise<void> {
   return window.plobiDesktop
     .api<{ error?: string, ok: boolean }>({
-      body: reason ? { reason } : {},
+      body: { comment, kind },
       method: 'POST',
-      path: `/api/tickets/${encodeURIComponent(id)}/${action}`
+      path: `/api/tickets/${encodeURIComponent(id)}/decision`
     })
     .then(body => {
       if (!body?.ok) {
@@ -64,40 +80,92 @@ function PendingRow({
   busy, onDecide, ticket
 }: {
   busy: boolean
-  onDecide: (id: string, action: 'activate' | 'revoke') => void
-  ticket: DispatchTicket
+  onDecide: (id: string, kind: DecisionKind, comment?: string) => void
+  ticket: InboxItem
 }) {
-  const { t } = useI18n()
+  const [commentOpen, setCommentOpen] = useState(false)
+  const [commentText, setCommentText] = useState('')
   const Source = sourceIcon(ticket)
-  const summary = ticket.refs?.prompt_excerpt || ticket.goal
+  const summary = ticket.one_line || ticket.refs?.prompt_excerpt || ticket.goal
+
+  const submitComment = () => {
+    const text = commentText.trim()
+    if (!text) {
+      return
+    }
+    onDecide(ticket.id, 'comment', text)
+    setCommentText('')
+    setCommentOpen(false)
+  }
 
   return (
-    <div className="flex items-center gap-1.5 rounded-md border border-(--ui-stroke-tertiary) px-1.5 py-1">
-      <Source aria-hidden className={cn(iconSize.sm, 'shrink-0 text-(--ui-text-tertiary)')} />
-      <span className="min-w-0 flex-1 truncate text-[0.7rem]" title={ticket.refs?.prompt || ticket.goal}>
-        {summary}
-      </span>
-      <Clock aria-hidden className={cn(iconSize.xs, 'shrink-0 text-(--ui-text-quaternary)')} />
-      <button
-        aria-label={t.console.ticketApprove}
-        className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
-        disabled={busy}
-        onClick={() => onDecide(ticket.id, 'activate')}
-        title={t.console.ticketApprove}
-        type="button"
-      >
-        <Check className={iconSize.xs} />
-      </button>
-      <button
-        aria-label={t.console.ticketIgnore}
-        className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
-        disabled={busy}
-        onClick={() => onDecide(ticket.id, 'revoke')}
-        title={t.console.ticketIgnore}
-        type="button"
-      >
-        <X className={iconSize.xs} />
-      </button>
+    <div className="flex flex-col gap-1 rounded-md border border-(--ui-stroke-tertiary) px-1.5 py-1">
+      <div className="flex items-center gap-1.5">
+        <Source aria-hidden className={cn(iconSize.sm, 'shrink-0 text-(--ui-text-tertiary)')} />
+        <span className="min-w-0 flex-1 truncate text-[0.7rem]" title={ticket.refs?.prompt || ticket.goal}>
+          {summary}
+        </span>
+        <Clock aria-hidden className={cn(iconSize.xs, 'shrink-0 text-(--ui-text-quaternary)')} />
+        <button
+          aria-label="接纳"
+          className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+          disabled={busy}
+          onClick={() => onDecide(ticket.id, 'accept')}
+          title="接纳"
+          type="button"
+        >
+          <Check className={iconSize.xs} />
+        </button>
+        <button
+          aria-label="拒绝"
+          className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+          disabled={busy}
+          onClick={() => onDecide(ticket.id, 'reject')}
+          title="拒绝"
+          type="button"
+        >
+          <X className={iconSize.xs} />
+        </button>
+        <button
+          aria-label="评论"
+          className={cn(
+            'grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)',
+            commentOpen && 'bg-(--ui-control-hover-background)'
+          )}
+          disabled={busy}
+          onClick={() => setCommentOpen(!commentOpen)}
+          title="评论"
+          type="button"
+        >
+          <MessageSquareText className={iconSize.xs} />
+        </button>
+      </div>
+      {commentOpen ? (
+        <div className="flex items-center gap-1 px-0.5">
+          <input
+            className="min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-transparent px-1.5 py-0.5 text-[0.68rem] outline-none"
+            onChange={event => setCommentText(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                submitComment()
+              }
+            }}
+            placeholder="说清楚为什么，让 Agent 理解后再记下来"
+            type="text"
+            value={commentText}
+          />
+          <button
+            aria-label="提交评论"
+            className="shrink-0 rounded px-1.5 py-0.5 text-[0.68rem] hover:bg-(--ui-control-hover-background)"
+            disabled={busy || !commentText.trim()}
+            onClick={submitComment}
+            title="提交评论"
+            type="button"
+          >
+            发送
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -105,7 +173,7 @@ function PendingRow({
 export function PendingTicketsButton() {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
-  const [tickets, setTickets] = useState<DispatchTicket[]>([])
+  const [tickets, setTickets] = useState<InboxItem[]>([])
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -127,10 +195,10 @@ export function PendingTicketsButton() {
     return () => clearInterval(timer)
   }, [load])
 
-  const decideOne = (id: string, action: 'activate' | 'revoke') => {
+  const decideOne = (id: string, kind: DecisionKind, comment = '') => {
     setBusy(id)
     setError('')
-    void decide(id, action, action === 'revoke' ? 'ignored from desktop' : undefined)
+    void decide(id, kind, comment)
       .then(load)
       .catch((reason: unknown) => setError(String(reason)))
       .finally(() => setBusy(''))

@@ -1722,6 +1722,41 @@ async def dispatch_tickets_route(status: str = "observed", leg: str = "", limit:
     return {"ok": True, "data": {"tickets": [t.as_dict() for t in rows]}}
 
 
+@router.get("/tickets/escalations", name="dispatch_escalations")
+async def dispatch_escalations_route(limit: int = 50):
+    """收件箱里的「一件一件」：有需人六态回执的票，最新在前。
+
+    给人看的那一屏是本机主人面前，不按 Agent 的可见性过滤；但**只回结构化
+    回执**，不把 Agent 之间的私聊正文搬过来。
+    """
+    from plobi.delegation.report_gate import NEEDS_HUMAN_STATES, render_one
+    from plobi.delegation.tickets import TicketLedger
+
+    ledger = TicketLedger()
+    rows = await run_in_threadpool(lambda: ledger.list_tickets(limit=500))
+    out = []
+    for ticket in rows:
+        last = await run_in_threadpool(ledger.latest_report, ticket.id)
+        state = str((last or {}).get("state") or "").strip().lower()
+        if state not in NEEDS_HUMAN_STATES:
+            continue
+        view = {
+            "ticket_id": ticket.id, "leg": ticket.leg, "goal": ticket.goal,
+            "domain": dict(ticket.refs or {}).get("domain", ""),
+            "last_report": last,
+        }
+        out.append({
+            "id": ticket.id,
+            "goal": ticket.goal,
+            "leg": ticket.leg,
+            "state": state,
+            "note": str((last or {}).get("note") or ""),
+            "one_line": render_one(view),
+            "status": ticket.status,
+        })
+    return {"ok": True, "data": {"tickets": out[:max(1, int(limit))]}}
+
+
 @router.get("/tickets/{ticket_id}", name="dispatch_ticket")
 async def dispatch_ticket_route(ticket_id: str):
     """GET /api/tickets/:id — 一张票的固化授权（scope / policy / 关联键）。"""
@@ -1791,6 +1826,105 @@ async def dispatch_ticket_revoke_route(ticket_id: str, request: Request):
     await run_in_threadpool(lambda: ledger.revoke(ticket_id, reason=reason))
     updated = await run_in_threadpool(ledger.get, ticket_id)
     return {"ok": True, "data": {"ticket": updated.as_dict() if updated else None}}
+
+
+# ── 人对汇报的三态表态 ＋ 会移动的语义授权（裁定 226）──────────────────
+
+
+@router.post("/tickets/{ticket_id}/decision", name="dispatch_ticket_decision")
+async def dispatch_ticket_decision_route(ticket_id: str, request: Request):
+    """收件箱三按钮：接纳 / 拒绝 / 评论。
+
+    只写**人决定账**，不改票状态——汇报的票多半已经终态，改它没有意义；
+    表态攒够之后能不能起草 lesson，由 ``can_propose`` 回答，能不能生效则由
+    人对 lesson 点头决定。评论会留在 ``tickets`` 回包的 ``pending_feedback``
+    里，等指挥那一轮理解后起草草稿。
+    """
+    from plobi.delegation.decision_ledger import KINDS, DecisionLedger
+    from plobi.delegation.report_gate import TRUST_SOURCE, can_propose, decision_category
+    from plobi.delegation.tickets import TicketLedger
+    from plobi.mind.proposal import TrustLedger
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    kind = str(body.get("kind") or "").strip().lower()
+    comment = str(body.get("comment") or "")[:1000]
+    if kind not in KINDS:
+        return _error(400, f"unknown decision kind {kind!r}", kinds=list(KINDS))
+
+    ticket = await run_in_threadpool(TicketLedger().get, ticket_id)
+    if ticket is None:
+        return _error(404, f"ticket {ticket_id!r} not found")
+
+    decision = await run_in_threadpool(
+        lambda: DecisionLedger().record(ticket_id, kind, comment=comment)
+    )
+    category = decision_category({
+        "leg": ticket.leg,
+        "domain": dict(ticket.refs or {}).get("domain", ""),
+    })
+
+    def _note_count() -> None:
+        # 计数只作「可以起草了吗」的提议门槛（裁定 226 第 2 拍）。
+        outcome = {"accept": "adopted", "reject": "rejected", "comment": "edited"}[kind]
+        TrustLedger().record(outcome, category, TRUST_SOURCE, comment[:120])
+
+    await run_in_threadpool(_note_count)
+    return {
+        "ok": True,
+        "data": {
+            "decision": decision.as_dict(),
+            "category": category,
+            "can_propose": can_propose(category),
+        },
+    }
+
+
+@router.get("/decisions", name="dispatch_decisions")
+async def dispatch_decisions_route(ticket_id: str = "", limit: int = 50):
+    """列人对汇报的表态；与 ``ticket_reports`` 那张 Agent 回执账分开。"""
+    from plobi.delegation.decision_ledger import DecisionLedger
+
+    ledger = DecisionLedger()
+    rows = await run_in_threadpool(
+        lambda: (ledger.list_for_ticket(ticket_id, limit=limit) if ticket_id
+                 else ledger.list_recent(limit=limit))
+    )
+    return {"ok": True, "data": {"decisions": [r.as_dict() for r in rows]}}
+
+
+@router.get("/lessons", name="dispatch_lessons")
+async def dispatch_lessons_route(status: str = "", limit: int = 50):
+    """列授权 lesson；默认只给**已生效**的，proposed 要显式问才看得到。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    book = LessonLedger()
+    rows = await run_in_threadpool(book.all)
+    if not status:
+        rows = [r for r in rows if r.status == "approved"]
+    else:
+        rows = [r for r in rows if r.status == status]
+    return {
+        "ok": True,
+        "data": {"lessons": [r.as_dict() for r in rows[:max(1, int(limit))]]},
+    }
+
+
+@router.post("/lessons/{lesson_id}/{action}", name="dispatch_lesson_decide")
+async def dispatch_lesson_decide_route(lesson_id: str, action: str):
+    """人对草稿点头：approve / reject / revoke。只有 approve 才生效。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    if action not in ("approve", "reject", "revoke"):
+        return _error(400, f"unknown lesson action {action!r}")
+    book = LessonLedger()
+    row = await run_in_threadpool(lambda: getattr(book, action)(lesson_id))
+    if row is None:
+        return _error(404, f"lesson {lesson_id!r} not found")
+    return {"ok": True, "data": {"lesson": row.as_dict()}}
 
 
 @router.get("/offload/agents", name="offload_agents")

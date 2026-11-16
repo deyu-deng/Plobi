@@ -144,59 +144,56 @@ def test_one_line_is_short_has_one_question_and_no_ticket_id(gate):
     assert "改配色" in line
 
 
-def test_never_auto_ignores_full_trust(gate, _isolate):
-    """外部事件票与日记/画像那一族，攒满多少次都不许系统替人放行。"""
-    from plobi.mind.proposal import TrustLedger
+def test_never_auto_ignores_an_approved_lesson(gate, _isolate):
+    """裁定 226：外部事件票与日记/画像那一族，有点头的 lesson 也不许自决。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
 
-    book = TrustLedger(path=gate.ledger_path())
-    for _ in range(gate.AUTO_THRESHOLD):
-        book.record("adopted", "router:diary", gate.TRUST_SOURCE)
+    book = LessonLedger()
+    lesson = book.propose(scope="router:diary", rule="这类你自己定")
+    book.approve(lesson.id)
     policy = gate.ReportPolicy(auto_approve=True)
     assert gate.should_escalate(
-        _view(state="ready", domain="diary"), policy=policy, ledger=book
+        _view(state="ready", domain="diary"), policy=policy, lesson_ledger=book
     ) is True
     assert gate.should_escalate(
-        _view(state="ready", leg="trigger"), policy=policy, ledger=book
+        _view(state="ready", leg="trigger"), policy=policy, lesson_ledger=book
     ) is True
 
 
-def test_switch_off_asks_even_when_report_ledger_is_full(gate, _isolate):
-    """「开总开关」是用户的动作：账本攒满但开关没开，照样件件都问。"""
-    from plobi.mind.proposal import TrustLedger
+def test_switch_off_asks_even_when_a_lesson_is_approved(gate, _isolate):
+    """「开总开关」是用户的动作：有 lesson 但开关没开，照样件件都问。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
 
-    book = TrustLedger(path=gate.ledger_path())
-    for _ in range(gate.AUTO_THRESHOLD):
-        book.record("adopted", "router:general", gate.TRUST_SOURCE)
+    book = LessonLedger()
+    lesson = book.propose(scope="router:general", rule="这类你自己定")
+    book.approve(lesson.id)
     assert gate.should_escalate(
-        _view(), policy=gate.ReportPolicy(auto_approve=False), ledger=book
+        _view(), policy=gate.ReportPolicy(auto_approve=False), lesson_ledger=book
     ) is True
 
 
-def test_full_trust_skips_then_one_reject_returns_to_asking(gate, _isolate):
-    from plobi.mind.proposal import TrustLedger
+def test_approved_lesson_skips_then_revoke_returns_to_asking(gate, _isolate):
+    from plobi.delegation.lesson_ledger import LessonLedger
 
-    book = TrustLedger(path=gate.ledger_path())
-    category = gate.decision_category(_view())
-    for _ in range(gate.AUTO_THRESHOLD):
-        book.record("adopted", category, gate.TRUST_SOURCE)
+    book = LessonLedger()
+    lesson = book.propose(scope="router:general", rule="改配色这类你自己定")
+    book.approve(lesson.id)
     policy = gate.ReportPolicy(auto_approve=True)
-    assert gate.should_escalate(_view(), policy=policy, ledger=book) is False
+    assert gate.should_escalate(_view(), policy=policy, lesson_ledger=book) is False
 
-    book.record("rejected", category, gate.TRUST_SOURCE, "用户驳回")
-    assert gate.should_escalate(_view(), policy=policy, ledger=book) is True
+    book.revoke(lesson.id)
+    assert gate.should_escalate(_view(), policy=policy, lesson_ledger=book) is True
 
 
-def test_two_ledgers_do_not_bleed(gate, _isolate):
-    """批过一次笔记写入，不许顺带把汇报也放行。"""
-    from plobi.mind.proposal import TrustLedger
+def test_proposed_lesson_is_never_a_permission(gate, _isolate):
+    """草稿不是授权：Agent 写完 lesson_write 仍得件件都问。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
 
-    memory_book = TrustLedger(path=_isolate / "l1-trust.json")
-    category = gate.decision_category(_view())
-    for _ in range(gate.AUTO_THRESHOLD):
-        memory_book.record("adopted", category, gate.TRUST_SOURCE)
+    book = LessonLedger()
+    book.propose(scope="router:general", rule="我自己决定就行了")
     assert gate.should_escalate(
-        _view(), policy=gate.ReportPolicy(auto_approve=True)
-    ) is True, "汇报账本是空的，不该读到记忆账本的信任"
+        _view(), policy=gate.ReportPolicy(auto_approve=True), lesson_ledger=book
+    ) is True, "proposed 不许参与放行"
 
 
 # ── 读口回包：判据有真实消费者 ────────────────────────────────────────────

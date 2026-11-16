@@ -930,6 +930,32 @@ def _escalation_payload(views: list[dict]) -> dict:
     }
 
 
+def _pending_feedback_payload() -> dict:
+    """裁定 226：评论不会丢。还没被起草过的评论挂在读口回包里，等指挥那一轮
+    理解后用 ``lesson_write`` 起草。这里只读两张账，不建目录、不叫人、不改票。
+    """
+    try:
+        from plobi.delegation.decision_ledger import DecisionLedger
+        from plobi.delegation.lesson_ledger import LessonLedger
+
+        drafted = {
+            item for lesson in LessonLedger().all() for item in lesson.decision_ids
+        }
+        pending = [
+            {
+                "decision_id": decision.id,
+                "ticket_id": decision.ticket_id,
+                "comment": decision.comment,
+            }
+            for decision in DecisionLedger().list_recent(limit=50)
+            if decision.kind == "comment" and decision.id not in drafted
+        ]
+        return {"pending_feedback": pending}
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("feedback read unavailable: %s", exc)
+        return {"pending_feedback": []}
+
+
 def handle_tickets(args: dict, **kwargs) -> str:
     """读口（裁定 222）：只 SELECT。**不调 _transition / report_state / open_ticket**，
     也**不调 _deliver / wake**——它既不改票，也不向任何人发提示词。
@@ -962,7 +988,7 @@ def handle_tickets(args: dict, **kwargs) -> str:
         view = _ticket_view(ticket, ledger, with_reports=10)
         return _result(
             True, mode="tickets", caller=me, ticket=view,
-            **_escalation_payload([view]),
+            **_escalation_payload([view]), **_pending_feedback_payload(),
         )
 
     if thread_id:
@@ -976,7 +1002,8 @@ def handle_tickets(args: dict, **kwargs) -> str:
         views = [_ticket_view(t, ledger) for t in rows[:cap]]
         return _result(
             True, mode="tickets", caller=me, thread_id=thread_id,
-            count=len(views), tickets=views, **_escalation_payload(views),
+            count=len(views), tickets=views,
+            **_escalation_payload(views), **_pending_feedback_payload(),
         )
 
     status = str(args.get("status") or "").strip().lower()
@@ -993,7 +1020,7 @@ def handle_tickets(args: dict, **kwargs) -> str:
     return _result(
         True, mode="tickets", caller=me, count=len(rows),
         tickets=views, hint="" if rows else "你名下还没有派出去过的活。",
-        **_escalation_payload(views),
+        **_escalation_payload(views), **_pending_feedback_payload(),
     )
 
 
@@ -1044,6 +1071,56 @@ def handle_ticket_revoke(args: dict, **kwargs) -> str:
         True, mode="ticket_revoke", caller=me, ticket_id=ticket_id,
         status=updated.status if updated else "revoked", reason=reason,
         note="这一跳已冻结；同一条 thread 后续再派，执行层不会替收件人起轮。",
+    )
+
+
+#: 裁定 226：从用户反馈里起草一条授权。**只写 proposed，不生效**——
+#: 旁路状态通道，不向任何 Agent 传提示词，也不是第三枚嘴。
+LESSON_WRITE_SCHEMA = {
+    "name": "lesson_write",
+    "description": (
+        "把用户反馈里你理解到的一条授权写成**草稿**，不是立刻生效的规则。\n"
+        "`scope` 写清哪一类事（用票的域或你说的那类活），`rule` 写你据此可以自己决定的边界；"
+        "**拿不准就把 rule 留空、把要问的写进 `question`**，不许替用户编一条他没说过的规则。\n"
+        "`evidence` 引用户的原话，`decision_id` 关联他那次表态。写完要等用户点头才生效，"
+        "在生效前你仍按旧规矩办。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "description": "哪一类事（必填）。"},
+            "rule": {"type": "string", "description": "你据此可以自己决定的边界；拿不准就留空。"},
+            "question": {"type": "string", "description": "拿不准的地方，写成一句要问人的话。"},
+            "evidence": {"type": "string", "description": "用户原话或那段反馈的摘要。"},
+            "decision_id": {"type": "string", "description": "关联的那次表态 id（可选）。"},
+        },
+        "required": ["scope"],
+    },
+}
+
+
+def handle_lesson_write(args: dict, **kwargs) -> str:
+    """只起草（proposed）。**不 approve、不召回、不向用户发话**——那三件分别
+    由人对账、判据读账、指挥的 `say to=用户` 做，边界不混（裁定 226）。"""
+    args = args if isinstance(args, dict) else {}
+    scope = str(args.get("scope") or "").strip()
+    if not scope:
+        return _result(False, error="没写 `scope`——这条授权管哪一类事？")
+    try:
+        from plobi.delegation.lesson_ledger import LessonLedger
+
+        row = LessonLedger().propose(
+            scope=scope,
+            rule=str(args.get("rule") or ""),
+            question=str(args.get("question") or ""),
+            evidence=str(args.get("evidence") or ""),
+            decision_ids=[str(args.get("decision_id") or "")] if args.get("decision_id") else [],
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _result(False, error=f"草稿没写进去：{exc}")
+    return _result(
+        True, mode="lesson_write", lesson_id=row.id, status=row.status,
+        note="草稿已写，用户点头前不生效；你仍按旧规矩办。",
     )
 
 

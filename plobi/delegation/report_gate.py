@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from plobi.delegation.lesson_ledger import LessonLedger
 from plobi.mind.proposal import (
     AUTO_THRESHOLD,
     NEVER_AUTO_CATEGORIES,
@@ -125,9 +126,14 @@ def should_escalate(
     view: dict[str, Any],
     *,
     policy: Optional[ReportPolicy] = None,
-    ledger: Optional[TrustLedger] = None,
+    lesson_ledger: Optional[LessonLedger] = None,
 ) -> bool:
-    """这一刻该不该向用户开口。任何不确定都回 ``True``（宁可多喊）。"""
+    """这一刻该不该向用户开口。任何不确定都回 ``True``（宁可多喊）。
+
+    裁定 226：**计数不再决定放行**。开关打开后只认已批准的 lesson——有覆盖就
+    在边界内自决（不喊），没有就照旧喊。8 次计数降格为「可以起草了吗」的
+    提议门槛，见 :func:`can_propose`。
+    """
     last = view.get("last_report") or {}
     state = str(last.get("state") or "").strip().lower()
     if state not in NEEDS_HUMAN_STATES:
@@ -137,8 +143,19 @@ def should_escalate(
     gate = policy if policy is not None else load_policy()
     if not gate.auto_approve:
         return True
+    book = lesson_ledger if lesson_ledger is not None else LessonLedger()
+    query = f"{decision_category(view)} {view.get('goal') or ''}"
+    return not bool(book.recall(query, limit=3))
+
+
+def can_propose(category: str, *, ledger: Optional[TrustLedger] = None) -> bool:
+    """同类表态攒够 8 次，**可以起草一条 lesson**——不是可以免问。
+
+    计数只管提议（裁定 226 第 2 拍）；真正生效必须有人点头
+    （``LessonLedger.approve``），否则又绕回模型自评。
+    """
     book = ledger if ledger is not None else TrustLedger(path=ledger_path())
-    return book.should_ask(decision_category(view), TRUST_SOURCE)
+    return book.entry(category, TRUST_SOURCE).streak >= AUTO_THRESHOLD
 
 
 def render_one(view: dict[str, Any]) -> str:
@@ -162,12 +179,12 @@ def due_escalations(
     views: Iterable[dict[str, Any]],
     *,
     policy: Optional[ReportPolicy] = None,
-    ledger: Optional[TrustLedger] = None,
+    lesson_ledger: Optional[LessonLedger] = None,
 ) -> list[dict[str, Any]]:
     """把一批票视图筛成「待喊人」清单。"""
     out: list[dict[str, Any]] = []
     for view in views:
-        if not should_escalate(view, policy=policy, ledger=ledger):
+        if not should_escalate(view, policy=policy, lesson_ledger=lesson_ledger):
             continue
         category = decision_category(view)
         state = str((view.get("last_report") or {}).get("state") or "").strip().lower()
@@ -187,6 +204,7 @@ __all__ = [
     "NEEDS_HUMAN_STATES",
     "NEVER_AUTO_CATEGORIES",
     "ReportPolicy",
+    "can_propose",
     "decision_category",
     "due_escalations",
     "is_never_auto",

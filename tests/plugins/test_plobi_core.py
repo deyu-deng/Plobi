@@ -182,8 +182,11 @@ def test_register_deep_tool_and_secretary_surface(ns):
     # 不发提示词、不动别人的票，所以仍不是嘴。紧跟读口，也不挂
     # check_channel_available。
     assert registered[4] == "ticket_revoke", registered
+    # 裁定 226：第六枚是旁路写入口——只写 proposed 草稿、不生效、不传提示词，
+    # 所以它和读口/停口同类，紧跟其后，也不挂 check_channel_available。
+    assert registered[5] == "lesson_write", registered
     assert "plobi" not in registered, registered
-    assert registered[5:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
+    assert registered[6:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
 
 
 def test_boot_get_north_star(tmp_home):

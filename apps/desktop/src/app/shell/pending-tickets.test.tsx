@@ -47,45 +47,78 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+function mockBothLists(reports: unknown[] = []) {
+  api.mockImplementation((req: { path?: string, method?: string }) => {
+    if (req.method === 'POST') {
+      return Promise.resolve({ ok: true })
+    }
+    if (req.path?.includes('/api/tickets/escalations')) {
+      return Promise.resolve({ ok: true, data: { tickets: reports } })
+    }
+    return Promise.resolve({ ok: true, data: { tickets: [TICKET] } })
+  })
+}
+
 describe('PendingTicketsButton', () => {
-  it('只读待放行的外部事件票，数量摆在图标角标上', async () => {
-    api.mockResolvedValue({ ok: true, data: { tickets: [TICKET] } })
+  it('外部事件票与需人汇报都进收件箱，数量摆在图标角标上', async () => {
+    mockBothLists([{ id: 'tkt_r1', goal: '改配色', leg: 'router', state: 'blocked', status: 'active', one_line: '「改配色」卡住了：缺一张图。要我继续，还是你来定？' }])
     render(<PendingTicketsButton />)
 
-    expect(await screen.findByText('1')).toBeTruthy()
+    expect(await screen.findByText('2')).toBeTruthy()
     expect(api).toHaveBeenCalledWith(expect.objectContaining({
       path: expect.stringContaining('/api/tickets?status=observed&leg=trigger')
     }))
+    expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      path: expect.stringContaining('/api/tickets/escalations')
+    }))
   })
 
-  it('放行 / 忽略各走一条 POST，之后重读清单', async () => {
-    api.mockImplementation((req: { method?: string }) => {
-      if (req.method === 'POST') {
-        return Promise.resolve({ ok: true, data: { ticket: TICKET } })
-      }
-
-      return Promise.resolve({ ok: true, data: { tickets: [TICKET] } })
-    })
+  it('接纳 / 拒绝各走一条三态 POST，之后重读清单', async () => {
+    mockBothLists()
     render(<PendingTicketsButton />)
 
     fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
     expect(await screen.findByText('顺手把测试补一下')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: /放行|Approve/ }))
+    fireEvent.click(screen.getByRole('button', { name: '接纳' }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
-      path: `/api/tickets/${TICKET.id}/activate`
+      body: { comment: '', kind: 'accept' },
+      path: `/api/tickets/${TICKET.id}/decision`
     })))
 
-    fireEvent.click(screen.getByRole('button', { name: /忽略|Ignore/ }))
+    fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
-      path: `/api/tickets/${TICKET.id}/revoke`
+      body: { comment: '', kind: 'reject' },
+      path: `/api/tickets/${TICKET.id}/decision`
+    })))
+  })
+
+  it('评论带原话走同一条 POST，空评论不提交', async () => {
+    mockBothLists()
+    render(<PendingTicketsButton />)
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    expect(await screen.findByText('顺手把测试补一下')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '评论' }))
+    const box = screen.getByPlaceholderText('说清楚为什么，让 Agent 理解后再记下来')
+    fireEvent.change(box, { target: { value: '以后配色这类你定' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交评论' }))
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      body: { comment: '以后配色这类你定', kind: 'comment' },
+      path: `/api/tickets/${TICKET.id}/decision`
     })))
   })
 
   it('读不到清单就说读不到，不假称一条都没有', async () => {
-    api.mockResolvedValue({ ok: false, error: 'db locked' })
+    api.mockImplementation((req: { method?: string }) => {
+      if (req.method === 'POST') {
+        return Promise.resolve({ ok: true })
+      }
+      return Promise.resolve({ ok: false, error: 'db locked' })
+    })
     render(<PendingTicketsButton />)
     fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
     expect(await screen.findByText(/读不到待放行清单|Could not load/)).toBeTruthy()

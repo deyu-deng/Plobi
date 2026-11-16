@@ -191,6 +191,17 @@ def register(ctx) -> None:
         emoji="\u2718",
     )
 
+    # 裁定 226：lesson_write 只写 proposed 草稿，不生效、不传提示词；跟读口/停口
+    # 同属旁路通道，所以也不挂 check_channel_available。
+    ctx.register_tool(
+        name=CH.LESSON_WRITE_SCHEMA["name"],
+        toolset="channel",
+        schema=CH.LESSON_WRITE_SCHEMA,
+        handler=CH.handle_lesson_write,
+        description=CH.LESSON_WRITE_SCHEMA["description"],
+        emoji="\u270e",
+    )
+
     for name, toolset, area, action, description, props, required in _DOMAIN_TOOLS:
         ctx.register_tool(
             name=name,
