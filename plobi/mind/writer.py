@@ -37,6 +37,17 @@ logger = logging.getLogger(__name__)
 VERIFIER_RELATIVE = "Mind/scripts/verifier.py"
 
 
+def _consent_book():
+    """表态流水（``consent.db``）——P2 的边界判据从这里读「这一类的历史」。
+
+    构造不碰盘（连接是懒的），所以这里不需要 try：真读不到时 ``recent`` 返回空表，
+    判据会因为「没有表态史」判必问，正是保守的那一边。
+    """
+    from .consent_events import ConsentLedger
+
+    return ConsentLedger()
+
+
 def _write_atomic(target: Path, text: str) -> None:
     """临时文件 ＋ ``os.replace``：读者要么看到旧的，要么看到新的，看不到半份。"""
     handle, tmp = tempfile.mkstemp(prefix=".mind-", suffix=".tmp", dir=str(target.parent))
@@ -113,9 +124,12 @@ class MindWriter:
         三条并起来问，缺一条就会出现「看起来自动了、其实没人批准过」：
         ① 路径本身是改写过去那一类（:func:`proposal.never_auto`）；
         ② 类别在永不自动那张表里（用户 10-23 拍：日记＋画像＋删除）；
-        ③ 信任账没攒够（连续采纳 < AUTO_THRESHOLD，或被改／被驳回而归零）。
+        ③ 边界层判这一次能不能不问（``plobi/mind/boundary.py``，规格 §3.4 五条：
+          硬下限／熔断／ramp／偏好／政策授权）。P2 起 ③ 不再是一个计数，而是一整套
+          带 trace 的判据——所以这里的拒绝理由直接取判据给的那句话，不自己编。
         外加总开关：自动档没开时，全部按「先问」办。
         """
+        from plobi.mind import boundary as B
         from plobi.mind import proposal as L1
 
         if self.require_approval is True:
@@ -124,6 +138,7 @@ class MindWriter:
             return []
         auto = self._auto_allowed()
         ledger = L1.TrustLedger()
+        book = _consent_book()
         refusals: list[str] = []
         for request in batch:
             why = L1.never_auto(request.relative_path, request.mode)
@@ -139,11 +154,12 @@ class MindWriter:
                     f"{request.relative_path}: 自动档没开（memory.mind_write_auto_approve），先点头"
                 )
                 continue
-            if ledger.should_ask(category, "l1", always_ask=L1.NEVER_AUTO_CATEGORIES):
-                streak = ledger.entry(category, "l1").streak
-                refusals.append(
-                    f"{request.relative_path}: 类别 {category} 连续采纳 {streak}/{L1.AUTO_THRESHOLD}，还没攒够"
-                )
+            verdict = B.evaluate(
+                book, category, logical=request.relative_path, mode=request.mode,
+                ledger=ledger, record=True,
+            )
+            if not verdict.silent:
+                refusals.append(f"{request.relative_path}: {verdict.reason}")
         return refusals
 
     def _stage_for_approval(self, batch: list[WriteRequest]):

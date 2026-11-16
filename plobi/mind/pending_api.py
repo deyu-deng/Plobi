@@ -151,6 +151,18 @@ def _consent(limit: int = 50) -> Dict[str, Any]:
     }
 
 
+def _boundary(limit: int = 50) -> Dict[str, Any]:
+    """边界层读数（规格 §3.3／§3.4，P2）。**只读**：不判定、不放行、不写任何一张纸。
+
+    与 ``/consent`` 的分工：那个给人看「人做了什么」，这个给人看「机器凭什么不问」——
+    每类攒到第几次、有没有生效政策、熔断没熔断、最近几次静默的 trace。
+    """
+    from plobi.mind.boundary import snapshot
+    from plobi.mind.consent_events import ConsentLedger
+
+    return snapshot(ConsentLedger(), limit=max(1, min(int(limit), 200)))
+
+
 def register_memory_pending_api(app: FastAPI) -> None:
     """挂三个口：读列表、点头、驳回。行为仍归那一层命令实现。"""
 
@@ -175,6 +187,11 @@ def register_memory_pending_api(app: FastAPI) -> None:
     async def memory_consent_events(limit: int = 50) -> JSONResponse:
         """同意事件流水（P1 信号层的读口）：人点什么就记什么，这里只读、不放行。"""
         return JSONResponse(_consent(limit))
+
+    @app.get(f"{PREFIX}/boundary", name="memory_boundary_state")
+    async def memory_boundary_state(limit: int = 50) -> JSONResponse:
+        """边界层读数（P2）：每类 streak、熔断状态、已生效政策、最近静默 trace。只读。"""
+        return JSONResponse(_boundary(limit))
 
     @app.post(f"{PREFIX}/pending/prune", name="memory_pending_prune")
     async def memory_pending_prune() -> JSONResponse:

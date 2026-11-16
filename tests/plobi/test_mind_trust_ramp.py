@@ -37,6 +37,29 @@ def _writer(auto: bool) -> MindWriter:
     return MindWriter(require_approval=None, commit=False, auto_approve=auto)
 
 
+def _grant(category: str) -> None:
+    """把「人点头过一条政策」落成正典里应有的样子（等价于 approve 之后的状态）。
+
+    2026-11-16 21:4x 用户拍定（规格 §8 第 3 条）：攒够 streak 只是**够格**，
+    还要一条人点头过的政策才不打扰人——所以「攒满就放行」这条旧期望换成
+    「攒满 ＋ 授权 ⇒ 放行」。政策本身没有捷径：``boundary.stage_policies``
+    只产待批纸，测试里这行字等于人点完头之后的正典。
+    """
+    from plobi.mind import boundary as B
+    from plobi.mind import preferences as P
+    from plobi.mind.paths import real_target, resolve_roots
+
+    path = real_target(P.PREFERENCES_LOGICAL, resolve_roots())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base = path.read_text(encoding="utf-8") if path.is_file() else P._HEADER
+    path.write_text(
+        base + f"\n{B.POLICY_SECTION}\n\n- 类别 `{category}` 的写入：可以不问。\n"
+               f"  <!-- pol:promote:{category} category:{category} state:active"
+               f" evidence:cev_seed -->\n",
+        encoding="utf-8",
+    )
+
+
 def test_diary_and_persona_are_never_auto(roots, tmp_path):
     """攒再多也不放行：日记与画像的「改写过去」不在自动档里（永不自动）。"""
     surface, home = roots
@@ -52,7 +75,9 @@ def test_diary_and_persona_are_never_auto(roots, tmp_path):
     assert _writer(True)._gate_refusals(
         [WriteRequest("Surface/meta/profile/profile.md", "改画像")]
     ) != []
-    # 同一格攒满 30 次 ⇒ 不再拦（这才叫「会移动的门槛」）。类别由路径定，别猜名字。
+    # 同一格攒满 30 次 ＋ 一条已点头的政策 ⇒ 不再拦（这才叫「会移动的门槛」）。
+    # 类别由路径定，别猜名字。
+    _grant(L1.category_of(AGENDA))
     assert _writer(True)._gate_refusals([WriteRequest(AGENDA, "摘要")]) == []
 
 
@@ -68,12 +93,13 @@ def test_auto_stays_off_until_the_config_says_yes(roots):
 
 
 def test_one_rejection_falls_back_to_asking(roots):
-    """驳回归零：攒满 8 次那一类被驳一次，立刻回到每次都问（且账上留得下原因）。"""
+    """驳回归零：攒满那一类被驳一次，立刻回到每次都问（且账上留得下原因）。"""
     _vault, home = roots
     ledger = L1.TrustLedger(path=home / "l1-trust.json")
     cat = L1.category_of(AGENDA)
     for _ in range(L1.AUTO_THRESHOLD):
         ledger.record("adopted", cat, "l1")
+    _grant(cat)
     assert _writer(True)._gate_refusals([WriteRequest(AGENDA, "摘要")]) == []
 
     ledger.record("rejected", cat, "l1", "周次写错")
