@@ -181,6 +181,7 @@ def test_drafted_comment_disappears_from_pending(CH, ticket, monkeypatch):
 
 
 def test_lesson_write_handler_only_creates_a_draft(CH):
+    """没标来源（默认 comment）仍是草稿——裁定 226 的原行为不许被 227 改坏。"""
     from plobi.delegation.lesson_ledger import LessonLedger
 
     out = json.loads(CH.handle_lesson_write({
@@ -188,4 +189,87 @@ def test_lesson_write_handler_only_creates_a_draft(CH):
     }))
     assert out["ok"] is True
     assert out["status"] == "proposed"
-    assert LessonLedger().approved() == [], "工具本身不许让草稿生效"
+    assert out["source"] == "comment"
+    assert LessonLedger().approved() == [], "从评论推断的草稿不许借对话入口生效"
+
+
+# ── 裁定 227：用户亲口授权那句话本身就是点头 ──────────────────────────────
+
+
+def test_user_utterance_authorization_takes_effect_immediately(CH):
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    words = "以后配色这类你自己定，不用再问我"
+    out = json.loads(CH.handle_lesson_write({
+        "scope": "router:general", "rule": "配色这类我自己定",
+        "source": "conversation", "user_words": words,
+    }))
+    assert out["ok"] is True
+    assert out["status"] == "approved"
+    assert out["source"] == "conversation"
+
+    row = LessonLedger().get(out["lesson_id"])
+    assert row.status == "approved"
+    assert row.user_words == words
+    assert row.evidence == words, "原话要落进账本供回核"
+    assert row.approved_by == "user_utterance"
+    assert row.question == "", "授权明确时不该留问句"
+
+
+def test_conversation_without_user_words_is_refused(CH):
+    """没有用户原话，模型不许凭一句『我觉得他同意』就放权。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    out = json.loads(CH.handle_lesson_write({
+        "scope": "router:general", "rule": "配色这类我自己定",
+        "source": "conversation",
+    }))
+    assert out["ok"] is False
+    assert "user_words" in out["error"]
+    assert LessonLedger().all() == [], "被拒的授权连草稿都不该留"
+
+
+def test_ledger_refuses_utterance_without_words_even_if_called_directly():
+    """账本层自己也有牙：绕过工具直接调 propose 也不许无原话放权（纵深第二层）。"""
+    import pytest
+
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    with pytest.raises(ValueError, match="user_words"):
+        LessonLedger().propose(
+            scope="router:general", rule="我自己放权", source="conversation"
+        )
+    assert LessonLedger().all() == []
+
+
+def test_utterance_authorization_silences_the_next_report(CH):
+    """用户说完那句话，下一次同类 blocked 不再生成 next_escalation。"""
+    gate = importlib.import_module("plobi.delegation.report_gate")
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    words = "以后改配色这类你自己定"
+    LessonLedger().propose(
+        scope="router:general", rule="改配色这类自己定",
+        source="conversation", user_words=words,
+    )
+    view = {
+        "ticket_id": "tkt_x", "leg": "router", "goal": "改配色", "domain": "",
+        "last_report": {"state": "blocked", "note": "缺一张图"},
+    }
+    assert gate.should_escalate(
+        view, policy=gate.ReportPolicy(auto_approve=True), lesson_ledger=LessonLedger()
+    ) is False
+
+
+def test_revoked_utterance_authorization_stops_being_effective():
+    """一句话撤回后召回里立刻没有它——撤回是失效，不是再加一条反向 lesson。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    book = LessonLedger()
+    row = book.propose(
+        scope="router:general", rule="改配色这类自己定",
+        source="conversation", user_words="以后改配色你定",
+    )
+    assert book.recall("改配色")
+    book.revoke(row.id)
+    assert book.recall("改配色") == []

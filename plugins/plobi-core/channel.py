@@ -1079,11 +1079,13 @@ def handle_ticket_revoke(args: dict, **kwargs) -> str:
 LESSON_WRITE_SCHEMA = {
     "name": "lesson_write",
     "description": (
-        "把用户反馈里你理解到的一条授权写成**草稿**，不是立刻生效的规则。\n"
-        "`scope` 写清哪一类事（用票的域或你说的那类活），`rule` 写你据此可以自己决定的边界；"
-        "**拿不准就把 rule 留空、把要问的写进 `question`**，不许替用户编一条他没说过的规则。\n"
-        "`evidence` 引用户的原话，`decision_id` 关联他那次表态。写完要等用户点头才生效，"
-        "在生效前你仍按旧规矩办。"
+        "把一条授权记进账本。`source` 决定它是否立刻生效（裁定 227）：\n"
+        "- `conversation`：**用户这一轮亲口说**了「以后这类你定」这类话——那句原话本身就是"
+        "点头。必须把他的**原话逐字**填进 `user_words`，规则立刻生效；不许拿你自己的推断"
+        "当他的话。\n"
+        "- `comment`（默认）：你从评论/回执里读出来的意图，**只写草稿**，要等用户点头才生效。\n"
+        "`scope` 写清哪一类事，`rule` 写你据此可以自己决定的边界；**拿不准就把 rule 留空、"
+        "把要问的写进 `question`**，不许替用户编一条他没说过的规则。用户一句话就能撤回。"
     ),
     "parameters": {
         "type": "object",
@@ -1091,8 +1093,17 @@ LESSON_WRITE_SCHEMA = {
             "scope": {"type": "string", "description": "哪一类事（必填）。"},
             "rule": {"type": "string", "description": "你据此可以自己决定的边界；拿不准就留空。"},
             "question": {"type": "string", "description": "拿不准的地方，写成一句要问人的话。"},
-            "evidence": {"type": "string", "description": "用户原话或那段反馈的摘要。"},
-            "decision_id": {"type": "string", "description": "关联的那次表态 id（可选）。"},
+            "evidence": {"type": "string", "description": "comment 时用：用户原话或那段反馈的摘要。"},
+            "decision_id": {"type": "string", "description": "comment 时用：关联的那次表态 id（可选）。"},
+            "source": {
+                "type": "string",
+                "enum": ["conversation", "comment"],
+                "description": "授权来源。只有用户这一轮亲口说的授权句才填 conversation。",
+            },
+            "user_words": {
+                "type": "string",
+                "description": "source=conversation 时必填：用户那句授权的**原话**，逐字引用。",
+            },
         },
         "required": ["scope"],
     },
@@ -1100,12 +1111,20 @@ LESSON_WRITE_SCHEMA = {
 
 
 def handle_lesson_write(args: dict, **kwargs) -> str:
-    """只起草（proposed）。**不 approve、不召回、不向用户发话**——那三件分别
-    由人对账、判据读账、指挥的 `say to=用户` 做，边界不混（裁定 226）。"""
+    """两写入口（裁定 227）：用户亲口授权→直接生效；从评论推断→草稿待点头。
+
+    本函数**不召回、不向用户发话**——那两件分别由判据读账、指挥的 `say to=用户` 做。
+    """
     args = args if isinstance(args, dict) else {}
     scope = str(args.get("scope") or "").strip()
     if not scope:
         return _result(False, error="没写 `scope`——这条授权管哪一类事？")
+    source = str(args.get("source") or "comment").strip().lower()
+    user_words = str(args.get("user_words") or "").strip()
+    if source == "conversation" and not user_words:
+        return _result(
+            False, error="对话授权必须逐字填 `user_words`（用户原话）；没有原话就只能按 comment 写草稿。",
+        )
     try:
         from plobi.delegation.lesson_ledger import LessonLedger
 
@@ -1115,12 +1134,19 @@ def handle_lesson_write(args: dict, **kwargs) -> str:
             question=str(args.get("question") or ""),
             evidence=str(args.get("evidence") or ""),
             decision_ids=[str(args.get("decision_id") or "")] if args.get("decision_id") else [],
+            source=source,
+            user_words=user_words,
         )
     except Exception as exc:  # noqa: BLE001
-        return _result(False, error=f"草稿没写进去：{exc}")
+        return _result(False, error=f"授权没写进去：{exc}")
+    note = (
+        "用户那句原话已记进账本，这条现在生效；一句话就能撤回。"
+        if row.status == "approved"
+        else "草稿已写，用户点头前不生效；你仍按旧规矩办。"
+    )
     return _result(
         True, mode="lesson_write", lesson_id=row.id, status=row.status,
-        note="草稿已写，用户点头前不生效；你仍按旧规矩办。",
+        source=row.source, note=note,
     )
 
 

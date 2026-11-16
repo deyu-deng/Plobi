@@ -35,6 +35,13 @@ REJECTED = "rejected"
 REVOKED = "revoked"
 STATUSES = (PROPOSED, APPROVED, REJECTED, REVOKED)
 
+#: 授权的两种来源（裁定 227）。``conversation`` = 用户**这一轮亲口说的**授权句，
+#: 那句话本身就是点头，所以直接生效；``comment`` = 从评论/回执里读出来的意图，
+#: 只是草稿，仍要人点头。模型不许把后者冒充前者。
+SOURCE_CONVERSATION = "conversation"
+SOURCE_COMMENT = "comment"
+SOURCES = (SOURCE_CONVERSATION, SOURCE_COMMENT)
+
 #: 只有生效状态参与召回；proposed 绝不能被当成「用户已经同意」。
 EFFECTIVE = frozenset({APPROVED})
 
@@ -55,6 +62,9 @@ class Lesson:
     created_at: float = 0.0
     approved_at: float = 0.0
     approved_by: str = "user"
+    #: 凭什么放权：记下用户原话（对话授权）或关联的表态 id（评论回路），可核、可撤回。
+    source: str = SOURCE_COMMENT
+    user_words: str = ""
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -153,19 +163,40 @@ class LessonLedger:
     def propose(
         self, *, scope: str, rule: str = "", question: str = "", evidence: str = "",
         decision_ids: Optional[list[str]] = None,
+        source: str = SOURCE_COMMENT, user_words: str = "",
     ) -> Lesson:
-        """起草一条授权；**默认不生效**。拿不准就只写 question，不编 rule。"""
+        """起草一条授权；**默认不生效**。拿不准就只写 question，不编 rule。
+
+        裁定 227：``source=conversation`` 且带了 ``user_words``，表示这是用户
+        **这一轮亲口说的**授权——那句话本身就是点头，直接落 ``approved``，不必
+        再去收件箱点一次；原话存进账本供回核。其余一律 ``proposed``。
+        """
+        source = str(source or SOURCE_COMMENT).strip().lower()
+        if source not in SOURCES:
+            raise ValueError(f"unknown lesson source: {source!r}")
+        words = " ".join(str(user_words or "").split())[:500]
+        if source == SOURCE_CONVERSATION and not words:
+            # 没有原话就不许冒充用户授权——这是「不许模型自评」在入口这侧的牙。
+            raise ValueError("对话授权必须带 user_words（用户原话），否则只能按 comment 起草草稿")
+
+        from_user = source == SOURCE_CONVERSATION and bool(words)
+        now = time.time()
         row = Lesson(
             id="les_" + uuid.uuid4().hex[:12],
             scope=str(scope or "general")[:200],
             rule=str(rule or "")[:500],
             question=str(question or "")[:500],
-            evidence=str(evidence or "")[:500],
+            evidence=(words if from_user else str(evidence or ""))[:500],
             decision_ids=[str(x) for x in (decision_ids or [])][:20],
-            status=PROPOSED,
-            created_at=time.time(),
+            status=APPROVED if from_user else PROPOSED,
+            created_at=now,
+            approved_at=now if from_user else 0.0,
+            approved_by="user_utterance" if from_user else "user",
+            source=source,
+            user_words=words,
         )
-        self._write(list(self._read()) + [row], f"propose {row.id}")
+        verb = "authorize" if from_user else "propose"
+        self._write(list(self._read()) + [row], f"{verb} {row.id}")
         return row
 
     def _set(self, lesson_id: str, status: str, *, by: str = "user") -> Optional[Lesson]:
