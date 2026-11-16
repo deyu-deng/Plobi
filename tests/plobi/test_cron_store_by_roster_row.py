@@ -34,7 +34,13 @@ def cron_home(tmp_path, monkeypatch):
         "  Aura:\n"
         "    role: principal\n"
         "    profile: aura\n"
-        "    description: 名册上的那一行\n",
+        "    description: 名册上的那一行\n"
+        # 与 Plobi 安装同名的那一行：名册里既成事实，slug 由 runtime_slugs.yaml
+        # 钉成 l2-plobi。读排程时它不该被「保留名」当成新建请求拦掉。
+        "  Plobi:\n"
+        "    role: principal\n"
+        "    profile: l2-plobi\n"
+        "    description: 与安装同名的那一行\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
@@ -116,6 +122,33 @@ def test_roster_name_with_capitals_is_not_a_400(cron_home):
     assert exc.value.status_code == 404
     with pytest.raises(HTTPException) as exc:
         ws._resolve_profile_dir("不合法 的 名字!")
+    assert exc.value.status_code == 400
+
+
+def test_reserved_looking_roster_row_can_still_read_its_cron(cron_home):
+    """名册里有一行叫 ``Plobi``（与安装同名）：读排程不该 400。
+
+    形状与保留名是**建造期**的门（``validate_profile_name``），不是读侧的门。这一行在
+    名册里既成事实、slug 由 ``runtime_slugs.yaml`` 钉成 ``l2-plobi``，可早先读排程先
+    跑形状校验，于是每次都被判成「保留名」400——errors.log 累计 648 次就是这么来的。
+    修法不是把 ``plobi`` 从保留名里划掉（建造期仍要拦：新起一个叫 ``plobi`` 的行派生
+    不出 slug，等于永远没有身份），而是把名册查询排到形状校验前面。
+    """
+    ws = _web_server()
+    name, store_dir = ws._cron_profile_home("Plobi")
+    assert name == "plobi"  # 规范名是小写，存储键取的是名册 name
+    assert store_dir == cron_home / "cron" / "agents" / "Plobi"
+    # 小写写法是同一行、同一份存储
+    assert ws._cron_profile_home("plobi")[1] == store_dir
+
+
+def test_reserved_name_absent_from_roster_is_still_a_400(cron_home):
+    """名册里没有、又撞保留名的新写法仍是 400（这道门只是挪了位置，没有拆掉）。"""
+    from fastapi import HTTPException
+
+    ws = _web_server()
+    with pytest.raises(HTTPException) as exc:
+        ws._cron_profile_home("sudo")
     assert exc.value.status_code == 400
 
 

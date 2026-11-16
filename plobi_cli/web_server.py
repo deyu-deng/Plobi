@@ -10941,28 +10941,35 @@ def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
     raw = (profile or "default").strip() or "default"
     try:
         canon = profiles_mod.normalize_profile_name(raw)
-        profiles_mod.validate_profile_name(canon)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if canon == "default":
         return canon, _cron_store_root()
-    if not profiles_mod.identity_exists(canon):
-        raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
+    # 名册那一行先说话：**形状与保留名是建造期的门，不是读侧的门**。
+    # 名册里既成的一行必须能给自己排程——早先这里先跑 ``validate_profile_name``，
+    # 结果「名叫 Plobi 的那个角色」（名册有这一行、slug 派生得出 ``l2-plobi``）
+    # 每次读排程都被判成保留名 400（errors.log 累计 648 次）。存在性问名册（裁 192）
+    # 已经排在前面了，形状校验只剩「名册里没有这一行、但家还在盘上」那条腿要管。
     # 同一行的两个写法（名册 name 与它的 profile_name）要落在**同一份**存储里，
     # 否则「用显示名建的作业」和「用 slug 建的作业」会分家两份。
     # 键取**名册 name**——与身份文件 ``souls/<名册 name>.md`` 同一把钥匙
     # （早先按 ``profile_name`` 建目录 ⇒ ``agenda`` 那行落到 ``l2-agenda/``，
     #  与搬作业时用的键 ``agenda`` 对不上，读出来 0 个作业）。
-    row_key = canon
     try:
         from plobi.agents.registry import entry_for_profile
 
         entry = entry_for_profile(canon)
-        if entry is not None and entry.name:
-            row_key = entry.name
     except Exception:
-        pass
-    return canon, _cron_store_dir_for(row_key)
+        entry = None
+    if entry is not None and entry.name:
+        return canon, _cron_store_dir_for(entry.name)
+    try:
+        profiles_mod.validate_profile_name(canon)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not profiles_mod.identity_exists(canon):
+        raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
+    return canon, _cron_store_dir_for(canon)
 
 
 def _roster_has_scope(scope: str) -> bool:
