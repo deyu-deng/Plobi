@@ -32,6 +32,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
+import sys
 from typing import Any, Dict, Optional
 
 from tools.registry import registry
@@ -446,6 +449,152 @@ def _handle_collect(args: Dict[str, Any], **_kw: Any) -> str:
     return _ok(payload)
 
 
+# --------------------------------------------------------------------------- #
+# 信源包那一段：列 / 装 / 卸（WP-SOURCE-PACKAGES）
+#
+# **闸门仍然在 CLI 里**：这一层只 spawn `plobi collectors …`，不碰 pip、
+# **也不替 CLI 校验包名**——理由照 `plobi/collectors/external.py` 模块头第 1 条：
+# 用户输入离执行最近的一跳不该只隔一次函数调用（自己先校验一遍＝把闸门挪回
+# 最近的那一跳，底下那道就没人知道它存在）。设置屏那一面也是这么写的
+# （`sources_api._spawn_collectors_action` 同样只 spawn）。
+# --------------------------------------------------------------------------- #
+
+#: pip 装一个带依赖的包要几十秒到几分钟；这一把**等它跑完**（Agent 要一个结果，
+#: 不是一条「我起了，你自己去轮」的进度——Agent 手里没有「轮动作状态」那把工具）。
+_PACKAGE_TIMEOUT = 600
+
+SOURCE_PACKAGE_LIST_SCHEMA: Dict[str, Any] = {
+    "name": "source_package_list",
+    "description": (
+        "列**外面装着的**第三方信源包（自己写的信源包，不是内置那几条）。\n"
+        "每一格给：包名（`distribution`，**卸它就传这个**）、它带来的信源 id（`source`）、"
+        "入口点名（`entry_point`）；包装上了但载不进来时，`load_error` 是那句原因。\n"
+        "一个参数都不给。"
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+SOURCE_PACKAGE_INSTALL_SCHEMA: Dict[str, Any] = {
+    "name": "source_package_install",
+    "description": (
+        "装**一个**第三方信源包：`package` 是包名（如 `plobi-collector-telegram`）。\n"
+        "**只收裸包名**：版本约束、extras、URL、git 地址一概不收（要去那些去终端）。\n"
+        "装上之后它带来的那条信源**是关着的**——要采它，另外调 `source_enable`。\n"
+        "装包＝跑那个包的代码，这一步会被循环守卫当成改动动作盯上。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "package": {"type": "string", "description": "包名。"},
+        },
+        "required": ["package"],
+    },
+}
+
+SOURCE_PACKAGE_REMOVE_SCHEMA: Dict[str, Any] = {
+    "name": "source_package_remove",
+    "description": (
+        "卸**一个**第三方信源包：`package` 是包名（`source_package_list` 给的那个 `distribution`）。\n"
+        "卸掉之后它带来的那条信源会从注册表里消失；**采到的东西留在池里**（池只增不删）。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "package": {"type": "string", "description": "包名。"},
+        },
+        "required": ["package"],
+    },
+}
+
+
+def _spawn_collectors(verb: str, package: str) -> tuple[int, str, str]:
+    """跑 ``plobi collectors <verb> <包名> --json --yes``，等它跑完。
+
+    与设置屏那一面**同一个形状**（那一面也是 spawn `plobi collectors …`）——
+    闸门在 CLI 里，不在这一层。`--json` 让 CLI 吐那份报告（它自己写的那句人话
+    ＋ pip 的尾巴），`--yes` 标"这一条是非交互的"。
+    """
+    cmd = [sys.executable, "-m", "plobi_cli.main", "collectors", verb, package, "--json", "--yes"]
+    env = {**os.environ, "PLOBI_NONINTERACTIVE": "1"}
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=_PACKAGE_TIMEOUT, env=env)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"装/卸 {package} 超时（{_PACKAGE_TIMEOUT} 秒还没完）。"
+    except Exception as exc:  # noqa: BLE001 - 起不来也要说得出
+        return 127, "", f"起不来这一轮：{type(exc).__name__}: {exc}"
+    return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+
+def _package_report(verb: str, package: str) -> Dict[str, Any]:
+    """把 CLI 那一轮读成一份说得清的话（**CLI 自己说什么就是什么，不转述**）。"""
+    code, out, err = _spawn_collectors(verb, package)
+    report: Dict[str, Any] = {}
+    for line in reversed((out or "").splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+        except Exception:  # noqa: BLE001 - CLI 没吐 JSON 就按原文报
+            continue
+        if isinstance(parsed, dict):
+            report = parsed
+            break
+
+    if not report:
+        # CLI 没吐 JSON：它多半是**拒了**（名字闸门）——那句话就是判据，原样带回来。
+        detail = (err or out or "").strip()
+        return {"package": package, "verb": verb, "cli_exit_code": code, "ok": False,
+                "summary": detail or f"装/卸 {package} 没跑成（退出码 {code}）。"}
+
+    payload: Dict[str, Any] = {
+        "package": str(report.get("package") or package),
+        "verb": verb,
+        "cli_exit_code": code,
+        "ok": bool(report.get("ok")) and code == 0,
+        "summary": str(report.get("summary") or ""),
+        "sources_added": list(report.get("added") or []),
+        "sources_removed": list(report.get("removed") or []),
+        "sources": list(report.get("sources") or []),
+    }
+    output = report.get("output")
+    if output:
+        payload["output"] = output if isinstance(output, str) else list(output)
+    return payload
+
+
+def _package_result(payload: Dict[str, Any]) -> str:
+    """成功与失败**一个形状**：失败时 `error` 那一格就是 CLI 自己写的那句话。"""
+    out: Dict[str, Any] = {"ok": bool(payload.get("ok"))}
+    if not out["ok"]:
+        out["error"] = str(payload.get("summary") or "没跑成")
+    out.update({k: v for k, v in payload.items() if k != "ok"})
+    return json.dumps(out, ensure_ascii=False)
+
+
+def _handle_package_list(args: Dict[str, Any], **_kw: Any) -> str:
+    from plobi.collectors import external
+
+    try:
+        rows = external.installed_external_packages()
+    except Exception as exc:  # noqa: BLE001 - 读不到就说读不到
+        return _err(f"读外面装着的信源包失败：{type(exc).__name__}: {exc}")
+    return _ok({"packages": rows, "count": len(rows)})
+
+
+def _handle_package_install(args: Dict[str, Any], **_kw: Any) -> str:
+    # **不预校验包名**（连空串也不拦）：名字闸门在 CLI 那一层，它自己会说明白
+    # 「这一层不收什么」——自己先解释一遍＝把闸门挪回用户输入离执行最近的那一跳。
+    package = str(args.get("package") or "")
+    return _package_result(_package_report("install", package))
+
+
+def _handle_package_remove(args: Dict[str, Any], **_kw: Any) -> str:
+    package = str(args.get("package") or "")
+    return _package_result(_package_report("remove", package))
+
+
 registry.register(
     name="source_list",
     toolset=TOOLSET,
@@ -487,4 +636,25 @@ registry.register(
     schema=SOURCE_COLLECT_SCHEMA,
     handler=_handle_collect,
     emoji="📥",
+)
+registry.register(
+    name="source_package_list",
+    toolset=TOOLSET,
+    schema=SOURCE_PACKAGE_LIST_SCHEMA,
+    handler=_handle_package_list,
+    emoji="📦",
+)
+registry.register(
+    name="source_package_install",
+    toolset=TOOLSET,
+    schema=SOURCE_PACKAGE_INSTALL_SCHEMA,
+    handler=_handle_package_install,
+    emoji="⬇️",
+)
+registry.register(
+    name="source_package_remove",
+    toolset=TOOLSET,
+    schema=SOURCE_PACKAGE_REMOVE_SCHEMA,
+    handler=_handle_package_remove,
+    emoji="🗑",
 )

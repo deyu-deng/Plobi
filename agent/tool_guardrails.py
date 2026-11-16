@@ -55,6 +55,12 @@ MUTATING_TOOL_NAMES = frozenset(
         "source_set_cadence",
         "source_configure",
         "source_collect",
+        # 信源包那两把（WP-SOURCE-PACKAGES）：装一个第三方信源包、卸一个。
+        # **装包＝跑那个包的代码**——产品面上唯一一个会执行任意第三方代码的入口，
+        # 循环守卫更要认得出它在改东西。
+        # （`source_package_list` 反过来不进这张名单——它什么也不改。）
+        "source_package_install",
+        "source_package_remove",
         "skill_manage",
         # 浏览器那一族 16b 起收成一把 `browser_exec`（写 Python 驱动真浏览器）：
         # 它什么都能改（点、输入、导航），循环守卫必须认得出它在改东西。

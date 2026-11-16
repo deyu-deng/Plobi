@@ -63,6 +63,12 @@ _PLOBI_CORE_TOOLS = [
     # 不是哪个角色的特权——按 role 过滤就把这件事重新变成特权入口。
     "source_list", "source_read", "source_enable", "source_set_cadence",
     "source_configure", "source_collect",
+    # 信源包那三把（WP-SOURCE-PACKAGES）：列外面装着的包、装一个、卸一个。
+    # 与上面六把同一 rung：**接一个自己的信源**也是每个角色都要的手（用户 11-16 20:1x
+    # 拍「让 Agent 能装/卸一个信源包」——真装真卸）。装与卸是**两件**事，所以是**两把**
+    # 工具（裁 185：参数里不许有 action/intent/mode）。装包＝跑那个包的代码 ⇒ 这两把
+    # 都在循环守卫的改动名单里。
+    "source_package_list", "source_package_install", "source_package_remove",
     # 日程的读手与写手（WP-AGENDA-ATOMS / 裁定 185）。同一 rung、同一理由：
     # 「看得见自己家的日程、也改得动」不是秘书的特权，是每个角色都需要的手——课程 Agent
     # 要读课表才能问作业，项目 Agent 要知道今天哪几块是它的。而**写**这一枚刻意给到所有角色：
@@ -243,10 +249,12 @@ TOOLSETS = {
 
     "sources": {
         "description": ("The source face: see what each collector is doing, switch one on/off, set how "
-                        "often to pull it, write its config, or trigger one collection round now "
+                        "often to pull it, write its config, or trigger one collection round now; "
+                        "plus the third-party source packages: list them, install one, remove one "
                         "(read + write)"),
         "tools": ["source_list", "source_read", "source_enable", "source_set_cadence",
-                  "source_configure", "source_collect"],
+                  "source_configure", "source_collect",
+                  "source_package_list", "source_package_install", "source_package_remove"],
         "includes": []
     },
 
