@@ -21,6 +21,7 @@ from tools.delegate_tool import (
     DELEGATE_BLOCKED_TOOLS,
     DELEGATE_TASK_SCHEMA,
     DelegateEvent,
+    _drop_blocked_tools,
     _get_max_concurrent_children,
     _load_config,
     _LEGACY_EVENT_MAP,
@@ -158,12 +159,41 @@ class TestChildSystemPrompt(unittest.TestCase):
 
 class TestStripBlockedTools(unittest.TestCase):
     def test_removes_blocked_toolsets(self):
+        """被挡的那几个 toolset（delegation／clarify／code_execution）必须拿掉。
+
+        ⚠️ ``memory`` **不在**被拿掉的那一栏：它现在装上了产品面那两枚原子
+        （``memory_read``／``memory_write``，裁 185）⇒ 不再是「工具全在黑名单里」
+        ⇒ 整族不进黑名单。黑名单里挡的仍是那把 ``memory`` 工具本身
+        （不许写共享 MEMORY.md）。
+        """
         result = _strip_blocked_tools(["terminal", "file", "delegation", "clarify", "memory", "code_execution"])
-        self.assertEqual(sorted(result), ["file", "terminal"])
+        self.assertEqual(sorted(result), ["file", "memory", "terminal"])
+        self.assertIn("memory", DELEGATE_BLOCKED_TOOLS, "那把工具本身仍在黑名单里")
 
     def test_preserves_allowed_toolsets(self):
         result = _strip_blocked_tools(["terminal", "file", "web", "browser"])
         self.assertEqual(sorted(result), ["browser", "file", "terminal", "web"])
+
+    def test_the_blocked_tool_never_reaches_the_child(self):
+        """门类那一层只摘「整族全被挡」的 ⇒ 族里混着一把允许的就会漏。
+
+        ``memory`` 族现在带着产品面那两枚原子（``memory_read``／``memory_write``，
+        裁 185）⇒ 整族留在子 Agent 的门类里；但那把**明令挡住**的 ``memory``
+        （不许子 Agent 写共享 MEMORY.md）不许跟着漏进去。
+        """
+        defs = [
+            {"function": {"name": "memory_read"}},
+            {"function": {"name": "memory_write"}},
+            {"function": {"name": "memory"}},
+            {"function": {"name": "terminal"}},
+        ]
+        kept = [t["function"]["name"] for t in _drop_blocked_tools(defs)]
+        self.assertNotIn("memory", kept, "被挡的那把工具漏给了子 Agent")
+        self.assertIn("memory_read", kept, "产品面那两枚原子该留着")
+        self.assertIn("memory_write", kept)
+        self.assertIn("terminal", kept)
+        # 名单本身不许被这一刀改掉。
+        self.assertIn("memory", DELEGATE_BLOCKED_TOOLS)
 
     def test_empty_input(self):
         result = _strip_blocked_tools([])

@@ -177,14 +177,46 @@ def test_without_a_bundle_the_stage_still_wants_a_checkout() -> None:
 
     Asserted on the SOURCE, not by running it: that path really clones over
     the network, and it is today's behaviour rather than this knife's.
+
+    2026-11-16（现况）：clone 那条路**按 ref 分档**了，不再是一句写死的
+    ``clone --depth 1 --branch $Branch``：
+      · 默认（只有 -Branch）：浅克隆 + ``--branch <branch>``；
+      · -Tag：浅克隆 + ``--branch <tag>``；
+      · -Commit：**不带 --depth**（裸 SHA 不是 ref，浅克隆里根本没有那个 commit），
+        克隆完再由后面那一段 detach 到那个 SHA。
+    形状由 ``$cloneDepthArgs`` / ``$cloneRef`` / ``$cloneArgsBase`` 三样拼出来，
+    所以判据跟着这三样走。
     """
     source = INSTALL_PS1.read_text(encoding="utf-8")
 
-    assert "git -c windows.appendAtomically=false clone --depth 1 --branch $Branch" in source, "克隆那条路不见了"
-    assert "if ($BundleDir -and (Test-Path $BundleDir))" in source, "bundle 分支不见了"
-    assert source.index("if ($BundleDir -and (Test-Path $BundleDir))") < source.index(
-        "git -c windows.appendAtomically=false clone --depth 1 --branch $Branch"
-    ), "bundle 分支必须排在克隆那条路之前"
+    bundle_branch = "if ($BundleDir -and (Test-Path $BundleDir))"
+    assert bundle_branch in source, "bundle 分支不见了"
+
+    # clone 的拼装块：从 $cloneDepthArgs 起到 $cloneArgsSsh 为止。
+    start = source.index("$cloneDepthArgs = @(\"--depth\", \"1\")")
+    end = source.index("$cloneArgsSsh =", start)
+    block = source[start:end]
+
+    # 默认浅克隆。
+    assert '$cloneDepthArgs = @("--depth", "1")' in block
+    # ref 的优先级：Commit > Tag > Branch。
+    assert "if ($Commit)" in block
+    assert "elseif ($Tag)" in block
+    assert "$cloneRef = $Tag" in block
+    assert "$cloneRef = $Branch" in block
+    # -Commit ⇒ 不带 --depth（浅克隆里没有那个 commit）。
+    commit_at = block.index("if ($Commit)")
+    tag_at = block.index("elseif ($Tag)")
+    assert "$cloneDepthArgs = @()" in block[commit_at:tag_at], (
+        "-Commit 必须整份历史（浅克隆拿不到那个 SHA）"
+    )
+    # clone 本体：原子写开关 + autocrlf 一起骑在 clone 上。
+    assert '@("-c", "windows.appendAtomically=false", "-c", "core.autocrlf=false", "clone")' in block
+    # 选中的 ref 以 --branch 的形式跟在 clone 后面。
+    assert 'if ($cloneRef) { $cloneArgsBase += @("--branch", $cloneRef) }' in block
+
+    # bundle 分支必须排在克隆那条路之前。
+    assert source.index(bundle_branch) < start, "bundle 分支必须排在克隆那条路之前"
 
 
 def test_the_dependencies_stage_asks_uv_for_an_offline_install() -> None:

@@ -377,7 +377,11 @@ async def test_start_command_is_noop_during_active_session():
         ("/help", "_handle_help_command", "Help text"),
         ("/commands", "_handle_commands_command", "Commands text"),
         ("/update", "_handle_update_command", "Update text"),
-        ("/profile", "_handle_profile_command", "Profile text"),
+        # ⚠️ 这里曾是 "/profile"（_handle_profile_command）：那条命令的主名已经改成
+        # ``agent``（``profile`` 降为别名，裁 WP-PROFILE-CANCEL），网关的
+        # 「跑活时也直接答」那一栏按**主名**认 ⇒ 那一格现在走的是 catch-all 的
+        # 「Agent is running」回话。判据改成仍在那道面闸里的 ``/version``。
+        ("/version", "_handle_version_command", "Version text"),
     ],
 )
 async def test_active_session_bypass_commands_dispatch_without_interrupt(

@@ -38,12 +38,21 @@ def test_gateway_config_flags_use_shared_helper():
         assert pattern not in src, f"hand-rolled truthy set without 'on': {pattern}"
 
 
-def test_desktop_gate_accepts_on():
+def test_desktop_terminal_gates_no_longer_read_the_env_flag():
+    """桌面那两把（read_terminal／close_terminal）**不再有 env 闸**。
+
+    以前答的是「这个进程是不是被桌面起的」（``PLOBI_DESKTOP``）⇒ 那是**进程级**的：
+    桌面客户端连**远程后端**时后端进程上没有那个变量 ⇒ 工具**从工具表里静默消失**，
+    而能力其实可用（renderer 的 WS 桥就在那个连接上）。
+
+    现在：**门类 ``desktop_ui`` 就是那道面闸**（按这一会话的平台折进去），
+    check_fn 只答可达性、不答表面 ⇒ ``PLOBI_DESKTOP`` 摆 on／off／没有都一样。
+    新的判据在 ``tests/tools/test_desktop_ui_surface.py``。
+    """
     from tools.close_terminal_tool import check_close_terminal_requirements
     from tools.read_terminal_tool import check_read_terminal_requirements
 
-    with patch.dict(os.environ, {"PLOBI_DESKTOP": "on"}):
-        assert check_read_terminal_requirements() is True
-        assert check_close_terminal_requirements() is True
-    with patch.dict(os.environ, {"PLOBI_DESKTOP": "off"}):
-        assert check_read_terminal_requirements() is False
+    for value in ("on", "off"):
+        with patch.dict(os.environ, {"PLOBI_DESKTOP": value}):
+            assert check_read_terminal_requirements() is True
+            assert check_close_terminal_requirements() is True

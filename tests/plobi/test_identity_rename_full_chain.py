@@ -340,13 +340,22 @@ def test_the_rename_endpoint_shows_the_plan_before_it_touches_anything(full_home
     assert _roster_names() == ["AuraAgain", "agenda"]
 
 def test_rename_moves_the_legacy_store_dir(full_home, monkeypatch):
-    """判据：改名前按旧名落的那把排程存储跟着搬走，旧目录不留在盘上没人认领。
+    """判据：改名前按旧键落的那把排程存储跟着搬走，旧目录不留在盘上没人认领。
 
     11-05 现读：这台 ``cron/agents/`` 下 35 个目录，英名与中文名两把同时存在。
     2026-11-16（i18n 定名刀）：门牌就是名册 name，没有第二把拼法、也没有钉表
     （``runtime-slugs.yaml`` 已随 slug 层一起删除），所以这里只剩「名字的那把要跟上」。
+
+    「旧键」＝**名册行的 agent_id**（不是旧的小写门牌——slug 层已经删了）。
+    按现况从名册行取，不写死一把字符串：否则两个平台的行为会分叉（Windows 上
+    大小写不敏感，旧门牌那一把与新名那一把是同一个目录，这一档会**假绿**）。
     """
-    legacy = full_home / "cron" / "agents" / "aura"
+    from plobi.agents.registry import load_registry
+    from plobi_cli.agent_identity import identity_store_key
+
+    entry = load_registry().agents["Aura"]
+    legacy_key = identity_store_key(entry.agent_id)
+    legacy = full_home / "cron" / "agents" / legacy_key
     legacy.mkdir(parents=True, exist_ok=True)
     (legacy / "jobs.json").write_text('{"jobs": [{"id": "orphan"}]}', encoding="utf-8")
 
@@ -354,6 +363,13 @@ def test_rename_moves_the_legacy_store_dir(full_home, monkeypatch):
 
     assert (full_home / "cron" / "agents" / "AuraPrime" / "jobs.json").is_file()
     assert not legacy.exists(), "旧名那一把的排程被丢在原地，改名后再没人认领"
+    # 它跟着搬走了（主目录已被占用时落在 -legacy 那把旁边）
+    carried = [
+        p
+        for p in (full_home / "cron" / "agents").glob("*/jobs.json")
+        if "orphan" in p.read_text(encoding="utf-8")
+    ]
+    assert carried, "旧那一把的作业没跟着搬走"
 
 
 def test_the_cron_scopes_point_at_the_roster_name_dir(monkeypatch, tmp_path):

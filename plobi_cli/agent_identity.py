@@ -1522,7 +1522,17 @@ def plan_identity_rename(old_name: str, new_name: str) -> Tuple[dict, List[dict]
     if legacy_key and legacy_key != identity_store_key(old_key):
         legacy_store = home / "cron" / "agents" / legacy_key
         if legacy_store.is_dir():
-            target = new_store if not new_store.is_dir() else home / "cron" / "agents" / f"{identity_store_key(new_key)}-legacy"
+            # 目标位：**主目录那一把（old_store）也要搬过来**时，new_store 会被它占住
+            # ⇒ 旧这一把只能落在旁边的 ``-legacy`` 那把。
+            # 原来这里看的是「此刻 new_store 在不在」，可主目录那一步还没执行 ⇒
+            # 两步都奔着 new_store 去 ⇒ 改到第二步撞「目标已经存在，不覆盖」，
+            # 整个改名失败（11-16 实测：两把目录同时存在时改名改名就炸）。
+            if old_store.is_dir():
+                target = home / "cron" / "agents" / f"{identity_store_key(new_key)}-legacy"
+            elif new_store.is_dir():
+                target = home / "cron" / "agents" / f"{identity_store_key(new_key)}-legacy"
+            else:
+                target = new_store
             steps.append({"kind": "move-dir", "src": str(legacy_store), "dst": str(target)})
 
     # 2026-11-16（i18n 定名刀）：slug-pin 链路整条删除——门牌就是 name 本身，

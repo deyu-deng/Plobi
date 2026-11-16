@@ -294,7 +294,10 @@ class TestSystemPromptActiveProfile:
         那几份」；④ 绕过那个旗标叫 ``cross_agent=True``。
         """
         from pathlib import Path
-        src = Path("agent/system_prompt.py").read_text()
+        # 源码路径按本档位置算，不靠 cwd（pytest 从别处起手时相对路径会读空）。
+        src = (Path(__file__).resolve().parents[2] / "agent" / "system_prompt.py").read_text(
+            encoding="utf-8"
+        )
         assert "Active agent:" in src
         assert "cross_agent=True" in src
         # 一份共享家 + 「没有按 Agent 分的家」这句话必须在（那句旧话是假的）
@@ -304,6 +307,9 @@ class TestSystemPromptActiveProfile:
         assert "Leave another agent's alone" in src
         # 两个分支都在（默认身份与有名有姓的身份）
         assert "Plobi keeps ONE shared home" in src
-        assert "Active agent: {active_profile}" in src
+        # 11-12 起，报的那一串是**用户命名的名字**（名册行的 display_name），
+        # 不是 agent_id、也不是作用域键 ⇒ 提示词那句的写法也跟着换了
+        # （agent/system_prompt.py:441 走 ``_roster_display_name()``）。
+        assert "Active agent: {_roster_display_name(active_profile)}" in src
         # 旧词不许再出现在给模型看的段落里（内部名不算）
         assert "Active Plobi profile" not in src

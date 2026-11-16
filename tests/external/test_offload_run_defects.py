@@ -43,11 +43,16 @@ def test_the_file_instruction_is_ascii_so_the_shell_cannot_split_it():
     assert " " in prompt, "必须含 ASCII 空格 ⇒ list2cmdline 一定会加引号"
 
 
-def test_the_npm_shim_is_bypassed_so_no_cmd_shell_eats_the_quotes():
+def test_the_npm_shim_is_bypassed_so_no_cmd_shell_eats_the_quotes(tmp_path):
     """垫片 → 真实 Node 入口：解析垫片最后一行那固定形状
     （`"%_prog%" "%dp0%\\node_modules\\...\\<entry>" %*`），
-    ⇒ 直接起 `node.exe <entry>`，**中间不经过 cmd.exe**。"""
-    shim = Path("D:/fake/cli/pkg.cmd")
+    ⇒ 直接起 `node <entry>`，**中间不经过 cmd.exe**。
+
+    假垫片落在 **tmp_path** 里（不是某个盘符字面量）：垫片解析只认它自己所在目录，
+    换个平台也一样解析得出；写死 `D:/fake/...` 在 POSIX 上是个相对路径，
+    会在仓里凭空长出一棵假树。
+    """
+    shim = tmp_path / "cli" / "pkg.cmd"
     shim.parent.mkdir(parents=True, exist_ok=True)
     entry = shim.parent / "node_modules" / "pkg" / "bin" / "entry.js"
     entry.parent.mkdir(parents=True, exist_ok=True)
@@ -63,38 +68,35 @@ def test_the_npm_shim_is_bypassed_so_no_cmd_shell_eats_the_quotes():
         '"%_prog%" "%dp0%\\node_modules\\pkg\\bin\\entry.js" %*\r\n',
         encoding="utf-8",
     )
-    try:
-        found = offload.resolve_node_entry(str(shim))
-        if found is None:
-            pytest.skip("这台机器上没有 node.exe（垫片解析要靠它）")
-        node, script = found
-        assert script.lower().endswith(os.path.join("pkg", "bin", "entry.js"))
-        assert os.path.basename(node).lower() == "node.exe"
+    # tmp_path 由 pytest 收尾，不必自己 rmtree。
+    found = offload.resolve_node_entry(str(shim))
+    if found is None:
+        pytest.skip("这台机器上没有 node（垫片解析要靠它）")
+    node, script = found
+    assert script.lower().endswith(os.path.join("pkg", "bin", "entry.js"))
+    # 解析出来的是 **node 本体**：Windows 上叫 node.exe，POSIX 上叫 node。
+    # 判据是「是 node、且不是 cmd」——名字随平台走，机制（绕开 cmd.exe）不变。
+    node_name = os.path.basename(node).lower()
+    assert node_name in {"node", "node.exe"}, f"解析出来的不是 node 本体：{node}"
+    assert "cmd" not in node_name, "绕行的目的是不经过 cmd.exe"
 
-        argv = offload.spawn_argv([str(shim), "--json", "-y", "prompt"])
-        if os.name == "nt":
-            assert argv[0].lower().endswith("node.exe"), "绕开 cmd.exe"
-            assert argv[1].lower().endswith("entry.js")
-            assert "cmd.exe" not in [a.lower() for a in argv]
-            assert argv[2:] == ["--json", "-y", "prompt"], "参数一个不许少、也不许换位置"
-    finally:
-        import shutil
-        shutil.rmtree(str(shim.parent), ignore_errors=True)
+    argv = offload.spawn_argv([str(shim), "--json", "-y", "prompt"])
+    if os.name == "nt":
+        assert argv[0].lower().endswith(("node.exe", "node")), "绕开 cmd.exe"
+        assert argv[1].lower().endswith("entry.js")
+        assert "cmd.exe" not in [a.lower() for a in argv]
+        assert argv[2:] == ["--json", "-y", "prompt"], "参数一个不许少、也不许换位置"
 
 
-def test_a_shim_we_cannot_parse_still_falls_back_to_cmd():
+def test_a_shim_we_cannot_parse_still_falls_back_to_cmd(tmp_path):
     """解析不出来**照旧走 `cmd /c`**——不许因为绕行失败就不派活。"""
-    bogus = Path("D:/fake/cli/bogus.cmd")
+    bogus = tmp_path / "cli" / "bogus.cmd"
     bogus.parent.mkdir(parents=True, exist_ok=True)
     bogus.write_text("@echo off\r\necho hi\r\n", encoding="utf-8")
-    try:
-        assert offload.resolve_node_entry(str(bogus)) is None
-        if os.name == "nt":
-            argv = offload.spawn_argv([str(bogus), "--x"])
-            assert argv[0].lower().endswith(("cmd.exe", "comspec"))
-    finally:
-        import shutil
-        shutil.rmtree(str(bogus.parent), ignore_errors=True)
+    assert offload.resolve_node_entry(str(bogus)) is None
+    if os.name == "nt":
+        argv = offload.spawn_argv([str(bogus), "--x"])
+        assert argv[0].lower().endswith(("cmd.exe", "comspec"))
 
 
 # ── 缺陷②：登录态照实判（过期 token 不算登上了） ──────────────────────────

@@ -121,29 +121,43 @@ def test_summary_says_did_not_reply_and_could_not_read_apart():
 # 10-22 实测：名册绑 `D:\projects\Sindri`，台账记的是文件系统解析出的 `D:\Projects\Sindri`，
 # 逐字符 startswith 让这一格**永远空表**——用户因此看不到外包那一条。同一个式子还反过来错：
 # `Sindri-2` 会被算到 `Sindri` 头上。
+#
+# ⚠️ 这一族的路**按本平台现造**（tmp_path）：`_cwd_under_folder` 走的是本平台的路径语义
+# （`os.path.abspath`／`normcase`／`relpath`），写死 `D:\projects\Sindri` 那种盘符字面量
+# 在 POSIX 上根本不是绝对路径 ⇒ 那一格在 Linux CI 上必然是空的（实测：更深一层那格红）。
 
-def test_a_deeper_directory_still_belongs_to_that_agent():
-    assert _cwd_under_folder("D:/projects/Sindri/sub/dir", "D:\\projects\\Sindri")
+def test_a_deeper_directory_still_belongs_to_that_agent(tmp_path):
+    """名册绑的那只目录，**更深一层**还是它的。"""
+    home = tmp_path / "Sindri"
+
+    assert _cwd_under_folder(str(home / "sub" / "dir"), str(home))
 
 
-def test_sibling_folder_with_the_same_prefix_is_not_the_same_agent():
+def test_sibling_folder_with_the_same_prefix_is_not_the_same_agent(tmp_path):
     """纯前缀匹配会把兄弟目录的活记到隔壁分身名下——那比漏报更坏。"""
-    assert not _cwd_under_folder("D:/projects/Sindri-2", "D:/projects/Sindri")
-    assert not _cwd_under_folder("D:/projects/Sindrievous", "D:/projects/Sindri")
+    home = tmp_path / "Sindri"
+
+    assert not _cwd_under_folder(str(tmp_path / "Sindri-2"), str(home))
+    assert not _cwd_under_folder(str(tmp_path / "Sindrievous"), str(home))
 
 
-def test_parent_folder_is_not_inside_the_bound_one():
-    assert not _cwd_under_folder("D:/projects", "D:/projects/Sindri")
+def test_parent_folder_is_not_inside_the_bound_one(tmp_path):
+    home = tmp_path / "Sindri"
+
+    assert not _cwd_under_folder(str(tmp_path), str(home))
 
 
-def test_case_rule_follows_this_platform_not_a_lowercase_hack():
+def test_case_rule_follows_this_platform_not_a_lowercase_hack(tmp_path):
     """Windows 上大小写是显示差异；POSIX 上它是数据的一部分，不许无条件抹平。"""
-    assert _cwd_under_folder("D:/PROJECTS/SINDRI/x", "D:/projects/Sindri") is (os.name == "nt")
+    home = tmp_path / "projects" / "Sindri"
+    other = tmp_path / "PROJECTS" / "SINDRI" / "x"
+
+    assert _cwd_under_folder(str(other), str(home)) is (os.name == "nt")
 
 
-def test_unbound_agent_gets_nothing_rather_than_a_guess():
-    assert not _cwd_under_folder("D:/anything/at/all", "")
-    assert not _cwd_under_folder("", "D:/projects/Sindri")
+def test_unbound_agent_gets_nothing_rather_than_a_guess(tmp_path):
+    assert not _cwd_under_folder(str(tmp_path / "anything" / "at" / "all"), "")
+    assert not _cwd_under_folder("", str(tmp_path / "Sindri"))
 
 
 # ── 它说的话要留得下来：回执文件与口头回话是两句不同的话 ─────────────

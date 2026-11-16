@@ -752,8 +752,13 @@ class TestClassifyApiError:
         result = classify_api_error(e, approx_tokens=5000, context_length=200000)
         assert result.reason == FailoverReason.timeout
 
-    def test_disconnect_many_messages_below_large_context_pressure_is_timeout(self):
-        """Large-context disconnects should not overflow solely due to message count."""
+    def test_disconnect_many_messages_goes_to_compress_even_on_a_large_window(self):
+        """大上下文上的断连**也**走压缩那一支，不许只看比例。
+
+        断连的规模地板（``_DISCONNECT_COMPRESS_MIN_MESSAGES``／``_DISCONNECT_COMPRESS_MIN_TOKENS``）
+        是按「这一趟已经不小了」判的：1M 窗口的模型上，比例看着很小，但同一份
+        大载荷重发三次只会死三次 ⇒ 压一次更划算（2026-11-05 实测后加的地板）。
+        """
         e = Exception("server disconnected without sending complete message")
         result = classify_api_error(
             e,
@@ -762,6 +767,20 @@ class TestClassifyApiError:
             approx_tokens=74320,
             context_length=1_000_000,
             num_messages=432,
+        )
+        assert result.reason == FailoverReason.context_overflow
+        assert result.should_compress is True
+
+    def test_disconnect_below_the_size_floors_is_a_plain_timeout(self):
+        """地板以下的老规矩：断连就是断连，重试即可（不许乱压历史）。"""
+        e = Exception("server disconnected without sending complete message")
+        result = classify_api_error(
+            e,
+            provider="openai-codex",
+            model="gpt-5.5",
+            approx_tokens=5000,
+            context_length=1_000_000,
+            num_messages=10,
         )
         assert result.reason == FailoverReason.timeout
         assert result.should_compress is False

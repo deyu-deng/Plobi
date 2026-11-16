@@ -491,7 +491,13 @@ def test_the_ceiling_sentence_names_the_catch_all_rather_than_a_direction():
 
 
 def test_the_status_reading_includes_whether_the_machine_is_ours(monkeypatch):
-    """One reading for the machine half too — the CLI, the panel and boot must not disagree."""
+    """One reading for the machine half too — the CLI, the panel and boot must not disagree.
+
+    这一格（`agent/egress/system_proxy.py::status_lines`）在 Windows 上读注册表、答
+    「现在是不是我们的」，并把 PAC 那一档一并报出来；在别的系统上这一格**还没实现**
+    （`system_proxy.py:53-55`），面上必须说清是「没实现」（`:667-668`）——
+    不能把「没实现」说成「不是我们的」。
+    """
     from agent.egress import system_proxy
     from agent.egress.status import render
 
@@ -499,8 +505,15 @@ def test_the_status_reading_includes_whether_the_machine_is_ours(monkeypatch):
 
     lines = render(_range_table(), with_probe=False)
 
-    assert any(line.startswith("system proxy:") for line in lines), lines
-    assert any("我们的 PAC" in line for line in lines), lines
+    machine = [line for line in lines if line.startswith("system proxy:")]
+    assert len(machine) == 1, machine
+    if system_proxy.supported():
+        # 注册表里 ProxyEnable=0 ⇒ 这一格现在**不是**我们的。
+        assert "Plobi 在管" not in machine[0], machine
+        assert "不是" in machine[0], machine
+        assert any("我们的 PAC" in line for line in lines), lines
+    else:
+        assert "只实现 Windows" in machine[0], machine
 
 
 def test_a_dropped_range_is_named_by_its_own_sentence(monkeypatch, caplog):

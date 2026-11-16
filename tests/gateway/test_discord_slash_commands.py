@@ -202,9 +202,16 @@ async def test_auto_registers_missing_gateway_commands(adapter):
 
     # These commands are gateway-available but were not in the original
     # hardcoded registration list — they should be auto-registered.
-    expected_auto = {"debug", "yolo", "profile"}
+    #
+    # 「profile」这个名字已经退役：名册那一行改叫 agent
+    # （plobi_cli/commands.py:122 `CommandDef("agent", ..., aliases=("profile",))`）。
+    # Discord 只登记**正名**（plugins/platforms/discord/adapter.py:4275 取
+    # `cmd_def.name`），别名不上树 ⇒ 树上该是 /agent，不是 /profile。
+    expected_auto = {"debug", "yolo", "agent"}
     for name in expected_auto:
         assert name in tree_names, f"/{name} should be auto-registered on Discord"
+    # 退役的那个名字不该再出现在树上（别名只在聊天层留着，slash 树上没有）。
+    assert "profile" not in tree_names, "/profile 已退役，不该再自动登记到 Discord"
 
 
 @pytest.mark.asyncio

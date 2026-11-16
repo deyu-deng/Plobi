@@ -13,6 +13,7 @@ from datetime import date
 import pytest
 
 from plobi.mind.provider import MindProvider
+from tools import human_dossier_tools
 
 PROFILE: dict = {
     "version": 1,
@@ -57,7 +58,11 @@ def roots(tmp_path, monkeypatch):
 
 
 def _call(provider, **args):
-    return json.loads(provider.handle_tool_call("dossier_write", args))
+    # 人读面那 17 把在 11-14（WP-HUMAN-REGISTRY-TOOLS）之后是**注册表工具**，
+    # provider 只管脑页了 ⇒ 这一把从 provider 搬到了 `tools/human_dossier_tools.py`。
+    # 断言一个字不动，只把「从哪儿调」追上现况（同一个 `_call` 形状留着，
+    # 第一个参数是当年那个 provider 实例，现在不再用）。
+    return json.loads(human_dossier_tools.dossier_write(args))
 
 
 def test_goal_and_status_change_and_unknown_keys_survive(roots):

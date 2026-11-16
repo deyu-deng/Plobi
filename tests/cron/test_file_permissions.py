@@ -113,9 +113,28 @@ class TestConfigFilePermissions(unittest.TestCase):
             home_mode = stat.S_IMODE(os.stat(home).st_mode)
             self.assertEqual(home_mode, 0o700)
 
-            for subdir in ("cron", "sessions", "logs", "memories"):
+            # 2026-11-16：``memories/`` 已退役（裁定 42/178）——家不再种它，
+            # 免得"清干净的家"看着像没清干净（plobi_cli/config.py 里
+            # ``_HOME_REQUIRED_SUBDIRS`` / ``_HOME_EXTRA_SUBDIRS`` 是同一条名单）。
+            for subdir in (
+                "cron",
+                "sessions",
+                "logs",
+                "logs/curator",
+                "pairing",
+                "hooks",
+                "image_cache",
+                "audio_cache",
+                "skills",
+            ):
                 subdir_mode = stat.S_IMODE(os.stat(home / subdir).st_mode)
                 self.assertEqual(subdir_mode, 0o700, f"{subdir} should be 0700")
+
+            # 退役的那一格不许被重新种出来（种了也没人读）。
+            self.assertFalse(
+                (home / "memories").exists(),
+                "memories/ 已退役，不该再被种出来",
+            )
 
 
 class TestSecureHelpers(unittest.TestCase):

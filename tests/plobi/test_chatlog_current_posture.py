@@ -43,6 +43,21 @@ def absent(tmp_path: Path) -> Path:
     return tmp_path / "no-such-chatlog.json"
 
 
+@pytest.fixture
+def wechat_on() -> None:
+    """把微信这一条**打开**。
+
+    11-08 起这一条**默认关**（`plobi/collectors/chatlog/__init__.py:174-178`，
+    用户 11-05 原话「用户没有配置微信。就不采集。」）。关着的时候
+    `ChatlogPipeline.health()` 答的是第四态 `disabled`（`pipeline.py:160-169`），
+    **不是**那四种"采不到"——所以判「四种病分得开」的用例必须先把这一条打开：
+    那是用户配好微信之后的样子。
+    """
+    from plobi.collectors import sources_config
+
+    sources_config.set_enabled("wechat", True)
+
+
 class TestNoConfigEqualsCurrentPosture:
     """判据 7 的那条硬要求：没有 ``chatlog.json`` 时，行为就等于 ADR 现行口径。"""
 
@@ -252,7 +267,7 @@ class TestFourDeadEndsAreFourSentences:
     def test_resolved_binary_is_none_when_nothing_exists(self, tmp_path: Path) -> None:
         assert sidecar.resolved_binary(env={"PATH": str(tmp_path)}, repo_root=tmp_path) is None
 
-    def test_health_carries_the_binary_alongside_the_state(self, monkeypatch, tmp_path: Path) -> None:
+    def test_health_carries_the_binary_alongside_the_state(self, monkeypatch, tmp_path: Path, wechat_on) -> None:
         """桌面一次 `health` 就要拿到"缺哪一步"+"可用的产物"，不必二次问。"""
         from types import SimpleNamespace
 
@@ -271,7 +286,7 @@ class TestFourDeadEndsAreFourSentences:
 
 
 class TestHealthCarriesTheReason:
-    def test_unhealthy_health_reports_a_state_key(self, monkeypatch, tmp_path: Path) -> None:
+    def test_unhealthy_health_reports_a_state_key(self, monkeypatch, tmp_path: Path, wechat_on) -> None:
         from types import SimpleNamespace
         from plobi.collectors.chatlog import pipeline as pipeline_module
 
@@ -289,6 +304,40 @@ class TestHealthCarriesTheReason:
         assert report["detail"].startswith("chatlog 采不到：")
 
 
+class TestTheSourceIsOffByDefault:
+    """微信这一条 11-08 起**默认关**（`plobi/collectors/chatlog/__init__.py:174-178`）。
+
+    关着不是"坏了"：用户 11-05 原话「用户没有配置微信。就不采集。相关的采集腿也不要反复报错了」。
+    所以 `health()` 答第四态 `disabled`，桌面据此不 spawn、不弹红（`pipeline.py:147-169`）。
+    这一族与上面那四种"采不到"**分得开**——判据就是这一条。
+    """
+
+    def test_the_default_is_off(self) -> None:
+        from plobi.collectors import sources_config
+
+        enabled, origin = sources_config.effective_enabled("wechat")
+        assert enabled is False, f"微信这一条不再是默认关（现在说 {origin} 关着）"
+
+    def test_a_source_that_is_off_is_not_one_of_the_four_dead_ends(self, monkeypatch) -> None:
+        from types import SimpleNamespace
+
+        from plobi.collectors.chatlog import pipeline as pipeline_module
+
+        monkeypatch.setattr(pipeline_module, "chatlog_is_healthy", lambda client: False)
+        pipe = pipeline_module.ChatlogPipeline(
+            config=CollectorConfig(), client=SimpleNamespace(), service=SimpleNamespace(),
+            seen=SimpleNamespace(), talkers=SimpleNamespace(), confirmer=SimpleNamespace(),
+        )
+
+        report = pipe.health()
+
+        assert report["ok"] is False
+        assert report["state"] == "disabled"
+        assert report["state"] not in DEAD_STATES, "「没打开」不是「坏了」"
+        assert report["binary"] is None
+        assert "不采集" in report["detail"], report["detail"]
+
+
 DEAD_STATES = {
     sidecar.STATE_GO_MISSING,
     sidecar.STATE_BUILD_MISSING,
@@ -302,7 +351,7 @@ class TestUnreachableIsNotZeroSessions:
     "你一条会话都没有"和"采集器根本到不了"在面上长得一模一样——这条钉住它们必须分得开。"""
 
     @pytest.fixture
-    def board(self, tmp_path):
+    def board(self, tmp_path, wechat_on):
         import contextlib
         from datetime import datetime
         from types import SimpleNamespace

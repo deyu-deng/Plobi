@@ -9498,7 +9498,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     return await self._handle_help_command(event)
                 if _cmd_def_inner.name == "commands":
                     return await self._handle_commands_command(event)
-                if _cmd_def_inner.name == "profile":
+                if _cmd_def_inner.name == "agent":
                     return await self._handle_profile_command(event)
                 if _cmd_def_inner.name == "update":
                     return await self._handle_update_command(event)
@@ -9775,7 +9775,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "commands":
             return await self._handle_commands_command(event)
         
-        if canonical == "profile":
+        # 这条命令的主名是 ``agent``（``profile`` 降成别名，裁 WP-PROFILE-CANCEL）；
+        # ``canonical`` 取的是主名 ⇒ 这里必须按主名认，否则 /agent 与 /profile
+        # 两边都掉进下面的兜底（把命令当提示词发给 Agent）。
+        if canonical in {"agent", "profile"}:
             return await self._handle_profile_command(event)
 
         if canonical == "whoami":

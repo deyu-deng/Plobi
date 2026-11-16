@@ -1268,7 +1268,21 @@ def test_config_load_missing(server, tmp_path):
     assert server._load_cfg() == {}
 
 
-def test_config_roundtrip(server, tmp_path):
+def test_config_roundtrip(server, tmp_path, monkeypatch):
+    # `_current_config_path()` 走 `plobi_constants.config_path_for_home`；而上面的夹具把
+    # 整个 `plobi_constants` mock 成了 MagicMock ⇒ 那条路吐回来的是一个 Mock 路径。
+    # 产品这一周加了一道闸（`plobi_cli/config.py`：既有 `config.yaml` 读不了就不许覆写），
+    # Mock 路径 `stat()` 不报错、`open()` 报 WinError 6 ⇒ 写侧直接抛 RuntimeError。
+    # 这里把两处落点都指到 tmp_path 下的真文件，让这一档跑真正的往返（而不是绕过那道闸）。
+    import plobi_constants
+
+    cfg_path = tmp_path / "config.yaml"
+    monkeypatch.setattr(
+        server, "config_path_for_home", lambda home: cfg_path, raising=False
+    )
+    monkeypatch.setattr(
+        plobi_constants, "get_config_path", lambda: cfg_path, raising=False
+    )
     server._plobi_home = tmp_path
     server._save_cfg({"model": "test/model"})
     assert server._load_cfg()["model"] == "test/model"

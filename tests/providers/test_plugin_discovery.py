@@ -32,7 +32,18 @@ def _clear_provider_caches():
 
 
 def test_bundled_plugins_discovered():
-    """Every plugins/model-providers/<name>/ should contain a plugin.yaml + __init__.py."""
+    """Every plugins/model-providers/<name>/ must be an importable provider.
+
+    ``__init__.py`` is the only **required** file — it is what calls
+    ``register_provider()``. ``plugin.yaml`` is optional metadata: the
+    generic loader falls back to a source-text heuristic when it is
+    absent, and the data-only profiles ported from upstream Hermes
+    (``ai-gateway``, ``actual``, …) legitimately ship without one.
+
+    What a manifest *does* have to say is ``kind: model-provider`` —
+    without it the generic loader would treat the directory as a plain
+    plugin and import the module itself.
+    """
     plugins_dir = REPO_ROOT / "plugins" / "model-providers"
     assert plugins_dir.is_dir(), f"Missing {plugins_dir}"
 
@@ -41,7 +52,13 @@ def test_bundled_plugins_discovered():
 
     for child in child_dirs:
         assert (child / "__init__.py").exists(), f"{child.name} missing __init__.py"
-        assert (child / "plugin.yaml").exists(), f"{child.name} missing plugin.yaml"
+        manifest = child / "plugin.yaml"
+        if not manifest.exists():
+            continue
+        text = manifest.read_text(encoding="utf-8")
+        assert "kind: model-provider" in text, (
+            f"{child.name}/plugin.yaml must declare kind: model-provider"
+        )
 
 
 def test_all_profiles_register():

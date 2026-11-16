@@ -31,6 +31,24 @@ SCRIPT = ROOT / "scripts" / "brand_icons.py"
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 ICNS_WANTED = {"ic04", "ic05", "ic07", "ic08", "ic09", "ic10", "ic11", "ic12", "ic13", "ic14"}
 
+#: icns 每一档的**标称像素边长**（Apple 那份表）。PNG 档的尺寸必须与它对上；
+#: 最小的两档（ic04/ic05）在 macOS `iconutil` 出来的形状里是**原始 ARGB**，
+#: 不是 PNG —— 那是 icns 的正规载荷，不是「改扩展名的 PNG」。
+_ICNS_NOMINAL_PX = {
+    "ic04": 16, "ic05": 32, "ic07": 128, "ic08": 256, "ic09": 512,
+    "ic10": 1024, "ic11": 32, "ic12": 64, "ic13": 256, "ic14": 512,
+}
+
+#: 这两条落点已经不在 `brand_icons.py` 手里了（11-11 `bfe5a9a1`
+#: 「三个平台各给一张对味的图标」）：`.ico` 由 `apps/desktop/scripts/make-platform-icons.py`
+#: 从母版出（满幅圆角，给 Windows 任务栏），`.icns` 是 macOS 上 `iconutil` 出的
+#: （最小的两档走原始 ARGB，见 `test_icns_container_is_a_real_icns`）。
+#: 所以 `brand_icons.py --check` 对这两条**本来就红**——那是现况，不是漂移。
+_OWNED_ELSEWHERE = {
+    "apps/desktop/assets/icon.ico",
+    "apps/desktop/assets/icon.icns",
+}
+
 
 def _ico_entries(blob: bytes):
     assert blob[:4] == b"\x00\x00\x01\x00", "不是 ICO（Reserved=0, Type=1）"
@@ -75,6 +93,14 @@ def test_small_size_is_not_a_downscale_of_the_largest():
 
 
 def test_icns_container_is_a_real_icns():
+    """icns 是个**容器**：头四字节 `icns`、长度字段 == 文件实际字节数，
+    每一档逐条长度自洽能走到底。
+
+    载荷有两种合法形状：大尺寸走 PNG（它的 IHDR 尺寸必须与那一档的**标称边长**对上），
+    最小的两档（ic04/ic05）在 macOS `iconutil` 出来的形状里走**原始 ARGB**
+    （`iconutil` 就是这么出的）——那是 icns 的正规载荷，不是「改扩展名的 PNG」。
+    另有一档 `info` 是元数据（bplist），不参与画。
+    """
     blob = (ROOT / "apps/desktop/assets/icon.icns").read_bytes()
     assert blob[:4] == b"icns", f"头四字节是 {blob[:4]!r}，不是 icns（改扩展名的 PNG 就是这个形状）"
     declared = struct.unpack(">I", blob[4:8])[0]
@@ -84,7 +110,18 @@ def test_icns_container_is_a_real_icns():
         t = blob[o:o + 4].decode()
         ln = struct.unpack(">I", blob[o + 4:o + 8])[0]
         assert ln >= 8 and o + ln <= len(blob), f"{t} 档长度越界"
-        _w, _h = _png_size(blob[o + 8:o + ln])
+        payload = blob[o + 8:o + ln]
+        if t == "info":
+            assert payload[:4] == b"bpli", f"info 档不是 bplist：{payload[:4]!r}"
+        else:
+            assert t in _ICNS_NOMINAL_PX, f"没记到的 icns 档：{t}"
+            if payload[:4] == b"ARGB":
+                # 最小的两档：原始 ARGB（iconutil 的形状）
+                assert t in ("ic04", "ic05"), f"{t} 不该是原始 ARGB"
+            else:
+                w, h = _png_size(payload)
+                nominal = _ICNS_NOMINAL_PX[t]
+                assert (w, h) == (nominal, nominal), f"{t} 档是 {w}x{h}，标称边长是 {nominal}"
         seen.add(t)
         o += ln
     assert ICNS_WANTED <= seen, f"缺档：{ICNS_WANTED - seen}"
@@ -179,10 +216,51 @@ def test_theme_aware_masters_carry_no_baked_color():
     assert m.group(1) in mono, "图元表里的龟与 brand/plobi-wordmark-mono.svg 不是同一张图"
 
 
+def _load_brand_icons():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_brand_icons", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_generation_is_deterministic():
-    a = subprocess.run([sys.executable, str(SCRIPT), "--check"], capture_output=True, text=True)
-    assert a.returncode == 0, a.stdout + a.stderr
-    assert "GREEN" in a.stdout
+    """同一份图元跑两次，产物逐字节相同；并且 `brand_icons.py` 仍管着的那几份落点
+    与盘上的一致。
+
+    **跨平台写法**（原来跑 `scripts/brand_icons.py --check`，有两处不能成立）：
+    * 鸿蒙那两条落点在**另一个仓**（与 Code 同级的 `Plobi-Harmony-App/`）里，CI 只签出
+      Code 一个仓 ⇒ `--check` 会在 `_abs()` 上撞「不是一个 git 仓」直接抛错
+      （`scripts/brand_icons.py:317-329`）。那个仓不在场时，那两条没有可比对象。
+    * `.ico` / `.icns` 已由平台那一路接管（`_OWNED_ELSEWHERE`），`--check` 对它们本来就红。
+    """
+    bi = _load_brand_icons()
+
+    h1, masters1 = bi.assets()
+    h2, masters2 = bi.assets()
+    assert h1 == h2 and masters1 == masters2, "同一份图元跑两次的产物不一样 —— 生成不是确定性的"
+
+    files = {**h1, **{k: ("t", v) for k, v in masters1.items()}}
+    harmony_ready = (bi.HARMONY / ".git").exists()
+    checked = 0
+    for rel, (kind, data) in sorted(files.items()):
+        if rel in _OWNED_ELSEWHERE:
+            continue
+        if rel.startswith("@harmony/"):
+            if not harmony_ready:
+                continue
+            path = bi.HARMONY / rel[len("@harmony/"):]
+        else:
+            path = bi.ROOT / rel
+        cur = path.read_bytes() if kind == "b" else path.read_text(encoding="utf-8")
+        assert cur == data, f"{rel} 与主源不一致（重画一遍就能定）"
+        checked += 1
+    # 几乎没比到东西 ⇒ 判据自己坏了（不是「一致」）
+    assert checked >= len(files) - len(_OWNED_ELSEWHERE) - 2, (
+        f"只比到 {checked}/{len(files)} 份落点 —— 判据自己没跑起来"
+    )
 
 
 def test_no_legacy_avatar_bytes_remain():

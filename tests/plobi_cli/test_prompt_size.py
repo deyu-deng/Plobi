@@ -149,7 +149,23 @@ def test_blank_slate_prompt_size_counts_only_minimal_tools(isolated_home):
 
     data = compute_prompt_breakdown("cli")
 
-    assert data["tools"]["count"] == 6
+    # 条数**不写死**：写死的那一格（6）跟着 `file` 那一族多一把就过期了
+    # （`list_open_files`，WP-WORKBENCH-LAUNCHER 那一刀）。这里判的是**关系**：
+    # Blank Slate 只留 file + terminal 两族 ⇒ 上报的条数必须恰好等于这两族声明的工具数
+    # （多一条 = 有别族漏进来了；少一条 = 有工具没露出来）。
+    from toolsets import TOOLSETS
+
+    def _declared(name: str) -> set:
+        out: set = set()
+        stack = [name]
+        while stack:
+            spec = TOOLSETS[stack.pop()]
+            out.update(spec["tools"])
+            stack.extend(spec.get("includes") or [])
+        return out
+
+    expected = len(_declared("file") | _declared("terminal"))
+    assert data["tools"]["count"] == expected
 
 
 def test_skills_index_reflects_installed_skills(isolated_home):

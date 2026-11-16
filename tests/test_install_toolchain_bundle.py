@@ -16,6 +16,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -59,6 +60,7 @@ def _run_ps(body: str) -> subprocess.CompletedProcess:
         for n in (
             "Get-WindowsArch",
             "Install-Git",
+            "Set-GitBashEnvVar",
             "Ensure-NodeExeOnPath",
             "Test-NodeVersionOk",
             "Install-ManagedNodeFromZip",
@@ -70,12 +72,17 @@ def _run_ps(body: str) -> subprocess.CompletedProcess:
     # The installer persists <data dir>\node to the USER PATH (that is how a
     # fresh shell finds node).  A test must not leave that behind -- snapshot
     # it, and put it back whatever happens.
+    # 2026-11-16：``Set-GitBashEnvVar`` 也会往用户级写 ``PLOBI_GIT_BASH_PATH``
+    # （Install-Git 的快路径会调它）⇒ 一并快照、一并还原，测试不许在开发者机器上
+    # 留下钉子。
     guard = (
         "$__savedUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')\n"
+        "$__savedGitBash = [Environment]::GetEnvironmentVariable('PLOBI_GIT_BASH_PATH', 'User')\n"
         "try {\n"
         + body
         + "\n} finally {\n"
         "  [Environment]::SetEnvironmentVariable('Path', $__savedUserPath, 'User')\n"
+        "  [Environment]::SetEnvironmentVariable('PLOBI_GIT_BASH_PATH', $__savedGitBash, 'User')\n"
         "}\n"
     )
     ps1 = Path(tempfile.mkdtemp(prefix="plobi-toolchain-ps-")) / "probe.ps1"
@@ -92,6 +99,16 @@ def _run_ps(body: str) -> subprocess.CompletedProcess:
         shutil.rmtree(ps1.parent, ignore_errors=True)
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason=(
+        "这一档量的是 **Windows 装机脚本**的那条优先：包里那份 PortableGit（Windows 自解压 "
+        "7z.exe，x64 才认）先于下载。它在 POSIX 上量不到——install.ps1 在 Linux 上根本不是装机"
+        "脚本，而且掐 PATH 的写法也掐不掉真的 PATH（$env:Path 与 $PATH 是两格）。"
+        "同一条契约在两边都成立的那一半（分支顺序）由 "
+        "test_the_bundled_portable_git_wins_over_the_download 量。"
+    ),
+)
 def test_the_bundled_portable_git_is_used_instead_of_downloading(tmp_path: Path):
     """包里有 PortableGit ⇒ 不下载（真跑：掐掉 PATH，让 git 不在场）。
 
@@ -119,6 +136,27 @@ def test_the_bundled_portable_git_is_used_instead_of_downloading(tmp_path: Path)
         f"它没有去用包里那份 PortableGit：{proc.stdout}{proc.stderr}"
     )
     assert "REACHED-END" in proc.stdout, proc.stdout
+
+
+def test_the_bundled_portable_git_wins_over_the_download():
+    """包里那份必须排在下载之前（源码形状：两边都成立）。
+
+    真跑那一档（``test_the_bundled_portable_git_is_used_instead_of_downloading``）只在
+    Windows 上量得到"包里那份优先"这件事；这一档量的是同一条契约在任意平台上都成立
+    的那一半——**分支顺序**：先认包里那份，认不到才下载。
+    """
+    body = _function_text("Install-Git")
+
+    bundled_at = body.index("$bundled")
+    download_at = body.index("Downloading $assetName")
+    assert bundled_at < download_at, "下载排在了包里那份前面 ⇒ 首启零下载就破了"
+
+    # 只认 x64 的 PortableGit（包里那份就是 x64 的）。
+    assert 'Filter "PortableGit-*-64-bit.7z.exe"' in body
+    # 认到就用它，并且**不许**当成自己下载的那份删掉。
+    assert "$tmpFile = $bundled.FullName" in body
+    assert "if ($tmpIsOurs)" in body
+    assert "$tmpIsOurs = $false" in body
 
 
 def test_the_toolchain_dir_is_a_parameter_of_the_installer():

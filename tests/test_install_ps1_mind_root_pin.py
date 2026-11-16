@@ -11,6 +11,16 @@ by hand was a step nobody documented as part of installing.
 The contract is locked two ways: at the source level (the script only runs on
 Windows), **and** by running the derivation for real in PowerShell — against a temp
 home and the in-process env scope only, never the live user registry.
+
+2026-11-16（现况）：**钉的方式变了**（WP-DATA-ISOLATION，2026-11-08）。
+``MIND_ROOT`` / ``PLOBI_HOME`` / 人读面那一格不再是"往用户级注册表里写一格"，
+而是**只设本次安装进程的 ``$env``**：那几格是两份身份（装机版 / 开发态）共用的门牌，
+钉死一份就把另一份的家也带偏了。现在签的是：
+  · 由**同一个家**派生（``Join-Path $PlobiHomePath "mind"``），不许出现第二处默认；
+  · 只写本次进程的 ``$env``，**不写注册表**；
+  · **已经钉着的指针不许被改写**（脑住在哪是人的决定，口径同
+    ``paths.py::_surface_pointer()``）。
+用户级的残留由 ``Remove-LegacySharedEnvVars``（装机器时顺手收）与卸载那一档负责。
 """
 
 import os
@@ -45,6 +55,20 @@ def _function_body(source: str, name: str) -> str:
     raise AssertionError(f"unterminated function body for {name}")
 
 
+def _code_lines(body: str) -> list[str]:
+    """The function's executable lines — PowerShell line comments dropped.
+
+    裁定 48.1 / 79 禁的是**逻辑里**的盘符字面量。函数头里那段解释历史的话
+    （"开发态 MIND_ROOT 指向 D:\\Data\\AppData\\Plobi\\mind"）是**注释**，
+    不是会被人执行的路径 —— 判据要盯的是前者。
+    """
+    return [
+        line
+        for line in body.splitlines()
+        if not line.strip().startswith("#")
+    ]
+
+
 # ---------------------------------------------------------------- source contracts
 
 
@@ -59,28 +83,47 @@ def test_derivation_function_exists_and_uses_the_home_it_is_given(source: str):
         "the brain's location must not re-derive a default home; one home, one place "
         "(install.ps1's $PlobiHome parameter is that place)"
     )
-    assert not re.search(r"[A-Za-z]:[\\/]", body), (
+    code = "\n".join(_code_lines(body))
+    assert not re.search(r"[A-Za-z]:[\\/]", code), (
         "no literal drive letter may appear in the brain's location logic (ruling 48.1 / 79)"
     )
 
 
 def test_pinned_by_the_same_mechanism_and_scope_as_plobi_home(source: str):
-    """Same API, same scope — and it does NOT move a pointer that is already set.
+    """Same mechanism, same scope as PLOBI_HOME — and it does NOT move a pointer
+    that is already set.
 
     2026-11-07：这一段以前是「与我的不一样就改写成我的」⇒ 桌面端每次启动跑 bootstrap
     都把用户自己指的那一格拖回安装器的默认（这台：%LOCALAPPDATA%\\plobi，C 盘）。
     脑住在哪是**人的决定**（它是自己那个仓，有独立远端），口径与 Python 侧
     ``paths.py::_surface_pointer()`` 同一条：宁可不静默换家。
+
+    2026-11-16（现况）：机制与作用域又变了一次——**两边都不再写用户级注册表**，
+    只设本次安装进程的 ``$env``（WP-DATA-ISOLATION：那一格是两份身份共用的门牌）。
+    用户级的残留由 ``Remove-LegacySharedEnvVars`` 收回、由卸载那一档清干净。
     """
     body = _function_body(source, "Set-MindRootEnv")
-    assert '[Environment]::SetEnvironmentVariable("MIND_ROOT", $mindRoot, $Scope)' in body
-    assert '[Environment]::GetEnvironmentVariable("MIND_ROOT", $Scope)' in body
-    assert re.search(r'\[string\]\$Scope\s*=\s*"User"', body), (
-        "default scope must be User — a process-only value is exactly what does not "
-        "survive into an autostart or scheduled-task process"
+
+    # 1. 不许再写用户级注册表（一个字节都不许）。
+    assert "SetEnvironmentVariable" not in body, (
+        "脑的指针不再写用户级注册表（WP-DATA-ISOLATION）：只设本次安装进程的 $env"
     )
-    assert re.search(r"if \(-not \$existing\)\s*\{", body), (
-        "已经钉着的指针不许被改写：脑住在哪要人来定（口径同 paths.py::_surface_pointer()）"
+    assert "GetEnvironmentVariable" not in body, (
+        "脑的指针不再从用户级注册表读：只认本次安装进程继承的那一串"
+    )
+
+    # 2. 只设本次进程的 $env，且与 PLOBI_HOME 同一个机制。
+    assert "$env:MIND_ROOT = $mindRoot" in body
+    assert "$env:MIND_ROOT" in body
+
+    # 3. 已经钉着的指针不许被改写：赋值只许出现在 else 那一支（"没钉"的那一支）。
+    assert "if ($env:MIND_ROOT)" in body, (
+        "已经钉着的指针要认出来（不许无声改写）"
+    )
+    else_at = body.index("} else {")
+    assign_at = body.index("$env:MIND_ROOT = $mindRoot")
+    assert else_at < assign_at, (
+        "已经钉着的指针不许被改写：赋值只许在 else（没钉）那一支"
     )
     assert "-or $existing -ne $mindRoot" not in body, (
         "旧写法是「与我的不一样就改写成我的」⇒ 每次启动都替人搬家"
@@ -92,6 +135,9 @@ def test_the_surface_pointer_is_the_home_itself(source: str):
 
     旧形状把指针指到一处根本不存在的地方 ⇒ 人读面读不到（这台 11-07 现核：
     注册表里那一格指的就是那个不存在的旧形状）。
+
+    2026-11-13 起那一格只叫 ``HUMAN_ROOT``，旧名 ``SURFACE_ROOT`` 彻底停用
+    （读它等于把旧指针当成配置继续用）——所以**代码里不许再出现那个旧名**。
     """
     body = _function_body(source, "Set-MindRootEnv")
     assert '$surfaceRoot = $PlobiHomePath' in body, (
@@ -100,8 +146,19 @@ def test_the_surface_pointer_is_the_home_itself(source: str):
     assert 'Join-Path $PlobiHomePath "surface"' not in body, (
         "旧形状 <家>\\surface 指到一处不存在的地方 ⇒ 人读面读不到"
     )
-    assert re.search(r"if \(-not \$existingSurface\)\s*\{", body), (
-        "人读面的指针同样不许覆盖已经钉着的那一格"
+
+    code = "\n".join(_code_lines(body))
+    assert "SURFACE_ROOT" not in code, (
+        "旧名 SURFACE_ROOT 已彻底停用（2026-11-13）：代码里不许再读它"
+    )
+
+    # 人读面那一格同样**不许覆盖已经钉着的那一格**（口径同上）。
+    assert "$inheritedHuman = $env:HUMAN_ROOT" in body
+    assert "$inheritedHuman = $surfaceRoot" in body, (
+        "没钉着才落回家本体"
+    )
+    assert "$env:HUMAN_ROOT = $inheritedHuman" in body, (
+        "人读面的指针只许照着继承来的那一串写回去，不许改写它"
     )
 
 
@@ -110,8 +167,13 @@ def test_path_stage_calls_it_from_the_final_home(source: str):
     body = _function_body(source, "Set-PathVariable")
     call = body.find("Set-MindRootEnv")
     assert call != -1, "Set-PathVariable must call Set-MindRootEnv"
-    pin = body.find('[Environment]::SetEnvironmentVariable("PLOBI_HOME"')
+    # 2026-11-08 起 PLOBI_HOME 也不再写用户级注册表，只设本次进程的 $env。
+    pin = body.find("$env:PLOBI_HOME = $PlobiHome")
     assert pin != -1, "expected the PLOBI_HOME pin in Set-PathVariable"
+    assert '[Environment]::SetEnvironmentVariable("PLOBI_HOME"' not in body, (
+        "PLOBI_HOME 不再写用户级注册表（WP-DATA-ISOLATION）"
+    )
+    assert pin < call, "PLOBI_HOME 先落定，再从它派生脑的落点"
     first_line = body[call : body.index("\n", call)]
     assert "$PlobiHome" in first_line, (
         f"the call must pass $PlobiHome, not compute a home of its own: {first_line!r}"
@@ -145,11 +207,13 @@ def _extract_function(source: str, name: str) -> str:
 
 
 def _run_derivation(tmp_path: Path, preexisting: str | None = None) -> tuple[str, str]:
-    """Execute the real Set-MindRootEnv in PowerShell with Scope=Process.
+    """Execute the real Set-MindRootEnv in PowerShell.
 
-    Scope=Process writes only the *current* process environment — the live HKCU
-    user registry is never touched, so this is safe to run on a machine that
-    already has MIND_ROOT pinned by hand.  Returns (stdout, expected brain path).
+    2026-11-16（现况）：这个函数**不再有 ``-Scope`` 参数**了——它根本不写注册表，
+    只设**本次安装进程**的 ``$env:MIND_ROOT`` / ``$env:HUMAN_ROOT``
+    （WP-DATA-ISOLATION）。所以这台机器上那个被人手钉过的 HKCU\\Environment 里的
+    MIND_ROOT **一个字节都不会被碰到**，探针可以放心跑。
+    Returns (stdout, expected brain path).
     """
     fn = _extract_function(_INSTALL_PS1.read_text(encoding="utf-8"), "Set-MindRootEnv")
     home = tmp_path / "plobi-home"
@@ -169,7 +233,7 @@ def _run_derivation(tmp_path: Path, preexisting: str | None = None) -> tuple[str
         + fn
         + "\n"
         + seed
-        + f"Set-MindRootEnv -PlobiHomePath {q}{home}{q} -Scope Process\n"
+        + f"Set-MindRootEnv -PlobiHomePath {q}{home}{q}\n"
         + 'Write-Output "RESULT:$env:MIND_ROOT"\n'
     )
     ps1 = tmp_path / "probe.ps1"
@@ -194,7 +258,7 @@ def test_powershell_registers_the_derived_value(tmp_path: Path):
     """Run it for real: afterwards MIND_ROOT is <home>\\mind, not an echo of the docs."""
     out, expected = _run_derivation(tmp_path)
     assert f"RESULT:{expected}" in out, out
-    assert "OK:Set MIND_ROOT=" in out, out
+    assert "MIND_ROOT (this process only, user env untouched)" in out, out
     assert "not at" in out, "a fresh machine must be told the vault is not restored yet"
 
 
@@ -205,8 +269,8 @@ def test_powershell_is_idempotent_when_already_registered(tmp_path: Path):
     out, _ = _run_derivation(tmp_path, preexisting=expected)
     assert "SEEDED" in out, out
     assert f"RESULT:{expected}" in out, out
-    assert "INFO:MIND_ROOT already configured" in out, out
-    assert "OK:Set MIND_ROOT=" not in out, out
+    assert "MIND_ROOT (this process only, already inherited)" in out, out
+    assert "MIND_ROOT (this process only, user env untouched)" not in out, out
 
 
 @pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
@@ -220,8 +284,11 @@ def test_powershell_does_not_move_a_pointer_that_is_already_set(tmp_path: Path):
     elsewhere.mkdir()
     out, _ = _run_derivation(tmp_path, preexisting=str(elsewhere))
     assert f"RESULT:{elsewhere}" in out, out
-    assert "OK:Set MIND_ROOT=" not in out, out
-    assert "already configured" in out, out
+    assert "MIND_ROOT (this process only, user env untouched)" not in out, out
+    assert "already inherited" in out, out
+    assert "not moving it" in out, (
+        "钉在别处的指针要**说清楚没被搬**（口径：脑住在哪是人的决定）"
+    )
 
 
 @pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
@@ -296,6 +363,6 @@ def test_install_ps1_still_parses():
 def test_no_literal_drive_letter_in_the_new_lines(source: str):
     """Ruling 48.1 / 79: this machine's trap is a drive-letter literal read as relative."""
     body = _function_body(source, "Set-MindRootEnv") + _function_body(source, "Set-PathVariable")
-    for line in body.splitlines():
+    for line in _code_lines(body):
         if "MIND_ROOT" in line or "MindRoot" in line:
             assert not re.search(r"[A-Za-z]:[\\/]{1,2}[A-Za-z]", line), line

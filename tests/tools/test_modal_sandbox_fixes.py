@@ -34,14 +34,18 @@ class TestToolResolution:
     """Verify get_tool_definitions returns all expected tools for eval."""
 
     def test_terminal_and_file_toolsets_resolve_all_tools(self):
-        """enabled_toolsets=['terminal', 'file'] should produce 6 tools."""
+        """enabled_toolsets=['terminal', 'file'] should produce every tool of both."""
         from model_tools import get_tool_definitions
         tools = get_tool_definitions(
             enabled_toolsets=["terminal", "file"],
             quiet_mode=True,
         )
         names = {t["function"]["name"] for t in tools}
-        expected = {"terminal", "process", "read_file", "write_file", "search_files", "patch"}
+        # ``file`` 这一族现在还带一把 ``list_open_files``（看人开着哪些桌面页签）。
+        expected = {
+            "terminal", "process",
+            "read_file", "write_file", "search_files", "patch", "list_open_files",
+        }
         assert expected == names, f"Expected {expected}, got {names}"
 
     def test_terminal_tool_present(self):
@@ -84,15 +88,30 @@ class TestCwdHandling:
         assert config["host_cwd"] is None
         assert config["docker_mount_cwd_to_workspace"] is False
 
-    def test_users_path_maps_to_workspace_for_docker_when_enabled(self, monkeypatch):
-        """Docker should map the host cwd into /workspace only when explicitly enabled."""
+    def test_a_host_path_maps_to_workspace_for_docker_when_enabled(self, monkeypatch, tmp_path):
+        """Docker should map the host cwd into /workspace only when explicitly enabled.
+
+        宿主目录取 **这台机器上真有的那个**（tmp_path）：挂载那一支认的是
+        「POSIX 宿主前缀（/Users/、/home/）」**或**「这是一个存在的绝对目录」——
+        后者才是跨平台都成立的那一支（前缀表里只钉死了 ``C:``）。
+        """
+        monkeypatch.setenv("TERMINAL_ENV", "docker")
+        monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
+        monkeypatch.setenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "true")
+        config = _tt_mod._get_env_config()
+        assert config["cwd"] == "/workspace"
+        assert config["host_cwd"] == os.path.abspath(str(tmp_path))
+        assert config["docker_mount_cwd_to_workspace"] is True
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX 宿主路径前缀（/Users/、/home/）")
+    def test_a_posix_host_path_maps_to_workspace_for_docker_when_enabled(self, monkeypatch):
+        """POSIX 上的宿主路径前缀也是一条认得的路（macOS 的 /Users/、Linux 的 /home/）。"""
         monkeypatch.setenv("TERMINAL_ENV", "docker")
         monkeypatch.setenv("TERMINAL_CWD", "/Users/someone/projects")
         monkeypatch.setenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "true")
         config = _tt_mod._get_env_config()
         assert config["cwd"] == "/workspace"
         assert config["host_cwd"] == "/Users/someone/projects"
-        assert config["docker_mount_cwd_to_workspace"] is True
 
     def test_windows_path_replaced_for_modal(self, monkeypatch):
         """TERMINAL_CWD=C:\\Users\\... should be replaced for modal."""
@@ -112,15 +131,15 @@ class TestCwdHandling:
             f"Backend {backend}: expected /root default, got {config['cwd']}"
         )
 
-    def test_docker_default_cwd_maps_current_directory_when_enabled(self, monkeypatch):
+    def test_docker_default_cwd_maps_current_directory_when_enabled(self, monkeypatch, tmp_path):
         """Docker should use /workspace when cwd mounting is explicitly enabled."""
-        monkeypatch.setattr("tools.terminal_tool.os.getcwd", lambda: "/home/user/project")
+        monkeypatch.setattr("tools.terminal_tool.os.getcwd", lambda: str(tmp_path))
         monkeypatch.setenv("TERMINAL_ENV", "docker")
         monkeypatch.setenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "true")
         monkeypatch.delenv("TERMINAL_CWD", raising=False)
         config = _tt_mod._get_env_config()
         assert config["cwd"] == "/workspace"
-        assert config["host_cwd"] == "/home/user/project"
+        assert config["host_cwd"] == os.path.abspath(str(tmp_path))
 
     def test_local_backend_uses_getcwd(self, monkeypatch):
         """Local backend should use os.getcwd(), not /root."""

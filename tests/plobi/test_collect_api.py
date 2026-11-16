@@ -49,8 +49,22 @@ class StubClient:
         return True
 
 
+def _enable_wechat_source() -> None:
+    """把微信这一条**打开**。
+
+    11-08 起这一条**默认关**（`plobi/collectors/chatlog/__init__.py:174-178`，用户 11-05
+    原话「用户没有配置微信。就不采集。」）。关着的时候 `ChatlogPipeline.health()` 答的是
+    第四态 `disabled`（`pipeline.py:160-169`），采集面**整个端点**先回 503 与空表。
+    要看板上那份会话名单，就把这一条打开——那是用户配好微信之后的样子。
+    """
+    from plobi.collectors import sources_config
+
+    sources_config.set_enabled("wechat", True)
+
+
 @pytest.fixture()
 def client(tmp_path):
+    _enable_wechat_source()
     pipeline = ChatlogPipeline(
         config=CollectorConfig(mode="blacklist", enabled=True),
         client=StubClient(["班级群", "项目群", "广告群"], names=DEFAULT_NAMES),
@@ -95,6 +109,44 @@ def test_list_surfaces_chatlog_display_names(client):
     assert names["项目群"] == "项目协作群"
     # No chatlog label -> id fallback, so a row can never be blank.
     assert names["广告群"] == "广告群"
+
+
+def test_a_source_that_is_off_says_so_instead_of_an_empty_board(tmp_path):
+    """信源没打开时，端点要说「没打开」，不是「你一条会话都没有」。
+
+    11-08 起微信这一条**默认关**（`plobi/collectors/chatlog/__init__.py:174-178`，
+    用户 11-05 原话「用户没有配置微信。就不采集。」）。关着的时候 `health()` 答
+    `state=disabled`（`pipeline.py:160-169`），端点据此回 503 + 那句「为什么」。
+
+    面上不许出现一张空表：空表读作「采到了、但真的没有会话」，那是另一件事。
+    """
+    from plobi.collectors import sources_config
+
+    assert sources_config.effective_enabled("wechat")[0] is False, "微信这一条应当默认关"
+
+    pipeline = ChatlogPipeline(
+        config=CollectorConfig(mode="blacklist", enabled=True),
+        client=StubClient(["班级群"], names=DEFAULT_NAMES),
+        service=AgendaService(tmp_path / "agenda.db"),
+        seen=SeenStore(tmp_path / "seen.db"),
+        talkers=TalkerStore(tmp_path / "talkers.db"),
+        confirmer=HeuristicConfirmer(now_factory=lambda: NOW),
+    )
+    webhook_module.set_pipeline(pipeline)
+    app = FastAPI()
+    app.include_router(collect_api.router, prefix="/api/collect")
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/collect/talkers")
+    finally:
+        webhook_module.set_pipeline(None)
+
+    body = response.json()
+    assert response.status_code == 503, "「没打开」与「采到了但空的」在面上要分得开"
+    assert body["ok"] is False
+    assert body["state"] == "disabled"
+    assert body["talkers"] == []
+    assert body["error"], "那句「为什么」必须跟着一起回来"
 
 
 def test_one_click_collect_marks_known(client):

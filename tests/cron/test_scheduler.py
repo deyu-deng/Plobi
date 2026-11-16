@@ -2341,7 +2341,9 @@ class TestRunJobSkillBacked:
             register_env_passthrough(["NOTION_API_KEY"])
             return json.dumps({"success": True, "content": "# notion\nUse Notion."})
 
-        def _run_conversation(prompt):
+        def _run_conversation(prompt, **_kw):
+            # `conversation_history=` 是裁定 201 之后调度器多传的那一个（cron 那一轮
+            # 接得上收件人那一屏最近的消息）——桩只关心环境变量透传，收下即可。
             from tools.env_passthrough import get_all_passthrough
 
             assert "NOTION_API_KEY" in get_all_passthrough()
@@ -2400,7 +2402,9 @@ class TestRunJobSkillBacked:
             register_credential_file("credentials/google_token.json")
             return json.dumps({"success": True, "content": "# google-workspace\nUse Google."})
 
-        def _run_conversation(prompt):
+        def _run_conversation(prompt, **_kw):
+            # `conversation_history=` 是裁定 201 之后调度器多传的那一个——桩只关心
+            # 凭据文件在 worker 线程里看得到，收下即可。
             from tools.credential_files import _get_registered
 
             registered = _get_registered()
@@ -2673,6 +2677,8 @@ class TestSilentDelivery:
             False,
             "Agent completed but produced empty response (model error, timeout, or misconfiguration)",
             delivery_error=None,
+            delivery=None,
+            cancelled=False,
         )
 
 
@@ -2900,7 +2906,9 @@ class TestRunJobWakeGate:
         import cron.scheduler as scheduler
 
         call_count = 0
-        def _script_stub(path):
+        def _script_stub(path, job_id=None, **_kw):
+            # `_run_job_script` 现在还带 `job_id` 与 `started_at`（脚本那一趟的
+            # 归属与起止），桩只数「跑了几次」。
             nonlocal call_count
             call_count += 1
             return (True, "regular output")

@@ -1018,7 +1018,17 @@ class TestBackupEdgeCases:
         assert (tmp_path / "mybackup.tar.zip").exists()
 
     def test_empty_plobi_home(self, tmp_path, monkeypatch):
-        """Backup handles empty plobi home (no files to back up)."""
+        """Backup handles empty plobi home (no files to back up).
+
+        2026-11-16：这一档以前直接跑，于是它量到的东西变了——**官方脑也进备份**
+        （``plobi/mind/provider.py::backup_paths()`` 把它那一格声明出来），而脑住在
+        PLOBI_HOME **之外**。空的家不再等于"没东西可备份"：默认那一份记忆 provider
+        就是官方脑，它在 conftest 钉的 MIND_ROOT（tmp_path 下）里 ⇒ 归档照样产。
+
+        这一档要量的是"**家本身**空着"那件事 ⇒ 先把 provider 摘掉
+        （``backup_paths()`` 返回空），外部那一半由
+        ``test_the_brain_is_backed_up_even_when_the_home_is_empty`` 单独量。
+        """
         plobi_home = tmp_path / ".plobi"
         plobi_home.mkdir()
         # Only excluded dirs, no actual files
@@ -1028,6 +1038,11 @@ class TestBackupEdgeCases:
         monkeypatch.setenv("PLOBI_HOME", str(plobi_home))
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
+        import plobi_cli.backup as backup_mod
+        monkeypatch.setattr(
+            backup_mod, "_collect_memory_provider_external_paths", lambda: []
+        )
+
         args = Namespace(output=str(tmp_path / "out.zip"))
 
         from plobi_cli.backup import run_backup
@@ -1035,6 +1050,35 @@ class TestBackupEdgeCases:
 
         # No zip should be created
         assert not (tmp_path / "out.zip").exists()
+
+    def test_the_brain_is_backed_up_even_when_the_home_is_empty(self, tmp_path, monkeypatch):
+        """空的**家**也有东西可备份：脑住在家之外，但它是这个家的记忆。
+
+        官方记忆 provider（``plobi/mind/provider.py::backup_paths()``）把脑的根目录
+        声明成额外要收的路径 ⇒ 它落在 ``_external/`` 下（相对 home 编码）。
+        2026-11-16 之前这条不成立，那时备份只看 PLOBI_HOME 之内。
+        """
+        plobi_home = tmp_path / ".plobi"
+        plobi_home.mkdir()
+        (plobi_home / "__pycache__").mkdir()
+
+        # 脑住在家之外，但仍在 home 之下（可携带 ⇒ 进归档）。
+        brain = tmp_path / "brain_vault"
+        (brain / "wiki").mkdir(parents=True)
+        (brain / "AGENTS.md").write_text("# brain\n", encoding="utf-8")
+
+        monkeypatch.setenv("PLOBI_HOME", str(plobi_home))
+        monkeypatch.setenv("MIND_ROOT", str(brain))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        out_zip = tmp_path / "out.zip"
+        from plobi_cli.backup import run_backup
+        run_backup(Namespace(output=str(out_zip)))
+
+        assert out_zip.exists(), "脑在家之外也进备份 ⇒ 归档照样产"
+        with zipfile.ZipFile(out_zip) as zf:
+            names = set(zf.namelist())
+        assert "_external/brain_vault/AGENTS.md" in names, sorted(names)
 
     def test_permission_error_during_backup(self, tmp_path, monkeypatch):
         """Backup handles permission errors gracefully."""

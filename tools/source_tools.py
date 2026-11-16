@@ -518,6 +518,7 @@ def _spawn_collectors(verb: str, package: str) -> tuple[int, str, str]:
     env = {**os.environ, "PLOBI_NONINTERACTIVE": "1"}
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL,
                               timeout=_PACKAGE_TIMEOUT, env=env)
     except subprocess.TimeoutExpired:
         return 124, "", f"装/卸 {package} 超时（{_PACKAGE_TIMEOUT} 秒还没完）。"

@@ -162,21 +162,45 @@ def test_install_ps1_stops_venv_resident_processes_before_removing_venv() -> Non
     misses it, the loaded ``.pyd`` stays locked, and ``Remove-Item venv`` fails
     mid-recursion (issues #47036/#47557/#47910). The recreate branch must also
     sweep by venv path prefix, and that sweep must run before the delete.
+
+    2026-11-16（现况）：**按镜像名杀的那一刀没了**。``taskkill /IM`` 的大小写不敏感
+    匹配会把宿主外壳 ``D:\\Software\\Plobi\\Plobi.exe`` 也一起带走（/T 连子进程）⇒
+    装机窗口一闪就没了（0.3.0 setup 闪退）。现在改成**按可执行文件路径前缀 + PID**
+    （``Get-CimInstance Win32_Process`` → ``ExecutablePath.StartsWith($venvPrefix)``
+    → ``taskkill /F /T /PID``），于是：
+      · 跑在这个 venv 里的东西（含 pythonw 那个网关）照样被杀；
+      · venv 之外的同名 plobi.exe（宿主外壳、系统里的 python）一个都不碰。
     """
     text = INSTALL_PS1.read_text()
 
-    # The plobi.exe tree-kill is preserved (kills spawned child processes too).
-    assert 'taskkill /F /T /IM plobi.exe' in text
+    # 按镜像名杀的那一刀必须**不在**了：它会连宿主外壳一起杀掉。
+    assert "taskkill /F /T /IM plobi.exe" not in text, (
+        "按镜像名杀会把宿主外壳（Plobi.exe）一起带走 ⇒ 又回到 0.3.0 的 setup 闪退"
+    )
+
+    # 启动器（plobi.exe）那一刀仍在，但改成**按路径前缀圈定 + 按 PID 杀**（/T 保留：
+    # 子进程也要一起收）。
+    assert "Get-CimInstance Win32_Process -Filter \"Name = 'plobi.exe'\"" in text
+    assert "$venvPrefixForKill" in text
+    assert "& taskkill /F /T /PID $_.ProcessId" in text, (
+        "启动器那一刀必须按 PID 杀（/T 保留子进程那一层）"
+    )
 
     # The venv path-prefix sweep exists. It must match by case-insensitive
     # StartsWith, NOT PowerShell -like: a venv path containing wildcard
     # metacharacters ('[', ']') — legal in a Windows user name — silently fails
     # to match under -like, reintroducing the exact miss this fix closes.
+    # （``$venvPrefix,`` 带逗号 ⇒ 只命中**通用**那一刀，``$venvPrefixForKill,``
+    # 是上面启动器那一刀，两者都要在，但这一条盯的是"跑在这个 venv 里的任何东西"。）
     idx_recreate = text.index("Virtual environment already exists, recreating")
-    idx_sweep = text.index("StartsWith($venvPrefix", idx_recreate)
+    idx_sweep = text.index("StartsWith($venvPrefix,", idx_recreate)
     assert "[System.StringComparison]::OrdinalIgnoreCase" in text[idx_sweep:idx_sweep + 200]
     assert 'ExecutablePath -like "$venvRoot' not in text, (
         "the -like wildcard match must not be used for venv path scoping"
+    )
+    # 通用那一刀按 PID 收（python/pythonw 那种镜像名不叫 plobi.exe 的也在内）。
+    assert "Stop-Process -Id $_.ProcessId -Force" in text, (
+        "venv 里的进程必须按 PID 收掉（镜像名不叫 plobi.exe 的网关也在内）"
     )
 
     # The process sweep must run before the venv is removed, or it is a no-op.

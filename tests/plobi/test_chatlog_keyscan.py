@@ -157,9 +157,16 @@ class TestEntropyFilter:
 
 class TestAccountDir:
     def test_account_dir_drops_the_last_three_parts(self) -> None:
-        path = r"D:\Data\Local\Weixin\xwechat_files\wxid_abc_c19\db_storage\message\message_0.db"
-        assert keyscan._account_dir(path) == \
-            r"D:\Data\Local\Weixin\xwechat_files\wxid_abc_c19"
+        """``.../<账号>/db_storage/message/message_0.db`` ⇒ 账号目录（去掉最后三段）。
+
+        路径**按这台机器的规矩拼**（`pathlib`），不写死某一家的分隔符：
+        原来那条判据把 Windows 的盘符路径写成字面量，在 POSIX 上整条路径只是一个
+        「文件名」⇒ `_account_dir()` 走 `len(parts) <= 3` 那条分支，答 "."（CI 上红）。
+        """
+        path = str(Path("D:/Data/Local/Weixin/xwechat_files/wxid_abc_c19"
+                       "/db_storage/message/message_0.db"))
+        assert keyscan._account_dir(path) == str(
+            Path("D:/Data/Local/Weixin/xwechat_files/wxid_abc_c19"))
 
 
 class TestHandoff:

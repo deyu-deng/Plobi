@@ -178,7 +178,7 @@ class TestOffloadSummaryReadout:
         assert "今天花了多少算不出来" in summary
 
 
-def test_the_local_day_helper_follows_the_local_calendar():
+def test_the_local_day_helper_follows_the_local_calendar(monkeypatch):
     """那个换算本身：本地那天；读不出来就空串；极端日期不许掀了整格。"""
     ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
     local_day = _dt.datetime.fromisoformat(ts).astimezone().date().isoformat()
@@ -186,5 +186,20 @@ def test_the_local_day_helper_follows_the_local_calendar():
     assert console_router._local_day(ts) == local_day
     assert console_router._local_day("") == ""
     assert console_router._local_day("不是时间") == ""
-    # 公元 9999 年转本地时区会越界（Windows 抛 OSError）⇒ 不许把一行的坏账掀了整格读数。
-    assert console_router._local_day("9999-12-31T23:00:00+00:00") == ""
+    # 极端日期转本地时区**可能**越界（Windows 抛 OSError ⇒ 空串）；本地时区往回走时
+    # 不越界（POSIX UTC ⇒ 读得出那天）。两种都是契约内的读数，
+    # 不许的是抛异常、或读出别的日子。
+    extreme = console_router._local_day("9999-12-31T23:00:00+00:00")
+    assert extreme in ("", "9999-12-31"), extreme
+
+    # 越界那一支单独钉住（哪个平台都成立）：转换一炸就空串，不许掀了整格读数。
+    class _OverflowingDatetime(_dt.datetime):
+        def astimezone(self, tz=None):
+            raise OverflowError("转本地时区越界")
+
+    class _OverflowingModule:
+        datetime = _OverflowingDatetime
+        timezone = _dt.timezone
+
+    monkeypatch.setattr(console_router, "_dt", _OverflowingModule)
+    assert console_router._local_day(ts) == ""

@@ -1323,7 +1323,11 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
         server._sessions.clear()
 
 
-def test_session_cwd_set_profile_session_updates_profile_db(monkeypatch, tmp_path):
+def test_session_cwd_set_persists_to_the_shared_db(monkeypatch, tmp_path):
+    """裁定 180 之后：一条会话一行，一个进程一个库——cwd 写进**当前进程那份
+    共享库**，不再按 ``profile_home`` 另开一份库文件（家退休 ⇒ 文件级隔离退役，
+    见 tui_gateway/server.py:1906 ``_session_db``：它恒借 ``_get_db()``）。
+    """
     target = "stored-profile-session"
     profile_home = tmp_path / "profiles" / "worker"
     profile_home.mkdir(parents=True)
@@ -1332,6 +1336,8 @@ def test_session_cwd_set_profile_session_updates_profile_db(monkeypatch, tmp_pat
     captured = {}
 
     class ProfileDB:
+        """家目录那一格还挂着一个库文件——产品侧已经不再按家开库了。"""
+
         def update_session_cwd(self, session_id, cwd, git_branch=None, git_repo_root=None):
             captured["profile_update"] = (session_id, cwd)
 
@@ -1339,8 +1345,8 @@ def test_session_cwd_set_profile_session_updates_profile_db(monkeypatch, tmp_pat
             captured["profile_closed"] = True
 
     class LaunchDB:
-        def update_session_cwd(self, *_args):
-            captured["launch_update"] = True
+        def update_session_cwd(self, session_id, cwd, *_args):
+            captured["launch_update"] = (session_id, cwd)
 
     profile_db = ProfileDB()
 
@@ -1355,9 +1361,11 @@ def test_session_cwd_set_profile_session_updates_profile_db(monkeypatch, tmp_pat
     assert server._set_session_cwd(session, str(new_cwd)) == str(new_cwd)
     assert session["cwd"] == str(new_cwd)
     assert session["explicit_cwd"] is True
-    assert captured["profile_update"] == (target, str(new_cwd))
-    assert captured["profile_closed"] is True
-    assert "launch_update" not in captured
+    # cwd 落在共享库那一份上。
+    assert captured["launch_update"] == (target, str(new_cwd))
+    # 家目录那份库不该再被打开（文件级隔离退役）。
+    assert "profile_update" not in captured
+    assert "profile_closed" not in captured
 
 
 def test_stored_session_runtime_overrides_skips_bare_billing_provider():
@@ -2370,9 +2378,9 @@ def test_ensure_session_db_row_persists_explicit_cwd(monkeypatch, tmp_path):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, agent_id=None):
             created.append(
-                {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
+                {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd, "agent_id": agent_id}
             )
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
@@ -2381,7 +2389,7 @@ def test_ensure_session_db_row_persists_explicit_cwd(monkeypatch, tmp_path):
     server._ensure_session_db_row({"session_key": "k1", "cwd": str(tmp_path), "explicit_cwd": True})
 
     assert created == [
-        {"key": "k1", "source": "tui", "model": "test-model", "model_config": None, "cwd": str(tmp_path)}
+        {"key": "k1", "source": "tui", "model": "test-model", "model_config": None, "cwd": str(tmp_path), "agent_id": ""}
     ]
 
 
@@ -2389,9 +2397,9 @@ def test_ensure_session_db_row_persists_session_source(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, agent_id=None):
             created.append(
-                {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
+                {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd, "agent_id": agent_id}
             )
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
@@ -2400,7 +2408,7 @@ def test_ensure_session_db_row_persists_session_source(monkeypatch):
     server._ensure_session_db_row({"session_key": "k1", "source": "tool"})
 
     assert created == [
-        {"key": "k1", "source": "tool", "model": "test-model", "model_config": None, "cwd": None}
+        {"key": "k1", "source": "tool", "model": "test-model", "model_config": None, "cwd": None, "agent_id": ""}
     ]
 
 
@@ -2410,9 +2418,9 @@ def test_ensure_session_db_row_defaults_to_no_workspace(monkeypatch, tmp_path):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, agent_id=None):
             created.append(
-                {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
+                {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd, "agent_id": agent_id}
             )
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
@@ -2421,7 +2429,7 @@ def test_ensure_session_db_row_defaults_to_no_workspace(monkeypatch, tmp_path):
     server._ensure_session_db_row({"session_key": "k1", "cwd": str(tmp_path)})
 
     assert created == [
-        {"key": "k1", "source": "tui", "model": "test-model", "model_config": None, "cwd": None}
+        {"key": "k1", "source": "tui", "model": "test-model", "model_config": None, "cwd": None, "agent_id": ""}
     ]
 
 
@@ -2437,9 +2445,9 @@ def test_ensure_session_db_row_persists_session_model_override(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, agent_id=None):
             created.append(
-                {"key": key, "model": model, "model_config": model_config, "cwd": cwd}
+                {"key": key, "model": model, "model_config": model_config, "cwd": cwd, "agent_id": agent_id}
             )
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
@@ -2461,6 +2469,8 @@ def test_ensure_session_db_row_persists_session_model_override(monkeypatch):
     assert row["model_config"]["provider"] == "openrouter"
     assert row["model_config"]["reasoning_config"] == {"effort": "high"}
     assert row["model_config"]["service_tier"] == "priority"
+    # 归属是**行级**的（裁定 180）：这条会话没带任何身份线索 ⇒ 落 L1（空串）。
+    assert row["agent_id"] == ""
 
 
 def test_ensure_session_db_row_no_override_uses_global(monkeypatch):
@@ -2469,15 +2479,15 @@ def test_ensure_session_db_row_no_override_uses_global(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None):
-            created.append({"model": model, "model_config": model_config})
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, agent_id=None):
+            created.append({"model": model, "model_config": model_config, "agent_id": agent_id})
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
     monkeypatch.setattr(server, "_resolve_model", lambda: "global/default")
 
     server._ensure_session_db_row({"session_key": "k1", "model_override": None})
 
-    assert created == [{"model": "global/default", "model_config": None}]
+    assert created == [{"model": "global/default", "model_config": None, "agent_id": ""}]
 
 
 def test_session_title_clears_pending_after_persist(monkeypatch):
@@ -4014,11 +4024,10 @@ def test_config_set_model_switches_agent_without_touching_env(monkeypatch):
         assert agent._cached_system_prompt == db.system_prompt
         assert session["history"][-1]["role"] == "user"
         assert "changed to anthropic/claude-sonnet-4.6" in session["history"][-1]["content"]
-        assert db.messages[-1] == {
-            "session_id": "session-key",
-            "role": "user",
-            "content": session["history"][-1]["content"],
-        }
+        # 换腿通知**不落库**（R-092 / 裁定 145）：它只给正在跑的这一轮看，落库之后
+        # 它就长在这页聊天里，在 L1 的记忆里冒充用户说的话（08:58 实测连着 7 条
+        # role=user）。真源只有 session_model_usage（状态面与账单都从它读）。
+        assert db.messages == []
         # ...and the shared process env was NOT touched.
         assert os.environ["PLOBI_TUI_PROVIDER"] == "openai-codex"
         assert "PLOBI_MODEL" not in os.environ

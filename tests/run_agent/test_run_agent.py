@@ -4066,7 +4066,12 @@ class TestRunConversation:
         ]
         assert all("message_count" in c and isinstance(c.get("request_messages"), list) for c in pre_request_calls)
         assert all("request" in c and "messages" in c["request"]["body"] for c in pre_request_calls)
-        assert any(msg.get("role") == "user" and msg.get("content") == "search something" for msg in pre_request_calls[0]["request_messages"])
+        # 用户消息现在带上一行时间戳前缀（那一轮得知道自己是什么时候收到的）
+        # ⇒ 判据改成「这一轮那句话在里面」，不再是逐字相等。
+        user_msgs = [
+            m for m in pre_request_calls[0]["request_messages"] if m.get("role") == "user"
+        ]
+        assert any("search something" in str(m.get("content")) for m in user_msgs)
         assert all("usage" in c and "response" in c for c in post_request_calls)
         assert all("assistant_message" in c["response"] for c in post_request_calls)
 

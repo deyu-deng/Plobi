@@ -1122,6 +1122,15 @@ class TestEventBridgePollE2E:
         sessions_dir = tmp_path / "sessions"
         sessions_dir.mkdir()
         monkeypatch.setattr(mcp_serve, "_get_sessions_dir", lambda: sessions_dir)
+        # 「有没有变」这一下探的是**会话总账那份 state.db 的 mtime**
+        # （`plobi_constants.get_plobi_state_home()`，见 `mcp_serve.EventBridge._poll_once`）
+        # ——路由索引与消息表在同一个文件里（#9006 起）。所以那一档也得指到
+        # tmp_path，否则探的是本机真的那份总账：mtime 一路在动 ⇒ 第二轮不跳过。
+        monkeypatch.setenv("PLOBI_STATE_HOME", str(tmp_path))
+        # 索引那一路走的是**真的** SessionDB：它在测试这份只有 messages 表的库上
+        # 补建自己的表 ⇒ 写盘 ⇒ mtime 变 ⇒ 第二轮照样不跳（这一档要验的是
+        # 「没变就跳过」，不是「索引从哪儿来」）。断成 None，索引回落 sessions.json。
+        monkeypatch.setattr(mcp_serve, "_get_session_db", lambda: None)
 
         session_id = "20260329_150000_skip_test"
         db_path = tmp_path / "state.db"

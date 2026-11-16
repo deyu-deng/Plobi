@@ -47,12 +47,18 @@ class TestToolsetIntersection:
         assert "web" in child
 
     def test_strip_blocked_removes_delegation(self):
-        """Blocked toolsets (delegation, clarify, etc.) are always removed."""
+        """Blocked toolsets (delegation, clarify, etc.) are always removed.
+
+        ⚠️ ``memory`` is **not** one of them any more: the toolset now carries the
+        product-face atoms (``memory_read``／``memory_write``, 裁定 185), so it is no
+        longer "every one of its tools is blocked" and the whole toolset survives.
+        The blocked *tool* (``memory``) is still on ``DELEGATE_BLOCKED_TOOLS``.
+        """
         child = _strip_blocked_tools(["terminal", "delegation", "clarify", "memory"])
         assert "delegation" not in child
         assert "clarify" not in child
-        assert "memory" not in child
         assert "terminal" in child
+        assert "memory" in child, "memory 那一族现在带着产品面的原子，不是「全被挡」"
 
     def test_empty_intersection_yields_empty_toolsets(self):
         """If parent has no overlap with requested, child gets nothing extra."""

@@ -763,6 +763,21 @@ def _resolve_workspace_hint(parent_agent) -> Optional[str]:
     return None
 
 
+def _drop_blocked_tools(tool_defs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """从一份工具定义表里**按工具名**摘掉被挡的那几把。
+
+    ``_strip_blocked_tools`` 摘的是「整族工具全被挡」的门类；可只要那一族里还剩
+    一把允许的（``memory`` 族 11-16 之后有 ``memory_read``／``memory_write``，裁 185），
+    整族就留下来 —— 于是那把**明令挡住**的 ``memory``（不许子 Agent 写共享
+    MEMORY.md）跟着漏给了子 Agent。这一格按工具名补一刀：闸门的牙齿不许因为
+    族里多了两把产品面原子就掉一颗。
+    """
+    return [
+        t for t in (tool_defs or [])
+        if (t.get("function") or {}).get("name") not in DELEGATE_BLOCKED_TOOLS
+    ]
+
+
 def _strip_blocked_tools(toolsets: List[str]) -> List[str]:
     """Remove toolsets that contain only blocked tools.
 
@@ -1367,6 +1382,22 @@ def _build_child_agent(
         **child_optional_kwargs,
     )
     child._print_fn = getattr(parent_agent, "_print_fn", None)
+    # 被挡住的那几把工具：从子 Agent 的工具表里**逐把**再摘一次（见
+    # `_drop_blocked_tools`：门类那一层只摘「整族全被挡」的，族里混着一把允许的
+    # 就会漏）。
+    _child_tools = getattr(child, "tools", None) or []
+    _leaked = [
+        t for t in _child_tools
+        if (t.get("function") or {}).get("name") in DELEGATE_BLOCKED_TOOLS
+    ]
+    if _leaked:
+        child.tools = _drop_blocked_tools(_child_tools)
+        child.valid_tool_names = {
+            t["function"]["name"]
+            for t in child.tools
+            if (t.get("function") or {}).get("name")
+        }
+        _w(f"  🔒 子 Agent 摘掉被挡的工具: {', '.join(sorted(t['function']['name'] for t in _leaked))}")
     # Now the child exists, its session id can ride on every relayed event
     # (including the spawn_requested below — first emit happens after this).
     child_session_ref["session_id"] = getattr(child, "session_id", "") or ""

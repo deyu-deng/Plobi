@@ -55,12 +55,48 @@ def roster_one_usable(monkeypatch):
     return ot.agent_roster()
 
 
+@pytest.fixture
+def roster_agy_installed_but_not_logged_in(monkeypatch):
+    """把名册钉成「agy 装着、但没登录」——**不随这台机器装没装漂**。
+
+    名册里的两个事实各自有出处：``installed`` 来自 ``resolve_command()``
+    （找不找得到那个命令），``logged_in`` 来自登录探针。这台 Windows 上 agy 装着，
+    Linux CI 上没装 ⇒ 不钉住的话，同一句断言在两个平台上判的是两件不同的事。
+    """
+    import agent.external_offload as channel
+
+    real_resolve = channel.resolve_command
+    monkeypatch.setattr(
+        channel,
+        "resolve_command",
+        lambda name: "agy-stub-binary" if name == "agy" else real_resolve(name),
+    )
+    monkeypatch.setattr(ot, "_probe_logged_in", lambda name: False)
+    return ot.agent_roster()
+
+
 class TestTheListNeverPretends:
-    def test_unprobed_agent_is_listed_but_said_so(self, roster_one_usable):
-        rows = {r["name"]: r for r in selectable(roster_one_usable)}
+    def test_unprobed_agent_is_listed_but_said_so(self, roster_agy_installed_but_not_logged_in):
+        rows = {r["name"]: r for r in selectable(roster_agy_installed_but_not_logged_in)}
 
         assert rows["agy"]["can_use"] is False
         assert "没登录" in rows["agy"]["why_not"]
+
+    def test_an_agent_that_is_not_installed_is_said_so(self, monkeypatch):
+        """没装的那家：那句话是「没装」，不是「没登录」——两句不许混。
+
+        （这一格按**当前环境**断言：这台机器上 agy 装着 ⇒ 上一格走「没登录」；
+        没装 ⇒ 这一格走「没装」。判据都出自 ``availability()``，不许测试自己另判。）
+        """
+        import agent.external_offload as channel
+
+        monkeypatch.setattr(channel, "resolve_command", lambda name: "")
+        monkeypatch.setattr(ot, "_probe_logged_in", lambda name: False)
+
+        rows = {r["name"]: r for r in selectable(ot.agent_roster())}
+
+        assert rows["agy"]["can_use"] is False
+        assert "没装" in rows["agy"]["why_not"]
 
     def test_status_and_availability_are_the_same_judgement(self, roster_one_usable):
         """判据 3：清单不许另造第二条判据——逐行对回 `availability()`。"""
@@ -96,11 +132,11 @@ class TestRefusalsAreSeparateSentences:
     def test_an_unknown_failure_is_not_forced_into_a_known_one(self):
         assert ot.classify_failure("exit 0 but no artifact was written") == ""
 
-    def test_unusable_agent_is_refused_before_the_channel_is_touched(self, monkeypatch, roster_one_usable):
+    def test_unusable_agent_is_refused_before_the_channel_is_touched(self, monkeypatch, roster_agy_installed_but_not_logged_in):
         def explode(*a, **k):
             raise AssertionError("不该起真子进程")
 
-        monkeypatch.setattr(ot, "agent_roster", lambda: roster_one_usable)
+        monkeypatch.setattr(ot, "agent_roster", lambda: roster_agy_installed_but_not_logged_in)
         import agent.external_offload as channel
         monkeypatch.setattr(channel, "run_task", explode)
 

@@ -605,6 +605,15 @@ def test_installer_pins_and_uninstall_sweep_name_the_same_set():
     ``MIND_ROOT`` 之所以能躺一年多没人发现，是因为"钉"在 PowerShell 里、"清"在 Python 里，
     两边各一份名单，没有任何东西把它们对起来。这里用一次解析把它们对上：谁再往
     ``install.ps1`` 加一个 ``SetEnvironmentVariable`` 而卸载名单没跟上，就是红。
+
+    2026-11-16（WP-DATA-ISOLATION 之后的现况）：**等号变成了包含关系**。
+    装机器不再往用户级钉 ``PLOBI_HOME`` / ``MIND_ROOT``（那两格是两份身份共用的门牌，
+    钉死一份就把另一份的家也带偏了）⇒ 现在只钉 ``Path`` 与 ``PLOBI_GIT_BASH_PATH``。
+    但卸载**仍然要认得** ``PLOBI_HOME`` / ``MIND_ROOT``：那是旧装机器留在别人机器上的
+    垃圾，卸载是唯一能收干净它的一步（装机器自己只在装的时候收，见
+    ``Remove-LegacySharedEnvVars``）。所以两条断言分开说：
+      · 装机器现在钉的每一个名字，卸载名单都得认得（不许有"钉了没人清"的）；
+      · 卸载名单里的旧名字（PLOBI_HOME / MIND_ROOT）确实是旧装机器钉过的（不许漏清）。
     """
     import re
     from pathlib import Path
@@ -612,12 +621,28 @@ def test_installer_pins_and_uninstall_sweep_name_the_same_set():
     from plobi_cli.uninstall import _PLOBI_USER_ENV_NAMES
 
     ps1 = Path(__file__).resolve().parents[2] / "scripts" / "install.ps1"
+    source = ps1.read_text(encoding="utf-8")
     pins = set(re.findall(r'SetEnvironmentVariable\(\s*"([A-Za-z_][A-Za-z0-9_]*)"',
-                          ps1.read_text(encoding="utf-8")))
+                          source))
     # 解析式过期会伪装成"两边一致"，所以先证明它确实钉到了东西。
     assert pins, f"{ps1} 里一个钉子都没解析出来——是解析式坏了，不是没钉子"
     # ``Path`` 是唯一的例外，而且不是"没人管"：卸载对它是**摘自己那几条条目**
     # （``remove_path_from_windows_registry``），整值删掉会把用户其它 PATH 一起抹了。
     assert "Path" in pins, sorted(pins)
-    assert pins - {"Path"} == set(_PLOBI_USER_ENV_NAMES), (sorted(pins), sorted(_PLOBI_USER_ENV_NAMES))
+    sweep = set(_PLOBI_USER_ENV_NAMES)
+
+    # 1. 装机器现在钉的每一个名字，卸载都得认得。
+    assert pins - {"Path"} <= sweep, (sorted(pins - {"Path"}), sorted(sweep))
+    assert pins - {"Path"}, f"装机器一个用户级变量都不钉了？解析式过期了吧：{sorted(pins)}"
+
+    # 2. 旧装机器钉过的那两格，卸载名单必须留着（存量机器上的垃圾只有卸载能收）。
+    assert {"PLOBI_HOME", "MIND_ROOT"} <= sweep, sorted(sweep)
+
+    # 3. 现况本身：用户级不再钉那两格（只设本次安装进程的 $env）。
+    assert "PLOBI_HOME" not in pins, sorted(pins)
+    assert "MIND_ROOT" not in pins, sorted(pins)
+    # …而旧值的回收仍然在装机器里（装机时顺手收，不在安装位留下垃圾）。
+    assert "Remove-LegacySharedEnvVars" in source
+    for legacy in ("PLOBI_HOME", "MIND_ROOT"):
+        assert legacy in source, f"装机器连旧值的回收名单里都没有 {legacy}"
 

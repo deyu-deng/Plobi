@@ -9,6 +9,8 @@
   正解一律是 `agent.process_bootstrap._get_proxy_for_base_url` —— 只有它先看 `network.egress`
   表、再退环境变量，也只有它尊重表里的 `NO_PROXY` 展开。重复那三份只读 env，于是**表配了它们不认**
   （与桌面昨天那件「配了不生效」同族）。
+* ③ 网关子工程（`bezel/`，11-15 由 `quota_hub/` 改名）按名字碰过 `*_PROXY` —— 它是**另一个产品**
+  （自带 venv 与自己的出口解析），不归 ① 那一处读数管；但名单要跟着现况点到位（`_BEZEL_READERS`）。
 """
 
 from __future__ import annotations
@@ -52,6 +54,20 @@ _DUPLICATE_READERS = {
     "gateway/platforms/qqbot/adapter.py",  # QQ 机器人 WebSocket（另造了一个 WSS_PROXY 名字）
 }
 
+#: 网关子工程（`bezel/`，11-15 由 `quota_hub/` 改名）**自带 venv 与自己的出口解析**
+#: （`bezel/bezel/egress.py::proxy_url` 读的是设置里那个节点，不是环境变量），
+#: 它那一族不归本仓「一处读数」管。但它确实按名字碰过 `*_PROXY`
+#: （Antigravity 那条腿读环境变量，其余几处是理由串 `"no_proxy"` 与它给子进程写的 env），
+#: 所以**点名在册**：名单跟着现况走，它那边多一处照样红。
+_BEZEL_READERS = {
+    "bezel/bezel/egress.py",
+    "bezel/bezel/main.py",
+    "bezel/bezel/providers/apps/antigravity/network.py",
+    "bezel/bezel/providers/apps/antigravity/oauth.py",
+    "bezel/bezel/providers/apps/antigravity/tool_bridge.py",
+    "bezel/bezel/providers/apps/gemini/oauth.py",
+}
+
 
 def _tracked_sources(suffixes: tuple[str, ...]) -> list[Path]:
     """仓库里"随包走"的那批源文件——剪掉产物与依赖目录，别去读 node_modules 里锁住的东西。"""
@@ -63,7 +79,10 @@ def _tracked_sources(suffixes: tuple[str, ...]) -> list[Path]:
                 continue
             path = Path(root) / name
             rel = path.relative_to(REPO).as_posix()
-            if rel.startswith("tests/") or ".test." in rel:
+            # 测试档不算「产品代码里自己按名字读」：主仓的 `tests/` 与子工程各自的
+            # `tests/`（`bezel/tests/`）都是——里面的 `monkeypatch.setenv("HTTPS_PROXY")`
+            # 是被测行为的一部分，不是第二条读数。
+            if rel.startswith("tests/") or "/tests/" in rel or ".test." in rel:
                 continue
             found.append(path)
     return found
@@ -86,7 +105,7 @@ def test_no_proxy_address_is_written_into_a_shipped_script():
 
 def test_the_proxy_env_readers_are_exactly_the_recorded_set():
     """谁在按名字碰 `*_PROXY` 必须点名在册；重复读法今天三份，第四份不许再冒出来。"""
-    sanctioned, duplicates, unexpected = set(), set(), set()
+    sanctioned, duplicates, recorded, unexpected = set(), set(), set(), set()
 
     for path in _tracked_sources((".py",)):
         rel = path.relative_to(REPO).as_posix()
@@ -97,6 +116,8 @@ def test_the_proxy_env_readers_are_exactly_the_recorded_set():
             sanctioned.add(rel)
         elif rel in _DUPLICATE_READERS:
             duplicates.add(rel)
+        elif rel in _BEZEL_READERS:
+            recorded.add(rel)
         else:
             unexpected.add(rel)
 
@@ -111,3 +132,8 @@ def test_the_proxy_env_readers_are_exactly_the_recorded_set():
         + ", ".join(converged)
     )
     assert len(sanctioned) == len(_SANCTIONED), (sanctioned, _SANCTIONED)
+    stale = sorted(_BEZEL_READERS - recorded)
+    assert not stale, (
+        "网关子工程（bezel/）那一族已经不按名字碰 `*_PROXY` 了，把 `_BEZEL_READERS` 里的"
+        "对应行删掉再签（名单不许留着当装饰）：" + ", ".join(stale)
+    )

@@ -1273,21 +1273,36 @@ def test_migration_renames_legacy_event_kinds(tmp_path, monkeypatch):
 
 def test_list_profiles_on_disk(tmp_path, monkeypatch):
     """list_profiles_on_disk returns the implicit default profile plus
-    named profiles under ~/.plobi/profiles/ that contain a config.yaml."""
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    the named homes under ``<root>/profiles/``.
+
+    判据（裁 166 / ADR-0013 之后）：「这个 Agent 存在吗」＝**那个家目录在**，
+    不再是「里面躺着一份 config.yaml」——分身家不再自带那份复印件，拿它当凭据
+    会把名册上的分身从看板收件人里悄悄抹掉（``plobi_cli/kanban_db.py:8538``）。
+    所以空家（没有 config.yaml）也算一家，下划线／点号开头的隔离区不算。
+    """
+    # 根目录显式钉住：``get_default_plobi_root()`` 在 POSIX 上是 ``~/.plobi``、
+    # 在 Windows 上是 ``%LOCALAPPDATA%\\plobi``——顶替 ``Path.home()`` 只能盖住
+    # POSIX 那一半（这条断言在 Windows 上会读到真机器的家）。改成顶替那口函数
+    # 本身：kanban_db 在函数体里现 import 它，顶替模块属性即可。
+    import plobi_constants
+
+    root = tmp_path / ".plobi"
+    monkeypatch.setattr(plobi_constants, "get_default_plobi_root", lambda: root)
     monkeypatch.delenv("PLOBI_HOME", raising=False)
-    profiles = tmp_path / ".plobi" / "profiles"
+    profiles = root / "profiles"
     profiles.mkdir(parents=True)
     for name in ("researcher", "writer"):
         d = profiles / name
         d.mkdir()
-        (d / "config.yaml").write_text("model: {}\n")
+    # 空家也是一家（没有 config.yaml 也算数）。
     (profiles / "empty_dir").mkdir()
+    # 下划线开头的目录是隔离区，不是家。
+    (profiles / "_quarantine-2026-10-01").mkdir()
     # A stray file; should be ignored.
     (profiles / "stray.txt").write_text("noise")
 
     names = kb.list_profiles_on_disk()
-    assert names == ["default", "researcher", "writer"]
+    assert names == ["default", "empty_dir", "researcher", "writer"]
 
 
 def test_list_profiles_on_disk_custom_root(tmp_path, monkeypatch):
