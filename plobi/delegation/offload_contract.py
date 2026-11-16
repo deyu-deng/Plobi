@@ -292,7 +292,7 @@ def probe_acp_login(
     spec = contract_for(key)
     if spec is None:
         return AcpLoginAnswer(key, None, "no-contract", "名册里没有这一家。")
-    if not spec.acp_args and "acp" not in spec.legs:
+    if not spec.acp_args and not spec.acp_command and "acp" not in spec.legs:
         # 「有 ACP 入口」＝有旗标 **或** 它的派活腿就是 ACP（11-16）：
         # glm 那台 ACP server 不接旗标，但入口命令就是它自己。
         return AcpLoginAnswer(key, None, "no-acp", spec.acp_note or "这一家没法用 ACP 问。")
@@ -302,11 +302,9 @@ def probe_acp_login(
         if hit is not None:
             return hit
 
-    binary = channel.resolve_command(key)
-    if not binary:
+    argv = channel.acp_argv(key)
+    if not argv:
         return AcpLoginAnswer(key, None, "not-installed", "本机没装它（Plobi 不代下载）。")
-
-    argv = channel.spawn_argv([binary, *spec.acp_args])
     proc = None
     lines: queue.Queue = queue.Queue()
     try:

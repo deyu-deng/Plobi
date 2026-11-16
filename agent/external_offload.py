@@ -430,6 +430,40 @@ def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
     return ""
 
 
+
+def acp_argv(agent: str) -> tuple[str, ...]:
+    """ACP 那一腿**在这台机器上怎么起它**——**只有一份答案**（裁定 94 族）。
+
+    两种形态，**表里声明、代码不按厂商分叉**：
+
+    * ``acp_command`` 非空 ⇒ 它就是完整 argv（入口是**另一个可执行文件**时用：
+      官方 ACP 注册表里 agy 那一家是 ``agy_acp_server.exe``，不是 ``agy acp``）；
+    * 空 ⇒ 沿用「本机那个二进制 ＋ 旗标」：``[resolve_command(agent), *acp_args]``
+      （**现有一切行为一个字不变**）。
+
+    起不来（没装／解析不出）⇒ 返回**空元组**——调用方照实说「这台机器上没有它」，
+    **不编一个假命令**。
+    """
+    contract = OFFLOAD_CONTRACT.get(agent)
+    if contract is None:
+        return ()
+    if contract.acp_command:
+        head = contract.acp_command[0]
+        if not head:
+            return ()
+        if os.path.isabs(head) or os.sep in head:
+            found = head if os.path.isfile(head) else ""
+        else:
+            found = _which_prefer_executable(head)
+        if not found:
+            return ()
+        return tuple(spawn_argv([found, *contract.acp_command[1:]]))
+    binary = resolve_command(agent)
+    if not binary:
+        return ()
+    return tuple(spawn_argv([binary, *contract.acp_args]))
+
+
 LOGIN_PROBE_TIMEOUT_S = 45.0
 
 #: 厂商自己承认"没登录"的原话（小写匹配）。认不出来的输出一律记 ``None``，**不判成不能**。
@@ -1191,18 +1225,18 @@ def run_acp_task(
         )
 
     contract = OFFLOAD_CONTRACT.get(agent)
-    if contract is None or (not contract.acp_args and "acp" not in contract.legs):
+    if contract is None or (not contract.acp_args and not contract.acp_command
+                            and "acp" not in contract.legs):
         return fail(f"这一家没有 ACP 那一腿：{agent}。")
-    binary = resolve_command(agent)
-    if not binary:
-        return fail(f"external agent {agent!r} has no drivable command on this machine")
 
     try:
         prep, task = prepare_offload(task, agent=agent, cwd=workdir)
     except ValueError as exc:
         return fail(str(exc))
 
-    argv = tuple(spawn_argv([binary, *contract.acp_args]))
+    argv = acp_argv(agent)
+    if not argv:
+        return fail(f"external agent {agent!r} has no drivable command on this machine")
     client = AcpClient(argv, cwd=str(prep.workdir), env=prep.env)
     # 「要的是只读 ⇒ 它问权限一律不准」：判据只有这一条，别的档照旧准
     # （裁定 99 一：子进程跑在它自己那档上，Plobi 自己的闸门一道都不松）。

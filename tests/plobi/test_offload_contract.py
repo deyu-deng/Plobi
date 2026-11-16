@@ -58,12 +58,19 @@ def test_acp_args_match_the_official_registry():
 
 
 def test_a_vendor_the_registry_does_not_know_has_no_acp_flags():
-    """codex / claude 不在官方注册表里 ⇒ 明写「没法用 ACP 问它」，不编一个旗标。"""
-    for name in ("codex", "claude"):
+    """codex / claude 的 ACP 入口**不是旗标**（是另一个可执行文件）⇒ 没有旗标，
+    但**入口在**：官方注册表里那两行叫 ``codex-acp``／``claude-acp``。
+
+    ⚠️ 11-14 那次按**产品名**找，说「注册表里没有这一家」——**那次是错的**：
+    注册表里确实有，只是名字带 ``-acp`` 后缀（11-16 才发现并纠正）。
+    """
+    for name, registry_id in (("codex", "codex-acp"), ("claude", "claude-acp")):
         spec = contract.contract_for(name)
         assert spec is not None, name
         assert spec.acp_args == (), name
-        assert spec.acp_note, f"{name} 得说清为什么问不了"
+        assert spec.acp_registry_id == registry_id, name
+        assert spec.acp_command, f"{name}：入口是另一个可执行文件 ⇒ 得写明是哪个"
+        assert spec.acp_note, f"{name}：得说清它现核到哪一步"
 
 
 # ── 3. 回跳旗标只有实测过的 ──────────────────────────────────────────────
@@ -200,7 +207,17 @@ def test_silence_is_unknown_not_a_logout(monkeypatch):
 
 
 def test_a_vendor_without_an_acp_leg_is_unknown_not_a_logout(monkeypatch):
-    answer = contract.probe_acp_login("codex", use_cache=False)
+    """**没有 ACP 那一腿**的那一家 ⇒ 探不到，**不判「没登录」**。
+
+    ⚠️ 11-16 之后，**能派活的每一家都有 ACP 腿**了（codex／claude 的入口是
+    **另一个可执行文件**，不是旗标）⇒ 真源表里已经没有「有通道、没有 ACP 腿」
+    的那一家 ⇒ 这一条改用**摆布出来**的一行来验同一条判据。
+    """
+    monkeypatch.setitem(
+        contract.OFFLOAD_CONTRACT, "acme",
+        contract.VendorContract(id="acme", legs=("cli",)),
+    )
+    answer = contract.probe_acp_login("acme", use_cache=False)
 
     assert answer.value is None
     assert answer.source == "no-acp"

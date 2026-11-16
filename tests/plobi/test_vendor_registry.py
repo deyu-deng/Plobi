@@ -433,3 +433,26 @@ def test_every_install_only_vendor_opens_a_door_for_a_new_machine():
         spec = vr.INSTALL_SPECS[row.id]
         assert spec.command or spec.homepage, f"{row.id}\uff1a\u65e2\u6ca1\u6709\u547d\u4ee4\u4e5f\u6ca1\u6709\u5b98\u65b9\u9875"
         assert "\u8fd8\u6ca1\u63a5\u6d3e\u6d3b\u817f" in spec.note, f"{row.id}\uff1anote \u91cc\u6ca1\u5199\u660e\u300c\u8fd8\u6ca1\u63a5\u6d3e\u6d3b\u817f\u300d"
+
+
+
+# ── ACP 入口那一格（11-16 第十刀）──────────────────────────────────────
+
+
+def test_the_acp_entry_point_and_the_flags_never_both_get_filled():
+    """**两格只许填一格**：``acp_command``（完整 argv）与 ``acp_args``（旗标）。
+
+    都填了就说不清走的是哪条命令 ⇒ 判红。
+    """
+    for row in vr.VENDOR_ROWS:
+        assert not (row.acp_command and row.acp_args), (
+            f"{row.id}：acp_command 与 acp_args 只能填一格"
+        )
+
+
+def test_the_contract_row_carries_the_acp_entry_point():
+    """契约表那一行**带上**这一格（派活腿与登录探针读的是同一份答案）。"""
+    for name, contract in vr.OFFLOAD_CONTRACT.items():
+        row = vr.vendor_row(name)
+        assert row is not None, name
+        assert contract.acp_command == row.acp_command, name

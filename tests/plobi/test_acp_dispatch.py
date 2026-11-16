@@ -423,7 +423,7 @@ def test_every_acp_leg_vendor_has_an_entry_and_says_where_it_got_to():
 
     assert legs, "真源表里没有一家登记了 ACP 派活腿"
     for row in legs:
-        assert row.binary_name, f"{row.id}：没有入口命令"
+        assert row.binary_name or row.acp_command, f"{row.id}：没有入口命令"
         assert row.acp_note, f"{row.id}：没写清 ACP 那一腿现核到哪一步"
         assert "acp" in vr.DISPATCH_LEGS[row.id]
 
@@ -450,3 +450,86 @@ def test_adding_one_row_grows_the_dispatch_table_too():
 
     assert vr.dispatch_legs(rows)["acme"] == ("acp",)
     assert vr.dispatch_legs(rows) == vr.dispatch_legs(vr.VENDOR_ROWS) | {"acme": ("acp",)}
+
+
+
+# ── ACP 入口那一格（11-16 第十刀）──────────────────────────────────────
+
+
+def test_the_entry_point_can_be_another_executable(monkeypatch):
+    """入口是**另一个可执行文件**时，拼出来的就是它。
+
+    官方 ACP 注册表里 agy 那一家是 ``agy_acp_server.exe``（**不是** ``agy acp``）
+    ⇒ 这一格就是为它留的。
+    """
+    contract = vr.VendorContract(id="acme", acp_command=("agy_acp_server.exe",), legs=("acp",))
+    monkeypatch.setitem(offload.OFFLOAD_CONTRACT, "acme", contract)
+    monkeypatch.setattr(
+        offload, "_which_prefer_executable",
+        lambda name: r"C:\Program Files\Antigravity\agy_acp_server.exe",
+    )
+
+    assert offload.acp_argv("acme") == (r"C:\Program Files\Antigravity\agy_acp_server.exe",)
+
+
+def test_an_empty_entry_point_keeps_the_old_shape(monkeypatch):
+    """新格空 ⇒ **现有一切行为一个字不变**（本机那个二进制 ＋ 旗标）。"""
+    contract = vr.VendorContract(id="acme", acp_args=("--acp",), legs=("acp",))
+    monkeypatch.setitem(offload.OFFLOAD_CONTRACT, "acme", contract)
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="acme": r"C:\x\agy.exe")
+
+    assert offload.acp_argv("acme") == (r"C:\x\agy.exe", "--acp")
+
+
+def test_an_entry_point_that_is_not_on_this_machine_is_not_invented(monkeypatch):
+    """那台可执行文件**这台机器上没有** ⇒ 空元组（调用方照实说「没有它」）。
+
+    **不编一个假命令** —— 编出来的命令会让人以为它跑过了。
+    """
+    contract = vr.VendorContract(id="acme", acp_command=("agy_acp_server.exe",), legs=("acp",))
+    monkeypatch.setitem(offload.OFFLOAD_CONTRACT, "acme", contract)
+    monkeypatch.setattr(offload, "_which_prefer_executable", lambda name: "")
+
+    assert offload.acp_argv("acme") == ()
+
+
+def test_a_guest_whose_entry_point_is_another_executable_can_still_be_sent_work(
+    tmp_path, workdir, monkeypatch,
+):
+    """入口是另一个可执行文件的那一家，照样能把活送过去（走那一格，不走本机那个二进制）。"""
+    contract = vr.VendorContract(id="acme", acp_command=("agy_acp_server.exe",), legs=("acp",))
+    monkeypatch.setitem(offload.OFFLOAD_CONTRACT, "acme", contract)
+    monkeypatch.setitem(offload.DISPATCH_LEGS, "acme", ("acp",))
+
+    script = tmp_path / "fake_acp_server.py"
+    script.write_text(FAKE_SERVER, encoding="utf-8")
+    monkeypatch.setenv("FAKE_ACP_CONFIG", json.dumps({"say": "OK"}, ensure_ascii=False))
+    monkeypatch.setattr(offload, "_which_prefer_executable", lambda name: str(script))
+    monkeypatch.setattr(
+        offload, "spawn_argv",
+        lambda argv: [sys.executable, str(script), *list(argv)[1:]],
+    )
+    monkeypatch.setattr(offload, "resolve_proxy", lambda: ("", "none"))
+
+    result = offload.run_task("只回 OK", agent="acme", leg="acp", cwd=str(workdir))
+
+    assert result.ok, result.error
+    assert result.leg == "acp"
+    assert "OK" in result.text
+
+
+def test_a_vendor_with_only_an_entry_point_is_not_told_it_has_no_acp_leg(monkeypatch):
+    """只有 ``acp_command``（旗标空）的那一家，探针**不许**说它「没法用 ACP 问」。
+
+    这一格存在的理由就是这个：入口命令不是旗标时，只看旗标会把它当成没有入口。
+    """
+    from plobi.delegation import offload_contract as oc
+
+    contract = vr.VendorContract(id="acme", acp_command=("agy_acp_server.exe",), legs=("acp",))
+    monkeypatch.setitem(offload.OFFLOAD_CONTRACT, "acme", contract)
+    monkeypatch.setattr(offload, "_which_prefer_executable", lambda name: "")
+
+    answer = oc.probe_acp_login("acme", use_cache=False)
+
+    assert answer.source != "no-acp", answer.detail
+    assert answer.value is None

@@ -195,6 +195,10 @@ class VendorContract:
     acp_registry_id: str = ""
     #: 起 ACP 模式的旗标（跟本机那个入口命令配着用）。空 = 没法用 ACP 问它。
     acp_args: tuple[str, ...] = ()
+    #: ACP 那一腿的**完整 argv**（入口是**另一个可执行文件**时用）。
+    #: 空 = 沿用「本机那个二进制 ＋ 旗标」那一族（:attr:`acp_args`）。
+    #: 例：官方 ACP 注册表里 codex 那一行是 ``codex-acp``（不是 ``codex --acp``）。
+    acp_command: tuple[str, ...] = ()
     #: 这一家**有哪几条腿**（``cli``／``acp``，11-16 19:0x 主人拍板并存）。
     #: ACP 腿的那几家**入口命令就是它自己**——旗标可以空（glm 那台 ACP server
     #: 不接旗标），所以「有没有 ACP 入口」不能只看旗标。
@@ -644,6 +648,10 @@ class VendorRow:
     # ── ACP ──────────────────────────────────────────────────────────────
     acp_registry_id: str = ""
     acp_args: tuple[str, ...] = ()
+    #: ACP 那一腿的**完整 argv**（入口是**另一个可执行文件**时用）。
+    #: 空 = 沿用「本机那个二进制 ＋ 旗标」那一族（:attr:`acp_args`）。
+    #: **与 :attr:`acp_args` 互斥**（两格都填 ⇒ 说不清走的是哪条命令 ⇒ 性质测试判红）。
+    acp_command: tuple[str, ...] = ()
     acp_note: str = ""
     # ── 派活腿 ───────────────────────────────────────────────────────────
     #: 这一家**有哪几条腿**（``cli`` 命令行／``acp`` 协议）。
@@ -694,6 +702,7 @@ class VendorRow:
             id=self.id,
             acp_registry_id=self.acp_registry_id,
             acp_args=self.acp_args,
+            acp_command=self.acp_command,
             acp_note=self.acp_note,
             legs=self.legs,
             resume_argv=self.resume_argv,
@@ -797,9 +806,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         #   ``token.expiry`` = 2026-11-05T17:59:05Z（**已过期**）⇒ 真跑回 ``Authentication required``。
         #   ⇒ 这一条要**读那一个过期字段**：过期就是没登录。
         login_hints=("json-expiry:~/.gemini/antigravity-cli/antigravity-oauth-token#token.expiry",),
+        legs=("cli", "acp"),
         acp_registry_id="antigravity-acp",
         acp_args=("acp",),
-        acp_note="11-14 现核：没回话 ⇒ 探不到（官方注册表里它是二进制形态，本机这一支的旗标没试出来）",
+        acp_note="11-16 真跑通了：回「OK」、它问了 1 次授权（我们答了）、用量报上来了（14,645 token）；握手探针 25s 不够（它起得慢）⇒ 探针那一格照实说「探不到」",
         resume_argv=("--conversation", "{session_id}"),
         session=SessionSpec(
             vendor=AGENT_AGY,
@@ -960,9 +970,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         artifact_required=False,
         argv_template=("--json", "{flags}", "{extra}", "{task}"),
         login_hints=("~/.cline/data/settings/providers.json",),
+        legs=("cli", "acp"),
         acp_registry_id="cline",
         acp_args=("--acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
+        acp_note="11-16 真跑通了：回「OK」、它问了 1 次授权；它不报用量（cost_status=no_usage_reported）",
         resume_note=NO_RESUME_FLAG,
         # ── 会话腿（11-15 现读）─────────────────────────────────────────
         # ``~/.cline/data/sessions/<会话号>/``：**每个会话一个目录**，
@@ -1029,10 +1040,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             "env:GOOGLE_GENAI_USE_VERTEXAI",
             "env:GOOGLE_GENAI_USE_GCA",
         ),
+        legs=("cli", "acp"),
         acp_registry_id="gemini",
         acp_args=("--acp",),
-        acp_note="11-14 现核：拒了，原话是「Gemini API key is missing or not configured.」"
-                 "——不是认证类措辞 ⇒ 探不到，不判「没登录」",
+        acp_note="11-16 真跑：session/new 被拒，原话「Gemini API key is missing or not configured.」——它那条腿要 API key（不是 OAuth 登录）；11-16 它的派活腿接上 ACP",
         resume_note=NO_RESUME_FLAG,
         # ── 会话腿（11-15 现读）─────────────────────────────────────────
         # ``~/.gemini/tmp/<项目>/chats/session-<时间>-<短号>.jsonl``：
@@ -1085,9 +1096,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         # 这台机器上它住在便携目录、不在 PATH（``D:\_POLICY`` 的 Portables 约定）；
         # 别处没有这个文件时 is_file() 为假，等价于没装。
         portable_fallback="D:/Portables/cli/opencode/opencode.exe",
+        legs=("cli", "acp"),
         acp_registry_id="opencode",
         acp_args=("acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
+        acp_note="11-16 现核：握手登录着（它自己开了会话），但真派活那一趟 session/new 被拒，原话「Internal error: Internal service failure」（连跑两趟一样）；11-16 它的派活腿接上 ACP",
         resume_note=NO_RESUME_FLAG,
         session=SessionSpec(
             vendor=AGENT_OPENCODE,
@@ -1158,7 +1170,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
         artifact_required=False,
         argv_template=("exec", "--json", "--skip-git-repo-check", "{flags}", "{extra}", "{task}"),
-        acp_note="官方 ACP 注册表里没有这一家 ⇒ 没法用 ACP 问它，登录态只能靠别的证据",
+        legs=("cli", "acp"),
+        acp_registry_id="codex-acp",
+        acp_command=("codex-acp"),
+        acp_note="官方 ACP 注册表里**有**这一家（id 是 codex-acp；11-14 那次按产品名找，漏了带 -acp 后缀的那几家）；11-16 真跑：入口起得来（**另一个可执行文件** codex-acp），但它说「Authentication required」⇒ 没登录；11-16 它的派活腿接上 ACP",
         resume_note=NO_RESUME_FLAG,
     ),
     VendorRow(
@@ -1172,7 +1187,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         skip_permissions_env=CLAUDE_SKIP_ENV,
         # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
         artifact_required=False,
-        acp_note="官方 ACP 注册表里没有这一家 ⇒ 没法用 ACP 问它，登录态只能靠别的证据",
+        legs=("cli", "acp"),
+        acp_registry_id="claude-acp",
+        acp_command=("claude-agent-acp"),
+        acp_note="官方 ACP 注册表里**有**这一家（id 是 claude-acp；11-14 那次按产品名找漏了）；11-16 真跑：入口起得来（**另一个可执行文件** claude-agent-acp），也开了会话，但它说「Authentication required」⇒ 没登录；11-16 它的派活腿接上 ACP",
         resume_note=NO_RESUME_FLAG,
     ),
     VendorRow(
@@ -1197,9 +1215,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         argv_template=("{flags}", "--output-format", "json", "{extra}", "-p", "{task}"),
         login_probe=("--list-models",),
         login_hints=("~/.qoder/.auth",),
+        legs=("cli", "acp"),
         acp_registry_id="qoder",
         acp_args=("--acp",),
-        acp_note="11-14 现核：12s 没回话（它起得慢）⇒ 探不到",
+        acp_note="11-16 真跑：开了会话，但发一句 prompt 它自己拒了，原话「Sorry, something went wrong. Please try again. Report Issue」；11-16 它的派活腿接上 ACP",
         resume_argv=("--resume", "{session_id}"),
         session=SessionSpec(
             vendor=AGENT_QODER,
@@ -1276,9 +1295,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         # 没测过它是否"exit 0 但没落盘"，不套那条判据（与 Qoder 同理）。
         artifact_required=False,
         argv_template=("chat", "--no-interactive", "{flags}", "{extra}", "{task}"),
+        legs=("cli", "acp"),
         acp_registry_id="kiro",
         acp_args=("acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
+        acp_note="11-16 真跑通了：回「OK」、它问了 1 次授权；它不报用量",
         resume_note=NO_RESUME_FLAG,
         # ── 会话腿（11-15 现读）─────────────────────────────────────────
         # ``~/.kiro/sessions/cli/<会话号>.json`` ＋同名 ``.jsonl``：
@@ -1332,10 +1352,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         artifact_required=False,
         argv_template=("-o", "json", "{flags}", "{extra}", "{task}"),
         login_hints=("~/.qwen/oauth_creds.json",),
+        legs=("cli", "acp"),
         acp_registry_id="qwen-code",
         acp_args=("--acp",),
-        acp_note="11-14 现核：拒了，原话是「Authentication required: Use Qwen Code CLI to authenticate first.」"
-                 "⇒ 它自己说没登录",
+        acp_note="11-16 真跑：session/new 被拒，原话「Authentication required: Use Qwen Code CLI to authenticate first.」（它自己说没登录）；11-16 它的派活腿接上 ACP",
         resume_note=NO_RESUME_FLAG,
     ),
     VendorRow(
@@ -1361,9 +1381,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         # 它没有「不烧额度又能报登录态」的子命令 ⇒ 登录态只能靠本地证据判：
         # 三条环境变量与凭据库都没有 ⇒ **没登录**（这一格不许假装能用）。
         login_hints=("env:COPILOT_GITHUB_TOKEN", "env:GH_TOKEN", "env:GITHUB_TOKEN", "cred:copilot"),
+        legs=("cli", "acp"),
         acp_registry_id="github-copilot-cli",
         acp_args=("--acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
+        acp_note="11-16 真跑通了：回「OK」、它问了 1 次授权、用量报上来了（28,121 token）",
         resume_note=NO_RESUME_FLAG,
         # ── 会话腿（11-15 现读）─────────────────────────────────────────
         # ``~/.copilot/session-store.db``：会话层是 ``sessions`` 表
@@ -1421,9 +1442,10 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         # ⇒ 它没有「不登录也能用」的档，登录痕迹就落在 ``kilo auth list`` 自己打印的那个文件上。
         login_probe=("auth", "list"),
         login_hints=("~/.local/share/kilo/auth.json",),
+        legs=("cli", "acp"),
         acp_registry_id="kilo",
         acp_args=("acp",),
-        acp_note="11-14 现核：给了会话（登录着）",
+        acp_note="11-16 现核：握手登录着，但真派活那一趟 session/new 被拒，原话「Internal error: OpenCode service failure」（连跑两趟一样；它与 opencode 同源）；11-16 它的派活腿接上 ACP",
         resume_note=NO_RESUME_FLAG,
         # ── 会话腿（11-15 现读）─────────────────────────────────────────
         # ``~/.local/share/kilo/kilo.db``：会话层 ``session`` 表；
