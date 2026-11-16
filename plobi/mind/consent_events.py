@@ -23,9 +23,10 @@ import os
 import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 #: 三种表态。``edited`` 现在没有产出方（还没有「人改完再点头」的流程），
 #: 但形状先钉住：将来那条路落地时不必再改表。
@@ -114,6 +115,20 @@ class ConsentLedger:
         conn.executescript(_SCHEMA)
         return conn
 
+    @contextmanager
+    def _session(self) -> Iterator[sqlite3.Connection]:
+        """一次事务一个连接，用完就关。
+
+        ``with sqlite3.Connection`` 只管**事务**、不管**句柄**：拿它当连接管理器会让
+        文件一直开着，Windows 上连重命名这份库都会被拒（这条是测试先撞上的，不是理论洁癖）。
+        """
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     # -- 写 ---------------------------------------------------------------
 
     def record(
@@ -142,7 +157,7 @@ class ConsentLedger:
             comment=str(comment or ""),
             context_ref=str(context_ref or "").strip(),
         )
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute(
                 "INSERT INTO consent_events"
                 " (id, ts, target, category, content_sha, action, comment, context_ref)"
@@ -206,7 +221,7 @@ class ConsentLedger:
         sql += " ORDER BY ts DESC, id DESC LIMIT ?"
         args.append(max(1, min(int(limit), 500)))
         try:
-            with self._connect() as conn:
+            with self._session() as conn:
                 return [_row(r) for r in conn.execute(sql, args).fetchall()]
         except sqlite3.Error:
             return []
@@ -218,7 +233,7 @@ class ConsentLedger:
         """
         out: Dict[str, Dict[str, Any]] = {}
         try:
-            with self._connect() as conn:
+            with self._session() as conn:
                 rows = conn.execute(
                     "SELECT category, action, COUNT(*) AS n, MAX(ts) AS last_ts"
                     " FROM consent_events GROUP BY category, action"
