@@ -46,7 +46,21 @@ function isToday(date: string): boolean {
   return date === today
 }
 
-export function DossierPanel({ agentId, className }: { agentId: string; className?: string }) {
+export function DossierPanel({
+  agentId,
+  className,
+  showPin = true
+}: {
+  agentId: string
+  className?: string
+  /**
+   * 那枚**图钉**（切「并排一列／浮层」）还看不看。
+   *
+   * 窄形态下没有并排列可切（对话卡窄到装不下那一列，档案卡是折叠的）⇒ 那枚图钉
+   * 在那里是个**点不动的按钮** ⇒ 藏起来（用户 11-16 19:4x 拍板的窄形态）。
+   */
+  showPin?: boolean
+}) {
   const { t } = useI18n()
   const v = t.surface
   const queryClient = useQueryClient()
@@ -125,18 +139,20 @@ export function DossierPanel({ agentId, className }: { agentId: string; classNam
         <span className="min-w-0 flex-1 truncate text-[0.7rem] text-(--ui-text-tertiary)">
           {agent.displayName}
         </span>
-        <Button
-          aria-label={pinned ? v.dossierUnpin : v.dossierPin}
-          aria-pressed={pinned}
-          className={cn('shrink-0', pinned ? 'text-foreground' : 'text-(--ui-text-tertiary)')}
-          data-testid="dossier-pin"
-          onClick={() => toggleDossierPanelPin()}
-          size="icon-xs"
-          title={pinned ? v.dossierUnpin : v.dossierPin}
-          variant="ghost"
-        >
-          <Codicon name="pin" size="0.85rem" />
-        </Button>
+        {showPin ? (
+          <Button
+            aria-label={pinned ? v.dossierUnpin : v.dossierPin}
+            aria-pressed={pinned}
+            className={cn('shrink-0', pinned ? 'text-foreground' : 'text-(--ui-text-tertiary)')}
+            data-testid="dossier-pin"
+            onClick={() => toggleDossierPanelPin()}
+            size="icon-xs"
+            title={pinned ? v.dossierUnpin : v.dossierPin}
+            variant="ghost"
+          >
+            <Codicon name="pin" size="0.85rem" />
+          </Button>
+        ) : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -114,7 +114,9 @@ describe('右上角那一列是注册表驱动的', () => {
     const entries = chatTopBarRailEntries({
       dossierLabel: '档案',
       dossierVisible: false,
-      edgeControls: {}
+      edgeControls: {},
+      narrow: false,
+      peekOpen: false
     })
 
     expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'edge'])
@@ -124,7 +126,9 @@ describe('右上角那一列是注册表驱动的', () => {
     const entries = chatTopBarRailEntries({
       dossierLabel: '档案',
       dossierVisible: false,
-      edgeControls: {}
+      edgeControls: {},
+      narrow: false,
+      peekOpen: false
     })
 
     const withExtra = [...entries, { id: 'future', render: () => <button type="button">未来</button> }]

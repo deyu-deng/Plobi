@@ -354,6 +354,54 @@ export function toggleDossierPanelPin(): void {
   $dossierPanelPinned.set(!$dossierPanelPinned.get())
 }
 
+/**
+ * 对话卡**容器**的宽度（px）—— 这一刀唯一的宽度判据。
+ *
+ * Qoder 的机制（11-08 逆向报告）：**形状由宽度决定，状态变量只管「在不在」**。
+ * 它的任务监控卡在 `@container new-chat-b1 (max-width:639.98px)` 下整块收起，
+ * 宽到 ≥924px 才从一列变两列。我们抄这一条：对话卡窄到装不下档案列时，
+ * **档案卡折叠**（不占位、不遮挡），入口只剩抬头右上角那枚图标。
+ *
+ * 为什么用 JS 量而不是 CSS `@container`：① 档案卡是对话卡的**兄弟**，
+ * CSS 容器查询管不到兄弟；② 我们还要按宽度改**点击行为**（窄时点图标弹贴头浮层、
+ * 宽时点图标切换显隐），纯 CSS 做不到。
+ *
+ * **量的是对话卡整卡**，不是对话区：量对话区会自激——钉住形态下档案列占 22rem，
+ * 对话区一变窄就判「窄」→ 折叠档案列 → 对话区变宽 → 又判「不窄」⇒ 来回抖。
+ */
+export const $chatCardWidth = atom(0)
+
+/** 窄到这条线以下，档案卡折叠。768 ＝ 档案列 22rem ＋ 对话最少能读的宽度。 */
+export const CHAT_CARD_NARROW_WIDTH = 768
+
+export const $chatCardNarrow = computed($chatCardWidth, width => width > 0 && width < CHAT_CARD_NARROW_WIDTH)
+
+export function setChatCardWidth(width: number): void {
+  $chatCardWidth.set(Math.max(0, Math.round(width)))
+}
+
+/**
+ * 窄形态下那个**贴头浮层**开没开（用户 11-16 19:4x 拍板：宽度不够就折叠、不遮对话）。
+ *
+ * 与 `$dossierPanelMode` 是两件事：那张管「档案在不在」，这个管「窄屏下浮层开没开」。
+ * 宽了自动收起 —— 宽形态有自己的并排列／浮层，窄形态那个入口不该跟过去。
+ */
+export const $dossierPeekOpen = atom(false)
+
+export function toggleDossierPeek(): void {
+  $dossierPeekOpen.set(!$dossierPeekOpen.get())
+}
+
+export function closeDossierPeek(): void {
+  $dossierPeekOpen.set(false)
+}
+
+$chatCardNarrow.listen(narrow => {
+  if (!narrow) {
+    $dossierPeekOpen.set(false)
+  }
+})
+
 export function toggleCardFocus(which: 'chat' | 'workbench'): void {
   $cardFocus.set($cardFocus.get() === which ? null : which)
 }

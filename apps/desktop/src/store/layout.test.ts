@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   $cardFocus,
+  $chatCardNarrow,
   $dossierPanelMode,
   $dossierPanelVisible,
+  $dossierPeekOpen,
+  CHAT_CARD_NARROW_WIDTH,
   setCardFocus,
-  toggleDossierPanel
+  setChatCardWidth,
+  toggleDossierPanel,
+  toggleDossierPeek
 } from './layout'
 
 /**
@@ -62,5 +67,41 @@ describe('档案卡的显隐口径', () => {
 
     toggleDossierPanel()
     expect($dossierPanelVisible.get()).toBe(true)
+  })
+})
+
+/**
+ * **宽度决定档案卡的形状**（用户 11-16 19:4x 拍板：这一列先只做容器查询）。
+ *
+ * Qoder 的机制（11-08 逆向报告）：**形状由宽度决定，状态变量只管「在不在」**。
+ * 它的任务监控卡在 `@container new-chat-b1 (max-width:639.98px)` 下整块收起。
+ * 我们抄这一条：对话卡窄到装不下档案列 ⇒ 档案卡**折叠**（不占位、不遮挡），
+ * 入口只剩抬头右上角那枚图标。
+ */
+describe('对话卡宽度决定档案卡的形状', () => {
+  beforeEach(() => {
+    setChatCardWidth(0)
+    $dossierPeekOpen.set(false)
+  })
+
+  it('宽度还没量出来时**不算窄**（首帧不许闪一下窄形态）', () => {
+    expect($chatCardNarrow.get()).toBe(false)
+  })
+
+  it('窄到阈值以下算窄，回到阈值以上就不窄', () => {
+    setChatCardWidth(CHAT_CARD_NARROW_WIDTH - 1)
+    expect($chatCardNarrow.get()).toBe(true)
+
+    setChatCardWidth(CHAT_CARD_NARROW_WIDTH)
+    expect($chatCardNarrow.get()).toBe(false)
+  })
+
+  it('宽了自动收起窄形态那个浮层（窄形态的入口不跟到宽形态去）', () => {
+    setChatCardWidth(CHAT_CARD_NARROW_WIDTH - 1)
+    toggleDossierPeek()
+    expect($dossierPeekOpen.get()).toBe(true)
+
+    setChatCardWidth(CHAT_CARD_NARROW_WIDTH + 200)
+    expect($dossierPeekOpen.get()).toBe(false)
   })
 })

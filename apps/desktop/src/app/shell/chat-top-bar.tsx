@@ -4,7 +4,13 @@ import { useStore } from '@nanostores/react'
 import { $consoleAgents } from '@/app/console/store/agents'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { $dossierPanelVisible, toggleDossierPanel } from '@/store/layout'
+import {
+  $chatCardNarrow,
+  $dossierPanelVisible,
+  $dossierPeekOpen,
+  toggleDossierPanel,
+  toggleDossierPeek
+} from '@/store/layout'
 
 import type { ChatScope } from '../console/chat/scope'
 import { secretaryShellLabel } from '../desktop-controller-utils'
@@ -48,10 +54,41 @@ export interface ChatTopBarRailEntry {
  * 工作区在显示时默认收起，点它才展开；点过的那一次只在这一面算数（换了面回到默认）。
  * 档案卡本体在 `app/dossier/dossier-panel.tsx`，由控制器挂在对话卡里。
  */
+/**
+ * 档案那枚图标按下去该做什么 —— **形状由宽度决定，状态变量只管「在不在」**。
+ *
+ * Qoder 的机制（11-08 逆向报告）：窄容器下它的任务监控卡整块收起，入口换成一个
+ * 浮层形态。我们这一刀只抄这一条（用户 11-16 19:4x 拍板）：对话卡窄到装不下
+ * 档案列时，档案卡折叠（不占位、不遮挡），这枚图标变成唯一入口，点它以**贴头
+ * 浮层**展开；宽时它的老样子不变（点图标切换档案卡显隐）。
+ *
+ * 抽成纯函数是为了**能钉住行为**：这两条分支是这一刀的核心判据，不能只读源码。
+ */
+export function dossierRailToggle(narrow: boolean): void {
+  if (narrow) {
+    toggleDossierPeek()
+
+    return
+  }
+
+  toggleDossierPanel()
+}
+
+/** 那枚图标此刻是不是「开着」的样子：窄时看浮层，宽时看档案卡。 */
+export function dossierRailPressed(deps: {
+  dossierVisible: boolean
+  narrow: boolean
+  peekOpen: boolean
+}): boolean {
+  return deps.narrow ? deps.peekOpen : deps.dossierVisible
+}
+
 export function chatTopBarRailEntries(deps: {
   dossierLabel: string
   dossierVisible: boolean
   edgeControls: CardEdgeControls
+  narrow: boolean
+  peekOpen: boolean
 }): ChatTopBarRailEntry[] {
   return [
     {
@@ -60,8 +97,12 @@ export function chatTopBarRailEntries(deps: {
         <TopBarIconButton
           icon="book"
           label={deps.dossierLabel}
-          onClick={() => toggleDossierPanel()}
-          pressed={deps.dossierVisible}
+          onClick={() => dossierRailToggle(deps.narrow)}
+          pressed={dossierRailPressed({
+            dossierVisible: deps.dossierVisible,
+            narrow: deps.narrow,
+            peekOpen: deps.peekOpen
+          })}
         />
       )
     },
@@ -81,12 +122,16 @@ export function ChatTopBar({
   const { t } = useI18n()
   const agents = useStore($consoleAgents)
   const dossierVisible = useStore($dossierPanelVisible)
+  const narrow = useStore($chatCardNarrow)
+  const peekOpen = useStore($dossierPeekOpen)
   const level = scope.kind === 'agent' ? { l2: scope.id } : 'l1'
   const name = secretaryShellLabel(level, t.console.chiefSecretary, agents)
 
   const entries = chatTopBarRailEntries({
     dossierLabel: t.surface.agentDossier,
     dossierVisible,
+    narrow,
+    peekOpen,
     edgeControls: edgeControls ?? {}
   })
 

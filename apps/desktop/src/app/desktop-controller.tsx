@@ -30,8 +30,10 @@ import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setAgentScope } from '../store/agent-scope'
 import type { ComposerAttachment } from '../store/composer'
 import {
+  $chatCardNarrow,
   $dossierPanelPinned,
   $dossierPanelVisible,
+  $dossierPeekOpen,
   $fileBrowserOpen,
   $panesFlipped,
   $shellCards,
@@ -40,6 +42,7 @@ import {
   $cardFocus,
   $cardFocusAnimating,
   setCardFocus,
+  setChatCardWidth,
   setShellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
@@ -50,6 +53,7 @@ import {
   toggleShellSwapped
 } from '../store/layout'
 import { cardDragProps, useCardDrop } from './shell/card-drag'
+import { useContainerWidth } from './shell/container-width'
 import { useSystemTools } from './shell/system-tools'
 import { resolveWorkbenchAsideClass } from './shell/workbench-aside-class'
 import { respondToApprovalAction } from '../store/native-notifications'
@@ -392,6 +396,20 @@ export function DesktopController() {
   const dossierVisible = useStore($dossierPanelVisible)
   const dossierPinned = useStore($dossierPanelPinned)
   const dossierAgentId = chatScope?.kind === 'agent' ? chatScope.id : 'l1'
+
+  // ── 对话卡的**容器宽度**（这一刀唯一的宽度判据）─────────────────────────
+  // Qoder 的机制（11-08 逆向报告）：**形状由宽度决定，状态变量只管「在不在」**。
+  // 窄到装不下档案列时，**档案卡折叠**（不占位、不遮挡），入口只剩抬头右上角
+  // 那枚图标 —— 点它以**贴头浮层**展开（Qoder 的 `floating` 形态）。
+  // 用户 11-16 19:4x 拍板：这一列先只做容器查询。
+  const [chatCardElement, setChatCardElement] = useState<HTMLDivElement | null>(null)
+  const chatCardWidth = useContainerWidth(chatCardElement)
+  const chatCardNarrow = useStore($chatCardNarrow)
+  const dossierPeekOpen = useStore($dossierPeekOpen)
+
+  useEffect(() => {
+    setChatCardWidth(chatCardWidth)
+  }, [chatCardWidth])
 
   // 终端页签按 Agent 分家（10-31）：把当前路由的 Agent 身份写进 store。
   // 归属键只认这个值，不认会话 id —— 一个 Agent 一张嘴、一套页签；同一个
@@ -2312,14 +2330,21 @@ export function DesktopController() {
     <div
       className={cn(
         'relative flex h-full min-h-0',
-        dossierVisible && dossierPinned ? 'flex-row' : 'flex-col'
+        dossierVisible && dossierPinned && !chatCardNarrow ? 'flex-row' : 'flex-col'
       )}
       data-shell-card-drop={chatDrop.over ? '' : undefined}
+      ref={setChatCardElement}
       {...chatDrop.dropProps}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatRoutes}</div>
-      {dossierVisible ? (
+      {dossierVisible && !chatCardNarrow ? (
         <DossierPanel agentId={dossierAgentId} className={dossierPinned ? DOSSIER_PINNED : DOSSIER_FLOATING} />
+      ) : null}
+      {/* 窄形态：档案卡在对话卡里**折叠**（不占位、不遮挡），点抬头右上角那枚图标
+          以**贴头浮层**展开（位置沿用 `DOSSIER_FLOATING`：压在抬头下面那一行之下，
+          不盖住抬头右边那几枚）。窄了没有并排列可切 ⇒ 那枚图钉不出现。 */}
+      {chatCardNarrow && dossierPeekOpen ? (
+        <DossierPanel agentId={dossierAgentId} className={DOSSIER_FLOATING} showPin={false} />
       ) : null}
     </div>
   )
