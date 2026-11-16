@@ -10,6 +10,13 @@ import { atom, computed } from 'nanostores'
  * （这台现核：count 7 / expired 6）。看不见＝永远不会被点头。
  */
 
+/** 一条打算写进脑的具体内容（WP-MIND-PENDING-CONTENT）：不是文件名，是正文。 */
+export interface MindPendingChange {
+  path: string
+  mode: string
+  content: string
+}
+
 export interface MindPendingItem {
   id: string
   kind: string
@@ -19,6 +26,19 @@ export interface MindPendingItem {
   expired: boolean
   /** 这张纸属于哪个 Agent（L0 改写才有；屏幕上要说得出来）。 */
   agent?: string
+  /** mind_plan 才有；其余两类走 summary，形状不变。 */
+  changes?: MindPendingChange[]
+}
+
+/** 还没被指挥起草过的评论（复用 lesson_write 起草候选，草稿不自动生效）。 */
+export interface MindPendingFeedback {
+  pending_id: string
+  feedback_id: string
+  comment: string
+  /** 待批记录的分类（mind_plan / memory / …）。 */
+  kind?: string
+  /** 这张纸指向的第一个对象；读不出时为空串。 */
+  path: string
 }
 
 export interface MindPendingState {
@@ -29,6 +49,8 @@ export interface MindPendingState {
   gate: boolean
   /** 自动档（memory.mind_write_auto_approve）：开着时这一屏通常是空的，那是正常 */
   auto: boolean
+  /** 未起草的评论：等指挥那一轮读到后复用 lesson_write 起草候选。 */
+  pending_feedback?: MindPendingFeedback[]
   message?: string
   ok?: boolean
 }
@@ -71,6 +93,17 @@ export async function refreshMindPending(): Promise<MindPendingState> {
 
 export async function actOnMindPending(id: string, verb: 'approve' | 'reject'): Promise<MindPendingState> {
   const state = await call(`/api/memory/pending/${encodeURIComponent(id)}/${verb}`, 'POST')
+  $mindPending.set({ ...EMPTY, ...state })
+  return state
+}
+
+/** 三态的第三态：评论原话入账，不改票状态、不放行写入。 */
+export async function commentOnMindPending(id: string, comment: string): Promise<MindPendingState> {
+  const state = await window.plobiDesktop.api<MindPendingState>({
+    body: { comment },
+    method: 'POST',
+    path: `/api/memory/pending/${encodeURIComponent(id)}/comment`
+  })
   $mindPending.set({ ...EMPTY, ...state })
   return state
 }

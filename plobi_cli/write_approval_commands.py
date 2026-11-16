@@ -203,7 +203,19 @@ def _apply_one(subsystem: str, rec, memory_store):
                 writer=MindWriter(require_approval=False),
             )
             if report.ok:
-                _remember_l0_decision(payload, "adopted")
+                # WP-MIND-PENDING-CONTENT：写脑的采纳要记在 L1 那一格上。
+                # 原先一律走 _remember_l0_decision（source="l0"），而驳回 mind_plan
+                # 走的是 L1.record_rejection（source="l1"）——采纳永远攒不到 streak，
+                # 门槛只降不升。两本账分开：这里只补 L1，L0/note_manage 那两支一个字不动。
+                try:
+                    from plobi.mind.proposal import TrustLedger, category_of
+
+                    cats = sorted(set(plan.categories.values())) or [category_of(c.logical_path) for c in plan.changes] or ["other"]
+                    book = TrustLedger()
+                    for cat in set(cats):
+                        book.record("adopted", cat, "l1")
+                except Exception:  # noqa: BLE001 - 记不上账不该让批准本身失败
+                    pass
             return (True, "") if report.ok else (False, "计划过期或对象/内容已变，重出一张再点头")
         if subsystem == wa.MEMORY:
             if memory_store is None:

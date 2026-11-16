@@ -10,10 +10,12 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
+import { Check, MessageSquareText, X } from '@/lib/icons'
 import {
   $mindPending,
   $mindPendingOpen,
   actOnMindPending,
+  commentOnMindPending,
   refreshMindPending,
   setMindPendingOpen
 } from '@/store/mind-pending'
@@ -27,10 +29,16 @@ import {
 export function MindPendingOverlay() {
   const { t } = useI18n()
   const m = t.mindPending
+  // 四语键归在派的 `WP-TERMS-FOUR-WORDS`，本刀不冒那个前缀、不硬改 i18n：
+  // 复用现成的通用词「批注／Note／メモ」（`t.workbench.office.note` 那对键）与 `common.save`。
+  // 记作缺口：待四语那一刀落地后换成 `mindPending.comment`。
+  const noteWord = t.workbench.office.note
   const open = useStore($mindPendingOpen)
   const state = useStore($mindPending)
   const [busy, setBusy] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
+  const [commentFor, setCommentFor] = useState<string | null>(null)
+  const [commentText, setCommentText] = useState('')
 
   // 轮询挂在这个组件上，不挂在那颗角标上：`use-statusbar-items.tsx` 由在派的
   // `WP-WORKBENCH-LAUNCHER` 独占（串行一次一家，我不抢），而这一档是本刀新建的、归本线。
@@ -56,6 +64,26 @@ export function MindPendingOverlay() {
         setFailed(next.message || m.failed)
       } else {
         setFailed(null)
+      }
+    } catch {
+      setFailed(m.failed)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const comment = async (id: string) => {
+    const text = commentText.trim()
+    if (!text) {
+      return
+    }
+    setBusy(`${id}:comment`)
+    try {
+      const next = await commentOnMindPending(id, text)
+      setFailed(next.ok === false ? (next.message || m.failed) : null)
+      if (next.ok !== false) {
+        setCommentFor(null)
+        setCommentText('')
       }
     } catch {
       setFailed(m.failed)
@@ -99,24 +127,81 @@ export function MindPendingOverlay() {
                       <div className="text-muted-foreground text-xs">{m.expired}</div>
                     ) : null}
                   </div>
-                  <div className="flex shrink-0 gap-2">
+                  {/* 三枚矢量图标，对齐票面那组：接纳 / 驳回 / 评论。
+                      四语键被在派格认领，本刀不碰 i18n；label 复用现有键、图标自身表意。 */}
+                  <div className="flex shrink-0 gap-1">
                     <Button
+                      aria-label={m.approve}
                       disabled={Boolean(busy) || item.expired}
                       onClick={() => void act(item.id, 'approve')}
                       size="sm"
+                      title={m.approve}
+                      variant="ghost"
                     >
-                      {m.approve}
+                      <Check aria-hidden className="size-4" />
                     </Button>
                     <Button
+                      aria-label={m.reject}
                       disabled={Boolean(busy)}
                       onClick={() => void act(item.id, 'reject')}
                       size="sm"
+                      title={m.reject}
                       variant="ghost"
                     >
-                      {m.reject}
+                      <X aria-hidden className="size-4" />
+                    </Button>
+                    <Button
+                      aria-label={noteWord}
+                      disabled={Boolean(busy)}
+                      onClick={() => {
+                        setCommentFor(commentFor === item.id ? null : item.id)
+                        setCommentText('')
+                      }}
+                      size="sm"
+                      title={noteWord}
+                      variant="ghost"
+                    >
+                      <MessageSquareText aria-hidden className="size-4" />
                     </Button>
                   </div>
                 </div>
+                {/* 要点头就得看见要写什么：默认折叠，点开看具体正文。 */}
+                {item.changes && item.changes.length > 0 ? (
+                  <details className="mt-2 text-sm">
+                    <summary className="cursor-pointer text-muted-foreground text-xs">
+                      {item.summary || m.desc}
+                    </summary>
+                    {item.changes.map((change, idx) => (
+                      <div className="mt-2 border-border border-l-2 pl-2" key={`${item.id}:${idx}`}>
+                        <div className="text-muted-foreground text-xs">{change.path} · {change.mode}</div>
+                        <pre className="whitespace-pre-wrap font-sans text-xs">{change.content}</pre>
+                      </div>
+                    ))}
+                  </details>
+                ) : item.summary ? (
+                  <div className="text-muted-foreground mt-1 truncate text-xs" title={item.summary}>
+                    {item.summary}
+                  </div>
+                ) : null}
+                {commentFor === item.id ? (
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1 text-sm"
+                      onChange={e => setCommentText(e.target.value)}
+                      placeholder={t.workbench.office.notePlaceholder}
+                      value={commentText}
+                    />
+                    <Button
+                      aria-label={t.common.save}
+                      disabled={Boolean(busy) || !commentText.trim()}
+                      onClick={() => void comment(item.id)}
+                      size="sm"
+                      title={t.common.save}
+                    >
+                      <Check aria-hidden className="size-4" />
+                    </Button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

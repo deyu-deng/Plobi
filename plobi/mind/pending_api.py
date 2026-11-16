@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 PREFIX = "/api/memory"
 
+# 屏幕预览上限：够人看懂要写什么，不给待批列表塞进整篇脑页。落盘仍用原 payload。
+_CHANGE_PREVIEW_CHARS = 2000
+
 
 def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
     """一张待批记录 → 屏幕上能读的三行。机理解释留在 tooltip，不进正文。"""
@@ -30,6 +33,10 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
     paths: List[str] = []
     expired = False
     summary = ""
+    # WP-MIND-PENDING-CONTENT：人要点头，就得看见**要写什么**，不能只给一个文件名。
+    # 正文来自 Plan.changes[].content（proposal.py:58 早就在 to_json 里序列化了），
+    # 断的是这一层没往响应里放。这里给阅读上限，不是截断原计划——落盘仍用原 payload。
+    changes: List[Dict[str, str]] = []
     if kind == "mind_plan":
         try:
             from plobi.mind import proposal as L1
@@ -40,6 +47,14 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
             # ——他是在待批那一屏上看到的，那是我把内部名字印了上去。
             paths = [c.logical_path[len("Mind/"):] if c.logical_path.startswith("Mind/") else c.logical_path
                      for c in plan.changes]
+            changes = [
+                {
+                    "path": c.logical_path[len("Mind/"):] if c.logical_path.startswith("Mind/") else c.logical_path,
+                    "mode": c.mode,
+                    "content": str(c.content)[:_CHANGE_PREVIEW_CHARS],
+                }
+                for c in plan.changes
+            ]
             expired = L1.is_expired(plan)
             summary = f"{len(plan.changes)} 项 · {plan.digest[:12]}"
         except Exception as exc:  # noqa: BLE001 - 一张读不出来的纸不该拖垮整个列表
@@ -84,6 +99,8 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
         "kind": kind,
         "paths": paths,
         "summary": summary,
+        # 只有 mind_plan 有正文；其余两类仍走各自的 summary，形状不变。
+        "changes": changes,
         "created_at": created,
         "expired": expired,
         # 这张纸属于哪个 Agent（L0 的改写才有）。屏幕上要说得出来，否则"memory"一词看不出是谁的。
@@ -105,7 +122,16 @@ def _listing() -> Dict[str, Any]:
         # 两个开关给屏幕说真话用：闸开没开、自动档开没开（不是给模型解释机理）
         "gate": bool(mem.get("mind_write_approval", True)),
         "auto": bool(mem.get("mind_write_auto_approve", False)),
+        # 未被起草过的评论挂回包，等指挥那一轮读到后复用 lesson_write 起草。
+        # 形状对齐票面 pending_feedback，但来源是本面记录、两本账不合并。
+        "pending_feedback": [] if not items else _pending_feedback(),
     }
+
+
+def _pending_feedback() -> List[Dict[str, Any]]:
+    from plobi.mind.pending_feedback import pending_feedback
+
+    return pending_feedback()
 
 
 def register_memory_pending_api(app: FastAPI) -> None:
@@ -122,6 +148,11 @@ def register_memory_pending_api(app: FastAPI) -> None:
     @app.post(f"{PREFIX}/pending/{{pending_id}}/reject", name="memory_pending_reject")
     async def memory_pending_reject(pending_id: str) -> JSONResponse:
         return JSONResponse(_act(pending_id, "reject"))
+
+    @app.post(f"{PREFIX}/pending/{{pending_id}}/comment", name="memory_pending_comment")
+    async def memory_pending_comment(pending_id: str, body: dict | None = None) -> JSONResponse:
+        """三态里的第三态：评论原话入账，不改票状态、不放行任何写入。"""
+        return JSONResponse(_comment(pending_id, str((body or {}).get("comment") or "")))
 
     @app.post(f"{PREFIX}/pending/prune", name="memory_pending_prune")
     async def memory_pending_prune() -> JSONResponse:
@@ -192,6 +223,20 @@ def _prune() -> Dict[str, Any]:
             pruned.append(str(record.get("id")))
     out = _listing()
     out.update({"ok": True, "pruned": pruned, "kept": kept, "archive": str(archive)})
+    return out
+
+
+def _comment(pending_id: str, text: str) -> Dict[str, Any]:
+    from plobi.mind.pending_feedback import record_comment
+
+    comment = (text or "").strip()
+    ok = bool(comment) and record_comment(pending_id, comment)
+    out = _listing()
+    out.update({
+        "ok": ok,
+        "message": ("评论已记下。草稿要等指挥读到后起草，不会自动放行。"
+                    if ok else "评论没记成：话是空的，或这张纸已不在待批层。"),
+    })
     return out
 
 
