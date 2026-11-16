@@ -13,6 +13,9 @@ Hermetic-test invariants enforced here (see AGENTS.md for rationale):
 3. **Deterministic runtime.** TZ=UTC, LANG=C.UTF-8, PYTHONHASHSEED=0.
 4. **No PLOBI_SESSION_* inheritance** — the agent's current gateway
    session must not leak into tests.
+5. **No writes into the real ``logs/`` dir.** ``setup_logging()`` is pinned
+   to a session temp dir, so failure-path WARNINGs don't pile up in the
+   developer's own ``~/.plobi/logs/errors.log``.
 
 These invariants make the local test run match CI closely. Gaps that
 remain (CPU count, xdist worker count) are addressed by the canonical
@@ -20,11 +23,41 @@ test runner at ``scripts/run_tests.sh``.
 """
 
 import asyncio
+import atexit
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
+
+import plobi_logging
+
+# --- 5. **No writes into the developer's real logs directory.** -------------
+# File logging is the one side effect the PLOBI_HOME isolation above cannot
+# catch: production code calls ``plobi_logging.setup_logging(plobi_home=...)``
+# with the *real* home (``agent/agent_init.py`` does exactly that), so every
+# WARNING a test emits along a failure path used to land in the developer's own
+# ``~/.plobi/logs/errors.log`` — 2225 lines of pytest noise by 11-16, which
+# buries real incidents and makes ``plobi logs errors`` useless after a test
+# run. Pin the file side of logging to a session temp dir instead.
+_TEST_LOG_HOME = Path(tempfile.mkdtemp(prefix="plobi-test-logs-"))
+atexit.register(shutil.rmtree, _TEST_LOG_HOME, True)
+_real_setup_logging = plobi_logging.setup_logging
+
+
+def _isolated_setup_logging(*args: object, **kwargs: object) -> Path:
+    """``setup_logging`` with the log directory pinned to a temp dir."""
+
+    kwargs["plobi_home"] = _TEST_LOG_HOME
+    return _real_setup_logging(*args, **kwargs)
+
+
+_isolated_setup_logging.__name__ = _real_setup_logging.__name__
+_isolated_setup_logging.__qualname__ = _real_setup_logging.__qualname__
+_isolated_setup_logging.__doc__ = _real_setup_logging.__doc__
+plobi_logging.setup_logging = _isolated_setup_logging  # type: ignore[assignment]
 
 # Ensure project root is importable
 PROJECT_ROOT = Path(__file__).parent.parent
