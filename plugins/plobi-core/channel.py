@@ -1150,6 +1150,129 @@ def handle_lesson_write(args: dict, **kwargs) -> str:
     )
 
 
+# ── 授权全套（裁定 228）：人能做的每件动作都有对应工具，一枚动作一枚工具 ──
+# 对称的是**能力**，不是权限：人点按钮，点击本身就是授权证据；模型调工具，
+# 状态变更类必须附 `user_words`（用户原话）当证据，不许自己给自己点头。
+
+
+_LESSON_WORDS_PROP = {
+    "type": "string",
+    "description": "用户说的那句原话，逐字引用。必填——没有它就不许变更授权状态。",
+}
+
+LESSONS_SCHEMA = {
+    "name": "lessons",
+    "description": (
+        "读授权账：看现有 lesson 的样子、状态、当初凭哪句话生效（裁定 228）。\n"
+        "**只读**：不发提示词、不写账、不改状态。人能在设置里看的，你也能看——这是能力对称。\n"
+        "`status` 不填就看全部；`limit` 最多 50。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["approved", "proposed", "rejected", "revoked"],
+                "description": "按状态过滤（可选）。",
+            },
+            "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "最多几条（默认 20）。"},
+        },
+    },
+}
+
+
+def handle_lessons(args: dict, **kwargs) -> str:
+    args = args if isinstance(args, dict) else {}
+    status = str(args.get("status") or "").strip().lower()
+    try:
+        from plobi.delegation.lesson_ledger import LessonLedger, STATUSES
+
+        rows = LessonLedger().all()
+    except Exception as exc:  # noqa: BLE001
+        return _result(False, error=f"授权账读不出来：{exc}")
+    if status and status in STATUSES:
+        rows = [r for r in rows if r.status == status]
+    try:
+        limit = max(1, min(50, int(args.get("limit") or 20)))
+    except (TypeError, ValueError):
+        limit = 20
+    return _result(
+        True, mode="lessons", count=min(len(rows), limit),
+        lessons=[r.as_dict() for r in rows[:limit]],
+    )
+
+
+def _lesson_decision_schema(name: str, what: str, emoji_note: str) -> dict:
+    return {
+        "name": name,
+        "description": (
+            f"{what}（裁定 228）。**必须逐字引用用户说的那句话**填进 `user_words`——"
+            "你是在替他执行一个决定，不是在替他做决定。没有那句话就不许动账。"
+            f"{emoji_note}"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "lesson_id": {"type": "string", "description": "要处理的那条 lesson 的 id（必填）。"},
+                "user_words": _LESSON_WORDS_PROP,
+            },
+            "required": ["lesson_id", "user_words"],
+        },
+    }
+
+
+LESSON_APPROVE_SCHEMA = _lesson_decision_schema(
+    "lesson_approve", "把一条草稿点头生效", "人点批准按钮，你也能点——但要带他的原话。",
+)
+LESSON_REJECT_SCHEMA = _lesson_decision_schema(
+    "lesson_reject", "驳回一条草稿", "人点拒绝，你也能点——但要带他的原话。",
+)
+LESSON_REVOKE_SCHEMA = _lesson_decision_schema(
+    "lesson_revoke", "撤回一条已生效的授权", "人点撤回，你也能点——但要带他的原话；撤回是让旧授权失效，不是再加一条。",
+)
+
+
+def _handle_lesson_decision(args: dict, status: str) -> str:
+    args = args if isinstance(args, dict) else {}
+    lesson_id = str(args.get("lesson_id") or "").strip()
+    words = " ".join(str(args.get("user_words") or "").split())
+    if not lesson_id:
+        return _result(False, error="没给 `lesson_id`。")
+    if not words:
+        return _result(
+            False, error="没给 `user_words`——授权状态变更必须引用用户原话，不许自评。",
+        )
+    try:
+        from plobi.delegation.lesson_ledger import LessonLedger
+
+        row = LessonLedger().decide_with_words(
+            lesson_id, status, user_words=words,
+        )
+    except ValueError as exc:
+        return _result(False, error=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return _result(False, error=f"授权状态没写成：{exc}")
+    if row is None:
+        return _result(False, error=f"找不到 lesson {lesson_id}。")
+    return _result(
+        True, mode=f"lesson_{status}", lesson_id=row.id, status=row.status,
+        decision_words=row.decision_words,
+        note="已按用户原话记账；生效/失效的授权下次召回即按新状态算。",
+    )
+
+
+def handle_lesson_approve(args: dict, **kwargs) -> str:
+    return _handle_lesson_decision(args, "approved")
+
+
+def handle_lesson_reject(args: dict, **kwargs) -> str:
+    return _handle_lesson_decision(args, "rejected")
+
+
+def handle_lesson_revoke(args: dict, **kwargs) -> str:
+    return _handle_lesson_decision(args, "revoked")
+
+
 def check_channel_available() -> bool:
     """名册里一条可发的人都没有 ⇒ 零 schema 足迹（Footprint Ladder rung 3）。"""
     return bool(live_names())

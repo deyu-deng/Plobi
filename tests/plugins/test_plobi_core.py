@@ -185,8 +185,12 @@ def test_register_deep_tool_and_secretary_surface(ns):
     # 裁定 226：第六枚是旁路写入口——只写 proposed 草稿、不生效、不传提示词，
     # 所以它和读口/停口同类，紧跟其后，也不挂 check_channel_available。
     assert registered[5] == "lesson_write", registered
+    # 裁定 228：授权全套——人能做的每件动作都有对应工具，一枚动作一枚工具。
+    assert registered[6:10] == [
+        "lessons", "lesson_approve", "lesson_reject", "lesson_revoke"
+    ], registered
     assert "plobi" not in registered, registered
-    assert registered[6:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
+    assert registered[10:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
 
 
 def test_boot_get_north_star(tmp_home):

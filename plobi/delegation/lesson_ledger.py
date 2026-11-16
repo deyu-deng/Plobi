@@ -65,6 +65,8 @@ class Lesson:
     #: 凭什么放权：记下用户原话（对话授权）或关联的表态 id（评论回路），可核、可撤回。
     source: str = SOURCE_COMMENT
     user_words: str = ""
+    #: 后来点头／驳回／撤回时用户说的那句话（裁定 228：Agent 全套工具必须带原话）。
+    decision_words: str = ""
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -223,6 +225,33 @@ class LessonLedger:
     def revoke(self, lesson_id: str) -> Optional[Lesson]:
         """撤回一条已生效的授权：下次召回立刻不再命中。"""
         return self._set(lesson_id, REVOKED)
+
+    def decide_with_words(
+        self, lesson_id: str, status: str, *, user_words: str
+    ) -> Optional[Lesson]:
+        """Agent 全套工具用的状态变更入口（裁定 228）。
+
+        与上面三枚「人点按钮」用的 approve/reject/revoke 分开：那条路人的点击就是证据；
+        这一条模型在调，所以必须带用户原话，且原话要落账可核。**不许模型自评**。
+        """
+        if status not in (APPROVED, REJECTED, REVOKED):
+            raise ValueError(f"unknown decision status: {status!r}")
+        words = " ".join(str(user_words or "").split())[:500]
+        if not words:
+            raise ValueError("Agent 变更授权状态必须带 user_words（用户原话），不许自评")
+
+        rows = self._read()
+        for row in rows:
+            if row.id != lesson_id:
+                continue
+            row.status = status
+            row.decision_words = words
+            if status == APPROVED:
+                row.approved_at = time.time()
+                row.approved_by = "user_utterance"
+            self._write(rows, f"decide {status} {lesson_id} by utterance")
+            return row
+        return None
 
     # -- reads ---------------------------------------------------------
 

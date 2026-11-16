@@ -202,6 +202,24 @@ def register(ctx) -> None:
         emoji="\u270e",
     )
 
+    # 裁定 228：授权全套——人能在收件箱/设置里看的、点的，Agent 都有对应工具。
+    # 一枚动作一枚工具（裁 183 否过 action 枚举）；445 状态变更类必须带用户原话，
+    # 所以跟读口/停口同属旁路，不挂 check_channel_available。
+    for schema, handler, emoji in (
+        (CH.LESSONS_SCHEMA, CH.handle_lessons, "\U0001f4d6"),
+        (CH.LESSON_APPROVE_SCHEMA, CH.handle_lesson_approve, "\U0001f44d"),
+        (CH.LESSON_REJECT_SCHEMA, CH.handle_lesson_reject, "\U0001f44e"),
+        (CH.LESSON_REVOKE_SCHEMA, CH.handle_lesson_revoke, "\U0001f5d1"),
+    ):
+        ctx.register_tool(
+            name=schema["name"],
+            toolset="channel",
+            schema=schema,
+            handler=handler,
+            description=schema["description"],
+            emoji=emoji,
+        )
+
     for name, toolset, area, action, description, props, required in _DOMAIN_TOOLS:
         ctx.register_tool(
             name=name,

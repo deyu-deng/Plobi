@@ -273,3 +273,96 @@ def test_revoked_utterance_authorization_stops_being_effective():
     assert book.recall("改配色")
     book.revoke(row.id)
     assert book.recall("改配色") == []
+
+
+# ── 裁定 228：全套工具，人能做的每件动作都有对应工具 ──────────────────────
+
+
+def test_full_toolset_can_read_and_decide_with_user_words(CH):
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    book = LessonLedger()
+    draft = book.propose(scope="router:general", rule="配色这类自己定")
+
+    seen = json.loads(CH.handle_lessons({"status": "proposed"}))
+    assert seen["ok"] is True
+    assert [r["id"] for r in seen["lessons"]] == [draft.id]
+
+    out = json.loads(CH.handle_lesson_approve({
+        "lesson_id": draft.id, "user_words": "这条我批准了"
+    }))
+    assert out["ok"] is True
+    assert out["status"] == "approved"
+    assert book.get(draft.id).decision_words == "这条我批准了"
+
+    seen = json.loads(CH.handle_lessons({"status": "approved"}))
+    assert [r["id"] for r in seen["lessons"]] == [draft.id]
+
+    revoked = json.loads(CH.handle_lesson_revoke({
+        "lesson_id": draft.id, "user_words": "这类以后还是问我"
+    }))
+    assert revoked["ok"] is True
+    assert book.get(draft.id).status == "revoked"
+    assert book.recall("配色") == []
+
+
+def test_lesson_reject_is_a_separate_tool(CH):
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    draft = LessonLedger().propose(scope="router:general", rule="照我说的办")
+    out = json.loads(CH.handle_lesson_reject({
+        "lesson_id": draft.id, "user_words": "不对，驳回这条"
+    }))
+    assert out["ok"] is True
+    assert out["status"] == "rejected"
+    assert LessonLedger().get(draft.id).decision_words == "不对，驳回这条"
+
+
+@pytest.mark.parametrize(
+    "handler",
+    ["handle_lesson_approve", "handle_lesson_reject", "handle_lesson_revoke"],
+)
+def test_every_state_tool_requires_user_words(CH, handler):
+    """三枚状态工具各自有牙：缺原话就不许动账（对称≠权限）。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    draft = LessonLedger().propose(scope="router:general", rule="照我说的办")
+    out = json.loads(getattr(CH, handler)({"lesson_id": draft.id}))
+    assert out["ok"] is False
+    assert "user_words" in out["error"]
+    assert LessonLedger().get(draft.id).status == "proposed"
+
+
+def test_ledger_decide_with_words_refuses_empty_words():
+    """账本层第二道牙：绕过工具直接调也不许无原话变更（纵深）。"""
+    import pytest
+
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    book = LessonLedger()
+    draft = book.propose(scope="router:general", rule="照我说的办")
+    with pytest.raises(ValueError, match="user_words"):
+        book.decide_with_words(draft.id, "approved", user_words="")
+    assert book.get(draft.id).status == "proposed"
+
+
+def test_lessons_tool_is_read_only(CH, tmp_path, monkeypatch):
+    """读账工具不许写盘、不许改状态、不建目录。"""
+    from plobi.delegation.lesson_ledger import LessonLedger
+
+    book = LessonLedger()
+    draft = book.propose(scope="router:general", rule="照我说的办")
+    before = book.get(draft.id).as_dict()
+    ledger_dir = book.root
+
+    calls: list[str] = []
+    monkeypatch.setattr(CH, "_deliver", lambda *a, **k: calls.append("_deliver") or ("", ""))
+    monkeypatch.setattr(
+        CH, "_deliver_to_user", lambda *a, **k: calls.append("_deliver_to_user") or ""
+    )
+    CH.handle_lessons({})
+    CH.handle_lessons({"status": "proposed", "limit": 5})
+
+    assert calls == []
+    assert book.get(draft.id).as_dict() == before
+    assert ledger_dir.exists(), "账本已存在；读工具没建过新目录"
