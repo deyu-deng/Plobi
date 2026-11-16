@@ -83,6 +83,20 @@ def test_unpopular_comments_are_carried_in_the_read_payload(client):
     assert got["pending_feedback"][0]["path"] == "wiki/daily/2026-11-16.md"
 
 
+def test_a_comment_survives_the_paper_it_was_written_on(client):
+    """「评论＋顺手点头」是最自然的动作；纸被删掉时评论不能跟着蒸发。"""
+    http, _mind = client
+    pid = _stage()
+    http.post(f"/api/memory/pending/{pid}/comment", json={"comment": "下次这类先写成三段。"})
+
+    approved = http.post(f"/api/memory/pending/{pid}/approve").json()
+    assert approved["ok"] is True, approved
+    assert http.get("/api/memory/pending").json()["count"] == 0, "纸本来就该被批掉"
+
+    got = http.get("/api/memory/pending").json()["pending_feedback"]
+    assert [f["comment"] for f in got] == ["下次这类先写成三段。"], got
+
+
 def test_approving_a_mind_plan_records_adoption_on_the_l1_ledger(client, tmp_path, monkeypatch):
     """采纳记 L0 账时，L1 的 streak 永远攒不起来——这条钉死记账格。"""
     http, _mind = client

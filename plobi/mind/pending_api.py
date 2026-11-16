@@ -124,7 +124,9 @@ def _listing() -> Dict[str, Any]:
         "auto": bool(mem.get("mind_write_auto_approve", False)),
         # 未被起草过的评论挂回包，等指挥那一轮读到后复用 lesson_write 起草。
         # 形状对齐票面 pending_feedback，但来源是本面记录、两本账不合并。
-        "pending_feedback": [] if not items else _pending_feedback(),
+        # 不看 items 是否为空：评论写下的那一刻就落独立的篮，纸被批掉／驳回之后
+        # （`_approve`／`_reject` 都会 discard_pending）它照样得回来。
+        "pending_feedback": _pending_feedback(),
     }
 
 
