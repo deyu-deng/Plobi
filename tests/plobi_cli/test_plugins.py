@@ -2314,7 +2314,7 @@ class TestPluginContextProfileName:
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("PLOBI_HOME", str(home))
-        assert self._ctx().profile_name == "default"
+        assert self._ctx().agent_id == "default"
 
     def test_named_profile(self, tmp_path, monkeypatch):
         """PLOBI_HOME under profiles/<name> resolves to that name."""
@@ -2322,17 +2322,17 @@ class TestPluginContextProfileName:
         prof.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("PLOBI_HOME", str(prof))
-        assert self._ctx().profile_name == "coder"
+        assert self._ctx().agent_id == "coder"
 
     def test_works_without_cli_ref(self, tmp_path, monkeypatch):
-        """profile_name does not depend on _cli_ref (None in worker sessions)."""
+        """agent_id does not depend on _cli_ref (None in worker sessions)."""
         prof = tmp_path / ".plobi" / "profiles" / "worker1"
         prof.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("PLOBI_HOME", str(prof))
         ctx = self._ctx()
         assert ctx._manager._cli_ref is None
-        assert ctx.profile_name == "worker1"
+        assert ctx.agent_id == "worker1"
 
 
 class TestDispatchToolWithoutCliRef:

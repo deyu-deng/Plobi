@@ -44,6 +44,10 @@ class _FakeSubprocess:
 
     #: except 子句要引用 `subprocess.TimeoutExpired`——真模块上有，假模块也得有。
     TimeoutExpired = subprocess.TimeoutExpired
+    #: 产品那一层起子进程时会带 `stdin=subprocess.DEVNULL`（孩子不许攥着网关的
+    #: stdin，#14036 那个形状）⇒ 假模块也得有这一枚常量，否则产品那行直接
+    #: AttributeError（2026-11-16 那次 CI 就是这么红的）。
+    DEVNULL = subprocess.DEVNULL
 
     def __init__(self):
         self.calls = []

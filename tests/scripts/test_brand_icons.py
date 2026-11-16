@@ -226,6 +226,36 @@ def _load_brand_icons():
     return mod
 
 
+def _same_raster(a: bytes, b: bytes) -> bool:
+    """两张位图比**像素**，不比编码字节。
+
+    为什么不能比字节：同一张图在 Windows 与 Linux 上由 Pillow 编出来的 PNG/ICO
+    字节不同（zlib 版本与压缩级别），逐字节比 ⇒ 同一个内容在 CI 上被判「不一致」。
+    像素是跨平台的那一层，「这张图还是不是那张」问的就是它。
+    """
+    import io
+
+    from PIL import Image
+
+    if a[:8] == b"\x89PNG\r\n\x1a\n" and b[:8] == b"\x89PNG\r\n\x1a\n":
+        ia = Image.open(io.BytesIO(a)).convert("RGBA")
+        ib = Image.open(io.BytesIO(b)).convert("RGBA")
+        return ia.size == ib.size and ia.tobytes() == ib.tobytes()
+    if a[:4] == b"\x00\x00\x01\x00" and b[:4] == b"\x00\x00\x01\x00":
+        ia = Image.open(io.BytesIO(a))
+        ib = Image.open(io.BytesIO(b))
+        if sorted(ia.ico.sizes()) != sorted(ib.ico.sizes()):
+            return False
+        for size in ia.ico.sizes():
+            if (
+                ia.ico.getimage(size).convert("RGBA").tobytes()
+                != ib.ico.getimage(size).convert("RGBA").tobytes()
+            ):
+                return False
+        return True
+    return a == b
+
+
 def test_generation_is_deterministic():
     """同一份图元跑两次，产物逐字节相同；并且 `brand_icons.py` 仍管着的那几份落点
     与盘上的一致。
@@ -235,6 +265,9 @@ def test_generation_is_deterministic():
       Code 一个仓 ⇒ `--check` 会在 `_abs()` 上撞「不是一个 git 仓」直接抛错
       （`scripts/brand_icons.py:317-329`）。那个仓不在场时，那两条没有可比对象。
     * `.ico` / `.icns` 已由平台那一路接管（`_OWNED_ELSEWHERE`），`--check` 对它们本来就红。
+
+    位图那几份与盘上的比的是**像素**（`_same_raster`）：同一张图在两个平台上编出来的
+    字节不同，比字节会把「同一个内容」判成「不一致」。
     """
     bi = _load_brand_icons()
 
@@ -254,8 +287,13 @@ def test_generation_is_deterministic():
             path = bi.HARMONY / rel[len("@harmony/"):]
         else:
             path = bi.ROOT / rel
-        cur = path.read_bytes() if kind == "b" else path.read_text(encoding="utf-8")
-        assert cur == data, f"{rel} 与主源不一致（重画一遍就能定）"
+        if kind == "b":
+            cur = path.read_bytes()
+            same = _same_raster(cur, data)
+        else:
+            cur = path.read_text(encoding="utf-8")
+            same = cur == data
+        assert same, f"{rel} 与主源不一致（重画一遍就能定）"
         checked += 1
     # 几乎没比到东西 ⇒ 判据自己坏了（不是「一致」）
     assert checked >= len(files) - len(_OWNED_ELSEWHERE) - 2, (
