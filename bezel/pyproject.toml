@@ -14,7 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 vault = ["keyring>=24.0"]            # OS keyring backend for the encrypted vault
 discover = ["mitmproxy>=10.0"]       # protocol capture addon
-protobuf = ["protobuf>=4.0"]         # generate cursor_pb2 stubs
+protobuf = ["protobuf>=7.36.2"]         # generate cursor_pb2 stubs
 dev = [
     "ruff>=0.6",                     # linter + formatter (replaces flake8/black/isort)
     "mypy>=1.11",                    # static type checker
