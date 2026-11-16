@@ -124,13 +124,13 @@ test('profileRemoteOverride tolerates a missing/!object profiles map', () => {
 
 // --- pathWithGlobalRemoteProfile ---
 
-test('pathWithGlobalRemoteProfile appends profile in global remote mode', () => {
+test('pathWithGlobalRemoteProfile appends agent (and the legacy profile twin) in global remote mode', () => {
   assert.equal(
     pathWithGlobalRemoteProfile('/api/model/info', 'iris', {
       globalRemote: true,
       profileRemoteOverride: false
     }),
-    '/api/model/info?profile=iris'
+    '/api/model/info?agent=iris&profile=iris'
   )
 })
 
@@ -140,7 +140,7 @@ test('pathWithGlobalRemoteProfile preserves existing query params', () => {
       globalRemote: true,
       profileRemoteOverride: false
     }),
-    '/api/model/options?force=1&profile=iris'
+    '/api/model/options?force=1&agent=iris&profile=iris'
   )
 })
 
@@ -154,8 +154,11 @@ test('a non-ASCII identity survives the trip when carried as a query param', () 
     profileRemoteOverride: false
   })
 
+  // 2026-11-16（传输层改名刀）：新名 `agent` 在前，旧名 `profile` 双写在后
+  // （新后端读前者，装着的老后端读后者），同一个值、同一句话。
+  assert.equal(new URL(scoped, 'http://plobi.local').searchParams.get('agent'), '理论力学（甲）')
   assert.equal(new URL(scoped, 'http://plobi.local').searchParams.get('profile'), '理论力学（甲）')
-  assert.equal(scoped.startsWith('/api/network/egress?profile='), true, scoped)
+  assert.equal(scoped.startsWith('/api/network/egress?agent='), true, scoped)
 })
 
 test('...and a backend already scoped to that profile still needs no scope at all', () => {
@@ -176,6 +179,16 @@ test('pathWithGlobalRemoteProfile does not replace an explicit profile query', (
       profileRemoteOverride: false
     }),
     '/api/model/info?profile=default'
+  )
+})
+
+test('...nor an explicit agent query (the new name owns the slot)', () => {
+  assert.equal(
+    pathWithGlobalRemoteProfile('/api/model/info?agent=iris', 'aura', {
+      globalRemote: true,
+      profileRemoteOverride: false
+    }),
+    '/api/model/info?agent=iris'
   )
 })
 

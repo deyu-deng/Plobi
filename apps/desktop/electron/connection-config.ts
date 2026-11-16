@@ -206,8 +206,13 @@ function profileRemoteOverride(config, profile) {
  * may only carry latin-1, and a roster identity can be a course name in Chinese —
  * measured 11-05 on this box, 11 of 25 identities are. `X-Plobi-Agent` with such a
  * name makes Node throw before the request leaves, so the whole bridge dies instead
- * of scoping one call. The backend reads header → `?profile=`, so the query form is
+ * of scoping one call. The backend reads header → `?agent=`, so the query form is
  * the same statement through a channel that can carry it.
+ *
+ * 2026-11-16（传输层改名刀）：参数名从 `profile` 改为 `agent`（`profile` 已不再
+ * 表示第二套身份，只是「那一份磁盘家」的旧词）。这里**双写** `?agent=` 与
+ * `?profile=` 同一个值：新后端读 `agent`，装着的旧后端（0.3.1 及以前）读
+ * `profile`，两边都不断。
  */
 function pathWithGlobalRemoteProfile(path, profile, opts: any = {}) {
   const scopedProfile = connectionScopeKey(profile)
@@ -230,10 +235,12 @@ function pathWithGlobalRemoteProfile(path, profile, opts: any = {}) {
     return path
   }
 
-  if (parsed.searchParams.has('profile')) {
+  if (parsed.searchParams.has('agent') || parsed.searchParams.has('profile')) {
     return path
   }
 
+  // 双写：新后端认 `agent`（优先），旧后端认 `profile`。两个通道同一条语句。
+  parsed.searchParams.set('agent', scopedProfile)
   parsed.searchParams.set('profile', scopedProfile)
 
   return `${parsed.pathname}${parsed.search}${parsed.hash}`

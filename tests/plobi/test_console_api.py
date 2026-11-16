@@ -910,16 +910,23 @@ def test_request_profile_precedence_header_over_query():
             self.headers = headers
             self.query_params = query
 
-    got = console_router.request_profile(
-        _FakeRequest({"x-plobi-agent": "course-l2"}, {"profile": "remote-host"})
+    got = console_router.request_agent(
+        _FakeRequest({"x-plobi-agent": "course-l2"}, {"agent": "physics", "profile": "remote-host"})
     )
     assert got == "course-l2"
 
-    got = console_router.request_profile(_FakeRequest({}, {"profile": "remote-host"}))
-    assert got == "remote-host"
+    # 2026-11-16（传输层改名刀）：query 通道的新名是 `?agent=`，优先于旧 `?profile=`。
+    # 桌面现在双写两个参数（connection-config.ts::pathWithGlobalRemoteProfile），
+    # 新后端认前者、装着的老后端认后者 —— 同一条语句两个通道都能读。
+    assert console_router.request_agent(_FakeRequest({}, {"agent": "physics", "profile": "physics"})) == "physics"
+    assert console_router.request_agent(_FakeRequest({}, {"agent": "physics"})) == "physics"
 
-    assert console_router.request_profile(_FakeRequest({}, {})) == ""
-    assert console_router.request_profile(None) == ""
+    # 旧名仍然认（老调用方/老远程只填 `?profile=`）；`request_profile` alias 不断。
+    assert console_router.request_agent(_FakeRequest({}, {"profile": "remote-host"})) == "remote-host"
+    assert console_router.request_profile is console_router.request_agent
+
+    assert console_router.request_agent(_FakeRequest({}, {})) == ""
+    assert console_router.request_agent(None) == ""
 
 
 def test_today_usd_agent_filter_matches_only_that_agent(tmp_path):

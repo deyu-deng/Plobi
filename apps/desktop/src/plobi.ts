@@ -286,12 +286,25 @@ export function searchSessions(query: string): Promise<SessionSearchResponse> {
   })
 }
 
+/**
+ * 请求作用域查询串（2026-11-16 传输层改名刀）。
+ *
+ * 参数名已从 `profile` 改成 `agent`（`profile` 不再表示第二套身份，只是「那一份
+ * 磁盘家」的旧词）。这里**双写**两个参数同一个值：新后端读 `agent`（优先），
+ * 装着的旧后端（0.3.1 及以前）读 `profile`，升级窗口里两边都不失联。
+ */
+function scopeQuery(profile: string): string {
+  const value = encodeURIComponent(profile)
+
+  return `?agent=${value}&profile=${value}`
+}
+
 // Resolves a single session row by id on one backend (the active profile, or
 // the given `profile`). The backend resolves exact ids and unique prefixes and
 // 404s when the id isn't on that profile — so a cheap by-id lookup replaces the
 // cross-profile list scan when locating an unknown id's owner.
 export function getSession(id: string, profile?: string | null): Promise<SessionInfo> {
-  const suffix = profile ? `?profile=${encodeURIComponent(profile)}` : ''
+  const suffix = profile ? scopeQuery(profile) : ''
 
   return window.plobiDesktop.api<SessionInfo>({
     ...(profile ? { profile } : {}),
@@ -304,7 +317,7 @@ export function getSession(id: string, profile?: string | null): Promise<Session
 // profile the primary opens that profile's state.db via ?profile=. Omit for
 // the current/default profile.
 export function getSessionMessages(id: string, profile?: string | null): Promise<SessionMessagesResponse> {
-  const suffix = profile ? `?profile=${encodeURIComponent(profile)}` : ''
+  const suffix = profile ? scopeQuery(profile) : ''
 
   return window.plobiDesktop.api<SessionMessagesResponse>({
     ...(profile ? { profile } : {}),

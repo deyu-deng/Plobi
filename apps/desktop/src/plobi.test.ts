@@ -131,8 +131,9 @@ describe('Plobi REST session helpers', () => {
 
     await getSessionMessages('session-1', 'xiaoxuxu')
 
+    // 2026-11-16（传输层改名刀）：`agent` 是新名、`profile` 是双写的旧名（老后端认它）。
     expect(api).toHaveBeenCalledWith({
-      path: '/api/sessions/session-1/messages?profile=xiaoxuxu',
+      path: '/api/sessions/session-1/messages?agent=xiaoxuxu&profile=xiaoxuxu',
       profile: 'xiaoxuxu'
     })
   })

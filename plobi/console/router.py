@@ -788,10 +788,13 @@ def today_usd(
     return round(float(row[0] or 0.0), 6) if row else 0.0
 
 
-def request_profile(request) -> str:
+def request_agent(request) -> str:
     """请求级身份（WP-AGENT-SINGLE-GATEWAY §3.4）：「当前在跟哪个 Agent 说话」。
 
-    读取顺序：``X-Plobi-Agent`` header → ``?profile=`` query → 空串。
+    读取顺序：``X-Plobi-Agent`` header → ``?agent=`` → ``?profile=`` → 空串。
+    ``?profile=`` 只作**旧调用方回落**（2026-11-16 传输层改名刀：桌面的
+    ``pathWithGlobalRemoteProfile`` 现在双写 ``?agent=`` 与 ``?profile=``，
+    新后端认前者、旧后端认后者，同一条语句两个通道都能读）。
 
     - header 是**本地单后端**的新路：桌面 ``plobi:api`` 桥把 renderer 的
       ``request.profile`` 变成请求头带下去（main.ts，本刀 §3.3），不再按
@@ -806,12 +809,18 @@ def request_profile(request) -> str:
         return ""
     for raw in (
         request.headers.get("x-plobi-agent"),
+        request.query_params.get("agent"),
         request.query_params.get("profile"),
     ):
         value = str(raw or "").strip()
         if value:
             return value
     return ""
+
+
+# 旧名保留：本函数原先叫 request_profile（profile 已不再表示第二套身份，
+# 只是「那一份磁盘家」的旧词）。留 alias 免得外部脚本/旧分支 import 断掉。
+request_profile = request_agent
 
 
 def quota_summary_data(profile: str = "") -> dict:
@@ -844,7 +853,7 @@ def quota_summary_data(profile: str = "") -> dict:
 @router.get("/quota/summary", name="quota_summary")
 async def quota_summary(request: Request):
     """WP-BE-4 — 额度池快照：各源健康度 + 今日花费（todayUsd 按请求身份，§3.4）。"""
-    data = await run_in_threadpool(quota_summary_data, request_profile(request))
+    data = await run_in_threadpool(quota_summary_data, request_agent(request))
     return {"ok": True, "data": data}
 
 
