@@ -195,10 +195,10 @@ class VendorContract:
     acp_registry_id: str = ""
     #: 起 ACP 模式的旗标（跟本机那个入口命令配着用）。空 = 没法用 ACP 问它。
     acp_args: tuple[str, ...] = ()
-    #: 这一家派活走哪条腿（``cli``／``acp``，11-16）。
+    #: 这一家**有哪几条腿**（``cli``／``acp``，11-16 19:0x 主人拍板并存）。
     #: ACP 腿的那几家**入口命令就是它自己**——旗标可以空（glm 那台 ACP server
     #: 不接旗标），所以「有没有 ACP 入口」不能只看旗标。
-    dispatch_leg: str = "cli"
+    legs: tuple[str, ...] = ("cli",)
     #: 这一家 ACP 那一支**现核到哪一步**（给日志与 tooltip，不上屏）。
     acp_note: str = ""
     #: 回跳到它自己那条会话的旗标（``{session_id}`` 是唯一允许被替换的槽位）。
@@ -645,9 +645,14 @@ class VendorRow:
     acp_registry_id: str = ""
     acp_args: tuple[str, ...] = ()
     acp_note: str = ""
-    #: 这一家派活**走哪条腿**：``cli``（命令行）／``acp``（协议）。
+    # ── 派活腿 ───────────────────────────────────────────────────────────
+    #: 这一家**有哪几条腿**（``cli`` 命令行／``acp`` 协议）。
+    #: **可以有多条**（主人 11-16 19:0x 拍板：「并存，Agent 自己判断什么好用就用哪个」）。
     #: 纯 ACP 客席只有后者——它们没有一条跑通的命令行腿（11-16 派活腿）。
-    dispatch_leg: str = "cli"
+    legs: tuple[str, ...] = ("cli",)
+    #: **不点名时**走哪一条（空 = ``legs`` 的第一条）。
+    #: 默认腿是**实测跑通过的那条** ⇒ 不点名时每一家的行为一个字不变。
+    prefer_leg: str = ""
     #: ACP 那一腿的**档**怎么对（权限档／agent 模式；表里声明，代码不按厂商分叉）。
     acp_modes: Optional[AcpModeMap] = None
 
@@ -690,7 +695,7 @@ class VendorRow:
             acp_registry_id=self.acp_registry_id,
             acp_args=self.acp_args,
             acp_note=self.acp_note,
-            dispatch_leg=self.dispatch_leg,
+            legs=self.legs,
             resume_argv=self.resume_argv,
             resume_note=self.resume_note,
             session_source=self.session.vendor if self.session else "",
@@ -713,6 +718,11 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         default_permission_mode=DEFAULT_PERMISSION_MODE,
         permission_mode_env=PERMISSION_MODE_ENV,
         permission_prefix=("-y",),
+        # 11-16 19:0x 主人拍板「并存」：这一家**两条腿都有**——命令行那腿实测跑通过，
+        # ACP 那腿（``codebuddy --acp``）11-14 实测也给了会话（登录着）⇒ Agent 可以点名走哪条。
+        # **默认仍是命令行那条**（实测跑通的那条 ⇒ 不点名时行为一个字不变）。
+        legs=("cli", "acp"),
+        prefer_leg="cli",
         login_probe=("doctor",),
         login_hints=("~/.codebuddy/local_storage",),
         # 11-16 现读：这一族的**账号清单**落在三个身份文件里（各有 accounts／allAccounts 数组）；
@@ -1582,7 +1592,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         command_env="PLOBI_OFFLOAD_AUGGIE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AUGGIE_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_registry_id="auggie",
         acp_args=("--acp",),
         acp_note="11-15 本机实测：握手通了，但登录/派活被拒——它自己说「要在终端里 auggie login，ACP 里登不了」；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
@@ -1766,7 +1776,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         command_env="PLOBI_OFFLOAD_GLM_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GLM_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_registry_id="glm-acp-agent",
         acp_args=(),
         acp_note="11-15 本机实测：握手通了，也开出了会话，权限档是 ACP 的 session mode（default／accept_edits／bypass_permissions）；但发一句 prompt 报「No API key found」；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
@@ -1796,7 +1806,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         command_env="PLOBI_OFFLOAD_GROK_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GROK_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_registry_id="grok-build",
         acp_args=("agent", "stdio"),
         acp_note="11-15 本机实测：握手通了，但开会话被拒——它自己说没登录（authMethods 里是 grok.com 网页登录）；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
@@ -1883,7 +1893,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         command_env="PLOBI_OFFLOAD_KIMI_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMI_CODE_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_registry_id="kimi-code",
         acp_args=("acp",),
         acp_note="11-15 本机实测：握手通了，但开会话被拒——它自己说没登录（要在终端里 /login）；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
@@ -1953,7 +1963,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         command_env="PLOBI_OFFLOAD_NOVA_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_NOVA_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_registry_id="nova",
         acp_args=("acp",),
         acp_note="11-15 本机实测：握手通了，但开会话被拒——它自己说「要点 Nova Setup 配 API key」；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
@@ -2055,7 +2065,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         command_env="PLOBI_OFFLOAD_DEVECO_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEVECO_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_args=("acp",),
         acp_note="11-15 本机实测：握手通了、开出了会话，档是 ACP 的 session mode，但它那四档（build／ask／goal／plan）是 agent 模式不是权限档；发一句 prompt 它回 refusal；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
         acp_modes=AcpModeMap(
@@ -2168,14 +2178,19 @@ def account_rules(rows: Rows = VENDOR_ROWS) -> dict[str, AccountRule]:
     return {row.id: row.accounts_rule for row in rows if row.accounts_rule}
 
 
-def dispatch_legs(rows: Rows = VENDOR_ROWS) -> dict[str, str]:
-    """出口表七：这一家派活**走哪条腿**（``cli``／``acp``）。
+def dispatch_legs(rows: Rows = VENDOR_ROWS) -> dict[str, tuple[str, ...]]:
+    """出口表七：这一家**有哪几条腿**（``cli``／``acp``，可以有多条）。
 
     纯 ACP 客席（ACP 官方注册表收录、本机没有一条跑通的命令行腿的那一批）
-    登记成 ``acp`` ⇒ 派活时走协议，不走命令行。
+    只有 ``acp``；codebuddy 两条都有（11-16 19:0x 主人拍板并存）。
     """
-    return {row.id: row.dispatch_leg
-            for row in rows if row.offloadable and row.dispatch_leg != "cli"}
+    return {row.id: row.legs for row in rows if row.offloadable and row.legs}
+
+
+def prefer_legs(rows: Rows = VENDOR_ROWS) -> dict[str, str]:
+    """出口表九：**不点名时**走哪一条腿（默认＝实测跑通过的那条）。"""
+    return {row.id: (row.prefer_leg or row.legs[0])
+            for row in rows if row.offloadable and row.legs}
 
 
 def acp_mode_maps(rows: Rows = VENDOR_ROWS) -> dict[str, AcpModeMap]:
@@ -2204,7 +2219,8 @@ LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = login_probe_map()
 PORTABLES_FALLBACK: dict[str, str] = portable_fallbacks()
 INSTALL_SPECS: dict[str, InstallSpec] = install_specs()
 ACCOUNT_RULES: dict[str, AccountRule] = account_rules()
-DISPATCH_LEGS: dict[str, str] = dispatch_legs()
+DISPATCH_LEGS: dict[str, tuple[str, ...]] = dispatch_legs()
+PREFER_LEGS: dict[str, str] = prefer_legs()
 ACP_MODE_MAPS: dict[str, AcpModeMap] = acp_mode_maps()
 
 

@@ -262,6 +262,8 @@ def test_its_permission_question_is_answered(tmp_path, workdir, monkeypatch):
     assert result.ok, result.error
     answer = json.loads(_read(answer_log))
     assert answer.get("result", {}).get("outcome", {}).get("optionId") == "allow"
+    # **它问了几次授权是读数**（不回它，它就卡在那儿等 ⇒ 那条分支要有数）。
+    assert result.permission_requests == 1
 
 
 def test_a_read_only_run_answers_no(tmp_path, workdir, monkeypatch):
@@ -362,23 +364,74 @@ def test_the_tool_face_can_hand_a_task_to_a_pure_acp_guest(tmp_path, workdir, mo
     assert rows and rows[0].agent == "glm"
 
 
+# ── 多腿并存（11-16 19:0x 主人拍板：「并存，Agent 自己判断」）────────────
+
+def test_one_vendor_can_have_two_legs():
+    """**一家的腿可以有多条**（codebuddy：命令行 ＋ ACP 两条都有）。"""
+    legs = vr.DISPATCH_LEGS["codebuddy"]
+
+    assert "cli" in legs and "acp" in legs
+
+
+def test_the_default_leg_is_the_one_that_was_measured():
+    """**默认腿＝实测跑通过的那条** ⇒ 不点名时行为一个字不变。"""
+    assert vr.PREFER_LEGS["codebuddy"] == "cli"
+    # 纯 ACP 客席只有 ACP 那条 ⇒ 它的默认腿只能是 ACP。
+    for vendor in ("auggie", "glm", "grok", "kimi-code", "nova", "deveco"):
+        assert vr.PREFER_LEGS[vendor] == "acp", vendor
+        assert vr.DISPATCH_LEGS[vendor] == ("acp",), vendor
+
+
+def test_naming_the_leg_picks_it(tmp_path, workdir, monkeypatch):
+    """**点名 ⇒ 走那一条**（同一个 vendor，两条腿，两个结果）。"""
+    _install_fake_server(tmp_path, monkeypatch, {
+        "say": "走的是协议那条", "modes": GLM_MODES, "current": "default",
+    })
+
+    result = offload.run_task("干活", cwd=workdir, agent="glm", leg="acp")
+
+    assert result.ok, result.error
+    assert result.leg == "acp"
+    assert result.text == "走的是协议那条"
+
+
+def test_naming_a_leg_the_vendor_does_not_have_is_refused_out_loud(tmp_path, workdir, monkeypatch):
+    """点名一条**它没有的腿** ⇒ 照实说它有哪几条，不静默换一条。"""
+    result = offload.run_task("干活", cwd=workdir, agent="glm", leg="cli")
+
+    assert not result.ok
+    assert "没有" in result.error and "cli" in result.error
+    assert result.leg == ""
+
+
+def test_the_leg_is_recorded_on_the_result(tmp_path, workdir, monkeypatch):
+    """**这一趟走的是哪条腿**是读数（台账那一格靠它）。"""
+    _install_fake_server(tmp_path, monkeypatch, {
+        "say": "OK", "modes": GLM_MODES, "current": "default",
+    })
+
+    result = offload.run_task("干活", cwd=workdir, agent="glm")
+
+    assert result.leg == "acp"
+
+
 # ── 真源表那一行 ────────────────────────────────────────────────────────
 
 def test_every_acp_leg_vendor_has_an_entry_and_says_where_it_got_to():
     """走 ACP 腿的那几家：**入口命令**在、**现核到哪一步**写在表里。"""
-    legs = [row for row in vr.VENDOR_ROWS if row.dispatch_leg == "acp"]
+    legs = [row for row in vr.VENDOR_ROWS if "acp" in row.legs]
 
     assert legs, "真源表里没有一家登记了 ACP 派活腿"
     for row in legs:
         assert row.binary_name, f"{row.id}：没有入口命令"
         assert row.acp_note, f"{row.id}：没写清 ACP 那一腿现核到哪一步"
-        assert row.id in vr.DISPATCH_LEGS
+        assert "acp" in vr.DISPATCH_LEGS[row.id]
 
 
 def test_only_the_acp_leg_vendors_carry_a_mode_map():
     """档位映射只挂在 ACP 腿的那几家身上（命令行的档是另一套）。"""
     for vendor, mode_map in vr.ACP_MODE_MAPS.items():
-        assert vr.DISPATCH_LEGS.get(vendor) == "acp", vendor
+        assert "acp" in vr.DISPATCH_LEGS.get(vendor, ()), vendor
         assert mode_map.kind in ("permission", "agent"), vendor
 
 
@@ -390,10 +443,10 @@ def test_adding_one_row_grows_the_dispatch_table_too():
         command_env="PLOBI_OFFLOAD_ACME_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_ACME_EXTRA_ARGS",
         offloadable=True,
-        dispatch_leg="acp",
+        legs=("acp",),
         acp_args=("acp",),
     )
     rows = vr.VENDOR_ROWS + (row,)
 
-    assert vr.dispatch_legs(rows)["acme"] == "acp"
-    assert vr.dispatch_legs(rows) == vr.dispatch_legs(vr.VENDOR_ROWS) | {"acme": "acp"}
+    assert vr.dispatch_legs(rows)["acme"] == ("acp",)
+    assert vr.dispatch_legs(rows) == vr.dispatch_legs(vr.VENDOR_ROWS) | {"acme": ("acp",)}

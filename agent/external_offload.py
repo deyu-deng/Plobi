@@ -102,6 +102,7 @@ from agent.vendor_registry import (  # noqa: F401  （re-export：公共形状�
     ACP_MODE_MAPS,
     DISPATCH_LEGS,
     OFFLOAD_CONTRACT,
+    PREFER_LEGS,
 )
 
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"
@@ -195,6 +196,12 @@ class OffloadResult:
     #: 这一趟**用的是哪一个身份**（多账号体系，11-16）。空 = 厂商用它自己当前登录的那个
     #: （主人没选，或这一族没做多账号）——**读数不是许诺**：厂商认不认那份凭据是它那边的事。
     account: str = ""
+    #: 这一趟**走的是哪条腿**（``cli``／``acp``；11-16 19:0x 主人拍板并存）。
+    #: 空 = 压根没走成（连腿都没选上／起不来）。
+    leg: str = ""
+    #: 这一趟**它问了几次授权**（= 我们答了几次；11-16）。
+    #: 不回它，它就卡在那儿等 ⇒ 这一格是「那条分支有没有被走到」的读数。
+    permission_requests: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -969,9 +976,17 @@ def main(argv: Optional[list[str]] = None) -> int:
 # 哪一家走哪条腿，**真源表那一行说了算**（``VendorRow.dispatch_leg``），不按厂商分叉。
 
 
-def dispatch_leg(agent: str) -> str:
-    """这一家派活走哪条腿（``cli``／``acp``）。真源表那一行说了算。"""
-    return DISPATCH_LEGS.get((agent or "").strip().lower(), "cli")
+def dispatch_legs(agent: str) -> tuple[str, ...]:
+    """这一家**有哪几条腿**（``cli``／``acp``，可以有多条）。真源表那一行说了算。
+
+    认不出的家 ⇒ **只有命令行那一条**（不猜一个别家的腿）。
+    """
+    return DISPATCH_LEGS.get((agent or "").strip().lower(), ("cli",))
+
+
+def prefer_leg(agent: str) -> str:
+    """**不点名时**走哪一条腿（默认＝真源表声明的那条，实测跑通过的那条）。"""
+    return PREFER_LEGS.get((agent or "").strip().lower(), "cli")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1153,6 +1168,8 @@ def run_acp_task(
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     sandboxed = is_sandboxed()
     reply_to = (reply_to or "").strip()
+    #: 它问了几次授权（读数；闭包读的是**当前值** ⇒ 跑完之后那一格才是真数）。
+    questions = 0
 
     def fail(
         message: str,
@@ -1170,10 +1187,11 @@ def run_acp_task(
             cost_status=cost_status, artifacts=(), text="", ok=False, error=message,
             external_session=session,
             external_session_source="acp.sessionId" if session else "",
+            leg="acp", permission_requests=questions,
         )
 
     contract = OFFLOAD_CONTRACT.get(agent)
-    if contract is None or (not contract.acp_args and contract.dispatch_leg != "acp"):
+    if contract is None or (not contract.acp_args and "acp" not in contract.legs):
         return fail(f"这一家没有 ACP 那一腿：{agent}。")
     binary = resolve_command(agent)
     if not binary:
@@ -1251,8 +1269,10 @@ def run_acp_task(
         reported = answered.get("usage")
         usage = dict(reported) if isinstance(reported, dict) else {}
     except AcpError as exc:
+        questions = client.permission_requests
         return fail(str(exc), argv=argv, flags=flags, session=session_id)
     finally:
+        questions = client.permission_requests
         client.close()
         if prep.snapshot_path is not None:
             with contextlib.suppress(OSError):
@@ -1282,7 +1302,7 @@ def run_acp_task(
         proxy=prep.proxy, proxy_source=prep.proxy_source,
         external_session=session_id, external_session_source="acp.sessionId" if session_id else "",
         job=prep.job, reply=reply, reply_status=reply_status, reply_to=reply_to,
-        account=prep.account,
+        account=prep.account, leg="acp", permission_requests=questions,
     )
 
 
@@ -1294,15 +1314,31 @@ def run_task(
     permission_mode: Optional[str] = None,
     timeout: float = 900.0,
     reply_to: str = "",
+    leg: str = "",
 ) -> OffloadResult:
     """Hand one real task to a local external agent and report the four answers.
 
     ``reply_to`` 是**派活那一侧的 Agent 名字**（可空），只进台账当"该向谁交代"的读数；
     回执本身走文件（见 :func:`reply_instructions`），不靠它填收件人。
+
+    ``leg`` 点名走哪一条腿（``cli``／``acp``）；**不点名 ⇒ 走默认腿**
+    （真源表声明的「实测跑通过的那条」⇒ 行为一个字不变）。
     """
-    # **两条腿**（11-16）：这一家登记了 ACP 派活腿（纯 ACP 客席）⇒ 走协议；
-    # 否则走命令行。**真源表那一行说了算**（不按厂商分叉）。
-    if dispatch_leg(agent) == "acp":
+    # **腿可以有多条**（11-16 19:0x 主人拍板：「并存，Agent 自己判断什么好用就用哪个」）。
+    # 点名 ⇒ 走那一条；不点名 ⇒ 走**默认腿**（真源表声明的「实测跑通过的那条」
+    # ⇒ **不点名时每一家的行为一个字不变**）。**真源表那一行说了算**（不按厂商分叉）。
+    legs = dispatch_legs(agent)
+    wanted = (leg or "").strip().lower() or prefer_leg(agent)
+    if wanted not in legs:
+        return OffloadResult(
+            agent=agent, cwd=str(Path(cwd).resolve() if cwd else default_workdir()),
+            permission_flags=(), sandboxed=is_sandboxed(),
+            exit_code=None, duration_s=0.0, argv=(), usage={}, cost=None,
+            cost_status="not_started", artifacts=(), text="", ok=False,
+            error=(f"这一家没有「{wanted}」那条腿"
+                   f"（它有：{'、'.join(legs) or '（一条都没有）'}）"),
+        )
+    if wanted == "acp":
         return run_acp_task(
             task, cwd=cwd, agent=agent, permission_mode=permission_mode,
             timeout=timeout, reply_to=reply_to,
@@ -1317,6 +1353,7 @@ def run_task(
             agent=agent, cwd=str(workdir), permission_flags=(), sandboxed=is_sandboxed(),
             exit_code=None, duration_s=0.0, argv=(), usage={}, cost=None,
             cost_status="not_started", artifacts=(), text="", ok=False, error=str(exc),
+            leg="cli",
         )
     sandboxed = is_sandboxed()
 
@@ -1325,6 +1362,7 @@ def run_task(
             agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
             exit_code=None, duration_s=0.0, argv=(), usage={}, cost=None,
             cost_status="not_started", artifacts=(), text="", ok=False, error=message,
+            leg="cli",
         )
 
     if not allowed:
@@ -1383,7 +1421,7 @@ def run_task(
             error=f"external agent did not finish within {timeout:.0f}s"
                    + (f"（{tree_note}）" if tree_note else ""),
             job=job, reply=late_reply, reply_status=late_status or "not_filed",
-            reply_to=reply_to, account=account_id,
+            reply_to=reply_to, account=account_id, leg="cli",
         )
     except OSError as exc:
         return fail(f"cannot start {binary}: {exc}")
@@ -1443,7 +1481,7 @@ def run_task(
         proxy=proxy, proxy_source=proxy_source,
         external_session=external_session, external_session_source=external_session_source,
         job=job, reply=reply, reply_status=reply_status, reply_to=reply_to,
-        account=account_id,
+        account=account_id, leg="cli",
     )
 
 

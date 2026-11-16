@@ -95,6 +95,8 @@ class AcpClient:
         self.stderr_lines: list[str] = []
         #: 授权问句**答不答准**（策略由上层按那一档定，传输层不自己决定）。
         self.allow_permissions = True
+        #: 它问了几次授权（= 我们答了几次）。**读数**：不回它，它就卡在那儿等。
+        self.permission_requests = 0
         self._lines: queue.Queue = queue.Queue()
         self._next_id = 0
 
@@ -216,6 +218,7 @@ class AcpClient:
         ident = msg.get("id")
         params = msg.get("params") or {}
         options = params.get("options") or []
+        self.permission_requests += 1
         kinds = ALLOW_KINDS if self.allow_permissions else REJECT_KINDS
         chosen = ""
         for kind in kinds:
