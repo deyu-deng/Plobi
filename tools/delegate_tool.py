@@ -1125,17 +1125,9 @@ def _build_child_agent(
     else:
         parent_toolsets = set(DEFAULT_TOOLSETS)
 
-    if toolsets:
-        # Intersect with parent — subagent must not gain tools the parent lacks.
-        # Expand composite toolsets (e.g. plobi-cli) so that individual
-        # toolset names (e.g. web, terminal) are recognised during intersection.
-        expanded_parent = _expand_parent_toolsets(parent_toolsets)
-        child_toolsets = [t for t in toolsets if t in expanded_parent]
-        if _get_inherit_mcp_toolsets():
-            child_toolsets = _preserve_parent_mcp_toolsets(
-                child_toolsets, parent_toolsets
-            )
-        child_toolsets = _strip_blocked_tools(child_toolsets)
+    selected = _child_toolset_selection(parent_toolsets, toolsets, expert)
+    if selected is not None:
+        child_toolsets = selected
     elif parent_agent and parent_enabled is not None:
         child_toolsets = _strip_blocked_tools(parent_enabled)
     elif parent_toolsets:
@@ -1758,6 +1750,35 @@ def _apply_summary_budget(results: List[Dict[str, Any]], parent_agent) -> None:
             cap,
             spill_path or "none",
         )
+
+
+def _child_toolset_selection(
+    parent_toolsets: set,
+    toolsets: Optional[List[str]],
+    expert: Optional[str],
+) -> Optional[List[str]]:
+    """这一跳拿哪些门类——**两族两套规则**：
+
+    - **名手（专家）自带工具箱**：底＝设置面那一份**全局真源**，减它**自己**的黑名单；
+      **不与 principal 求交集**，也不继承 principal 的 MCP（用户 11-15 12:5x 定调）。
+    - **子代理继承父的**：交集（不许有父没有的）＋ MCP 继承 ＋ 剥离那几把。
+
+    回 ``None``＝这一支不适用（调用方走「继承父的整套」那条路）。
+    """
+    if expert:
+        from plobi.delegation.expert_roles import effective_toolsets as _expert_toolsets
+
+        return _expert_toolsets(expert)
+    if not toolsets:
+        return None
+    # Intersect with parent — subagent must not gain tools the parent lacks.
+    # Expand composite toolsets (e.g. plobi-cli) so that individual
+    # toolset names (e.g. web, terminal) are recognised during intersection.
+    expanded_parent = _expand_parent_toolsets(parent_toolsets)
+    child = [t for t in toolsets if t in expanded_parent]
+    if _get_inherit_mcp_toolsets():
+        child = _preserve_parent_mcp_toolsets(child, parent_toolsets)
+    return _strip_blocked_tools(child)
 
 
 def _run_single_child(
@@ -3918,11 +3939,35 @@ def delegate_expert(
     # 顶层 Agent 派工一律后台（与 delegate_task 同一条规矩）；L3 派专家时才同步等。
     is_subagent = getattr(parent_agent, "_delegate_depth", 0) > 0
 
-    return delegate_task(
+    result = delegate_task(
         tasks=[task],
         background=not is_subagent,
         parent_agent=parent_agent,
     )
+
+    # 照实说：这个名手**现在**到底有什么能力（默认 − 它自己的黑名单 − 全局硬压制）。
+    # 少了哪样写出来——「派出去的与承诺的不符」是最容易被忽略的一种坑。
+    try:
+        from plobi.delegation.expert_roles import (
+            effective_capabilities,
+            effective_toolsets,
+            missing_capabilities,
+        )
+
+        payload = json.loads(result) if isinstance(result, str) else result
+        if isinstance(payload, dict):
+            spec = role_spec(key) or {}
+            payload["expert_capabilities"] = {
+                "role": key,
+                "label": spec.get("label", key),
+                "effective": effective_capabilities(key),
+                "toolsets": effective_toolsets(key),
+                "missing": missing_capabilities(key),
+            }
+            result = json.dumps(payload, ensure_ascii=False)
+    except Exception as exc:  # noqa: BLE001 - 附注失败不许把派工带崩
+        logger.debug("delegate_expert: cannot attach the capability note: %s", exc)
+    return result
 
 
 registry.register(

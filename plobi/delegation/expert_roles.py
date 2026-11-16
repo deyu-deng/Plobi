@@ -68,12 +68,56 @@ DUTIES: dict[str, str] = {
     ),
 }
 
-#: 工具面：只看该看的工具，别把整个工具箱背过去。
+#: **能力项**（人话）——设置面勾的就是这些；一个能力项＝一组工具门类。
+#:
+#: 粒度说明：能力项落在**门类**这一层（`file` 那一门类含读写搜索几把）⇒
+#: 「读文件」与「写文件」都映射到 `file` 门类，勾掉其中一个会连带另一把。
+#: 想要更细的粒度得把门类拆开（那是另一次改法），本轮先把**能勾、能看、能说人话**做出来。
+CAPABILITIES: dict[str, str] = {
+    "read_files": "读文件",
+    "write_files": "写文件",
+    "run_commands": "跑命令",
+    "browse": "上网",
+    "read_pages": "抄网页",
+    "see_images": "看图",
+    "operate_desktop": "操作窗口",
+}
+
+#: 能力项 → 工具门类。**工具面由它派生**（别在角色表里再写一遍门类）⇒ 一处维护。
+CAPABILITY_TOOLSETS: dict[str, list[str]] = {
+    "read_files": ["file"],
+    "write_files": ["file"],
+    "run_commands": ["terminal"],
+    "browse": ["browser"],
+    "read_pages": ["web"],
+    "see_images": ["vision"],
+    "operate_desktop": ["computer_use"],
+}
+
+#: 每个角色**默认**开哪些能力。**与 11-15 之前的工具面逐字一致**（一个字节没变）——
+#: 「看图」进得了池子，但**默认不开**（开不开由设置面那一格勾）。
+ROLE_CAPABILITIES: dict[str, tuple[str, ...]] = {
+    "file": ("read_files", "write_files"),
+    "browser": ("browse", "read_pages"),
+    "software": ("run_commands", "read_files", "write_files"),
+    "computer": ("run_commands", "operate_desktop"),
+}
+
+
+def _derive_toolsets(capabilities) -> list[str]:
+    """能力清单 → 工具门类（按能力顺序去重 ⇒ 与旧表逐字同序）。"""
+    out: list[str] = []
+    for capability in capabilities:
+        for toolset in CAPABILITY_TOOLSETS.get(capability, ()):
+            if toolset not in out:
+                out.append(toolset)
+    return out
+
+
+#: 工具面：只看该看的工具，别把整个工具箱背过去。**由能力派生**（11-15 那次收口把
+#: 「键/名/职责/工具面」拆成平表；这一刀再拆出一层「能力」⇒ 工具面不再手写）。
 TOOLSETS: dict[str, list[str]] = {
-    "file": ["file"],
-    "browser": ["browser", "web"],
-    "software": ["terminal", "file"],
-    "computer": ["terminal", "computer_use"],
+    key: _derive_toolsets(capabilities) for key, capabilities in ROLE_CAPABILITIES.items()
 }
 
 #: 派生视图（键 → 上面几表的一项）：runner 与 router 读它，内容不在这里写。
@@ -97,7 +141,7 @@ def role_spec(key: str) -> Optional[dict[str, Any]]:
 
 
 def role_rows() -> list[dict[str, Any]]:
-    """给人看的名册（设置/说明用）：键、名字、职责、工具面。
+    """给人看的名册（设置/说明用）：键、名字、职责、工具面、能力。
 
     顺序只读 ``TRADES``——前端把它当唯一真相（``expert-trades.test.ts`` 对表）。
     """
@@ -108,6 +152,10 @@ def role_rows() -> list[dict[str, Any]]:
             "mark": ROLES[key]["mark"],
             "duty": ROLES[key]["duty"],
             "toolsets": list(ROLES[key]["toolsets"]),
+            "capabilities": role_capabilities(key),
+            "effective_capabilities": effective_capabilities(key),
+            "missing_capabilities": missing_capabilities(key),
+            "disabled_capabilities": sorted(role_disabled_capabilities(key)),
         }
         for key in TRADES
     ]
@@ -144,16 +192,21 @@ def experts_dir() -> Path:
 
 
 def roles_config_path() -> Path:
-    """四类角色各自的模型：`$PLOBI_HOME/experts/roles.json`。
+    """四类角色各自的设置：`$PLOBI_HOME/experts/roles.json`。
 
-    形状：`{"software": {"model": "provider/model"}, ...}`。**没有这一格＝继承父 Agent**，
-    与普通子代理同一条默认——不给专家配模型时，它就该跟 L2 用同一个。
+    形状：`{"software": {"model": "provider/model", "disabled_capabilities": [...]}}`。
+
+    - ``model`` 没有这一格＝**继承父 Agent**（与普通子代理同一条默认）；
+    - ``disabled_capabilities`` 没有这一格＝**默认全开**（角色表里那份默认能力）。
+
+    ⚠ **能力的底永远是设置面那一份全局真源**（技能目录／工具门类／MCP 全局表）；
+    这一份只是**角色级的减项**（名手自己的黑名单）——它**不继承 principal 的工具设置**。
     """
     return experts_dir() / "roles.json"
 
 
-def load_role_models() -> dict[str, str]:
-    """角色 → `provider/model`。读不到/坏档一律当「没配」，不拖垮派工。"""
+def load_role_settings() -> dict[str, dict]:
+    """角色 → 它的设置（``model`` ＋ ``disabled_capabilities``）。读不到/坏档一律当「没配」。"""
     try:
         payload = json.loads(roles_config_path().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -161,19 +214,123 @@ def load_role_models() -> dict[str, str]:
     if not isinstance(payload, dict):
         return {}
 
-    out: dict[str, str] = {}
+    out: dict[str, dict] = {}
     for key, value in payload.items():
         role = str(key or "").strip().lower()
         if role not in ROLES:
             continue
-        model = ""
-        if isinstance(value, dict):
-            model = str(value.get("model") or "").strip()
-        elif isinstance(value, str):
-            model = value.strip()
+        if isinstance(value, str):
+            value = {"model": value}
+        if not isinstance(value, dict):
+            continue
+        settings: dict[str, Any] = {}
+        model = str(value.get("model") or "").strip()
         if model:
-            out[role] = model
+            settings["model"] = model
+        disabled = value.get("disabled_capabilities")
+        if isinstance(disabled, (list, tuple)):
+            settings["disabled_capabilities"] = [
+                str(c).strip() for c in disabled if str(c).strip()
+            ]
+        out[role] = settings
     return out
+
+
+def load_role_models() -> dict[str, str]:
+    """角色 → `provider/model`。读不到/坏档一律当「没配」，不拖垮派工。"""
+    return {
+        role: str(settings.get("model") or "")
+        for role, settings in load_role_settings().items()
+        if settings.get("model")
+    }
+
+
+def role_disabled_capabilities(key: str) -> set[str]:
+    """这个名手**自己**关掉的能力（角色级黑名单；**不是** principal 那份）。"""
+    role = str(key or "").strip().lower()
+    settings = load_role_settings().get(role) or {}
+    return {str(c).strip().casefold() for c in settings.get("disabled_capabilities") or []}
+
+
+def role_capabilities(key: str) -> list[str]:
+    """这个角色**默认**的能力（人话标签）。"""
+    role = str(key or "").strip().lower()
+    return [
+        CAPABILITIES.get(capability, capability)
+        for capability in ROLE_CAPABILITIES.get(role, ())
+    ]
+
+
+def _capability_alive(capability: str, disabled: set, blocked: set) -> bool:
+    """这一项能力现在还在吗？两个减项：它自己的黑名单、全局硬压制（真源的一部分）。"""
+    if capability.casefold() in disabled:
+        return False
+    toolsets = CAPABILITY_TOOLSETS.get(capability, ())
+    if toolsets and all(name.casefold() in blocked for name in toolsets):
+        return False
+    return True
+
+
+def effective_capabilities(key: str) -> list[str]:
+    """这个名手**现在**有的能力（默认 − 它自己的黑名单 − 全局硬压制），人话标签。"""
+    role = str(key or "").strip().lower()
+    disabled = role_disabled_capabilities(role)
+    blocked = _global_disabled_toolsets()
+    return [
+        CAPABILITIES.get(capability, capability)
+        for capability in ROLE_CAPABILITIES.get(role, ())
+        if _capability_alive(capability, disabled, blocked)
+    ]
+
+
+def _global_disabled_toolsets() -> set[str]:
+    """全局硬压制（设置面那份 ``agent.disabled_toolsets``）——与 principal 无关。"""
+    try:
+        from plobi_cli.config import load_config
+
+        config = load_config() or {}
+    except Exception:  # noqa: BLE001 - 配置读不动就当没有硬压制
+        return set()
+    agent_cfg = config.get("agent") or {}
+    return {
+        str(name).strip().casefold()
+        for name in (agent_cfg.get("disabled_toolsets") or [])
+        if str(name).strip()
+    }
+
+
+def effective_toolsets(key: str) -> list[str]:
+    """这个名手现在拿到的**工具门类**（能力派生 − 全局硬压制）。
+
+    ⚠ **不与 principal 的工具集求交集**——名手自带工具箱（用户 11-15 12:5x 定调：
+    能力的底永远是设置面那一份全局真源，名手只减**自己**的黑名单，不继承 principal
+    的工具设置）。子代理那一支仍旧继承父的（那是另一族）。
+    """
+    role = str(key or "").strip().lower()
+    disabled = role_disabled_capabilities(role)
+    blocked = _global_disabled_toolsets()
+    capabilities = [
+        capability
+        for capability in ROLE_CAPABILITIES.get(role, ())
+        if _capability_alive(capability, disabled, blocked)
+    ]
+    return [name for name in _derive_toolsets(capabilities) if name.casefold() not in blocked]
+
+
+def missing_capabilities(key: str) -> list[str]:
+    """这个名手**现在拿不到**的能力（默认有、现在没有），人话标签。
+
+    少了哪样要写出来——「派出去的与承诺的不符」是最容易被忽略的一种坑
+    （角色自己的黑名单关掉的、全局硬压制砍掉的，都算少）。
+    """
+    role = str(key or "").strip().lower()
+    disabled = role_disabled_capabilities(role)
+    blocked = _global_disabled_toolsets()
+    return [
+        CAPABILITIES.get(capability, capability)
+        for capability in ROLE_CAPABILITIES.get(role, ())
+        if not _capability_alive(capability, disabled, blocked)
+    ]
 
 
 def model_for_role(key: str) -> Optional[str]:
@@ -182,29 +339,69 @@ def model_for_role(key: str) -> Optional[str]:
     return load_role_models().get(role) if role in ROLES else None
 
 
+def _write_role_settings(settings: dict[str, dict]) -> dict[str, dict]:
+    """整档写回。**这一份只归本模块管**，没有别人往里写行（与旧的模型表同一条口径）。"""
+    path = roles_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {}
+    for role, values in settings.items():
+        entry: dict[str, Any] = {}
+        model = str(values.get("model") or "").strip()
+        if model:
+            entry["model"] = model
+        disabled = [str(c).strip() for c in values.get("disabled_capabilities") or [] if str(c).strip()]
+        if disabled:
+            entry["disabled_capabilities"] = disabled
+        payload[role] = entry
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    return settings
+
+
 def save_role_model(key: str, model: Optional[str]) -> dict[str, str]:
     """写一类角色的模型。`model` 传空＝清掉覆盖，回到继承父 Agent。
 
-    整档重写是有意的：这份文件只归本模块管，没有别人往里写行。
+    **只动这一格的 ``model``**，同一格里的 ``disabled_capabilities`` 原样留着。
     """
     role = str(key or "").strip().lower()
     if role not in ROLES:
         raise ValueError(f"未知专家角色 {key!r}：只有 file / browser / software / computer 四种")
 
-    current = load_role_models()
+    settings = load_role_settings()
+    current = dict(settings.get(role) or {})
     value = str(model or "").strip()
     if value:
-        current[role] = value
+        current["model"] = value
     else:
-        current.pop(role, None)
+        current.pop("model", None)
+    settings[role] = current
+    _write_role_settings(settings)
+    return load_role_models()
 
-    path = roles_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {name: {"model": value} for name, value in current.items()}
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
-    return current
+
+def save_role_disabled_capabilities(key: str, disabled: list[str]) -> dict[str, list[str]]:
+    """写这个名手**自己**的黑名单（能力项名）。传空＝回到默认全开。
+
+    只动这一格的 ``disabled_capabilities``，同一格里的 ``model`` 原样留着。
+    """
+    role = str(key or "").strip().lower()
+    if role not in ROLES:
+        raise ValueError(f"未知专家角色 {key!r}：只有 file / browser / software / computer 四种")
+
+    settings = load_role_settings()
+    current = dict(settings.get(role) or {})
+    names = sorted({str(c).strip().casefold() for c in (disabled or []) if str(c).strip()})
+    unknown = [c for c in names if c not in CAPABILITIES]
+    if unknown:
+        raise ValueError(f"不认得的能力项：{'、'.join(unknown)}（认得：{'、'.join(sorted(CAPABILITIES))}）")
+    if names:
+        current["disabled_capabilities"] = names
+    else:
+        current.pop("disabled_capabilities", None)
+    settings[role] = current
+    _write_role_settings(settings)
+    return {r: list(v.get("disabled_capabilities") or []) for r, v in load_role_settings().items()}
 
 
 def record_role(child_session_id: str, role: str, goal: str, model: Optional[str] = None,
