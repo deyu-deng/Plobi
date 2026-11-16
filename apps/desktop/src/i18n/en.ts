@@ -1307,6 +1307,7 @@ export const en: Translations = {
     tabToolsets: 'Tools',
     tabMcp: 'MCP',
     tabHub: 'Browse Hub',
+    tabExperts: 'Experts',
     all: 'All',
     searchSkills: 'Search skills...',
     searchToolsets: 'Search tools...',
@@ -1402,6 +1403,12 @@ export const en: Translations = {
       previewFailed: 'Skill preview failed',
       scanFailed: 'Security scan failed',
       searchFailed: 'Hub search failed'
+    },
+    experts: {
+      bulkUpdated: count => `Updated ${count} ${count === 1 ? 'role' : 'roles'}.`,
+      emptyTitle: 'No experts',
+      loadFailed: 'Expert roles failed to load',
+      toggleCapability: (role, capability) => `Toggle ${capability} for ${role}`
     }
   },
 

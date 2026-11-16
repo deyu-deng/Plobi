@@ -223,6 +223,16 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
           id: 'cview:hub',
           label: t.skills.tabHub,
           onSelect: () => openCapabilitiesView('hub')
+        },
+        {
+          // 名手（专家）那一格（WP-EXPERT-CAPABILITIES-UI，11-16）：四类名手的能力
+          // 开关与默认模型。放在**能力**这一族里（它本来就是能力面），
+          // 不另开一屏 ⇒ 导航与主界面那一屏同一套。
+          active: activeView === 'capabilities' && capabilitiesView === 'experts',
+          icon: Users,
+          id: 'cview:experts',
+          label: t.skills.tabExperts,
+          onSelect: () => openCapabilitiesView('experts')
         }
       ],
       active: activeView === 'capabilities',

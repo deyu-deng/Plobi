@@ -1149,6 +1149,7 @@ export interface Translations {
     tabToolsets: string
     tabMcp: string
     tabHub: string
+    tabExperts: string
     all: string
     searchSkills: string
     searchToolsets: string
@@ -1235,6 +1236,13 @@ export interface Translations {
       previewFailed: string
       scanFailed: string
       searchFailed: string
+    }
+    /** 名手（临时专家）那一格：四类角色各自的能力开关与默认模型。 */
+    experts: {
+      bulkUpdated: (count: number) => string
+      emptyTitle: string
+      loadFailed: string
+      toggleCapability: (role: string, capability: string) => string
     }
   }
 

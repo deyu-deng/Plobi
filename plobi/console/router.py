@@ -2273,27 +2273,56 @@ async def agent_experts_route(agent_id: str):
 
 @router.get("/experts/roles", name="expert_roles")
 async def expert_roles_route():
-    """GET /api/experts/roles — 四类专家各自配的模型。
+    """GET /api/experts/roles — 四类名手各自的模型 ＋ 能力。
 
     `model` 为 null ＝ 这一类还没配，派工时继承父 Agent（与普通子代理同一条默认）。
     顺带把职责与工具面一起交出去：主区那张专家卡片要能说清「它是什么」。
+
+    **能力**（`WP-EXPERT-CAPABILITIES`，11-16）：`capabilities` 是这一类**默认**的能力
+    （人话标签），`effective_capabilities` 是它**现在**真有的（默认 − 它自己的黑名单 −
+    全局硬压制），`missing_capabilities` 是默认有、现在没有的（派出去的与承诺的不符，
+    要让人看见），`disabled_capabilities` 是它自己的黑名单。
     """
-    from plobi.delegation.expert_roles import load_role_models, role_rows
+    from plobi.delegation.expert_roles import (
+        CAPABILITIES,
+        load_role_models,
+        role_rows,
+    )
 
     configured = await run_in_threadpool(load_role_models)
     rows = [{**row, "model": configured.get(row["key"])} for row in role_rows()]
 
-    return {"ok": True, "data": {"roles": rows}}
+    return {
+        "ok": True,
+        "data": {
+            "roles": rows,
+            # **能力池**（键 ＋ 人话标签）：屏上那一格要画勾选框 ⇒ 得知道
+            # 「有哪些能力项可选」，而不只是这一类现在开着哪几个。
+            "capabilities": [
+                {"key": key, "label": label} for key, label in CAPABILITIES.items()
+            ],
+        },
+    }
 
 
 @router.put("/experts/roles/{role}", name="expert_role_model")
 async def expert_role_model_route(role: str, request: Request):
-    """PUT /api/experts/roles/:role — 改这一类专家的模型。
+    """PUT /api/experts/roles/:role — 改这一类名手的**模型**与/或**它自己的黑名单**。
 
-    `{"model": "provider/model"}` 写覆盖；`{"model": ""}` 或 `null` 清掉覆盖，
-    回到「继承父 Agent」。
+    - `{"model": "provider/model"}` 写模型覆盖；`{"model": ""}` 或 `null` 清掉覆盖，
+      回到「继承父 Agent」。
+    - `{"disabled_capabilities": ["run_commands"]}` 写它自己的黑名单（能力项名）；
+      `[]` 清掉，回到「默认全开」。
+
+    ⚠ **只动这次带过来的那一格**：带 `model` 不碰黑名单，带 `disabled_capabilities`
+    不碰模型（两者都带就都写）。
     """
-    from plobi.delegation.expert_roles import save_role_model
+    from plobi.delegation.expert_roles import (
+        load_role_models,
+        load_role_settings,
+        save_role_disabled_capabilities,
+        save_role_model,
+    )
 
     try:
         body = await request.json()
@@ -2302,18 +2331,46 @@ async def expert_role_model_route(role: str, request: Request):
     if not isinstance(body, dict):
         return _error(400, "body must be an object")
 
-    model = body.get("model")
-    if model is not None and not isinstance(model, str):
-        return _error(400, "model must be a string")
+    key = str(role).strip().lower()
+    wants_model = "model" in body
+    wants_caps = "disabled_capabilities" in body
+    if not wants_model and not wants_caps:
+        return _error(400, "nothing to change: send model and/or disabled_capabilities")
 
-    try:
-        models = await run_in_threadpool(save_role_model, role, model)
-    except ValueError as exc:
-        return _error(400, str(exc))
-    except OSError as exc:
-        return _error(500, f"cannot write role config: {exc}")
+    if wants_model:
+        model = body.get("model")
+        if model is not None and not isinstance(model, str):
+            return _error(400, "model must be a string")
+        try:
+            await run_in_threadpool(save_role_model, role, model)
+        except ValueError as exc:
+            return _error(400, str(exc))
+        except OSError as exc:
+            return _error(500, f"cannot write role config: {exc}")
 
-    return {"ok": True, "data": {"role": str(role).strip().lower(), "model": models.get(str(role).strip().lower())}}
+    if wants_caps:
+        disabled = body.get("disabled_capabilities")
+        if disabled is None:
+            disabled = []
+        if not isinstance(disabled, list) or any(not isinstance(c, str) for c in disabled):
+            return _error(400, "disabled_capabilities must be a list of strings")
+        try:
+            await run_in_threadpool(save_role_disabled_capabilities, role, list(disabled))
+        except ValueError as exc:
+            return _error(400, str(exc))
+        except OSError as exc:
+            return _error(500, f"cannot write role config: {exc}")
+
+    models = await run_in_threadpool(load_role_models)
+    settings = await run_in_threadpool(load_role_settings)
+    return {
+        "ok": True,
+        "data": {
+            "role": key,
+            "model": models.get(key),
+            "disabled_capabilities": list((settings.get(key) or {}).get("disabled_capabilities") or []),
+        },
+    }
 
 
 @router.get("/agents/{agent_id}/notes")

@@ -151,7 +151,10 @@ def role_rows() -> list[dict[str, Any]]:
             "label": ROLES[key]["label"],
             "mark": ROLES[key]["mark"],
             "duty": ROLES[key]["duty"],
+            # ``toolsets``＝**默认**那一层（既有消费方指着它，别改）；
+            # ``effective_toolsets``＝它**现在**真拿到的（减掉自己的黑名单与全局硬压制）。
             "toolsets": list(ROLES[key]["toolsets"]),
+            "effective_toolsets": effective_toolsets(key),
             "capabilities": role_capabilities(key),
             "effective_capabilities": effective_capabilities(key),
             "missing_capabilities": missing_capabilities(key),

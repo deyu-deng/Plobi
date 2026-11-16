@@ -1337,6 +1337,7 @@ export const zhHant = defineLocale({
     tabSkills: '技能',
     tabToolsets: '工具集',
     tabMcp: 'MCP',
+    tabExperts: '名手',
     all: '全部',
     searchSkills: '搜尋技能...',
     searchToolsets: '搜尋工具集...',
@@ -1384,7 +1385,13 @@ export const zhHant = defineLocale({
     edit: '編輯',
     archive: '封存',
     skillArchivedTitle: '技能已封存',
-    skillArchivedMessage: '可透過 plobi curator restore 還原。'
+    skillArchivedMessage: '可透過 plobi curator restore 還原。',
+    experts: {
+      bulkUpdated: count => `已更新 ${count} 類名手。`,
+      emptyTitle: '沒有名手',
+      loadFailed: '名手名單讀不出來',
+      toggleCapability: (role, capability) => `切換「${role}」的「${capability}」`
+    }
   },
 
   surface: {

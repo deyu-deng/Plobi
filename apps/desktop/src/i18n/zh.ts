@@ -1486,6 +1486,7 @@ export const zh: Translations = {
     tabToolsets: '工具集',
     tabMcp: 'MCP',
     tabHub: '浏览技能中心',
+    tabExperts: '名手',
     all: '全部',
     searchSkills: '搜索技能…',
     searchToolsets: '搜索工具集…',
@@ -1580,6 +1581,12 @@ export const zh: Translations = {
       previewFailed: '技能预览失败',
       scanFailed: '安全扫描失败',
       searchFailed: '技能中心搜索失败'
+    },
+    experts: {
+      bulkUpdated: count => `已更新 ${count} 类名手。`,
+      emptyTitle: '没有名手',
+      loadFailed: '名手名单读不出来',
+      toggleCapability: (role, capability) => `切换「${role}」的「${capability}」`
     }
   },
 

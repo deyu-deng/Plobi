@@ -1373,6 +1373,7 @@ export const ja = defineLocale({
     tabSkills: 'スキル',
     tabToolsets: 'ツールセット',
     tabMcp: 'MCP',
+    tabExperts: '名手',
     all: 'すべて',
     searchSkills: 'スキルを検索...',
     searchToolsets: 'ツールセットを検索...',
@@ -1420,7 +1421,13 @@ export const ja = defineLocale({
     edit: '編集',
     archive: 'アーカイブ',
     skillArchivedTitle: 'スキルをアーカイブしました',
-    skillArchivedMessage: 'plobi curator restore で復元できます。'
+    skillArchivedMessage: 'plobi curator restore で復元できます。',
+    experts: {
+      bulkUpdated: count => `${count} 類の名手を更新しました。`,
+      emptyTitle: '名手がありません',
+      loadFailed: '名手の設定を読み込めません',
+      toggleCapability: (role, capability) => `${role} の ${capability} を切り替える`
+    }
   },
 
   surface: {

@@ -67,9 +67,21 @@ describe('名手分类表：后端与前端是同一套词', () => {
   })
 
   it('后端四张平表键集合完全一致，缺一格就是运行时 KeyError', () => {
-    for (const table of ['LABELS', 'MARKS', 'DUTIES', 'TOOLSETS']) {
+    // 2026-11-16（WP-EXPERT-CAPABILITIES）：`TOOLSETS` 变成了**派生视图**
+    // （工具面由能力派生 ⇒ 那一格不再是「字面表」）；承担「四类各自一张表」职责的
+    // 换成了 `ROLE_CAPABILITIES`（每个角色默认开哪些能力）。这里盯的是**键集合**，
+    // 派生视图另有下面那条断言盯着。
+    for (const table of ['LABELS', 'MARKS', 'DUTIES', 'ROLE_CAPABILITIES']) {
       expect(keysOfDict(py, table), `${table} 与 TRADES 不同步`).toEqual(backend)
     }
+  })
+
+  it('工具面那一格是派生视图（不许在它里面另写内容）', () => {
+    // 派生写法里出现的是 `key: _derive_toolsets(`，不是 `"file": [`——后者说明
+    // 有人又开始手抄了（能力项与门类的对应只该在 CAPABILITY_TOOLSETS 一处）。
+    expect(py).toContain('TOOLSETS: dict[str, list[str]] = {')
+    expect(py).toContain('for key, capabilities in ROLE_CAPABILITIES.items()')
+    expect(py).not.toMatch(/TOOLSETS: dict\[str, list\[str\]\] = \{\s*\n\s*"file":/)
   })
 
   it('ROLES 只是派生视图，不许在它里面另写内容', () => {

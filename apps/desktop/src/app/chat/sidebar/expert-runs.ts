@@ -35,18 +35,75 @@ export function getAgentExperts(agentId: string): Promise<{ data: ExpertRunsData
   return api(`/api/agents/${encodeURIComponent(agentId)}/experts`)
 }
 
-/** 一类角色的配置：职责、工具面、以及**它自己用的模型**（null＝跟随父 Agent）。 */
+/**
+ * 能力池里的一项：**键** ＋ 人话标签。
+ *
+ * 键用来回写（黑名单只认键），标签用来上屏。后端给的标签是中文，屏上原样显示——
+ * 前端不自己译那一套（`Docs/reference/glossary.md` 的口径：机器词不上屏，人话标签照抄）。
+ */
+export type ExpertCapability = {
+  key: string
+  label: string
+}
+
+/**
+ * 一类角色的配置：职责、工具面、**它自己用的模型**（null＝跟随父 Agent），
+ * 以及它的能力三件套。
+ *
+ * ⚠ **两套名字，别混**（`capabilities` / `effective_capabilities` /
+ * `missing_capabilities` 是**人话标签**；`disabled_capabilities` 与能力池里的
+ * `key` 是**能力项键**）：
+ * - `capabilities` —— 这一类**默认**有的能力（人话标签）；
+ * - `effective_capabilities` —— 它**现在**真拿到的（人话标签）；
+ * - `missing_capabilities` —— 默认有、现在没有的（人话标签）；
+ * - `disabled_capabilities` —— 它**自己**的黑名单（**能力项键**）。
+ */
 export type ExpertRoleInfo = {
+  /** 这一类**默认**有的能力（人话标签）。 */
+  capabilities: string[]
+  /** 这一类**现在**真拿到的能力（人话标签）。 */
+  effective_capabilities: string[]
+  /** 这一类**现在**真拿到的工具门类。 */
+  effective_toolsets: string[]
+  /** 它**自己**关掉的能力（能力项**键**，如 `run_commands`）。 */
+  disabled_capabilities: string[]
   duty: string
   key: string
   label: string
   mark: string
+  /** 默认有、现在没有的（人话标签）。 */
+  missing_capabilities: string[]
   model: null | string
   toolsets: string[]
 }
 
-export function getExpertRoles(): Promise<{ data: { roles: ExpertRoleInfo[] }, ok: boolean }> {
+/** `GET /api/experts/roles` 的整个身子。 */
+export type ExpertRolesResponse = {
+  data: {
+    /** 能力池（键 ＋ 人话标签）——画勾选框要靠它把标签认回键。 */
+    capabilities?: ExpertCapability[]
+    roles: ExpertRoleInfo[]
+  }
+  ok: boolean
+}
+
+export function getExpertRoles(): Promise<ExpertRolesResponse> {
   return api('/api/experts/roles')
+}
+
+/**
+ * 写一类角色**自己**的黑名单（能力项键）。空数组＝回到默认全开。
+ *
+ * 只动这一格：后端收到 `disabled_capabilities` 就只写黑名单，**不碰模型**。
+ */
+export function setExpertRoleDisabledCapabilities(
+  role: string,
+  disabled: string[]
+): Promise<{ data: { disabled_capabilities: string[], model: null | string, role: string }, ok: boolean }> {
+  return api(`/api/experts/roles/${encodeURIComponent(role)}`, {
+    body: { disabled_capabilities: disabled },
+    method: 'PUT'
+  })
 }
 
 /** 写一类角色的模型。`model` 传空串＝清掉覆盖，回到继承父 Agent。 */
