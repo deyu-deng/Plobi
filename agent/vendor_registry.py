@@ -236,6 +236,44 @@ class PathRule:
 
 
 @dataclasses.dataclass(frozen=True)
+class AccountRule:
+    """一"族"客席的**账号清单**从哪读（多账号体系的第一格，11-16）。
+
+    账号清单是**盘上会变的东西**（用户随时切账号、加账号）⇒ 它不进真源表的数据，
+    真源表里只放**读它的规矩**：文件在哪、数组键叫什么、哪个字段是账号标识、
+    哪个字段是显示名、哪个字段标着"当前登录的是哪个"。
+
+    **读不出名字的那一家也要能列出来**：厂商把昵称加密时（WorkBuddy 的
+    ``{"$wbEncrypted": 1, "envelope": ...}``），显示名退到账号标识 ——
+    宁可给一个认得出的标识，也不给空白。
+    """
+
+    #: 候选文件（``PathRule`` 那套写法：``kind:value|rel``）。
+    files: tuple[str, ...] = ()
+    #: 文件里那个数组的键（``accounts``／``allAccounts``……）。空 = 顶层就是数组。
+    list_keys: tuple[str, ...] = ("accounts", "allAccounts")
+    #: 账号标识取哪个字段（``uid``）。
+    id_field: str = "uid"
+    #: 显示名取哪个字段（``nickname``）。
+    label_field: str = "nickname"
+    #: 「当前登录的是哪个」取哪个字段（``lastLogin``）。
+    current_field: str = "lastLogin"
+    #: 名字被加密时的形状里那个标记（``{"$wbEncrypted": 1, ...}``）⇒ 读不出来。
+    encrypted_marker: str = "$wbEncrypted"
+
+    # ── 凭据交接（派活时把「哪一个身份」交给厂商）────────────────────────
+    #: 厂商认哪个环境变量（**凭据交接的入口**）。空 = 这一族没有交接这一说。
+    credential_env: str = ""
+    #: 交接的形状：``session`` —— 厂商读的那份快照是
+    #: ``{"session": {"account": …, "auth": …}}``（CodeBuddy CLI 现读）。
+    credential_kind: str = ""
+    #: 身份文件里「当前身份」那一块的键（``account``）。
+    account_key: str = "account"
+    #: 身份文件里「凭据」那一块的键（``auth``）。
+    auth_key: str = "auth"
+
+
+@dataclasses.dataclass(frozen=True)
 class FirstUserSpec:
     """「去另一张表取第一句用户话」那一跳的映射。
 
@@ -583,6 +621,10 @@ class VendorRow:
     # ── 会话 ─────────────────────────────────────────────────────────────
     session: Optional[SessionSpec] = None
 
+    # ── 多账号 ───────────────────────────────────────────────────────────
+    #: 这一族的**账号清单**从哪读（规矩在表里，账号在盘上）。空 = 这一族只有一种身份。
+    accounts_rule: Optional[AccountRule] = None
+
     # ── 派生 ─────────────────────────────────────────────────────────────
     def to_spec(self) -> ExternalAgentSpec:
         """这一行在**通道表**里的形状（字段与默认值照旧）。"""
@@ -635,6 +677,21 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         permission_prefix=("-y",),
         login_probe=("doctor",),
         login_hints=("~/.codebuddy/local_storage",),
+        # 11-16 现读：这一族的**账号清单**落在三个身份文件里（各有 accounts／allAccounts 数组）；
+        # 盘上那两个账号目录（``<CODEBUDDY_CONFIG_DIR>/<uid>/``）只装 UI 快照，**不装会话**。
+        accounts_rule=AccountRule(
+            files=(
+                "localappdata:LOCALAPPDATA|CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info",
+                "localappdata:LOCALAPPDATA|CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info",
+                "localappdata:LOCALAPPDATA|CodeBuddyExtension/Data/Public/auth/workbuddy-desktop-ai.info",
+            ),
+            # 11-16 现读厂商包：非交互的派活腿吃不下它自己那条交互式切换
+            # （`/login`＝「Switch Tencent Cloud CodeBuddy accounts」，底层是拿 refresh token
+            # 打 `/v2/…/account/switch`）⇒ 走它给非交互进程留的那个入口：
+            # 一个**凭据快照文件**的路径（`acceptSession` 要 `account` + `auth.accessToken`）。
+            credential_env="CODEBUDDY_AUTH_SNAPSHOT_PATH",
+            credential_kind="session",
+        ),
         acp_registry_id="codebuddy-code",
         acp_args=("--acp",),
         acp_note="11-14 现核：给了会话（登录着）",
@@ -2023,6 +2080,16 @@ def roster(rows: Rows = VENDOR_ROWS) -> tuple[str, ...]:
                  if not row.offloadable and (row.install.command or row.install.homepage))
     return ready + rest
 
+
+def account_rules(rows: Rows = VENDOR_ROWS) -> dict[str, AccountRule]:
+    """**出口表六**：多账号——每一族的账号清单从哪读。
+
+    规矩在真源表那一行里（:class:`AccountRule`）；**账号本身在盘上**，
+    由 ``plobi/delegation/external_accounts.py`` 按这里的规矩读出来。
+    """
+    return {row.id: row.accounts_rule for row in rows if row.accounts_rule}
+
+
 def vendor_row(vendor: str) -> Optional[VendorRow]:
     """认不出的一家 ⇒ ``None``，由调用方决定怎么报——不猜一个默认的。"""
     key = (vendor or "").strip().lower()
@@ -2040,6 +2107,7 @@ SESSION_SPECS: dict[str, SessionSpec] = session_specs()
 LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = login_probe_map()
 PORTABLES_FALLBACK: dict[str, str] = portable_fallbacks()
 INSTALL_SPECS: dict[str, InstallSpec] = install_specs()
+ACCOUNT_RULES: dict[str, AccountRule] = account_rules()
 
 
 # ── 落点解析（表里的候选怎么变成一条真路径）────────────────────────────────
@@ -2103,6 +2171,17 @@ def _expand_candidate(candidate: str) -> tuple[Optional[Path], bool]:
     if rel:
         path = path / rel
     return path, kind == "env"
+
+
+
+def resolve_candidate(candidate: str) -> Path:
+    """把**一条**落点写法（``kind:value|rel``）解成一条真路径。
+
+    :class:`PathRule` 解的是「一串候选里取一个」；账号清单那一族要的是
+    **一个文件一个文件地解**（三个身份文件各读各的）⇒ 这里把单条那条拆出来用。
+    """
+    path, _ = _expand_candidate(candidate)
+    return path if path is not None else Path("")
 
 
 def resolve_path(rule: PathRule) -> Path:

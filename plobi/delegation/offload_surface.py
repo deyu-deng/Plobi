@@ -208,6 +208,16 @@ def _install_payload(vendor: str) -> Optional[dict[str, Any]]:
     }
 
 
+def _selected_account(vendor: str) -> str:
+    """主人为这一族选的身份标识（空 = 没选 ⇒ 厂商用它自己当前登录的那个）。"""
+    try:
+        from plobi.delegation.external_accounts import selected_account
+
+        return selected_account(vendor)
+    except Exception:  # noqa: BLE001 - 读不到就当没选
+        return ""
+
+
 def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
     """一家外部软件一行。**能不能用**只问 `availability()`；**为什么**原样带出。"""
     from tools.offload_tools import agent_roster
@@ -275,6 +285,9 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
             # 这一家**能不能派活**（真源表那一行说了算）＋**怎么装**（新用户的第一扇门）。
             "dispatch_ready": True,
             "install": _install_payload(name),
+            # 多账号（11-16）：这一族下面有哪几个身份、主人选了哪一个。
+            "accounts": channel.read_accounts(name),
+            "selected_account": _selected_account(name),
             "today": {
                 "rounds": len(day_rows),
                 "total_usd": amount,
@@ -323,6 +336,9 @@ def external_agent_rows(*, refresh: bool = False) -> dict[str, Any]:
             "resume_supported": False,
             "dispatch_ready": False,
             "install": _install_payload(row.id),
+            # 多账号（11-16）：同一套规矩，与能不能派活无关。
+            "accounts": channel.read_accounts(row.id),
+            "selected_account": _selected_account(row.id),
             "today": {
                 "rounds": 0,
                 "total_usd": None,

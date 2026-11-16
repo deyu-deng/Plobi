@@ -1839,6 +1839,31 @@ async def set_offload_agent_enabled_route(agent_name: str, request: Request):
     }
 
 
+@router.put("/offload/agents/{agent_name}/account", name="set_offload_agent_account")
+async def set_offload_agent_account_route(agent_name: str, request: Request):
+    """PUT /api/offload/agents/:name/account — 这一族**用哪一个身份**派活。
+
+    落点 ``config.yaml`` 的 ``delegation.offload_accounts``（``{厂商: 账号标识}``）。
+    账号清单本身**在盘上**（规矩在真源表那一行）⇒ 这里只记「主人选了哪一个」。
+    写不进去就如实回错，**不假装存下了**。
+    """
+    from plobi.delegation.external_accounts import set_selected_account
+
+    name = agent_name.strip().lower()
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - 空 body/坏 JSON 都按「没给值」处理
+        body = {}
+    account = str((body or {}).get("account") or "").strip()
+    try:
+        chosen = await run_in_threadpool(set_selected_account, name, account)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
+    return {"ok": True, "data": {"name": name, "account": chosen}}
+
+
 @router.post("/offload/agents/{agent_name}/login", name="start_offload_agent_login")
 async def start_offload_agent_login_route(agent_name: str):
     """POST /api/offload/agents/:name/login — 设置 → 外包 那一行点「+」时**拉起这一家的登录**。

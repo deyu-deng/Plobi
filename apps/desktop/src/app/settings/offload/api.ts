@@ -36,6 +36,15 @@ export interface OffloadInstall {
   verified: boolean
 }
 
+export interface OffloadAccount {
+  /** 账号标识（厂商那边那一串 id）。 */
+  id: string
+  /** 显示名（厂商把昵称加密了就读不出来 ⇒ 退到标识前八位，不给空白）。 */
+  label: string
+  /** 厂商那边当前登录着的是这个（这一族里第一份身份文件说了算）。 */
+  current: boolean
+}
+
 export interface OffloadAgent {
   name: string
   installed: boolean
@@ -61,6 +70,10 @@ export interface OffloadAgent {
   dispatch_ready: boolean
   /** 这一家**怎么装**（新用户的第一扇门）。null = 表里没有这一族事实 ⇒ 不编命令。 */
   install: OffloadInstall | null
+  /** 这一族下面有哪几个身份（多账号体系，11-16）。空 = 这一族没做多账号。 */
+  accounts: OffloadAccount[]
+  /** 主人为这一族选的那个身份（空 = 厂商用它自己当前登录的那个）。 */
+  selected_account: string
   today: { rounds: number; total_usd: number | null; cost_status: string; last_ts: string }
   last_round: OffloadLastRound | null
 }
@@ -120,6 +133,16 @@ export async function setOffloadAgentEnabled(name: string, enabled: boolean): Pr
     path: `/api/offload/agents/${encodeURIComponent(name)}/enabled`,
     method: 'PUT',
     body: { enabled }
+  })
+}
+
+/** 这一族派活用哪一个身份（多账号体系，11-16）。
+ *  落点 config.yaml 的 `delegation.offload_accounts`（`{厂商: 账号标识}`）。 */
+export async function setOffloadAgentAccount(name: string, account: string): Promise<void> {
+  await window.plobiDesktop.api({
+    path: `/api/offload/agents/${encodeURIComponent(name)}/account`,
+    method: 'PUT',
+    body: { account }
   })
 }
 

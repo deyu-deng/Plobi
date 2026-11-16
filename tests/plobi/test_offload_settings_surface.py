@@ -220,6 +220,33 @@ def test_every_row_carries_its_install_facts_and_dispatch_readiness():
         assert isinstance(row["dispatch_ready"], bool)
 
 
+def test_every_row_carries_its_accounts_and_the_chosen_one():
+    """每一行都带 ``accounts`` 与 ``selected_account``（屏上那一下拉靠它们）。
+
+    **没做多账号的那一族 ⇒ 空清单**（不是"它没有账号"，是"这一族没做多账号"）。
+    """
+    payload = offload_surface.external_agent_rows()
+
+    for row in payload["agents"]:
+        assert "accounts" in row
+        assert "selected_account" in row
+        assert isinstance(row["accounts"], list)
+        for account in row["accounts"]:
+            assert account["id"]
+            assert account["label"], "读不出名字也要给一个认得出的标识，不许给空白"
+
+
+def test_the_chosen_account_is_not_guessed_when_nothing_was_chosen():
+    """没选 ⇒ **空串**（厂商用它自己当前登录的那个），不许替主人挑一个。"""
+    payload = offload_surface.external_agent_rows()
+    by_name = {row["name"]: row for row in payload["agents"]}
+
+    for row in payload["agents"]:
+        if row["accounts"]:
+            continue
+        assert by_name[row["name"]]["selected_account"] == ""
+
+
 def test_the_vendors_that_only_know_how_to_install_are_on_screen_without_a_switch():
     """**只装不派活**的那几家：屏上看得见（给下载引导），但**不给开关**。"""
     payload = offload_surface.external_agent_rows()

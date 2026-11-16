@@ -21,12 +21,20 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { vendorLabelFor } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useI18n } from '@/i18n'
 import { Plus, RefreshCw } from '@/lib/icons'
 
 import { ConnectionControl } from './connection-control'
 import { OffloadVendorAvatar } from './offload-vendor-avatar'
-import { getOffloadAgents, type OffloadAgent, type OffloadPayload, setOffloadAgentEnabled, startOffloadLogin } from './offload/api'
+import {
+  getOffloadAgents,
+  type OffloadAgent,
+  type OffloadPayload,
+  setOffloadAgentAccount,
+  setOffloadAgentEnabled,
+  startOffloadLogin
+} from './offload/api'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 
 const CAPTION =
@@ -50,6 +58,7 @@ export function OffloadSettings() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState('')
+  const [pendingAccount, setPendingAccount] = useState('')
   const [guide, setGuide] = useState('')
 
   /**
@@ -152,6 +161,50 @@ export function OffloadSettings() {
     }
   }
 
+  /**
+   * 这一行**现在用哪一个身份**：主人选的那个；没选 ⇒ 厂商它自己当前登录的那个。
+   *
+   * **不替主人挑**：没选过就显示当前那一个，但落盘的那一格仍然是空
+   * （屏上看着有值，配置里没记 ⇒ 主人没选过，别替他选了）。
+   */
+  const selectedAccountId = (agent: OffloadAgent): string =>
+    agent.selected_account || agent.accounts.find(item => item.current)?.id || agent.accounts[0]?.id || ''
+
+  /** 换身份：先就地翻面，落盘失败再翻回去并把原因写在屏上（与开关同一套做法）。 */
+  const pickAccount = async (agent: OffloadAgent, account: string) => {
+    const previous = agent.selected_account
+    setPendingAccount(agent.name)
+    setError('')
+    setPayload(current =>
+      current
+        ? {
+            ...current,
+            agents: current.agents.map(item =>
+              item.name === agent.name ? { ...item, selected_account: account } : item
+            )
+          }
+        : current
+    )
+
+    try {
+      await setOffloadAgentAccount(agent.name, account)
+    } catch (err) {
+      setPayload(current =>
+        current
+          ? {
+              ...current,
+              agents: current.agents.map(item =>
+                item.name === agent.name ? { ...item, selected_account: previous } : item
+              )
+            }
+          : current
+      )
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPendingAccount('')
+    }
+  }
+
   const loginText = (agent: OffloadAgent): string => {
     if (agent.logged_in.value === true) {
       // 「本地痕迹」**不是**一次会话的答复：凭据文件在 ≠ 此刻登上了
@@ -209,6 +262,8 @@ export function OffloadSettings() {
   const agentTip = (agent: OffloadAgent): string =>
     [
       agent.installed ? `${agent.binary}${agent.version ? ` · ${agent.version}` : ''}` : s.notInstalled,
+      // 这一族下面有几个身份（机器细节，进悬停，不上屏）。
+      agent.accounts.length ? s.accountTip(agent.accounts.length) : '',
       agent.permission_flag,
       loginText(agent),
       // 这一格的证据原话（谁说的、说了什么）——机器细节进悬停，不上屏。
@@ -280,35 +335,63 @@ export function OffloadSettings() {
           return (
             <ListRow
               action={
-                isConfigured ? (
-                  /* 右侧那**一颗**控件（`ConnectionControl`，与 Providers/Sources 同一件）：
-                     配好了是开关；坏了不换控件，旁边一颗红点。 */
-                  <ConnectionControl
-                    busy={pending === agent.name}
-                    checked={agent.enabled}
-                    configureLabel={s.setup}
-                    error={broken}
-                    errorTitle={reason}
-                    mode="toggle"
-                    onToggle={next => void toggle(agent, next)}
-                    toggleLabel={`${s.allowSwitch} · ${agent.name}`}
-                  />
-                ) : (
-                  <Button
-                    aria-expanded={guide === agent.name}
-                    aria-label={`${s.setup} · ${agent.name}`}
-                    onClick={() => {
-                      setGuide(current => (current === agent.name ? '' : agent.name))
-                      void launchLogin(agent)
-                    }}
-                    size="icon-sm"
-                    title={reason}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <Plus className="size-4" />
-                  </Button>
-                )
+                /* 右侧：**账号下拉** ＋ 那一颗控件。
+                   一家一行、账号做下拉（用户 11-16：「一家一行，账号做下拉」）——
+                   账号是**这一族**的属性，不是另起一行。 */
+                <div className="flex items-center gap-2">
+                  {agent.accounts.length ? (
+                    <Select
+                      disabled={pendingAccount === agent.name}
+                      onValueChange={value => void pickAccount(agent, value)}
+                      value={selectedAccountId(agent)}
+                    >
+                      <SelectTrigger
+                        aria-label={`${s.accountLabel} · ${agent.name}`}
+                        className="w-auto max-w-[12rem]"
+                        size="sm"
+                        title={s.accountTip(agent.accounts.length)}
+                      >
+                        <SelectValue placeholder={s.accountLabel} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agent.accounts.map(account => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.current ? `${account.label} · ${s.accountCurrent}` : account.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                  {isConfigured ? (
+                    /* 右侧那**一颗**控件（`ConnectionControl`，与 Providers/Sources 同一件）：
+                       配好了是开关；坏了不换控件，旁边一颗红点。 */
+                    <ConnectionControl
+                      busy={pending === agent.name}
+                      checked={agent.enabled}
+                      configureLabel={s.setup}
+                      error={broken}
+                      errorTitle={reason}
+                      mode="toggle"
+                      onToggle={next => void toggle(agent, next)}
+                      toggleLabel={`${s.allowSwitch} · ${agent.name}`}
+                    />
+                  ) : (
+                    <Button
+                      aria-expanded={guide === agent.name}
+                      aria-label={`${s.setup} · ${agent.name}`}
+                      onClick={() => {
+                        setGuide(current => (current === agent.name ? '' : agent.name))
+                        void launchLogin(agent)
+                      }}
+                      size="icon-sm"
+                      title={reason}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  )}
+                </div>
               }
               below={
                 /* 只留「点开加号之后的那句引导」——那是这颗控件的内容，不是状态句。

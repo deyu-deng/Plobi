@@ -8,14 +8,40 @@
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { OffloadSettings } from './offload-settings'
 import type * as OffloadApi from './offload/api'
 import type { OffloadPayload } from './offload/api'
 
+// Radix 的下拉要 pointer-capture / scrollIntoView / ResizeObserver，jsdom 一个都没有；
+// 补上这几样，下拉才开得了（与 approval.test.tsx 同一套办法）。
+beforeAll(() => {
+  const proto = window.HTMLElement.prototype as unknown as Record<string, () => unknown>
+
+  const stubs: Record<string, () => unknown> = {
+    hasPointerCapture: () => false,
+    releasePointerCapture: () => undefined,
+    scrollIntoView: () => undefined,
+    setPointerCapture: () => undefined
+  }
+
+  for (const [name, fn] of Object.entries(stubs)) {
+    proto[name] ??= fn
+  }
+
+  if (!('ResizeObserver' in window)) {
+    ;(window as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  }
+})
+
 const getOffloadAgents = vi.fn()
 const startOffloadLogin = vi.fn()
+const setOffloadAgentAccount = vi.fn()
 
 vi.mock('./offload/api', async () => {
   const actual = await vi.importActual<typeof OffloadApi>('./offload/api')
@@ -23,7 +49,8 @@ vi.mock('./offload/api', async () => {
   return {
     ...actual,
     getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh),
-    startOffloadLogin: (name: string) => startOffloadLogin(name)
+    startOffloadLogin: (name: string) => startOffloadLogin(name),
+    setOffloadAgentAccount: (name: string, account: string) => setOffloadAgentAccount(name, account)
   }
 })
 
@@ -31,6 +58,8 @@ const payload: OffloadPayload = {
   agents: [
     {
       name: 'qoder',
+      accounts: [],
+      selected_account: '',
       dispatch_ready: true,
       install: { command: '', package: '', homepage: '', binary: 'qodercli', note: '这台机器上是 node 全局包 @qoder-ai/qodercli；registry 上查不到这一家', verified: false },
       installed: true,
@@ -57,6 +86,12 @@ const payload: OffloadPayload = {
     },
     {
       name: 'codebuddy',
+      // 多账号（11-16）：这一族下面有两个身份；厂商当前登录着的是第一个。
+      accounts: [
+        { id: '2fface12-fe18-4517-a6f7-48009aa628c8', label: '190****0997', current: true },
+        { id: '8fabe04c-3f5f-4851-b9d6-43d3b63256d2', label: '8fabe04c', current: false }
+      ],
+      selected_account: '',
       dispatch_ready: true,
       install: { command: 'npm i -g @tencent-ai/codebuddy-code', package: '@tencent-ai/codebuddy-code', homepage: 'https://cnb.cool/codebuddy/codebuddy-code', binary: 'codebuddy', note: '', verified: true },
       installed: true,
@@ -76,6 +111,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'agy',
+      accounts: [],
+      selected_account: '',
       dispatch_ready: true,
       install: null,
       installed: false,
@@ -95,6 +132,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'kiro',
+      accounts: [],
+      selected_account: '',
       dispatch_ready: true,
       install: { command: '', package: '', homepage: 'https://kiro.dev/docs', binary: 'kiro-cli', note: '官方安装器（不在 npm）', verified: true },
       installed: true,
@@ -114,6 +153,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'qwen',
+      accounts: [],
+      selected_account: '',
       dispatch_ready: true,
       install: { command: 'npm i -g @qwen-code/qwen-code', package: '@qwen-code/qwen-code', homepage: 'https://github.com/QwenLM/qwen-code', binary: 'qwen', note: '', verified: true },
       installed: true,
@@ -133,6 +174,8 @@ const payload: OffloadPayload = {
     },
     {
       name: 'amp',
+      accounts: [],
+      selected_account: '',
       installed: false,
       binary: '',
       version: '',
@@ -344,4 +387,46 @@ describe('settings → offload', () => {
     expect(startOffloadLogin).not.toHaveBeenCalledWith('amp')
   })
 
+  // 用户 11-16：「一家一行，账号做下拉」＋「我希望可以有多账号体系」。
+  it('一家一行，账号做下拉：只有这一族有账号时，那一行才多一颗下拉', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('CodeBuddy')).toBeTruthy())
+
+    // 全屏**只有这一颗**账号下拉（其余几家没做多账号 ⇒ 一个字都不多）。
+    const triggers = screen.getAllByLabelText(/^Account · /)
+    expect(triggers.length).toBe(1)
+
+    // 它显示的是这一族**当前登录着**的那个身份（没替主人挑别的）。
+    expect(triggers[0].textContent).toContain('190****0997')
+  })
+
+  it('选了哪一个身份就记哪一个', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    setOffloadAgentAccount.mockResolvedValue(undefined)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('CodeBuddy')).toBeTruthy())
+
+    const trigger = screen.getAllByLabelText(/^Account · /)[0]
+
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+
+    // 选项在 portal 里（`role="option"`）。选中走 Radix 的**键盘那条路**
+    // （`SELECTION_KEYS`＝Enter／空格）⇒ 这也正是键盘用户选它的方式。
+    const option = await waitFor(() => {
+      const found = [...document.querySelectorAll('[role="option"]')].find(node =>
+        (node.textContent || '').includes('8fabe04c')
+      )
+
+      expect(found).toBeTruthy()
+
+      return found as HTMLElement
+    })
+
+    fireEvent.keyDown(option, { key: 'Enter' })
+
+    await waitFor(() =>
+      expect(setOffloadAgentAccount).toHaveBeenCalledWith('codebuddy', '8fabe04c-3f5f-4851-b9d6-43d3b63256d2')
+    )
+  })
 })

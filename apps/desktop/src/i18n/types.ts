@@ -355,6 +355,12 @@ export interface Translations {
       installPage: string
       installThen: string
       notWired: string
+      /** 这一族那一行的账号下拉（多账号体系，11-16）。 */
+      accountLabel: string
+      /** 厂商那边当前登录着的那一个（在下拉里标出来）。 */
+      accountCurrent: string
+      /** 这一族有几个身份（进悬停，不上屏）。 */
+      accountTip: (count: number) => string
       loginGuide: string
       notInstalled: string
       sessionsTitle: string

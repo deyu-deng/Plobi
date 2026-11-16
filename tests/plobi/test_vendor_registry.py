@@ -325,6 +325,71 @@ def test_the_channel_table_shape_did_not_change():
     assert vr.EXTERNAL_AGENTS["codebuddy"].binary_name == "codebuddy"
 
 
+# ── 第六张出口表：多账号（11-16）──────────────────────────────────────
+
+def test_adding_one_row_grows_the_account_table_too():
+    """加一行 ⇒ **多账号那张表**也长出这一家（读它的规矩写在那一行里）。
+
+    用户 11-16：「其实我希望可以有多账号体系。」⇒ 多账号**不是一个按厂商分叉的 if**，
+    是真源表里的一族事实。
+    """
+    rows = vr.VENDOR_ROWS + (
+        vr.VendorRow(
+            id="acme",
+            binary_name="acme",
+            command_env="",
+            extra_args_env="",
+            accounts_rule=vr.AccountRule(files=("home:.acme|accounts.json",)),
+        ),
+    )
+
+    grown = vr.account_rules(rows)
+
+    assert "acme" in grown
+    assert grown["acme"].files == ("home:.acme|accounts.json",)
+
+
+def test_the_account_table_is_exactly_what_the_one_table_derives():
+    for name, derive, current in OUTLET_TABLES + (
+        ("安装事实表", vr.install_specs, vr.INSTALL_SPECS),
+        ("多账号表", vr.account_rules, vr.ACCOUNT_RULES),
+    ):
+        assert current == derive(vr.VENDOR_ROWS), f"{name}：与真源表对不上"
+
+
+def test_a_family_without_an_account_rule_has_no_entry_in_the_account_table():
+    """没登记规矩的那一族 ⇒ **不进那张表**（不是空规则）。"""
+    for row in vr.VENDOR_ROWS:
+        if not row.accounts_rule:
+            assert row.id not in vr.ACCOUNT_RULES, f"{row.id}：没登记规矩却进了多账号表"
+
+
+def test_the_codebuddy_family_registers_its_credential_handover():
+    """**凭据交接的入口写在表里**（厂商认哪个环境变量）⇒ 读取器里没有按厂商分叉的代码。
+
+    11-16 现读厂商包：非交互的派活腿吃不下它自己那条交互式切换
+    （``/login``＝「Switch Tencent Cloud CodeBuddy accounts」）⇒ 走它给非交互进程留的
+    那个入口：一个**凭据快照文件**的路径。
+    """
+    rule = vr.ACCOUNT_RULES["codebuddy"]
+
+    assert rule.credential_env == "CODEBUDDY_AUTH_SNAPSHOT_PATH"
+    assert rule.credential_kind == "session"
+    assert rule.account_key == "account"
+    assert rule.auth_key == "auth"
+    # 三个身份文件 = 这一族里三个产品各存各的那一份（次序 = 产品次序）。
+    assert len(rule.files) == 3
+    assert rule.files[0].endswith("Tencent-Cloud.coding-copilot.info")
+
+
+def test_the_channel_spec_shape_still_did_not_change():
+    """加了多账号那一族 ⇒ **公共形状一个字不许改**（``ExternalAgentSpec`` 照旧）。"""
+    names = [f.name for f in dataclasses.fields(vr.ExternalAgentSpec)]
+
+    assert "accounts" not in names
+    assert "accounts_rule" not in names
+
+
 # ── 标题那两个旋钮（11-15 现读修）──────────────────────────────────────
 
 def test_the_vendor_named_title_is_a_knob_not_a_vendor_branch():

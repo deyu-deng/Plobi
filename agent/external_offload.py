@@ -102,6 +102,35 @@ from agent.vendor_registry import (  # noqa: F401  （re-export：公共形状�
 
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"
 
+
+def read_accounts(vendor: str) -> list[dict[str, Any]]:
+    """一"族"客席的**账号清单**（多账号体系，11-16）。
+
+    账号在**盘上**、读它的规矩在真源表 ⇒ 这里只做一次**懒导入**
+    （底座层不把 ``plobi`` 那棵树拉进来）。
+    """
+    try:
+        from plobi.delegation.external_accounts import read_accounts as _read
+    except Exception:  # noqa: BLE001 - 读不到就当这一族没做多账号
+        return []
+    return _read(vendor)
+
+
+def _apply_account_env(agent: str, env: dict[str, str]) -> tuple[str, Any]:
+    """把主人选的那个身份的凭据交给厂商（**凭据交接**）。
+
+    返回 ``(身份标识, 快照文件路径)``；没交出去就是 ``("", None)``。
+    **交不出去不许把整趟派活拖垮**——那只是「这一趟用它自己当前登录的那个」。
+    """
+    try:
+        from plobi.delegation.external_accounts import apply_account_env
+    except Exception:  # noqa: BLE001 - 这一层不在就当没选身份
+        return "", None
+    try:
+        return apply_account_env(agent, env)
+    except Exception:  # noqa: BLE001 - 交不出去不是错误状态
+        return "", None
+
 #: Where an offload child finds the proxy. Deliberately NOT a literal
 #: 127.0.0.1:7890 — that is this box's dev-time Clash port and changes with the
 #: network. Unset, we fall through to the repo's ONE proxy reader.
@@ -150,6 +179,9 @@ class OffloadResult:
     #: 这一趟是谁派的（名册里那一行的名字；空 = L1 那一轮，名册里没有那一行）。
     #: 回执**不发给它**——回执只进台账；这一格是"该向谁交代"的读数。
     reply_to: str = ""
+    #: 这一趟**用的是哪一个身份**（多账号体系，11-16）。空 = 厂商用它自己当前登录的那个
+    #: （主人没选，或这一族没做多账号）——**读数不是许诺**：厂商认不认那份凭据是它那边的事。
+    account: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -978,6 +1010,9 @@ def run_task(
     # 从 Qoder Desktop 里派活时，子进程会继承那三个 SDK 变量，CLI 一看就拒普通调用
     # （`sdk_invalid_args`）。洗掉它的条件是**结构性事实**，写在表里，不是 if 分支。
     scrub_child_env(agent, env)
+    # 多账号：主人选的那个身份 ⇒ 把它的凭据交给厂商（厂商认哪个入口写在真源表那一行）。
+    # 没选 ⇒ 什么都不交，厂商用它自己当前登录的那个（行为一个字不变）。
+    account_id, snapshot_path = _apply_account_env(agent, env)
     if reply_file is not None:
         env[REPLY_FILE_ENV] = str(reply_file)
     proxy, proxy_source = resolve_proxy()
@@ -1035,7 +1070,7 @@ def run_task(
             error=f"external agent did not finish within {timeout:.0f}s"
                    + (f"（{tree_note}）" if tree_note else ""),
             job=job, reply=late_reply, reply_status=late_status or "not_filed",
-            reply_to=reply_to,
+            reply_to=reply_to, account=account_id,
         )
     except OSError as exc:
         return fail(f"cannot start {binary}: {exc}")
@@ -1043,6 +1078,9 @@ def run_task(
         if task_file is not None:
             with contextlib.suppress(OSError):
                 task_file.unlink(missing_ok=True)
+        if snapshot_path is not None:
+            with contextlib.suppress(OSError):
+                Path(str(snapshot_path)).unlink(missing_ok=True)
     duration = time.time() - started
 
     text, usage, external_session, external_session_source = _parse_envelope(completed.stdout or "")
@@ -1092,6 +1130,7 @@ def run_task(
         proxy=proxy, proxy_source=proxy_source,
         external_session=external_session, external_session_source=external_session_source,
         job=job, reply=reply, reply_status=reply_status, reply_to=reply_to,
+        account=account_id,
     )
 
 
