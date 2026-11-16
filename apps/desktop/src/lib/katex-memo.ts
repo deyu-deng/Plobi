@@ -204,7 +204,12 @@ function lazyPlaceholder(value: string, displayMode: boolean): ElementContent {
     properties: {
       className: displayMode ? ['katex-lazy', 'katex-lazy-display'] : ['katex-lazy'],
       'data-katex-display': displayMode ? 'true' : 'false',
-      'data-katex-lazy': value
+      'data-katex-lazy': value,
+      // 占位自己的样子：**透明**（源码不给人看）但**占住位置**——排好后那一跳才不刺眼。
+      // 样式内联在这儿：这几行只服务这一族，不去动共享的样式表（那一档别线在认领）。
+      style: displayMode
+        ? 'color: transparent; display: block; min-height: 1.6em'
+        : 'color: transparent; display: inline-block; min-height: 1.2em'
     },
     children: [{ type: 'text', value }]
   }
