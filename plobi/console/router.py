@@ -29,7 +29,7 @@ layer is added and no figure is invented when the table has nothing to say.
 
 Session attribution (WP-BE-3, ARCH-RULINGS 2026-09-02 裁定 1): sessions belong
 to a **profile** (one ``state.db`` per profile home), and agent → profile is 1:1
-(``AgentEntry.profile_name``), so an agent's ``sessionId`` = the most recently
+(``AgentEntry.agent_id``), so an agent's ``sessionId`` = the most recently
 active session in its profile's own ``state.db`` (read-only query). Chat itself
 does NOT flow through here — the desktop uses the base session store + gateway
 RPC (裁定 2; no ``POST /api/chat`` in MVP).
@@ -76,9 +76,10 @@ from plobi.agents.registry import (
     agent_navigability,
     AGENT_ID_RE,
     load_registry,
-    profile_name_blocker,
+    agent_id_blocker,
     registration_blocker,
 )
+from plobi.agents.naming import naming_for
 from plobi.routing.models import KNOWN_ROLES, PRINCIPAL as PRINCIPAL_ROLE
 from plobi.delegation.offload_contract import resume_argv_map
 from plobi.delegation.tracker import (
@@ -514,6 +515,9 @@ def agent_row(entry: AgentEntry, *, working: bool = False) -> dict:
     row: dict = {
         "id": entry.name,
         "name": agent_display_name(entry),
+        # 英文名单独一格透出：前端编辑表单要能把它读回那个框里，否则打开
+        # 「编辑」只看到中文名，一保存就把英文名洗成空。
+        "displayNameEn": entry.display_name_en,
         "status": status_for(entry.name),
         "model": model_for(entry),
         # 裁定 166 决定二（WP-AGENT-MODEL-PICKER-MOUNT 第一档）：`model` 是**路由解析后的生效值**，
@@ -950,6 +954,11 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     # 到 entry.name（slug id）。不做 title-case、不截断——「iPhone 项目」就
     # 存这个。
     display = str(body.get("name") or "").strip()
+    # 2026-11-16（i18n 定名刀）：``name`` 是中文显示名，``displayNameEn`` 是英文名。
+    # 两个都只是「名字」的不同语言写法；门牌 ``id`` 由英文名派生（桌面端
+    # ``agentIdFromEnglish`` 折成小写连字符），后端这里只校验 ``id`` 本身的格式，
+    # 不替前端做翻译。
+    display_en = str(body.get("displayNameEn") or "").strip()
     blurb = str(body.get("description") or "").strip()
     mind_subtree = str(body.get("mindSubtree") or "").strip()
 
@@ -1026,6 +1035,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         name=agent_id,
         role=role,
         description=blurb,
+        display_name_en=display_en,
         display_name=display,
         mind_subtree=mind_subtree,
         category=category,
@@ -1049,7 +1059,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     # R-071：项目分身叫 ``Plobi`` 这类记录登记了也永远问不到——它的 profile 家
     # 撞上保留名，永远建不出来。在这道门就说清「改哪一格」，别把底座那句
     # "Profile name 'plobi' is reserved" 原样丢给人，也别先落一条查不着的记录。
-    blocker = profile_name_blocker(proposed)
+    blocker = agent_id_blocker(proposed)
     if blocker:
         return _error(400, blocker)
 
@@ -1269,7 +1279,7 @@ def _archive_profile_dir(entry: AgentEntry, *, move: bool) -> Optional[Path]:
     except ImportError:
         return None
     try:
-        src = get_profile_dir(entry.profile_name)
+        src = get_profile_dir(entry.agent_id)
     except Exception:
         # Not KeyError specifically: an empty or illegal profile name raises
         # ValueError (rows that derive no runtime slug have no profile at all), and a
@@ -1300,6 +1310,33 @@ def _archive_profile_dir(entry: AgentEntry, *, move: bool) -> Optional[Path]:
     return dest
 
 
+@router.post("/agents/suggest-name", name="suggest_agent_name")
+async def suggest_agent_name_route(request: Request):
+    """POST /api/agents/suggest-name — 中文名 → 英文名 → 门牌（i18n 定名刀）.
+
+    新建表单里用户只填中文名，英文名那个框靠这里自动预填（可改）。翻译失败
+    不是错：回 ``englishName: ""`` 让用户自己填，**绝不**替他编一个。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "请求体不是合法的 JSON")
+    if not isinstance(body, dict):
+        return _error(400, "请求体必须是一个对象")
+
+    name = str(body.get("name") or "").strip()
+    if not name:
+        return _error(400, "要先有个名字才能翻。")
+
+    # 默认只走本地词表（快、不联网）；前端点「重新翻译」时才允许问 LLM。
+    deep = bool(body.get("deep"))
+
+    return {
+        "ok": True,
+        "data": await run_in_threadpool(naming_for, name, allow_llm=deep),
+    }
+
+
 @router.post("/agents", name="create_agent")
 async def create_agent_route(request: Request):
     """§5 POST /api/agents — human registers one project L2 (裁定 18)."""
@@ -1321,7 +1358,7 @@ async def create_agent_route(request: Request):
 #: 会按 body **全量重建**整条 ``AgentEntry``——没带上的 role / model / provider /
 #: source_event_id 都会被清成默认。改个显示名顺手把模型覆盖抹掉，是那种"看起来
 #: 能用、过两天才发现"的坏。所以编辑走一个窄口，只碰下面这几格。
-_AGENT_PATCH_KEYS = ("displayName", "description", "icon", "color", "projectPaths")
+_AGENT_PATCH_KEYS = ("displayName", "displayNameEn", "description", "icon", "color", "projectPaths")
 
 
 def update_agent(agent_id: str, body: dict):
@@ -1343,6 +1380,10 @@ def update_agent(agent_id: str, body: dict):
         if not display:
             return _error(400, "显示名不能为空——那是左栏那一行的字。")
         changes["display_name"] = display
+    if "displayNameEn" in body:
+        # 2026-11-16（i18n 定名刀）：英文名可清空——清空即「这个 Agent 没有英文名」，
+        # 显示名回退中文名。它**不参与门牌**（门牌是 id；改名走 rename 那条专门的路）。
+        changes["display_name_en"] = str(body.get("displayNameEn") or "").strip()
     if "description" in body:
         changes["description"] = str(body.get("description") or "").strip()
     if "icon" in body:

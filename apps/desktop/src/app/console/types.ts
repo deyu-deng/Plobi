@@ -65,6 +65,12 @@ export interface AgentCreateRequest {
    * `Docs/AGENT-TASK-AGENT-DISPLAY-NAME.md`.
    */
   name?: string
+  /**
+   * 英文名（2026-11-16 i18n 定名刀）。`name` 存中文名，这一格存英文名；
+   * 显示时按语言取，缺英文名回退中文名。英文名**不参与门牌**——
+   * `id` 才是门牌，由英文名规范化而来。
+   */
+  displayNameEn?: string
   description?: string
   mindSubtree?: string
   cloneFrom?: string
@@ -133,6 +139,11 @@ export interface Agent {
   /** Qualified model id, e.g. `deepseek/deepseek-chat` (ADR-0011 routing). Absent when the role has no route. */
   model?: string
   name: string
+  /**
+   * 英文名（2026-11-16 i18n 定名刀）。空串 = 这个 Agent 没有英文名，
+   * 显示回退 `name`（中文名）。编辑表单要能把它读回输入框。
+   */
+  displayNameEn?: string
   /**
    * 主工作目录（2026-10-21 起随行透出）。与 overview 的 `projectPath` 同源
    * （名册 `project_path`），只是不再需要为「三个点 → 编辑」再打一次 overview。

@@ -1971,8 +1971,6 @@ export const zhHant = defineLocale({
     agentEditCancel: '取消',
     agentEditSaved: 'Agent 已更新。',
     agentEditFailed: '更新該 Agent 失敗：',
-    agentEditIdentityLabel: '這個名字',
-    agentEditIdentityNote: '派工、記憶、歷史都按它認人',
     agentEditIdentityChange: '改名…',
     agentEditRenameTitle: '改成「{name}」？',
     agentEditRenameBody: '會一起改過來的地方（{count} 處）：',
@@ -2047,6 +2045,9 @@ export const zhHant = defineLocale({
     newAgent: '新增智慧代理',
     newAgentLabel: '新增智慧代理',
     newAgentDesc: '智慧代理是你團隊的一員：有自己專管的事，能長期記住你的偏好。建好就能在左邊點名找它。',
+    // 2026-11-16（i18n 定名刀）：中文名只當顯示名，門牌從英文名來。
+    newAgentEnglishLabel: '英文名',
+    newAgentEnglishHelp: '它會轉成 Agent 的機器鍵（小寫、連字號）；左欄顯示的還是中文名。',
     newAgentCategoryLabel: '分類',
     newAgentCategoryHelp: {
       projects: '專案：有自己的工作資料夾，推進一件具體的事。',

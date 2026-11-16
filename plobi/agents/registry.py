@@ -393,7 +393,7 @@ class AgentEntry:
     role: str = "principal"
     # 2026-11-05（profile 连根拔 · 后端批）：这里原来是一格可填写的 ``profile`` 名
     # （``profile: str = ""  # 空 = 用 name``）。现在**没有这一格**——门牌由
-    # :func:`agent_id_for` 按 ``name`` + ``role`` 拼成（见 :attr:`profile_name`）。
+    # :func:`agent_id_for` 按 ``name`` + ``role`` 拼成（见 :attr:`agent_id`）。
     # 老形状的 ``projects.yaml`` 若还写着 ``profile:``，读盘时静默忽略，下一次
     # ``save()`` 会把那一行键自然抹掉（数据不用手改）。
     provider: str = ""  # 可选覆盖；空 = 默认路由
@@ -482,7 +482,7 @@ class AgentEntry:
     domains: tuple[str, ...] = ()
 
     @property
-    def profile_name(self) -> str:
+    def agent_id(self) -> str:
         """门牌号 = ``<role>-<name>``（全小写）；不合格时回空串。
 
         2026-11-16（i18n 定名刀）：这条属性以前是
@@ -574,6 +574,10 @@ class AgentEntry:
             data["description_auto"] = True
         if self.display_name:
             data["display_name"] = self.display_name
+        # 2026-11-16（i18n 定名刀）：英文名同样是名册里的真相，必须落盘——
+        # 只定义不写盘的话，重启一次英文名就没了，显示名悄悄退回中文名。
+        if self.display_name_en:
+            data["display_name_en"] = self.display_name_en
         if self.pace:
             data["pace"] = self.pace
         # R-012/R-013: always write category so roundtrip is faithful; the
@@ -657,6 +661,7 @@ class AgentEntry:
             description=str(raw.get("description") or ""),
             description_auto=bool(raw.get("description_auto") or False),
             display_name=str(raw.get("display_name") or ""),
+            display_name_en=str(raw.get("display_name_en") or ""),
             pace=pace,
             category=_normalize_category(raw.get("category")),
             project_path=primary,
@@ -838,7 +843,7 @@ class AgentRegistry:
     def find_case_twin(self, name: str) -> str:
         """已存在的、与 *name* 只差大小写的注册键（没有则空串）。
 
-        profile 家一律按小写名落盘（:attr:`AgentEntry.profile_name`），所以
+        profile 家一律按小写名落盘（:attr:`AgentEntry.agent_id`），所以
         ``Nymo`` 与 ``nymo`` 是**同一个家的两条记录**：问分身时两条一起命中，
         秘书谁都问不到（R-071 实测的「对上了好几个分身（Nymo、Nymo）」）。
         """
@@ -885,7 +890,7 @@ class AgentRegistry:
             twin = self.find_case_twin(entry.name)
             if twin:
                 raise RegistryError(
-                    _case_twin_message(entry.name, twin, entry.profile_name)
+                    _case_twin_message(entry.name, twin, entry.agent_id)
                 )
         # R-013: when the caller did not supply any folder binding, seed it from
         # the category default. butler stays empty (no bound folder). The
@@ -910,10 +915,10 @@ class AgentRegistry:
         return entry
 
     def _profile_taken_by_other(self, profile: str, name: str) -> bool:
-        """推荐名已经被别的条目占着 ⇒ 不许自动落，留给 ``profile_name_blocker`` 说。"""
+        """推荐名已经被别的条目占着 ⇒ 不许自动落，留给 ``agent_id_blocker`` 说。"""
         target = (profile or "").strip().lower()
 
-        return any(other.name != name and other.profile_name.strip().lower() == target
+        return any(other.name != name and other.agent_id.strip().lower() == target
                    for other in self.agents.values())
 
     def remove(self, name: str) -> bool:
@@ -1168,7 +1173,7 @@ class AgentRegistry:
 # ---------------------------------------------------------------------------
 
 
-def profile_name_blocker(entry: AgentEntry) -> str:
+def agent_id_blocker(entry: AgentEntry) -> str:
     """这条记录的 profile 家**永远建不出来**时，返回一句能行动的话（没问题返回空串）。
 
     判据只有一份：``plobi_cli.agent_identity`` 的 profile 名校验。这里加的只有「改什么」——
@@ -1234,7 +1239,7 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
 
     只看结构性事实，不看任何一句文本：归档 / 这一行有没有角色路由
     （:func:`has_agent_identity`，裁 192：身份就是名册这一行，不看盘）/ profile 名建不建得出来
-    （:func:`profile_name_blocker`）。名单与工具**必须读同一份判据**
+    （:func:`agent_id_blocker`）。名单与工具**必须读同一份判据**
     ——以前名单那条路报「有这个人」而那枚嘴报「问不到」，
     两边各判一次，秘书就只能靠试（R-072）。
 
@@ -1249,7 +1254,7 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
         )
     if not has_agent_identity(entry):
         return False, f"这一条的角色是 ``{entry.role}``，名册上还没盖章、没有路由，问不到。"
-    blocker = profile_name_blocker(entry)
+    blocker = agent_id_blocker(entry)
     if blocker:
         return False, blocker
     return True, ""
@@ -1272,7 +1277,7 @@ def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
     1. 这一行**没有角色路由**（:func:`has_agent_identity`，裁 192）——没有路由的行
        没有运行时可连，点进去只会是一张空壳。有身份的课程行
        （``role: principal`` + ``category: courses``，裁定 143②）有路由，照样可点；
-    2. ``profile_name_blocker`` 非空——保留名（名册里那条 ``Plobi`` 行的
+    2. ``agent_id_blocker`` 非空——保留名（名册里那条 ``Plobi`` 行的
        ``l2-plobi``，小写化撞上安装本身）这类永远建不出家的形状，点了就是一次
        必然失败的 spawn。
 
@@ -1284,7 +1289,7 @@ def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
         return False, "这一条已经归档。"
     if not has_agent_identity(entry):
         return False, "这一条还没有自己的运行时（名册名派生不出可路由的身份）——点进去也只会是一张空壳。"
-    blocker = profile_name_blocker(entry)
+    blocker = agent_id_blocker(entry)
     if blocker:
         return False, blocker
     return True, ""
@@ -1312,7 +1317,7 @@ def registration_blocker(registry: AgentRegistry, entry: AgentEntry) -> str:
     if creating:
         twin = registry.find_case_twin(entry.name)
         if twin:
-            return _case_twin_message(entry.name, twin, entry.profile_name)
+            return _case_twin_message(entry.name, twin, entry.agent_id)
 
     subtree = (entry.mind_subtree or "").strip()
     if subtree:
@@ -1461,7 +1466,7 @@ def entry_for_profile(profile_name: str) -> Optional[AgentEntry]:
     """按**已落地的家目录名**反查名册那一行；查不到给 None。
 
     反查而不是正查是必须的：配置读侧只知道活跃家是哪个目录（``profiles/<name>``），
-    而 ``AgentEntry.profile_name`` 是归一小写过的（见那个属性自己的说明），所以这里
+    而 ``AgentEntry.agent_id`` 是归一小写过的（见那个属性自己的说明），所以这里
     也按 casefold 比。归档行不算——它的家已经不在 ``profiles/`` 下了。
     """
     found = _registry_and_entry_for_profile(profile_name)
@@ -1491,7 +1496,7 @@ def identity_name_in_entries(entries, key: str | None) -> str:
         if getattr(entry, "archived", False):
             continue
         candidates = {entry.name, entry.name.lower()}
-        value = str(getattr(entry, "profile_name", "") or "").strip()
+        value = str(getattr(entry, "agent_id", "") or "").strip()
         if value:
             candidates.add(value)
             candidates.add(value.lower())
@@ -1573,7 +1578,7 @@ def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[Agen
     # ``ii`` 而查询串原样不动，于是「按 name 查」对这类名字永远不命中——课表那几行
     # 正是这种名字（``大学物理（甲）Ⅱ``）。这一格是身份查找，折一半等于没折。
     probe = (want or "").strip().casefold()
-    by_slug = [e for e in alive if (e.profile_name or "").casefold() == probe]
+    by_slug = [e for e in alive if (e.agent_id or "").casefold() == probe]
     if len(by_slug) == 1:
         return by_slug[0]
     if len(by_slug) > 1:
@@ -3025,7 +3030,7 @@ def ensure_l2_identity_soul(
     text exists is decided by :func:`_soul_persona_text` (the upstream stub is
     not a persona) and handed to the renderer as ``persona_written``.
     """
-    if entry.role == CONDUCTOR_ROLE or entry.profile_name == "default":
+    if entry.role == CONDUCTOR_ROLE or entry.agent_id == "default":
         return False
 
     if home is not None:

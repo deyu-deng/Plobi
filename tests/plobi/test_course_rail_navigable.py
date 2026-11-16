@@ -4,7 +4,7 @@ The 2026-10-21 symptom: every ``courses`` row rendered greyed out and
 unclickable. Root cause was a **role mislabel in the data**, not a policy
 decision: the rows carried 裁定 143②'s "identity granted" shape (``category:
 courses`` + a name that derives an ASCII slug) but their ``role`` still pointed
-at「还没有拿到身份」那一档。``AgentEntry.profile_name`` 对那种行返回 ""，于是
+at「还没有拿到身份」那一档。``AgentEntry.agent_id`` 对那种行返回 ""，于是
 ``agent_navigability`` 第一道否决开火，整列灰掉。
 
 **2026-11-15（用户裁定）**：那一档（第三个 role 值）已经物理删除。
@@ -113,7 +113,7 @@ def test_identified_course_row_is_navigable_and_askable(tmp_path, home):
     assert navigable is True, reason
     assert agent_askability(entry)[0] is True
     # The DTO field the rail consumes must carry the doorplate, not "".
-    assert entry.profile_name == "principal-ee"
+    assert entry.agent_id == "principal-ee"
 
 
 def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
@@ -155,7 +155,7 @@ def test_course_row_without_identity_stays_non_navigable(tmp_path, home):
 
     navigable, reason = agent_navigability(entry)
     assert navigable is False
-    assert entry.profile_name == ""
+    assert entry.agent_id == ""
     assert agent_askability(entry)[0] is False
 
 
@@ -179,5 +179,5 @@ def test_row_whose_name_derives_no_slug_is_not_clickable(tmp_path, home):
     )
     entry = reg.get("线性代数")
 
-    assert entry.profile_name == ""
+    assert entry.agent_id == ""
     assert agent_navigability(entry)[0] is False

@@ -128,6 +128,31 @@ export async function createAgent(req: AgentCreateRequest): Promise<Agent> {
 }
 
 /**
+ * POST /api/agents/suggest-name —— 中文名 → 英文名 → 门牌（2026-11-16 i18n 定名刀）。
+ *
+ * 新建表单里用户只填中文名，英文名那个框靠这里预填（可改）。两条路径：
+ * - 默认（`deep: false`）只过本地词表：零延迟、不联网，边打边翻不卡；
+ * - `deep: true` 才允许问 LLM（用户点「重新翻译」时）。
+ *
+ * 翻不出来时 `englishName` 是空串——那**不是错误**，是「这个框请你填」。
+ * 所以这里不抛：把一次取名做成会失败的请求，等于让信箱在翻译不通时打不开。
+ */
+export async function suggestAgentName(
+  name: string,
+  options: { deep?: boolean } = {}
+): Promise<{ agentId: string; englishName: string }> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    body: { deep: options.deep === true, name },
+    method: 'POST',
+    path: '/api/agents/suggest-name'
+  })
+
+  const data = unwrapEnvelope<{ agentId?: string; englishName?: string }>(payload)
+
+  return { agentId: data?.agentId ?? '', englishName: data?.englishName ?? '' }
+}
+
+/**
  * 归档一个 Agent（裁定 19）：它的家收进 `_archived/`，名册那一行标 archived。
  *
  * 左栏「三个点」菜单里的那一项。归档不是删除——数据还在，只是它不再出现在
@@ -156,6 +181,11 @@ export async function updateAgent(
     color?: string
     description?: string
     displayName?: string
+    /**
+     * 英文名（2026-11-16 i18n 定名刀）：与 `displayName` 是同一件东西的两种语言写法，
+     * 不是另一个身份。门牌 `agent_id` 由它派生，见 `agentIdFromEnglish`。
+     */
+    displayNameEn?: string
     icon?: string
     /** 完整清单，主文件夹在前（后端取首个驱动 terminal.cwd 与右栏挂载）。 */
     projectPaths?: string[]

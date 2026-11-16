@@ -208,17 +208,17 @@ def test_genuinely_different_homes_stay_ambiguous(fresh_registry, tmp_path):
 
 def test_a_bare_name_without_a_role_prefix_yields_an_actionable_blocker():
     """裸名（不带自己的职级前缀）没有门牌 ⇒ 派生不出运行时名字，且话术能行动。"""
-    from plobi.agents.registry import profile_name_blocker
+    from plobi.agents.registry import agent_id_blocker
 
     entry = _project("档案室")
-    assert entry.profile_name == ""
-    blocker = profile_name_blocker(entry)
+    assert entry.agent_id == ""
+    blocker = agent_id_blocker(entry)
     assert blocker
     assert "档案室" in blocker  # 点名是哪条分身
     assert "不能用" in blocker  # 说清哪儿坏了
 
     # 正常门牌不该被误判成建不出家。
-    assert profile_name_blocker(_project("principal-nymo")) == ""
+    assert agent_id_blocker(_project("principal-nymo")) == ""
 
 
 def test_agent_ask_refuses_a_分身_whose_home_can_never_be_created(fresh_registry):
@@ -233,10 +233,10 @@ def test_agent_ask_refuses_a_分身_whose_home_can_never_be_created(fresh_regist
 def test_a_plain_ascii_name_gets_its_role_prefix_for_free(fresh_registry):
     """录入侧只要英文名；门牌由 ``agent_id_for`` 补上职级前缀，幂等不重复。"""
     entry = fresh_registry.upsert(_project("Aura"))
-    assert entry.profile_name == "principal-aura"
+    assert entry.agent_id == "principal-aura"
 
     same = fresh_registry.upsert(_project("principal-aura"))
-    assert same.profile_name == "principal-aura"
+    assert same.agent_id == "principal-aura"
 
 
 def test_an_unregistered_non_ascii_name_has_no_runtime_identity(fresh_registry):
@@ -245,4 +245,4 @@ def test_an_unregistered_non_ascii_name_has_no_runtime_identity(fresh_registry):
 
     row = AgentEntry(name="未登记的中文名", role="principal", category="projects")
 
-    assert row.profile_name == ""
+    assert row.agent_id == ""

@@ -1728,7 +1728,7 @@ def _agent_id_for_profile_home(profile_home) -> str:
         from plobi.agents.registry import load_registry
 
         for entry in load_registry().entries():
-            if (entry.profile_name or "").strip() == name:
+            if (entry.agent_id or "").strip() == name:
                 return entry.name
     except Exception:
         return ""

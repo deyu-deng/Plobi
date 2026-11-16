@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     ceiling = aa.timeout_seconds()
     prompt = aa.compose_question(_QUESTION, entry=entry, asker="measure_l2_ask")
     child_argv, env, cwd = aa.build_child_command(entry, prompt, asked_by="measure")
-    print(f"目标分身 : {aa._label(entry)}  profile={entry.profile_name}")
+    print(f"目标分身 : {aa._label(entry)}  profile={entry.agent_id}")
     print(f"它的项目目录 : {cwd or '（未绑定路径）'}")
     print(f"这条腿的预算 : timeout_seconds()={ceiling}s（config 旋钮，代码里硬夹上限）")
     print(f"子进程 argv : {' '.join(str(a) for a in child_argv[:7])} …")

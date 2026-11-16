@@ -505,7 +505,7 @@ def list_roster_agents(include_archived: bool = False) -> List[dict]:
             {
                 "name": entry.name,
                 "display_name": getattr(entry, "display_name", "") or entry.name,
-                "profile_name": entry.profile_name,
+                "profile_name": entry.agent_id,
                 "role": getattr(entry, "role", None),
                 "description": getattr(entry, "description", "") or "",
                 "description_auto": bool(getattr(entry, "description_auto", False)),
@@ -1150,7 +1150,7 @@ def _roster_row(name: str):
         if entry.name.casefold() == canon.casefold():
             return registry, entry
     for entry in registry.entries():
-        if (entry.profile_name or "").casefold() == canon.casefold():
+        if (entry.agent_id or "").casefold() == canon.casefold():
             return registry, entry
     # 名册里没有这一行 ⇒ 最后问一次别名表：旧写法翻回现名再找一遍。
     try:
@@ -1166,7 +1166,7 @@ def _roster_row(name: str):
     for entry in registry.entries():
         if entry.name.casefold() == resolved.casefold():
             return registry, entry
-        if (entry.profile_name or "").casefold() == resolved.casefold():
+        if (entry.agent_id or "").casefold() == resolved.casefold():
             return registry, entry
     return registry, None
 
@@ -1244,7 +1244,7 @@ def delete_identity(name: str, yes: bool = False) -> Path:
     registry.agents.pop(entry.name, None)
     registry.save()
 
-    alias = build_alias_map().get(entry.name) or build_alias_map().get(entry.profile_name or "")
+    alias = build_alias_map().get(entry.name) or build_alias_map().get(entry.agent_id or "")
     if alias:
         try:
             remove_wrapper_script(alias)
@@ -1517,7 +1517,7 @@ def plan_identity_rename(old_name: str, new_name: str) -> Tuple[dict, List[dict]
     # 真正装着作业的是一份 `agenda/`、列表却把存储指到 `l2-agenda/`。只搬一把等于把
     # 另一把下面的作业丢在盘上没人认领——搬过来，目标位已有目录就并到旁边一个名字，
     # 调度器那份 discover 是按目录扫的，两边都照跑。
-    legacy_slug = str(getattr(entry, "profile_name", "") or "").strip()
+    legacy_slug = str(getattr(entry, "agent_id", "") or "").strip()
     legacy_key = identity_store_key(legacy_slug) if legacy_slug else ""
     if legacy_key and legacy_key != identity_store_key(old_key):
         legacy_store = home / "cron" / "agents" / legacy_key

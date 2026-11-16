@@ -2032,8 +2032,6 @@ export const ja = defineLocale({
     agentEditCancel: 'キャンセル',
     agentEditSaved: 'エージェントを更新しました。',
     agentEditFailed: 'このエージェントの更新に失敗しました：',
-    agentEditIdentityLabel: 'この名前',
-    agentEditIdentityNote: '声のかけ方も、履歴の持ち主もこの名前',
     agentEditIdentityChange: '名前を変える…',
     agentEditRenameTitle: '「{name}」に変えますか？',
     agentEditRenameBody: 'いっしょに変わる箇所（{count} か所）：',
@@ -2108,6 +2106,9 @@ export const ja = defineLocale({
     newAgent: 'エージェントを追加',
     newAgentLabel: 'エージェントを追加',
     newAgentDesc: 'エージェントはチームの一員：担当する仕事を持ち、あなたの好みを長く覚えます。作れば左のレールで名前で呼べます。',
+    // 2026-11-16（i18n 定名刀）：中国語名は表示名のみ、ID は英語名から作る。
+    newAgentEnglishLabel: '英語名',
+    newAgentEnglishHelp: 'エージェント ID（小文字・ハイフン区切り）になります。左レールには中国語名が表示されます。',
     newAgentCategoryLabel: 'カテゴリ',
     newAgentCategoryHelp: {
       projects: 'プロジェクト：作業フォルダを持ち、具体的なことを進めます。',

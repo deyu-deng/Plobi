@@ -2281,8 +2281,6 @@ export const zh: Translations = {
     agentEditCancel: '取消',
     agentEditSaved: 'Agent 已更新。',
     agentEditFailed: '更新该 Agent 失败：',
-    agentEditIdentityLabel: '这个名字',
-    agentEditIdentityNote: '派活、记忆、历史都按它认人',
     agentEditIdentityChange: '改名…',
     agentEditRenameTitle: '改成「{name}」？',
     agentEditRenameBody: '会一起改过来的地方（{count} 处）：',
@@ -2361,6 +2359,9 @@ export const zh: Translations = {
     // WP-AGENT-CREATE-UPGRADE（用户 10-16「新建 Agent 的弹窗这么简陋呀」）：
     // 弹窗顶部一句话说清 Agent 是什么——原来只有标题，用户看完不知道在建什么。
     newAgentDesc: '智能体是你团队里的一员：有自己专管的事，能长期记住你的偏好。建好就能在左边点名找它。',
+    // 2026-11-16（i18n 定名刀）：中文名只当显示名，门牌从英文名来。
+    newAgentEnglishLabel: '英文名',
+    newAgentEnglishHelp: '它会转成 Agent 的机器键（小写、连字符）；左栏显示的还是中文名。',
     newAgentCategoryLabel: '分类',
     // 每类一行帮助：选这类是干什么的（原来只有一个裸下拉）。
     newAgentCategoryHelp: {

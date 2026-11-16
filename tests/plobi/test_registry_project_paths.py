@@ -221,7 +221,7 @@ def test_stale_binding_is_rebased_onto_the_real_directory(home, tmp_path):
     # whole point of the slice. Read-time overlay off the roster row: the
     # 分身 home gets no ``config.yaml`` of its own (裁 166 / ADR-0013).
     # 2026-11-16（i18n 定名刀）：门牌 = ``<role>-<name>``。
-    profile = entry.profile_name
+    profile = entry.agent_id
     assert profile == "principal-resonote"
     profile_dir = _landing_home(tmp_path, profile)
 
@@ -327,7 +327,7 @@ def test_unresolvable_stale_binding_is_never_fabricated(home, tmp_path):
 
     # and the downstream cwd lookup still refuses to invent a workdir — while
     # the 分身 home stays empty of the file that used to carry the guess.
-    profile = entry.profile_name
+    profile = entry.agent_id
     assert profile == "principal-animation"
     profile_dir = _landing_home(tmp_path, profile)
 

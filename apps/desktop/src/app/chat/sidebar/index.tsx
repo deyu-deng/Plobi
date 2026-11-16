@@ -30,7 +30,7 @@ import { $panesFlipped, $sidebarOpen, pinSession } from '@/store/layout'
 import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
-import { createAgent } from '../../console/api'
+import { createAgent, suggestAgentName } from '../../console/api'
 import { $consoleAgents, $consoleAgentsError, $consoleAgentsLoading, $consoleL1Agent, refreshConsoleAgents } from '../../console/store/agents'
 import type { Agent } from '../../console/types'
 import {
@@ -60,13 +60,15 @@ import {
   AGENT_COLOR_CHOICES,
   AGENT_ICON_CHOICES,
   type AgentCategory,
+  agentIdFromEnglish,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
   creatableCategoryOptions,
   createAgentErrorMessage,
   DEFAULT_AGENT_CATEGORY,
   isCreateAgentCategoryBlocked,
-  isCreateAgentSubmitDisabled
+  isCreateAgentSubmitDisabled,
+  isValidEnglishName
 } from './create-agent'
 import { sidebarNavForLevel } from './nav-level'
 import { ProjectDialog } from './project-dialog'
@@ -203,6 +205,10 @@ export function ChatSidebar({
 
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [createAgentName, setCreateAgentName] = useState('')
+  const [createAgentEnglish, setCreateAgentEnglish] = useState('')
+  // 英文名框有没有被用户亲手改过。改过之后中文名再怎么变都不许机器抢回去——
+  // 用户改的是他的决定，自动翻译只负责给一个起点。
+  const [createAgentEnglishTouched, setCreateAgentEnglishTouched] = useState(false)
   const [createAgentBusy, setCreateAgentBusy] = useState(false)
   const [createAgentError, setCreateAgentError] = useState<null | string>(null)
   const [createAgentCategory, setCreateAgentCategory] = useState<AgentCategory>(DEFAULT_AGENT_CATEGORY)
@@ -244,6 +250,8 @@ export function ChatSidebar({
 
   const openCreateAgent = useCallback(() => {
     setCreateAgentName('')
+    setCreateAgentEnglish('')
+    setCreateAgentEnglishTouched(false)
     setCreateAgentError(null)
     setCreateAgentBusy(false)
     setCreateAgentCategory(DEFAULT_AGENT_CATEGORY)
@@ -256,6 +264,45 @@ export function ChatSidebar({
   // Reuses the existing remote-aware folder picker (and its dialog) — no second
   // folder UI. Cancelling the picker leaves the list exactly as it was, which
   // also means cancelling never submits anything.
+  // 中文名一改就把英文名重翻一遍，但**只在这个框还没被用户动过的时候**。
+  //
+  // 三条边界，都是踩过的：
+  // 1. 用户手改过英文名 ⇒ 完全不管（`touched`），否则边打边被改回去；
+  // 2. 350ms 防抖：中文名是逐字敲的，不能一个字一次请求；
+  // 3. 翻译不通 ⇒ 留空，绝不塞回中文名。中文名进英文名框，门牌就废了。
+  useEffect(() => {
+    if (!createAgentOpen || createAgentEnglishTouched) {
+      return
+    }
+
+    const trimmed = createAgentName.trim()
+
+    if (!trimmed) {
+      setCreateAgentEnglish('')
+
+      return
+    }
+
+    let cancelled = false
+
+    const timer = setTimeout(() => {
+      void suggestAgentName(trimmed)
+        .then(result => {
+          if (!cancelled) {
+            setCreateAgentEnglish(result.englishName)
+          }
+        })
+        .catch(() => {
+          // 翻不出来不是错误：这个框交给用户填。
+        })
+    }, 350)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [createAgentEnglishTouched, createAgentName, createAgentOpen])
+
   // WP-AGENT-CREATE-UPGRADE：追加进清单（去重），不再覆盖单值。
   const pickCreateAgentFolder = useCallback(async () => {
     const dir = await pickProjectFolder()
@@ -267,8 +314,10 @@ export function ChatSidebar({
 
   const submitCreateAgent = useCallback(async () => {
     const trimmed = createAgentName.trim()
+    const english = createAgentEnglish.trim()
 
-    if (!trimmed || createAgentBusy) {
+    // 英文名是门牌的来源（2026-11-16 i18n 定名刀）：不合法就不发请求。
+    if (!trimmed || !isValidEnglishName(english) || createAgentBusy) {
       return
     }
 
@@ -287,7 +336,7 @@ export function ChatSidebar({
       return
     }
 
-    const body = buildCreateAgentBody(trimmed, createAgentCategory, paths, {
+    const body = buildCreateAgentBody(trimmed, english, createAgentCategory, paths, {
       color: createAgentColor,
       icon: createAgentIcon
     })
@@ -572,6 +621,29 @@ export function ChatSidebar({
               />
             </div>
             <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="new-agent-english">
+                {c.newAgentEnglishLabel}
+              </label>
+              <Input
+                id="new-agent-english"
+                onChange={event => {
+                  setCreateAgentEnglishTouched(true)
+                  setCreateAgentEnglish(event.target.value)
+                }}
+                value={createAgentEnglish}
+              />
+              <p className="text-xs text-muted-foreground">
+                {isValidEnglishName(createAgentEnglish) ? (
+                  <>
+                    <span className="opacity-70">agent id:</span>{' '}
+                    <code>{agentIdFromEnglish(createAgentEnglish)}</code>
+                  </>
+                ) : (
+                  c.newAgentEnglishHelp
+                )}
+              </p>
+            </div>
+            <div className="grid gap-1.5">
               <label className="text-xs font-medium" htmlFor="new-agent-category">
                 {c.newAgentCategoryLabel}
               </label>
@@ -733,7 +805,12 @@ export function ChatSidebar({
               <Button
                 disabled={
                   createAgentBusy ||
-                  isCreateAgentSubmitDisabled(createAgentName, createAgentCategory, createAgentPaths)
+                  isCreateAgentSubmitDisabled(
+                    createAgentName,
+                    createAgentEnglish,
+                    createAgentCategory,
+                    createAgentPaths
+                  )
                 }
                 type="submit"
               >

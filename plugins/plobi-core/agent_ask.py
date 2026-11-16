@@ -278,7 +278,7 @@ def _matches(entry, needle: str) -> bool:
     ``<role>-<name>``（如 ``principal-aura``），桌面左栏、日志、脚本里传的都是它，
     问一声「问问 principal-aura」不该说找不到人。
     """
-    names = {entry.name, entry.display_name, getattr(entry, "profile_name", "")}
+    names = {entry.name, entry.display_name, getattr(entry, "agent_id", "")}
     return needle in {name.strip().casefold() for name in names if name}
 
 
@@ -345,9 +345,9 @@ def resolve_target(name: str, *, registry=None, entries=None):
     )
     if len(hits) == 1:
         entry = hits[0]
-        from plobi.agents.registry import profile_name_blocker
+        from plobi.agents.registry import agent_id_blocker
 
-        blocker = profile_name_blocker(entry)
+        blocker = agent_id_blocker(entry)
         if blocker:
             raise AskRefusal(blocker, available)
         return entry

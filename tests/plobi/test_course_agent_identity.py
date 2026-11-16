@@ -30,7 +30,7 @@ from plobi.agents.registry import (
     AgentRegistry,
     agent_askability,
     is_askable_agent,
-    profile_name_blocker,
+    agent_id_blocker,
 )
 from plobi.routing.models import DEFAULT_ROUTES, PRINCIPAL
 
@@ -66,8 +66,8 @@ def test_declared_course_entry_gets_a_nonempty_profile_name():
     """表里登记过的课 ⇒ 前端那句「能不能点」的谓词拿到非空（R-090 的可点半边）。"""
     entry = _course_entry()
 
-    assert entry.profile_name == "principal-physics-a2"
-    assert entry.profile_name.strip()  # isNavigableAgent 在 JS 侧判的就是这个
+    assert entry.agent_id == "principal-physics-a2"
+    assert entry.agent_id.strip()  # isNavigableAgent 在 JS 侧判的就是这个
 
 
 def test_an_unregistered_course_name_keeps_profile_name_empty():
@@ -75,8 +75,8 @@ def test_an_unregistered_course_name_keeps_profile_name_empty():
     空串挡着「冒充一格 profile 起后端」。数据条目没有家不是缺陷，blocker 也不该响。"""
     entry = AgentEntry(name="未登记的中文名", role=PRINCIPAL, category="courses")
 
-    assert entry.profile_name == ""
-    assert profile_name_blocker(entry)  # 有运行时的角色派生不出名字，得能行动地说
+    assert entry.agent_id == ""
+    assert agent_id_blocker(entry)  # 有运行时的角色派生不出名字，得能行动地说
     assert not is_askable_agent(entry)
 
 
@@ -86,7 +86,7 @@ def test_course_role_is_the_one_the_ask_list_and_router_both_accept():
 
     assert entry.role == ASKABLE_ROLE
     assert entry.role in DEFAULT_ROUTES
-    assert profile_name_blocker(entry) == ""
+    assert agent_id_blocker(entry) == ""
 
 
 def test_a_missing_home_no_longer_changes_askability(tmp_path, monkeypatch):
@@ -98,7 +98,7 @@ def test_a_missing_home_no_longer_changes_askability(tmp_path, monkeypatch):
     """
     entry = _course_entry()
 
-    assert not (tmp_path / "profiles" / entry.profile_name).exists()  # 前提：盘上没有这个家
+    assert not (tmp_path / "profiles" / entry.agent_id).exists()  # 前提：盘上没有这个家
     askable, reason = agent_askability(entry)
 
     assert askable is True

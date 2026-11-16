@@ -76,7 +76,7 @@ def _profile_to_agent() -> dict[str, str]:
         return {}
     out: dict[str, str] = {}
     for entry in entries:
-        profile = (getattr(entry, "profile_name", "") or "").strip()
+        profile = (getattr(entry, "agent_id", "") or "").strip()
         name = (getattr(entry, "name", "") or "").strip()
         if profile and name:
             out[profile] = name

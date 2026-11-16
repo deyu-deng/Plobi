@@ -182,9 +182,9 @@ def _apply_conductor_form() -> None:
         from plobi.agents.registry import ensure_conductor_form
 
         if ensure_conductor_form():
-            _log.info("plobi: default profile brought into L1 secretary shape")
+            _log.info("plobi: default profile brought into Conductor shape")
     except Exception as exc:
-        _log.warning("plobi: L1 secretary shape skipped: %s", exc)
+        _log.warning("plobi: Conductor shape skipped: %s", exc)
 
 
 def _resolve_restart_drain_timeout() -> float:
@@ -4639,7 +4639,7 @@ def _agent_roster_names() -> list[str]:
 
 
 def _agent_home_names() -> dict:
-    """名册 name → 已落地的家目录名（``AgentEntry.profile_name``，归一过小写）。
+    """名册 name → 已落地的家目录名（``AgentEntry.agent_id``，归一过小写）。
 
     总账的 ``sessions.agent_id`` 存的是名册 name，而桌面与 cron 那几处认的是
     家目录名——这一张表就是两者之间的反表（与 ``_agent_id_for_profile`` 正相反）。
@@ -4650,9 +4650,9 @@ def _agent_home_names() -> dict:
 
         registry = AgentRegistry.load()
         return {
-            entry.name: entry.profile_name
+            entry.name: entry.agent_id
             for entry in registry.entries()
-            if (entry.profile_name or "").strip()
+            if (entry.agent_id or "").strip()
         }
     except Exception:
         return {}
@@ -10254,6 +10254,9 @@ def _agent_id_for_profile(profile: Optional[str]) -> str:
 
     这一只**不是**行级圈定键——那一只看 :func:`_agent_scope_key`（L1 是空串那一格，
     不是"不圈"）。
+
+    2026-11-16（i18n 定名刀）：家名与门牌已经合成一个东西（``<role>-<name>``），
+    桌面传的就是名册 name，这一跳只剩「认不认得这一行」。
 
     与 tui_gateway 的 ``_agent_id_for_profile_home`` 同语义：桌面传的是家名，
     总账里存的是名册 name——这一跳就是两者之间的桥。缺口 B 之后聚合读面

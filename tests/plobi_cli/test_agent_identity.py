@@ -1613,12 +1613,12 @@ def test_registry_profile_name_is_the_roster_name_with_its_role_prefix():
     """
     from plobi.agents.registry import AgentEntry
 
-    assert AgentEntry(name="principal-aura", role="principal").profile_name == "principal-aura"
-    assert AgentEntry(name="Principal-Aura", role="principal").profile_name == "principal-aura"
-    assert AgentEntry(name="Aura", role="principal").profile_name == "principal-aura"
-    assert AgentEntry(name="default", role="principal").profile_name == "principal-default"
+    assert AgentEntry(name="principal-aura", role="principal").agent_id == "principal-aura"
+    assert AgentEntry(name="Principal-Aura", role="principal").agent_id == "principal-aura"
+    assert AgentEntry(name="Aura", role="principal").agent_id == "principal-aura"
+    assert AgentEntry(name="default", role="principal").agent_id == "principal-default"
     # 中文名仍然没有门牌：录入侧必须给英文名。
-    assert AgentEntry(name="档案室", role="principal").profile_name == ""
+    assert AgentEntry(name="档案室", role="principal").agent_id == ""
 
 
 def test_clone_subdir_files_carry_no_memory_ledgers():

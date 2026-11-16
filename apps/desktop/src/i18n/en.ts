@@ -2157,8 +2157,6 @@ export const en: Translations = {
     agentEditCancel: 'Cancel',
     agentEditSaved: 'Agent updated.',
     agentEditFailed: 'Failed to update this agent: ',
-    agentEditIdentityLabel: 'This name',
-    agentEditIdentityNote: 'How it gets addressed, and who its history belongs to',
     agentEditIdentityChange: 'Rename…',
     agentEditRenameTitle: 'Rename to “{name}”?',
     agentEditRenameBody: 'What moves with it ({count} places):',
@@ -2238,6 +2236,9 @@ export const en: Translations = {
     // saying what an agent actually is — it used to be a bare title.
     newAgentDesc:
       'An agent is a member of your team: it owns one kind of work and remembers your preferences over time. Create it and you can call on it by name in the left rail.',
+    // 2026-11-16（i18n 定名刀）：中文名只当显示名，门牌从英文名来。
+    newAgentEnglishLabel: 'English name',
+    newAgentEnglishHelp: 'Becomes the agent id (lowercase, hyphenated). The left rail keeps showing the Chinese name.',
     newAgentCategoryLabel: 'Category',
     newAgentCategoryHelp: {
       projects: 'Project: has its own work folder and drives one concrete thing forward.',

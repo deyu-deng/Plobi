@@ -1845,8 +1845,6 @@ export interface Translations {
     agentEditCancel: string
     agentEditSaved: string
     agentEditFailed: string
-    agentEditIdentityLabel: string
-    agentEditIdentityNote: string
     agentEditIdentityChange: string
     agentEditRenameTitle: string
     agentEditRenameBody: string
@@ -1935,6 +1933,13 @@ export interface Translations {
      * 弹窗顶部一句话说清 Agent 是什么——原来只有标题。
      */
     newAgentDesc: string
+    /**
+     * 2026-11-16（i18n 定名刀）：中文名是显示名，机器键（agent_id）从英文名来。
+     * 所以新建弹窗里是两个框：中文名 + 英文名（后端预填，用户可改）。
+     */
+    newAgentEnglishLabel: string
+    /** 英文名框下面那行说明：它会变成什么，以及左栏显示什么。 */
+    newAgentEnglishHelp: string
     /** WP-CREATE-CAT: label for the category <select> in the new-agent dialog. */
     newAgentCategoryLabel: string
     /** WP-AGENT-CREATE-UPGRADE: per-category one-line help under the <select>. */

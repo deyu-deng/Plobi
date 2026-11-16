@@ -296,7 +296,7 @@ def agenda_state_db(home: Path | None = None) -> Path:
 
             for entry in load_registry().entries():
                 if entry.role != CONDUCTOR:
-                    profile = entry.profile_name
+                    profile = entry.agent_id
                     break
         except Exception:
             pass

@@ -17,14 +17,17 @@ import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { pickProjectFolder } from '@/store/projects'
 
-import { AGENT_COLOR_CHOICES, AGENT_ICON_CHOICES } from './create-agent'
+import { AGENT_COLOR_CHOICES, AGENT_ICON_CHOICES, agentIdFromEnglish, isValidEnglishName } from './create-agent'
 
 /**
  * 「三个点 → 编辑这个 Agent」（用户 10-21：「可以编辑更多信息，比如修改添加
  * 工作目录。重命名等等」）。
  *
- * 能改的就是**人和这个 Agent 的关系**，不是它的身份：
- *   - 显示名（左栏那行字；`id` / profile 家不动——改了会把会话历史孤儿化）
+ * 2026-11-16（i18n 定名刀）之后的规矩：这里只有**名字**，分两种语言写法，没有身份/门牌。
+ *   - 中文名（`displayName`）：左栏那行字
+ *   - 英文名（`displayNameEn`）：英文界面里那行字，同时是门牌 `agent_id` 的唯一来源
+ * 门牌不让手填——用户想改门牌就改英文名，`agentIdFromEnglish` 派生出新的 `agent_id`，
+ * 派活、记忆、历史跟着换（还是要走一遍 dry-run 清单再确认，见 `askRename`）。
  *   - 图标与颜色（创建时选过、左栏以前从不渲染，现在两边一致）
  *   - 工作目录清单（主文件夹在前；后端取首个驱动右栏挂载）
  *
@@ -47,11 +50,13 @@ export function AgentEditDialog({
   const [color, setColor] = useState(agent.color ?? '')
   const [paths, setPaths] = useState<string[]>(agent.projectPaths ?? (agent.projectPath ? [agent.projectPath] : []))
   const [busy, setBusy] = useState(false)
-  // 身份名那一格：改它动的是身份，不是"怎么叫它"。确认面板要的那份清单在点下
-  // 「改名…」之后才向后端要（dry-run），拿到才显示——不预告一个可能失败的清单。
-  const [identity, setIdentity] = useState(agent.id)
+  // 英文名那一格：它既是英文界面里的那行字，也是门牌 `agent_id` 的来源，所以用户
+  // 想改门牌就改这里。确认面板要的那份清单在点下「改名…」之后才向后端要（dry-run），
+  // 拿到才显示——不预告一个可能失败的清单。
+  const [englishName, setEnglishName] = useState(agent.displayNameEn ?? '')
   const [renameSteps, setRenameSteps] = useState<string[] | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const nextId = agentIdFromEnglish(englishName)
 
   // 每次打开都从名册现状回填：攒着上一次关窗时的半截输入再来一次很吓人。
   useEffect(() => {
@@ -60,15 +65,15 @@ export function AgentEditDialog({
     }
 
     setDisplayName(agent.name || agent.id)
-    setIdentity(agent.id)
+    setEnglishName(agent.displayNameEn ?? '')
     setRenameSteps(null)
     setIcon(agent.icon ?? '')
     setColor(agent.color ?? '')
     setPaths(agent.projectPaths ?? (agent.projectPath ? [agent.projectPath] : []))
-  }, [agent.color, agent.icon, agent.id, agent.name, agent.projectPath, agent.projectPaths, open])
+  }, [agent.color, agent.displayNameEn, agent.icon, agent.id, agent.name, agent.projectPath, agent.projectPaths, open])
 
   const askRename = async () => {
-    const next = identity.trim()
+    const next = nextId
 
     if (!next || next === agent.id) {
       return
@@ -88,7 +93,7 @@ export function AgentEditDialog({
   }
 
   const confirmRename = async () => {
-    const next = identity.trim()
+    const next = nextId
 
     setRenaming(true)
 
@@ -126,6 +131,9 @@ export function AgentEditDialog({
       await updateAgent(agent.id, {
         color,
         displayName: name,
+        // 英文名跟着这张表单一起存：它就是门牌来源，空了会让英文界面回落到中文名
+        // （后端允许空串，语义是「没有英文名」）。手门牌那一步在下面的「改名…」。
+        displayNameEn: englishName.trim(),
         icon,
         // 只有这张表单上真能改的目录才送；一个都没绑的（butler）不送这一格，
         // 免得把「本来就没有」写成「清空」。
@@ -269,18 +277,28 @@ export function AgentEditDialog({
 
           <div className="flex flex-col gap-1.5">
             <label className="flex flex-col gap-1">
-              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.agentEditIdentityLabel}</span>
+              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.newAgentEnglishLabel}</span>
               <input
                 className="h-8 w-full rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 text-sm outline-none focus:border-(--ui-stroke-secondary)"
                 onChange={event => {
-                  setIdentity(event.target.value)
+                  setEnglishName(event.target.value)
                   setRenameSteps(null)
                 }}
-                value={identity}
+                value={englishName}
               />
             </label>
-            <span className="text-[0.6875rem] text-(--ui-text-quaternary)">{c.agentEditIdentityNote}</span>
-            {identity.trim() !== agent.id && !renameSteps && (
+            {/* 门牌不是另一件东西，就是这个英文名折出来的那一串，所以直接摊在眼前：
+                用户改一个字就看见 agent id 跟着变，不必猜。 */}
+            <span className="text-[0.6875rem] text-(--ui-text-quaternary)">
+              {isValidEnglishName(englishName) ? (
+                <>
+                  agent id: <code className="rounded bg-(--ui-control-hover-background) px-1">{nextId}</code>
+                </>
+              ) : (
+                c.newAgentEnglishHelp
+              )}
+            </span>
+            {isValidEnglishName(englishName) && nextId !== agent.id && !renameSteps && (
               <button
                 className="self-start rounded-md border border-(--ui-stroke-tertiary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-60"
                 disabled={busy}
@@ -297,7 +315,7 @@ export function AgentEditDialog({
                 className="flex flex-col gap-1.5 rounded-md border border-(--ui-stroke-secondary) p-2"
                 role="alertdialog"
               >
-                <span className="text-xs font-medium">{c.agentEditRenameTitle.replace('{name}', identity.trim())}</span>
+                <span className="text-xs font-medium">{c.agentEditRenameTitle.replace('{name}', nextId)}</span>
                 <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
                   {c.agentEditRenameBody.replace('{count}', String(renameSteps.length))}
                 </span>

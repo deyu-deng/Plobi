@@ -391,7 +391,7 @@ class PluginContext:
     # -- profile awareness --------------------------------------------------
 
     @property
-    def profile_name(self) -> str:
+    def agent_id(self) -> str:
         """Return the active Plobi profile name (e.g. ``"default"``).
 
         Derived from ``PLOBI_HOME`` via

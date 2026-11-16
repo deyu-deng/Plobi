@@ -197,7 +197,7 @@ def test_round_trip_preserves_entries(home):
     assert set(reloaded.names()) == {"principal-agenda", "principal-srtp"}
     assert reloaded.get("principal-agenda").disabled_skills == ("a", "b")
     assert reloaded.get("principal-agenda").description == "日程闭环"
-    assert reloaded.get("principal-srtp").profile_name == "principal-srtp"
+    assert reloaded.get("principal-srtp").agent_id == "principal-srtp"
 
 
 def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
@@ -278,7 +278,7 @@ def test_courses_category_can_bind_folders(home):
 def test_missing_profile_field_falls_back_to_name(home):
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="principal-x"))
-    assert reg.get("principal-x").profile_name == "principal-x"
+    assert reg.get("principal-x").agent_id == "principal-x"
 
 
 # ---------------------------------------------------------------------------
@@ -359,11 +359,11 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # （`_effective_config(spawn_env, profile)` 把 PLOBI_HOME 指到
     # ``profiles/<profile>``，`ensure_plobi_home()` 对不存在的 named home 是
     # 拒绝而非播种）。所以家由测试自己预建——模拟「显式 -p 过的机器」。
-    # 注意用 ``_slug_of(result)``（那一行没显式传 profile，``profile_name``
+    # 注意用 ``_agent_id_of(result)``（那一行没显式传 profile，``profile_name``
     # 回退成名册 name「agenda」），别硬编码「l2-agenda」。
     # 「名册加一行不建家」那条不变量由 test_registry_no_home.py 钉，这里改回钉
     # **不往家里写**（本用例真正的主题：复印件）。
-    profile_dir = _seed_profile_dir(spawn_env, _slug_of(result))
+    profile_dir = _seed_profile_dir(spawn_env, _agent_id_of(result))
 
     from plobi.routing import ModelRouter
     from plobi.routing.models import shared_config_path
@@ -384,7 +384,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # 判据①的另一半：也不许带配置文件复印件
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
     # 名册行上的覆盖仍生效——读时叠：只有这个分身读到它自己那一行，顶层照旧
-    profile_model = _effective_config(spawn_env, _slug_of(result))["model"]
+    profile_model = _effective_config(spawn_env, _agent_id_of(result))["model"]
     assert profile_model["provider"] == "deepseek"
     assert profile_model["default"] == "deepseek-chat"
     assert _effective_config(spawn_env)["model"] == _CONFIGURED_DEFAULT
@@ -687,7 +687,7 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     reg.save()
     result = reg.spawn("principal-plobi")
 
-    assert _slug_of(result) == "principal-plobi"
+    assert _agent_id_of(result) == "principal-plobi"
     assert registry_mod.project_cwd_for_profile("principal-plobi") == str(project_dir.absolute())
     # 生效链上同样读得到（不只那个查询函数）：名册行覆盖 → 顶层 → 出厂默认。
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
@@ -723,7 +723,7 @@ def _resolvable_provider_name() -> str:
     raise AssertionError("注册表里没有一个自反的 provider 名 —— 闸门无从验证")
 
 
-def _slug_of(result: dict) -> str:
+def _agent_id_of(result: dict) -> str:
     """spawn 返回体里的身份 → 它的门牌（家目录名 / ``-p`` 参数那种写法）。
 
     2026-11-16（i18n 定名刀）：门牌就是名册 name 本身，没有派生层可借用，
@@ -731,7 +731,7 @@ def _slug_of(result: dict) -> str:
     """
     from plobi.agents.registry import AgentEntry
 
-    return AgentEntry(name=result["name"], role=result.get("role") or "principal").profile_name
+    return AgentEntry(name=result["name"], role=result.get("role") or "principal").agent_id
 
 
 def _seed_profile_dir(home, profile: str) -> Path:
@@ -769,9 +769,9 @@ def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
     assert "profile_dir" not in result
     assert "-p" not in result["command"]
     # 这一行要按家读配置 ⇒ 家由测试预建；spawn 不许往里写任何东西。
-    profile_dir = _seed_profile_dir(spawn_env, _slug_of(result))
+    profile_dir = _seed_profile_dir(spawn_env, _agent_id_of(result))
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
-    model = _effective_config(home, _slug_of(result))["model"]
+    model = _effective_config(home, _agent_id_of(result))["model"]
     assert model["provider"] == provider
     assert model["default"] == "a-model"
     # 「配一次大家用」：顶层那一份没被这一行带跑。
@@ -846,15 +846,15 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
 
     result = reg.spawn("principal-proj")
 
-    cfg = _effective_config(home, _slug_of(result))
+    cfg = _effective_config(home, _agent_id_of(result))
     assert cfg["terminal"]["cwd"] == str(project_dir.absolute())
     assert cfg["model"] == _effective_config(home)["model"] == _CONFIGURED_DEFAULT
     assert not (profile_dir / "config.yaml").exists()
     assert result["routing_ok"] is True
 
 
-def test_profile_name_is_normalized_to_the_on_disk_id():
-    assert AgentEntry(name="Principal-Aura", role="principal").profile_name == "principal-aura"
+def test_agent_id_is_normalized_to_the_on_disk_id():
+    assert AgentEntry(name="Principal-Aura", role="principal").agent_id == "principal-aura"
 
 
 # ---------------------------------------------------------------------------
@@ -892,7 +892,7 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
 
     result = reg.spawn("principal-proj")
 
-    model = _effective_config(home, _slug_of(result))["model"]
+    model = _effective_config(home, _agent_id_of(result))["model"]
     assert model == _CONFIGURED_DEFAULT, "分身被盖上了它没被选择的模型"
     rendered = json.dumps(model, ensure_ascii=False)
     assert "bezel" not in rendered, rendered
@@ -924,21 +924,21 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     assert _effective_config(home)["model"] == _CONFIGURED_DEFAULT
 
 
-def test_profile_name_requires_its_own_role_prefix():
+def test_agent_id_requires_its_own_role_prefix():
     """门牌就是 name 自己，但必须带着自己那条职级前缀。
 
     2026-11-16（i18n 定名刀）：slug 派生层与保留名闸一起删除。``Default``
     不再需要特批——它是 ``principal-default``，跟 L1 那枚 ``default`` 不是一把门牌。
     前缀是「Conductor 与 Principal 允许同名」的唯一隔离依据，所以读侧必须强制。
     """
-    assert AgentEntry(name="principal-aura", role="principal").profile_name == "principal-aura"
-    assert AgentEntry(name="Principal-Aura", role="principal").profile_name == "principal-aura"
-    assert AgentEntry(name="principal-default", role="principal").profile_name == "principal-default"
-    assert AgentEntry(name="conductor-secretary", role="conductor").profile_name == "conductor-secretary"
+    assert AgentEntry(name="principal-aura", role="principal").agent_id == "principal-aura"
+    assert AgentEntry(name="Principal-Aura", role="principal").agent_id == "principal-aura"
+    assert AgentEntry(name="principal-default", role="principal").agent_id == "principal-default"
+    assert AgentEntry(name="conductor-secretary", role="conductor").agent_id == "conductor-secretary"
     # 裸名自动补前缀（录入侧只需要英文名）
-    assert AgentEntry(name="Aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="Aura", role="principal").agent_id == "principal-aura"
     # 幂等：不重复拼
-    assert AgentEntry(name="principal-aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="principal-aura", role="principal").agent_id == "principal-aura"
     # 空值不许炸（未设 profile 的老行）
-    assert AgentEntry(name="", role="principal").profile_name == ""
+    assert AgentEntry(name="", role="principal").agent_id == ""
 

@@ -120,6 +120,9 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
         # 11-05（profile 连根拔）：行**不再带 profile**——运行时 slug 由 name 派生，
         # 前端与总账只认 name 这一种身份（裁定 192）。
         "id", "name", "status", "model", "todayCalls", "category", "mindSubtree",
+        # 2026-11-16（i18n 定名刀）：displayNameEn 是**同一个名字的英文写法**，不是
+        # 第二份身份；行上恒带（没有英文名就是空串），英文界面靠它显名、缺了回退 name。
+        "displayNameEn",
         # 11-05（用户）：名册 role 随行透出——L1 与五类 L2 分开标、但地位平等，
         # 前端靠它认出「这一行是 L1 自己」，不再拿 profile 反查。
         "role",
@@ -231,6 +234,9 @@ def test_post_principal_appears_in_list(client, _isolated_state, monkeypatch):
     # 11-05（profile 连根拔）：行不再带 profile 那一格。
     assert set(body["data"]) == {
         "id", "name", "status", "model", "todayCalls", "category", "mindSubtree",
+        # 2026-11-16（i18n 定名刀）：displayNameEn 是**同一个名字的英文写法**，不是
+        # 第二份身份；行上恒带（没有英文名就是空串），英文界面靠它显名、缺了回退 name。
+        "displayNameEn",
         # 11-05（用户）：名册 role 随行透出——L1 与五类 L2 分开标、但地位平等，
         # 前端靠它认出「这一行是 L1 自己」，不再拿 profile 反查。
         "role",

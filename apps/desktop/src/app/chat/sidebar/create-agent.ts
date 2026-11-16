@@ -1,5 +1,3 @@
-import { slug } from '@/lib/sanitize'
-
 import type { AgentCreateRequest, ApiEnvelope } from '../../console/types'
 
 import { AGENT_CATEGORY_PREFERENCE, orderedCategories } from './agent-groups'
@@ -29,45 +27,40 @@ export type AgentCategory = (typeof AGENT_CATEGORY_VALUES)[number]
 export const DEFAULT_AGENT_CATEGORY: AgentCategory = 'projects'
 
 /**
- * 名字的短哈希（FNV-1a，base36 四位）：**同一个名字永远同一个 id** ⇒ 重名交给
- * 后端那道闸去说（用户 11-12 22:32：以前空名字落的是时间戳，同一个名字能建出
- * 两行）。
+ * 英文名 → **`agent_id`**（机器键、落盘目录名）。
+ *
+ * 2026-11-16（i18n 定名刀）：门牌就是英文名的小写化，**不再带 `l2-` 之类职级前缀、
+ * 不再拼短哈希**。以前那套「名字里没有 ASCII 就补一段哈希」是把门牌变成了猜不出来的
+ * 暗号（用户 11-12 22:32：「我明明设置的文字『大学物理（甲）II』怎么机器记录的是 ii」）；
+ * 现在中文名只是**显示名**，英文名由后端翻出来预填、用户可改，门牌从英文名来——
+ * 看得懂、改得动。
+ *
+ * 规则与后端 `plobi.agents.naming.agent_id_from_english` 逐字一致：两处不一致，
+ * 表单上显示的 id 和真正落盘的目录名就会对不上。
  */
-function shortHash(value: string): string {
-  let hash = 0x811c9dc5
-
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-
-  return hash.toString(36).slice(0, 4).padStart(4, '0')
+export function agentIdFromEnglish(englishName: string): string {
+  return englishName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /**
- * 新建 Agent 的 **`agent_id`**（机器键）：从用户命名的那个名字派生，ASCII、稳定。
+ * 英文名框里的东西能不能用：ASCII 字母/数字打头，后面可以跟空格、连字符、
+ * 下划线、撇号（人写「Aura's Notes」「x-1」都算正常英文名），且规范化后非空。
  *
- * ⚠️ 中文名会被 `slug()` 整段删掉 ——「大学物理（甲）II」只剩两个 ASCII 的 I ⇒
- * 「ii」。那是**删剩的残渣**：看不出是什么，两门只差中文的课还会撞成同一个键
- * （用户 11-12 22:32：「我明明设置的文字『大学物理（甲）II』怎么机器记录的是 ii」）。
- * ⇒ 名字里有非 ASCII 字符时补一段**名字的短哈希**：既不再是残渣，也不会撞。
- * 纯 ASCII 的名字照旧（'My Project' → 'my-project'）。
- *
- * 可见面一律用**用户命名的名字**（`display_name`），`agent_id` 只活在机器面。
+ * 中文、全角标点一律不认——英文名框里混进中文，门牌要么退化成空串、要么
+ * 退化成哈希，两种都比「让人重填一个词」糟。
  */
-export function agentIdFromName(name: string): string {
-  const trimmed = name.trim()
-  const base = slug(trimmed).replace(/-+$/g, '')
+export function isValidEnglishName(englishName: string): boolean {
+  const trimmed = englishName.trim()
 
-  if (!base) {
-    return `l2-${shortHash(trimmed)}`
+  if (!trimmed || !/^[A-Za-z0-9][A-Za-z0-9 _'-]*$/.test(trimmed)) {
+    return false
   }
 
-  if (/[^\x00-\x7f]/.test(trimmed)) {
-    return `${base}-${shortHash(trimmed)}`
-  }
-
-  return base
+  return agentIdFromEnglish(trimmed).length > 0
 }
 
 /**
@@ -84,22 +77,27 @@ export function agentIdFromName(name: string): string {
  * 不动，后端与既有测试都认）。单元清单时不发 projectPaths——旧形状原样。
  *
  * 2026-09-16: we now also send the typed `name` **as typed** (the backend reads
- * `body["name"]` into `display`). `id` stays the lowercased slug — it doubles as
- * the Plobi profile name — but the human's casing no longer disappears at the
- * dialog. The rail still prints the id until the backend serves a display name
- * (handoff: `Docs/AGENT-TASK-AGENT-DISPLAY-NAME.md`).
+ * `body["name"]` into `display`).
+ *
+ * 2026-11-16（i18n 定名刀）：`name` 只当**中文显示名**，另发 `displayNameEn`
+ * 存英文名；`id`（门牌）由英文名规范化而来，不再与任何哈希/职级前缀挂钩。
  */
 export function buildCreateAgentBody(
   name: string,
+  englishName: string,
   category: AgentCategory,
   projectPaths?: null | readonly (null | string)[] | string,
   appearance?: { color?: null | string; icon?: null | string }
 ): AgentCreateRequest {
   const display = name.trim()
+  const english = englishName.trim()
 
   const body: AgentCreateRequest = {
-    id: agentIdFromName(display),
+    // 门牌从**英文名**来（2026-11-16 i18n 定名刀）。中文名只是显示名，
+    // 它不再参与任何机器键——所以中文名怎么改都不会撞出「ii」这种残键。
+    id: agentIdFromEnglish(english),
     name: display,
+    displayNameEn: english,
     role: 'principal',
     category
   }
@@ -164,12 +162,14 @@ export function isCreateAgentCategoryBlocked(category: AgentCategory): boolean {
 
 /**
  * Whether submit should stay disabled for the current dialog state: blocked
- * category, missing name, or a workspace category with no folder picked yet.
+ * category, missing name, bad English name (门牌来源), or a workspace category
+ * with no folder picked yet.
  *
  * WP-AGENT-CREATE-UPGRADE：`projectPaths` 是清单（主文件夹在前）；空清单 = 没绑。
  */
 export function isCreateAgentSubmitDisabled(
   name: string,
+  englishName: string,
   category: AgentCategory,
   projectPaths?: readonly (null | string)[] | null
 ): boolean {
@@ -178,6 +178,12 @@ export function isCreateAgentSubmitDisabled(
   }
 
   if (!name.trim()) {
+    return true
+  }
+
+  // 英文名是门牌的来源：它不合法就建不出可用的 agent_id，先在按钮上拦住，
+  // 别让后端去报那句「id is required」。
+  if (!isValidEnglishName(englishName)) {
     return true
   }
 
