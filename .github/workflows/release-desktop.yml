@@ -86,7 +86,7 @@ jobs:
           "./$bin" version
 
       - name: Upload the collector engine
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: plobi/collectors/chatlog/vendor/chatlog/bin/${{ matrix.binary }}
@@ -133,7 +133,7 @@ jobs:
       # copy. Copies of a checkout never contain it (bin/ is gitignored), which
       # is exactly the bug this workflow now prevents.
       - name: Download the collector engine
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: ${{ matrix.chatlog_artifact }}
           path: apps/desktop/build/chatlog-bin
@@ -308,7 +308,7 @@ jobs:
           npm run dist:${{ matrix.platform }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: plobi-${{ matrix.platform }}
           path: apps/desktop/release/*
@@ -339,7 +339,7 @@ jobs:
       # 阶段的输入：已经由 collect-backend-bundle 打进 backend bundle，
       # 随安装包分发，不该单独出现在 release 资产里。
       - name: Download installers
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: plobi-*
           path: artifacts
