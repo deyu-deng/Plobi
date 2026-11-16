@@ -16,9 +16,12 @@ platform the gateway truncates it and points the user at the dashboard / file.
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Optional
 
 from tools import write_approval as wa
+
+logger = logging.getLogger(__name__)
 
 
 def _fmt_state(subsystem: str) -> str:
@@ -159,6 +162,25 @@ def _remember_l0_decision(payload: dict, outcome: str) -> None:
         pass
 
 
+def _record_consent(plan, action: str, pending_id: str) -> None:
+    """一次表态落一条不可变事件（规格 §3.1／§5.2，P1 信号层）。
+
+    **与 ``TrustLedger`` 并存、不替代**：那是门槛的当前值（会归零），这是发生过什么
+    （只追加）。采纳与驳回**走同一本账**——这正是 P0 修掉的「采纳记 L0、驳回记 L1」
+    那类错位在流水层面的对称律。
+
+    记账失败不许让批准本身失败（沿用 ``_remember_l0_decision`` 的口径），但**要留日志**：
+    静默失败的账本等于没有流水，下一刀抽偏好时才发现表是空的。
+    """
+    try:
+        from plobi.mind.consent_events import ConsentLedger, comments_for
+
+        comment = "\n".join(comments_for(pending_id))
+        ConsentLedger().record_plan(plan, action, pending_id=pending_id, comment=comment)
+    except Exception:  # noqa: BLE001 - 记不上账不该让表态本身失败
+        logger.warning("consent event (%s) for %s not recorded", action, pending_id, exc_info=True)
+
+
 def _remember_rejection(rec) -> None:
     """驳回要进信任账（裁定 156／199：被驳一次，那一类立刻退回必问）。"""
     payload = (rec or {}).get("payload", {})
@@ -170,9 +192,12 @@ def _remember_rejection(rec) -> None:
     try:
         from plobi.mind import proposal as L1
 
-        L1.record_rejection(L1.Plan.from_json(payload["plan"]), reason="用户驳回")
+        plan = L1.Plan.from_json(payload["plan"])
+        L1.record_rejection(plan, reason="用户驳回")
     except Exception:  # noqa: BLE001 - 记不上账不该让驳回本身失败
-        pass
+        plan = None
+    if plan is not None:
+        _record_consent(plan, "rejected", str((rec or {}).get("id") or ""))
 
 
 def _apply_one(subsystem: str, rec, memory_store):
@@ -216,6 +241,9 @@ def _apply_one(subsystem: str, rec, memory_store):
                         book.record("adopted", cat, "l1")
                 except Exception:  # noqa: BLE001 - 记不上账不该让批准本身失败
                     pass
+                # 同一次点头还要落**不可变流水**（P1 信号层）：门槛的当前值与
+                # 「发生过什么」是两件事，前者能重算、后者重不出来。
+                _record_consent(plan, "adopted", str((rec or {}).get("id") or ""))
             return (True, "") if report.ok else (False, "计划过期或对象/内容已变，重出一张再点头")
         if subsystem == wa.MEMORY:
             if memory_store is None:

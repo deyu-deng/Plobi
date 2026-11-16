@@ -136,6 +136,21 @@ def _pending_feedback() -> List[Dict[str, Any]]:
     return pending_feedback()
 
 
+def _consent(limit: int = 50) -> Dict[str, Any]:
+    """同意事件流水（规格 §3.1／§5.2，P1）。**只读**：不放行、不改任何一张纸。"""
+    from plobi.mind.consent_events import ConsentLedger
+
+    book = ConsentLedger()
+    events = book.recent(max(1, min(int(limit), 200)))
+    return {
+        "events": [e.as_dict() for e in events],
+        "count": len(events),
+        # 按类计数只给事实，不给「该不该静默」的结论——那是 P2 用这些数去判的事。
+        "categories": book.summary(),
+        "db": str(book.path),
+    }
+
+
 def register_memory_pending_api(app: FastAPI) -> None:
     """挂三个口：读列表、点头、驳回。行为仍归那一层命令实现。"""
 
@@ -155,6 +170,11 @@ def register_memory_pending_api(app: FastAPI) -> None:
     async def memory_pending_comment(pending_id: str, body: dict | None = None) -> JSONResponse:
         """三态里的第三态：评论原话入账，不改票状态、不放行任何写入。"""
         return JSONResponse(_comment(pending_id, str((body or {}).get("comment") or "")))
+
+    @app.get(f"{PREFIX}/consent", name="memory_consent_events")
+    async def memory_consent_events(limit: int = 50) -> JSONResponse:
+        """同意事件流水（P1 信号层的读口）：人点什么就记什么，这里只读、不放行。"""
+        return JSONResponse(_consent(limit))
 
     @app.post(f"{PREFIX}/pending/prune", name="memory_pending_prune")
     async def memory_pending_prune() -> JSONResponse:
