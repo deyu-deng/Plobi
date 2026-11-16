@@ -29,6 +29,11 @@ from typing import Callable, List, Optional, Sequence
 #: 偏好正典的逻辑路径（``MEMORY_ZONES`` 内）。逻辑头只有"种类"一种写法。
 PREFERENCES_LOGICAL = "Mind/wiki/memory/preferences.md"
 
+#: 边界政策那一节的标题（P2 落在**同一个文件**的另节，用户 11-16 21:4x 拍「单文件」）。
+#: 这里只放标题字面量，判定逻辑在 ``plobi/mind/boundary.py``——偏好往这个位置**之前**追加，
+#: 不然后写的偏好条目会跑到政策节底下，读起来像是政策的一部分。
+BOUNDARY_HEADING = "## 边界政策"
+
 _HEADER = """# 记忆写入偏好
 
 > 每一条都从你的评论里长出来，**你点头之后才生效**；改这一行字就是改规则本身，
@@ -124,11 +129,19 @@ def pending(
 
 
 def render(existing: str, fresh: Sequence[Candidate]) -> str:
-    """把新候选接在正典末尾。空档时先写抬头（抬头本身不含任何规则）。"""
+    """把新候选接在正典末尾。空档时先写抬头（抬头本身不含任何规则）。
+
+    「末尾」指**边界政策那一节之前**（P2 起同一个文件里还有 policy 一节）：偏好条目
+    落在政策节下面会读成政策的子项，语义就错了。
+    """
     base = existing if existing.strip() else _HEADER
+    block = "".join(c.block() for c in fresh)
+    cut = base.find(BOUNDARY_HEADING)
+    if cut >= 0:
+        head = base[:cut].rstrip("\n") + "\n\n"
+        return head + block + "\n" + base[cut:]
     if not base.endswith("\n"):
         base += "\n"
-    block = "".join(c.block() for c in fresh)
     return base + ("\n" + block if base.strip() and not base.endswith("\n\n") else block)
 
 

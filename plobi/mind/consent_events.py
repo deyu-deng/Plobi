@@ -50,6 +50,16 @@ CREATE INDEX IF NOT EXISTS idx_consent_events_category
   ON consent_events(category, ts);
 CREATE INDEX IF NOT EXISTS idx_consent_events_target
   ON consent_events(target, ts);
+CREATE TABLE IF NOT EXISTS silence_traces (
+  id       TEXT PRIMARY KEY,
+  ts       REAL NOT NULL,
+  category TEXT NOT NULL,
+  target   TEXT NOT NULL DEFAULT '',
+  silent   INTEGER NOT NULL,
+  reason   TEXT NOT NULL DEFAULT '',
+  trace    TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_silence_traces_ts ON silence_traces(ts);
 """
 
 
@@ -248,6 +258,80 @@ class ConsentLedger:
             if act in ("adopted", "rejected", "edited"):
                 bucket[act] = int(row["n"])
             bucket["last_ts"] = max(float(bucket.get("last_ts") or 0.0), float(row["last_ts"] or 0.0))
+        return out
+
+
+    # -- 静默 trace（P2 判据用）--------------------------------------------
+
+    def record_trace(
+        self,
+        category: str,
+        *,
+        silent: bool,
+        reason: str,
+        target: str = "",
+        trace: Optional[Dict[str, Any]] = None,
+        ts: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """一次判定的 trace（规格 §3.4：静默必须能回答「这次凭什么没问我」）。
+
+        与 ``consent_events`` 同库不同表、同样只追加：事件记「人做了什么」，trace 记
+        「机器判了什么」。两者都删得掉（重置学习），但 trace 是判据的一部分——写不进
+        这一条的时候，判据那边按必问处理，不让一次静默失去来路。
+        """
+        import json
+
+        row = {
+            "id": "trc_" + uuid.uuid4().hex[:12],
+            "ts": time.time() if ts is None else float(ts),
+            "category": str(category or "other").strip() or "other",
+            "target": str(target or "").strip(),
+            "silent": 1 if silent else 0,
+            "reason": str(reason or ""),
+            "trace": json.dumps(trace or {}, ensure_ascii=False, sort_keys=True),
+        }
+        with self._session() as conn:
+            conn.execute(
+                "INSERT INTO silence_traces (id, ts, category, target, silent, reason, trace)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (row["id"], row["ts"], row["category"], row["target"],
+                 row["silent"], row["reason"], row["trace"]),
+            )
+        out = dict(row)
+        out["silent"] = bool(silent)
+        try:
+            out["trace"] = json.loads(str(row["trace"]))
+        except ValueError:
+            out["trace"] = {}
+        return out
+
+    def recent_traces(self, limit: int = 50, *, category: str = "") -> List[Dict[str, Any]]:
+        import json
+
+        sql = "SELECT * FROM silence_traces"
+        args: List[Any] = []
+        if category:
+            sql += " WHERE category = ?"
+            args.append(str(category))
+        sql += " ORDER BY ts DESC, id DESC LIMIT ?"
+        args.append(max(1, min(int(limit), 500)))
+        try:
+            with self._session() as conn:
+                rows = conn.execute(sql, args).fetchall()
+        except sqlite3.Error:
+            return []
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            item = {
+                "id": row["id"], "ts": float(row["ts"]), "category": row["category"],
+                "target": row["target"], "silent": bool(row["silent"]),
+                "reason": row["reason"], "trace": {},
+            }
+            try:
+                item["trace"] = json.loads(str(row["trace"] or "{}"))
+            except ValueError:
+                item["trace"] = {}
+            out.append(item)
         return out
 
 
