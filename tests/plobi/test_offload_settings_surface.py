@@ -247,18 +247,54 @@ def test_the_chosen_account_is_not_guessed_when_nothing_was_chosen():
         assert by_name[row["name"]]["selected_account"] == ""
 
 
-def test_the_vendors_that_only_know_how_to_install_are_on_screen_without_a_switch():
-    """**只装不派活**的那几家：屏上看得见（给下载引导），但**不给开关**。"""
-    payload = offload_surface.external_agent_rows()
+def _screen_with_nothing_installed(monkeypatch):
+    """摆出一屏「本机一家都没装」的读数（**不靠缓存、不靠这台机器**）。
+
+    这一屏有 120 秒的缓存 ⇒ 不先丢一次就会读到别的档留下的那份。
+    """
+    offload_surface.forget_rows_cache()
+    monkeypatch.setattr(channel, "resolve_command", lambda agent="codebuddy": "")
+    monkeypatch.setattr(offload_surface, "_which", lambda binary: "")
+    monkeypatch.setattr(offload_surface, "cached_answers", lambda vendors=None: {})
+    return offload_surface.external_agent_rows()
+
+
+def test_the_vendors_with_an_acp_entry_are_on_screen_as_dispatchable(monkeypatch):
+    """官方 ACP 注册表里有**入口命令**的那几家 ⇒ 屏上**当能派活**（11-16 第十刀第二步）。
+
+    本机没装 ⇒ 那一格是「＋」＋ 它各自的安装引导 ⇒ **装完就能派活**。
+    登录态那一格仍由探针说话（登录着／它自己说没登录／探不到）⇒ 不会说假话。
+
+    ⚠ 这一档钉的是**契约**（「有 ACP 入口 ⇒ 当能派活 ＋ 给安装引导」），
+    不是「这台机器装没装」——那是读数，本档把它摆平成「都没装」。
+    """
+    payload = _screen_with_nothing_installed(monkeypatch)
     by_name = {row["name"]: row for row in payload["agents"]}
 
-    for vendor in ("amp", "iflow", "aider", "goose", "crush", "droid"):
+    for vendor in ("goose", "junie", "devin", "stakpak", "vtcode", "droid"):
         assert vendor in by_name, f"{vendor}：屏上名册里没有这一家"
         row = by_name[vendor]
-        assert row["dispatch_ready"] is False
-        assert row["can_use"] is False
+        assert row["dispatch_ready"] is True, vendor
+        assert row["installed"] is False, vendor
+        assert row["can_use"] is False, vendor
+        assert "没装" in row["why_not"], vendor
+        # 新用户第一次点「＋」时拿得到**它自己**的安装引导。
+        assert row["install"] is not None, vendor
+        assert row["install"]["command"] or row["install"]["homepage"], vendor
+
+
+def test_the_vendors_without_an_acp_entry_stay_without_a_switch(monkeypatch):
+    """**没有 ACP 入口**的那几家：屏上看得见（给下载引导），但**不给开关**。"""
+    payload = _screen_with_nothing_installed(monkeypatch)
+    by_name = {row["name"]: row for row in payload["agents"]}
+
+    for vendor in ("cursor", "amp", "fast-agent", "minion-code", "iflow", "aider", "crush"):
+        assert vendor in by_name, f"{vendor}：屏上名册里没有这一家"
+        row = by_name[vendor]
+        assert row["dispatch_ready"] is False, vendor
+        assert row["can_use"] is False, vendor
         # 探不到登录态（**不判成没登录**）：这一家还没接派活腿 ⇒ 没实测过登录判据。
-        assert row["logged_in"]["value"] is None
+        assert row["logged_in"]["value"] is None, vendor
 
 
 def test_the_install_facts_of_a_row_are_the_ones_in_the_source_table():

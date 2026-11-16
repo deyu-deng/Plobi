@@ -83,6 +83,7 @@ from agent.vendor_registry import (  # noqa: E402  （re-export：公共形状�
     NO_RESUME_FLAG,
     OFFLOAD_CONTRACT,
     VendorContract,
+    has_acp_entry,
     resume_argv_map as _resume_argv_map,
 )
 
@@ -292,9 +293,9 @@ def probe_acp_login(
     spec = contract_for(key)
     if spec is None:
         return AcpLoginAnswer(key, None, "no-contract", "名册里没有这一家。")
-    if not spec.acp_args and not spec.acp_command and "acp" not in spec.legs:
-        # 「有 ACP 入口」＝有旗标 **或** 它的派活腿就是 ACP（11-16）：
-        # glm 那台 ACP server 不接旗标，但入口命令就是它自己。
+    if not has_acp_entry(spec):
+        # 「有 ACP 入口」＝有旗标 **或** 入口是另一个可执行文件 **或** 它的派活腿就是 ACP
+        # （11-16）：glm 那台 ACP server 不接旗标，但入口命令就是它自己。
         return AcpLoginAnswer(key, None, "no-acp", spec.acp_note or "这一家没法用 ACP 问。")
 
     if use_cache:
@@ -314,7 +315,7 @@ def probe_acp_login(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=tempfile.gettempdir(),
-            env=os.environ.copy(),
+            env={**os.environ.copy(), **channel.acp_env(key)},
         )
         assert proc.stdin is not None and proc.stdout is not None
         threading.Thread(target=_read_lines, args=(proc.stdout, lines), daemon=True).start()

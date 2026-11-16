@@ -103,6 +103,7 @@ from agent.vendor_registry import (  # noqa: F401  （re-export：公共形状�
     DISPATCH_LEGS,
     OFFLOAD_CONTRACT,
     PREFER_LEGS,
+    has_acp_entry,
 )
 
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"
@@ -462,6 +463,21 @@ def acp_argv(agent: str) -> tuple[str, ...]:
     if not binary:
         return ()
     return tuple(spawn_argv([binary, *contract.acp_args]))
+
+
+def acp_env(agent: str) -> dict[str, str]:
+    """ACP 那一腿**要带的环境变量**（官方注册表在分发项里写明的那几个）。
+
+    两家要：Muse 要 ``MUSE_EXPERIMENTAL_ACP=on``、VTCode 要 ``VT_ACP_ENABLED=1``／
+    ``VT_ACP_ZED_ENABLED=1``——**不带它，它们根本不开 ACP 那一腿**（旗标对了也不开）。
+
+    那一格写在真源表里（``VendorRow.acp_env``）⇒ **代码不按厂商分叉**。
+    **只有一份答案**（裁定 94 族）：派活腿与登录探针都读它。
+    """
+    contract = OFFLOAD_CONTRACT.get(agent)
+    if contract is None:
+        return {}
+    return dict(contract.acp_env)
 
 
 LOGIN_PROBE_TIMEOUT_S = 45.0
@@ -1225,8 +1241,7 @@ def run_acp_task(
         )
 
     contract = OFFLOAD_CONTRACT.get(agent)
-    if contract is None or (not contract.acp_args and not contract.acp_command
-                            and "acp" not in contract.legs):
+    if not has_acp_entry(contract):
         return fail(f"这一家没有 ACP 那一腿：{agent}。")
 
     try:
@@ -1237,7 +1252,9 @@ def run_acp_task(
     argv = acp_argv(agent)
     if not argv:
         return fail(f"external agent {agent!r} has no drivable command on this machine")
-    client = AcpClient(argv, cwd=str(prep.workdir), env=prep.env)
+    # 官方注册表写明要带的环境变量（Muse／VTCode 那两家）——不带就开不了 ACP 腿。
+    env = {**prep.env, **acp_env(agent)}
+    client = AcpClient(argv, cwd=str(prep.workdir), env=env)
     # 「要的是只读 ⇒ 它问权限一律不准」：判据只有这一条，别的档照旧准
     # （裁定 99 一：子进程跑在它自己那档上，Plobi 自己的闸门一道都不松）。
     client.allow_permissions = (permission_mode or "").strip() != "read_only"

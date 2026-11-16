@@ -51,6 +51,10 @@ def log(name, body):
         handle.write(body)
 
 
+#: 子进程**看到**的那个环境变量（判据：官方注册表写明要带的那几个有没有真带过去）。
+log("env_log", os.environ.get("PLOBI_TEST_ACP_ENV", ""))
+
+
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -533,3 +537,60 @@ def test_a_vendor_with_only_an_entry_point_is_not_told_it_has_no_acp_leg(monkeyp
 
     assert answer.source != "no-acp", answer.detail
     assert answer.value is None
+
+
+# ── ACP 那一腿要带的环境变量（11-16 第十刀第二步）────────────────────────
+
+
+def test_the_env_the_registry_writes_down_is_carried_to_the_child(
+    tmp_path, workdir, monkeypatch,
+):
+    """官方注册表在分发项里写明 ``env`` 的那几家 ⇒ 子进程**真的拿到**它。
+
+    Muse 要 ``MUSE_EXPERIMENTAL_ACP=on``、VTCode 要 ``VT_ACP_ENABLED=1``／
+    ``VT_ACP_ZED_ENABLED=1``——**不带它，它们根本不开 ACP 那一腿**（旗标对了也不开）。
+
+    那一格写在真源表里 ⇒ 代码里没有按厂商分叉的 if。
+    """
+    contract = vr.VendorContract(
+        id="acme",
+        acp_command=("agy_acp_server.exe",),
+        legs=("acp",),
+        acp_env=(("PLOBI_TEST_ACP_ENV", "on"),),
+    )
+    monkeypatch.setitem(offload.OFFLOAD_CONTRACT, "acme", contract)
+    monkeypatch.setitem(offload.DISPATCH_LEGS, "acme", ("acp",))
+
+    script = tmp_path / "fake_acp_server.py"
+    script.write_text(FAKE_SERVER, encoding="utf-8")
+    env_log = tmp_path / "env.txt"
+    monkeypatch.setenv(
+        "FAKE_ACP_CONFIG",
+        json.dumps({"say": "OK", "env_log": str(env_log)}, ensure_ascii=False),
+    )
+    monkeypatch.setattr(offload, "_which_prefer_executable", lambda name: str(script))
+    monkeypatch.setattr(
+        offload,
+        "spawn_argv",
+        lambda argv: [sys.executable, str(script), *list(argv)[1:]],
+    )
+    monkeypatch.setattr(offload, "resolve_proxy", lambda: ("", "none"))
+
+    result = offload.run_task("只回 OK", agent="acme", leg="acp", cwd=str(workdir))
+
+    assert result.ok, result.error
+    assert env_log.read_text(encoding="utf-8").strip() == "on"
+
+
+def test_the_two_families_that_need_the_env_have_it_registered():
+    """真源表里那两家**确实登记了**（照官方注册表写的那几个抄的）。"""
+    assert vr.OFFLOAD_CONTRACT["muse-code"].acp_env == (("MUSE_EXPERIMENTAL_ACP", "on"),)
+    assert vr.OFFLOAD_CONTRACT["vtcode"].acp_env == (
+        ("VT_ACP_ENABLED", "1"),
+        ("VT_ACP_ZED_ENABLED", "1"),
+    )
+
+
+def test_a_family_that_needs_no_env_gets_none():
+    """不带环境变量的那一家 ⇒ 空（不塞任何东西进子进程）。"""
+    assert offload.acp_env("codebuddy") == {}

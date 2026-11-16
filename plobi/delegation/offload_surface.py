@@ -45,7 +45,7 @@ def _acp_pending(vendors: list[str]) -> list[str]:
     out: list[str] = []
     for name in vendors:
         spec = OFFLOAD_CONTRACT.get(name)
-        if spec is None or not spec.acp_args:
+        if not channel.has_acp_entry(spec):
             continue
         if name in have:
             continue
@@ -66,7 +66,7 @@ def maybe_start_acp_sweep() -> list[str]:
     have = cached_answers()
     pending = [
         name for name, spec in OFFLOAD_CONTRACT.items()
-        if spec.acp_args and name not in have
+        if channel.has_acp_entry(spec) and name not in have
     ]
     if not pending:
         return []

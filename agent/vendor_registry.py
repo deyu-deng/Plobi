@@ -199,6 +199,8 @@ class VendorContract:
     #: 空 = 沿用「本机那个二进制 ＋ 旗标」那一族（:attr:`acp_args`）。
     #: 例：官方 ACP 注册表里 codex 那一行是 ``codex-acp``（不是 ``codex --acp``）。
     acp_command: tuple[str, ...] = ()
+    #: ACP 那一腿**要带的环境变量**（官方注册表写明的那些；不带就开不了那一腿）。
+    acp_env: tuple[tuple[str, str], ...] = ()
     #: 这一家**有哪几条腿**（``cli``／``acp``，11-16 19:0x 主人拍板并存）。
     #: ACP 腿的那几家**入口命令就是它自己**——旗标可以空（glm 那台 ACP server
     #: 不接旗标），所以「有没有 ACP 入口」不能只看旗标。
@@ -651,6 +653,10 @@ class VendorRow:
     #: ACP 那一腿的**完整 argv**（入口是**另一个可执行文件**时用）。
     #: 空 = 沿用「本机那个二进制 ＋ 旗标」那一族（:attr:`acp_args`）。
     #: **与 :attr:`acp_args` 互斥**（两格都填 ⇒ 说不清走的是哪条命令 ⇒ 性质测试判红）。
+    #: ACP 那一腿**要带的环境变量**（官方注册表在分发项里写明的那几个）。
+    #: 例：Muse 要 ``MUSE_EXPERIMENTAL_ACP=on``、VTCode 要 ``VT_ACP_ENABLED=1``——
+    #: 不带它，它根本不开 ACP 那一腿。空 = 不带任何环境变量（多数家）。
+    acp_env: tuple[tuple[str, str], ...] = ()
     acp_command: tuple[str, ...] = ()
     acp_note: str = ""
     # ── 派活腿 ───────────────────────────────────────────────────────────
@@ -703,6 +709,7 @@ class VendorRow:
             acp_registry_id=self.acp_registry_id,
             acp_args=self.acp_args,
             acp_command=self.acp_command,
+            acp_env=self.acp_env,
             acp_note=self.acp_note,
             legs=self.legs,
             resume_argv=self.resume_argv,
@@ -1551,14 +1558,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="goose",
         command_env="PLOBI_OFFLOAD_GOOSE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GOOSE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="goose",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「goose」）；入口 goose acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://block.github.io/goose",
             binary="goose",
             verified=True,
-            note="ACP 官方注册表收录（id「goose」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「goose」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 goose acp，照官方注册表写的，未实测）",
         ),
     ),
     VendorRow(
@@ -1581,14 +1593,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="droid",
         command_env="PLOBI_OFFLOAD_DROID_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DROID_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="factory-droid",
+        acp_args=("exec", "--output-format", "acp-daemon"),
+        acp_note="官方 ACP 注册表收录（id「factory-droid」）；入口 droid exec --output-format acp-daemon（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g droid@1.12.1",
             package="droid",
             homepage="https://app.factory.ai/cli",
             binary="droid",
             verified=True,
-            note="ACP 官方注册表收录（id「factory-droid」）；这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「factory-droid」）；派活腿走 ACP（入口 droid exec --output-format acp-daemon，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1597,14 +1614,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="agoragentic-mcp",
         command_env="PLOBI_OFFLOAD_AGORAGENTIC_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AGORAGENTIC_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="agoragentic-acp",
+        acp_args=("--acp",),
+        acp_note="官方 ACP 注册表收录（id「agoragentic-acp」）；入口 agoragentic-mcp --acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g agoragentic-mcp@1.3.0",
             package="agoragentic-mcp",
             homepage="https://agoragentic.com",
             binary="agoragentic-mcp",
             verified=True,
-            note="ACP 官方注册表收录（id「agoragentic-acp」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「agoragentic-acp」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 agoragentic-mcp --acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1635,14 +1657,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="autohand",
         command_env="PLOBI_OFFLOAD_AUTOHAND_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AUTOHAND_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="autohand",
+        acp_args=("--acp",),
+        acp_note="官方 ACP 注册表收录（id「autohand」）；入口 autohand --acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://github.com/autohandai/code-cli/blob/main/docs/guides/ACP.md",
             binary="autohand",
             verified=True,
-            note="ACP 官方注册表收录（id「autohand」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「autohand」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 autohand --acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1651,14 +1678,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="bob",
         command_env="PLOBI_OFFLOAD_BOB_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_BOB_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="bob",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「bob」）；入口 bob acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @ibm/bob@2.1.0",
             package="@ibm/bob",
             homepage="https://bob.ibm.com",
             binary="bob",
             verified=True,
-            note="ACP 官方注册表收录（id「bob」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「bob」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 bob acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1667,14 +1699,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="cortex",
         command_env="PLOBI_OFFLOAD_CORTEX_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CORTEX_CODE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="cortex-code",
+        acp_args=("acp", "serve"),
+        acp_note="官方 ACP 注册表收录（id「cortex-code」）；入口 cortex acp serve（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code",
             binary="cortex",
             verified=True,
-            note="ACP 官方注册表收录（id「cortex-code」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「cortex-code」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 cortex acp serve，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1683,14 +1720,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="corust-agent-acp",
         command_env="PLOBI_OFFLOAD_CORUST_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CORUST_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="corust-agent",
+        # 入口就是它自己，**不接旗标**（官方注册表那一行没有 args）。
+        acp_args=(),
+        acp_note="官方 ACP 注册表收录（id「corust-agent」）；入口 corust-agent-acp（入口就是它自己，无旗标）（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://github.com/Corust-ai/corust-agent-release",
             binary="corust-agent-acp",
             verified=True,
-            note="ACP 官方注册表收录（id「corust-agent」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「corust-agent」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 corust-agent-acp（入口就是它自己，无旗标），照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1699,14 +1742,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="crow-cli",
         command_env="PLOBI_OFFLOAD_CROW_CLI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CROW_CLI_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="crow-cli",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「crow-cli」）；入口 crow-cli acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://crow-ai.dev",
             binary="crow-cli",
             verified=True,
-            note="ACP 官方注册表收录（id「crow-cli」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「crow-cli」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 crow-cli acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1715,14 +1763,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="deepagents-acp",
         command_env="PLOBI_OFFLOAD_DEEPAGENTS_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEEPAGENTS_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="deepagents",
+        # 入口就是它自己，**不接旗标**（官方注册表那一行没有 args）。
+        acp_args=(),
+        acp_note="官方 ACP 注册表收录（id「deepagents」）；入口 deepagents-acp（入口就是它自己，无旗标）（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g deepagents-acp@0.1.7",
             package="deepagents-acp",
             homepage="https://docs.langchain.com/oss/javascript/deepagents/overview",
             binary="deepagents-acp",
             verified=True,
-            note="ACP 官方注册表收录（id「deepagents」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「deepagents」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 deepagents-acp（入口就是它自己，无旗标），照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1731,7 +1785,12 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="devin",
         command_env="PLOBI_OFFLOAD_DEVIN_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEVIN_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="devin",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「devin」）；入口 devin acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="irm https://static.devin.ai/cli/setup.ps1 | iex",
             package="",
@@ -1740,7 +1799,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             verified=True,
             note="ACP 官方注册表收录（id「devin」）；官方分发是二进制压缩包；"
                  "安装命令照官方 Windows 文档写的（PowerShell 专用），本机实测用的是下载安装器那条路 "
-                 "⇒ 这条命令没在本机跑过；这一家还没接派活腿",
+                 "⇒ 这条命令没在本机跑过；派活腿走 ACP（入口 devin acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1749,14 +1808,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="dimcode",
         command_env="PLOBI_OFFLOAD_DIMCODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DIMCODE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="dimcode",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「dimcode」）；入口 dimcode acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g dimcode@0.5.28",
             package="dimcode",
             homepage="https://dimagent.cn/",
             binary="dimcode",
             verified=True,
-            note="ACP 官方注册表收录（id「dimcode」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「dimcode」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 dimcode acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1765,14 +1829,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="dirac",
         command_env="PLOBI_OFFLOAD_DIRAC_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DIRAC_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="dirac",
+        acp_args=("--acp",),
+        acp_note="官方 ACP 注册表收录（id「dirac」）；入口 dirac --acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g dirac-cli@0.6.0",
             package="dirac-cli",
             homepage="https://dirac.run",
             binary="dirac",
             verified=True,
-            note="ACP 官方注册表收录（id「dirac」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「dirac」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 dirac --acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1849,14 +1918,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="harn",
         command_env="PLOBI_OFFLOAD_HARN_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_HARN_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="harn",
+        acp_args=("serve", "acp"),
+        acp_note="官方 ACP 注册表收录（id「harn」）；入口 harn serve acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://harnlang.com",
             binary="harn",
             verified=True,
-            note="ACP 官方注册表收录（id「harn」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「harn」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 harn serve acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1865,7 +1939,12 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="junie",
         command_env="PLOBI_OFFLOAD_JUNIE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_JUNIE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="junie",
+        acp_args=("--acp=true",),
+        acp_note="官方 ACP 注册表收录（id「junie」）；入口 junie --acp=true（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @jetbrains/junie",
             package="@jetbrains/junie",
@@ -1873,7 +1952,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="junie",
             verified=True,
             note="ACP 官方注册表收录（id「junie」）；本体在 npm 上有官方 scope 的包"
-                 "（registry 现核：「Junie command-line client」）⇒ 给这条命令；这一家还没接派活腿",
+                 "（registry 现核：「Junie command-line client」）⇒ 给这条命令；派活腿走 ACP（入口 junie --acp=true，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1882,14 +1961,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="kimchi",
         command_env="PLOBI_OFFLOAD_KIMCHI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMCHI_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="kimchi",
+        acp_args=("--mode", "acp"),
+        acp_note="官方 ACP 注册表收录（id「kimchi」）；入口 kimchi --mode acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://kimchi.dev",
             binary="kimchi",
             verified=True,
-            note="ACP 官方注册表收录（id「kimchi」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「kimchi」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 kimchi --mode acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1898,14 +1982,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="kimi",
         command_env="PLOBI_OFFLOAD_KIMI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMI_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="kimi",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「kimi」）；入口 kimi acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://moonshotai.github.io/kimi-cli/",
             binary="kimi",
             verified=True,
-            note="ACP 官方注册表收录（id「kimi」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「kimi」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 kimi acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1952,14 +2041,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="vibe-acp",
         command_env="PLOBI_OFFLOAD_VIBE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_VIBE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="mistral-vibe",
+        # 入口就是它自己，**不接旗标**（官方注册表那一行没有 args）。
+        acp_args=(),
+        acp_note="官方 ACP 注册表收录（id「mistral-vibe」）；入口 vibe-acp（入口就是它自己，无旗标）（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://github.com/mistralai/mistral-vibe",
             binary="vibe-acp",
             verified=True,
-            note="ACP 官方注册表收录（id「mistral-vibe」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「mistral-vibe」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 vibe-acp（入口就是它自己，无旗标），照官方注册表写的，未实测）",
         ),
     ),
 
@@ -1968,14 +2063,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="muse",
         command_env="PLOBI_OFFLOAD_MUSE_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_MUSE_CODE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="muse-code",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「muse-code」）；入口 muse acp（官方写明要带环境变量 MUSE_EXPERIMENTAL_ACP=on）（照注册表写的，本机没装 ⇒ 未实测）",
+        acp_env=(("MUSE_EXPERIMENTAL_ACP", "on"),),
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://dev.meta.ai/docs/muse-code",
             binary="muse",
             verified=True,
-            note="ACP 官方注册表收录（id「muse-code」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿；官网地址这台机器现核连不上（TLS 被挡）⇒ 按官方注册表登的地址给的",
+            note="ACP 官方注册表收录（id「muse-code」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 muse acp（官方写明要带环境变量 MUSE_EXPERIMENTAL_ACP=on），照官方注册表写的，未实测）；官网地址这台机器现核连不上（TLS 被挡）⇒ 按官方注册表登的地址给的",
         ),
     ),
 
@@ -2006,14 +2107,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="pi-acp",
         command_env="PLOBI_OFFLOAD_PI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_PI_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="pi-acp",
+        # 入口就是它自己，**不接旗标**（官方注册表那一行没有 args）。
+        acp_args=(),
+        acp_note="官方 ACP 注册表收录（id「pi-acp」）；入口 pi-acp（入口就是它自己，无旗标）（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g pi-acp@0.0.34",
             package="pi-acp",
             homepage="https://github.com/svkozak/pi-acp",
             binary="pi-acp",
             verified=True,
-            note="ACP 官方注册表收录（id「pi-acp」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「pi-acp」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 pi-acp（入口就是它自己，无旗标），照官方注册表写的，未实测）",
         ),
     ),
 
@@ -2022,14 +2129,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="pool-windows-amd64",
         command_env="PLOBI_OFFLOAD_POOLSIDE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_POOLSIDE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="poolside",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「poolside」）；入口 pool-windows-amd64 acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://poolside.ai",
             binary="pool-windows-amd64",
             verified=True,
-            note="ACP 官方注册表收录（id「poolside」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「poolside」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 pool-windows-amd64 acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -2038,14 +2150,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="sigit",
         command_env="PLOBI_OFFLOAD_SIGIT_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_SIGIT_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="sigit",
+        # 入口就是它自己，**不接旗标**（官方注册表那一行没有 args）。
+        acp_args=(),
+        acp_note="官方 ACP 注册表收录（id「sigit」）；入口 sigit（入口就是它自己，无旗标）（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @smbcloud/sigit@1.7.10",
             package="@smbcloud/sigit",
             homepage="https://github.com/getsigit/sigit",
             binary="sigit",
             verified=True,
-            note="ACP 官方注册表收录（id「sigit」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「sigit」）；安装命令照官方分发写的（registry 与 npm 现核），没在本机实测过。派活腿走 ACP（入口 sigit（入口就是它自己，无旗标），照官方注册表写的，未实测）",
         ),
     ),
 
@@ -2054,14 +2172,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="stakpak",
         command_env="PLOBI_OFFLOAD_STAKPAK_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_STAKPAK_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="stakpak",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「stakpak」）；入口 stakpak acp（照注册表写的，本机没装 ⇒ 未实测）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://stakpak.dev",
             binary="stakpak",
             verified=True,
-            note="ACP 官方注册表收录（id「stakpak」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「stakpak」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 stakpak acp，照官方注册表写的，未实测）",
         ),
     ),
 
@@ -2070,14 +2193,20 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="vtcode",
         command_env="PLOBI_OFFLOAD_VTCODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_VTCODE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        legs=("acp",),
+        acp_registry_id="vtcode",
+        acp_args=("acp",),
+        acp_note="官方 ACP 注册表收录（id「vtcode」）；入口 vtcode acp（官方写明要带环境变量 VT_ACP_ENABLED=1／VT_ACP_ZED_ENABLED=1）（照注册表写的，本机没装 ⇒ 未实测）",
+        acp_env=(("VT_ACP_ENABLED", "1"), ("VT_ACP_ZED_ENABLED", "1")),
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="",
             package="",
             homepage="https://github.com/vinhnx/VTCode/blob/main/docs/guides/zed-acp.md",
             binary="vtcode",
             verified=True,
-            note="ACP 官方注册表收录（id「vtcode」）；官方分发是二进制压缩包，按官网装。这一家还没接派活腿",
+            note="ACP 官方注册表收录（id「vtcode」）；官方分发是二进制压缩包，按官网装。派活腿走 ACP（入口 vtcode acp（官方写明要带环境变量 VT_ACP_ENABLED=1／VT_ACP_ZED_ENABLED=1），照官方注册表写的，未实测）",
         ),
     ),
 
@@ -2126,6 +2255,26 @@ def external_agent_specs(rows: Rows = VENDOR_ROWS) -> dict[str, ExternalAgentSpe
 def contract_map(rows: Rows = VENDOR_ROWS) -> dict[str, VendorContract]:
     """**出口表二**：契约表（ACP 起法／回跳旗标／会话来源）。"""
     return {row.id: row.to_contract() for row in rows if row.offloadable}
+
+
+def has_acp_entry(spec: Any) -> bool:
+    """「有没有 ACP 入口」——**只有一份答案**（裁定 94 族）。
+
+    三种形态都算**有**入口：
+
+    * **旗标**（``acp_args``）：``cline --acp``；
+    * **另一个可执行文件**（``acp_command``）：官方注册表里 codex 那一行是 ``codex-acp``；
+    * **入口就是它自己**（旗标空，但那一腿就是 ACP）：glm 那台 ACP server 不接旗标。
+
+    只看旗标会把后两种说成「没有入口」⇒ 探针不探它、屏上那一格永远停在「＋」
+    （11-16 第十刀第二步接了 23 家之后，这个漏法会让装好的那几家也点不动）。
+
+    ``spec`` 可以是真源表那一行（:class:`VendorRow`），也可以是契约表那一行
+    （:class:`VendorContract`）——两边的格子同名，答案一样。
+    """
+    if spec is None:
+        return False
+    return bool(spec.acp_args or spec.acp_command or "acp" in spec.legs)
 
 
 def login_hints_map(rows: Rows = VENDOR_ROWS) -> dict[str, tuple[str, ...]]:

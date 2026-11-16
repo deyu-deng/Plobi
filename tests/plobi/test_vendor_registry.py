@@ -102,8 +102,9 @@ def test_the_roster_is_the_offloadable_rows_and_nothing_else():
     offloadable = [row.id for row in vr.VENDOR_ROWS if row.offloadable]
 
     assert list(vr.EXTERNAL_AGENTS) == offloadable
-    # 十二家走命令行 ＋ 六家走 ACP（11-16：纯 ACP 客席接上了派活腿）。
-    assert len(vr.EXTERNAL_AGENTS) == 18
+    # 12 家走命令行 ＋ 6 家走 ACP ＋ **23 家新接的纯 ACP 客席**（11-16 第十刀第二步：
+    # 官方注册表里有 ACP 入口 ⇒ 能派活；装没装只管屏上那个「＋」）。
+    assert len(vr.EXTERNAL_AGENTS) == 41
 
 
 def test_a_vendor_with_no_login_hints_is_not_in_the_login_table():
@@ -137,6 +138,8 @@ def test_every_contract_row_matches_its_row_in_the_one_table():
         contract = vr.OFFLOAD_CONTRACT[row.id]
         assert contract.acp_registry_id == row.acp_registry_id
         assert contract.acp_args == row.acp_args
+        assert contract.acp_command == row.acp_command
+        assert contract.acp_env == row.acp_env
         assert contract.acp_note == row.acp_note
         assert contract.resume_argv == row.resume_argv
         assert contract.resume_note == row.resume_note
@@ -304,18 +307,49 @@ def test_an_unverified_install_fact_says_so_in_words():
             assert spec.note, f"{vendor}：没实测过的安装事实却没有一句说明"
 
 
-def test_the_install_only_vendors_stay_out_of_the_channel_tables():
-    """**只装不派活**的那几家不进通道表／契约表（派活腿没实测过 ⇒ 不许进派活面）。"""
-    install_only = {vid for vid, spec in vr.INSTALL_SPECS.items()
-                    if vid not in vr.EXTERNAL_AGENTS}
+def test_a_row_with_an_acp_entry_is_in_the_channel_tables():
+    """**有 ACP 入口 ⇒ 能派活**（11-16 第十刀第二步）。
 
-    assert install_only, "表里应当有几家只装不派活的候选"
+    11-16 之前有一档叫「只装不派活」，理由是「派活腿没实测过 ⇒ 不许进派活面」。
+    机制跑通（11 家真跑）＋ 官方 ACP 注册表给出每家的入口命令之后，**那个理由过期了**
+    ⇒ 那一档取消：**装没装只管屏上那个「＋」**，不再决定「能不能派活」。
 
-    for vendor in install_only:
-        assert vendor not in vr.EXTERNAL_AGENTS
-        assert vendor not in vr.OFFLOAD_CONTRACT
-        # 但屏上名册看得见它们（新用户第一次点「+」时要能拿到下载引导）。
-        assert vendor in vr.roster()
+    屏上的那一格仍由**探针**说话（登录着／它自己说没登录／探不到）⇒ 不会说假话。
+    """
+    with_entry = []
+    for row in vr.VENDOR_ROWS:
+        if not (row.acp_args or row.acp_command or "acp" in row.legs):
+            continue
+        with_entry.append(row.id)
+        assert row.offloadable, f"{row.id}：有 ACP 入口却不许派活（那一档已经取消了）"
+        assert row.id in vr.EXTERNAL_AGENTS, row.id
+        assert row.id in vr.OFFLOAD_CONTRACT, row.id
+
+    assert len(with_entry) >= 40, f"有 ACP 入口的只有 {len(with_entry)} 家（注册表 46 家）"
+
+
+def test_the_vendors_without_an_acp_entry_stay_out_of_the_channel_tables():
+    """**没有 ACP 入口**的那几家仍不进通道表／契约表（照实说，不给点不动的开关）。
+
+    这几家属三种：官方注册表里**没有这一家**（国产/小众 CLI）、
+    入口是**另一个可执行文件**（不在 PATH 上，落点不明）、
+    入口是 **uvx**（每次现下载 ⇒ Plobi 不代下载）。
+    """
+    without = [row.id for row in vr.VENDOR_ROWS
+               if not (row.acp_args or row.acp_command or "acp" in row.legs)]
+
+    assert without, "表里应当还有几家没接派活腿的"
+    for vendor in without:
+        assert vendor not in vr.EXTERNAL_AGENTS, vendor
+        assert vendor not in vr.OFFLOAD_CONTRACT, vendor
+
+    # 屏上名册看得见它们（新用户第一次点「+」时要能拿到下载引导）——
+    # **有官方下载页的那几家**才在屏上；没有下载页的（Marvis 是我们自家、
+    # Qoder 中国版是另一件安装）压根不上屏，也就谈不上「看得见」。
+    on_screen = [vid for vid in without if vid in vr.INSTALL_SPECS]
+    assert on_screen, "表里应当还有几家上了屏却没接派活腿的"
+    for vendor in on_screen:
+        assert vendor in vr.roster(), vendor
 
 
 def test_the_channel_table_shape_did_not_change():
