@@ -1605,27 +1605,20 @@ class TestProfilesToServe:
         serve = profiles_to_serve(multiplex=True)
         assert [n for n, _ in serve] == ["default"]
 
-def test_registry_profile_name_is_the_derived_runtime_slug():
-    """名册行的内部门牌号＝**派生 slug**（一份真源），不是归一化后的名字。
+def test_registry_profile_name_is_the_roster_name_with_its_role_prefix():
+    """门牌就是名册 name 自己（带职级前缀），没有独立 slug 层。
 
-    2026-11-06：这一格以前是「归一化后的名字」（名册上可填的那一格），所以这里原来
-    拿它跟底座的 ``normalize_profile_name`` 比口径。现在它是
-    :func:`derive_runtime_slug` 的派生值——保留名（``default``／``plobi``…）派生不出来
-    就是空串（＝没有可路由身份），那不是漂移，是判据。
+    2026-11-16（i18n 定名刀）：slug 派生层整条删除。裸名（不带自己的职级
+    前缀）没有可路由身份——空串是判据，不是漂移。
     """
-    from plobi.agents.registry import AgentEntry, derive_runtime_slug
+    from plobi.agents.registry import AgentEntry
 
-    for raw in ("Aura", "L2-Aura", "default", "DEFAULT", "  Prism  "):
-        entry = AgentEntry(name=raw, role="principal")
-        assert entry.profile_name == derive_runtime_slug(raw)
-
-    # 保留名派不出内部门牌号 ⇒ 空串（不是「叫 default 的那个人」）
-    assert AgentEntry(name="default", role="principal").profile_name == ""
-
-
-# ===================================================================
-# Shared memory ledger — --clone must not copy memory files (裁定 44)
-# ===================================================================
+    assert AgentEntry(name="principal-aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="Principal-Aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="Aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="default", role="principal").profile_name == "principal-default"
+    # 中文名仍然没有门牌：录入侧必须给英文名。
+    assert AgentEntry(name="档案室", role="principal").profile_name == ""
 
 
 def test_clone_subdir_files_carry_no_memory_ledgers():

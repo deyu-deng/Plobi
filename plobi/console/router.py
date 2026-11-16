@@ -1,4 +1,4 @@
-﻿"""§5 console data API — HTTP + row assembly in ONE module (ARCH-UI-MASTER §3.5).
+"""§5 console data API — HTTP + row assembly in ONE module (ARCH-UI-MASTER §3.5).
 
 Mounted at ``/api`` by ``plobi_cli.web_server`` so the routes are exactly the
 contract paths: ``/api/agents``, ``/api/agents/{id}/subagents``,
@@ -74,8 +74,7 @@ from plobi.agents.registry import (
     default_project_path,
     agent_askability,
     agent_navigability,
-    derive_runtime_slug,
-    explain_runtime_slug,
+    AGENT_ID_RE,
     load_registry,
     profile_name_blocker,
     registration_blocker,
@@ -936,13 +935,13 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     if role.lower() not in KNOWN_ROLES:
         return _error(400, f"role must be one of {list(KNOWN_ROLES)}")
 
-    # 2026-11-15（用户裁定）：名册名必须派生得出运行时 slug。派生不出（非 ASCII 未在
-    # runtime_slugs.yaml 登记 / 形状不合法 / 撞保留名）的行建出来点了必然失败（裁
-    # 146②(b)「不许列在那儿点不动」），所以在写名册之前就拒，并指明改哪一格。
-    if not derive_runtime_slug(agent_id):
+    # 2026-11-16（i18n 定名刀）：``id`` 现在**就是**门牌，不再由别的字段派生。
+    # 前端把英文名规范化后直接发过来；建不出来（非 ASCII）的说明在提交前的表单里
+    # 就该挡住，这里是最后一道形状复核。
+    if not AGENT_ID_RE.match(agent_id):
         return _error(
             400,
-            f"name derives no runtime slug — {explain_runtime_slug(agent_id)}",
+            f"id {agent_id!r} 不是合法的门牌（小写 ASCII 字母数字，可用 - 和 _，最长 64）",
         )
 
     # WP-AGENT-DISPLAY-NAME / 裁定 37.1: ``name`` 进 display_name（人设的中

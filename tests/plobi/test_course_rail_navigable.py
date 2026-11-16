@@ -7,18 +7,18 @@ courses`` + a name that derives an ASCII slug) but their ``role`` still pointed
 at「还没有拿到身份」那一档。``AgentEntry.profile_name`` 对那种行返回 ""，于是
 ``agent_navigability`` 第一道否决开火，整列灰掉。
 
-**2026-11-15（用户裁定）**：那一档（第三个 role 值）已经物理删除——「有没有身份」
-现在只有一个判据：``derive_runtime_slug(name)`` 是否为空串。数据里写着的 ``profile``
-不算数，``role`` 也不再背这件事。这个文件跟着改成钉那条判据。
+**2026-11-15（用户裁定）**：那一档（第三个 role 值）已经物理删除。
+**2026-11-16（i18n 定名刀）**：slug 派生层整层删除——「有没有身份」的判据变成
+:func:`agent_id_for` 拼出的门牌 ``<role>-<name>`` 是否为空串。名字必须是 ASCII
+（翻译在录入侧做，中文留在 ``display_name``），数据里写着的 ``profile`` 不算数。
 
 This file pins the contract that closes it:
 
-1. A course row WHOSE NAME derives a slug is navigable — the same clickability
-   any project 分身 gets (「五种 Agent 完全平等」).
-2. A course row WHOSE NAME derives no slug (非 ASCII 未在 ``runtime_slugs.yaml``
-   登记 / 撞保留名) stays non-navigable — that row genuinely has no runtime to
-   bind, and pretending otherwise is what produced the 2026-10-13 restart-loop
-   bug.
+1. A course row WHOSE NAME yields a doorplate is navigable — the same
+   clickability any project 分身 gets (「五种 Agent 完全平等」).
+2. A course row WHOSE NAME yields no doorplate (中文名直接当 ``name``) stays
+   non-navigable — that row genuinely has no runtime to bind, and pretending
+   otherwise is what produced the 2026-10-13 restart-loop bug.
 3. Askability follows the same identity: a row with a slug is askable like any
    other L2, so 派活/提问 paths see courses and projects identically.
 
@@ -95,25 +95,25 @@ def _load(tmp_path, agents: dict) -> AgentRegistry:
 
 
 def test_identified_course_row_is_navigable_and_askable(tmp_path, home):
-    """裁定 143② shape: explicit profile + landed home ⇒ 同列同点."""
-    _landing_home(tmp_path, "l2-course-ee")
+    """裁定 143② shape: ASCII 门牌 + landed home ⇒ 同列同点。"""
+    _landing_home(tmp_path, "principal-ee")
     reg = _load(
         tmp_path,
         {
-            "电工电子学": {
+            "ee": {
+                "display_name": "电工电子学",
                 "role": PRINCIPAL,
                 "category": "courses",
-                "profile": "l2-course-ee",
             }
         },
     )
-    entry = reg.get("电工电子学")
+    entry = reg.get("ee")
 
     navigable, reason = agent_navigability(entry)
     assert navigable is True, reason
     assert agent_askability(entry)[0] is True
-    # The DTO field the rail consumes must carry the profile, not "".
-    assert entry.profile_name == "l2-course-ee"
+    # The DTO field the rail consumes must carry the doorplate, not "".
+    assert entry.profile_name == "principal-ee"
 
 
 def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
@@ -122,28 +122,28 @@ def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
     这条原来钉的是反方向（"家没落地就先把行灰掉，否则点了 spawn 失败"）。那个前提随
     单后端（裁 168）与乙案（裁 178）一起没了：点击不再 spawn 一个带 `--profile` 的进程，
     而把家当"能不能点"的证据，会让一次数据搬家把整条左栏打瘫——10-23 11:36 就是这么红的。
-    防 2026-10-13 那个重启循环的牙在隔壁那条：派生不出 slug 的行仍然不可点。
+    防 2026-10-13 那个重启循环的牙在隔壁那条：拼不出门牌的行仍然不可点。
     """
     reg = _load(
         tmp_path,
         {
-            "电工电子学": {
+            "ee": {
+                "display_name": "电工电子学",
                 "role": PRINCIPAL,
                 "category": "courses",
-                "profile": "l2-course-ee",
             }
         },
     )
-    entry = reg.get("电工电子学")
+    entry = reg.get("ee")
 
-    assert not (home / "profiles" / "l2-course-ee").exists()  # 前提：盘上没有这个家
+    assert not (home / "profiles" / "principal-ee").exists()  # 前提：盘上没有这个家
     navigable, reason = agent_navigability(entry)
     assert navigable is True
     assert reason == ""
 
 
 def test_course_row_without_identity_stays_non_navigable(tmp_path, home):
-    """非 ASCII 名、又没在 ``runtime_slugs.yaml`` 登记 ⇒ 派生不出 slug ⇒ 无路由。
+    """中文名直接当 ``name`` ⇒ 拼不出合法门牌 ⇒ 无路由。
 
     This is the shape that MUST stay grey — the 2026-10-13 restart-loop bug.
     """
@@ -160,11 +160,11 @@ def test_course_row_without_identity_stays_non_navigable(tmp_path, home):
 
 
 def test_row_whose_name_derives_no_slug_is_not_clickable(tmp_path, home):
-    """数据里那格 ``profile`` 不再算数——身份只认名字派生出来的 slug。
+    """数据里那格 ``profile`` 不再算数——身份只认 ``<role>-<name>`` 拼出来的门牌。
 
     原来是钉 2026-10-21 那个「role 说不算、数据说算」的错标形状。第三值删掉之后
     那个形状不可能再存在了，牙改成钉新判据：即便有人在 yaml 里硬塞一个 ``profile``，
-    派生不出 slug 的行照样灰着、``profile_name`` 照样是空串。
+    拼不出门牌的行照样灰着、``profile_name`` 照样是空串。
     """
     _landing_home(tmp_path, "l2-course-ee")
     reg = _load(

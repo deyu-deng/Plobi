@@ -1341,55 +1341,7 @@ def _memory_agent_dir(agent_name: str) -> Path:
     return get_memory_dir() / "agents" / resolve_agent_slug(agent_name)
 
 
-def _user_slug_table_path() -> Path:
-    """用户侧那份运行时 slug 钉表（与仓里那份同名键优先，格式相同）。"""
-    return _get_default_plobi_home() / "plobi" / "runtime-slugs.yaml"
 
-
-def _pinned_runtime_slug(name: str) -> str:
-    """这一行在钉表里有没有值：先看用户侧那份，再看仓里那份。"""
-    import yaml
-
-    for path in (_user_slug_table_path(), Path(__file__).resolve().parent.parent / "plobi" / "agents" / "runtime_slugs.yaml"):
-        if not path.is_file():
-            continue
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            continue
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if str(key).strip() == str(name).strip() and str(value or "").strip():
-                    return str(value).strip()
-    return ""
-
-
-def _carry_slug_pin(new_name: str, slug: str, carry_from: str = ""):
-    """把旧行的钉搬到新行名下（写用户侧那份），返回撤销动作。
-
-    那张表的意义是「这一行的内部门牌号不许变」；改名如果不接它，钉住的行一改名就换
-    一把门牌，按门牌存的东西当场读空。
-    """
-    import yaml
-
-    path = _user_slug_table_path()
-    before = _snapshot_bytes(path)
-    data: dict = {}
-    if path.is_file():
-        try:
-            loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            if isinstance(loaded, dict):
-                data = {str(k): str(v) for k, v in loaded.items()}
-        except Exception:
-            data = {}
-    data[str(new_name).strip()] = str(slug).strip()
-    if carry_from and str(carry_from).strip() != str(new_name).strip():
-        data.pop(str(carry_from).strip(), None)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=True), encoding="utf-8")
-    tmp.replace(path)
-    return lambda: _restore_bytes(path, before)
 
 
 def _state_db_path() -> Optional[Path]:
@@ -1573,13 +1525,8 @@ def plan_identity_rename(old_name: str, new_name: str) -> Tuple[dict, List[dict]
             target = new_store if not new_store.is_dir() else home / "cron" / "agents" / f"{identity_store_key(new_key)}-legacy"
             steps.append({"kind": "move-dir", "src": str(legacy_store), "dst": str(target)})
 
-    # 运行时 slug 的钉（`runtime_slugs.yaml`）跟着改名走：那张表的意义是「这一行的内部
-    # 门牌号不许变」，而改名恰恰是唯一还没被它接住的一条路——不接，那 14 行里任意一行
-    # 改完名就换一把门牌，按门牌存的东西（记忆目录等）当场读空。写**用户侧**那一份
-    # （`<家>/plobi/runtime-slugs.yaml`，同名键优先），不改仓里那份数据文件。
-    pinned = _pinned_runtime_slug(old_key)
-    if pinned:
-        steps.append({"kind": "slug-pin", "name": new_key, "slug": pinned, "carry_from": old_key})
+    # 2026-11-16（i18n 定名刀）：slug-pin 链路整条删除——门牌就是 name 本身，
+    # 改名即换门牌（用户已接受「改名即搬家」），不再需要一张表钉住旧门牌。
 
     state_db = _state_db_path()
     if state_db is not None and state_db.is_file():
@@ -1813,9 +1760,6 @@ def _apply_rename_step(step: dict, info: dict):
         registry.agents[step["new"]] = replace(entry, **updates)
         registry.save()
         return lambda: _restore_bytes(roster_path, before)
-
-    if kind == "slug-pin":
-        return _carry_slug_pin(step["name"], step["slug"], step.get("carry_from") or "")
 
     if kind in ("move-file", "move-dir"):
         src, dst = Path(step["src"]), Path(step["dst"])

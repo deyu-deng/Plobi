@@ -86,12 +86,15 @@ def test_roster_scope_is_not_missing(roster):
     assert _scope("srtp") == "srtp"
 
 
-def test_roster_scope_matches_by_profile_name_not_by_dir(roster):
-    """① 旧的家名写法（``l2-agenda``）照样归到名册 name —— 别名反查还在。"""
+def test_roster_scope_matches_the_roster_name(roster):
+    """① 名册 name 就是门牌；``l2-`` 那套旧家名不再认（没有重定向，照旧 404）。"""
+    from fastapi import HTTPException
+
     _add(roster, "agenda")
 
-    assert _scope("l2-agenda") == "agenda"
     assert _scope("agenda") == "agenda"
+    with pytest.raises(HTTPException):
+        _scope("l2-agenda")
 
 
 # ── ② 圈出来的真是那一行的会话 ─────────────────────────────────────────────

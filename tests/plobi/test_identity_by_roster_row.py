@@ -126,4 +126,4 @@ def test_decomposer_roster_comes_from_the_registry(roster_home):
     names = [entry["name"] for entry in roster]
     assert "Aura" in names
     assert "agenda" in names
-    assert "Aura" in valid and "aura" in valid  # 名字与 slug 都算认得
+    assert "principal-aura" in valid and "principal-agenda" in valid  # 门牌也算认得

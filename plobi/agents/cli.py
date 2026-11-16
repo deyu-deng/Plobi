@@ -16,7 +16,8 @@ from .registry import (
     DEFAULT_CATEGORY,
     RegistryError,
     default_path,
-    derive_runtime_slug,
+    agent_id_for,
+    explain_agent_id,
     load_registry,
 )
 from ..routing.models import KNOWN_ROLES, PRINCIPAL
@@ -75,20 +76,22 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
         )
         sys.exit(2)
 
-    slug = derive_runtime_slug(name)
-    if not slug:
+    # 2026-11-16（i18n 定名刀）：name 自己就是门牌的一部分，不再有「派生 / 登记
+    # 一张表」这条路。建不出来只有一个原因：name 不是 ASCII。
+    agent_id = agent_id_for(name, role_raw)
+    if not agent_id:
         print(
-            f"Error: 名册名 {name!r} 派生不出运行时 slug，建出来是一行点了必然失败的空壳。"
-            "改法二选一：① 换成 ASCII 名字；② 非 ASCII 名（如中文课程名）在 "
-            "$PLOBI_HOME/plobi/runtime_slugs.yaml 里给它登记一个 ASCII slug；"
-            "③ 撞了保留名就换名。",
+            f"Error: 名册名 {name!r} 建不出可路由身份——{explain_agent_id(name, role_raw)}。",
             file=sys.stderr,
         )
         sys.exit(2)
 
     return AgentEntry(
-        name=name,
+        # 门牌落 name、用户看到的名字落 display_name —— 两层各归其位。用户敲中文名
+        # 时 agent_id_for 会直接拒（下面那条 if），所以走到这里的 name 一定能当门牌。
+        name=agent_id,
         role=role_raw,
+        display_name=name if name != agent_id else "",
         category=category_raw,
         provider=getattr(args, "provider", None) or "",
         model=getattr(args, "model", None) or "",
@@ -102,7 +105,7 @@ def run_plobi(args: Any) -> None:
     action = getattr(args, "plobi_action", None)
     if action is None:
         print("usage: plobi plobi <agents> ...")
-        print("  agents list              list resident L2 agents")
+        print("  agents list              list resident Principal agents")
         print("  agents register NAME     add/update a registry entry")
         print("  agents spawn NAME        materialize the shared-layer files + model routing")
         return
@@ -209,6 +212,6 @@ def _spawn(registry: AgentRegistry, args: Any) -> None:
     # 概念取消后那一格不再是数据而是派生物，且随时可能从返回值里消失（读了就是
     # KeyError）。人只需要知道身份在哪一行。
     print(f"Agent:    {result['name']}（身份在名册这一行；家已退役，不再建目录）")
-    print(f"Routing:  ✅ ADR-0011 green (L1 ≠ L2 model)")
+    print(f"Routing:  ✅ ADR-0011 green (per-role model routing)")
     print(f"Start:    {result['command']}")
     print()

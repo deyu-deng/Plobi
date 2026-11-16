@@ -10,8 +10,8 @@ rc 2 · `POST /api/profiles` 已 410），本刀把它关上：**家目录不再
 判据六条：
   ① `-p` 指向一个家不存在的名字 ⇒ **盘上不长那个家**（一个字节都不建）；
   ② 折回的是**共享根** `<root>`，不是 `<root>/profiles/<name>`；
-  ③ **身份**跟着 `-p` 走：名册那一行的 `name` 进 `PLOBI_AGENT_ID`（**不是** profile 名——
-     本机 24 行名册里有 11 行 `name ≠ profile`，如 `name: agenda` / `profile: l2-agenda`）；
+  ③ **身份**跟着 `-p` 走：名册那一行的 `name` 进 `PLOBI_AGENT_ID`（门牌就是 name，
+     不再有 `profile:` 那一格）；
   ④ **kanban 的腿不丢**：worker 子进程 argv 仍带 `-p <assignee>`、`PLOBI_PROFILE` 仍在；
   ⑤ 老装机逐字不变：家**在**时仍用那一家；
   ⑥ 显式 `-p` 而名册里没有 ⇒ **报错退出**；粘性的 `active_profile` ⇒ 只出一行 note、继续跑。
@@ -55,7 +55,7 @@ def _root(home) -> Path:
     return Path(home) / ".plobi"
 
 
-def _seed_roster(root: Path, name: str, profile: str) -> None:
+def _seed_roster(root: Path, name: str) -> None:
     """名册写共享层那一份（`default_path()` = `<root>/plobi/projects.yaml`）。"""
     reg = AgentRegistry(root / "plobi" / "projects.yaml")
     reg.upsert(AgentEntry(name=name, role="principal"))
@@ -101,12 +101,12 @@ def test_dash_p_does_not_create_the_home(tmp_path):
     """① 家不存在的名字 ⇒ 盘上**不长**那个家（一个字节都不建）。"""
     root = tmp_path / ".plobi"
     root.mkdir()
-    _seed_roster(root, "agenda", "l2-agenda")
+    _seed_roster(root, "agenda")
 
-    proc = _run_cli(root, "-p", "l2-agenda")
+    proc = _run_cli(root, "-p", "agenda")
 
     assert proc.returncode == 0, proc.stderr
-    assert not (root / "profiles" / "l2-agenda").exists(), "又建了一个分身家"
+    assert not (root / "profiles" / "agenda").exists(), "又建了一个分身家"
     assert not (root / "profiles").exists() or not any((root / "profiles").iterdir())
 
 
@@ -114,9 +114,9 @@ def test_dash_p_folds_to_the_shared_root(tmp_path):
     """② 折回的是**共享根**，不是 `<root>/profiles/<name>`。"""
     root = tmp_path / ".plobi"
     root.mkdir()
-    _seed_roster(root, "agenda", "l2-agenda")
+    _seed_roster(root, "agenda")
 
-    proc = _run_cli(root, "-p", "l2-agenda")
+    proc = _run_cli(root, "-p", "agenda")
 
     home, _agent = _probe_values(proc.stdout)
     assert home == str(root), f"折回的不是共享根：{home}"
@@ -130,23 +130,23 @@ def test_identity_is_the_roster_name_not_the_profile_name(tmp_path):
     """③ `PLOBI_AGENT_ID` = 名册那一行的 **name**（不是 profile 名）。"""
     root = tmp_path / ".plobi"
     root.mkdir()
-    _seed_roster(root, "agenda", "l2-agenda")
+    _seed_roster(root, "agenda")
 
-    proc = _run_cli(root, "-p", "l2-agenda")
+    proc = _run_cli(root, "-p", "agenda")
 
     _home, agent = _probe_values(proc.stdout)
     assert agent == "agenda", f"身份不是名册 name：{agent!r}"
-    assert agent != "l2-agenda", "身份落成了 profile 名——共享层的人设文件按 name 命名"
 
 
 def test_agent_id_lookup_returns_the_roster_name(home):
     """③ 的读侧那一半：`-p` 给的是落点名，身份要的是名册 name。"""
     from plobi_cli.main import _agent_id_for_profile
 
-    _seed_roster(_root(home), "agenda", "l2-agenda")
+    _seed_roster(_root(home), "agenda")
 
-    assert _agent_id_for_profile("l2-agenda") == "agenda"
-    assert _agent_id_for_profile("agenda") == "agenda"  # 名册 name 也认
+    assert _agent_id_for_profile("agenda") == "agenda"
+    # 2026-11-16：``l2-`` 那套旧门牌不认了，没有重定向。
+    assert _agent_id_for_profile("l2-agenda") == ""
     assert _agent_id_for_profile("查无此行") == ""
 
 

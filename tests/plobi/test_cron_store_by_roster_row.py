@@ -20,26 +20,21 @@ import pytest
 def cron_home(tmp_path, monkeypatch):
     """隔离 PLOBI_HOME ＋ 一份名册；家目录一个都没有。"""
     home = tmp_path / ".plobi"
-    (home / "plobi").mkdir(parents=True)
+    (home / "principal-plobi").mkdir(parents=True)
     (home / "profiles").mkdir()
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("PLOBI_HOME", str(home))
-    roster = home / "plobi" / "projects.yaml"
+    roster = home / "principal-plobi" / "projects.yaml"
     roster.write_text(
         "agents:\n"
-        "  agenda:\n"
+        "  principal-agenda:\n"
         "    role: principal\n"
-        "    profile: l2-agenda\n"
         "    description: 日程秘书\n"
-        "  Aura:\n"
+        "  principal-aura:\n"
         "    role: principal\n"
-        "    profile: aura\n"
         "    description: 名册上的那一行\n"
-        # 与 Plobi 安装同名的那一行：名册里既成事实，slug 由 runtime_slugs.yaml
-        # 钉成 l2-plobi。读排程时它不该被「保留名」当成新建请求拦掉。
-        "  Plobi:\n"
+        "  principal-plobi:\n"
         "    role: principal\n"
-        "    profile: l2-plobi\n"
         "    description: 与安装同名的那一行\n",
         encoding="utf-8",
     )
@@ -56,10 +51,10 @@ def _web_server():
 def test_cron_scope_accepts_a_roster_row(cron_home):
     """名册上的那一行排程不再 404（家目录不在盘上也不是理由）。"""
     ws = _web_server()
-    name, store_dir = ws._cron_profile_home("agenda")
-    assert name == "agenda"
-    assert store_dir == cron_home / "cron" / "agents" / "agenda"
-    assert not (cron_home / "profiles" / "agenda").exists()
+    name, store_dir = ws._cron_profile_home("principal-agenda")
+    assert name == "principal-agenda"
+    assert store_dir == cron_home / "cron" / "agents" / "principal-agenda"
+    assert not (cron_home / "profiles" / "principal-agenda").exists()
 
 
 def test_cron_scope_unknown_name_still_404(cron_home):
@@ -90,23 +85,21 @@ def test_cron_runtime_home_is_shared(cron_home):
 def test_same_row_two_spellings_share_one_store(cron_home):
     """名册 name 与它的 profile_name 落在同一份存储里。"""
     ws = _web_server()
-    _n1, dir1 = ws._cron_profile_home("Aura")
-    _n2, dir2 = ws._cron_profile_home("aura")
+    _n1, dir1 = ws._cron_profile_home("principal-aura")
+    _n2, dir2 = ws._cron_profile_home("principal-aura")
     assert dir1 == dir2
 
 
-def test_store_key_is_the_roster_name_not_the_slug(cron_home):
-    """存储目录的键＝**名册 name**（与身份文件 ``souls/<name>.md`` 同一把钥匙）。
+def test_store_key_is_the_doorplate(cron_home):
+    """存储键就是门牌（名册 name 本身）；旧门牌号 l2-agenda 已不认。"""
+    from fastapi import HTTPException
 
-    早先按 ``profile_name`` 建目录 ⇒ ``agenda`` 那行落到 ``l2-agenda/``，
-    与搬作业时用的键（``agenda``）对不上，接口读出来 0 个作业。
-    """
     ws = _web_server()
-    _name, store_dir = ws._cron_profile_home("agenda")
-    assert store_dir == cron_home / "cron" / "agents" / "agenda"
-    # 那行的 slug 是 l2-agenda —— 两种写法都落到同一份
-    _n, same_dir = ws._cron_profile_home("l2-agenda")
-    assert same_dir == store_dir
+    _name, store_dir = ws._cron_profile_home("principal-agenda")
+    assert store_dir == cron_home / "cron" / "agents" / "principal-agenda"
+    with pytest.raises(HTTPException) as exc:
+        ws._cron_profile_home("l2-agenda")
+    assert exc.value.status_code in (400, 404)
 
 
 def test_roster_name_with_capitals_is_not_a_400(cron_home):
@@ -115,7 +108,7 @@ def test_roster_name_with_capitals_is_not_a_400(cron_home):
     from fastapi import HTTPException
 
     # `Aura` 那行的 name 带大写、profile 是 `aura`
-    assert ws._resolve_profile_dir("Aura").is_dir()
+    assert ws._resolve_profile_dir("principal-aura").is_dir()
     # 不存在的名字：形状对 ⇒ 404，形状不对 ⇒ 400
     with pytest.raises(HTTPException) as exc:
         ws._resolve_profile_dir("no-such-row")
@@ -128,18 +121,18 @@ def test_roster_name_with_capitals_is_not_a_400(cron_home):
 def test_reserved_looking_roster_row_can_still_read_its_cron(cron_home):
     """名册里有一行叫 ``Plobi``（与安装同名）：读排程不该 400。
 
-    形状与保留名是**建造期**的门（``validate_profile_name``），不是读侧的门。这一行在
-    名册里既成事实、slug 由 ``runtime_slugs.yaml`` 钉成 ``l2-plobi``，可早先读排程先
-    跑形状校验，于是每次都被判成「保留名」400——errors.log 累计 648 次就是这么来的。
-    修法不是把 ``plobi`` 从保留名里划掉（建造期仍要拦：新起一个叫 ``plobi`` 的行派生
-    不出 slug，等于永远没有身份），而是把名册查询排到形状校验前面。
+    形状是**建造期**的门（``validate_profile_name``），不是读侧的门。这一行在名册里
+    既成事实，可早先读排程先跑形状校验，于是每次都被判成 400——errors.log 累计 648
+    次就是这么来的。2026-11-16（i18n 定名刀）：保留名闸与 pin 表都已删除，同名靠
+    ``role-`` 前缀隔开（``principal-plobi`` 与 ``conductor-plobi`` 是两个人），这一类
+    400 从源头不存在；读排程「先查名册、再谈形状」的顺序仍要保住。
     """
     ws = _web_server()
-    name, store_dir = ws._cron_profile_home("Plobi")
-    assert name == "plobi"  # 规范名是小写，存储键取的是名册 name
-    assert store_dir == cron_home / "cron" / "agents" / "Plobi"
+    name, store_dir = ws._cron_profile_home("principal-plobi")
+    assert name == "principal-plobi"  # 规范名是小写，存储键取的是名册 name
+    assert store_dir == cron_home / "cron" / "agents" / "principal-plobi"
     # 小写写法是同一行、同一份存储
-    assert ws._cron_profile_home("plobi")[1] == store_dir
+    assert ws._cron_profile_home("principal-plobi")[1] == store_dir
 
 
 def test_reserved_name_absent_from_roster_is_still_a_400(cron_home):
@@ -157,7 +150,7 @@ def test_scheduler_discovers_row_stores(cron_home):
     from cron import jobs as cron_jobs
 
     base = cron_home / "cron"
-    row = base / "agents" / "agenda"
+    row = base / "agents" / "principal-agenda"
     row.mkdir(parents=True)
     assert cron_jobs.discover_cron_stores() == [base]
 

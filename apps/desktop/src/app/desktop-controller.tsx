@@ -1563,8 +1563,8 @@ export function DesktopController() {
       // （`WP-PROFILE-CANCEL`）从响应里删掉了 ⇒ 取到的是**恒空串** ⇒ 下面那道
       // 「没有 profile ⇒ 数据条目」的门**恒真** ⇒ 每个 L2 都开一张空草稿、
       // **从不 resume 自己那条会话** ⇒ 对话一换界面就消失（用户 11-10 23:02 报）。
-      // 派生 slug（`derive_runtime_slug` ＋ `runtime_slugs.yaml`）在后端，桌面算不出来
-      // 也不需要——名册行自己的 `id` 就是那个身份键。
+      // 派生 slug 与其翻译表 2026-11-16 已整层删除——名册行自己的 `id`
+      // （`<role>-<name>` 门牌）就是那个身份键，桌面不必再算别的。
       const identity = l2IdentityKey(rosterRow, agentId)
 
       let sessionId = ''

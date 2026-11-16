@@ -271,12 +271,12 @@ def _label(entry) -> str:
 
 
 def _matches(entry, needle: str) -> bool:
-    """认三个键：名册 name、display_name，以及这一行派生的运行时 slug。
+    """认三个键：名册 name、display_name，以及这一行的门牌 ``profile_name``。
 
     ``profile:`` 那一格已经删了（2026-11-06），但 ``profile_name`` 这个**属性**还在
-    ——它是 :func:`derive_runtime_slug` 的产物（``l2-course-ee`` 这种历史写法钉在
-    ``runtime_slugs.yaml`` 里）。用户手里、日志里、老脚本里还都是这些 slug，问一声
-    「问问 l2-aura」不该说找不到人。
+    ——2026-11-16（i18n 定名刀）之后它是 :func:`agent_id_for` 拼出的
+    ``<role>-<name>``（如 ``principal-aura``），桌面左栏、日志、脚本里传的都是它，
+    问一声「问问 principal-aura」不该说找不到人。
     """
     names = {entry.name, entry.display_name, getattr(entry, "profile_name", "")}
     return needle in {name.strip().casefold() for name in names if name}

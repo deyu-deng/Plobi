@@ -51,8 +51,9 @@ def test_the_assignee_key_is_the_roster_name_verbatim(roster_home):
     assert kb._canonical_assignee("Aura") == "Aura"
     assert kb._canonical_assignee("aura") == "Aura"          # 旧家名的拼法也认
     assert kb._canonical_assignee("大学物理（甲）Ⅱ") == "大学物理（甲）Ⅱ"
-    assert kb._canonical_assignee("l2-course-physics-a2") == "大学物理（甲）Ⅱ"
-    assert kb._canonical_assignee("l2-agenda") == "agenda"
+    # 2026-11-16：旧 slug 别名跟着 slug 层一起消失，认不出就原样归一。
+    assert kb._canonical_assignee("l2-course-physics-a2") == "l2-course-physics-a2"
+    assert kb._canonical_assignee("l2-agenda") == "l2-agenda"
     # 认不出的（terminal lane／人类自取的收件人）不改行为：仍走旧的归一
     assert kb._canonical_assignee("Researcher") == "researcher"
     assert kb._canonical_assignee(None) is None

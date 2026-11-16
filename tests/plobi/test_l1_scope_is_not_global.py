@@ -3,7 +3,7 @@
 
 判据四件，全在这一个文件里：
   ① 一只口给出三个值：``''`` = L1 那一格、``None`` = 不圈（``all``／认不出）、名册 name = L2；
-  ② 名册里的 L1 行（``role=conductor``，slug 恰好是 ``default``）翻回**空串**，
+  ② 名册里的 L1 行（``role=conductor``）翻回**空串**，
      不再翻成 ``secretary``（那一翻就是 11-05「我和总秘书的对话又消失了」：按
      ``secretary`` 圈 = 0 行，按空串圈才是秘书那一格）；
   ③ 总账的过滤条件把 ``agent_id=''`` 当**真过滤**，不当"没传"；
@@ -25,9 +25,9 @@ from plobi.agents.registry import (
 )
 from plobi_state import SessionDB
 
-L1 = {"role": "conductor", "profile": "default"}
-EE = {"role": "principal", "profile": "l2-course-ee", "category": "courses"}
-AGENDA = {"role": "principal", "profile": "l2-agenda"}
+L1 = {"role": "conductor", "display_name": "总秘书"}
+EE = {"role": "principal", "category": "courses"}
+AGENDA = {"role": "principal"}
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def roster(tmp_path, monkeypatch):
     (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
     reg = AgentRegistry(path=tmp_path / "projects.yaml")
-    for name, raw in (("secretary", L1), ("电工电子学", EE), ("agenda", AGENDA)):
+    for name, raw in (("secretary", L1), ("electrical-engineering", EE), ("agenda", AGENDA)):
         reg.upsert(AgentEntry.from_dict(name, raw))
     reg.save()
     return reg
@@ -46,9 +46,9 @@ def roster(tmp_path, monkeypatch):
 def test_the_scope_key_gives_three_different_things(roster):
     """``''``／``None``／名册 name 是三件事，谁都不许并成一件。"""
     entries = roster.entries()
-    # L1 的两种写法都回到**空串那一格**
-    assert agent_id_for_scope("default", entries=entries) == ""
+    # L1 那一行回到**空串那一格**；旧写法 ``default`` 随 pin 表一起作废，认不出
     assert agent_id_for_scope("secretary", entries=entries) == ""
+    assert agent_id_for_scope("default", entries=entries) is None
     # 没带作用域 = 进程默认身份 = L1（§3.4），仍然不是"全局"
     assert agent_id_for_scope("", entries=entries) == ""
     assert agent_id_for_scope(None, entries=entries) == ""
@@ -56,9 +56,10 @@ def test_the_scope_key_gives_three_different_things(roster):
     assert agent_id_for_scope("all", entries=entries) is None
     assert agent_id_for_scope("no-such-row", entries=entries) is None
     # L2：名册 name 与旧家名两种写法都算，且**不许**折进 L1
-    assert agent_id_for_scope("电工电子学", entries=entries) == "电工电子学"
-    assert agent_id_for_scope("l2-course-ee", entries=entries) == "电工电子学"
+    assert agent_id_for_scope("electrical-engineering", entries=entries) == "electrical-engineering"
     assert agent_id_for_scope("agenda", entries=entries) == "agenda"
+    # 旧 slug 写法不再有人认
+    assert agent_id_for_scope("l2-course-ee", entries=entries) is None
     # 同一份判据：认不出的写法不许悄悄落到别人那一格
     assert identity_name_in_entries(entries, "secretary") == "secretary"
 
@@ -125,12 +126,12 @@ def test_console_scope_key_routes_l1_and_l2_to_their_own_rows(monkeypatch, tmp_p
     monkeypatch.setattr(console_router, "get_registry", lambda: _Reg())
     reg = AgentRegistry(path=tmp_path / "projects.yaml")
     reg.upsert(AgentEntry.from_dict("secretary", L1))
-    reg.upsert(AgentEntry.from_dict("电工电子学", EE))
+    reg.upsert(AgentEntry.from_dict("electrical-engineering", EE))
     rows = reg.entries()
 
-    assert console_router._agent_id_for_profile("default") == ""
     assert console_router._agent_id_for_profile("secretary") == ""
-    assert console_router._agent_id_for_profile("电工电子学") == "电工电子学"
-    assert console_router._agent_id_for_profile("l2-course-ee") == "电工电子学"
+    assert console_router._agent_id_for_profile("default") is None
+    assert console_router._agent_id_for_profile("electrical-engineering") == "electrical-engineering"
+    assert console_router._agent_id_for_profile("l2-course-ee") is None
     assert console_router._agent_id_for_profile("all") is None
     assert console_router._agent_id_for_profile("no-such-row") is None

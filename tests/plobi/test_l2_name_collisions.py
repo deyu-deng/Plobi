@@ -206,68 +206,37 @@ def test_genuinely_different_homes_stay_ambiguous(fresh_registry, tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_reserved_home_name_yields_an_actionable_blocker():
-    from plobi.agents.registry import profile_name_blocker, suggested_profile_name
+def test_a_bare_name_without_a_role_prefix_yields_an_actionable_blocker():
+    """裸名（不带自己的职级前缀）没有门牌 ⇒ 派生不出运行时名字，且话术能行动。"""
+    from plobi.agents.registry import profile_name_blocker
 
-    # ``default`` 是 L1（secretary）专属的 slug；别的行撞上它 ⇒ 派生不出运行时名字。
-    entry = _project("default")
+    entry = _project("档案室")
     assert entry.profile_name == ""
     blocker = profile_name_blocker(entry)
     assert blocker
-    assert "default" in blocker  # 点名是哪条分身
+    assert "档案室" in blocker  # 点名是哪条分身
     assert "不能用" in blocker  # 说清哪儿坏了
-    suggestion = suggested_profile_name(entry)
-    assert suggestion and suggestion in blocker  # 给一个能填的替代名
 
-    # 正常名字不该被误判成建不出家。
-    assert profile_name_blocker(_project("nymo")) == ""
+    # 正常门牌不该被误判成建不出家。
+    assert profile_name_blocker(_project("principal-nymo")) == ""
 
 
 def test_agent_ask_refuses_a_分身_whose_home_can_never_be_created(fresh_registry):
-    # 分身登记了，但它派生不出运行时名字（撞 L1 保留 slug）→ 当面问要拒，并给能行动的话。
-    fresh_registry.agents["default"] = _project("default")
+    # 分身登记了，但裸名没有门牌 → 当面问要拒，并给能行动的话。
+    fresh_registry.agents["档案室"] = _project("档案室")
     with pytest.raises(AA.AskRefusal) as exc:
-        AA.resolve_target("default", registry=fresh_registry)
+        AA.resolve_target("档案室", registry=fresh_registry)
     message = str(exc.value.message)
-    assert "default" in message and "不能用" in message
+    assert "档案室" in message and "不能用" in message
 
 
-# --------------------------------------------------------------------------- #
-# slug 由 name 派生之后，upsert 不再保管家名（2026-11-05「profile 连根拔」）
-# 这几条以前断言 upsert 会把 profile 落成一格字段；那格字段已经不存在了，
-# 现在能钉的只有两件事：派生结果对不对、派生不出来会不会有人说。
-# --------------------------------------------------------------------------- #
-
-
-def test_plobi_derives_the_historical_slug_from_the_table(fresh_registry):
-    """``Plobi`` 的旧 slug 是 ``l2-plobi``，靠 ``runtime_slugs.yaml`` 那条登记一字不差。"""
-    from plobi.agents.registry import profile_name_blocker
-
-    entry = fresh_registry.upsert(_project("Plobi"))
-
-    assert entry.profile_name == "l2-plobi"
-    assert profile_name_blocker(entry) == ""
-
-
-def test_plain_ascii_names_derive_their_own_lowercase_slug(fresh_registry):
-    """没登记过的 ASCII 名一字不改地 lower 成 slug —— 不动那些本来能用的名字。"""
+def test_a_plain_ascii_name_gets_its_role_prefix_for_free(fresh_registry):
+    """录入侧只要英文名；门牌由 ``agent_id_for`` 补上职级前缀，幂等不重复。"""
     entry = fresh_registry.upsert(_project("Aura"))
+    assert entry.profile_name == "principal-aura"
 
-    assert entry.profile_name == "aura"
-
-
-def test_a_course_row_takes_its_slug_from_the_table(fresh_registry):
-    """数据条目（课程）的运行时名字只从 slug 表派生；它本来就不该报「建不出家」。"""
-    from plobi.agents.registry import AgentEntry, profile_name_blocker
-
-    # 课程行的正统形状是 principal + category: courses（裁定 143②/146②）；
-    # 派生不出 slug 的行（未登记的非 ASCII 名）才是没有身份的。
-    course = fresh_registry.upsert(
-        AgentEntry(name="电工电子学", role="principal", category="courses")
-    )
-
-    assert course.profile_name == "l2-course-ee"
-    assert profile_name_blocker(course) == "", "数据条目没有家是设计，不是缺陷"
+    same = fresh_registry.upsert(_project("principal-aura"))
+    assert same.profile_name == "principal-aura"
 
 
 def test_an_unregistered_non_ascii_name_has_no_runtime_identity(fresh_registry):

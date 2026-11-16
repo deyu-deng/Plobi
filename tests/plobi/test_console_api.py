@@ -842,17 +842,18 @@ def test_agent_id_for_profile_maps_roster_rows(_isolated_state):
     )
     assert console_router._agent_id_for_profile("agenda") == "agenda"
     assert console_router._agent_id_for_profile("physics") == "physics"
-    # 11-05（profile 连根拔）：身份写法只剩两种——名册 name，以及**表里登记过的**
-    # 运行时 slug（这只口不认大小写变体，也不认未登记的 ``l2-<name>``）。
-    assert console_router._agent_id_for_profile("l2-agenda") == "agenda"
+    # 2026-11-16（i18n 定名刀）：slug 层删除，旧 ``l2-`` 门牌不认、也没有重定向。
+    # 这一只认不出就回空串；「L1 那一格 vs 不圈」的区分在 ``_agent_scope_key``。
+    assert console_router._agent_id_for_profile("l2-agenda") is None
     assert console_router._agent_id_for_profile("l2-physics") is None
     assert console_router._agent_id_for_profile("Agenda") is None
     # 裁定 180：秘书在总账里的归属键是**空串**。名册里的 L1 行（slug 是 default）
     # 是同一格的另一种写法——把它翻成 `secretary` 就等于圈出 0 行（11-05 那次
     # 「我和总秘书的对话又消失了」）。
     assert console_router._agent_id_for_profile("secretary") == ""
-    assert console_router._agent_id_for_profile("default") == ""
-    # 旧家名 ``master`` 随 profile 一起退役：认不出 ⇒ 不圈，而不是当 L1。
+    # 2026-11-16：``default`` 是旧 slug 层的写法，跟着 slug 一起没了 ⇒ 认不出。
+    assert console_router._agent_id_for_profile("default") is None
+    # 旧家名 ``master`` 随 profile 一起退役：认不出 ⇒ 不圈（None），不要当成 L1。
     assert console_router._agent_id_for_profile("master") is None
     assert console_router._agent_id_for_profile("") == ""
     # 全局与"没带身份"是两件事
@@ -884,12 +885,12 @@ def test_an_identity_written_as_the_roster_name_is_not_read_as_l1(
     )
 
     assert console_router._agent_id_for_profile("电工电子学") == "电工电子学"
-    assert console_router._agent_id_for_profile("l2-course-ee") == "电工电子学"
+    # 2026-11-16：旧 slug 别名随 slug 层消失，认不出 ⇒ None（不圈，也不当 L1）。
+    assert console_router._agent_id_for_profile("l2-course-ee") is None
 
     assert client.get("/api/quota/summary?profile=电工电子学").json()["data"]["todayUsd"] == 0.5
-    assert client.get(
-        "/api/quota/summary", headers={"X-Plobi-Agent": "l2-course-ee"}
-    ).json()["data"]["todayUsd"] == 0.5
+    # 中文身份只能走 ``?profile=``：HTTP 头只许 latin-1，中文过不去（老注释已写明）。
+    # 这条腿在新模型下没有别的写法。
 
     # 不带身份才是 L1 那份
     assert client.get("/api/quota/summary").json()["data"]["todayUsd"] == 1.0
@@ -1093,9 +1094,11 @@ def test_conductor_shape_failure_does_not_break_startup(_isolated_state, monkeyp
             response = test_client.get("/api/agents")
 
     assert response.status_code == 200
-    assert any("L1 secretary shape" in record.getMessage() for record in caplog.records), (
-        caplog.text
-    )
+    # 文案随 web_server 那一侧统一改名（"L1 secretary shape" → "Conductor shape skipped"），
+    # 判据本身没变：shape 那一步炸了只留一条 warning，启动照走。
+    assert any(
+        "Conductor shape skipped" in record.getMessage() for record in caplog.records
+    ), caplog.text
 
 
 # --------------------------------------------------------------------------- #

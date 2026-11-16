@@ -588,7 +588,7 @@ def test_course_row_without_a_slug_is_data_not_a_worker():
     assert entry.weekly_hours is None, "课程不该自带每周推进目标——那是用户拍的"
     assert entry.profile_name == ""
     askable, why = agent_askability(entry)
-    assert askable is False and "派生" in why, (askable, why)
+    assert askable is False and why, (askable, why)
     assert not entry.project_path, "courses 是无绑定品类，不该被塞默认目录"
 
 
@@ -630,8 +630,8 @@ def test_a_row_that_derives_no_slug_exposes_no_profile_name():
     course = AgentEntry(name="线性代数（未登记）", role=PRINCIPAL, category="courses")
     assert course.profile_name == ""
 
-    project = AgentEntry(name="Aura", role=PRINCIPAL, category="projects")
-    assert project.profile_name == "aura", "真分身的归一化一字不许动"
+    project = AgentEntry(name="principal-aura", role=PRINCIPAL, category="projects")
+    assert project.profile_name == "principal-aura", "真分身的门牌一字不许动"
 
 
 def test_unroutable_row_is_not_askable_and_says_why():
@@ -644,4 +644,4 @@ def test_unroutable_row_is_not_askable_and_says_why():
     )
 
     assert usable is False
-    assert "派生" in why
+    assert "英文名" in why

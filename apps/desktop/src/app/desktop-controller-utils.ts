@@ -28,8 +28,8 @@ export interface L2RosterRow {
  * ⚠️ **不许再从名册响应里那一格 `profile` 取身份**：它 11-06 已经被
  * `5fbafaa1`（`WP-PROFILE-CANCEL`）从响应里删掉了 ⇒ 取到的是恒空串 ⇒ 每个 L2 都
  * 落进「数据条目」分支、永远开一张空草稿、**从不 resume** ⇒ 对话一换界面就消失
- * （用户 11-10 23:02 报）。那个派生 slug（`derive_runtime_slug` ＋
- * `runtime_slugs.yaml`）在后端，桌面算不出来，也不需要——名册行自己的 `id` 就是它。
+ * （用户 11-10 23:02 报）。派生 slug 与其翻译表在 2026-11-16 已经整层删除——
+ * 名册行自己的 `id`（= `<role>-<name>` 门牌）就是那个身份键，桌面不必再算别的。
  */
 export function l2IdentityKey(row: L2RosterRow | undefined, agentId: string): string {
   return (row?.id ?? '').trim() || (agentId ?? '').trim()
@@ -206,8 +206,11 @@ export function restartsMouthInPlace(level: null | ShellLevel): boolean {
  * 那边同样已清空）。
  */
 export function secretaryShortName(agentId: string, fallbackName?: string): string {
-  // WP-UI-NO-INTERNALS: the rail must never print a profile id (`l2-agenda`).
-  const stripProfilePrefix = (value: string): string => value.replace(/^l[12][-_]/, '')
+  // WP-UI-NO-INTERNALS: the rail must never print a 门牌（`principal-agenda`，
+  // 2026-11-16 之前叫 `l2-agenda`）。门牌 = `<role>-<name>`，role 是路由用的档位前缀，
+  // 屏幕上只该剩 name；旧的 `l1-`/`l2-` 拼法一并留着剥，历史行不至于当众露獠牙。
+  const stripProfilePrefix = (value: string): string =>
+    value.replace(/^(?:l[12][-_]|(?:conductor|principal|virtuoso|guest)-)/i, '')
   const named = (fallbackName || '').trim()
 
   if (named) {

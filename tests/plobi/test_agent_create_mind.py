@@ -265,18 +265,10 @@ def test_existing_key_held_by_another_project_name_is_refused(client, mind_home,
     assert tree_names(tmp_path / "mind") == []
 
 
-def test_reserved_profile_name_is_refused_before_anything_lands(client, mind_home, tmp_path):
-    # 11-06：``Plobi`` 不再是好例子——``runtime_slugs.yaml`` 为历史那行钉了
-    # ``Plobi: l2-plobi``，它派生得出合法 slug。换一个**真**撞保留名的：
-    # ``Root`` → ``root``（``_RUNTIME_SLUG_RESERVED``）。
-    response = client.post(
-        "/api/agents", json={"id": "root", "name": "Root", "category": "projects"}
-    )
-
-    assert response.status_code == 400, response.json()
-    assert "root" in response.json()["error"].lower()
-    assert live_registry().get("root") is None
-    assert tree_names(tmp_path / "mind") == []
+# 11-16（i18n 定名刀）：原来这里钉「撞保留名 ``root`` 建号必须先 400」。
+# 保留名清单随 slug 层一起物理删除，这条测试失去对象，故移除。
+# 待第二笔（入口改造）：``POST /api/agents`` 收英文名后应当自己落成门牌
+# ``<role>-<english>``，届时补一条「建号后 name 是门牌、display_name 是用户填的名」。
 
 
 def test_a_genuinely_different_project_is_still_created(client, mind_home, tmp_path):

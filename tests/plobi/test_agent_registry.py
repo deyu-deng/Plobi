@@ -38,7 +38,7 @@ def home(tmp_path, monkeypatch):
 
 
 def _entry(**kw):
-    defaults = dict(name="agenda", role="principal", model="deepseek-chat")
+    defaults = dict(name="principal-agenda", role="principal", model="deepseek-chat")
     defaults.update(kw)
     return AgentEntry(**defaults)
 
@@ -105,7 +105,7 @@ def test_default_path_resolves_to_shared_root_in_profile_mode(tmp_path, monkeypa
     自己的副本：它必须被无视，而不是被优先（那就是 R-095 改名改不干净的根因）。
     """
     root = tmp_path / "plobiroot"
-    profile = root / "profiles" / "aura"
+    profile = root / "profiles" / "principal-aura"
     (profile / "plobi").mkdir(parents=True)
     (root / "plobi").mkdir(parents=True)
     (profile / "plobi" / "projects.yaml").write_text("agents: []\n", encoding="utf-8")
@@ -138,9 +138,9 @@ def test_save_is_atomic_the_target_is_never_half_written(home, monkeypatch):
     并发读（左栏那次 `GET /api/agents`）会读到截断态，24 行名册瞬间读成 0 行。
     """
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="first", role="principal"))
+    reg.upsert(_entry(name="principal-first", role="principal"))
     path = reg.save()
-    assert "first" in path.read_text(encoding="utf-8")
+    assert "principal-first" in path.read_text(encoding="utf-8")
 
     seen = {}
     real_replace = os.replace
@@ -152,20 +152,20 @@ def test_save_is_atomic_the_target_is_never_half_written(home, monkeypatch):
 
     monkeypatch.setattr(os, "replace", spy_replace)
     second = AgentRegistry.load(path)
-    second.upsert(_entry(name="second", role="principal"))
+    second.upsert(_entry(name="principal-second", role="principal"))
     second.save()
 
-    assert "second" not in seen["target"], "rename 时目标已经是新版/半截 —— 不是原子写"
-    assert "first" in seen["target"]
-    assert "second" in seen["tmp"]
-    assert "second" in path.read_text(encoding="utf-8")
+    assert "principal-second" not in seen["target"], "rename 时目标已经是新版/半截 —— 不是原子写"
+    assert "principal-first" in seen["target"]
+    assert "principal-second" in seen["tmp"]
+    assert "principal-second" in path.read_text(encoding="utf-8")
     assert not list(path.parent.glob(f"{path.name}.tmp-*")), "临时文件没清掉"
 
 
 def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
     """写中途炸了（盘满/序列化抛）也不许把原来那份 24 行的名册毁掉。"""
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="keepme", role="principal"))
+    reg.upsert(_entry(name="principal-keepme", role="principal"))
     path = reg.save()
 
     import yaml as _yaml
@@ -175,12 +175,12 @@ def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
 
     monkeypatch.setattr(_yaml, "safe_dump", boom)
     second = AgentRegistry.load(path)
-    second.upsert(_entry(name="ghost", role="principal"))
+    second.upsert(_entry(name="principal-ghost", role="principal"))
     with pytest.raises(OSError):
         second.save()
 
-    assert "keepme" in path.read_text(encoding="utf-8")
-    assert "ghost" not in path.read_text(encoding="utf-8")
+    assert "principal-keepme" in path.read_text(encoding="utf-8")
+    assert "principal-ghost" not in path.read_text(encoding="utf-8")
     assert not list(path.parent.glob(f"{path.name}.tmp-*"))
 
 
@@ -188,16 +188,16 @@ def test_round_trip_preserves_entries(home):
     reg = AgentRegistry.load()
     # 正面那格 `skills:` 已退役（`WP-AGENT-CAPABILITIES`，11-15：它写了不生效）⇒
     # 这里改钉**还在的**那一份黑名单，判据仍是「存取一圈不丢东西」。
-    reg.upsert(_entry(name="agenda", disabled_skills=("a", "b"), description="日程闭环"))
-    reg.upsert(_entry(name="srtp", role="principal"))
+    reg.upsert(_entry(name="principal-agenda", disabled_skills=("a", "b"), description="日程闭环"))
+    reg.upsert(_entry(name="principal-srtp", role="principal"))
     path = reg.save()
 
     assert path.is_file()
     reloaded = AgentRegistry.load(path)
-    assert set(reloaded.names()) == {"agenda", "srtp"}
-    assert reloaded.get("agenda").disabled_skills == ("a", "b")
-    assert reloaded.get("agenda").description == "日程闭环"
-    assert reloaded.get("srtp").profile_name == "srtp"
+    assert set(reloaded.names()) == {"principal-agenda", "principal-srtp"}
+    assert reloaded.get("principal-agenda").disabled_skills == ("a", "b")
+    assert reloaded.get("principal-agenda").description == "日程闭环"
+    assert reloaded.get("principal-srtp").profile_name == "principal-srtp"
 
 
 def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
@@ -212,8 +212,8 @@ def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
             {
                 "version": 1,
                 "agents": {
-                    "agenda": {
-                        "name": "agenda",
+                    "principal-agenda": {
+                        "name": "principal-agenda",
                         "role": "principal",
                         "skills": ["plobi-l2-resident"],
                         "description": "日程闭环",
@@ -226,7 +226,7 @@ def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
     )
 
     reg = AgentRegistry.load()
-    entry = reg.get("agenda")
+    entry = reg.get("principal-agenda")
     assert entry is not None
     assert not hasattr(entry, "skills"), "正面那格退役了，别又长回来"
 
@@ -243,10 +243,10 @@ def test_project_paths_roundtrip_keeps_primary_first(home):
     """清单存取 + 主文件夹语义：第一个是主文件夹（旧消费方读 project_path 不变）。"""
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="multi", category="projects", project_paths=("D:/one", "D:/two", "D:/one"))
+        _entry(name="principal-multi", category="projects", project_paths=("D:/one", "D:/two", "D:/one"))
     )
     reloaded = AgentRegistry.load(reg.save())
-    entry = reloaded.get("multi")
+    entry = reloaded.get("principal-multi")
     assert entry.bound_paths() == ("D:/one", "D:/two")  # 去重保序
     assert entry.project_path == "D:/one"  # 主文件夹 = 第一个
 
@@ -254,12 +254,12 @@ def test_project_paths_roundtrip_keeps_primary_first(home):
 def test_legacy_single_project_path_reads_as_one_tuple(home):
     """旧条目只有 project_path：读进来 = 一元清单，存盘不硬写新字段（旧形状原样）。"""
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="legacy", category="projects", project_path="D:/only"))
+    reg.upsert(_entry(name="principal-legacy", category="projects", project_path="D:/only"))
     path = reg.save()
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert "project_paths" not in raw["agents"]["legacy"]  # 一元不写清单
+    assert "project_paths" not in raw["agents"]["principal-legacy"]  # 一元不写清单
     reloaded = AgentRegistry.load(path)
-    assert reloaded.get("legacy").bound_paths() == ("D:/only",)
+    assert reloaded.get("principal-legacy").bound_paths() == ("D:/only",)
 
 
 def test_courses_category_can_bind_folders(home):
@@ -267,18 +267,18 @@ def test_courses_category_can_bind_folders(home):
     assert "courses" not in UNBOUND_CATEGORIES
     reg = AgentRegistry.load()
     entry = reg.upsert(
-        _entry(name="c1", category="courses", project_path="D:/Cloud/Courses/x")
+        _entry(name="principal-c1", category="courses", project_path="D:/Cloud/Courses/x")
     )
     assert entry.bound_paths() == ("D:/Cloud/Courses/x",)
     reloaded = AgentRegistry.load(reg.save())
-    assert reloaded.get("c1").category == "courses"
-    assert reloaded.get("c1").bound_paths() == ("D:/Cloud/Courses/x",)
+    assert reloaded.get("principal-c1").category == "courses"
+    assert reloaded.get("principal-c1").bound_paths() == ("D:/Cloud/Courses/x",)
 
 
 def test_missing_profile_field_falls_back_to_name(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="x"))
-    assert reg.get("x").profile_name == "x"
+    reg.upsert(_entry(name="principal-x"))
+    assert reg.get("principal-x").profile_name == "principal-x"
 
 
 # ---------------------------------------------------------------------------
@@ -288,23 +288,23 @@ def test_missing_profile_field_falls_back_to_name(home):
 
 def test_registry_with_l1_and_l2_is_green(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="principal", model="deepseek-chat"))
+    reg.upsert(_entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="principal-agenda", role="principal", model="deepseek-chat"))
     assert reg.routing_problems() == []
 
 
 def test_l2_sharing_l1_model_is_flagged(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="bad", role="principal", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="principal-bad", role="principal", provider="moonshot", model="kimi-k3"))
     problems = reg.routing_problems()
     assert any("shares L1" in p for p in problems)
 
 
 def test_upsert_removes_and_round_trips(home):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="agenda"))
-    assert reg.remove("agenda") is True
+    reg.upsert(_entry(name="principal-agenda"))
+    assert reg.remove("principal-agenda") is True
     assert reg.remove("nope") is False
 
 
@@ -347,12 +347,12 @@ def test_spawn_creates_profile_and_models(spawn_env):
     复印件"从"检查一个空目录里没有某文件"变成"那个目录压根不存在"。
     """
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="principal", provider="deepseek", model="deepseek-chat"))
+    reg.upsert(_entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="principal-agenda", role="principal", provider="deepseek", model="deepseek-chat"))
     reg.save()
 
     _top_level_config(spawn_env, dict(_CONFIGURED_DEFAULT))
-    result = reg.spawn("agenda")
+    result = reg.spawn("principal-agenda")
 
     assert result["routing_ok"] is True
     # WP-REGISTRY-NO-HOME（B 刀）：spawn 不再建家，而这一行**要按家读配置**
@@ -375,7 +375,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # 问 ``route_for``——它仍是 deepseek/deepseek-chat，但只属于 agenda 那一行。
     assert models["roles"]["principal"]["provider"] == "bezel"
     assert models["roles"]["principal"]["model"] == "workbuddy/deepseek-v4.1-flash"
-    agenda_route = reg.route_for(reg.get("agenda"))
+    agenda_route = reg.route_for(reg.get("principal-agenda"))
     assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")
     # ADR-0011：那张唯一的表断言绿（L1≠L2）
     assert ModelRouter.load(shared).violations() == []
@@ -393,11 +393,11 @@ def test_spawn_creates_profile_and_models(spawn_env):
 def test_spawn_routing_violation_aborts(spawn_env):
     reg = AgentRegistry.load()
     # L1 缺失 → spawn 时 profile 路由表断言失败
-    reg.upsert(_entry(name="agenda", role="principal", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="principal-agenda", role="principal", provider="moonshot", model="kimi-k3"))
     reg.save()
 
     with pytest.raises(RegistryError, match="routing"):
-        reg.spawn("agenda")
+        reg.spawn("principal-agenda")
 
 
 def test_spawn_unknown_agent_raises(home):
@@ -408,13 +408,13 @@ def test_spawn_unknown_agent_raises(home):
 
 def test_spawn_reuses_existing_profile(spawn_env):
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
-    reg.upsert(_entry(name="agenda", role="principal", provider="deepseek", model="deepseek-chat"))
+    reg.upsert(_entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="principal-agenda", role="principal", provider="deepseek", model="deepseek-chat"))
     reg.save()
 
-    reg.spawn("agenda")
+    reg.spawn("principal-agenda")
     # 第二次 spawn：profile 已存在，仍成功且复用同一目录
-    result2 = reg.spawn("agenda")
+    result2 = reg.spawn("principal-agenda")
     assert result2["routing_ok"] is True
 
 
@@ -445,23 +445,23 @@ def test_cli_register_then_spawn(spawn_env, capsys, monkeypatch):
     run_plobi = cli.run_plobi
 
     run_plobi(_Args(
-        plobi_action="agents", agents_action="register", name="secretary",
+        plobi_action="agents", agents_action="register", name="conductor-secretary",
         role="conductor", profile="master", provider="moonshot", model="kimi-k3",
     ))
     run_plobi(_Args(
-        plobi_action="agents", agents_action="register", name="agenda",
+        plobi_action="agents", agents_action="register", name="principal-agenda",
         role="principal", category="projects", provider="deepseek", model="deepseek-chat",
     ))
 
-    run_plobi(_Args(plobi_action="agents", agents_action="spawn", name="agenda"))
+    run_plobi(_Args(plobi_action="agents", agents_action="spawn", name="principal-agenda"))
     out = capsys.readouterr().out
-    assert "Spawned agenda" in out
+    assert "Spawned principal-agenda" in out
     # WP-REGISTRY-NO-HOME：command 不再带 `-p`（那是已判废的形状，裁定 42）。
     # 只钉 Start 那一行——整段 out 里别处也可能出现 `-p`（usage 文本等）。
     assert "Start:    plobi chat" in out
     # 落盘后注册表可见
     reg = AgentRegistry.load()
-    assert set(reg.names()) == {"agenda", "secretary"}
+    assert set(reg.names()) == {"principal-agenda", "conductor-secretary"}
 
 
 def test_cli_spawn_inline_register(spawn_env, capsys):
@@ -469,15 +469,15 @@ def test_cli_spawn_inline_register(spawn_env, capsys):
     from plobi.agents.cli import run_plobi
 
     run_plobi(_Args(
-        plobi_action="agents", agents_action="spawn", name="secretary",
+        plobi_action="agents", agents_action="spawn", name="conductor-secretary",
         role="conductor", profile="master", provider="moonshot", model="kimi-k3",
     ))
     run_plobi(_Args(
-        plobi_action="agents", agents_action="spawn", name="agenda",
+        plobi_action="agents", agents_action="spawn", name="principal-agenda",
         role="principal", category="projects", provider="deepseek", model="deepseek-chat",
     ))
     out = capsys.readouterr().out
-    assert "Spawned agenda" in out
+    assert "Spawned principal-agenda" in out
     assert "ADR-0011 green" in out
 
 
@@ -494,29 +494,25 @@ def test_cli_register_principal_without_category_is_refused(spawn_env, capsys):
 
     with pytest.raises(SystemExit) as exc:
         run_plobi(_Args(
-            plobi_action="agents", agents_action="register", name="agenda",
+            plobi_action="agents", agents_action="register", name="principal-agenda",
             role="principal",
         ))
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "--category" in err
     # 拒在写盘之前：名册里没有这一行空壳
-    assert "agenda" not in AgentRegistry.load().names()
+    assert "principal-agenda" not in AgentRegistry.load().names()
 
 
 def test_cli_register_refuses_a_name_that_derives_no_slug(spawn_env, capsys):
-    """派生不出运行时 slug 的名字建出来是一行点了必然失败的空壳（裁 146②(b)）。"""
+    """中文名建不出门牌就被拒——不再有 slug 层，但「名字得是 ASCII」这条仍是硬要求。"""
     import pytest
-
     from plobi.agents.cli import run_plobi
 
     with pytest.raises(SystemExit) as exc:
-        run_plobi(_Args(
-            plobi_action="agents", agents_action="register", name="档案室",
-            role="principal", category="projects",
-        ))
+        run_plobi(_Args(plobi_action="agents", agents_action="register", name="档案室", role="principal", category="projects"))
     assert exc.value.code == 2
-    assert "slug" in capsys.readouterr().err
+    assert "ASCII" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------------------- #
@@ -567,12 +563,12 @@ def test_registry_roundtrip_preserves_pace(home):
 def test_display_name_round_trips_through_yaml(home):
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="aura", display_name="Aura", description="iPhone 项目节奏")
+        _entry(name="principal-aura", display_name="Aura", description="iPhone 项目节奏")
     )
     reg.save()
 
     reloaded = AgentRegistry.load(reg.path)
-    entry = reloaded.get("aura")
+    entry = reloaded.get("principal-aura")
     assert entry is not None
     assert entry.display_name == "Aura"
     # description 继续存长标语——不再承担显示名职责。
@@ -602,25 +598,25 @@ def test_display_name_empty_falls_back_to_id(home):
 def test_display_name_preserves_case_and_caps(home):
     """不做 title-case、不截断——「iPhone 项目」就存这个。"""
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="aura", display_name="Aura"))
-    reg.upsert(_entry(name="iphone-proj", display_name="iPhone 项目"))
+    reg.upsert(_entry(name="principal-aura", display_name="Aura"))
+    reg.upsert(_entry(name="principal-iphone-proj", display_name="iPhone 项目"))
     reg.save()
 
     reloaded = AgentRegistry.load(reg.path)
-    assert reloaded.get("aura").display_name == "Aura"
-    assert reloaded.get("iphone-proj").display_name == "iPhone 项目"
+    assert reloaded.get("principal-aura").display_name == "Aura"
+    assert reloaded.get("principal-iphone-proj").display_name == "iPhone 项目"
     # id 永远是小写 slug。
-    assert reloaded.get("iphone-proj").name == "iphone-proj"
+    assert reloaded.get("principal-iphone-proj").name == "principal-iphone-proj"
 
 
 def test_to_dict_omits_empty_display_name(home):
     """空 display_name 不进 yaml（避免老条目 yaml 噪声增长）。"""
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="naked", display_name=""))
-    data = reg.get("naked").to_dict()
+    reg.upsert(_entry(name="principal-naked", display_name=""))
+    data = reg.get("principal-naked").to_dict()
     assert "display_name" not in data
-    reg.upsert(_entry(name="dressed", display_name="有名字"))
-    data2 = reg.get("dressed").to_dict()
+    reg.upsert(_entry(name="principal-dressed", display_name="有名字"))
+    data2 = reg.get("principal-dressed").to_dict()
     assert data2["display_name"] == "有名字"
 
 
@@ -629,7 +625,7 @@ def test_from_dict_handles_missing_display_name_key(home):
     raw = {
         "version": 1,
         "agents": {
-            "legacy": {"role": "principal", "description": "x"},
+            "principal-legacy": {"role": "principal", "description": "x"},
         },
     }
     import yaml
@@ -638,7 +634,7 @@ def test_from_dict_handles_missing_display_name_key(home):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
     reloaded = AgentRegistry.load(path)
-    assert reloaded.get("legacy").display_name == ""
+    assert reloaded.get("principal-legacy").display_name == ""
 
 
 def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
@@ -673,29 +669,29 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
 
     project_dir = home / "workspace"
     project_dir.mkdir()
-    profile_dir = _seed_profile_dir(home, "l2-plobi")
+    profile_dir = _seed_profile_dir(home, "principal-plobi")
 
     reg = AgentRegistry.load()
     # display_name / category 是本刀新增字段；工作目录仍要跟着这一行。
     reg.upsert(
         AgentEntry(
-            name="Plobi",
+            name="principal-plobi",
             role="principal",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
-            display_name="Plobi",
+            display_name="principal-plobi",
         )
     )
     # 读时叠的前提是那一行**在盘上**（旧机制由 spawn 落文件，所以以前这里不用 save）。
     reg.save()
-    result = reg.spawn("Plobi")
+    result = reg.spawn("principal-plobi")
 
-    assert _slug_of(result) == "l2-plobi"
-    assert registry_mod.project_cwd_for_profile("l2-plobi") == str(project_dir.absolute())
+    assert _slug_of(result) == "principal-plobi"
+    assert registry_mod.project_cwd_for_profile("principal-plobi") == str(project_dir.absolute())
     # 生效链上同样读得到（不只那个查询函数）：名册行覆盖 → 顶层 → 出厂默认。
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
-    assert _effective_config(home, "l2-plobi")["terminal"]["cwd"] == str(
+    assert _effective_config(home, "principal-plobi")["terminal"]["cwd"] == str(
         project_dir.absolute()
     )
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
@@ -728,14 +724,14 @@ def _resolvable_provider_name() -> str:
 
 
 def _slug_of(result: dict) -> str:
-    """spawn 返回体里的身份 → 它的运行时 slug（家目录名 / ``-p`` 参数那种写法）。
+    """spawn 返回体里的身份 → 它的门牌（家目录名 / ``-p`` 参数那种写法）。
 
-    返回体已经没有 ``profile`` 这一格了（2026-11-06 连根拔：身份＝名册 name，
-    slug 只是它派生出来的运行时写法），所以测试自己按同一条规则派生一次。
+    2026-11-16（i18n 定名刀）：门牌就是名册 name 本身，没有派生层可借用，
+    读回来再确认一遍形状即可。
     """
-    from plobi.agents.registry import derive_runtime_slug
+    from plobi.agents.registry import AgentEntry
 
-    return derive_runtime_slug(result["name"])
+    return AgentEntry(name=result["name"], role=result.get("role") or "principal").profile_name
 
 
 def _seed_profile_dir(home, profile: str) -> Path:
@@ -760,14 +756,14 @@ def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3")
+        _entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="principal", provider=provider, model="a-model")
+        _entry(name="principal-proj", role="principal", provider=provider, model="a-model")
     )
     reg.save()
 
-    result = reg.spawn("proj")
+    result = reg.spawn("principal-proj")
 
     # WP-REGISTRY-NO-HOME：返回值里不再有 profile_dir（家不再被创建）。
     assert "profile_dir" not in result
@@ -798,19 +794,19 @@ def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, home, capl
     assert excinfo.value.code == "invalid_provider"
 
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
-    profile_dir = _seed_profile_dir(spawn_env, "proj")
+    profile_dir = _seed_profile_dir(spawn_env, "principal-proj")
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3")
+        _entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="principal", provider=_UNRESOLVABLE_PROVIDER, model="a-model",)
+        _entry(name="principal-proj", role="principal", provider=_UNRESOLVABLE_PROVIDER, model="a-model",)
     )
     reg.save()
 
     with caplog.at_level(logging.WARNING, logger="plobi.agents.registry"):
-        result = reg.spawn("proj")  # 不许抛
-        profile_cfg = _effective_config(home, "proj")
+        result = reg.spawn("principal-proj")  # 不许抛
+        profile_cfg = _effective_config(home, "principal-proj")
 
     assert result["routing_ok"] is True
     # WP-REGISTRY-NO-HOME：以前这里断言「spawn 复用了那个已存在的家」
@@ -837,18 +833,18 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
     project_dir = Path(home) / "workspace"
     project_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir = _seed_profile_dir(spawn_env, "proj")
+    profile_dir = _seed_profile_dir(spawn_env, "principal-proj")
 
     reg = AgentRegistry.load()
     reg.upsert(
-        _entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3")
+        _entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3")
     )
     reg.upsert(
-        _entry(name="proj", role="principal", provider=_UNRESOLVABLE_PROVIDER, model="a-model", project_path=str(project_dir), category="projects",)
+        _entry(name="principal-proj", role="principal", provider=_UNRESOLVABLE_PROVIDER, model="a-model", project_path=str(project_dir), category="projects",)
     )
     reg.save()
 
-    result = reg.spawn("proj")
+    result = reg.spawn("principal-proj")
 
     cfg = _effective_config(home, _slug_of(result))
     assert cfg["terminal"]["cwd"] == str(project_dir.absolute())
@@ -858,14 +854,7 @@ def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spaw
 
 
 def test_profile_name_is_normalized_to_the_on_disk_id():
-    """注册表键可以是首字母大写的显示名，但发出去的 profile 名必须是磁盘上那个小写 id。
-
-    否则桌面 ``plobi --profile Aura serve`` 会被 CLI 的 ``-p`` 预扫描（main.py 的
-    ``_PROFILE_ID_RE``）判为非法而**不摘 token**，argparse 接着把 ``Aura`` 当成子命令
-    → 退出码 2 → 分身后端永远起不来、界面一直停在「网关 检查中」。
-    与底座那个函数的等价性钉在 tests/plobi_cli/test_agent_identity.py（本层不 import plobi_cli）。
-    """
-    assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
+    assert AgentEntry(name="Principal-Aura", role="principal").profile_name == "principal-aura"
 
 
 # ---------------------------------------------------------------------------
@@ -893,15 +882,15 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     于是生效值逐字等于顶层那一份，而不是"某处落盘的值没被改写"。
     """
     _top_level_config(home, dict(_CONFIGURED_DEFAULT))
-    profile_dir = _seed_profile_dir(spawn_env, "proj")
+    profile_dir = _seed_profile_dir(spawn_env, "principal-proj")
     reg = AgentRegistry.load()
-    reg.upsert(_entry(name="secretary", role="conductor", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name="conductor-secretary", role="conductor", provider="moonshot", model="kimi-k3"))
     reg.upsert(
-        _entry(name="proj", role="principal", provider="", model="")
+        _entry(name="principal-proj", role="principal", provider="", model="")
     )
     reg.save()
 
-    result = reg.spawn("proj")
+    result = reg.spawn("principal-proj")
 
     model = _effective_config(home, _slug_of(result))["model"]
     assert model == _CONFIGURED_DEFAULT, "分身被盖上了它没被选择的模型"
@@ -921,43 +910,35 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
 
     # 控制组：同一条读链在记录**确实**写了覆盖时必须落到那个分身。没有这一段，
     # 上面那句「没写」可能只是覆盖整条根本不生效的假绿。
-    _seed_profile_dir(spawn_env, "ctrl")
+    _seed_profile_dir(spawn_env, "principal-ctrl")
     provider = _resolvable_provider_name()
     reg.upsert(
-        _entry(name="ctrl", role="principal", provider=provider, model="a-chosen-model",)
+        _entry(name="principal-ctrl", role="principal", provider=provider, model="a-chosen-model",)
     )
     reg.save()
-    reg.spawn("ctrl")
-    ctrl_model = _effective_config(home, "ctrl")["model"]
+    reg.spawn("principal-ctrl")
+    ctrl_model = _effective_config(home, "principal-ctrl")["model"]
     assert ctrl_model["provider"] == provider
     assert ctrl_model["default"] == "a-chosen-model"
     # 而且只有它变：顶层那一份仍是用户配的那一个，别人没被这一行带跑。
     assert _effective_config(home)["model"] == _CONFIGURED_DEFAULT
 
 
-def test_profile_name_derives_from_the_agent_name():
-    """2026-11-15：这里原来还挂着 ``agenda_template_entry()`` 的「模板不许硬写
-    provider/model」测试——模板本身随日程秘书单例一起退场（产品不预设任何 L2）。
-    同段末尾那组 profile_name 断言与模板无关，单独留下钉住。
+def test_profile_name_requires_its_own_role_prefix():
+    """门牌就是 name 自己，但必须带着自己那条职级前缀。
+
+    2026-11-16（i18n 定名刀）：slug 派生层与保留名闸一起删除。``Default``
+    不再需要特批——它是 ``principal-default``，跟 L1 那枚 ``default`` 不是一把门牌。
+    前缀是「Conductor 与 Principal 允许同名」的唯一隔离依据，所以读侧必须强制。
     """
-    assert AgentEntry(name="Aura", role="principal").profile_name == "aura"
-    # 11-06：``default`` 是 L1（名册 name ``secretary``）专属的 slug，别人撞上它一律
-    # 派生空串＝没有可路由身份（``derive_runtime_slug`` 里那道保留名闸）。
-    assert AgentEntry(name="Default", role="principal").profile_name == ""
-    assert AgentEntry(name="secretary", role="conductor").profile_name == "default"
+    assert AgentEntry(name="principal-aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="Principal-Aura", role="principal").profile_name == "principal-aura"
+    assert AgentEntry(name="principal-default", role="principal").profile_name == "principal-default"
+    assert AgentEntry(name="conductor-secretary", role="conductor").profile_name == "conductor-secretary"
+    # 裸名自动补前缀（录入侧只需要英文名）
+    assert AgentEntry(name="Aura", role="principal").profile_name == "principal-aura"
+    # 幂等：不重复拼
+    assert AgentEntry(name="principal-aura", role="principal").profile_name == "principal-aura"
     # 空值不许炸（未设 profile 的老行）
     assert AgentEntry(name="", role="principal").profile_name == ""
 
-def test_reserved_slug_names_are_one_list_written_twice_not_two_lists():
-    """两份保留名清单是**同一件事的两次内联**，故意的：``plobi/agents/registry.py``
-    在 ``plobi`` 层，import ``plobi_cli`` 就是分层倒错，所以它抄一份；建造期那道门
-    在 ``plobi_cli/agent_identity.py``。两份一漂移，就是「建的时候拦了、路由时没拦」
-    或者反过来——2026-11-16 复查的那批保留名 400（errors.log 累计 648 次）正是这类
-    判据错位的现场：门被架在了读侧，而不是清单不一致。
-
-    不合并，但必须逐字相等；这条测试就是那个「逐字」。
-    """
-    from plobi.agents.registry import _RUNTIME_SLUG_RESERVED
-    from plobi_cli.agent_identity import _RESERVED_NAMES
-
-    assert _RUNTIME_SLUG_RESERVED == _RESERVED_NAMES

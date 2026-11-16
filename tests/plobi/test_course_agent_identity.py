@@ -34,7 +34,11 @@ from plobi.agents.registry import (
 )
 from plobi.routing.models import DEFAULT_ROUTES, PRINCIPAL
 
+# 2026-11-16（i18n 定名刀）：一门课有两个名字——门牌（``name``，ASCII，机器用）
+# 与显示名（``display_name``，中文，用户看的）。旧版只有一个中文 ``name`` 加一张
+# 人工翻译表，表里没登记就派生不出任何东西；现在翻译在**录入侧**就做完了。
 COURSE = "大学物理（甲）Ⅱ"
+COURSE_ID = "physics-a2"
 
 
 @pytest.fixture(autouse=True)
@@ -48,11 +52,11 @@ def isolated_home(tmp_path, monkeypatch):
 
 def _course_entry(**over) -> AgentEntry:
     data = {
-        "name": COURSE,
+        "name": COURSE_ID,
+        "display_name": COURSE,
         "role": PRINCIPAL,          # 有运行时的那条路（models.py 注释指定的改法）
         "category": "courses",       # 类型只决定附加设置（裁定 146②(c)）
-        # slug 不是可填写的一格（2026-11-05）：这门课在 slug 表里登记过，
-        # 派生出来是 l2-course-physics-a2。非 ASCII 名不登记就一个字都派生不出来。
+        # 门牌 = ``<role>-<name>``，由 :func:`agent_id_for` 一次拼出，没有表、没有后缀表。
     }
     data.update(over)
     return AgentEntry(**data)
@@ -62,13 +66,13 @@ def test_declared_course_entry_gets_a_nonempty_profile_name():
     """表里登记过的课 ⇒ 前端那句「能不能点」的谓词拿到非空（R-090 的可点半边）。"""
     entry = _course_entry()
 
-    assert entry.profile_name == "l2-course-physics-a2"
+    assert entry.profile_name == "principal-physics-a2"
     assert entry.profile_name.strip()  # isNavigableAgent 在 JS 侧判的就是这个
 
 
 def test_an_unregistered_course_name_keeps_profile_name_empty():
-    """没登记过的名字 ⇒ 派生不出 slug，回空串。这是负例：
-    空串挡着「冒充一格 slug 起后端」。数据条目没有家不是缺陷，blocker 也不该响。"""
+    """中文名直接当门牌 ⇒ 拼不出合法形状，回空串。这是负例：
+    空串挡着「冒充一格 profile 起后端」。数据条目没有家不是缺陷，blocker 也不该响。"""
     entry = AgentEntry(name="未登记的中文名", role=PRINCIPAL, category="courses")
 
     assert entry.profile_name == ""

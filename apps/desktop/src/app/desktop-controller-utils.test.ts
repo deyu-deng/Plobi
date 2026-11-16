@@ -133,6 +133,16 @@ describe('secretaryShellLabel (WP-G8 / 裁定 13+16)', () => {
     expect(secretaryShortName('l2-agenda')).toBe('agenda')
     expect(secretaryShortName('l2-agenda', 'l2-agenda')).toBe('agenda')
   })
+
+  // 2026-11-16（i18n 定名刀）：门牌从 `l2-agenda` 换成 `principal-agenda`，
+  // 剥皮规则跟着 role 前缀走，屏幕上仍然只该剩 name。
+  it('never prints a 门牌：`<role>-<name>` 只留 name 那一截', () => {
+    expect(secretaryShortName('principal-agenda')).toBe('agenda')
+    expect(secretaryShortName('principal-electrical-engineering')).toBe('electrical-engineering')
+    expect(secretaryShortName('secretary')).toBe('secretary')
+    // name 里自带连字符也不许被啃掉一块
+    expect(secretaryShortName('principal-physics-a2')).toBe('physics-a2')
+  })
 })
 
 describe('pickL1MainSession (WP-G7)', () => {
