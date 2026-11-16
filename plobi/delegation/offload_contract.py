@@ -292,7 +292,9 @@ def probe_acp_login(
     spec = contract_for(key)
     if spec is None:
         return AcpLoginAnswer(key, None, "no-contract", "名册里没有这一家。")
-    if not spec.acp_args:
+    if not spec.acp_args and spec.dispatch_leg != "acp":
+        # 「有 ACP 入口」＝有旗标 **或** 它的派活腿就是 ACP（11-16）：
+        # glm 那台 ACP server 不接旗标，但入口命令就是它自己。
         return AcpLoginAnswer(key, None, "no-acp", spec.acp_note or "这一家没法用 ACP 问。")
 
     if use_cache:

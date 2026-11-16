@@ -102,7 +102,8 @@ def test_the_roster_is_the_offloadable_rows_and_nothing_else():
     offloadable = [row.id for row in vr.VENDOR_ROWS if row.offloadable]
 
     assert list(vr.EXTERNAL_AGENTS) == offloadable
-    assert len(vr.EXTERNAL_AGENTS) == 12
+    # 十二家走命令行 ＋ 六家走 ACP（11-16：纯 ACP 客席接上了派活腿）。
+    assert len(vr.EXTERNAL_AGENTS) == 18
 
 
 def test_a_vendor_with_no_login_hints_is_not_in_the_login_table():

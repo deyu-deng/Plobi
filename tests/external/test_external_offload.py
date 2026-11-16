@@ -912,7 +912,8 @@ def test_the_two_new_agents_are_advertised_through_the_same_table():
     names = {agent.name for agent in agent_roster()}
 
     assert {"kiro", "qwen"} <= names
-    assert len(offload.EXTERNAL_AGENTS) == 12
+    # 十二家走命令行 ＋ 六家走 ACP（11-16：纯 ACP 客席接上了派活腿）。
+    assert len(offload.EXTERNAL_AGENTS) == 18
 
 
 # ── 名册再加两家（11-08）：Copilot CLI 与 Kilo Code CLI ──────────────────────

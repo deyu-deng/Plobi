@@ -98,6 +98,10 @@ from agent.vendor_registry import (  # noqa: F401  （re-export：公共形状�
     ExternalAgentSpec,
     INSTALL_SPECS,
     InstallSpec,
+    # 11-16：ACP 派活腿要的两张小表（哪一家走哪条腿／ACP 那一腿的档怎么对）。
+    ACP_MODE_MAPS,
+    DISPATCH_LEGS,
+    OFFLOAD_CONTRACT,
 )
 
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"
@@ -135,6 +139,15 @@ def _apply_account_env(agent: str, env: dict[str, str]) -> tuple[str, Any]:
 #: 127.0.0.1:7890 — that is this box's dev-time Clash port and changes with the
 #: network. Unset, we fall through to the repo's ONE proxy reader.
 PROXY_ENV = "PLOBI_OFFLOAD_PROXY"
+
+#: 代理那几个键（**一份**就够：投影与回退都走它）。
+_PROXY_KEYS = (
+    "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
+    "https_proxy", "http_proxy", "all_proxy",
+)
+
+#: ACP 那一腿：开一条会话给它多少秒（它要起进程、读配置、可能自己弹一次登录提示）。
+ACP_SESSION_TIMEOUT = 60.0
 
 #: Where an offload may NOT run: the four repositories on this box.
 FORBIDDEN_CWD_NAMES = ("Plobi-Desktop", "Plobi-Harmony-App", "Code", "Docs")
@@ -949,6 +962,330 @@ def main(argv: Optional[list[str]] = None) -> int:
     return 0 if result.ok else 1
 
 
+# ── 两条腿（11-16）：命令行 ／ ACP ─────────────────────────────────────────
+#
+# **纯 ACP 客席**（ACP 官方注册表收录、本机没有一条跑通的命令行腿的那一批）
+# 走协议那一腿：``initialize`` → ``session/new`` → ``session/set_mode`` → ``session/prompt``。
+# 哪一家走哪条腿，**真源表那一行说了算**（``VendorRow.dispatch_leg``），不按厂商分叉。
+
+
+def dispatch_leg(agent: str) -> str:
+    """这一家派活走哪条腿（``cli``／``acp``）。真源表那一行说了算。"""
+    return DISPATCH_LEGS.get((agent or "").strip().lower(), "cli")
+
+
+@dataclasses.dataclass(frozen=True)
+class OffloadPreparation:
+    """一趟派活**开台**以后的那一包（两条腿共用）。
+
+    开台的活儿：工作目录守卫、job token、回执文件、子进程那一包环境
+    （洗过的／交过凭据的／投影过出口的）、产物基线。
+    """
+
+    workdir: Path
+    job: str
+    reply_file: Optional[Path]
+    env: dict[str, str]
+    account: str
+    snapshot_path: Optional[str]
+    proxy: str
+    proxy_source: str
+    before: dict[str, float]
+
+
+def _project_proxy(env: dict[str, str]) -> tuple[str, str]:
+    """把出口投影到子进程那一包环境里。返回 ``(代理, 来源)``。
+
+    **一份**就够：命令行腿与 ACP 腿共用它——出口怎么投影只有一份答案，
+    两处各写一份就是「改了一处、另一处悄悄不生效」（裁定 94 族）。
+    """
+    proxy, proxy_source = resolve_proxy()
+    knob = bool(os.environ.get(PROXY_ENV, "").strip())
+    if proxy and knob:
+        # An explicit per-channel override wins outright — including over a
+        # declared table, because "I named this exit for this channel" is the
+        # user speaking louder than the routing config.
+        for key in _PROXY_KEYS:
+            env[key] = proxy
+    elif not knob:
+        projected = project_egress_onto(env)
+        if projected:
+            proxy = env.get("HTTPS_PROXY", "") or env.get("https_proxy", "")
+            proxy_source = projected
+        elif proxy:
+            for key in _PROXY_KEYS:
+                env[key] = proxy
+    return proxy, proxy_source
+
+
+def prepare_offload(
+    task: str,
+    *,
+    agent: str,
+    cwd: Path | str,
+) -> tuple[OffloadPreparation, str]:
+    """把一趟派活**开好台**。返回 ``(开好的台, 拼上回执说明的提示词)``。
+
+    **这一格不许失败**：目录落在那四个仓里、出口连不上、路由表读不出来
+    ⇒ 抛 :class:`ValueError`（调用方把它当成一次失败的结果，不当异常崩掉）。
+
+    这一格做的是**两腿都要做的事**：回执身份（job token）、回执文件路径、
+    子进程那一包环境（洗 SDK 变量／交凭据／投影出口）、产物基线。
+    """
+    workdir = Path(cwd).resolve()
+    allowed, why = cwd_is_allowed(workdir)
+    if not allowed:
+        raise ValueError(why)
+
+    # 回执身份：每次派活现造一枚 token，任务书里那条落盘路径与子进程环境里那个值
+    # 都指向同一趟。它写不写、写了是不是这一趟的，都是**可核的读数**。
+    job = new_job_token()
+    reply_file = reply_file_for(workdir, job)
+    if reply_file is not None:
+        task = task + reply_instructions(job, reply_file)
+
+    env = dict(os.environ)
+    # 从 Qoder Desktop 里派活时，子进程会继承那三个 SDK 变量，CLI 一看就拒普通调用
+    # （`sdk_invalid_args`）。洗掉它的条件是**结构性事实**，写在表里，不是 if 分支。
+    scrub_child_env(agent, env)
+    # 多账号：主人选的那个身份 ⇒ 把它的凭据交给厂商（厂商认哪个入口写在真源表那一行）。
+    # 没选 ⇒ 什么都不交，厂商用它自己当前登录的那个（行为一个字不变）。
+    account_id, snapshot_path = _apply_account_env(agent, env)
+    if reply_file is not None:
+        env[REPLY_FILE_ENV] = str(reply_file)
+    try:
+        proxy, proxy_source = _project_proxy(env)
+        # Ask before spending: a dead exit must not turn into a child that reports
+        # something else (agy says "Please sign in") and a task that burns tokens.
+        if proxy:
+            reachable, why_not = egress_is_reachable(proxy)
+            if not reachable:
+                raise ValueError(why_not)
+        if is_sandboxed():
+            env["CODEBUDDY_IS_SANDBOX"] = "1"
+        before = {str(p.relative_to(workdir)): p.stat().st_mtime
+                  for p in workdir.rglob("*") if p.is_file()}
+    except Exception:
+        # 半路失败 ⇒ 别把凭据快照留在盘上（那是一次性的交接物）。
+        if snapshot_path is not None:
+            with contextlib.suppress(OSError):
+                Path(str(snapshot_path)).unlink(missing_ok=True)
+        raise
+    return OffloadPreparation(
+        workdir=workdir,
+        job=job,
+        reply_file=reply_file,
+        env=env,
+        account=account_id,
+        snapshot_path=snapshot_path,
+        proxy=proxy,
+        proxy_source=proxy_source,
+        before=before,
+    ), task
+
+
+def _pick_acp_mode(
+    mode_map: Any,
+    requested: str,
+    available: list[str],
+) -> tuple[str, str]:
+    """选它那一档。返回 ``(要切的那一档, 出错时的那句话)``。
+
+    * 请求的是**归一化档**（``read_only``／``edit``／``full_auto``）⇒ 按真源表那一行
+      声明的映射换算（``AcpModeMap.mapping``）；
+    * 请求的是**它自己的档 id** ⇒ 直接用（它报出来的档我们自己也能点名）；
+    * 没请求 ⇒ 用真源表声明的默认档；没有默认档 ⇒ 不切（用它当前那档）。
+
+    **它没有那一档就说没有**（不猜、不替它编一档）。
+    它的档是 **agent 模式**而不是权限档时（DevEco 的 build／ask／goal／plan），
+    我们的 read_only／edit／full_auto 对不上它 ⇒ 照实说，不硬套。
+    """
+    mapping = dict(mode_map.mapping) if mode_map else {}
+    if requested:
+        if requested in mapping:
+            target = mapping[requested]
+            if target not in available:
+                # 主人明说「要这一档」，而它**没有那一档** ⇒ 照实说没有。
+                # 静默换一档 = 拿另一档的权限干主人没点过的那件事。
+                return "", (f"这一家没有「{requested}」那一档"
+                           f"（它有：{'、'.join(available) or '（它没报档）'}）")
+            return target, ""
+        if requested in available:
+            return requested, ""
+        if mode_map and mode_map.kind == "agent":
+            return "", f"这一家的档是 agent 模式，不是权限档（{mode_map.note}）"
+        return "", (f"这一家没有「{requested}」那一档"
+                   f"（它有：{'、'.join(available) or '（它没报档）'}）")
+    return (mode_map.default if mode_map else ""), ""
+
+
+def run_acp_task(
+    task: str,
+    *,
+    cwd: Optional[Path | str] = None,
+    agent: str,
+    permission_mode: Optional[str] = None,
+    timeout: float = 900.0,
+    reply_to: str = "",
+) -> OffloadResult:
+    """**ACP 派活腿**：把一段活交给那台 ACP server。
+
+    四步（协议次序，见 ``agent/acp_client.py``）：``initialize`` → ``session/new``
+    → ``session/set_mode`` → ``session/prompt``。
+
+    **档从哪儿来**：真源表那一行声明的映射（``AcpModeMap``）——
+    归一化档（``read_only``／``edit``／``full_auto``）→ 它自己那一档的 id。
+    它没有那一档就不切；**要的是只读 ⇒ 它问权限一律不准**，其余准
+    （与命令行腿同一个判据：子进程跑在它自己那档上，Plobi 自己的闸门一道都不松）。
+
+    **它自己说的话原样带出去**：拒了、没登录、没 API key —— 那些都是它的原话，
+    我们不替它翻译成「失败了」。
+    """
+    from agent.acp_client import (
+        CLIENT_CAPABILITIES,
+        CLIENT_INFO,
+        PROTOCOL_VERSION,
+        AcpClient,
+        AcpError,
+        error_text,
+    )
+
+    workdir = Path(cwd).resolve() if cwd else default_workdir()
+    sandboxed = is_sandboxed()
+    reply_to = (reply_to or "").strip()
+
+    def fail(
+        message: str,
+        *,
+        argv: tuple[str, ...] = (),
+        flags: tuple[str, ...] = (),
+        session: str = "",
+        usage: Optional[dict[str, Any]] = None,
+        cost: Optional[float] = None,
+        cost_status: str = "not_started",
+    ) -> OffloadResult:
+        return OffloadResult(
+            agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
+            exit_code=None, duration_s=0.0, argv=argv, usage=usage or {}, cost=cost,
+            cost_status=cost_status, artifacts=(), text="", ok=False, error=message,
+            external_session=session,
+            external_session_source="acp.sessionId" if session else "",
+        )
+
+    contract = OFFLOAD_CONTRACT.get(agent)
+    if contract is None or (not contract.acp_args and contract.dispatch_leg != "acp"):
+        return fail(f"这一家没有 ACP 那一腿：{agent}。")
+    binary = resolve_command(agent)
+    if not binary:
+        return fail(f"external agent {agent!r} has no drivable command on this machine")
+
+    try:
+        prep, task = prepare_offload(task, agent=agent, cwd=workdir)
+    except ValueError as exc:
+        return fail(str(exc))
+
+    argv = tuple(spawn_argv([binary, *contract.acp_args]))
+    client = AcpClient(argv, cwd=str(prep.workdir), env=prep.env)
+    # 「要的是只读 ⇒ 它问权限一律不准」：判据只有这一条，别的档照旧准
+    # （裁定 99 一：子进程跑在它自己那档上，Plobi 自己的闸门一道都不松）。
+    client.allow_permissions = (permission_mode or "").strip() != "read_only"
+
+    session_id = ""
+    flags: tuple[str, ...] = ()
+    usage: dict[str, Any] = {}
+    stop_reason = ""
+    started = time.time()
+    try:
+        client.start()
+        init = client.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "clientCapabilities": CLIENT_CAPABILITIES,
+            "clientInfo": CLIENT_INFO,
+        }, ACP_SESSION_TIMEOUT)
+        if "error" in init:
+            return fail(f"initialize 被拒：{error_text(init['error'])}", argv=argv)
+
+        new = client.request("session/new", {
+            "cwd": str(prep.workdir),
+            "mcpServers": [],
+        }, ACP_SESSION_TIMEOUT)
+        if "error" in new:
+            return fail(f"session/new 被拒：{error_text(new['error'])}", argv=argv)
+        created = new.get("result") or {}
+        session_id = str(created.get("sessionId") or "")
+        state = created.get("modes") or {}
+        available = [
+            str(mode.get("id"))
+            for mode in (state.get("availableModes") or [])
+            if isinstance(mode, dict) and mode.get("id")
+        ]
+        current = str(state.get("currentModeId") or "")
+
+        # 档：真源表那一行声明的映射（不按厂商分叉）。
+        target, complaint = _pick_acp_mode(
+            ACP_MODE_MAPS.get(agent), (permission_mode or "").strip(), available)
+        if complaint:
+            return fail(complaint, argv=argv, session=session_id)
+        if target and target in available and target != current:
+            switched = client.request("session/set_mode", {
+                "sessionId": session_id,
+                "modeId": target,
+            }, ACP_SESSION_TIMEOUT)
+            if "error" in switched:
+                return fail(f"切档被拒：{error_text(switched['error'])}",
+                            argv=argv, session=session_id)
+        # 生效的那一档：**切了就是切的那一档，没切就是它自己当前那档**
+        # （台账里那一格写的就是它真在跑的那一档）。
+        effective = target if (target and target in available) else current
+        flags = (f"acp-mode:{effective}",) if effective else ()
+
+        prompt = client.request("session/prompt", {
+            "sessionId": session_id,
+            "prompt": [{"type": "text", "text": task}],
+        }, timeout)
+        if "error" in prompt:
+            return fail(f"它自己拒了这一趟：{error_text(prompt['error'])}",
+                        argv=argv, flags=flags, session=session_id)
+        answered = prompt.get("result") or {}
+        stop_reason = str(answered.get("stopReason") or "")
+        reported = answered.get("usage")
+        usage = dict(reported) if isinstance(reported, dict) else {}
+    except AcpError as exc:
+        return fail(str(exc), argv=argv, flags=flags, session=session_id)
+    finally:
+        client.close()
+        if prep.snapshot_path is not None:
+            with contextlib.suppress(OSError):
+                Path(str(prep.snapshot_path)).unlink(missing_ok=True)
+
+    duration = time.time() - started
+    text = client.agent_text()
+    artifacts = _collect_artifacts(prep.workdir, prep.before)
+    cost, cost_status = _cost(usage)
+    produced = bool(artifacts)
+    reply, reply_status = collect_reply(prep.reply_file)
+
+    error = ""
+    if stop_reason == "refusal":
+        error = "它自己拒了这一趟（stopReason=refusal）。"
+    elif stop_reason and stop_reason != "end_turn":
+        error = f"它没做完就停了（stopReason={stop_reason}）。"
+    elif not (text or produced):
+        error = "它没回话也没落盘。"
+    ok = not error
+
+    return OffloadResult(
+        agent=agent, cwd=str(prep.workdir), permission_flags=flags, sandboxed=sandboxed,
+        exit_code=None, duration_s=round(duration, 2), argv=argv,
+        usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,
+        text=text, ok=ok, error=error, produced=produced,
+        proxy=prep.proxy, proxy_source=prep.proxy_source,
+        external_session=session_id, external_session_source="acp.sessionId" if session_id else "",
+        job=prep.job, reply=reply, reply_status=reply_status, reply_to=reply_to,
+        account=prep.account,
+    )
+
+
 def run_task(
     task: str,
     *,
@@ -963,6 +1300,14 @@ def run_task(
     ``reply_to`` 是**派活那一侧的 Agent 名字**（可空），只进台账当"该向谁交代"的读数；
     回执本身走文件（见 :func:`reply_instructions`），不靠它填收件人。
     """
+    # **两条腿**（11-16）：这一家登记了 ACP 派活腿（纯 ACP 客席）⇒ 走协议；
+    # 否则走命令行。**真源表那一行说了算**（不按厂商分叉）。
+    if dispatch_leg(agent) == "acp":
+        return run_acp_task(
+            task, cwd=cwd, agent=agent, permission_mode=permission_mode,
+            timeout=timeout, reply_to=reply_to,
+        )
+
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     allowed, why = cwd_is_allowed(workdir)
     try:
@@ -991,10 +1336,17 @@ def run_task(
     # 回执身份：每次派活现造一枚 token，任务书里那条落盘路径与子进程环境里那个值
     # 都指向同一趟。它写不写、写了是不是这一趟的，都是**可核的读数**。
     reply_to = (reply_to or "").strip()
-    job = new_job_token()
-    reply_file = reply_file_for(workdir, job)
-    if reply_file is not None:
-        task = task + reply_instructions(job, reply_file)
+    # 「开台」：job token、回执文件、子进程那一包环境、代理投影、产物基线
+    # ——**两条腿共用这一格**（出口怎么投影只有一份答案，裁定 94 族）。
+    try:
+        prep, task = prepare_offload(task, agent=agent, cwd=workdir)
+    except ValueError as exc:
+        return fail(str(exc))
+    job, reply_file = prep.job, prep.reply_file
+    env = prep.env
+    account_id, snapshot_path = prep.account, prep.snapshot_path
+    proxy, proxy_source = prep.proxy, prep.proxy_source
+    before = prep.before
 
     # 批处理壳会把带换行的任务书截到第一行（见 `TASK_PREFIX`）：换成交给它读文件。
     prompt = task
@@ -1006,45 +1358,6 @@ def run_task(
                 task_file.write_text(task, encoding="utf-8")
                 prompt = task_file_prompt(task_file)
     argv = build_argv(agent, binary, prompt, flags, extra_args(agent))
-    env = dict(os.environ)
-    # 从 Qoder Desktop 里派活时，子进程会继承那三个 SDK 变量，CLI 一看就拒普通调用
-    # （`sdk_invalid_args`）。洗掉它的条件是**结构性事实**，写在表里，不是 if 分支。
-    scrub_child_env(agent, env)
-    # 多账号：主人选的那个身份 ⇒ 把它的凭据交给厂商（厂商认哪个入口写在真源表那一行）。
-    # 没选 ⇒ 什么都不交，厂商用它自己当前登录的那个（行为一个字不变）。
-    account_id, snapshot_path = _apply_account_env(agent, env)
-    if reply_file is not None:
-        env[REPLY_FILE_ENV] = str(reply_file)
-    proxy, proxy_source = resolve_proxy()
-    knob = bool(os.environ.get(PROXY_ENV, "").strip())
-    if proxy and knob:
-        # An explicit per-channel override wins outright — including over a
-        # declared table, because "I named this exit for this channel" is the
-        # user speaking louder than the routing config.
-        for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
-                    "https_proxy", "http_proxy", "all_proxy"):
-            env[key] = proxy
-    elif not knob:
-        try:
-            projected = project_egress_onto(env)
-        except ValueError as exc:
-            return fail(str(exc))
-        if projected:
-            proxy = env.get("HTTPS_PROXY", "") or env.get("https_proxy", "")
-            proxy_source = projected
-        elif proxy:
-            for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
-                        "https_proxy", "http_proxy", "all_proxy"):
-                env[key] = proxy
-    if sandboxed:
-        env["CODEBUDDY_IS_SANDBOX"] = "1"
-    # Ask before spending: a dead exit must not turn into a child that reports
-    # something else (agy says "Please sign in") and a task that burns tokens.
-    if proxy:
-        reachable, why = egress_is_reachable(proxy)
-        if not reachable:
-            return fail(why)
-    before = {str(p.relative_to(workdir)): p.stat().st_mtime for p in workdir.rglob("*") if p.is_file()}
 
     started = time.time()
     try:

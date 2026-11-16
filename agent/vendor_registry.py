@@ -195,6 +195,10 @@ class VendorContract:
     acp_registry_id: str = ""
     #: 起 ACP 模式的旗标（跟本机那个入口命令配着用）。空 = 没法用 ACP 问它。
     acp_args: tuple[str, ...] = ()
+    #: 这一家派活走哪条腿（``cli``／``acp``，11-16）。
+    #: ACP 腿的那几家**入口命令就是它自己**——旗标可以空（glm 那台 ACP server
+    #: 不接旗标），所以「有没有 ACP 入口」不能只看旗标。
+    dispatch_leg: str = "cli"
     #: 这一家 ACP 那一支**现核到哪一步**（给日志与 tooltip，不上屏）。
     acp_note: str = ""
     #: 回跳到它自己那条会话的旗标（``{session_id}`` 是唯一允许被替换的槽位）。
@@ -271,6 +275,34 @@ class AccountRule:
     account_key: str = "account"
     #: 身份文件里「凭据」那一块的键（``auth``）。
     auth_key: str = "auth"
+
+
+@dataclasses.dataclass(frozen=True)
+class AcpModeMap:
+    """ACP 那一腿的**档**怎么对（11-16：ACP 派活腿）。
+
+    **档有两种性质，混不得**（11-15 本机现读三家）：
+
+    * ``permission`` —— **权限档**：说的是「它准你做到哪一步」
+      （GLM 三档：default／accept_edits／bypass_permissions；
+      Claude 五档：default／acceptEdits／plan／auto／bypassPermissions）；
+    * ``agent`` —— **agent 模式**：说的是「它是谁」
+      （DevEco 四档：build／ask／goal／plan——干活的那个／问答的那个／出主意的那个）。
+
+    把后者当权限档翻译就是**编**——把「它是谁」说成「它准你做到哪一步」，
+    主就会以为派出去的活比实际更宽（或更窄）。⇒ 这一格是**表里声明**的，
+    代码只按声明办事，**不按厂商分叉**（真源表一行一家，裁定 94 族）。
+    """
+
+    #: ``permission``（权限档）／``agent``（agent 模式）。空 = 这一家没有档。
+    kind: str = ""
+    #: 归一化档（``read_only``／``edit``／``full_auto``）→ 它那一档的 id。
+    #: 成对写：先我们的，后它的。
+    mapping: tuple[tuple[str, str], ...] = ()
+    #: 不指定档时切到哪一档（空 = 不切，用它自己当前那档）。
+    default: str = ""
+    #: 一句人话（给日志与 tooltip，不上屏）。
+    note: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -613,6 +645,11 @@ class VendorRow:
     acp_registry_id: str = ""
     acp_args: tuple[str, ...] = ()
     acp_note: str = ""
+    #: 这一家派活**走哪条腿**：``cli``（命令行）／``acp``（协议）。
+    #: 纯 ACP 客席只有后者——它们没有一条跑通的命令行腿（11-16 派活腿）。
+    dispatch_leg: str = "cli"
+    #: ACP 那一腿的**档**怎么对（权限档／agent 模式；表里声明，代码不按厂商分叉）。
+    acp_modes: Optional[AcpModeMap] = None
 
     # ── 回跳 ─────────────────────────────────────────────────────────────
     resume_argv: tuple[str, ...] = ()
@@ -653,6 +690,7 @@ class VendorRow:
             acp_registry_id=self.acp_registry_id,
             acp_args=self.acp_args,
             acp_note=self.acp_note,
+            dispatch_leg=self.dispatch_leg,
             resume_argv=self.resume_argv,
             resume_note=self.resume_note,
             session_source=self.session.vendor if self.session else "",
@@ -1543,7 +1581,12 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="auggie",
         command_env="PLOBI_OFFLOAD_AUGGIE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AUGGIE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        dispatch_leg="acp",
+        acp_registry_id="auggie",
+        acp_args=("--acp",),
+        acp_note="11-15 本机实测：握手通了，但登录/派活被拒——它自己说「要在终端里 auggie login，ACP 里登不了」；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @augmentcode/auggie@0.37.0",
             package="@augmentcode/auggie",
@@ -1551,7 +1594,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="auggie",
             verified=True,
             note="ACP 官方注册表收录（id「auggie」）；11-15 本机实测：握手通了，但登录/派活被拒——"
-                 "它自己说「要在终端里 auggie login，ACP 里登不了」⇒ 这一家还没接派活腿",
+                 "它自己说「要在终端里 auggie login，ACP 里登不了」⇒ 派活腿走 ACP（11-16 接上）",
         ),
     ),
 
@@ -1722,7 +1765,19 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="glm-acp-agent",
         command_env="PLOBI_OFFLOAD_GLM_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GLM_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        dispatch_leg="acp",
+        acp_registry_id="glm-acp-agent",
+        acp_args=(),
+        acp_note="11-15 本机实测：握手通了，也开出了会话，权限档是 ACP 的 session mode（default／accept_edits／bypass_permissions）；但发一句 prompt 报「No API key found」；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        acp_modes=AcpModeMap(
+            kind="permission",
+            mapping=(("read_only", "default"), ("edit", "accept_edits"),
+                     ("full_auto", "bypass_permissions")),
+            default="bypass_permissions",
+            note="11-15 现读：它的三档就是权限档（default＝问一句；accept_edits＝自动改文件；bypass_permissions＝全放开）",
+        ),
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g glm-acp-agent@1.17.1",
             package="glm-acp-agent",
@@ -1731,7 +1786,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             verified=True,
             note="ACP 官方注册表收录（id「glm-acp-agent」）；11-15 本机实测：握手通了，也开出了会话，"
                  "权限档是 ACP 的 session mode（default／accept_edits／bypass_permissions）；"
-                 "但发一句 prompt 报「No API key found」⇒ 这一家还没接派活腿",
+                 "但发一句 prompt 报「No API key found」⇒ 派活腿走 ACP（11-16 接上）",
         ),
     ),
 
@@ -1740,7 +1795,12 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="grok",
         command_env="PLOBI_OFFLOAD_GROK_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GROK_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        dispatch_leg="acp",
+        acp_registry_id="grok-build",
+        acp_args=("agent", "stdio"),
+        acp_note="11-15 本机实测：握手通了，但开会话被拒——它自己说没登录（authMethods 里是 grok.com 网页登录）；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @xai-official/grok@1.0.87",
             package="@xai-official/grok",
@@ -1748,7 +1808,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="grok",
             verified=True,
             note="ACP 官方注册表收录（id「grok-build」）；11-15 本机实测：握手通了，但开会话被拒——"
-                 "它自己说没登录（authMethods 里是 grok.com 网页登录）⇒ 这一家还没接派活腿",
+                 "它自己说没登录（authMethods 里是 grok.com 网页登录）⇒ 派活腿走 ACP（11-16 接上）",
         ),
     ),
 
@@ -1822,7 +1882,12 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="kimi",
         command_env="PLOBI_OFFLOAD_KIMI_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMI_CODE_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        dispatch_leg="acp",
+        acp_registry_id="kimi-code",
+        acp_args=("acp",),
+        acp_note="11-15 本机实测：握手通了，但开会话被拒——它自己说没登录（要在终端里 /login）；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @moonshot-ai/kimi-code@2.6.2",
             package="@moonshot-ai/kimi-code",
@@ -1830,7 +1895,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="kimi",
             verified=True,
             note="ACP 官方注册表收录（id「kimi-code」）；11-15 本机实测：握手通了，但开会话被拒——"
-                 "它自己说没登录（要在终端里 /login）⇒ 这一家还没接派活腿",
+                 "它自己说没登录（要在终端里 /login）⇒ 派活腿走 ACP（11-16 接上）",
         ),
     ),
 
@@ -1887,7 +1952,12 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="nova",
         command_env="PLOBI_OFFLOAD_NOVA_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_NOVA_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        dispatch_leg="acp",
+        acp_registry_id="nova",
+        acp_args=("acp",),
+        acp_note="11-15 本机实测：握手通了，但开会话被拒——它自己说「要点 Nova Setup 配 API key」；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @compass-ai/nova@1.1.65",
             package="@compass-ai/nova",
@@ -1895,7 +1965,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="nova",
             verified=True,
             note="ACP 官方注册表收录（id「nova」）；11-15 本机实测：握手通了，但开会话被拒——"
-                 "它自己说「要点 Nova Setup 配 API key」⇒ 这一家还没接派活腿",
+                 "它自己说「要点 Nova Setup 配 API key」⇒ 派活腿走 ACP（11-16 接上）",
         ),
     ),
 
@@ -1984,7 +2054,15 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         binary_name="deveco",
         command_env="PLOBI_OFFLOAD_DEVECO_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEVECO_EXTRA_ARGS",
-        offloadable=False,
+        offloadable=True,
+        dispatch_leg="acp",
+        acp_args=("acp",),
+        acp_note="11-15 本机实测：握手通了、开出了会话，档是 ACP 的 session mode，但它那四档（build／ask／goal／plan）是 agent 模式不是权限档；发一句 prompt 它回 refusal；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        acp_modes=AcpModeMap(
+            kind="agent",
+            note="11-15 现读：它的四档（build／ask／goal／plan）是 agent 模式（干活的那个／问答的那个／出主意的那个），不是权限档 ⇒ 我们不替它选那一档",
+        ),
+        resume_note=NO_RESUME_FLAG,
         install=InstallSpec(
             command="npm i -g @deveco/deveco-code@stable",
             package="@deveco/deveco-code",
@@ -1992,7 +2070,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             binary="deveco",
             verified=True,
             note="华为的 HarmonyOS 开发 AI Agent（11-15 官方文档现读 ＋ npm registry 现核：stable 0.3.0-stable）；"
-                 "它自己实现了 ACP（deveco acp）但不在 ACP 官方注册表里 ⇒ 这一家还没接派活腿",
+                 "它自己实现了 ACP（deveco acp）但不在 ACP 官方注册表里 ⇒ 派活腿走 ACP（11-16 接上）",
         ),
     ),
 
@@ -2090,6 +2168,24 @@ def account_rules(rows: Rows = VENDOR_ROWS) -> dict[str, AccountRule]:
     return {row.id: row.accounts_rule for row in rows if row.accounts_rule}
 
 
+def dispatch_legs(rows: Rows = VENDOR_ROWS) -> dict[str, str]:
+    """出口表七：这一家派活**走哪条腿**（``cli``／``acp``）。
+
+    纯 ACP 客席（ACP 官方注册表收录、本机没有一条跑通的命令行腿的那一批）
+    登记成 ``acp`` ⇒ 派活时走协议，不走命令行。
+    """
+    return {row.id: row.dispatch_leg
+            for row in rows if row.offloadable and row.dispatch_leg != "cli"}
+
+
+def acp_mode_maps(rows: Rows = VENDOR_ROWS) -> dict[str, AcpModeMap]:
+    """出口表八：ACP 那一腿的**档**怎么对。
+
+    表里声明，代码不按厂商分叉（见 :class:`AcpModeMap`）。
+    """
+    return {row.id: row.acp_modes for row in rows if row.offloadable and row.acp_modes}
+
+
 def vendor_row(vendor: str) -> Optional[VendorRow]:
     """认不出的一家 ⇒ ``None``，由调用方决定怎么报——不猜一个默认的。"""
     key = (vendor or "").strip().lower()
@@ -2108,6 +2204,8 @@ LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = login_probe_map()
 PORTABLES_FALLBACK: dict[str, str] = portable_fallbacks()
 INSTALL_SPECS: dict[str, InstallSpec] = install_specs()
 ACCOUNT_RULES: dict[str, AccountRule] = account_rules()
+DISPATCH_LEGS: dict[str, str] = dispatch_legs()
+ACP_MODE_MAPS: dict[str, AcpModeMap] = acp_mode_maps()
 
 
 # ── 落点解析（表里的候选怎么变成一条真路径）────────────────────────────────
