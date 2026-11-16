@@ -51,6 +51,18 @@ interface KatexMemoOptions {
    * Mirrors `@streamdown/math`'s default so the visual output is identical.
    */
   errorColor?: string
+  /**
+   * **懒渲染**：不把公式排好，改为留一枚占位（`data-katex-lazy`），由渲染层
+   * 在它**进视口**时再跑 KaTeX。
+   *
+   * 为什么要有这一档：长笔记（《大学物理》2342 个公式）整篇排一遍 KaTeX 是
+   * **346 ms**，排出来的 DOM 约 **7 万个节点** —— 打开一篇就冻一下。
+   * Obsidian 不冻，是因为它只排**看得见的那几个**。
+   *
+   * 聊天与文件预览**不用**这一档：它们要么在流式地出字（要立刻看到公式），
+   * 要么文档小（排一遍不贵）。
+   */
+  lazy?: boolean
 }
 
 interface MathPluginConfig {
@@ -62,6 +74,18 @@ interface MathPluginConfig {
    */
   singleDollarTextMath?: boolean
   errorColor?: string
+  /**
+   * **懒渲染**：不把公式排好，改为留一枚占位（`data-katex-lazy`），由渲染层
+   * 在它**进视口**时再跑 KaTeX。
+   *
+   * 为什么要有这一档：长笔记（《大学物理》2342 个公式）整篇排一遍 KaTeX 是
+   * **346 ms**，排出来的 DOM 约 **7 万个节点** —— 打开一篇就冻一下。
+   * Obsidian 不冻，是因为它只排**看得见的那几个**。
+   *
+   * 聊天与文件预览**不用**这一档：它们要么在流式地出字（要立刻看到公式），
+   * 要么文档小（排一遍不贵）。
+   */
+  lazy?: boolean
 }
 
 /** Cached rendered hast — children to splice into the math node's parent. */
@@ -170,12 +194,30 @@ function renderMath(
 }
 
 /**
+ * 懒渲染那一档的占位节点：公式源码留在 `data-katex-lazy` 里，
+ * 渲染层在它**进视口**时取出来排（见 `app/knowledge/lazy-math.ts`）。
+ */
+function lazyPlaceholder(value: string, displayMode: boolean): ElementContent {
+  return {
+    type: 'element',
+    tagName: 'span',
+    properties: {
+      className: displayMode ? ['katex-lazy', 'katex-lazy-display'] : ['katex-lazy'],
+      'data-katex-display': displayMode ? 'true' : 'false',
+      'data-katex-lazy': value
+    },
+    children: [{ type: 'text', value }]
+  }
+}
+
+/**
  * The actual rehype plugin. Wraps `rehype-katex`'s logic with our LRU
  * cache. Mirrors the upstream visitor exactly except for the cache lookup
  * and an LRU.set on miss.
  */
 function createMemoizedRehypeKatex(options: KatexMemoOptions = {}): Pluggable {
   const errorColor = options.errorColor ?? 'var(--color-muted-foreground)'
+  const lazy = options.lazy === true
 
   return () =>
     function transform(tree: Root, file: VFile): undefined {
@@ -213,6 +255,19 @@ function createMemoizedRehypeKatex(options: KatexMemoOptions = {}): Pluggable {
         }
 
         const value = toText(scope, { whitespace: 'pre' })
+        const index = parent.children.indexOf(scope as ElementContent)
+
+        if (index === -1) {
+          return
+        }
+
+        if (lazy) {
+          // 懒渲染：只留占位，排版交给渲染层（它知道什么进视口了）。
+          parent.children.splice(index, 1, lazyPlaceholder(value, displayMode))
+
+          return SKIP
+        }
+
         const key = cacheKey(displayMode, value)
         let cached = cache.get(key)
 
@@ -228,11 +283,6 @@ function createMemoizedRehypeKatex(options: KatexMemoOptions = {}): Pluggable {
         // equation, well below the ~5–20ms katex.renderToString cost
         // we're avoiding.
         const clonedChildren = cached.map(child => structuredClone(child))
-        const index = parent.children.indexOf(scope as ElementContent)
-
-        if (index === -1) {
-          return
-        }
 
         parent.children.splice(index, 1, ...clonedChildren)
 
@@ -248,7 +298,7 @@ function createMemoizedRehypeKatex(options: KatexMemoOptions = {}): Pluggable {
 export function createMemoizedMathPlugin(config: MathPluginConfig = {}) {
   const remarkPlugin: Pluggable = [remarkMath, { singleDollarTextMath: config.singleDollarTextMath ?? false }]
 
-  const rehypePlugin = createMemoizedRehypeKatex({ errorColor: config.errorColor })
+  const rehypePlugin = createMemoizedRehypeKatex({ errorColor: config.errorColor, lazy: config.lazy })
 
   return {
     name: 'katex' as const,

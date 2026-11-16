@@ -7,6 +7,7 @@ import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { cn } from '@/lib/utils'
 
 import { findAnchor } from './anchor'
+import { mountLazyMath } from './lazy-math'
 import { decodeAssetSrc, isImageTarget, isRemoteAsset, loadNoteAssetDataUrl } from './note-media'
 import { NoteMermaid } from './note-mermaid'
 import { parseOutline, stripFrontmatter } from './outline'
@@ -48,7 +49,7 @@ const TAG_CLASSES = {
  * 模块级建一次：插件除了自己的 LRU 之外是无状态的，每次渲染重建只是白建。
  * `singleDollarTextMath: true` ⇒ `$x$` 也当行内公式（与聊天、预览同口径）。
  */
-const MATH_PLUGIN = createMemoizedMathPlugin({ singleDollarTextMath: true })
+const MATH_PLUGIN = createMemoizedMathPlugin({ singleDollarTextMath: true, lazy: true })
 
 /**
  * Streamdown 的插件与 remark 插件链（模块级建一次，别每次渲染重建）。
@@ -202,6 +203,15 @@ function NoteMarkdownImpl({
     })
   }, [clean, outline])
 
+  /**
+   * 公式：**进视口才排**。
+   *
+   * 长笔记（《大学物理》2342 个公式）整篇排一遍 KaTeX 是 346 ms，排出来的 DOM
+   * 约 7 万个节点 —— 打开一篇就冻一下。Obsidian 不冻是因为它只排看得见的那几个。
+   * 这里接上观察器：排版交给「进视口」那一刻。
+   */
+  useEffect(() => mountLazyMath(ref.current), [clean])
+
   const components = useMemo(() => {
     /**
      * 笔记里的一张本地图片。
@@ -216,10 +226,45 @@ function NoteMarkdownImpl({
       const { assetRoot, baseDir } = useContext(NoteAssetContext)
       const [dataUrl, setDataUrl] = useState<string | null>(null)
       const [missing, setMissing] = useState(false)
+      const [near, setNear] = useState(false)
+      const boxRef = useRef<HTMLSpanElement | null>(null)
       const remote = isRemoteAsset(target)
 
+      /**
+       * **进视口才读盘**。
+       *
+       * 一篇长笔记里几十张图，全量并发读盘＋base64 是一次性的 IO 洪峰；
+       * Obsidian 那套是「看得见才加载」。这里用观察器把读盘推到眼前那一刻。
+       */
       useEffect(() => {
-        if (remote) {
+        if (remote || near) {return}
+
+        const element = boxRef.current
+
+        if (!element) {return}
+
+        if (typeof IntersectionObserver === 'undefined') {
+          setNear(true)
+
+          return
+        }
+
+        const observer = new IntersectionObserver(
+          entries => {
+            if (!entries.some(entry => entry.isIntersecting)) {return}
+            observer.disconnect()
+            setNear(true)
+          },
+          { rootMargin: '400px 0px' }
+        )
+
+        observer.observe(element)
+
+        return () => observer.disconnect()
+      }, [near, remote])
+
+      useEffect(() => {
+        if (remote || !near) {
           setDataUrl(null)
           setMissing(false)
 
@@ -244,7 +289,7 @@ function NoteMarkdownImpl({
         return () => {
           alive = false
         }
-      }, [target, assetRoot, baseDir, remote])
+      }, [target, assetRoot, baseDir, remote, near])
 
       const label = alt || target || '图片'
 
@@ -264,7 +309,7 @@ function NoteMarkdownImpl({
       }
 
       if (!dataUrl) {
-        return <span className="my-2 block h-24 w-48 animate-pulse rounded-md bg-muted" />
+        return <span className="my-2 block h-24 w-48 animate-pulse rounded-md bg-muted" ref={boxRef} />
       }
 
       return <img alt={label} className="my-2 block max-w-full rounded-lg" src={dataUrl} style={width ? { width } : undefined} />
