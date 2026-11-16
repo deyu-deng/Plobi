@@ -255,6 +255,38 @@ class TestApplyProfileOverridePlobiHomeGuard:
         assert result.endswith("coder")
         assert sys.argv == ["plobi", "--continue"]
 
+    def test_long_name_agent_flag_is_consumed(self, tmp_path, monkeypatch):
+        """``--agent <name>`` is the spelling a reader learns (0.3.2 rename).
+
+        Same value, same strip as ``-p`` — the short flag keeps its old
+        behaviour, only the long alias now says agent instead of profile.
+        """
+        result = _run_apply_profile_override(
+            tmp_path,
+            monkeypatch,
+            plobi_home=None,
+            active_profile="coder",
+            argv=["plobi", "chat", "--agent", "coder", "-q", "hello"],
+        )
+
+        assert result is not None
+        assert result.endswith("coder")
+        assert sys.argv == ["plobi", "chat", "-q", "hello"]
+
+    def test_long_name_agent_equals_form_is_consumed(self, tmp_path, monkeypatch):
+        """``--agent=<name>`` (one token) behaves like the two-token form."""
+        result = _run_apply_profile_override(
+            tmp_path,
+            monkeypatch,
+            plobi_home=None,
+            active_profile="coder",
+            argv=["plobi", "--agent=coder", "chat"],
+        )
+
+        assert result is not None
+        assert result.endswith("coder")
+        assert sys.argv == ["plobi", "chat"]
+
 
 class TestSupervisedChildIgnoresStickyProfile:
     """The reserved default gateway s6 slot must not follow active_profile.

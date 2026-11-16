@@ -366,7 +366,8 @@ def _scan_gateway_pids(
         command_lc = command.lower()
         if current_profile_name:
             return (
-                f"--profile {current_profile_name_lc}" in command_lc
+                f"--agent {current_profile_name_lc}" in command_lc
+                or f"--profile {current_profile_name_lc}" in command_lc
                 or f"-p {current_profile_name_lc}" in command_lc
                 or f"plobi_home={current_home_lc}" in command_lc
             )
@@ -376,7 +377,7 @@ def _scan_gateway_pids(
         # may be passed via env (not visible in wmic/CIM command line) so
         # its absence is NOT disqualifying — only a non-matching explicit
         # PLOBI_HOME= in argv is.
-        if "--profile " in command_lc or " -p " in command_lc:
+        if "--agent " in command_lc or "--profile " in command_lc or " -p " in command_lc:
             return False
         if (
             "plobi_home=" in command_lc

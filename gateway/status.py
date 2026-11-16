@@ -267,8 +267,9 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
     if not has_gateway_entry:
         return None
 
-    # Drop profile selectors anywhere: --profile X / -p X / --profile=X / -p=X.
-    # This consumes a profile VALUE of "gateway" too, so the real subcommand
+    # Drop agent selectors anywhere: --agent X / -p X / --agent=X / -p=X
+    # (and the pre-0.3.2 spelling --profile, same value).
+    # This consumes an agent VALUE of "gateway" too, so the real subcommand
     # token is the one we land on below.
     filtered: list[str] = []
     skip_next = False
@@ -276,10 +277,14 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
         if skip_next:
             skip_next = False
             continue
-        if token in ("--profile", "-p"):
+        if token in ("--agent", "--profile", "-p"):
             skip_next = True
             continue
-        if token.startswith("--profile=") or token.startswith("-p="):
+        if (
+            token.startswith("--agent=")
+            or token.startswith("--profile=")
+            or token.startswith("-p=")
+        ):
             continue
         filtered.append(token)
 

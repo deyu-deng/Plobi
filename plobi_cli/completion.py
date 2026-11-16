@@ -118,8 +118,8 @@ _plobi_completion() {{
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
 
-    # Complete profile names after -p / --profile
-    if [[ "$prev" == "-p" || "$prev" == "--profile" ]]; then
+    # Complete agent names after -p / --agent (old spelling --profile)
+    if [[ "$prev" == "-p" || "$prev" == "--agent" || "$prev" == "--profile" ]]; then
         COMPREPLY=($(compgen -W "$(_plobi_profiles)" -- "$cur"))
         return
     fi

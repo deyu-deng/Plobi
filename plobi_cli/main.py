@@ -428,7 +428,13 @@ def _apply_folded_identity(name: str, *, explicit: bool) -> None:
 
 
 def _apply_profile_override() -> None:
-    """Pre-parse --profile/-p and set PLOBI_HOME before imports."""
+    """Pre-parse ``--agent`` / ``-p`` and set PLOBI_HOME before imports.
+
+    ``--agent`` is the name a reader learns; ``-p`` is the short spelling kept
+    for muscle memory and for every command string we emit ourselves;
+    ``--profile`` stays readable only so scripts written before 0.3.2 keep
+    working (same value, same meaning — the home directory of that agent).
+    """
     argv = sys.argv[1:]
     profile_name = None
     consume = 0
@@ -499,12 +505,12 @@ def _apply_profile_override() -> None:
             break
         if arg == "--args" and _inside_mcp_add_args(i):
             break
-        if arg in {"--profile", "-p"} and i + 1 < len(argv):
+        if arg in {"--agent", "--profile", "-p"} and i + 1 < len(argv):
             profile_name = argv[i + 1]
             consume = 2
             profile_index = i
             break
-        if arg.startswith("--profile="):
+        if arg.startswith("--agent=") or arg.startswith("--profile="):
             profile_name = arg.split("=", 1)[1]
             consume = 1
             profile_index = i

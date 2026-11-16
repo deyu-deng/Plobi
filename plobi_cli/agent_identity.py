@@ -2445,11 +2445,11 @@ def _profile_bound_backend_pids(canon: str, profile_dir: Path) -> list[int]:
             # Bound to THIS profile — by selector flag in argv...
             bound = False
             for i, tok in enumerate(argv):
-                if tok in {"--profile", "-p"} and i + 1 < len(argv):
+                if tok in {"--agent", "--profile", "-p"} and i + 1 < len(argv):
                     if normalize_profile_name(argv[i + 1]) == canon:
                         bound = True
                         break
-                elif tok.startswith("--profile="):
+                elif tok.startswith("--agent=") or tok.startswith("--profile="):
                     if normalize_profile_name(tok.split("=", 1)[1]) == canon:
                         bound = True
                         break

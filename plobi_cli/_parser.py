@@ -13,11 +13,13 @@ because its dispatch is tightly coupled to module-level ``cmd_*`` functions.
 import argparse
 
 
-# `--profile` / `-p` is consumed by ``main._apply_profile_override`` before
+# `--agent` / `-p` (old spelling `--profile`, still read) is consumed by
+# ``main._apply_profile_override`` before
 # argparse runs (it sets ``PLOBI_HOME`` and strips itself from ``sys.argv``),
 # so it isn't on the parser. Listed here so all "carry over on relaunch"
 # metadata lives in one file.
 PRE_ARGPARSE_INHERITED_FLAGS: list[tuple[str, bool]] = [
+    ("--agent", True),
     ("--profile", True),
     ("-p", True),
 ]
