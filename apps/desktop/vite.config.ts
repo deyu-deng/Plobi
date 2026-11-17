@@ -98,5 +98,11 @@ export default defineConfig({
     // fail on their own merits — this only stops load from being mistaken for a
     // broken component.
     testTimeout: 20000,
+    // `findBy*` / `waitFor` 的等待上限**是另一件事**：`testTimeout` 管的是整条用例，
+    // 异步等待的默认上限只有 **1 秒**。挂载 `providers-settings` 那一屏要 ~2.5 秒
+    // ⇒ 全量并发（303 个文件一起跑）时第一档就被 1 秒判超时，
+    // 而**单跑永远复现不了**（`providers-settings` 那两条红就是它，全量红、单跑绿）。
+    // 这里把异步等待也放宽到 10 秒：断言仍按自己的判据红，只是「慢」不再被当成「坏」。
+    asyncUtilTimeout: 10000
   }
 })

@@ -1,11 +1,6 @@
-import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-// 异步等待放宽到 5 秒：默认 1 秒在**全量并发**下不够（303 个文件一起跑时 CPU 被占，
-// 组件那几次异步取数会超过 1 秒）⇒ 第一档超时中断，它的异步尾巴落进下一档，
-// 于是下一档「这个不许被调用」就红了（两个红是同一个根因）。
-configure({ asyncUtilTimeout: 5000 })
 
 import {
   $connectedDesktopApps,
