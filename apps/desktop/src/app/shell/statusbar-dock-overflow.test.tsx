@@ -35,7 +35,10 @@ vi.mock('@/i18n', () => ({
 }))
 
 const ITEMS: readonly StatusbarItem[] = [
-  { icon: <Codicon name="book" size="0.75rem" />, id: 'mind-pending', label: '待确认', variant: 'action' },
+  // 「写脑待批」那一枚 11-16 21:4x 拍定搬进对话卡抬头（`WP-MIND-CONSENT-EVENTS`），
+  // 不再是左栏这一列的成员（`rail-footer.ts::RAIL_FOOTER_IDS` 里没有它了）⇒
+  // 这一列的样例数据改拿「分身」来占第三格。
+  { icon: <Codicon name="account" size="0.75rem" />, id: 'agents', label: '分身', variant: 'action' },
   { detail: '3 项', icon: <Codicon name="hubot" size="0.75rem" />, id: 'gateway-health', label: '网关', variant: 'menu' },
   // 没有图标、只带读数的那一格：既要有列，也要把数带出来。
   { detail: '00:12:34', id: 'agenda', label: '日程', variant: 'text' }
@@ -134,7 +137,7 @@ describe('左栏「⋯」里的那些行', () => {
     render(<StatusbarControls items={[...ITEMS, { id: 'cron', label: '定时任务', variant: 'action' }]} />)
 
     expect(screen.getByText('定时任务')).toBeTruthy()
-    expect(screen.getByText('待确认')).toBeTruthy()
+    expect(screen.getByText('分身')).toBeTruthy()
   })
 
   it('带面板的那一格：卡片宽度跟着那一格自己的口径，不许再压一个 w-56', async () => {
