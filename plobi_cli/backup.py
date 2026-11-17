@@ -133,38 +133,56 @@ _EXTERNAL_PREFIX = "_external/"
 
 
 def _collect_memory_provider_external_paths() -> List[Path]:
-    """Return existing absolute paths the active memory provider stores
-    outside PLOBI_HOME, resolved from config only (no network, no init).
+    """Return existing absolute paths that hold memory state OUTSIDE PLOBI_HOME,
+    resolved from config only (no network, no init).
 
-    Reads ``memory.provider`` from config, loads just that provider, and asks
-    it for ``backup_paths()``. Returns an empty list when no external provider
-    is active or the provider can't be loaded — backup must never fail because
-    of a flaky plugin.
+    两条来源，缺一不可：
+
+    ① **provider 自己声明的**：``memory.provider`` 指向的那一家说它把状态放在哪
+       （``MemoryProvider.backup_paths()``）；
+    ② **官方脑的根**：它自 2026-11-17 起**不再由 provider 兼管**
+       （WP-MIND-COEXIST「provider 不再兼管官方脑」）⇒ 问 provider 要不到它了。
+       可它仍然是这个家的记忆 ⇒ 直接问脑自己的解析器（``plobi.mind.paths.resolve_root``，
+       只读、不建盘）。
+
+    返回的都是**存在的**路径；备份那一步只收家目录之下的（家外相对路径编码成
+    ``_external/``），且**不许因为一个抖动的插件就失败**。
     """
+    declared: List[str] = []
+
     try:
         from plugins.memory import _get_active_memory_provider, load_memory_provider
     except Exception:
-        return []
-
-    try:
-        active = _get_active_memory_provider()
-    except Exception:
         active = None
-    if not active:
-        return []
-
-    try:
-        provider = load_memory_provider(active)
-    except Exception:
         provider = None
-    if provider is None:
-        return []
+    else:
+        try:
+            active = _get_active_memory_provider()
+        except Exception:
+            active = None
+        if active:
+            try:
+                provider = load_memory_provider(active)
+            except Exception:
+                provider = None
+            if provider is not None:
+                try:
+                    declared = list(provider.backup_paths() or [])
+                except Exception as exc:
+                    logger.warning("backup_paths() failed for memory provider %r: %s", active, exc)
 
+    # 官方脑：一等公民，不是 provider ⇒ 直接问它自己的解析器要根。
     try:
-        declared = provider.backup_paths() or []
-    except Exception as exc:
-        logger.warning("backup_paths() failed for memory provider %r: %s", active, exc)
-        return []
+        from plobi.mind.paths import resolve_root
+    except Exception:
+        root = None
+    else:
+        try:
+            root = resolve_root()
+        except Exception:
+            root = None
+    if root is not None:
+        declared.append(str(root))
 
     out: List[Path] = []
     seen: set = set()
