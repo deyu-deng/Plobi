@@ -1,65 +1,46 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 8eedff1fe7e84c1d5b90a145153aac3c_12938794dddd11f1997d52540024e231
-    ReservedCode1: fcBqfWCkLjR73ayQSfySujC418Ecp5OwXj6CVo4Q+1z8C4emznMGJGj7UFzPwbugflSVhrMFWD9oCgOha8ykXSWctlp/0m6S89hbhSt1EmSsNAcA9CT8/1E8KblrBwDH4MmIH/iwZyuN9Kf8vghcmWJ9+gjKSxCAc+Qnm5p9+keAMVYh7GMOPKrm8HI=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 8eedff1fe7e84c1d5b90a145153aac3c_12938794dddd11f1997d52540024e231
-    ReservedCode2: fcBqfWCkLjR73ayQSfySujC418Ecp5OwXj6CVo4Q+1z8C4emznMGJGj7UFzPwbugflSVhrMFWD9oCgOha8ykXSWctlp/0m6S89hbhSt1EmSsNAcA9CT8/1E8KblrBwDH4MmIH/iwZyuN9Kf8vghcmWJ9+gjKSxCAc+Qnm5p9+keAMVYh7GMOPKrm8HI=
----
-
-
-
 # Plobi v0.3.1
 
 [中文](https://github.com/deyu-deng/Plobi/releases/tag/v0.3.1) | [English](https://github.com/deyu-deng/Plobi/releases/download/v0.3.1/Plobi-0.3.1-release-notes.en.md)
 
-Previous release: [v0.3.0](https://github.com/deyu-deng/Plobi/releases/tag/v0.3.0)
-
-Against v0.3.0, subscriptions change substrate: sign-in, model catalogue and quota queries for every provider now come from magpie, and Plobi only maps that roster onto its own cards and display, instead of writing a connector per provider. Three further changes are visible directly -- the note sidebar goes from absent to five panels, secondary agents resume their own session, and a model can be assigned per agent; the faults v0.3.0 left in the data directory, self-update and CJK name lookup are fixed as well.
+v0.3.1 gives the desktop app subscription quotas kept by one maintainer, a full note sidebar, resumable sessions for secondary agents, and a model chosen per agent.
 
 Installers are attached below.
 
 ### New
 
-- **Subscription quotas maintained by magpie** — In the previous release each provider had its own connector written here, so a change on the provider side meant a client change. magpie now ships with the installer and runs at startup, maintaining sign-in, the model catalogue and quota queries for every provider; a provider added there needs no new connector code in the client.
-- **Card list follows the upstream roster** — In the previous release the card list was fixed in the client, so any addition or removal upstream required a client change. The list now reads the provider roster written upstream (22 providers), while whether a card appears, its name and its sign-in method come from a mapping table kept on the Plobi side: a rename upstream changes one cell in that table, and the published model ids and presets stay as they are.
-- **Import of a local quota configuration** — The previous release had no such entry. The settings page and the setup wizard list the quota configuration already present on the machine and leave the decision to import it to the user; the import writes a copy, and the original tool stays signed in.
-- **Secondary agents resume their own session** — The previous release opened a new session every time a secondary agent was entered, dropping whatever it had said in the last exchange. The agent's own session is now continued.
-- **Per-agent model selection** — The previous release shared one model setting across the whole machine. The Models page now assigns a model to an individual agent, written to that agent's own entry.
-- **Note sidebar** — The previous release had no sidebar on notes. Backlinks, outgoing links, tags, properties and bookmarks are now present.
+- **Subscription quotas under one maintainer** — Sign-in, the model catalogue and quota queries for every provider are maintained by magpie; it ships with the installer and runs at startup, so the sign-in entries and the provider roster arrive with it.
+- **Card list follows the roster** — When magpie adds, removes or renames a provider, the Plobi side changes one cell of a mapping table: the table decides whether a card appears, its name and its sign-in method, while published model ids and presets stay as they are.
+- **Import of a local quota configuration** — The settings page and the setup wizard list the quota configuration already present on the machine and leave the decision to import it to the user; the import writes a copy, and the original tool stays signed in.
+- **Secondary agents resume their own session** — Entering a secondary agent continues that agent's own session, so what it said in the last exchange is kept.
+- **Per-agent model selection** — The Models page assigns a model to an individual agent, and the choice is written to that agent's own entry.
+- **Note sidebar** — The previous release had no sidebar on notes; this release adds backlinks, outgoing links, tags, properties and bookmarks.
 
 ### Improved
 
-- **The quota adaptation layer updates independently of the client** — In the previous release that layer was bound to the client, so several upstream releases in one night could only be picked up by reinstalling. A bundled copy serves as the floor, a writable copy is kept alongside and resolved first, and its digest comes from the upstream `SHA256SUMS`; a build that fails to start is recorded and skipped, falling back to the bundled copy.
-- **Bundled plugin set** — The adaptation layer installs no plugins by itself, so on an empty data directory its roster is empty and the sign-in entry has no name to act on. The installer now carries a plugin list, the roster (22 rows, sign-in state fields removed) and 21 plugin packages, each checked against its `sha256`.
-- **Separate port and configuration directory** — Port, configuration directory and logs are separate from the client, with configuration written under the data directory; the port is probed before startup and an existing process record is taken over when another instance is detected.
-- **Usage reporting disabled** — The upstream reports usage to `usemagpie.ai` once a day by default; `DO_NOT_TRACK=1` disables that report in this release.
-- **Locally built installers carry offline dependencies too** — The previous release's "no network on first launch" held only for installers built in CI; a locally built one still resolved dependencies from PyPI. Locally built installers now carry them as well.
-- **Toolchain staged before packaging** — In the previous release a flaky network stalled the build or repeated downloads. Git, Node, Python, uv, ffmpeg and ripgrep are now staged before packaging, and parts already downloaded are reused.
-- **Build junk removed before packaging** — The previous release carried stale hashes in `dist`, `__pycache__` and `.map` files into the package. They are dropped before packaging, and the new `npm run check:payload` verifies payload size and lists the entries over budget.
+- **The quota layer updates on its own** — The quota layer can be updated without waiting for a new application release; the copy shipped in the installer serves as the floor.
+- **Sign-in entries arrive with the installer** — The sign-in items and the provider roster ship with the installer, so a fresh machine lists the sign-in entries instead of leaving them blank.
+- **Usage reporting off by default** — magpie reports usage outward once a day; from this version on, that report is off unless turned on.
 
 ### Fixed
 
-- **Models that could not be switched to in the picker** — The previous release had two provider resolvers in the backend: the credential side knew the gateway leg and the switching side did not, so its models answered `Unknown provider`. The plugin registry now backs both as a third source, and the two directions give the same answer for the same name.
-- **Sign-in that never started from the `+` control** — The previous release sent sign-in through Plobi's own channel, while the adaptation layer signs in through a terminal; a renderer that was alive but not mounted left a blank page. The sign-in command now runs in a terminal and the browser is opened by that layer, and a renderer that is alive but not mounted is reloaded by the main process.
-- **A quota screen that stayed on its loading state** — In the previous release that screen's branch sat behind the data fetch for the API-keys screen, so a slow credential check left the whole screen as a single spinner. The branch now sits ahead of it, and the two screens no longer block each other.
-- **Card icons falling back to initials** — The previous release looked icons up by the old leg names, so once quota legs took upstream names only three of 22 cards kept an icon. Keys now follow the new ids: 12 brand-coloured marks from simple-icons, five official marks, and initials kept for the three providers without a public vector mark.
-- **Free pools shown as configured** — In the previous release the OpenCode free pool appeared usable without a key. With the free pool owned upstream, that leg accepts a paid key only and reports a missing credential otherwise.
-- **Two Marvis cards shown without a working path** — The previous release kept `marvis_cli` and `marvis_gui` in the adaptation table, and neither starts on this machine. Both are out of the card list, and their legs are off by default in configuration.
-- **Stale copies left on disk** — The previous release left the previous adaptation copy behind on every version change, at about 74 MB each. The previous version is now removed.
-- **Location of adaptation-layer downloads** — The previous release downloaded those files inside the configuration directory, so backing up or migrating that directory carried them along. They now live outside it.
-- **Handover after an upgrade** — In the previous release an existing copy could be shadowed by an older build after the client upgraded. An upgrade now takes over the existing copy correctly, and a bundled version newer than the downloaded one is no longer shadowed.
-- **Data directory record survives uninstall** — The previous release dropped the recorded data directory path on uninstall, so a reinstall returned to the default location on the system disk and data on another partition appeared to be gone. The record is now kept.
-- **Startup failure when the data directory is unavailable** — When the data directory sat on a removable or secondary disk that was not mounted, the previous release created a directory at a path that did not exist and ended with `ENOENT`. It now falls through to the next usable directory and records the landing spot and the reason in the startup log.
-- **Repeated installer downloads on self-update** — The previous release downloaded about 400 MB from the start on every update. A completed download is now reused, an interrupted one resumes from the bytes already present, and the official size is checked at the end; a package of the wrong size is not handed to the installer.
-- **Agent names with full-width characters could not be found** — The previous release normalised only the roster side and left the query string as given, so names containing full-width Roman numerals and similar characters never matched. Both sides now use the same normalisation.
-- **Source of identity data** — The previous release read identity, descriptions and row-level filters from a per-agent home directory that is no longer used. The entry in the roster is read instead.
+- **Models that could not be switched in the picker** — Switching a model in the picker always answered "Unknown provider"; models can be switched now.
+- **Sign-in from the `+` control did nothing** — Sign-in needs a terminal, and an interface that was not mounted left a blank page; the sign-in command now runs in a terminal, the browser is opened, and an interface that fails to mount is reloaded.
+- **The quota screen stayed on its loading state** — That screen's data fetch sat behind another screen's, so a slow credential check left the whole screen as a single spinner; the two screens no longer block each other.
+- **Card icons falling back to initials** — Only three of 22 cards kept an icon; the icons are restored from the new roster: 12 brand-coloured marks, five official marks, and initials for the three providers without a public mark.
+- **Free pools shown as configured** — The OpenCode free pool appeared usable without a key; that leg takes a paid key only and reports a missing credential otherwise.
+- **Two Marvis cards shown without a working path** — Neither of the two cards starts on this machine; both are out of the card list, and their entries are off by default in the settings.
+- **Stale copies left on disk** — Every change of the quota layer left the previous copy behind, about 74 MB each; the previous copy is removed on replacement now.
+- **Downloads travelling with the settings** — The quota layer's downloads sat inside the configuration directory, so backing up or migrating that directory carried them along; they live outside it now.
+- **Handover after an upgrade** — After the client upgraded, an existing copy could be shadowed by an older build; the handover is correct now, and a bundled build newer than the downloaded one is no longer shadowed.
+- **The data directory record survives uninstall** — The previous release dropped the recorded data directory path on uninstall, so a reinstall returned to the default location on the system disk; the record is kept now.
+- **Startup failure when the data directory is unavailable** — When the data directory sat on a removable or secondary disk that was not mounted, startup ended on a path that did not exist; it falls through to the next usable directory now and records the landing spot and the reason in the startup log.
+- **Repeated installer downloads on self-update** — Every update downloaded about 400 MB from the start; a completed download is reused now, an interrupted one resumes from the bytes already present, and the official size is checked at the end, so a package of the wrong size is not handed to the installer.
+- **Agent names with full-width characters could not be found** — Only the roster side was normalised and the query string was left as given, so names containing full-width Roman numerals never matched; both sides use the same normalisation now.
+- **Agent identity and descriptions read from the roster** — Identity and descriptions came from a per-agent directory that is no longer used; the entry in the roster is read instead.
 
 ### Install
 
-Run the installer attached below -- `.exe` (choose the data directory) or `.msi` (default location) on Windows, `.dmg` on macOS, and `.deb` / `.rpm` / `.AppImage` on Linux.
+Download the installer below and run it — Windows uses `.exe` (lets you pick the data directory) or `.msi` (uses the default location), macOS uses `.dmg`, Linux uses `.deb`, `.rpm` or `.AppImage`.
 
 ### Docs
 

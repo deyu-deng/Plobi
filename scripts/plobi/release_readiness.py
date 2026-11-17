@@ -149,6 +149,21 @@ def _release_module() -> object:
     return module
 
 
+def _copy_rules_module() -> object:
+    """借 `release_copy_rules.py` 那把「用户面」尺（写什么、怎么框）。
+
+    与措辞那把（`release.py`）是分工：措辞尺管「这句话像不像人话」，这把管「该不该给
+    用户看、该不该拿上一版当句式模板」。
+    """
+    path = Path(__file__).resolve().parent / "release_copy_rules.py"
+    spec = importlib.util.spec_from_file_location("_plobi_copy_rules_for_gates", path)
+    if not spec or not spec.loader:
+        raise ImportError(f"读不到 {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def notes_problems(root: Path, version: str) -> list[str]:
     """这一版的两份说明：都在、都非空、互相对得上、措辞过得了尺。"""
     problems: list[str] = []
@@ -191,6 +206,16 @@ def notes_problems(root: Path, version: str) -> list[str]:
         problems.append(f"{zh_path.name} 的措辞过不了尺：{problem}")
     for problem in release.notes_register_problems(en, language="en"):
         problems.append(f"{en_path.name} 的措辞过不了尺：{problem}")
+
+    # 用户面那把尺：写什么、怎么框（生成标记／摘要写成对比句／成对对比句式过量／
+    # 内部实现词上屏）。措辞尺管「像不像人话」，这把管「该不该给用户看」。
+    try:
+        copy_rules = _copy_rules_module()
+    except Exception as exc:
+        problems.append(f"用户面那把尺读不到（release_copy_rules.py）：{exc}")
+    else:
+        problems += copy_rules.copy_problems(zh, zh_path.name)
+        problems += copy_rules.copy_problems(en, en_path.name)
     return problems
 
 

@@ -2,58 +2,51 @@
 
 [中文](https://github.com/deyu-deng/Plobi/releases/tag/v0.3.2) | [English](https://github.com/deyu-deng/Plobi/releases/download/v0.3.2/Plobi-0.3.2-release-notes.en.md)
 
-Previous release: [v0.3.1](https://github.com/deyu-deng/Plobi/releases/tag/v0.3.1)
-
-Against v0.3.1, this release makes dispatch and authorization directly usable: a decision stated in conversation becomes an authorization, and such authorizations can be looked up and withdrawn; dispatched work carries a ticket that can be looked up, revoked and reported on time. External tools collapse into one source table, where adding one vendor changes one place. Three sources of lag and remounting are gone from the interface: a transcript is no longer torn down and remounted every 2.5 seconds, scrolling a note page no longer rebuilds the whole tree, and the loading state is a brand turtle walking along the progress bar.
+v0.3.2 adds dispatch and authorization to the desktop app: a decision stated in conversation becomes an authorization, and dispatched work carries a ticket that can be looked up, revoked and reported on time; external tools get one catalog holding their accounts and their setup guidance.
 
 Installers are attached below.
 
 ### New
 
-- **Authorization given in conversation** — A decision stated in conversation becomes an authorization, and that sentence itself is kept as the record; such authorizations sit in a ledger, can be looked up, and can be withdrawn.
-- **Three decisions on an authorization** — Approve, reject, withdraw. A draft proposed by an Agent has no effect until a person approves it.
+- **Authorization given in conversation** — A decision stated in conversation becomes an authorization, and that sentence itself is kept as the record; such authorizations sit in a ledger, can be looked up and can be withdrawn. Approve, reject and withdraw are explicit decisions, and a draft proposed by an Agent has no effect until a person approves it.
 - **Tickets for dispatched work** — Dispatched work carries a ticket showing its current state, who it went to, and which domain it belongs to; "Revoke" stops it.
-- **Scheduled reporting** — A scheduled job reports its outcome when it fires; the criteria ships switched off and asks first.
-- **One source table for external tools** — 50 vendors each occupy one row, and adding one changes one place; the four exit tables (contract, setup guidance, session, account) are all derived from it.
-- **Accounts and legs per vendor** — Which identities a family holds and which one dispatch uses; a vendor can carry more than one leg, and dispatch can name the leg to take.
+- **Scheduled reporting** — A scheduled job reports the outcome it reached when it fires; out of the box it asks first.
+- **One catalog for external tools** — 50 vendors each occupy one row of a single table, and adding one changes one place.
+- **Accounts and legs per vendor** — Which accounts a family holds and which one dispatch uses; a vendor can carry more than one leg, and dispatch can name the leg to take.
 - **Setup guidance for tools not yet installed** — 48 vendors carry download and sign-in steps, shown the first time such a tool is added.
 - **Session access for more external tools** — Sessions of Gemini CLI, Kilo Code, Cline, kiro, GitHub Copilot and Qoder China can be read and answered.
-- **Fine-grained tools for notes, diary and dossiers** — List the whole library, read a link, change a property, tick one item, change one stage.
-- **Six source actions** — `source_list`, `source_read`, `source_enable`, `source_set_cadence`, `source_configure`, `source_collect`: see, read, toggle, change the cadence, write the configuration, trigger a collection round.
+- **Fine-grained actions on notes, diary and dossiers** — List the whole library, read a link, change a property, tick one item, change one stage.
+- **Source management** — Sources can be listed, read, switched on and off, put on another cadence, configured, and a collection round can be triggered directly.
 - **Agent capabilities can be asked about and configured** — One place answers what an Agent can call now; the toolbox and blacklist an expert carries are editable in the capabilities panel.
 
 ### Improved
 
-- **One set of role names across four languages** — The top level is called the Director, the second level the Chief, and the other two roles the Expert and the Guest; the old names no longer reach the screen.
-- **Transcript no longer remounts on a timer** — The message component keys on content, so a transcript is no longer torn down and remounted every 2.5 seconds.
+- **One set of role names** — Across four languages the top level is called the Director, the second level the Chief, and the other two roles the Expert and the Guest; the old names no longer reach the screen.
+- **The interface no longer rebuilds itself** — A whole transcript is no longer torn down and remounted every 2.5 seconds, and scrolling a note page no longer rebuilds the Markdown as a whole tree.
 - **Loading state** — The brand turtle walks left to right along the progress bar; switching screens shows the loading screen on its own.
-- **Note page scrolling** — Scrolling walks a rAF binary search, and Markdown is no longer rebuilt as a whole tree.
 - **Dossier card folds as its container narrows** — The column at the top right of the chat card holds dossiers and pending approvals in one shell; when it narrows, that column folds down to the icon.
-- **Browser tools folded into one** — The dozen click-style tools stop being registered; the category becomes `browser_exec`.
-- **Gateway directory renamed** — `quota_hub` becomes `bezel`, and model names on screen lose the upstream prefix.
+- **Browser tools folded into one** — The dozen click-style tools become a single one, and an Agent no longer lists them one by one.
+- **Model names on screen** — Model names lose the provider prefix and read as the model's own name.
 - **Default guest for a chief's call** — The default is now the one that actually runs on this machine.
 - **Titles in the left rail** — A name the vendor chose comes first; only when none can be read is the wrapper stripped to plain words.
 - **Transcript follows a runtime switch** — Rebinding the runtime of the same conversation carries the on-screen transcript along.
 
 ### Fixed
 
-- **Bundled backend that could not start** — The bundled backend was dead code: the bundled check was missing, the build left packages out, and downloads had no fallback; all three are fixed and the bundled backend now starts.
-- **First-launch marker** — The bootstrap marker repairs itself, and updates are split by the way the app was installed.
-- **Shallow clone during install** — The clone is staged per ref, and a shallow history is completed first.
+- **Bundled backend that could not start** — The bundled backend used to fail to start after an install; it starts now.
+- **First launch and updates** — The first-launch marker repairs itself; a managed install completes a shallow history first, and updates are handled per installation method.
 - **One version number on the About page** — Several version numbers used to be printed there; exactly one is printed now.
-- **Icons** — Each platform gets an icon of its own, and the menu bar uses a template image.
-- **Quota leg renamed** — That leg calls itself WorkBuddy now and no longer CodeBuddy.
-- **Quota self-update download** — The transfer resumes from the bytes already fetched, a stalled transfer is detected, and three rounds of retry are made.
+- **App icons** — Each platform gets an icon of its own, and the menu bar icon follows the system appearance.
+- **Quota tool** — That leg calls itself WorkBuddy now and no longer CodeBuddy; its self-update download resumes from the bytes already fetched, a stalled transfer is detected, and three rounds of retry are made.
 - **Collection fault reported while the WeChat source was off** — A source that is not enabled no longer reports a collection fault.
-- **System proxy takeover clickable with the engine off** — That control is disabled while the engine is off.
-- **Save dropping the engine section** — Saving no longer loses the engine section.
+- **Engine settings** — That control is disabled while the engine is off, and saving no longer loses the engine section.
 - **Messages dropped silently by a local gate** — The refusal carries a reason, and the refused message goes into the queue.
-- **Sending bucketed per Agent** — The busy semantics, the queue bucket and the send lock all belong to one Agent.
-- **Where the human-readable surface lives** — It moves from `plobi/mind/` to `plobi/human/`, and the extra directory level is gone.
+- **Sending bucketed per Agent** — Each Agent has its own busy state, queue and send lock, and none of them is taken by another.
+- **Where notes, diary and dossiers live** — Notes, diary and dossiers no longer sit one directory deeper; they land in the data directory directly.
 
 ### Install
 
-Run the installer attached below -- `.exe` (choose the data directory) or `.msi` (default location) on Windows, `.dmg` on macOS, and `.deb` / `.rpm` / `.AppImage` on Linux.
+Download the installer below and run it — Windows uses `.exe` (lets you pick the data directory) or `.msi` (uses the default location), macOS uses `.dmg`, Linux uses `.deb`, `.rpm` or `.AppImage`.
 
 ### Docs
 
