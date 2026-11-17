@@ -10,9 +10,10 @@ import { $agentHandoff, clearAgentHandoff } from '@/store/agent-handoff'
 
 import { ChatSelectionActions, messageIdForRange } from './selection-actions'
 
-const { ensureGatewayProfile, setQuoteTarget } = vi.hoisted(() => ({
+const { ensureGatewayProfile, setQuoteTarget, notifyError } = vi.hoisted(() => ({
   ensureGatewayProfile: vi.fn(async (_profile: string) => undefined),
-  setQuoteTarget: vi.fn()
+  setQuoteTarget: vi.fn(),
+  notifyError: vi.fn()
 }))
 
 // 名册那一档的 API 层会拉真后端，这一档不需要它。
@@ -24,6 +25,9 @@ vi.mock('@/store/scope', () => ({
 vi.mock('@/store/quote', async importOriginal => ({
   ...((await importOriginal()) as Record<string, unknown>),
   setQuoteTarget
+}))
+vi.mock('@/store/notifications', () => ({
+  notifyError: (error: unknown, fallback: string) => notifyError(error, fallback)
 }))
 
 const TEXT = '这句话要发给别的智能体'
@@ -82,6 +86,7 @@ describe('聊天里的选区浮窗（WP-SELECTION-TOOLBAR）', () => {
     clearAgentHandoff()
     ensureGatewayProfile.mockClear()
     setQuoteTarget.mockClear()
+    notifyError.mockClear()
     window.getSelection()?.removeAllRanges()
   })
 
@@ -146,5 +151,21 @@ describe('聊天里的选区浮窗（WP-SELECTION-TOOLBAR）', () => {
 
     expect(screen.getByTestId('chat-selection-toolbar-menu-aura')).toBeTruthy()
     expect(screen.queryByTestId('chat-selection-toolbar-menu-course')).toBeNull()
+  })
+
+  it('后端切不过去 ⇒ 说一声，不记待办、不跳界面', async () => {
+    ensureGatewayProfile.mockRejectedValueOnce(new Error('gateway down'))
+    render(<Harness />)
+    openToolbar()
+
+    fireEvent.click(screen.getByTestId('chat-selection-toolbar-send-to-agent'))
+    fireEvent.click(screen.getByTestId('chat-selection-toolbar-menu-aura'))
+
+    await waitFor(() => expect(notifyError).toHaveBeenCalledTimes(1))
+
+    // 没吭声的话，用户点了却像没点——这一族最招人烦的形状。
+    expect(notifyError.mock.calls[0]?.[1]).toBeTruthy()
+    expect($agentHandoff.get()).toBeNull()
+    expect(screen.getByTestId('location').textContent).toBe('/')
   })
 })

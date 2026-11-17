@@ -14,6 +14,7 @@ import { writeClipboardText } from '@/components/ui/copy-button'
 import { useI18n } from '@/i18n'
 import { Copy, MessageSquareText, Send } from '@/lib/icons'
 import { stageAgentHandoff } from '@/store/agent-handoff'
+import { notifyError } from '@/store/notifications'
 import { setQuoteTarget } from '@/store/quote'
 import { ensureGatewayProfile } from '@/store/scope'
 
@@ -77,7 +78,16 @@ function ChatSelectionActionsInner({ containerRef }: ChatSelectionActionsProps) 
     async (agent: Agent, text: string) => {
       // ① 先把活动后端换成它那一份。**必须先换再发**：发送那一步按当前作用域解析
       //    目标后端，作用域没换，这句话就落进**现在这个**智能体嘴里了。
-      await ensureGatewayProfile(agent.id)
+      try {
+        await ensureGatewayProfile(agent.id)
+      } catch (error) {
+        // 切不过去（那个后端起不来）：**说一声**。不吭声的话，用户点了「发给智能体」
+        // 却什么都没发生——那正是这一族最招人烦的形状。
+        notifyError(error, t.common.failed)
+
+        return
+      }
+
       // ② 跳到它的界面。
       navigate(agentRoute(agent.id))
       // ③ 记下待办——它那一屏的输入框长出来、作用域对上了，才照平常那条路送出去。
@@ -87,7 +97,7 @@ function ChatSelectionActionsInner({ containerRef }: ChatSelectionActionsProps) 
         text
       })
     },
-    [navigate]
+    [navigate, t]
   )
 
   const actions = useMemo<SelectionToolbarAction[]>(
