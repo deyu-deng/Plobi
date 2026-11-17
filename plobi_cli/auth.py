@@ -1785,16 +1785,6 @@ def resolve_provider(
         "ollama": "custom", "ollama_cloud": "ollama-cloud",
         "vllm": "custom", "llamacpp": "custom",
         "llama.cpp": "custom", "llama-cpp": "custom",
-        # 2026-11-17：本机网关的机器标识改过名（``aigw`` → ``bezel``），而**这一台**
-        # ``config.yaml`` 里的 ``model.provider`` 还是从旧版本写下来的 ``aigw``。
-        # 11-15 那刀按「内测版没有用户，不用管老配置文件」把读侧兼容表删了 ——
-        # 可内测版的用户**就是这一台**，删完换模型就只剩一句「Unknown provider
-        # 'aigw'」红条（主人 11-17 18:5x 截图）。这一条别名就是那份「读侧认旧值」的
-        # 最小代价：一个名字，不进屏上任何文案。
-        # 屏上那一栏列的是**一家一家软件**（WorkBuddy／Antigravity…），网关名不进屏
-        # （见 ``plugins/model-providers/bezel`` 的 ``display_name`` 与
-        # ``apps/desktop/src/app/settings/provider-rows.ts``）。
-        "aigw": "bezel",
     }
     # Extend with aliases declared in plugins/model-providers/<name>/ that aren't already mapped.
     # This keeps providers/ as the single source for new aliases while the
