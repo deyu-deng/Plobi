@@ -37,6 +37,53 @@ interface LedgersPayload {
   scopes: MemoryScope[]
 }
 
+/* ——— 写入边界（WP-MIND-SILENCE-VISIBLE）：GET /api/memory/boundary ———
+ *
+ * 两个 "连采" 是两件事，别读成一个进度：
+ * - 上面那三份记忆的 `streak` 来自 `TrustLedger`（L0：我汇报给你，你信不信，门槛 8）；
+ * - 这里每类的 `streak` 来自 `consent.db`（L1：这类写入能不能不问就写，门槛 5）。
+ * 它们各自的 `threshold` 由后端给，前端不硬编码任何一个数。
+ */
+
+export interface BoundaryCategory {
+  category: string
+  adopted: number
+  rejected: number
+  edited: number
+  streak: number
+  streak_source: string
+  last_ts: number
+  recent: string[]
+}
+
+export interface BoundaryPolicy {
+  key: string
+  category: string
+  text: string
+  state: string
+  evidence: string[]
+}
+
+export interface BoundaryTrace {
+  id: string
+  ts: number
+  category: string
+  target: string
+  silent: boolean
+  reason: string
+  trace: { policy_keys?: string[] } & Record<string, unknown>
+}
+
+export interface BoundaryPayload {
+  categories: Record<string, BoundaryCategory>
+  breaker: { tripped: boolean; count: number; threshold: number; window_days: number }
+  policies: BoundaryPolicy[]
+  traces: BoundaryTrace[]
+  thresholds: { n_adopt: number; k_reject: number; window_days: number }
+  canon: string
+  db: string
+}
+
 interface LedgerCopy {
   agentLine: (agent: string) => string
   openPending: string
@@ -49,12 +96,28 @@ interface LedgerCopy {
   streakLabel: (streak: number, threshold: number) => string
   confirmForget: string
   needsRestart: string
+  // ——— 写入边界（WP-MIND-SILENCE-VISIBLE）———
+  boundaryTitle: string
+  boundaryRule: (n: number, k: number, days: number) => string
+  breakerAlert: (count: number, k: number, days: number) => string
+  writeStreak: (streak: number, n: number) => string
+  rejectedTimes: (n: number) => string
+  granted: string
+  notGranted: string
+  policiesTitle: string
+  policyRevoke: string
+  tracesTitle: string
+  tracesEmpty: string
+  traceSilent: (target: string, category: string, key: string) => string
+  traceAsked: (target: string, category: string, why: string) => string
+  fiveRules: string
+  boundaryEmpty: string
 }
 
 const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   en: {
     agentLine: agent => `Agent: ${agent}`,
-    streakLabel: (streak, threshold) => `${streak}/${threshold} nods in a row`,
+    streakLabel: (streak, threshold) => `${streak}/${threshold} nods (report)`,
     confirmForget: 'Confirm forget',
     needsRestart: 'Backend is older than this page — restart Plobi to load it.',
     unbound: 'Secretary — no agent bound',
@@ -63,11 +126,27 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forget: 'Forget',
     forgetHint: 'Delete this entry and leave a receipt',
     failed: 'Not deleted',
-    unavailable: 'Memory is not readable right now'
+    unavailable: 'Memory is not readable right now',
+    boundaryTitle: 'Write boundary',
+    boundaryRule: (n, k, days) => `${n} in a row earns it · ${k} rejections in ${days} days stops everything`,
+    breakerAlert: (count, k, days) =>
+      `All paused: ${count}/${k} rejections in ${days} days — every class goes back to asking until you look`,
+    writeStreak: (streak, n) => `${streak}/${n} nods (write)`,
+    rejectedTimes: n => `${n} rejected`,
+    granted: 'granted',
+    notGranted: 'not granted',
+    policiesTitle: 'Standing permissions',
+    policyRevoke: 'Delete this line and it asks again',
+    tracesTitle: 'Times it did not ask',
+    tracesEmpty: 'Nothing has been silent yet',
+    traceSilent: (target, category, key) => `wrote ${target} (${category}; by ${key})`,
+    traceAsked: (target, category, why) => `${target} (${category}) still asked: ${why}`,
+    fiveRules: 'the five rules',
+    boundaryEmpty: 'Nothing to learn from yet — approve or reject a few times and the numbers appear here'
   },
   zh: {
     agentLine: agent => `这份 Agent：${agent}`,
-    streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}`,
+    streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}（汇报）`,
     confirmForget: '确认忘掉',
     needsRestart: '后端还是旧进程，重启 Plobi 后这一页就能读。',
     unbound: '总秘书（没有绑定到某个 Agent）',
@@ -76,11 +155,27 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forget: '忘掉',
     forgetHint: '删掉这一条，并留一行回执',
     failed: '没删成',
-    unavailable: '现在读不到记忆'
+    unavailable: '现在读不到记忆',
+    boundaryTitle: '写入边界',
+    boundaryRule: (n, k, days) => `连采 ${n} 次才够格 · ${days} 天内驳回 ${k} 次就全停`,
+    breakerAlert: (count, k, days) =>
+      `全部暂停：${days} 天内驳回 ${count}/${k} 次 ⇒ 全交回人，等你翻过一遍再说`,
+    writeStreak: (streak, n) => `连采 ${streak}/${n}（写入）`,
+    rejectedTimes: n => `驳回 ${n}`,
+    granted: '已授权',
+    notGranted: '未授权',
+    policiesTitle: '已生效的授权',
+    policyRevoke: '删掉这一行，这一类就回到每次都问',
+    tracesTitle: '最近几次没问你',
+    tracesEmpty: '还没有静默过',
+    traceSilent: (target, category, key) => `写进 ${target}（${category} 类；凭 ${key}）`,
+    traceAsked: (target, category, why) => `${target}（${category} 类）还是问了你：${why}`,
+    fiveRules: '五条判据',
+    boundaryEmpty: '还没有值得学的——批准或驳回几次之后，这里的读数才会长出来'
   },
   ja: {
     agentLine: agent => `この Agent：${agent}`,
-    streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}`,
+    streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}（報告）`,
     confirmForget: '忘れる（確認）',
     needsRestart: 'バックエンドが古いままです。Plobi を再起動してください。',
     unbound: '秘書（エージェント未割当）',
@@ -89,11 +184,27 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forget: '忘れる',
     forgetHint: 'この項目を削除し、記録を残します',
     failed: '削除できませんでした',
-    unavailable: '今は記憶を読めません'
+    unavailable: '今は記憶を読めません',
+    boundaryTitle: '書き込みの境界',
+    boundaryRule: (n, k, days) => `連続 ${n} 回で資格 · ${days} 日以内に ${k} 回却下で全部停止`,
+    breakerAlert: (count, k, days) =>
+      `全停止中：${days} 日以内に ${count}/${k} 回却下 ⇒ すべて確認に戻りました`,
+    writeStreak: (streak, n) => `連続 ${streak}/${n}（書き込み）`,
+    rejectedTimes: n => `却下 ${n}`,
+    granted: '許可済み',
+    notGranted: '未許可',
+    policiesTitle: '有効な許可',
+    policyRevoke: 'この行を消すと毎回確認に戻ります',
+    tracesTitle: '確認しなかった回',
+    tracesEmpty: 'まだ静かに書いたことはありません',
+    traceSilent: (target, category, key) => `${target} に書き込み（${category}；${key} による）`,
+    traceAsked: (target, category, why) => `${target}（${category}）は確認しました：${why}`,
+    fiveRules: '五つの規則',
+    boundaryEmpty: 'まだ学ぶ材料がありません——数回承認・却下するとここに数字が出ます'
   },
   'zh-hant': {
     agentLine: agent => `這份 Agent：${agent}`,
-    streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}`,
+    streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}（匯報）`,
     confirmForget: '確認忘掉',
     needsRestart: '後端還是舊進程，重啟 Plobi 後這一頁就能讀。',
     unbound: '總秘書（沒有綁定到某個 Agent）',
@@ -102,7 +213,23 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forget: '忘掉',
     forgetHint: '刪掉這一條，並留一行回執',
     failed: '沒刪成',
-    unavailable: '現在讀不到記憶'
+    unavailable: '現在讀不到記憶',
+    boundaryTitle: '寫入邊界',
+    boundaryRule: (n, k, days) => `連採 ${n} 次才夠格 · ${days} 天內駁回 ${k} 次就全停`,
+    breakerAlert: (count, k, days) =>
+      `全部暫停：${days} 天內駁回 ${count}/${k} 次 ⇒ 全交回人，等你翻過一遍再說`,
+    writeStreak: (streak, n) => `連採 ${streak}/${n}（寫入）`,
+    rejectedTimes: n => `駁回 ${n}`,
+    granted: '已授權',
+    notGranted: '未授權',
+    policiesTitle: '已生效的授權',
+    policyRevoke: '刪掉這一行，這一類就回到每次都問',
+    tracesTitle: '最近幾次沒問你',
+    tracesEmpty: '還沒有靜默過',
+    traceSilent: (target, category, key) => `寫進 ${target}（${category} 類；憑 ${key}）`,
+    traceAsked: (target, category, why) => `${target}（${category} 類）還是問了你：${why}`,
+    fiveRules: '五條判據',
+    boundaryEmpty: '還沒有值得學的——批准或駁回幾次之後，這裡的讀數才會長出來'
   }
 }
 
@@ -222,6 +349,121 @@ export function MemoryLedgers() {
           )}
         </section>
       ))}
+
+      <MemoryBoundary />
     </div>
+  )
+}
+
+/**
+ * 「凭什么没问你」——边界层的读数（`GET /api/memory/boundary`，只读）。
+ *
+ * 四块，按「出事时最想知道哪个」排序：
+ * ① 熔断（全部暂停，没熔断就不占地方）；
+ * ② 每类一行（连采 X/5、窗口内驳回、授没授权）——答「这条为什么还在问我」；
+ * ③ 已生效政策的**原文** ＋ 怎么收回（删掉那一行）——这是唯一能反悔的地方；
+ * ④ 最近几次静默，每行拼成一句人读的话。
+ *
+ * 老后端（这个口还不存在）整块不渲染：与其报一个「读不到」，不如让页面跟以前一样。
+ */
+export function MemoryBoundary() {
+  const { locale } = useI18n()
+  const m = copyFor(String(locale))
+  const [data, setData] = useState<BoundaryPayload | null>(null)
+  const [missing, setMissing] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const payload = await window.plobiDesktop.api<BoundaryPayload>({ path: '/api/memory/boundary' })
+        if (alive) {
+          setData(payload)
+          setMissing(false)
+        }
+      } catch {
+        if (alive) {
+          setMissing(true)
+        }
+      }
+    }
+    void load()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  if (missing || !data) {
+    return null
+  }
+
+  const categories = Object.values(data.categories ?? {}).sort((a, b) => a.category.localeCompare(b.category))
+  const active = (data.policies ?? []).filter(policy => policy.state === 'active')
+  const traces = (data.traces ?? []).slice(0, 3)
+  const granted = new Set(active.map(policy => policy.category))
+
+  return (
+    <section className="border-border rounded-lg border p-3" data-testid="memory-boundary">
+      <header className="flex items-baseline justify-between gap-3">
+        <h4 className="text-sm font-medium">{m.boundaryTitle}</h4>
+        <span className="text-muted-foreground text-xs">
+          {m.boundaryRule(data.thresholds.n_adopt, data.thresholds.k_reject, data.thresholds.window_days)}
+        </span>
+      </header>
+
+      {data.breaker.tripped ? (
+        <div className="text-destructive mt-2 text-xs" role="alert">
+          {m.breakerAlert(data.breaker.count, data.breaker.threshold, data.breaker.window_days)}
+        </div>
+      ) : null}
+
+      {categories.length === 0 ? (
+        <p className="text-muted-foreground mt-2 text-xs">{m.boundaryEmpty}</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1">
+          {categories.map(item => (
+            <li className="flex items-baseline justify-between gap-3 text-[0.8rem]" key={item.category}>
+              <span className="min-w-0 flex-1 truncate">{item.category}</span>
+              <span className="text-muted-foreground flex items-center gap-2 text-xs tabular-nums">
+                <span>{m.writeStreak(item.streak, data.thresholds.n_adopt)}</span>
+                {item.rejected > 0 ? <span>{m.rejectedTimes(item.rejected)}</span> : null}
+                <span>{granted.has(item.category) ? m.granted : m.notGranted}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {active.length > 0 ? (
+        <div className="mt-3">
+          <h5 className="text-xs font-medium">{m.policiesTitle}</h5>
+          <ul className="mt-1 flex flex-col gap-2">
+            {active.map(policy => (
+              <li className="text-[0.8rem]" key={policy.key}>
+                <span className="break-words">{policy.text}</span>
+                <span className="text-muted-foreground mt-0.5 block text-xs">{m.policyRevoke}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="mt-3">
+        <h5 className="text-xs font-medium">{m.tracesTitle}</h5>
+        {traces.length === 0 ? (
+          <p className="text-muted-foreground mt-1 text-xs">{m.tracesEmpty}</p>
+        ) : (
+          <ul className="mt-1 flex flex-col gap-1">
+            {traces.map(trace => (
+              <li className="text-muted-foreground text-xs break-words" key={trace.id}>
+                {trace.silent
+                  ? m.traceSilent(trace.target, trace.category, trace.trace?.policy_keys?.[0] || m.fiveRules)
+                  : m.traceAsked(trace.target, trace.category, trace.reason)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   )
 }
