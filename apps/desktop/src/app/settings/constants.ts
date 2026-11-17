@@ -14,7 +14,7 @@ import {
 import type { ThemeMode } from '@/themes/context'
 
 import { defineFieldCopy } from './field-copy'
-import type { DesktopConfigSection } from './types'
+import type { DesktopConfigGroup, DesktopConfigSection } from './types'
 
 // Provider group definitions used to fold raw env-var names like
 // ``XAI_API_KEY`` into a single "xAI" card with a friendly label, short
@@ -433,8 +433,8 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     memoryEnabled: 'Persistent Memory',
     userProfileEnabled: 'About You',
     writeApproval: 'Ask Before Writing',
-    mindWriteApproval: 'Ask Before Writing Into the Brain',
-    mindWriteAutoApprove: 'Let the Brain Write on Its Own Once Trusted',
+    mindWriteApproval: 'Ask Before Writing Into Mind',
+    mindWriteAutoApprove: 'Let Mind Write on Its Own Once Trusted',
     globalCharLimit: 'Shared Memory Budget (chars)',
     agentCharLimit: 'Per-Agent Memory Budget (chars)',
     userCharLimit: 'About-You Budget',
@@ -442,7 +442,7 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     l1StatusCharLimit: 'Status Digest Cap (chars)',
     squeezePressure: 'Sinking Threshold (0-1)',
     nudgeInterval: 'Memory Nudge (turns)',
-    provider: 'Memory Provider'
+    provider: 'Memory service'
   },
   context: {
     engine: 'Context Engine'
@@ -542,6 +542,56 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
   }
 })
 
+/**
+ * 「记忆与上下文」那一屏按记忆分层排（用户 2026-11-17 15:4x 给的定义）。
+ *
+ * 四组从上到下就是那个模型的后四层：**工作记忆**（这一轮真正在用的上下文）／
+ * **长时记忆**（三份记忆文件与各种上限）／**Mind**（官方脑，越出长时：会召回、
+ * 也能被主动查）／**外部记忆提供商**（最底，可选叠加）。
+ *
+ * 两处刻意不在这一屏：
+ * - 感觉记忆（这一轮新进来的输入，含工具结果）：它是会话级的东西，而这一屏是全局
+ *   设置；占用详情该放在对话框右下角那条上下文长条的点击浮窗里（另一刀）。
+ * - 性格（`SOUL.md`）：是文件不是开关，本刀不给入口。
+ *
+ * `keys` 由 `groups` 拼出来、不另写一遍——两处各写一次就一定会漂。
+ */
+const MEMORY_GROUPS: DesktopConfigGroup[] = [
+  {
+    titleKey: 'settings.groups.memory.working',
+    keys: [
+      'context.engine',
+      'compression.enabled',
+      'compression.threshold',
+      'compression.target_ratio',
+      'compression.protect_last_n'
+    ]
+  },
+  {
+    titleKey: 'settings.groups.memory.longTerm',
+    keys: [
+      'memory.memory_enabled',
+      'memory.user_profile_enabled',
+      'memory.write_approval',
+      'memory.global_char_limit',
+      'memory.agent_char_limit',
+      'memory.user_char_limit',
+      'memory.status_char_limit',
+      'memory.l1_status_char_limit',
+      'memory.squeeze_pressure',
+      'memory.nudge_interval'
+    ]
+  },
+  {
+    titleKey: 'settings.groups.memory.mind',
+    keys: ['memory.mind_write_approval', 'memory.mind_write_auto_approve']
+  },
+  {
+    titleKey: 'settings.groups.memory.external',
+    keys: ['memory.provider']
+  }
+]
+
 // Curated desktop config surface: only fields a user might tune from the app.
 export const SECTIONS: DesktopConfigSection[] = [
   {
@@ -594,26 +644,8 @@ export const SECTIONS: DesktopConfigSection[] = [
     id: 'memory',
     label: 'Memory & Context',
     icon: Brain,
-    keys: [
-      'memory.memory_enabled',
-      'memory.user_profile_enabled',
-      'memory.write_approval',
-      'memory.mind_write_approval',
-      'memory.mind_write_auto_approve',
-      'memory.global_char_limit',
-      'memory.agent_char_limit',
-      'memory.user_char_limit',
-      'memory.status_char_limit',
-      'memory.l1_status_char_limit',
-      'memory.squeeze_pressure',
-      'memory.nudge_interval',
-      'memory.provider',
-      'context.engine',
-      'compression.enabled',
-      'compression.threshold',
-      'compression.target_ratio',
-      'compression.protect_last_n'
-    ]
+    keys: MEMORY_GROUPS.flatMap(group => group.keys),
+    groups: MEMORY_GROUPS
   },
   {
     id: 'voice',

@@ -32,11 +32,25 @@ export interface ProviderGroup {
   hasAnySet: boolean
 }
 
+/**
+ * 一屏里的一个分组。有组名就有组标题可显示（`SettingsGroup` 的 `title`）。
+ *
+ * 分组只影响**怎么排**，不影响字段本身：`keys` 是这一组按屏上顺序排的键，
+ * 一屏的 `keys` 必须是各组 `keys` 的并集（渲染器按组切 `visibleFields`）。
+ */
+export interface DesktopConfigGroup {
+  /** i18n 键（`settings.groups.<屏>.<组>`），不是显示文案本身。 */
+  titleKey: string
+  keys: string[]
+}
+
 export interface DesktopConfigSection {
   id: string
   label: string
   icon: IconComponent
   keys: string[]
+  /** 给了就按组渲染、每组一张带组名的卡；不给就整屏一张卡（现有行为）。 */
+  groups?: DesktopConfigGroup[]
 }
 
 export interface EnvRowProps {

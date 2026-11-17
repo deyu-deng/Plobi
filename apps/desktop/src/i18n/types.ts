@@ -605,6 +605,14 @@ export interface Translations {
       completionSoundPreview: string
     }
     sections: Record<string, string>
+    /**
+     * 分组标题：`settings.groups.<屏>.<组>`。
+     *
+     * 只有带 `groups` 的屏才用（现在只有「记忆与上下文」，见 `constants.ts` 的
+     * `MEMORY_GROUPS`）。四语都必须真有这几句——渲染器取不到就退化成"这张卡不带
+     * 抬头"，不会把键名印上屏；缺翻译由 `settings/memory/copy.test.ts` 拦下。
+     */
+    groups: Record<string, Record<string, string>>
     searchPlaceholder: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string>
     modeOptions: Record<'light' | 'dark' | 'system', ModeOptionCopy>
     appearance: {
@@ -2923,6 +2931,7 @@ export interface Translations {
       fallbackTitle: string
     }
   }
+
 
   assistant: {
     thread: {

@@ -213,6 +213,27 @@ function ConfigField({
   )
 }
 
+/**
+ * 按点路径从文案表里取一句话（形如 `settings.groups.memory.working`）。
+ *
+ * 组名是**数据里的键**、不是写死的字段名，取不到静态属性。取不到就返回空串，
+ * 渲染时退化成「这张卡不带抬头」——不会把键名印到屏幕上冒充文案。
+ * 四个语种都真有这几句话，由 `settings-groups.test.ts` 钉住。
+ */
+function translatePath(copy: unknown, path: string): string {
+  let node = copy
+
+  for (const part of path.split('.')) {
+    if (!node || typeof node !== 'object') {
+      return ''
+    }
+
+    node = (node as Record<string, unknown>)[part]
+  }
+
+  return typeof node === 'string' ? node : ''
+}
+
 export function ConfigSettings({
   activeSectionId,
   onConfigSaved,
@@ -339,6 +360,8 @@ export function ConfigSettings({
   }, [schema])
 
   const fields = sectionFields.get(activeSectionId) ?? []
+  // 只有「记忆与上下文」这一屏带分组（`MEMORY_GROUPS`）。其余六节仍是整屏一张卡。
+  const sectionGroups = SECTIONS.find(s => s.id === activeSectionId)?.groups
 
   // Deep-link target from the command palette (?field=<key>): scroll the row
   // into view and flash it, then drop the param so it doesn't re-fire.
@@ -437,6 +460,40 @@ export function ConfigSettings({
 
   const visibleFields = activeSectionId === 'voice' ? fields.filter(([key]) => voiceFieldVisible(key, config)) : fields
 
+  const renderFieldRow = ([key, field]: [string, ConfigFieldSchema]) => (
+    <div className="scroll-mt-6 rounded-lg" id={`setting-field-${key}`} key={key}>
+      <ConfigField
+        descriptionExtra={
+          key === 'memory.memory_enabled' ? (
+            /* 个人记忆那一页（用户 2026-10-30 定：入口放这里、只做个人记忆）。
+               原先挂在 memory.provider 的说明区里；外部提供商挪到屏底之后，会把
+               「逐条记忆」一路拖到最底部——它不是外部服务的东西，是三份记忆文件的账。 */
+            <MemoryLedgers />
+          ) : key === 'memory.provider' ? (
+            Boolean(getNested(config, key)) ? <MemoryConnect provider={String(getNested(config, key))} /> : null
+          ) : key === 'memory.mind_write_auto_approve' ? (
+            /* 写入边界紧跟 Mind 那道总开关（用户 11-17 08:5x 拍定）：那一行问「要不要先问你」，
+               这一块答「这一类凭什么可以不问」。 */
+            <MemoryBoundary />
+          ) : undefined
+        }
+        enumOptions={
+          key === 'tts.elevenlabs.voice_id'
+            ? enumOptionsFor(key, getNested(config, key), config, elevenLabsVoiceOptions ?? undefined)
+            : enumOptionsFor(key, getNested(config, key), config)
+        }
+        onChange={value => updateConfig(setNested(config, key, value))}
+        optionLabels={key === 'tts.elevenlabs.voice_id' ? elevenLabsVoiceLabels : undefined}
+        schema={field}
+        schemaKey={key}
+        value={getNested(config, key)}
+      />
+      {key === 'memory.provider' && typeof getNested(config, key) === 'string' && getNested(config, key) ? (
+        <ProviderConfigPanel provider={String(getNested(config, key))} />
+      ) : null}
+    </div>
+  )
+
   return (
     <SettingsContent>
       {activeSectionId === 'model' && (
@@ -446,46 +503,30 @@ export function ConfigSettings({
       )}
       {visibleFields.length === 0 ? (
         <EmptyState description={c.emptyDesc} title={c.emptyTitle} />
+      ) : sectionGroups ? (
+        /* 带分组的屏（现在只有「记忆与上下文」，见 constants 的 MEMORY_GROUPS）：
+           每组一张卡、卡上只有一个组名，不补解释性小字（用户 11-17 15:5x 拍）。 */
+        <>
+          {sectionGroups.map(group => {
+            const rows = visibleFields.filter(([key]) => group.keys.includes(key))
+
+            if (rows.length === 0) {
+              return null
+            }
+
+            const title = translatePath(t, group.titleKey)
+
+            return (
+              <SettingsGroup key={group.titleKey} title={title || undefined}>
+                {rows.map(renderFieldRow)}
+              </SettingsGroup>
+            )
+          })}
+        </>
       ) : (
         /* 一组一张卡（用户 11-02 拍「外壳 + 设置」）：这一屏是通用渲染器，好几个导航项共用，
            没有第二个组名可叫 ⇒ 卡不带抬头，行与行之间虚线分隔。 */
-        <SettingsGroup>
-          {visibleFields.map(([key, field]) => (
-            <div className="scroll-mt-6 rounded-lg" id={`setting-field-${key}`} key={key}>
-              <ConfigField
-                descriptionExtra={
-                  key === 'memory.provider' ? (
-                    <>
-                      {Boolean(getNested(config, key)) ? (
-                        <MemoryConnect provider={String(getNested(config, key))} />
-                      ) : null}
-                      {/* 个人记忆那一页（用户 2026-10-30 定：入口放这里、只做个人记忆） */}
-                      <MemoryLedgers />
-                    </>
-                  ) : key === 'memory.mind_write_auto_approve' ? (
-                    /* 写入边界紧跟总开关（用户 11-17 08:5x 拍定）：那一行问「要不要先问你」，
-                       这一块答「这一类凭什么可以不问」。原先它嵌在 memory.provider 那行的
-                       说明区里——那是「接哪个外部脑」的下拉，往下要滚十二行，语义也不搭。 */
-                    <MemoryBoundary />
-                  ) : undefined
-                }
-                enumOptions={
-                  key === 'tts.elevenlabs.voice_id'
-                    ? enumOptionsFor(key, getNested(config, key), config, elevenLabsVoiceOptions ?? undefined)
-                    : enumOptionsFor(key, getNested(config, key), config)
-                }
-                onChange={value => updateConfig(setNested(config, key, value))}
-                optionLabels={key === 'tts.elevenlabs.voice_id' ? elevenLabsVoiceLabels : undefined}
-                schema={field}
-                schemaKey={key}
-                value={getNested(config, key)}
-              />
-              {key === 'memory.provider' && typeof getNested(config, key) === 'string' && getNested(config, key) ? (
-                <ProviderConfigPanel provider={String(getNested(config, key))} />
-              ) : null}
-            </div>
-          ))}
-        </SettingsGroup>
+        <SettingsGroup>{visibleFields.map(renderFieldRow)}</SettingsGroup>
       )}
       <input
         accept=".json,application/json"

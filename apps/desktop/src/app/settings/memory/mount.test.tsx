@@ -14,6 +14,33 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // 上一档的树会留在 document 里，第二个档查 `memory-ledgers` 会查到两个。
 afterEach(() => cleanup())
 
+/**
+ * 这一屏的全部字段，顺序就是设计上的分层顺序（`constants.ts` 的 `MEMORY_GROUPS`）：
+ * 工作记忆 → 长时记忆 → Mind → 外部记忆提供商。
+ *
+ * 用 `vi.hoisted` 是因为下面的 `vi.mock` 工厂会被提升到文件顶部，普通 const 那时还没赋值。
+ */
+const memoryFields = vi.hoisted(() => [
+  'context.engine',
+  'compression.enabled',
+  'compression.threshold',
+  'compression.target_ratio',
+  'compression.protect_last_n',
+  'memory.memory_enabled',
+  'memory.user_profile_enabled',
+  'memory.write_approval',
+  'memory.global_char_limit',
+  'memory.agent_char_limit',
+  'memory.user_char_limit',
+  'memory.status_char_limit',
+  'memory.l1_status_char_limit',
+  'memory.squeeze_pressure',
+  'memory.nudge_interval',
+  'memory.mind_write_approval',
+  'memory.mind_write_auto_approve',
+  'memory.provider'
+])
+
 vi.mock('@/i18n', async () => {
   const mod = await import('@/i18n/en')
   return { useI18n: () => ({ locale: 'en', t: mod.en }) }
@@ -34,10 +61,9 @@ vi.mock('@/plobi', async (importOriginal) => {
     ...actual,
     getElevenLabsVoices: async () => [],
     getPlobiConfigSchema: async () => ({
-      fields: {
-        'memory.provider': { type: 'string', description: '', title: 'Memory provider' },
-        'memory.mind_write_auto_approve': { type: 'boolean', description: '', title: 'Never ask' }
-      }
+      fields: Object.fromEntries(
+        memoryFields.map(key => [key, { type: 'string', description: '', title: key }])
+      )
     }),
     savePlobiConfig: async () => ({})
   }
@@ -89,24 +115,50 @@ describe('ConfigSettings · memory 段', () => {
     expect(await screen.findByTestId('memory-ledgers', undefined, { timeout: 8000 })).toBeTruthy()
   })
 
-  it('写入边界挂在「自动写入不用问」那一行下面，不再跟着 provider 走', async () => {
+  it('按四层分组渲染，组名与字段顺序都按定义排', async () => {
     installApi()
     await renderSettings()
 
-    // 位置钉在这里：每一行的容器名是可算的（`setting-field-<key>`）。
-    // schema 是异步取的，所以第一次查一定是 null——必须等它出现，不能同步 getElementById。
-    const row = await waitFor(
-      () => {
-        const el = document.getElementById('setting-field-memory.mind_write_auto_approve')
-        expect(el).toBeTruthy()
-        return el as HTMLElement
-      },
-      { timeout: 8000 }
-    )
-    expect(await within(row).findByTestId('memory-boundary', undefined, { timeout: 8000 })).toBeTruthy()
+    await waitFor(() => expect(document.querySelectorAll('[id^="setting-field-"]').length).toBe(memoryFields.length), {
+      timeout: 8000
+    })
 
-    // 它也不许再出现在「个人记忆」那张卡里（那正是原先埋了十二行的地方）。
-    const ledgers = await screen.findByTestId('memory-ledgers', undefined, { timeout: 8000 })
-    expect(within(ledgers).queryByTestId('memory-boundary')).toBeNull()
+    // 行顺序 === 设计上的分层顺序（`MEMORY_GROUPS` 各组 keys 的并集）。
+    const ids = Array.from(document.querySelectorAll('[id^="setting-field-"]')).map(node => node.id)
+    expect(ids).toEqual(memoryFields.map(key => `setting-field-${key}`))
+
+    // 组名顺序：工作记忆 → 长时记忆 → Mind → 外部提供商（取自 en 目录；
+    // 取不到就不给抬头，所以这条同时守着「四语键真的存在」）。
+    const titles = ['Working memory', 'Long-term memory', 'Mind', 'External memory providers']
+    const rendered = Array.from(document.querySelectorAll('h2'))
+      .map(node => node.textContent)
+      .filter(text => titles.includes(text ?? ''))
+    expect(rendered).toEqual(titles)
+  })
+
+  it('个人记忆账跟着长时记忆走，写边界跟着 Mind 走，都不在外部提供商那一行', async () => {
+    installApi()
+    await renderSettings()
+
+    const rowOf = async (key: string) =>
+      waitFor(
+        () => {
+          const el = document.getElementById(`setting-field-${key}`)
+          expect(el).toBeTruthy()
+          return el as HTMLElement
+        },
+        { timeout: 8000 }
+      )
+
+    const ledgersRow = await rowOf('memory.memory_enabled')
+    expect(await within(ledgersRow).findByTestId('memory-ledgers', undefined, { timeout: 8000 })).toBeTruthy()
+
+    const mindRow = await rowOf('memory.mind_write_auto_approve')
+    expect(await within(mindRow).findByTestId('memory-boundary', undefined, { timeout: 8000 })).toBeTruthy()
+
+    // 外部提供商那一行只剩连接状态：它不属于长时记忆，也不该再托管任何账。
+    const providerRow = await rowOf('memory.provider')
+    expect(within(providerRow).queryByTestId('memory-ledgers')).toBeNull()
+    expect(within(providerRow).queryByTestId('memory-boundary')).toBeNull()
   })
 })

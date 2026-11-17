@@ -683,6 +683,14 @@ export const ja = defineLocale({
       voice: '音声',
       advanced: '詳細'
     },
+    groups: {
+      memory: {
+        working: 'ワーキングメモリ',
+        longTerm: '長期記憶',
+        mind: 'Mind',
+        external: '外部メモリプロバイダー'
+      }
+    },
     searchPlaceholder: {
       about: 'Plobi Desktop について',
       config: '設定を検索…',
@@ -914,7 +922,16 @@ export const ja = defineLocale({
         userProfileEnabled: 'ユーザー像',
         memoryCharLimit: 'メモリ予算',
         userCharLimit: 'ユーザー像の予算',
-        provider: 'メモリプロバイダー'
+        writeApproval: '書き込み前に確認',
+        mindWriteApproval: 'Mind への書き込み前に確認',
+        mindWriteAutoApprove: '信頼が貯まったら Mind が自分で書く',
+        globalCharLimit: '共有メモリの上限（文字）',
+        agentCharLimit: 'エージェント別メモリの上限（文字）',
+        statusCharLimit: 'ステータスの上限（文字）',
+        l1StatusCharLimit: 'ステータス要約の上限（文字）',
+        squeezePressure: '退避しきい値（0〜1）',
+        nudgeInterval: 'メモリ整理の間隔（ターン）',
+        provider: 'メモリサービス'
       },
       context: {
         engine: 'コンテキストエンジン'

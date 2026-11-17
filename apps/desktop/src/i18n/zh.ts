@@ -735,6 +735,14 @@ export const zh: Translations = {
       voice: '语音',
       advanced: '高级'
     },
+    groups: {
+      memory: {
+        working: '工作记忆',
+        longTerm: '长时记忆',
+        mind: 'Mind',
+        external: '外部记忆提供商'
+      }
+    },
     searchPlaceholder: {
       about: '关于 Plobi Desktop',
       config: '搜索设置…',
@@ -963,7 +971,16 @@ export const zh: Translations = {
         userProfileEnabled: '用户画像',
         memoryCharLimit: '记忆预算',
         userCharLimit: '画像预算',
-        provider: '记忆提供方'
+        writeApproval: '写入前先问',
+        mindWriteApproval: '写入 Mind 前先问',
+        mindWriteAutoApprove: '攒够信任后 Mind 自己写',
+        globalCharLimit: '共用记忆上限（字符）',
+        agentCharLimit: '本 Agent 记忆上限（字符）',
+        statusCharLimit: '近况上限（字符）',
+        l1StatusCharLimit: '近况摘要上限（字符）',
+        squeezePressure: '下沉压线（0-1）',
+        nudgeInterval: '记忆提醒间隔（轮）',
+        provider: '记忆服务'
       },
       context: {
         engine: '上下文引擎'

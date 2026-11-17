@@ -667,6 +667,14 @@ export const zhHant = defineLocale({
       voice: '語音',
       advanced: '進階'
     },
+    groups: {
+      memory: {
+        working: '工作記憶',
+        longTerm: '長時記憶',
+        mind: 'Mind',
+        external: '外部記憶供應商'
+      }
+    },
     searchPlaceholder: {
       about: '關於 Plobi Desktop',
       config: '搜尋設定…',
@@ -892,10 +900,19 @@ export const zhHant = defineLocale({
       },
       memory: {
         memoryEnabled: '持久記憶',
-        userProfileEnabled: '使用者画像',
+        userProfileEnabled: '使用者畫像',
         memoryCharLimit: '記憶預算',
-        userCharLimit: '画像預算',
-        provider: '記憶提供方'
+        userCharLimit: '畫像預算',
+        writeApproval: '寫入前先問',
+        mindWriteApproval: '寫入 Mind 前先問',
+        mindWriteAutoApprove: '攢夠信任後 Mind 自己寫',
+        globalCharLimit: '共用記憶上限（字元）',
+        agentCharLimit: '本 Agent 記憶上限（字元）',
+        statusCharLimit: '近況上限（字元）',
+        l1StatusCharLimit: '近況摘要上限（字元）',
+        squeezePressure: '下沉壓線（0-1）',
+        nudgeInterval: '記憶提醒間隔（輪）',
+        provider: '記憶服務'
       },
       context: {
         engine: '上下文引擎'

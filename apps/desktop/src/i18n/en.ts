@@ -756,6 +756,14 @@ export const en: Translations = {
       voice: 'Voice',
       advanced: 'Advanced'
     },
+    groups: {
+      memory: {
+        working: 'Working memory',
+        longTerm: 'Long-term memory',
+        mind: 'Mind',
+        external: 'External memory providers'
+      }
+    },
     searchPlaceholder: {
       about: 'About Plobi Desktop',
       config: 'Search settings...',

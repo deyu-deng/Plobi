@@ -17,7 +17,14 @@ describe('settings memory page wiring', () => {
     const start = constants.indexOf("label: 'Memory & Context'")
     expect(start).toBeGreaterThan(0)
     const memorySection = constants.slice(start, constants.indexOf("label: 'Skills'", start))
-    expect(memorySection).toContain("'memory.provider'")
+    // 这一屏的 keys 由 `MEMORY_GROUPS` 拼出来（两处各写一份就一定会漂），
+    // 所以「在字段表里」= 在组定义里，并且这一屏确实引用了那份组定义。
+    expect(memorySection).toContain('groups: MEMORY_GROUPS')
+
+    const groupsStart = constants.indexOf('const MEMORY_GROUPS')
+    expect(groupsStart).toBeGreaterThan(-1)
+    const groups = constants.slice(groupsStart, constants.indexOf('export const SECTIONS', groupsStart))
+    expect(groups).toContain("'memory.provider'")
   })
 
   it('config-settings 把它挂在 memory.provider 那一行的 descriptionExtra 上', () => {
