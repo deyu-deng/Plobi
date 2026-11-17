@@ -332,6 +332,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Python
+        uses: actions/setup-python@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          python-version: "3.11"
+
+      # **发版就绪闸**：这一版的版本号七处一致吗？两份说明在不在、对不对得上？
+      # 这一步跑在**发布之前**，所以「说明没写好」不会变成一个已经发出去的发布页。
+      - name: Release readiness gate (before publishing)
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/plobi/release_readiness.py --version "${TAG#v}"
+
       # 只取安装包 artifact（plobi-win / plobi-mac / plobi-linux）。
       # 此前不带 pattern 地把全部 artifact 收进 artifacts/，于是 chatlog job 的
       # 产物（chatlog-windows / chatlog-macos / chatlog-linux）也一并挂上了
@@ -379,18 +394,51 @@ jobs:
           notes_file="docs/plobi/releases/${TAG}.md"
           notes_en="docs/plobi/releases/Plobi-${TAG#v}-release-notes.en.md"
 
-          if [ -f "$notes_file" ]; then
-            printf '正文取自 %s\n' "$notes_file"
-            if [ -f "$notes_en" ]; then
-              assets+=("$notes_en")
-              printf '英文附件: %s\n' "$notes_en"
-            else
-              echo "::warning::${notes_en} 不存在，正文里的 English 链接将是 404"
-            fi
-            # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
-            gh release create "$TAG" --title "$TAG" --notes-file "$notes_file" "${assets[@]}"
-          else
-            echo "::warning::${notes_file} 不存在，回退到 --generate-notes（版面将与历史版本不同）"
-            # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
-            gh release create "$TAG" --generate-notes --title "$TAG" "${assets[@]}"
+          # **没有正文就不发**。以前这里是「回退到 --generate-notes」⇒ 直接发出一个
+          # 「文案很差、没有双语」的发布页（2026-11-11 v0.3.1 那次漂就是这么来的：
+          # 手工传包 ＋ 手工写正文，版面越漂越远）。发布页是给人读的那一面，缺说明
+          # 不是降级，是事故 ⇒ 硬失败。
+          if [ ! -f "$notes_file" ]; then
+            echo "::error::${notes_file} 不存在——这一版没有手写正文，发不出去（不许回退到 --generate-notes）"
+            exit 1
           fi
+          if [ ! -f "$notes_en" ]; then
+            echo "::error::${notes_en} 不存在——这一版没有英文附件，正文里的 English 链接会是 404，发不出去"
+            exit 1
+          fi
+
+          printf '正文取自 %s\n' "$notes_file"
+          printf '英文附件: %s\n' "$notes_en"
+          assets+=("$notes_en")
+          # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
+          gh release create "$TAG" --title "$TAG" --notes-file "$notes_file" "${assets[@]}"
+
+  # **发布之后**那一半的硬闸：三平台齐不齐、英文附件挂没挂、正文是不是中文那份、
+  # 每个资产是不是真能下。发布页发出去就撤不回来了，所以这一格红＝这一版有问题，
+  # 要人来看（而不是像以前那样靠人肉看）。
+  verify:
+    name: Verify the published release
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          python-version: "3.11"
+
+      - name: Check the assets, the body and every download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/plobi/verify_release_assets.py --tag "$TAG"

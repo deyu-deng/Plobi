@@ -1,0 +1,190 @@
+# 发版：人点名哪一笔，就发哪一笔。
+#
+# 为什么是这个形状（2026-11-17 16:0x 改）：上一版这条流水线是「tag `main` 的头 ＋ 顺手把
+# 版本号推上 main」。那是**替别人做决定**：main 上永远叠着几条并行线正在飞的活，
+# 「CI 绿」只保证**没有新增红**，不保证**这一版做完了**（用户原话：「谁叫你直接发布的。
+# 这一个版本有没有未完成的代码直接发布的呢？」）。所以改成：
+#
+#   · **人点名 commit**（输入里必填，不许默认 HEAD）⇒ 发出去的是人认定的那一笔，
+#     不是「此刻 main 的头」；
+#   · **这一笔必须在 main 上**（祖先判定）⇒ 不能拿一棵没进 main 的树去发；
+#   · **这一笔的 CI 必须绿**（等它，绿了才往下走）；
+#   · **就绪闸必须过**（版本号七处一致 ＋ 这一版的两份说明都在、中英条目数一致、
+#     措辞过尺、互跳指着这一版、远端还没有这个号）；
+#   · **它不改任何文件、不推 main**：版本号那一笔与「这一版发什么」由人走正常流程合进 main
+#     （机械那半段是 `scripts/ploli/bump_version.py`，在本地跑、人看过再提交）；
+#   · **只推这一枚 tag**（`--tags` 会把别人删掉的 tag 复活）；
+#   · 发完回头核资产（`scripts/plobi/verify_release_assets.py`）。
+#
+# 想再插一道人工批准：在仓库设置里给 `release` 这个 environment 加一条「required reviewer」
+# （environment 已建好，规则要管理员权限，API 那边加不上）⇒ dispatch 之后还要人点一次批准。
+#
+# **人还欠的两件**：① 两份说明的**文字**（闸核形状与措辞，文字仍要人写）；② 「这一版做完了吗」
+# 的判断（哪个号、哪些条目、点名哪一笔）。
+
+name: Release (name the commit, gate, tag, verify)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要发的版本号 X.Y.Z"
+        required: true
+        type: string
+      commit:
+        description: "打 tag 的那一笔（**必填**：人认定的那一笔，不许默认 main 的头）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    name: Gate, tag that commit, publish, verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          python-version: "3.11"
+
+      - name: Resolve the named commit
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版本号 $VERSION 不是 X.Y.Z"
+            exit 2
+          fi
+          if [ -z "$COMMIT" ]; then
+            echo "::error::必须点名要发的那一笔（commit）——不许默认 main 的头"
+            exit 2
+          fi
+
+          sha="$(git rev-parse --verify "$COMMIT^{commit}")"
+          echo "要发的那一笔：$sha（$COMMIT）"
+
+          # **这一笔必须在 main 上**：没进 main 的树不发。
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::$sha 不在 main 上——拿一棵没进 main 的树去发版，不行"
+            exit 1
+          fi
+
+          # 发版的内容就是那一笔：**checkout 到它**，后面的闸全在它身上跑。
+          git checkout --force "$sha"
+          echo "$sha" > "$RUNNER_TEMP/release_sha"
+
+      - name: Gate on that commit
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          # 版本号七处一致 ＋ 这一版的两份说明都在、非空、中英条目数一致、措辞过尺、
+          # 互跳那一行指着这一版 ＋ 远端还没有这个号。
+          python3 scripts/plobi/release_readiness.py --version "$VERSION" --require-remote
+
+      - name: Wait for the suite to be green on that commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sha="$(cat "$RUNNER_TEMP/release_sha")"
+
+          run_id=""
+          for _ in $(seq 1 60); do
+            run_id="$(gh api "repos/$REPO/actions/workflows/test-suite.yml/runs?head_sha=$sha&per_page=20" \
+              --jq '[.workflow_runs[] | select(.event == "push")][0].id // empty')"
+            [ -n "$run_id" ] && break
+            sleep 20
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::那一笔的 test-suite 没起来——不发"
+            exit 1
+          fi
+          echo "test-suite run: $run_id"
+
+          for _ in $(seq 1 150); do
+            status="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.status')"
+            conclusion="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.conclusion // ""')"
+            echo "  suite: $status/$conclusion"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" != "success" ]; then
+                echo "::error::test-suite 是 $conclusion——那一笔没过，不发"
+                exit 1
+              fi
+              break
+            fi
+            sleep 20
+          done
+
+      - name: Tag that commit and push only that tag
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          sha="$(cat "$RUNNER_TEMP/release_sha")"
+          stamp="$(date +%Y-%m-%d)"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::远端已经有 v$VERSION 这个 tag——发过了就换号，别覆盖"
+            exit 1
+          fi
+
+          git tag -a "v$VERSION" "$sha" -m "Plobi v$VERSION ($stamp)"
+          # **只推这一枚**。
+          git push origin "refs/tags/v$VERSION"
+          echo "tag 已推：v$VERSION → $sha"
+
+      - name: Wait for the release pipeline and report
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          sha="$(cat "$RUNNER_TEMP/release_sha")"
+
+          run_id=""
+          for _ in $(seq 1 60); do
+            run_id="$(gh api "repos/$REPO/actions/workflows/release-desktop.yml/runs?head_sha=$sha&per_page=20" \
+              --jq '[.workflow_runs[] | select(.event == "push")][0].id // empty')"
+            [ -n "$run_id" ] && break
+            sleep 20
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::出包流水线没起来——tag 已经推了，人去看一眼"
+            exit 1
+          fi
+          echo "release run: $run_id"
+
+          for _ in $(seq 1 180); do
+            status="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.status')"
+            conclusion="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.conclusion // ""')"
+            echo "  release: $status/$conclusion"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" != "success" ]; then
+                echo "::error::出包流水线是 $conclusion——这一版没发成"
+                exit 1
+              fi
+              echo "发布页：https://github.com/$REPO/releases/tag/v$VERSION"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::出包流水线还没跑完（tag 已经推了）——自己去看一眼"
+          exit 1

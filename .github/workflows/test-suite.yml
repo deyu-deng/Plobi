@@ -60,6 +60,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Release readiness gate
+        # **发版这件事以前只有说明没有闸**：版本号散在七处手改、说明两份分别写、
+        # 流水线没正文就回退到 GitHub 自动生成的英文清单——漂是静默的，只有装到别人
+        # 机器上才看得见（v0.3.1 就漂成过一个「文案很差、没有双语」的发布页）。
+        # 这一格跑在**每次 CI** 上：版本号七处一致、这一版的两份说明齐且对得上，
+        # 才谈得上「这一版能发」。
+        run: |
+          set -euo pipefail
+          python3 scripts/plobi/release_readiness.py
+
       - name: Install uv
         run: |
           set -euo pipefail
