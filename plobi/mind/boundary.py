@@ -25,13 +25,17 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from plobi.mind.preferences import BOUNDARY_HEADING as POLICY_SECTION
 from plobi.mind.preferences import PREFERENCES_LOGICAL, _existing_text
+
+logger = logging.getLogger(__name__)
 
 #: 用户 2026-11-16 21:4x 拍定的三个数（规格 §8 第 3 条）。改这三个数等于改裁定，别在代码里顺手调。
 N_ADOPT = 5
@@ -109,6 +113,12 @@ def stats(book, *, now: Optional[float] = None, ledger=None,
     stamp = time.time() if now is None else float(now)
     grouped: Dict[str, List[Any]] = {}
     for event in _ordered(book, limit):
+        # 政策／偏好正典自己的表态不进业务类别：``category_of`` 把
+        # ``Mind/wiki/memory/preferences.md`` 归到 ``wiki``，算进来的话「批准一条政策」
+        # 就是给 wiki 加一次 streak——自己给自己发资格。
+        # 熔断那边**故意不过滤**：连续驳回政策纸正是「别再自动」的信号。
+        if str(getattr(event, "target", "")) == PREFERENCES_LOGICAL:
+            continue
         grouped.setdefault(str(getattr(event, "category", "") or "other"), []).append(event)
 
     book_ledger = ledger if ledger is not None else L1.TrustLedger()
@@ -321,6 +331,9 @@ def evaluate(
     # ⑤ 政策授权：真正的前置。没有它，ramp 攒够也不静默。
     active = policies_for(text, trace["category"], active_only=True)
     trace["policies"] = [p["text"] for p in active]
+    # 给「事后留话」用的机器键：写完之后要能说清「凭的是哪一条政策」，
+    # 光有一句人读文本对不回去。
+    trace["policy_keys"] = [str(p.get("key") or "") for p in active]
     if not active:
         return ask("policy", f"类别 {trace['category']} 还没有你点头过的政策（攒够了也要先授权）")
     trace["rules"].append({"rule": "policy", "ok": True,
@@ -403,6 +416,11 @@ def policy_candidates(book, *, now: Optional[float] = None, existing: Optional[s
     out: List[PolicyCandidate] = []
     per_category: Dict[str, List[Any]] = {}
     for event in orders:
+        # 政策／偏好正典自己的批准史**不算任何业务类别的表态**：``category_of`` 把
+        # ``Mind/wiki/memory/preferences.md`` 归到 ``wiki``，不过滤的话「批准一条政策」
+        # 等于给 wiki 加一次 streak——自己给自己发资格，晋升就成了自证。
+        if str(getattr(event, "target", "")) == PREFERENCES_LOGICAL:
+            continue
         per_category.setdefault(str(event.category or "other"), []).append(event)
 
     for category, events in per_category.items():
@@ -436,11 +454,23 @@ def policy_candidates(book, *, now: Optional[float] = None, existing: Optional[s
 
 def pending_policies(book, *, existing: Optional[str] = None, now: Optional[float] = None,
                      window_days: int = WINDOW_DAYS) -> List[PolicyCandidate]:
-    """还没进正典的候选（幂等：同一 ``kind:category`` 出现过的就不再提）。"""
+    """还没问过的候选。
+
+    两条幂等：① ``kind:category`` 已经进了正典；② 窗口内**问过**（``policy_notes``
+    里有 ``staged``／``dismissed``）。只看正典是不够的——一张纸被驳回后会被
+    ``discard_pending`` 删掉，正典里从头到尾没有它，于是下一轮又原样再问一次。
+    """
     text = _canon_text(existing)
     seen = {e["key"] for e in _entries(text, _POL_RE)}
+    stamp = time.time() if now is None else float(now)
+    floor = stamp - window_days * DAY
+    try:
+        asked = book.policy_notes(since=floor)
+    except Exception as exc:  # noqa: BLE001 - 备注表读不出来不该阻断归纳
+        logger.warning("mind: policy notes unreadable (%s); staging may repeat", exc)
+        asked = {}
     return [c for c in policy_candidates(book, now=now, existing=text, window_days=window_days)
-            if c.key not in seen]
+            if c.key not in seen and c.key not in asked]
 
 
 def render(existing: str, fresh: Sequence[PolicyCandidate]) -> str:
@@ -470,7 +500,45 @@ def stage_policies(book, *, writer=None, existing: Optional[str] = None,
         from plobi.mind.writer import MindWriter
 
         writer = MindWriter(require_approval=True)
-    return writer.write_one(PREFERENCES_LOGICAL, render(_canon_text(existing), fresh))
+    result = writer.write_one(PREFERENCES_LOGICAL, render(_canon_text(existing), fresh))
+    if getattr(result, "staged", ""):
+        # 真的落了一张纸 ⇒ 记一笔「问过」。记不进去不算失败：下次顶多再问一次。
+        stamp = time.time() if now is None else float(now)
+        for candidate in fresh:
+            try:
+                book.note_policy(candidate.key, "staged", ts=stamp)
+            except Exception as exc:  # noqa: BLE001 - 备注失败不改变本轮结果
+                logger.warning("mind: could not note staged policy %s: %s", candidate.key, exc)
+    return result
+
+
+#: 递归闸。``stage_policies`` 里那次 ``write_one`` 会再进 ``MindWriter.write()``，
+#: 而 ``write()`` 又要调 :func:`maybe_stage_policies`——不挡就是无限递归。
+_STAGING = threading.local()
+
+
+def maybe_stage_policies(book=None, *, now: Optional[float] = None):
+    """写入路径上的归纳口：有新候选就提一张纸，没有就什么都不做。
+
+    挂在这条腿上而不是「每日摘要」：后者在 ``plobi/mind/provider.py:675`` 已被注释
+    （用户 2026-10-29「每日摘要是干什么用的。我都没有定义过」），真正的写入腿是
+    ``provider.on_memory_write``。**任何异常都不许冒泡**——归纳失败顶多少问一次，
+    不能让一次写入因为归纳而失败。
+    """
+    if getattr(_STAGING, "active", False):
+        return None
+    _STAGING.active = True
+    try:
+        if book is None:
+            from plobi.mind.consent_events import ConsentLedger
+
+            book = ConsentLedger()
+        return stage_policies(book, now=now)
+    except Exception as exc:  # noqa: BLE001 - 归纳不是写入的必要条件
+        logger.warning("mind: policy staging skipped (%s: %s)", type(exc).__name__, exc)
+        return None
+    finally:
+        _STAGING.active = False
 
 
 def approve(pending_id: str) -> str:

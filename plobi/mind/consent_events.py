@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS silence_traces (
   trace    TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_silence_traces_ts ON silence_traces(ts);
+CREATE TABLE IF NOT EXISTS policy_notes (
+  key      TEXT NOT NULL,
+  ts       REAL NOT NULL,
+  note     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_policy_notes_key ON policy_notes(key, ts);
 """
 
 
@@ -333,6 +339,34 @@ class ConsentLedger:
                 item["trace"] = {}
             out.append(item)
         return out
+
+    # -- 政策备注（不是表态，是「这张纸问过没」） -------------------------
+
+    def note_policy(self, key: str, note: str, *, ts: Optional[float] = None) -> None:
+        """记一句政策备注：``staged``（提过纸）／``dismissed``（人驳回过）。
+
+        为什么需要它：政策候选的幂等原先只看正典——正典里没有它（提过纸，但被驳回后
+        纸被 ``discard_pending`` 删了）就会**无限重提**。窗口内的备注把「已经问过」
+        也当成事实，避免拿同一句话反复骚扰人。
+        """
+        stamp = time.time() if ts is None else float(ts)
+        with self._session() as conn:
+            conn.execute(
+                "INSERT INTO policy_notes (key, ts, note) VALUES (?,?,?)",
+                (str(key or "").strip(), stamp, str(note or "").strip()),
+            )
+
+    def policy_notes(self, *, since: float = 0.0) -> Dict[str, float]:
+        """``since`` 之后每把 key 最近一次的备注时间。读不出来按空表算（不阻断判据）。"""
+        try:
+            with self._session() as conn:
+                rows = conn.execute(
+                    "SELECT key, MAX(ts) AS ts FROM policy_notes WHERE ts >= ? GROUP BY key",
+                    (float(since),),
+                ).fetchall()
+        except sqlite3.Error:
+            return {}
+        return {str(row["key"]): float(row["ts"]) for row in rows}
 
 
 def comments_for(pending_id: str, limit: int = 50) -> List[str]:

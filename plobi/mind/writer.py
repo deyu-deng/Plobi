@@ -16,7 +16,7 @@ import os
 import subprocess
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -77,6 +77,10 @@ class WriteResult:
     # 非空 = 这一批**没有落盘**：已打包成计划等用户点头（裁定 156／198）。
     staged: str = ""
     pending_id: str = ""
+    # 非空 = 这一批**被判据放行、没问过你**。每条是 ``{path, category, policy, why}``。
+    # 只记「配置开了自动档 ＋ 五条全过」那一种；``require_approval=False`` 是你明说
+    # 别问，不叫静默，不填这里。空表 = 这一批没发生过静默。
+    silenced: list[dict] = field(default_factory=list)
 
 
 class MindWriter:
@@ -162,6 +166,52 @@ class MindWriter:
                 refusals.append(f"{request.relative_path}: {verdict.reason}")
         return refusals
 
+    def _silence_report(self, batch: list[WriteRequest]) -> list[dict]:
+        """这一批里哪些是「判据全过、所以没问你」的。**空表 = 这一批没静默过。**
+
+        三种情况不算静默，不许往这里填：``require_approval=True``（显式要求先问）、
+        ``require_approval=False``（你明说别问，那是我听你的，不是我替你决定）、
+        自动档没开（整批都在落纸）。只剩 ``None`` ＋ 自动档开 ＋ 五条全过那一格。
+
+        ``record=False``：真判静默时 :meth:`_gate_refusals` 已经落过一次 trace，
+        这里只回收结论，不重复记——同一件事在一张流水里出现两次会让读数翻倍。
+        """
+        from plobi.mind import boundary as B
+        from plobi.mind import proposal as L1
+
+        if self.require_approval is not None or not batch:
+            return []
+        if not self._auto_allowed():
+            return []
+
+        book = _consent_book()
+        ledger = L1.TrustLedger()
+        out: list[dict] = []
+        for request in batch:
+            category = L1.category_of(request.relative_path)
+            try:
+                verdict = B.evaluate(
+                    book, category, logical=request.relative_path,
+                    mode=request.mode, ledger=ledger, record=False,
+                )
+            except Exception as exc:  # noqa: BLE001 - 回报失败不该改变写入结果
+                logger.warning("mind: silence report skipped for %s: %s",
+                               request.relative_path, exc)
+                continue
+            if verdict.silent:
+                keys = (verdict.trace or {}).get("policy_keys") or []
+                policy = str(keys[0]) if keys else ""
+                out.append({
+                    "path": request.relative_path,
+                    "category": category,
+                    "policy": policy,
+                    "why": verdict.reason,
+                    # 人读的整句：调用方不必自己拼，也免得「凭哪条政策」散在两处。
+                    "text": (f"没问你，直接写了 {request.relative_path}（{category} 类；"
+                             f"凭 {policy or '五条判据'}）"),
+                })
+        return out
+
     def _stage_for_approval(self, batch: list[WriteRequest]):
         """把这一批改成计划，放进**内核**的待确认层（``/memory pending`` 看得到）。
 
@@ -200,6 +250,14 @@ class MindWriter:
         skipped: list[str] = []
         schema_refusals: list[str] = []
 
+        # 顺手归纳一次政策候选：有新的就提一张待批纸，没有就什么都不做。
+        # 放在判据**之前**、写锁**之外**——它内部会再进一次 write() 去落那张纸，
+        # 由 boundary 那边的重入闸挡住。异常一律在里面吞掉：归纳失败顶多少问一次，
+        # 不能让一次真实写入因为「顺手归纳」而失败。
+        from plobi.mind.boundary import maybe_stage_policies
+
+        maybe_stage_policies()
+
         if batch and self._gate_refusals(batch):
             plan, record = self._stage_for_approval(batch)
             return WriteResult(
@@ -214,6 +272,10 @@ class MindWriter:
                     % (plan.digest[:12], len(plan.changes), record.get("id"), record.get("id"))
                 ),
             )
+
+        # 走到这里 = 判据全过（或批次为空）。记下「哪些是真没问你」的，供调用方
+        # 事后能说清「写进哪、凭哪条政策」。空表就是这一批没静默。
+        silenced = self._silence_report(batch)
 
         with mind_write_lock(self._lock_path(root), timeout=self.lock_timeout):
             for request in batch:
@@ -264,13 +326,15 @@ class MindWriter:
                     # Files stay on disk (Mind is a working copy, not a
                     # transaction); we just refuse to commit a tree the
                     # verifier rejects and surface why.
-                    return WriteResult(ok=False, written=written, skipped=skipped, detail=detail)
+                    return WriteResult(ok=False, written=written, skipped=skipped,
+                                       detail=detail, silenced=silenced)
 
             if self.commit:
                 ok, detail = self._commit(root, written)
-                return WriteResult(ok=ok, written=written, skipped=skipped, detail=detail)
+                return WriteResult(ok=ok, written=written, skipped=skipped,
+                                   detail=detail, silenced=silenced)
 
-        return WriteResult(ok=True, written=written, skipped=skipped)
+        return WriteResult(ok=True, written=written, skipped=skipped, silenced=silenced)
 
     def write_one(self, relative_path: str, content: str, *, mode: str = "overwrite") -> WriteResult:
         return self.write([WriteRequest(relative_path=relative_path, content=content, mode=mode)])
