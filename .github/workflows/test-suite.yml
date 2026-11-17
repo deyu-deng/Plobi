@@ -46,6 +46,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
+      - name: Setup Python
+        # 钉 3.11，与装机版同一档（`release-desktop.yml` 的 `uv venv --python 3.11`）。
+        #
+        # 为什么不留默认：runner 镜像里默认那个 Python 会跟着镜像走（11-16 23:29 还是
+        # 3.13.18 之前那一版，11-17 00:24 就换过），而 `python-olm==3.2.16`（matrix extra
+        # 经 `mautrix[encryption]` 拉进来的）**没有 cp313 轮子** ⇒ uv 退回源码编译 ⇒ 它的
+        # `CMakeLists.txt` 要求 CMake < 3.5，而 runner 的 CMake 已是 4.x（4.x 删掉了对
+        # < 3.5 的兼容）⇒ 建环境那一步就死（"Compatibility with CMake < 3.5 has been
+        # removed"），套件根本没跑。钉 3.11 之后装的是现成轮子，不碰 cmake；
+        # 顺带把「验的那个 Python」变成用户真拿到的那一档。
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+
       - name: Install uv
         run: |
           set -euo pipefail
