@@ -12,7 +12,7 @@
 #   · **就绪闸必须过**（版本号七处一致 ＋ 这一版的两份说明都在、中英条目数一致、
 #     措辞过尺、互跳指着这一版、远端还没有这个号）；
 #   · **它不改任何文件、不推 main**：版本号那一笔与「这一版发什么」由人走正常流程合进 main
-#     （机械那半段是 `scripts/ploli/bump_version.py`，在本地跑、人看过再提交）；
+#     （机械那半段是 `scripts/plobi/bump_version.py`，在本地跑、人看过再提交）；
 #   · **只推这一枚 tag**（`--tags` 会把别人删掉的 tag 复活）；
 #   · 发完回头核资产（`scripts/plobi/verify_release_assets.py`）。
 #
