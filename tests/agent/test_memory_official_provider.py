@@ -11,8 +11,10 @@ What could silently break here, and is therefore asserted:
   started this knife was literally "the UI has no mind option" — so the drift
   between surfaces is the bug being closed, and a Python test that reads the
   frontend constant is the cheapest way to keep it closed.
-- official ≠ privileged: mind is still an *external* provider, so the
-  one-external-at-a-time rule keeps applying to it.
+- official ≠ privileged: the one-external-memory-face-at-a-time rule still
+  applies to it (an ABC contract fact, not a claim that the brain is a plugin).
+- the brain is not a plugin: it must come from the core module, never from a
+  directory under plugins/memory/.
 """
 
 from __future__ import annotations
@@ -68,6 +70,15 @@ def test_availability_is_answered_by_the_provider_not_by_init(tmp_path, monkeypa
 
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "there-is-no-brain-here"))
     assert load_memory_provider(OFFICIAL_MEMORY_PROVIDER).is_available() is False
+
+
+def test_official_brain_comes_from_core_not_a_plugin_dir(tmp_path, monkeypatch):
+    """「它是官方记忆脑，不是插件」必须是可回归的判据，不能只靠注释自觉。"""
+    monkeypatch.setenv("MIND_ROOT", str(_fake_brain(tmp_path)))
+    brain = load_memory_provider(OFFICIAL_MEMORY_PROVIDER)
+    assert brain is not None
+    assert type(brain).__module__ == "plobi.mind.provider", type(brain).__module__
+    assert not type(brain).__module__.startswith("plugins.memory.")
 
 
 def test_default_activation_needs_no_config_edit(tmp_path, monkeypatch):
