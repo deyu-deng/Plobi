@@ -2,17 +2,19 @@
 
 What could silently break here, and is therefore asserted:
 
-- the config key has three states; a default that overrides an explicit opt-out
-  is worse than no default
+- 两个键管两件正交的事：``memory.mind_enabled`` 管 Mind 在不在，``memory.provider``
+  只指外部服务。把这两个决定压回一个单选，就是「选了 honcho ＝ 官方脑停用」那条腐烂
+  （``WP-MIND-COEXIST`` 拆掉的就是它）。
 - "is a brain configured here?" must have exactly ONE answer in the codebase —
   the provider's own ``is_available()``, not a second detector in agent init
 - the backend's official name, the CLI registry's first entry and the desktop
   dropdown's allowed values are three surfaces for one fact. The report that
   started this knife was literally "the UI has no mind option" — so the drift
   between surfaces is the bug being closed, and a Python test that reads the
-  frontend constant is the cheapest way to keep it closed.
-- official ≠ privileged: the one-external-memory-face-at-a-time rule still
-  applies to it (an ABC contract fact, not a claim that the brain is a plugin).
+  frontend constant is the cheapest way to keep it closed. **11-17 之后这条判据反过来了**：
+  Mind 不再出现在那个下拉里（它不是外部服务），改成由同一屏 Mind 组自己的开关管。
+- official ≠ privileged but official ≠ external either: 官方脑**不占**第三方那一个
+  槽位，两家可以同时在册；被判掉的只有第二家**第三方**。
 - the brain is not a plugin: it must come from the core module, never from a
   directory under plugins/memory/.
 """
@@ -20,11 +22,17 @@ What could silently break here, and is therefore asserted:
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import pytest
 
-from agent.memory_manager import OFFICIAL_MEMORY_PROVIDER, MemoryManager, resolve_memory_provider_name
+from agent.memory_manager import (
+    OFFICIAL_MEMORY_PROVIDER,
+    MemoryManager,
+    resolve_external_provider_name,
+    resolve_mind_enabled,
+)
 from plugins.memory import load_memory_provider
 
 REPO = Path(__file__).resolve().parents[2]
@@ -39,24 +47,28 @@ def _fake_brain(tmp_path, *, with_agents_md=True):
     return root
 
 
-# ---- the three states -------------------------------------------------------
+# ---- 两个键管两件正交的事（WP-MIND-COEXIST）---------------------------------
 
 
 @pytest.mark.parametrize("configured, expected", [
-    (None, OFFICIAL_MEMORY_PROVIDER),          # key absent → nobody decided yet
-    (OFFICIAL_MEMORY_PROVIDER, OFFICIAL_MEMORY_PROVIDER),
-    ("hindsight", "hindsight"),                # the other eight stay selectable
-    ("", ""),                                  # explicit opt-out, honoured
+    (None, ""),                                # 缺键 → 不接外部服务
+    (OFFICIAL_MEMORY_PROVIDER, ""),            # 老配置说的「官方脑」不是一家外部服务
+    ("hindsight", "hindsight"),                # 那八家照旧可选
+    ("", ""),                                  # 显式退订
     ("   ", ""),
 ])
-def test_provider_key_has_three_states(configured, expected):
-    assert resolve_memory_provider_name(configured) == expected
+def test_provider_key_names_an_external_service_only(configured, expected):
+    assert resolve_external_provider_name(configured) == expected
 
 
-def test_absent_key_does_not_mean_off_and_empty_key_does_not_mean_default():
-    """混起来就变成「默认覆盖了别人做的决定」——这条是这台上最常犯的错法。"""
-    assert resolve_memory_provider_name(None) != ""
-    assert resolve_memory_provider_name("") == ""
+def test_the_brain_switch_does_not_depend_on_the_provider_key():
+    """Mind 在不在由自己的开关说，与「要接哪家外部」无关——这就是这一刀本身。"""
+    assert resolve_mind_enabled(None) is True          # 缺键＝常驻
+    assert resolve_mind_enabled(True) is True
+    assert resolve_mind_enabled(False) is False
+    # 老配置把两个决定压在一个键上，现在两者互不影响
+    assert resolve_mind_enabled(None) is True
+    assert resolve_external_provider_name("honcho") == "honcho"
 
 
 # ---- one brain detector, not two ------------------------------------------
@@ -84,10 +96,9 @@ def test_official_brain_comes_from_core_not_a_plugin_dir(tmp_path, monkeypatch):
 def test_default_activation_needs_no_config_edit(tmp_path, monkeypatch):
     """他那份 config.yaml 里根本没有 provider 这一行——不改他的文件也必须能装上。"""
     monkeypatch.setenv("MIND_ROOT", str(_fake_brain(tmp_path)))
-    mem_config = {"memory_enabled": False}          # 现读形状：没有 provider 键
-    name = resolve_memory_provider_name(mem_config.get("provider"))
-    assert name == OFFICIAL_MEMORY_PROVIDER
-    assert load_memory_provider(name).is_available() is True
+    mem_config = {"memory_enabled": False}          # 现读形状：没有 provider / mind_enabled 键
+    assert resolve_mind_enabled(mem_config.get("mind_enabled")) is True
+    assert load_memory_provider(OFFICIAL_MEMORY_PROVIDER).is_available() is True
 
 
 # ---- the three surfaces must agree ------------------------------------------
@@ -105,20 +116,21 @@ def test_cli_registry_declares_the_official_provider_first():
     assert {"MIND_ROOT", "HUMAN_ROOT"} <= fallbacks
 
 
-def test_desktop_dropdown_offers_the_official_provider():
-    """这份测试的存在理由：起因就是「桌面下拉框里没有 mind」。"""
+def test_desktop_dropdown_does_not_offer_the_official_provider():
+    """Mind 不是一家外部服务，所以不该出现在「外部记忆提供商」那个下拉里。
+
+    这条测试的前身钉的是「下拉框里必须有 mind」——那是旧 schema 把 Mind 塞进
+    九选一里、于是「选中它」等于「把别的挤掉」的产物。现在 Mind 有自己的开关，
+    两条一起钉：下拉里没有 mind、而 Mind 组第一行就是那个开关。免得下次又塞回去。
+    """
     text = io.open(DESKTOP_CONSTANTS, encoding="utf-8").read()
     line = next(l for l in text.splitlines() if "'memory.provider':" in l)
     values = [v.strip().strip("'") for v in line.split("[", 1)[1].split("]")[0].split(",")]
-    assert OFFICIAL_MEMORY_PROVIDER in values, line.strip()
-    assert values[0] == ""                       # 缺省位仍是第一项，mind 紧跟其后 = 推荐而非强制
-    assert values[1] == OFFICIAL_MEMORY_PROVIDER, line.strip()
+    assert OFFICIAL_MEMORY_PROVIDER not in values, line.strip()
+    assert values[0] == "", line.strip()         # 缺省＝不接外部服务
 
-
-def _quoted_keys(block: str) -> list[str]:
-    """从 `keys: [ 'a.b', 'c.d' ]` 里取出那些引号包住的键名。"""
-    inside = block.split("keys: [", 1)[1].split("]", 1)[0]
-    return [tok.strip().strip("'\"") for tok in inside.split(",") if tok.strip()]
+    at = text.index("titleKey: 'settings.groups.memory.mind'")
+    assert "memory.mind_enabled" in text[at:at + 400], "Mind 组里没有那个常驻开关"
 
 
 def test_desktop_memory_surface_only_exposes_keys_the_backend_reads():
@@ -133,15 +145,17 @@ def test_desktop_memory_surface_only_exposes_keys_the_backend_reads():
     from tools.memory_tool import _MEMORY_LIMIT_KEYS
 
     text = io.open(DESKTOP_CONSTANTS, encoding="utf-8").read()
-    at = text.index("id: 'memory',")
-    block = text[at:at + 1400]
-    exposed = [k for k in _quoted_keys(block) if k.startswith("memory.")]
+    # `WP-MEMORY-LAYERS` 之后那一节的 `keys` 由 `MEMORY_GROUPS` 拼出来（两处各写一遍
+    # 必然漂），所以真实的键清单在 `const MEMORY_GROUPS` 那一段里，不在这里。
+    at = text.index("const MEMORY_GROUPS")
+    block = text[at:text.index("export const SECTIONS")]
+    exposed = re.findall(r"'(memory\.[a-z_.]+)'", block)
     assert len(exposed) >= 8, f"那一格只剩 {exposed}，整条分层没面可设"
 
     honoured = {"memory." + v for v in _MEMORY_LIMIT_KEYS.values()} | {
         "memory.memory_enabled", "memory.user_profile_enabled",
         "memory.write_approval", "memory.mind_write_approval",
-        "memory.mind_write_auto_approve",
+        "memory.mind_write_auto_approve", "memory.mind_enabled",
         "memory.provider", "memory.nudge_interval",
     }
     dead = [k for k in exposed if k not in honoured]
@@ -170,12 +184,47 @@ class _Stub:
         return []
 
 
-def test_official_provider_is_still_one_of_one(tmp_path, monkeypatch):
-    """官方 != 可以并挂：mind 之后再来一家外部 provider，仍然要被判掉。"""
+def test_official_brain_does_not_take_the_third_party_slot(tmp_path, monkeypatch):
+    """官方脑与至多一家第三方**可以同时在册**（`WP-MIND-COEXIST`）。
+
+    前身 `test_official_provider_is_still_one_of_one` 钉的是反过来的事：mind 之后
+    再来一家就被判掉——那正是「选了 honcho 就等于把 Mind 关掉」的代码形状。
+    现在闸挪到第三方那一侧：第二家**第三方**才被判掉，Mind 不占那个槽。
+    """
     manager = MemoryManager()
     manager.add_provider(_Stub(OFFICIAL_MEMORY_PROVIDER))
     manager.add_provider(_Stub("honcho"))
+    assert [p.name for p in manager.providers] == [OFFICIAL_MEMORY_PROVIDER, "honcho"]
+
+    manager.add_provider(_Stub("mem0"))
+    assert [p.name for p in manager.providers] == [OFFICIAL_MEMORY_PROVIDER, "honcho"]
+
+
+def test_the_same_provider_is_not_registered_twice(tmp_path, monkeypatch):
+    """两路装载逻辑撞上同一家时不许叠影——叠了的话 sync_all 会把同一份记忆写两遍。"""
+    manager = MemoryManager()
+    manager.add_provider(_Stub(OFFICIAL_MEMORY_PROVIDER))
+    manager.add_provider(_Stub(OFFICIAL_MEMORY_PROVIDER))
     assert [p.name for p in manager.providers] == [OFFICIAL_MEMORY_PROVIDER]
+
+
+def test_sync_all_reaches_both_providers(tmp_path, monkeypatch):
+    """「两边都能写」不是一句口号：一次 `sync_all` 必须走到两家。"""
+    calls = []
+
+    class _Counter(_Stub):
+        def initialize(self, session_id=None, **kwargs):
+            return None
+
+        def sync_turn(self, user_content, assistant_content, **kwargs):
+            calls.append(self.name)
+
+    manager = MemoryManager()
+    manager.add_provider(_Counter(OFFICIAL_MEMORY_PROVIDER))
+    manager.add_provider(_Counter("honcho"))
+    manager.sync_all("问", "答", session_id="s1")
+    assert manager.flush_pending(timeout=5.0) is True
+    assert sorted(calls) == ["honcho", OFFICIAL_MEMORY_PROVIDER], calls
 
 
 def test_memory_enabled_flag_is_not_conflated_with_the_brain():
@@ -186,4 +235,4 @@ def test_memory_enabled_flag_is_not_conflated_with_the_brain():
     """
     cfg = {"memory_enabled": False}
     assert cfg.get("memory_enabled", False) is False
-    assert resolve_memory_provider_name(cfg.get("provider")) == OFFICIAL_MEMORY_PROVIDER
+    assert resolve_mind_enabled(cfg.get("mind_enabled")) is True

@@ -1222,11 +1222,17 @@ def _discover_context_engines() -> list[tuple[str, str]]:
 
 
 def _get_current_memory_provider() -> str:
-    """Return the current memory.provider from config (empty = built-in)."""
+    """Return the current **external** memory provider (empty = none).
+
+    ``WP-MIND-COEXIST``：``memory.provider`` 只指外部服务。老配置里写的
+    ``"mind"`` 是「官方脑」，不是一家外部服务，这里读成空串——否则
+    ``plobi memory status`` 会把 Mind 列成「当前选中的第三方」。
+    """
     try:
+        from agent.memory_manager import resolve_external_provider_name
         from plobi_cli.config import load_config
         config = load_config()
-        return cfg_get(config, "memory", "provider", default="") or ""
+        return resolve_external_provider_name(cfg_get(config, "memory", "provider", default=""))
     except Exception:
         return ""
 

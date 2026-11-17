@@ -1381,28 +1381,47 @@ def init_agent(
     
 
 
-    # 官方记忆脑（内核 plobi/mind）+ 可选的一家第三方记忆服务，一次只挂一家。
-    # memory.provider 缺省即官方脑；显式空串 = 关；显式别的名字 = 那家第三方。
-    # 装载函数统一在 plugins.memory.load_memory_provider，但官方脑不走插件发现。
+    # 官方记忆脑（内核 plobi/mind）＋ 至多一家第三方记忆服务，**可以同时挂**。
+    # 两个键管两件正交的事：memory.mind_enabled 管 Mind 在不在，memory.provider
+    # 管要不要再接一家外部服务。以前这两个决定压在同一个单选上，于是「接一家第三方」
+    # 的实际后果是「官方脑停用」（用户 11-17：Mind 是官方记忆系统，不能和外部并列；
+    # 别人装的外部提供商也不能被剥夺写的能力）。装载函数统一在
+    # plugins.memory.load_memory_provider，官方脑不走插件发现。
     agent._memory_manager = None
     if not skip_memory:
         try:
-            from agent.memory_manager import resolve_memory_provider_name as _resolve_provider
-
-            # Absent key -> the official brain; explicit empty string -> off.
-            # Loading it is still gated on the provider's own is_available() below,
-            # so "is a brain configured here?" has exactly one answer in the codebase.
-            _mem_provider_name = _resolve_provider(
-                mem_config.get("provider") if mem_config else None,
+            from agent.memory_manager import (
+                OFFICIAL_MEMORY_PROVIDER as _OFFICIAL_PROVIDER,
+                MemoryManager as _MemoryManager,
+                resolve_external_provider_name as _resolve_external,
+                resolve_mind_enabled as _resolve_mind_enabled,
             )
+            from plugins.memory import load_memory_provider as _load_mem
 
-            if _mem_provider_name and _mem_provider_name.strip():
-                from agent.memory_manager import MemoryManager as _MemoryManager
-                from plugins.memory import load_memory_provider as _load_mem
+            # 缺键＝开（Mind 常驻是产品定义，不是历史遗留）。老配置写 `provider: ""`
+            # 或某家第三方的机器，升级后 Mind 会开始工作——那条升级后果写在
+            # resolve_mind_enabled 的 docstring 里，想关就拨设置页那个开关。
+            _mem_cfg = _agent_cfg.get("memory", {}) or {}
+            if not isinstance(_mem_cfg, dict):
+                _mem_cfg = {}
+            _wanted: list = []
+            if _resolve_mind_enabled(_mem_cfg.get("mind_enabled")):
+                _wanted.append(_OFFICIAL_PROVIDER)
+            _external_name = _resolve_external(_mem_cfg.get("provider"))
+            if _external_name:
+                _wanted.append(_external_name)
+
+            if _wanted:
                 agent._memory_manager = _MemoryManager()
-                _mp = _load_mem(_mem_provider_name)
-                if _mp and _mp.is_available():
-                    agent._memory_manager.add_provider(_mp)
+                _activated: list = []
+                for _name in _wanted:
+                    _mp = _load_mem(_name)
+                    if _mp and _mp.is_available():
+                        agent._memory_manager.add_provider(_mp)
+                        _activated.append(_name)
+                    else:
+                        _ra().logger.debug(
+                            "Memory provider '%s' not found or not available", _name)
                 if agent._memory_manager.providers:
                     _init_kwargs = {
                         "session_id": agent.session_id,
@@ -1451,9 +1470,9 @@ def init_agent(
                     except Exception:
                         pass
                     agent._memory_manager.initialize_all(**_init_kwargs)
-                    _ra().logger.info("Memory provider '%s' activated", _mem_provider_name)
+                    _ra().logger.info(
+                        "Memory providers activated: %s", ", ".join(_activated) or "none")
                 else:
-                    _ra().logger.debug("Memory provider '%s' not found or not available", _mem_provider_name)
                     agent._memory_manager = None
         except Exception as _mpe:
             _ra().logger.warning("Memory provider plugin init failed: %s", _mpe)

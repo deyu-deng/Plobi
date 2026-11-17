@@ -36,6 +36,7 @@ const memoryFields = vi.hoisted(() => [
   'memory.l1_status_char_limit',
   'memory.squeeze_pressure',
   'memory.nudge_interval',
+  'memory.mind_enabled',
   'memory.mind_write_approval',
   'memory.mind_write_auto_approve',
   'memory.provider'
@@ -51,7 +52,11 @@ vi.mock('react-router-dom', () => ({
 }))
 
 vi.mock('../hooks/use-config-record', () => ({
-  usePlobiConfigRecord: () => ({ data: { memory: { provider: 'mind' } }, isError: false, refetch: () => undefined }),
+  usePlobiConfigRecord: () => ({
+    data: { memory: { mind_enabled: true, provider: '' } },
+    isError: false,
+    refetch: () => undefined
+  }),
   setPlobiConfigCache: () => undefined
 }))
 

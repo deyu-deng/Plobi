@@ -972,6 +972,7 @@ export const zh: Translations = {
         memoryCharLimit: '记忆预算',
         userCharLimit: '画像预算',
         writeApproval: '写入前先问',
+        mindEnabled: '常驻',
         mindWriteApproval: '写入 Mind 前先问',
         mindWriteAutoApprove: '攒够信任后 Mind 自己写',
         globalCharLimit: '共用记忆上限（字符）',

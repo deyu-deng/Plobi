@@ -34,8 +34,9 @@ delegation:
 # (ADR-0007). Mind writes go through the non-LLM serial writer service.
 memory:
   memory_enabled: true
-  # provider 省略即官方记忆面（Mind）：三态由 agent/memory_manager.py::resolve_memory_provider_name
-  # 决定 —— 缺这个键 = 没人决定过 = 用官方；写成空串才是显式关掉。
+  # 两件正交的事（WP-MIND-COEXIST）：`mind_enabled` 管官方记忆脑在不在（缺键＝开），
+  # `provider` 只指**外部**服务（缺键／空串＝不接；老配置写 `mind` 也读成不接）。
+  # 解析在 agent/memory_manager.py::resolve_mind_enabled / resolve_external_provider_name。
   # 真磁盘 I/O 在 plobi/mind/writer.py（串行锁 + 白名单前缀 + 提交前脑侧 verifier）。
   # 官方记忆脑是内核模块 plobi/mind/，不是 plugins/memory/ 下的插件。
 

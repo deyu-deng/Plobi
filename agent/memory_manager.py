@@ -3,13 +3,16 @@
 Single integration point in run_agent.py. Replaces scattered per-backend
 code with one manager that delegates to registered providers.
 
-Only ONE external plugin provider is allowed at a time — attempting to
-register a second external provider is rejected with a warning.  This
-prevents tool schema bloat and conflicting memory backends.
+At most ONE *third-party* provider is allowed at a time — attempting to
+register a second third-party provider is rejected with a warning.  This
+prevents tool schema bloat and conflicting memory backends.  The official
+brain (``mind``) does **not** count against that slot: it is the body's own
+memory surface and runs alongside one external service (``WP-MIND-COEXIST``).
 
 Usage in run_agent.py:
     self._memory_manager = MemoryManager()
-    # Only ONE of these:
+    # Official brain, then optionally one third-party service:
+    self._memory_manager.add_provider(official_provider)
     self._memory_manager.add_provider(plugin_provider)
 
     # System prompt
@@ -87,21 +90,40 @@ def normalize_tool_schema(schema: Any) -> Optional[Dict[str, Any]]:
 OFFICIAL_MEMORY_PROVIDER = "mind"
 
 
-def resolve_memory_provider_name(configured: object) -> str:
-    """Decide which external memory provider a config asks for.
+def resolve_mind_enabled(mind_enabled: object = None) -> bool:
+    """官方脑（``mind``）在这一台到底开不开。缺键＝开。
 
-    Three states have to stay distinct or the default silently overrides a
-    decision someone already made:
+    与 ``memory.provider`` **正交**：那个键管要不要再接一家外部服务，这个键管 Mind
+    自己在不在。以前这两个决定压在同一个单选上，于是「接一家第三方」的实际后果是
+    「官方脑停用」（用户 11-17：Mind 是官方记忆系统，不能和外部提供商并列；别人装的
+    外部提供商也不能被剥夺写的能力）。
 
-    * key absent / ``None`` — nothing was decided → use the official provider.
-      Whether it can actually load is *its* question (``is_available()``), not
-      this function's, so there is one answer to "is a brain configured here".
-    * ``""`` — an explicit opt-out. Honoured.
-    * a name — honoured, including the other eight providers.
+    **升级后果，明写在这里免得下一个人以为是 bug**：老配置写 ``provider: ""`` 或写
+    了某家第三方名字的机器，以前 Mind 是停用的（``""`` 当时同时表示「不要脑」和
+    「不要外部服务」）；这一刀之后 Mind 按缺省打开，那家第三方也照样接着跑。
+    想关就拨设置页 Mind 组里的开关——它就在第一行，不再是藏在某个单选框里的副作用。
+    """
+    if mind_enabled is None:
+        return True
+    return bool(mind_enabled)
+
+
+def resolve_external_provider_name(configured: object) -> str:
+    """要接哪一家**外部**服务；空串＝不接。
+
+    ``provider`` 只指第三方。官方脑不在这个槽位上，所以：
+
+    * 缺键 / ``""`` —— 没有外部服务（``""`` 在老语义里是显式退订 builtin 之外
+      的一家外部服务，这里照旧尊重）。
+    * ``"mind"`` —— 老配置说的「官方脑」。**它不是一家外部服务**，视同 ``""``，
+      且**不报错**：升级上来的机器上这个值很常见，报错等于让老用户开不了机。
+    * 别的名字 —— 那一家第三方。
     """
     if configured is None:
-        return OFFICIAL_MEMORY_PROVIDER
+        return ""
     name = str(configured).strip()
+    if name == OFFICIAL_MEMORY_PROVIDER:
+        return ""
     return name
 
 # 10-31（WP-TOOLSET-INBOUND-2）：memory-provider 的工具按门类归户。
@@ -455,16 +477,17 @@ def build_memory_context_block(raw_context: str) -> str:
 
 
 class MemoryManager:
-    """Orchestrates the built-in provider plus at most one external provider.
+    """Orchestrates the built-in provider, the official brain, and one external one.
 
-    The builtin provider is always first. Only one non-builtin (external)
-    provider is allowed.  Failures in one provider never block the other.
+    builtin 第一、官方脑次之、第三方殿后；**至多一家第三方**。官方脑不占那个槽位——
+    「接了 honcho」不该等于「Mind 关掉」（用户 11-17 定的产品定义）。
+    Failures in one provider never block the other.
     """
 
     def __init__(self) -> None:
         self._providers: List[MemoryProvider] = []
         self._tool_to_provider: Dict[str, MemoryProvider] = {}
-        self._has_external: bool = False  # True once a non-builtin provider is added
+        self._has_third_party: bool = False  # True once a non-builtin, non-official provider is added
         # Background executor for end-of-turn sync/prefetch. Lazily created on
         # first use so the common builtin-only path spawns no extra threads.
         # A single worker serializes a provider's writes (turn N must land
@@ -478,26 +501,41 @@ class MemoryManager:
     def add_provider(self, provider: MemoryProvider) -> None:
         """Register a memory provider.
 
-        Built-in provider (name ``"builtin"``) is always accepted.
-        Only **one** external (non-builtin) provider is allowed — a second
-        attempt is rejected with a warning.
-        """
-        is_builtin = provider.name == "builtin"
+        三类各有各的闸：
 
-        if not is_builtin:
-            if self._has_external:
+        * builtin（``"builtin"``）—— 永远收，且只收一次。
+        * 官方脑（``OFFICIAL_MEMORY_PROVIDER``）—— 永远收，不占第三方那一个槽位。
+          它和第三方不是同一类东西（``plugins/memory/__init__.py`` 的
+          ``CORE_PROVIDERS``），所以「接了一家第三方」不该把它挤掉。
+        * 第三方 —— **至多一家**，第二家拒绝并告警。
+        """
+        name = provider.name
+        is_builtin = name == "builtin"
+        is_official = name == OFFICIAL_MEMORY_PROVIDER
+
+        if not is_builtin and not is_official:
+            if self._has_third_party:
                 existing = next(
-                    (p.name for p in self._providers if p.name != "builtin"), "unknown"
+                    (p.name for p in self._providers
+                     if p.name not in ("builtin", OFFICIAL_MEMORY_PROVIDER)),
+                    "unknown",
                 )
                 logger.warning(
-                    "Rejected memory provider '%s' — external provider '%s' is "
-                    "already registered. Only one external memory provider is "
+                    "Rejected memory provider '%s' — third-party provider '%s' is "
+                    "already registered. Only one third-party memory provider is "
                     "allowed at a time. Configure which one via memory.provider "
-                    "in config.yaml.",
-                    provider.name, existing,
+                    "in config.yaml. (The official brain runs alongside it; see "
+                    "memory.mind_enabled.)",
+                    name, existing,
                 )
                 return
-            self._has_external = True
+            self._has_third_party = True
+        else:
+            # builtin 与官方脑各只收一份：同一次启动里两路装载逻辑撞上时不叠影，
+            # 否则 sync_all 会把同一份记忆写两遍。
+            if any(p.name == name for p in self._providers):
+                logger.debug("Memory provider '%s' already registered; ignored", name)
+                return
 
         self._providers.append(provider)
 

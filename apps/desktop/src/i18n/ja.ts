@@ -923,6 +923,7 @@ export const ja = defineLocale({
         memoryCharLimit: 'メモリ予算',
         userCharLimit: 'ユーザー像の予算',
         writeApproval: '書き込み前に確認',
+        mindEnabled: '常時オン',
         mindWriteApproval: 'Mind への書き込み前に確認',
         mindWriteAutoApprove: '信頼が貯まったら Mind が自分で書く',
         globalCharLimit: '共有メモリの上限（文字）',

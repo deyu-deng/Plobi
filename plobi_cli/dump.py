@@ -200,10 +200,27 @@ def _configured_platforms() -> list[str]:
 
 
 def _memory_provider(config: dict) -> str:
-    """Return the active memory provider name."""
-    mem = config.get("memory", {})
-    provider = mem.get("provider", "")
-    return provider if provider else "built-in"
+    """这一份配置装起来的是哪几张记忆面（`WP-MIND-COEXIST`）。
+
+    以前只报一个名字，因为那时 Mind 与第三方是同一个单选框里的九个选项。
+    现在两者可以同时在册，所以这里回答的是「谁在」而不是「谁被选中」——
+    报一个名字会让「Mind ＋ honcho」看起来像「只有 honcho」。
+    """
+    from agent.memory_manager import (
+        resolve_external_provider_name,
+        resolve_mind_enabled,
+    )
+
+    mem = config.get("memory", {}) or {}
+    if not isinstance(mem, dict):
+        mem = {}
+    faces = ["built-in"]
+    if resolve_mind_enabled(mem.get("mind_enabled")):
+        faces.append("Mind")
+    external = resolve_external_provider_name(mem.get("provider"))
+    if external:
+        faces.append(external)
+    return " + ".join(faces)
 
 
 def _get_model_and_provider(config: dict) -> tuple[str, str]:

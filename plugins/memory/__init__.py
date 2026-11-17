@@ -351,24 +351,22 @@ class _ProviderCollector:
 
 
 def _get_active_memory_provider() -> Optional[str]:
-    """Read the active memory provider name from config.yaml.
+    """要接的那一家**外部**记忆服务名；没接就 None。
 
-    Returns the provider name (e.g. ``"honcho"``) or None if no
-    external provider is configured.  Lightweight — only reads config,
-    no plugin loading.
+    官方脑不在这个答案里：它是内核一等公民（``CORE_PROVIDERS``），既没有插件目录
+    可以被发现，也不该被当成「一家外部服务」去决定 CLI 注册与备份路径。以前这个
+    函数会返回 ``"mind"``，那是旧 schema 把两件事压在一个单选框上的残留
+    （``WP-MIND-COEXIST``）。
 
-    The absent-key case is decided by :func:`agent.memory_manager.resolve_memory_provider_name`
-    — the official brain is the default, so ``plobi mind`` exists for the installs
-    that never wrote a ``provider`` key.  Re-deciding it here is how a surface ends
-    up not knowing the official provider at all; an explicit empty string still means
-    off.
+    老配置的 ``provider: "mind"`` 由
+    :func:`agent.memory_manager.resolve_external_provider_name` 读成 ``""``。
     """
     try:
         from plobi_cli.config import load_config
         config = load_config()
-        from agent.memory_manager import resolve_memory_provider_name
+        from agent.memory_manager import resolve_external_provider_name
 
-        return resolve_memory_provider_name(cfg_get(config, "memory", "provider")) or None
+        return resolve_external_provider_name(cfg_get(config, "memory", "provider")) or None
     except Exception:
         return None
 

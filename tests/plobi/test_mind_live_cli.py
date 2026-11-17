@@ -74,18 +74,22 @@ def test_digest_on_disk_but_untracked_is_not_reported_as_committed(two_brain_rep
 def test_the_cli_surface_resolves_the_official_provider_without_a_config_key(
     two_brain_repos,
 ):
-    """No ``memory.provider`` key = nothing decided = the official brain, on every surface.
+    """没有 ``memory.provider`` 键＝没决定接哪家外部；Mind 由自己的开关说。
 
-    The empty-string case is the opposite decision and must stay distinguishable:
-    someone opting out has to actually switch the CLI off.
+    ``WP-MIND-COEXIST`` 之后这两件事分开了，所以判据也分成两条：
+    缺键 ⇒ 外部那一格空着、Mind 常驻；显式空串 ⇒ 外部仍然空着，但
+    **Mind 的开/关不再由这个键决定**（想关要去拨 ``memory.mind_enabled``）。
     """
+    from agent.memory_manager import resolve_external_provider_name, resolve_mind_enabled
     from plugins.memory import _get_active_memory_provider
 
-    assert _get_active_memory_provider() == "mind"
+    assert _get_active_memory_provider() is None      # 缺键：没接外部
+    assert resolve_mind_enabled(None) is True         # 缺键：Mind 常驻
 
     config = Path(os.environ["PLOBI_HOME"]) / "config.yaml"
     config.write_text("memory:\n  provider: ''\n", encoding="utf-8")
     assert _get_active_memory_provider() is None
+    assert resolve_external_provider_name("") == ""
 
 
 def test_persona_status_says_when_the_condensed_copy_lags(tmp_path, monkeypatch):

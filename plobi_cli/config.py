@@ -2503,14 +2503,18 @@ DEFAULT_CONFIG = {
         # 为了让位而离开 L0 的内容算「被挤出去」，进待确认层等人批；没到压线的
         # remove 是正常编辑，不许灌进那道闸。
         "squeeze_pressure": 0.9,
-        # External memory provider — three states, and the shipped default is the
-        # official brain: absent/``"mind"`` -> the body's own Mind; ``""`` -> built-in
-        # only (an explicit opt-out, still honoured); any other name -> that provider.
-        # Only ONE external provider is allowed at a time.
-        # This value must NOT be "": ``resolve_memory_provider_name`` reads the merged
-        # config, so an empty default would make every install look like an opt-out
-        # (that is how "Mind is the official memory surface" stayed hollow in production).
-        "provider": "mind",
+        # 官方脑在不在（``WP-MIND-COEXIST``）。与 ``provider`` 正交：Mind 是这具身体
+        # 自己的记忆面，第三方服务是别人跑的东西，两者可以同时在写。
+        # 缺键的老配置由 ``memory_manager.resolve_mind_enabled`` 按老语义推导——
+        # 那时 ``provider`` 是单选，``""``／第三方名都意味着 Mind 停用，那个决定不翻。
+        "mind_enabled": True,
+        # 要接哪一家**外部**记忆服务。三态：
+        # 缺键 / ``""`` -> 不接外部（builtin 与 Mind 各按自己的开关）；
+        # ``"mind"`` -> 老配置说的「官方脑」，视同 ``""``，官方脑由 ``mind_enabled`` 管；
+        # 别的名字 -> 那一家第三方，与官方脑**并存**（至多一家第三方）。
+        # 这个值不能默认写成 ``"mind"``：那会让「Mind 常驻」与「外部单选」继续混在
+        # 同一个键上，也就是这一刀要拆掉的那种腐烂。
+        "provider": "",
     },
 
     # Subagent delegation — override the provider:model used by delegate_task

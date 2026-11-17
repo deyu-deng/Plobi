@@ -19,7 +19,9 @@ def build_memory_parser(subparsers, *, cmd_memory: Callable) -> None:
             "Available providers: honcho, openviking, mem0, hindsight,\n"
             "holographic, retaindb, byterover.\n\n"
             "Only one external provider can be active at a time.\n"
-            "Built-in memory (MEMORY.md/USER.md) is always active."
+            "Built-in memory (MEMORY.md/USER.md) is always active.\n"
+            "The official brain (Mind) is not one of these: it has its own switch\n"
+            "(memory.mind_enabled) and runs alongside one external provider."
         ),
     )
     memory_sub = memory_parser.add_subparsers(dest="memory_command")
@@ -33,7 +35,7 @@ def build_memory_parser(subparsers, *, cmd_memory: Callable) -> None:
         help="Provider to configure directly (e.g. honcho), skipping the picker",
     )
     memory_sub.add_parser("status", help="Show current memory provider config")
-    memory_sub.add_parser("off", help="Disable external provider (built-in only)")
+    memory_sub.add_parser("off", help="Disable the external provider (built-in memory and Mind stay)")
     _reset_parser = memory_sub.add_parser(
         "reset",
         help="Erase all built-in memory (MEMORY.md and USER.md)",

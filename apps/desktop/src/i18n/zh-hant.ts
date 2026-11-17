@@ -904,6 +904,7 @@ export const zhHant = defineLocale({
         memoryCharLimit: '記憶預算',
         userCharLimit: '畫像預算',
         writeApproval: '寫入前先問',
+        mindEnabled: '常駐',
         mindWriteApproval: '寫入 Mind 前先問',
         mindWriteAutoApprove: '攢夠信任後 Mind 自己寫',
         globalCharLimit: '共用記憶上限（字元）',

@@ -119,34 +119,54 @@ def _repo_state(repo: Optional[Path]) -> str:
 
 
 def status_lines() -> list[tuple[str, str]]:
-    """The four readouts, in the order a person should be able to read them."""
-    from agent.memory_manager import resolve_memory_provider_name
+    """The readouts, in the order a person should be able to read them.
+
+    Mind 与外部服务是两件事（``WP-MIND-COEXIST``），所以原来那一条 ``provider``
+    拆成两条：Mind 开没开、外部接的是谁。压成一行正是这一刀要拆掉的形状——
+    压在一起的时候，「接了一家第三方」在屏上看起来就像「官方脑没了」。
+    """
+    from agent.memory_manager import (
+        OFFICIAL_MEMORY_PROVIDER,
+        resolve_external_provider_name,
+        resolve_mind_enabled,
+    )
 
     try:
         from plobi_cli.config import load_config
 
-        configured = load_config().get("memory", {}).get("provider")
+        _mem_cfg = load_config().get("memory", {})
+        if not isinstance(_mem_cfg, dict):
+            _mem_cfg = {}
     except Exception:  # a config we cannot read is itself the finding
-        configured = None
-    name = resolve_memory_provider_name(configured)
+        _mem_cfg = {}
+    configured = _mem_cfg.get("provider")
+    mind_on = resolve_mind_enabled(_mem_cfg.get("mind_enabled"))
+    external = resolve_external_provider_name(configured)
     roots = resolve_roots(None)
 
-    availability = "无法解析 MIND_ROOT（脑不在这台的配置里）"
-    provider_line = f"{name}（配置里写的是 {configured!r}）"
-    if roots is not None:
+    def _availability(name: str) -> str:
+        if roots is None:
+            return "无法解析 MIND_ROOT（脑不在这台的配置里）"
         try:
             from plugins.memory import load_memory_provider
 
             provider = load_memory_provider(name)
-            availability = (
-                "可用" if provider is not None and provider.is_available() else "不可用"
-            )
+            return "可用" if provider is not None and provider.is_available() else "不可用"
         except Exception as exc:  # pragma: no cover - defensive readout
-            availability = f"加载失败：{exc}"
+            return f"加载失败：{exc}"
+
+    mind_line = "开" if mind_on else "关"
+    mind_line += f" · is_available: {_availability(OFFICIAL_MEMORY_PROVIDER)}" if mind_on else " · 没装载"
+    external_line = (
+        f"{external} · is_available: {_availability(external)}"
+        if external
+        else f"不接（配置里写的是 {configured!r}）"
+    )
 
     digest_logical, digest_state = _digest_state(roots) if roots else ("—", "无根可解析")
     return [
-        ("provider", provider_line + f" · is_available: {availability}"),
+        ("Mind", mind_line),
+        ("外部记忆服务", external_line),
         ("画像", _persona_state(roots) if roots else "无根可解析"),
         (f"今日摘要 {digest_logical}", digest_state),
         ("脑仓 MIND_ROOT", _repo_state(roots.mind) if roots else "未配置"),

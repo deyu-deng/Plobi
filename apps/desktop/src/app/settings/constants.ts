@@ -254,9 +254,11 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   // `''` is the real off switch for the external brain (the built-in MEMORY.md layer
   // stays); `mind` is what the backend ships as the official surface. There used to be a
   // `builtin` entry here — it is not a provider plugin, and measured behaviour for it is
-  // byte-for-byte the `''` case, so it was a second label for one state. Anything listed
-  // after `''` is either the core brain (mind) or a directory under Code's plugins/memory/ (a Python test enforces it).
-  'memory.provider': ['', 'mind', 'hindsight', 'honcho'],
+  // byte-for-byte the `''` case, so it was a second label for one state.
+  // `mind` 也不在这里（`WP-MIND-COEXIST`）：它是这具身体自己的记忆面，不是「一家外部服务」，
+  // 所以在同一个屏上由自己那个开关（`memory.mind_enabled`）管，不再和八家第三方位于一列。
+  // 别把它加回来——那个列表的每一项都会在用户选中时**取代**别的东西，而 Mind 不会。
+  'memory.provider': ['', 'hindsight', 'honcho'],
   // Terminal execution backends — kept in sync with the dispatch ladder in
   // tools/terminal_tool.py::_create_environment (local/docker/singularity/
   // modal/daytona/ssh). Remote backends need extra env (image, tokens, host).
@@ -433,6 +435,7 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     memoryEnabled: 'Persistent Memory',
     userProfileEnabled: 'About You',
     writeApproval: 'Ask Before Writing',
+    mindEnabled: 'Always On',
     mindWriteApproval: 'Ask Before Writing Into Mind',
     mindWriteAutoApprove: 'Let Mind Write on Its Own Once Trusted',
     globalCharLimit: 'Shared Memory Budget (chars)',
@@ -584,7 +587,7 @@ const MEMORY_GROUPS: DesktopConfigGroup[] = [
   },
   {
     titleKey: 'settings.groups.memory.mind',
-    keys: ['memory.mind_write_approval', 'memory.mind_write_auto_approve']
+    keys: ['memory.mind_enabled', 'memory.mind_write_approval', 'memory.mind_write_auto_approve']
   },
   {
     titleKey: 'settings.groups.memory.external',

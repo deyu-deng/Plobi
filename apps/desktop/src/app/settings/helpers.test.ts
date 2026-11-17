@@ -18,12 +18,15 @@ describe('settings helpers', () => {
   // must be selectable right after it. `enumOptionsFor` returns undefined for a key
   // with no enum, so assert the list exists before indexing it — otherwise this file
   // type-checks red (TS18048) while vitest stays green: two different rulers.
-  it('offers Mind as the recommended memory provider', () => {
+  it('offers only external services for the memory provider, never Mind', () => {
+    // `WP-MIND-COEXIST`：Mind 不再和八家第三方挤在同一列里，它有自己那个常驻开关
+    // （`memory.mind_enabled`）。这个下拉里每一项的语义都是「取代别的东西」，
+    // 而 Mind 不会取代任何东西——所以它不在这儿。
     const options = enumOptionsFor('memory.provider', '', {}) ?? []
 
     expect(options.length).toBeGreaterThan(1)
     expect(options[0]).toBe('')
-    expect(options[1]).toBe('mind')
+    expect(options).not.toContain('mind')
   })
 
   describe('defineFieldCopy', () => {
