@@ -1,6 +1,8 @@
 /**
- * 设置里那一页「记忆」：三份按条列出、忘掉两下才真删且带走回执；
- * 下面再接一段「写入边界」（`WP-MIND-SILENCE-VISIBLE`）。
+ * 设置里那一页「记忆」：三份按条列出、忘掉两下才真删且带走回执。
+ * 另有一块「写入边界」（`WP-MIND-SILENCE-VISIBLE`），**不再嵌在这一页里**——
+ * 它挂在 `memory.mind_write_auto_approve` 那一行下面，位置由 `mount.test.tsx`
+ * 钉住；本档只测它自己画得对不对，不测它被塞在哪。
  *
  * 现核那两条链：
  * - `GET /api/memory/ledgers` → 逐条渲染 → 第一下只上膛 → 第二下
@@ -12,7 +14,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MemoryLedgers } from './ledgers'
+import { MemoryBoundary, MemoryLedgers } from './ledgers'
 
 // 这一档跑在 vitest 的 globals:false 下，testing-library 不会自己注册 afterEach
 // cleanup ⇒ 不手动清的话 `screen` 会跨档累加（新加的边界面板每个档都渲染一次，
@@ -115,7 +117,7 @@ describe('MemoryLedgers', () => {
 
 describe('MemoryBoundary', () => {
   it('每类一行：写入连采用 5 的分母，与上面那行 8 分得开', async () => {
-    render(<MemoryLedgers />)
+    render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
     expect(within(panel).getByText('连采 3/5（写入）')).toBeTruthy()
@@ -126,7 +128,7 @@ describe('MemoryBoundary', () => {
   })
 
   it('已生效政策给原文，并说清怎么收回', async () => {
-    render(<MemoryLedgers />)
+    render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
     expect(within(panel).getByText('类别 wiki 的写入：你连着点头 5 次，以后这类我不再问。')).toBeTruthy()
@@ -134,7 +136,7 @@ describe('MemoryBoundary', () => {
   })
 
   it('最近一次静默能拼出「写进哪、哪一类、凭哪条政策」', async () => {
-    render(<MemoryLedgers />)
+    render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
     expect(within(panel).getByText('写进 Mind/wiki/daily/2026-11-17.md（wiki 类；凭 promote:wiki）')).toBeTruthy()
@@ -142,7 +144,7 @@ describe('MemoryBoundary', () => {
 
   it('熔断时最上方出一条告警，写明几次、几天', async () => {
     installApi({ boundary: { ...boundary, breaker: { count: 3, threshold: 3, tripped: true, window_days: 7 } } })
-    render(<MemoryLedgers />)
+    render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
     const alert = within(panel).getByRole('alert')
@@ -151,20 +153,21 @@ describe('MemoryBoundary', () => {
 
   it('全新安装（没有表态史）时说的是「还没有值得学的」，不留白', async () => {
     installApi({ boundary: { ...boundary, categories: {}, policies: [], traces: [] } })
-    render(<MemoryLedgers />)
+    render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
     expect(within(panel).getByText('还没有值得学的——批准或驳回几次之后，这里的读数才会长出来')).toBeTruthy()
     expect(within(panel).getByText('还没有静默过')).toBeTruthy()
   })
 
-  it('老后端没有这个口时整块不渲染，原有三份记忆照常', async () => {
-    installApi({ boundaryFails: true })
-    render(<MemoryLedgers />)
+  it('老后端没有这个口时整块不渲染，也不冒红字', async () => {
+    const api = installApi({ boundaryFails: true })
+    const view = render(<MemoryBoundary />)
 
-    expect(await screen.findByText('共用甲')).toBeTruthy()
+    // 请求确实发出去、也失败了；失败之后仍然一行都不画（不是画一个「读不到」）。
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/memory/boundary' })))
     expect(screen.queryByTestId('memory-boundary')).toBeNull()
-    // 不许因为边界面板读不到就冒一个红字出来
+    expect(view.container.textContent).toBe('')
     expect(screen.queryByText('现在读不到记忆')).toBeNull()
   })
 })

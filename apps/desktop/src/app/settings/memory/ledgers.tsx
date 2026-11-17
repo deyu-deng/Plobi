@@ -349,8 +349,6 @@ export function MemoryLedgers() {
           )}
         </section>
       ))}
-
-      <MemoryBoundary />
     </div>
   )
 }
@@ -365,6 +363,11 @@ export function MemoryLedgers() {
  * ④ 最近几次静默，每行拼成一句人读的话。
  *
  * 老后端（这个口还不存在）整块不渲染：与其报一个「读不到」，不如让页面跟以前一样。
+ *
+ * **挂载点在 `memory.mind_write_auto_approve` 那一行下面**（`config-settings.tsx` 的
+ * `descriptionExtra`，用户 11-17 08:5x 拍）。它原来嵌在 :func:`MemoryLedgers` 末尾、
+ * 跟着 `memory.provider` 那行走，要往下滚十二行才见到——「接哪个外部脑」的下拉跟
+ * 「这一类为什么要问你」本来也不是一件事。
  */
 export function MemoryBoundary() {
   const { locale } = useI18n()

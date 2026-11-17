@@ -22,7 +22,7 @@ import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS, SEC
 import { fieldCopyForSchemaKey } from './field-copy'
 import { enumOptionsFor, getNested, prettyName, setNested } from './helpers'
 import { MemoryConnect } from './memory/connect'
-import { MemoryLedgers } from './memory/ledgers'
+import { MemoryBoundary, MemoryLedgers } from './memory/ledgers'
 import { ModelSettings, ModelSettingsSkeleton } from './model-settings'
 import { EmptyState, ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import { ProviderConfigPanel } from './provider-config-panel'
@@ -462,6 +462,11 @@ export function ConfigSettings({
                       {/* 个人记忆那一页（用户 2026-10-30 定：入口放这里、只做个人记忆） */}
                       <MemoryLedgers />
                     </>
+                  ) : key === 'memory.mind_write_auto_approve' ? (
+                    /* 写入边界紧跟总开关（用户 11-17 08:5x 拍定）：那一行问「要不要先问你」，
+                       这一块答「这一类凭什么可以不问」。原先它嵌在 memory.provider 那行的
+                       说明区里——那是「接哪个外部脑」的下拉，往下要滚十二行，语义也不搭。 */
+                    <MemoryBoundary />
                   ) : undefined
                 }
                 enumOptions={
