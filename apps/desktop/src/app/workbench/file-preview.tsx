@@ -10,7 +10,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import ShikiHighlighter from 'react-shiki'
 import { Streamdown } from 'streamdown'
 
-import { requestComposerFocus, requestComposerInsertRefs } from '@/app/chat/composer/focus'
+import { requestComposerFocus, requestComposerInsertRefs, requestComposerSubmit } from '@/app/chat/composer/focus'
 import { droppedFileInlineRef } from '@/app/chat/composer/inline-refs'
 import { PLOBI_PATHS_MIME } from '@/app/chat/hooks/use-composer-actions'
 import { isAddSelectionShortcut } from '@/app/right-sidebar/terminal/selection'
@@ -26,6 +26,13 @@ import { CodeEditor } from '@/components/chat/code-editor'
 import { FileDiffPanel } from '@/components/chat/diff-lines'
 import { chunkTextLines, useFixedRowWindow } from '@/components/chat/fixed-row-window'
 import { PageLoader } from '@/components/page-loader'
+import {
+  SelectionToolbar,
+  type SelectionToolbarAction,
+  textBeforeRange,
+  textOfRange
+} from '@/components/selection-toolbar/selection-toolbar'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { translateNow, useI18n } from '@/i18n'
 import {
   desktopFileDiff,
@@ -34,7 +41,7 @@ import {
   readDesktopFileText,
   writeDesktopFileText
 } from '@/lib/desktop-fs'
-import { Check, Pencil, X } from '@/lib/icons'
+import { Check, Copy, MessageSquareText, Pencil, Wand, X } from '@/lib/icons'
 import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { shikiLanguageForFilename } from '@/lib/markdown-code'
 import { mediaKind } from '@/lib/media'
@@ -470,6 +477,58 @@ function startLineDrag(event: ReactDragEvent<HTMLElement>, filePath: string, { e
   event.dataTransfer.effectAllowed = 'copy'
 }
 
+export interface SelectedLineRange {
+  line: number
+  lineEnd: number
+}
+
+function countNewlines(value: string): number {
+  return (value.match(/\n/g) ?? []).length
+}
+
+/**
+ * 选区 ⇒ 起止行号（1 起）。
+ *
+ * 从选区**起点**往回数换行：选区之前在这个代码块里有几行，当前行就是第几行；
+ * 选区里跨了几行（几个换行），末行就是起始行加几。
+ *
+ * 纯函数——DOM 那部分（找代码块、取选区前后的字）另有两只小函数。
+ */
+export function selectedLineRange(chunkStart: number, beforeText: string, selectedText: string): SelectedLineRange {
+  const line = chunkStart + countNewlines(beforeText) + 1
+  const lineEnd = line + countNewlines(selectedText)
+
+  return { line, lineEnd }
+}
+
+/** 选区落在哪个代码块里（那一份 chunk）。 */
+function chunkRootFor(node: Node): null | HTMLElement {
+  let current: Node | null = node
+
+  while (current) {
+    if (current.nodeType === Node.ELEMENT_NODE && (current as HTMLElement).hasAttribute('data-chunk-start')) {
+      return current as HTMLElement
+    }
+
+    current = current.parentNode
+  }
+
+  return null
+}
+
+/** 选区 ⇒ 这个文件里的起止行号。选区不在代码块里就 null。 */
+export function lineRangeForSelection(range: Range): null | SelectedLineRange {
+  const root = chunkRootFor(range.startContainer)
+
+  if (!root) {
+    return null
+  }
+
+  const chunkStart = Number(root.getAttribute('data-chunk-start') ?? '0')
+
+  return selectedLineRange(chunkStart, textBeforeRange(root, range), textOfRange(range))
+}
+
 function SourceView({ filePath, language, text }: { filePath: string; language: string; text: string }) {
   const { t } = useI18n()
   const chunks = useMemo(() => chunkTextLines(text, SOURCE_CHUNK_LINES), [text])
@@ -506,6 +565,59 @@ function SourceView({ filePath, language, text }: { filePath: string; language: 
   const handleDragStart = (event: ReactDragEvent<HTMLElement>, line: number) => {
     startLineDrag(event, filePath, inSelection(line) && selection ? selection : { end: line, start: line })
   }
+
+  // 选区浮窗（WP-SELECTION-TOOLBAR）：复制／加入本会话／让智能体改这一段。
+  // 三个动作都走**已有的那条道**（行段引用 + 输入框），不新造协议。
+  const selectionActions = useMemo<SelectionToolbarAction[]>(
+    () => [
+      {
+        id: 'copy',
+        icon: <Copy className="size-3.5" />,
+        label: t.selectionToolbar.copy,
+        onSelect: ({ text }) => {
+          void writeClipboardText(text)
+        }
+      },
+      {
+        id: 'add-to-chat',
+        icon: <MessageSquareText className="size-3.5" />,
+        label: t.selectionToolbar.addToChat,
+        onSelect: ({ range }) => {
+          const lines = lineRangeForSelection(range)
+
+          const ref = droppedFileInlineRef(
+            { line: lines?.line, lineEnd: lines?.lineEnd, path: filePath },
+            $currentCwd.get()
+          )
+
+          if (!ref) {
+            return
+          }
+
+          requestComposerInsertRefs([ref])
+          requestComposerFocus('main')
+        }
+      },
+      {
+        id: 'fix-this-part',
+        icon: <Wand className="size-3.5" />,
+        label: t.selectionToolbar.fixThisPart,
+        onSelect: ({ range, text }) => {
+          const lines = lineRangeForSelection(range)
+
+          const ref = lines
+            ? droppedFileInlineRef(
+                { line: lines.line, lineEnd: lines.lineEnd, path: filePath },
+                $currentCwd.get()
+              )
+            : null
+
+          requestComposerSubmit(t.selectionToolbar.fixPrompt(ref ?? '', text))
+        }
+      }
+    ],
+    [filePath, t]
+  )
 
   // ⌘/Ctrl+L with a line selection drops the same `@line:path:start-end` ref the
   // gutter drag produces — so the keyboard path mirrors dragging the lines into
@@ -569,7 +681,11 @@ function SourceView({ filePath, language, text }: { filePath: string; language: 
                 )
               })}
             </div>
-            <div className="preview-source-code min-w-0 [&_pre]:m-0" data-selectable-text="true">
+            <div
+              className="preview-source-code min-w-0 [&_pre]:m-0"
+              data-chunk-start={chunk.start}
+              data-selectable-text="true"
+            >
               <ShikiHighlighter
                 addDefaultStyles={false}
                 as="div"
@@ -586,6 +702,11 @@ function SourceView({ filePath, language, text }: { filePath: string; language: 
         ))}
         {afterRows > 0 && <div aria-hidden className="col-span-2" style={{ height: afterRows * SOURCE_LINE_PX }} />}
       </div>
+      <SelectionToolbar
+        actions={selectionActions}
+        containerRef={scrollerRef}
+        testId="file-selection-toolbar"
+      />
     </div>
   )
 }

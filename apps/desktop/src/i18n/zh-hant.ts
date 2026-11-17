@@ -3161,6 +3161,15 @@ export const zhHant = defineLocale({
     }
   },
 
+  selectionToolbar: {
+    copy: '複製',
+    quote: '引用',
+    sendToAgent: '發給智能體',
+    addToChat: '加入對話',
+    fixThisPart: '讓智能體改這一段',
+    fixPrompt: (ref, snippet) => `只改這一段，其餘別動：\n\n${ref}\n\n${snippet}`
+  },
+
   assistant: {
     thread: {
       // 他自己打的那条（用户 11-03：「用户的也要」）。

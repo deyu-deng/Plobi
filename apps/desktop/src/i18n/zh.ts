@@ -3497,6 +3497,15 @@ export const zh: Translations = {
     }
   },
 
+  selectionToolbar: {
+    copy: '复制',
+    quote: '引用',
+    sendToAgent: '发给智能体',
+    addToChat: '加入对话',
+    fixThisPart: '让智能体改这一段',
+    fixPrompt: (ref, snippet) => `只改这一段，其余别动：\n\n${ref}\n\n${snippet}`
+  },
+
   assistant: {
     thread: {
       // 他自己打的那条（用户 11-03：「用户的也要」）。中文这一屏用「我」——他拍的那一格。

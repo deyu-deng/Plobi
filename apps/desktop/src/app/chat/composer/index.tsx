@@ -34,6 +34,7 @@ import { COMPOSER_DROP_ACTIVE_CLASS, COMPOSER_DROP_FADE_CLASS } from './drop-aff
 import { PermissionPill } from './permission-pill'
 import { markActiveComposer } from './focus'
 import { HelpHint } from './help-hint'
+import { useAgentHandoff } from './hooks/use-agent-handoff'
 import { useAtCompletions } from './hooks/use-at-completions'
 import { useComposerBranch } from './hooks/use-composer-branch'
 import { useComposerDraft } from './hooks/use-composer-draft'
@@ -230,7 +231,7 @@ export function ChatBar() {
     clearQuoteTarget()
   }, [sessionId])
 
-  const { steerDraft, submitDraft } = useComposerSubmit({
+  const { dispatchSubmit, steerDraft, submitDraft } = useComposerSubmit({
     activeQueueSessionKey,
     activeQueueSessionKeyRef,
     attachments,
@@ -256,6 +257,15 @@ export function ChatBar() {
     sessionId,
     setComposerText,
     stashAt
+  })
+
+  // 「发给别的智能体」那笔待办（WP-SELECTION-TOOLBAR）：作用域对上了、那一趟
+  // 「进入」也走完了，就照平常那条路把它送出去——**不走另外一条道**。
+  useAgentHandoff({
+    scopeKey: activeQueueSessionKey,
+    submit: text => {
+      void dispatchSubmit(text)
+    }
   })
 
   // Resting / reconnecting / starting placeholder text, re-rolled only on a real

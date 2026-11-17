@@ -1,7 +1,8 @@
-import { type FC, useCallback, useMemo, useState } from 'react'
+import { type FC, useCallback, useMemo, useRef, useState } from 'react'
 
 import { AssistantMessage } from '@/components/assistant-ui/thread/assistant-message'
 import { ThreadMessageList } from '@/components/assistant-ui/thread/list'
+import { ChatSelectionActions } from '@/components/assistant-ui/thread/selection-actions'
 import {
   BackgroundResumeNotice,
   CenteredThreadSpinner,
@@ -51,6 +52,11 @@ export const Thread: FC<{
 }) => {
   const { t } = useI18n()
   const copy = t.assistant.thread
+
+  // 选区浮窗（WP-SELECTION-TOOLBAR）认这一块：选区落在转录里，浮窗才出现。
+  // 浮窗自己的状态住在浮窗里 ⇒ 选区变化**不重渲染转录**（`WP-CHAT-TRANSCRIPT-REMOUNT`
+  // 刚把转录的渲染成本压下来，这一刀不许把它顶回去）。
+  const transcriptRef = useRef<HTMLDivElement | null>(null)
 
   const [restoreConfirmTarget, setRestoreConfirmTarget] = useState<
     (RestoreMessageTarget & { messageId: string }) | null
@@ -130,7 +136,10 @@ export const Thread: FC<{
   )
 
   return (
-    <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
+    <div
+      className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]"
+      ref={transcriptRef}
+    >
       <ThreadMessageList
         clampToComposer={clampToComposer}
         components={messageComponents}
@@ -140,6 +149,7 @@ export const Thread: FC<{
       />
       {loading === 'session' && <CenteredThreadSpinner />}
       <ThreadTimeline />
+      <ChatSelectionActions containerRef={transcriptRef} />
       <ConfirmDialog
         confirmLabel={copy.restoreConfirm}
         description={copy.restoreBody}

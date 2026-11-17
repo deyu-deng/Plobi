@@ -3372,6 +3372,15 @@ export const en: Translations = {
     }
   },
 
+  selectionToolbar: {
+    copy: 'Copy',
+    quote: 'Quote',
+    sendToAgent: 'Send to agent',
+    addToChat: 'Add to chat',
+    fixThisPart: 'Fix this part',
+    fixPrompt: (ref, snippet) => `Only change this part, leave the rest alone:\n\n${ref}\n\n${snippet}`
+  },
+
   assistant: {
     thread: {
       // 他自己打的那条（用户 11-03：「用户的也要」）。英语那一屏称呼读的人做主语：You。

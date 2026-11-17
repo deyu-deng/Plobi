@@ -3244,6 +3244,15 @@ export const ja = defineLocale({
     }
   },
 
+  selectionToolbar: {
+    copy: 'コピー',
+    quote: '引用',
+    sendToAgent: 'エージェントに送る',
+    addToChat: '会話に追加',
+    fixThisPart: 'この箇所だけ直す',
+    fixPrompt: (ref, snippet) => `この部分だけ直して、ほかは変えないでください：\n\n${ref}\n\n${snippet}`
+  },
+
   assistant: {
     thread: {
       // 他自己打的那条（用户 11-03：「用户的也要」）。与下一行同一人称：あなた。

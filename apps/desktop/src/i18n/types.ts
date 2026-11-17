@@ -2932,6 +2932,20 @@ export interface Translations {
     }
   }
 
+  selectionToolbar: {
+    /** 复制选中的那一段（聊天与文件两处共用同一枚浮窗）。 */
+    copy: string
+    /** 引用选中的那一段——挂到输入框上方，发送时带上 `reply_to`。 */
+    quote: string
+    /** 下拉那一项：把这段话发给别的智能体。 */
+    sendToAgent: string
+    /** 文件侧：把选中的这一段加进本会话。 */
+    addToChat: string
+    /** 文件侧：让智能体只改选中的这一段。 */
+    fixThisPart: string
+    /** 文件侧：让智能体只改这一段的请求正文（`ref` 是那枚行段引用）。 */
+    fixPrompt: (ref: string, snippet: string) => string
+  },
 
   assistant: {
     thread: {
