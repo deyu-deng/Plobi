@@ -128,13 +128,18 @@ describe('About panel: the desktop release line', () => {
     expect(screen.queryByText(en.shell.statusbar.backendVersion('0.3.0'))).toBeNull()
   })
 
-  it('says so when the backend is genuinely a different version', () => {
-    // 两边真不一致时那是毛病，值得说出来。
+  it('never prints a second version number, even when the backend differs', () => {
+    // 11-11 定案：壳与后端一起发 ⇒ **一个产品一个版本号，永远只印一个**
+    // （用户 11-07 与 11-11 两次：「只显示一个版本号」）。
+    // 0.3.1 印过「后端 v0.3.0」是因为它读的是 PLOBI_HOME 里那份陈旧的 bootstrap clone，
+    // 不是应用真正跑的 `resources/backend` ⇒ 两个数字说一件事、还常常说错。
+    // 真出现壳/后端不一致是**打包的毛病**：归日志，不该摆到屏上让主人裁决
+    // （见 `about-settings.tsx` 里那段注释）。
     $desktopVersion.set({ appVersion: '0.3.0', backendVersion: '0.1.0', electronVersion: '30.0.0', nodeVersion: '20.0.0', platform: 'win32', plobiRoot: 'C:\\Plobi' })
 
     render(<AboutSettings />)
 
     expect(screen.getByText(en.settings.about.version('0.3.0'))).toBeTruthy()
-    expect(screen.getByText(en.shell.statusbar.backendVersion('0.1.0'))).toBeTruthy()
+    expect(screen.queryByText(en.shell.statusbar.backendVersion('0.1.0'))).toBeNull()
   })
 })

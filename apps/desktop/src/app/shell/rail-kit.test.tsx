@@ -7,7 +7,10 @@ vi.mock('@/i18n', () => ({
     t: {
       common: { close: '关闭' },
       console: { chiefSecretary: '总秘书' },
-      surface: { agentDossier: '档案', pendingTickets: '待放行' }
+      surface: { agentDossier: '档案', pendingTickets: '待放行' },
+      // 右栏那一列现在有四条记录（写脑待批那一条 11-16 21:4x 拍定搬进对话卡），
+      // 那枚按钮要读这一节的标题 ⇒ mock 里也得有这一节。
+      mindPending: { title: '写脑待批' }
     }
   })
 }))
@@ -119,7 +122,9 @@ describe('右上角那一列是注册表驱动的', () => {
       peekOpen: false
     })
 
-    expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'edge'])
+    // 右栏那一列现在是四条记录：档案／待放行／**写脑待批**（11-16 21:4x 拍定从左栏
+    // 底部角标搬进对话卡，`WP-MIND-CONSENT-EVENTS`）／贴边那几枚。
+    expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
   })
 
   it('加一条记录就多一项 —— 不用改壳子', () => {

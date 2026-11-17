@@ -81,7 +81,7 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
 
     // 钉住那一套：对话右侧的一列（带左边线，不带圆角）；对话容器在钉住时是并排。
     expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*border-l/)
-    expect(controller).toMatch(/dossierVisible && dossierPinned \? 'flex-row' : 'flex-col'/)
+    expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
 
     // 浮层是**用户切出来**的另一种形态：绝对定位 ＋ 圆角 ＋ 投影。
     expect(controller).toMatch(/DOSSIER_FLOATING\s*=\s*\n\s*'absolute[^']*rounded-xl/)
@@ -218,6 +218,6 @@ describe('只有两张卡：预览轨的实现删掉了，笔记落工作区卡�
     expect(layout).toMatch(/\$dossierPanelPinned\s*=\s*atom\(true\)/)
     expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*border-l/)
     // 对话容器在钉住时是并排（`flex-row`），浮层那档才用 absolute。
-    expect(controller).toMatch(/dossierVisible && dossierPinned \? 'flex-row' : 'flex-col'/)
+    expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
   })
 })

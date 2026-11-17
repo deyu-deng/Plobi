@@ -180,6 +180,9 @@ describe('AgentActionsMenu', () => {
       expect(updateAgent).toHaveBeenCalledWith('aura', {
         color: '',
         displayName: '欧拉',
+        // 英文名那一格是 11-16 的 i18n 定名刀加进来的：这张表单把它一起存
+        // （门牌 `agent_id` 由它派生）。这一档没填 ⇒ 空串（「没有英文名」）。
+        displayNameEn: '',
         icon: 'robot',
         projectPaths: ['/work/aura', '/work/shared']
       })
