@@ -1,0 +1,42 @@
+# 发版就绪闸（常驻、便宜、每次推 main 都跑）。
+#
+# 为什么单独一条、而不是挂在 test-suite.yml 里：test-suite 只在「PR 碰到那几个特定路径」
+# 或「每周一 02:43」或「手动」时跑 ⇒ **直接推 main 时它不跑**（2026-11-17 推 12 笔时实测：
+# main 上一个套件 run 都没有）。而这一格要守的东西恰恰是「直接推 main」时最容易坏的：
+# 版本号改了但说明没跟上、说明只有一种语言、中英条目数对不上、措辞过了尺却带着生成标记。
+# ⇒ 它必须**每次推 main 都跑**，而且要**快**（纯标准库，秒级）。
+#
+# 判红的东西：版本号七处一致、这一版的两份说明都在且非空、中英条目数一致、措辞过尺、
+# 互跳那一行指着这一版、远端还没有这个号、用户面那把尺（生成标记／摘要写成对比句／
+# 「上一版…这一版…」成对句式过量／内部实现词上屏）。
+#
+# **它守的不是「这一版做完了吗」**——那是人的判断（裁定 231：发版入口要人点名那一笔）。
+
+name: Release readiness
+
+on:
+  push:
+    branches: [main, master, windows]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ready:
+    name: The version and the two notes agree
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Gate
+        run: |
+          set -euo pipefail
+          python scripts/plobi/release_readiness.py
