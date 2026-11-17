@@ -47,7 +47,6 @@ export const CenteredThreadSpinner: FC = () => {
     >
       <Loader
         aria-hidden="true"
-        className="text-midground/70"
         role="presentation"
         size="md"
       />

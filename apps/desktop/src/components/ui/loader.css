@@ -1,22 +1,36 @@
 /* ── Loader (brand turtle) ────────────────────────────────────────────────
-   品牌小乌龟沿一条跑道从左走到右，走到头转身走回来（循环；**不表达真实进度**）。
+   品牌小乌龟在一条跑道上**从左跑到右**；跑到头淡出，**再从左边重新开始**
+   （主人 11-17 08:2x 拍：**不要往返跑** —— 不折返、不转身走回来）。
 
-   为什么是纯 CSS、不是 JS：上一刀 `WP-CHAT-CARD-FLICKER` 的病根正是**旧实现**
+   这一版相对上一版改了三件事：
+   ① **不折返**：位移只有「左 → 右」一段。到右端淡出，循环时从左边重新进场
+      （上一版是走到头 `scaleX` 翻面、再走回来 —— 主人判「太简陋」）。
+   ② **颜色跟主题**：小龟跟 `--ui-accent`（＝ 运行时注入的 `--theme-midground`），
+      用户换主题它就跟着换；上一版跟的是 `text-primary`（发闷）。
+   ③ **有步态**：走位时小龟轻微起伏 + 前后倾（`plobi-turtle-gait`），读作「它在跑」
+      而不是「一块图在滑」。
+
+   为什么还是纯 CSS、不是 JS：上一刀 `WP-CHAT-CARD-FLICKER` 的病根正是**旧实现**
    那枚粒子加载指示——它每帧重算一条 220 步的 SVG 路径，并把 40 个粒子的
    cx/cy/r/opacity 逐个改写（实测约 1.7 万次 DOM 改写/秒，窗口最小化时照改）。
-   装饰动画**不该**逐帧改 DOM：`transform` 走合成器，零 DOM 改写、零 JS，而且浏览器
-   在窗口最小化时自己会停掉合成器动画——那件事以前要手写 `document.visibilityState`
-   才办得到。
+   装饰动画**不该**逐帧改 DOM：`transform`／`opacity` 走合成器，零 DOM 改写、零 JS，
+   而且浏览器在窗口最小化时自己会停掉合成器动画。
 
-   三层，各自有自己的 transform，互不打架：
-     .loader__rail    —— 跑道：一条静态的细线（currentColor 的弱色）
-     .loader__runner  —— 位移层：宽 = 跑道宽，只做 translateX
-     .loader__turtle  —— 龟：只做 scaleX（走到头转身时翻面）
-   跑道在 runner **之下**（DOM 顺序在前），龟与它身后的拖尾在跑道**之上**。
+   四层，各自有自己的 transform，互不打架：
+     .loader__rail    —— 跑道：一条**两端淡出**的细线（硬邦邦一根横条读着像进度条）
+     .loader__runner  —— 位移层：宽 = 跑道宽，只做 translateX（左 → 右，不回头）
+     .loader__trail   —— 尾迹：龟身后一道渐隐的亮痕（跟着走）
+     .loader__turtle  —— 龟：步态起伏 ＋ 翻面 ＋ 淡入淡出
 
    行程怎么算的：`translateX(calc(100% - var(--loader-size)))` —— 这里面的 100%
    是 **runner 自身宽度**（= 跑道宽），所以位移 = 跑道宽 − 龟宽 ⇒ 龟正好停在右端，
    不会有一半挂到跑道外面。
+
+   循环接缝：位移在循环边界**瞬移回左端**，而那一刻小龟正好是透明的（淡出 92%→100%、
+   淡入 0%→7%）⇒ 换位看不见。**不折返**这条就是靠这两个关键帧钉住的。
+
+   品牌龟侧影**头朝左**（`PLOBI_MARK_PATH` 里那颗头在 x=11、壳在 x=14–58），
+   朝右跑 ⇒ 整程翻面（`scaleX(-1)`），不再像上一版那样「走到一半翻回去」。
 
    紧凑档（`--dot`）：格子只有 16–24px，跑道放不下（12px 的行程在 24px 的格子里
    读不出「在走」，只读得出「在抖」）⇒ 那一档不画跑道，乌龟原地轻轻起伏。
@@ -25,19 +39,25 @@
 .loader {
   --loader-size: 18px;
   --loader-width: 9rem;
-  --loader-cycle: 2.8s;
-  --loader-rail: 3px;
+  --loader-cycle: 2.4s;
+  --loader-step: 0.6s;
+  --loader-rail: 2px;
+  /* 品牌龟在 64 网格里的实际高宽比（见 loader.tsx 里那棵裁过的 viewBox）。 */
+  --loader-ratio: 27.5 / 54;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: inherit;
+  /* 颜色跟用户选的主题走：`--ui-accent` ＝ 运行时注入的 `--theme-midground`。 */
+  color: var(--ui-accent);
 }
 
 .loader__track {
   position: relative;
   width: var(--loader-width);
-  height: calc(var(--loader-size) + var(--loader-rail));
+  /* 多留 3px：步态起伏要抬得起来，尾迹也不许挂到跑道外面。 */
+  height: calc(var(--loader-rail) + var(--loader-size) * var(--loader-ratio) + 3px);
+  overflow: hidden;
 }
 
 .loader__rail {
@@ -46,7 +66,13 @@
   bottom: 0;
   height: var(--loader-rail);
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 22%, transparent);
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, currentColor 24%, transparent) 16%,
+    color-mix(in srgb, currentColor 24%, transparent) 84%,
+    transparent
+  );
 }
 
 .loader__runner {
@@ -55,18 +81,19 @@
   left: 0;
   width: 100%;
   will-change: transform;
-  animation: plobi-turtle-walk var(--loader-cycle) ease-in-out infinite;
+  animation: plobi-turtle-run var(--loader-cycle) cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
-/* 乌龟身后那一小段亮痕：跟着一只走，读作「它正在跑道上跑」。 */
+/* 尾迹：龟身后一道渐隐的运动残影（**抬到龟身高度**，不压跑道 ——
+   压在跑道上那一版读起来像「进度条填到哪儿了」，而这一档不表达真实进度）。 */
 .loader__trail {
   position: absolute;
-  left: 0;
-  bottom: 0;
+  right: 100%;
+  bottom: calc(var(--loader-rail) + var(--loader-size) * var(--loader-ratio) * 0.42);
   width: calc(var(--loader-size) * 1.5);
-  height: var(--loader-rail);
+  height: calc(var(--loader-size) * var(--loader-ratio) * 0.42);
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 42%, transparent);
+  background: linear-gradient(to left, color-mix(in srgb, currentColor 30%, transparent), transparent);
 }
 
 .loader__turtle {
@@ -74,43 +101,69 @@
   left: 0;
   bottom: var(--loader-rail);
   width: var(--loader-size);
-  height: var(--loader-size);
-  color: currentColor;
-  will-change: transform;
-  /* 品牌龟侧影头朝**左**，所以朝右走的那半段是翻面（scaleX(-1)）。 */
-  animation: plobi-turtle-turn var(--loader-cycle) ease-in-out infinite;
+  height: calc(var(--loader-size) * var(--loader-ratio));
+  /* 品牌龟头朝左 ⇒ 朝右跑整程翻面（动画停掉时也翻，静态形状与走位一致）。 */
+  transform: scaleX(-1);
+  transform-origin: 50% 100%;
+  will-change: transform, opacity;
+  /* 两条动画各管一件事：步态管 transform，淡入淡出管 opacity ⇒ 互不打架。 */
+  animation:
+    plobi-turtle-gait var(--loader-step) ease-in-out infinite,
+    plobi-turtle-fade var(--loader-cycle) linear infinite;
 }
 
-@keyframes plobi-turtle-walk {
+/* 跑：只有「左 → 右」一段，**到右端就停住**（循环时从左边重新开始，不折返）。 */
+@keyframes plobi-turtle-run {
   0% {
     transform: translateX(0);
   }
-  50% {
-    transform: translateX(calc(100% - var(--loader-size)));
-  }
+  74%,
   100% {
-    transform: translateX(0);
+    transform: translateX(calc(100% - var(--loader-size)));
   }
 }
 
-@keyframes plobi-turtle-turn {
+/* 步态：跑起来时轻微起伏 + 前后倾（读作「在跑」，不是「在滑」）。 */
+@keyframes plobi-turtle-gait {
   0%,
-  49.9% {
-    transform: scaleX(-1);
-  }
-  50%,
   100% {
-    transform: scaleX(1);
+    transform: translateY(0) rotate(0deg) scaleX(-1);
+  }
+  25% {
+    transform: translateY(-1.5px) rotate(-3deg) scaleX(-1);
+  }
+  50% {
+    transform: translateY(0) rotate(0deg) scaleX(-1);
+  }
+  75% {
+    transform: translateY(-1.5px) rotate(3deg) scaleX(-1);
+  }
+}
+
+/* 淡入淡出：把循环接缝（瞬移回左端）藏起来。 */
+@keyframes plobi-turtle-fade {
+  0% {
+    opacity: 0;
+  }
+  7% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
 /* 紧凑档：没有跑道，乌龟原地起伏。 */
 .loader--dot .loader__track {
   width: var(--loader-size);
-  height: var(--loader-size);
+  height: calc(var(--loader-size) * var(--loader-ratio) + 3px);
 }
 
-.loader--dot .loader__rail {
+.loader--dot .loader__rail,
+.loader--dot .loader__trail {
   display: none;
 }
 
@@ -120,17 +173,7 @@
 
 .loader--dot .loader__turtle {
   bottom: 0;
-  animation: plobi-turtle-bob var(--loader-cycle) ease-in-out infinite;
-}
-
-@keyframes plobi-turtle-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-2px);
-  }
+  animation: plobi-turtle-gait var(--loader-step) ease-in-out infinite;
 }
 
 /* 系统说了「别动」就别动——不是改成「更短的动效」（与 `app/chat/thread-swap.ts` 同一口径）。 */

@@ -23,7 +23,6 @@ export function PageLoader({
     >
       <Loader
         aria-hidden="true"
-        className="text-primary/70"
         role="presentation"
         size="md"
       />
