@@ -39,6 +39,11 @@ class Occurrence:
     kind: str = "task"
     location: Optional[str] = None
     evidence: dict = field(default_factory=dict)
+    #: 这一条发生在**哪一扇会话**里（会话号）。空串＝这一族没有会话概念。
+    #: 落进池的 `conversation` 列 ⇒ Agent 能按会话筛、按群分（裁 187① 那一对列）。
+    conversation: str = ""
+    #: 这一扇是群还是私聊（`group`／`private`）。空串＝不知道，不许猜。
+    visibility: str = ""
 
 
 @runtime_checkable

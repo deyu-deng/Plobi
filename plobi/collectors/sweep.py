@@ -112,6 +112,12 @@ def _collect_one(source: str, collector: Any, *, service: Any) -> dict[str, Any]
             body=occurrence.evidence.get("text", "") if occurrence.evidence else "",
             context=occurrence.evidence or {},
             occurred_at=occurrence.start_at,
+            # 会话那两列（`conversation`／`visibility`）：微信那一族在**自己的**落点填
+            # （`chatlog/pipeline.py`），`pull()` 那一族由采集器**在 Occurrence 上带下来**——
+            # 同一个池曾经两套写法，钉钉那 1500 行两列全空 ⇒ 按会话筛不动、分不了群
+            # （11-17 真机现核）。这里把两格接上；**别的源没有就留空**。
+            conversation=occurrence.conversation or "",
+            visibility=occurrence.visibility or "",
         )
         for occurrence in occurrences
     ])

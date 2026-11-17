@@ -178,11 +178,17 @@ class LocalStore:
     `rows` = 打开时那张**被要求的表**有多少行（聊天那枚是 `tbconversation`，
     日历那枚是 `calendar_event`）。这一格不是"会话数"——同一只手开两种库，
     名字要说清它数的是哪一张表。
+
+    `uid` = **本机账号的 uid**（空串＝没验出来）。它是"解开这把钥匙的那个候选 uid"——
+    而解开的那把钥匙**只可能是本机账号的**（服务端派下来的密钥按账号下发），
+    所以这一格就是"我是谁"。11-17 现核：副本名后缀 `9dd9241f` ＝ `md5("5786844176")[:8]`，
+    且私聊 cid 全是 `对方:5786844176`。
     """
 
     connection: sqlite3.Connection
     profile: str
     rows: int
+    uid: str = ""
 
     def close(self) -> None:
         self.connection.close()
@@ -294,6 +300,108 @@ def stage_media(items: list[dict], *, into: Optional[Path] = None,
         saved.append({**item, "saved_to": str(target), "size_bytes": size, "reused": False})
 
     return saved, skipped, dropped
+
+
+#: 钉钉自家媒体域名——**两档**（11-17 真机实测，原样 GET 那些 URL）：
+#: `FREE` 免鉴权可下（实测 **200**）；`CRED` 要登录凭据（实测 **403**）。
+MEDIA_HOSTS_FREE = ("down-cdn.dingtalk.com", "static.dingtalk.com")
+MEDIA_HOSTS_CRED = ("down.dingtalk.com",)
+#: 消息体里 URL 的形状（JSON 解出来就是普通字符，末尾可能带标点）。
+_URL_RE = re.compile(r"https?://[^\s\"'\\<>]+")
+#: 取回来的件按 URL 的散列落名——**不许用消息里带的文件名或路径当落点名**（那是路径穿越的口）。
+_SUFFIX_BY_CONTENT = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+                      "image/webp": ".webp", "video/mp4": ".mp4", "audio/mpeg": ".mp3",
+                      "application/pdf": ".pdf"}
+
+
+def media_urls_of(content: Any) -> list[dict]:
+    """消息体里**原样**带着的钉钉自家媒体 URL（连扩展名与尺寸规格一起）。
+
+    **绝不自己拼**：11-17 实测自己拼的六种变体（两 host × `media`／`ddmedia` × 带/去
+    `$`／`@`／加 `.jpg`／加 `_200_200`，带与不带 `Referer`）**全 404**，
+    而客户端算好的那些**原样 GET 就是 200**。所以这一档只做一件事：把它算好的**原样**取出来。
+
+    每一格带 `needs_credential`：True ＝ 那一族要登录凭据（本机客户端没留下凭据），
+    False ＝ 免鉴权可下。
+    """
+    parsed = _loads(content)
+    if not isinstance(parsed, dict):
+        return []
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, str):
+            found.extend(_URL_RE.findall(node))
+        elif isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(parsed)
+    out: list[dict] = []
+    seen: set[str] = set()
+    for url in found:
+        host = url.split("/")[2].lower() if url.count("/") >= 2 else ""
+        if host not in MEDIA_HOSTS_FREE and host not in MEDIA_HOSTS_CRED:
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        out.append({"url": url, "host": host, "needs_credential": host in MEDIA_HOSTS_CRED})
+    return out
+
+
+def fetch_media(url: str, *, into: Optional[Path] = None, timeout: int = 20) -> dict:
+    """按消息体里**原样**的那条 URL 取字节，落进 Plobi 的家。
+
+    只取**免鉴权**那一族（`MEDIA_HOSTS_FREE`）。要凭据的那族（`down.dingtalk.com`，
+    11-17 实测 **403**）这里**不去试**：盘上没有凭据，如实说"没有凭据取不到"——
+    **不许拿缩略图冒充原件**。
+
+    返回 `{url, saved_to, size_bytes, content_type}`（取到了）或 `{url, status, reason}`
+    （没取到，且说得出为什么）。
+    """
+    host = url.split("/")[2].lower() if url.count("/") >= 2 else ""
+    if host in MEDIA_HOSTS_CRED:
+        return {"url": url, "status": "needs_credential",
+                "reason": "这一族要登录凭据（本机客户端没留下凭据）"}
+    if host not in MEDIA_HOSTS_FREE:
+        return {"url": url, "status": "refused", "reason": f"不取这个域名（{host or '读不出'}）"}
+
+    try:
+        import requests
+
+        response = requests.get(url, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 - 取不到不是崩溃的理由
+        return {"url": url, "status": "failed", "reason": f"连不上（{type(exc).__name__}）"}
+    try:
+        if response.status_code != 200:
+            return {"url": url, "status": "failed", "reason": f"服务端回了 {response.status_code}"}
+        payload = response.content
+        content_type = str(response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    finally:
+        response.close()
+
+    if not payload:
+        return {"url": url, "status": "failed", "reason": "回来的字节是空的"}
+    if len(payload) > MAX_MEDIA_BYTES:
+        return {"url": url, "status": "failed", "reason": f"太大（{len(payload)} 字节）"}
+
+    root = into or media_dir()
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+    target = root / digest[:2] / f"{digest}{_SUFFIX_BY_CONTENT.get(content_type, '.bin')}"
+    if target.is_file() and target.stat().st_size == len(payload):
+        return {"url": url, "saved_to": str(target), "size_bytes": len(payload),
+                "content_type": content_type, "reused": True}
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+    except OSError as exc:
+        return {"url": url, "status": "failed", "reason": f"写不下去（{type(exc).__name__}）"}
+    return {"url": url, "saved_to": str(target), "size_bytes": len(payload),
+            "content_type": content_type, "reused": False}
 
 
 def _decrypt_pages(source: Path, key: bytes, target: Path) -> int:
@@ -444,7 +552,8 @@ def open_local_store(*, profiles_dir: Optional[Iterable[Path]] = None,
             target.unlink(missing_ok=True)
             last_error = f"解开了但没有「{require_table}」这张表——这不是我们认的那枚库"
             continue
-        return LocalStore(connection=connection, profile=profile_list[0].name, rows=int(rows))
+        return LocalStore(connection=connection, profile=profile_list[0].name,
+                           rows=int(rows), uid=str(uid))
 
     raise LocalStoreUnavailable("local_store_missing", last_error or "没试出可用的钥匙")
 
@@ -489,15 +598,70 @@ def list_conversations(store: LocalStore, *, limit: int = 200) -> list[dict]:
             for cid, title, t, last in rows]
 
 
+def sender_names(store: LocalStore, *, limit: int = 20000) -> dict[str, str]:
+    """`uid → 他看得懂的名字`（全局昵称）。
+
+    真源是 `tbuser_profile_v2(uid, nick, realName, alias)`——这台 11-17 现读 **2146 行**、
+    **行行都有 nick**（11-08 那份快照是 1816 行，数字随客户端同步走）。这族以前**零引用**，
+    于是池里那 1493 条钉钉消息的发件人只剩一个数字 uid。
+
+    读不到（版本换了／没有这张表）⇒ **空表**：那是"这一侧没有名字可查"，不是故障。
+    """
+    out: dict[str, str] = {}
+    try:
+        rows = store.connection.execute(
+            "SELECT uid, nick, realName, alias FROM tbuser_profile_v2 LIMIT ?", (limit,)
+        ).fetchall()
+    except sqlite3.Error:
+        return out
+    for uid, nick, real_name, alias in rows:
+        token = str(uid or "").strip()
+        if not token:
+            continue
+        label = (str(nick or "").strip() or str(real_name or "").strip()
+                 or str(alias or "").strip())
+        if label:
+            out[token] = label
+    return out
+
+
+def group_nick_names(store: LocalStore, *, limit: int = 20000) -> dict[tuple[str, str], str]:
+    """`(cid, uid) → 群里的备注名`（`tbuser_group_nick`）。
+
+    群内叫法比全局昵称更贴近那个人怎么称呼对方 ⇒ **群消息优先用这一格**。
+    这台现核 7 行（覆盖极低），读不到就当没有。
+    """
+    out: dict[tuple[str, str], str] = {}
+    try:
+        rows = store.connection.execute(
+            "SELECT cid, uid, groupNick FROM tbuser_group_nick LIMIT ?", (limit,)
+        ).fetchall()
+    except sqlite3.Error:
+        return out
+    for cid, uid, nick in rows:
+        token = (str(cid or "").strip(), str(uid or "").strip())
+        label = str(nick or "").strip()
+        if token[0] and token[1] and label:
+            out[token] = label
+    return out
+
+
 TEXT_TYPE = 1
 #: 非文本那几类各自**实测**长什么样（10-26 逐类扒过这台 155 条样本，键路径抄在下面）。
 #: 一张表说清"哪些已经解得出、哪些还解不出"——把"没解析"写成"没有内容"就是下一颗假读数。
 #: 屏上不许出现英文键名，所以另有一张给人看的中文名词表（`content_label`）。
-KNOWN_TYPES = {1: "text", 2: "image", 102: "link", 500: "space_file", 501: "file",
-               1200: "markdown", 1201: "action_card", 1600: "ding", 2900: "card",
-               2950: "card", 3100: "miniapp"}
-_LABELS = {"text": "消息", "image": "图片", "link": "链接", "space_file": "群文件",
-           "file": "文件", "markdown": "卡片", "action_card": "卡片", "ding": "DING",
+#:
+#: 11-17 补齐（按这台 1196 条消息的实测分布）：`3` 语音、`202` 视频、`503` 群文件夹、
+#: `1400` 文档评论、`300` 资讯——它们原来不在表里 ⇒ `content_label` 回「非文本消息」，
+#: 屏上就是一句占位，而库里其实**有**时长、有文件名、有大小。
+KNOWN_TYPES = {1: "text", 2: "image", 3: "voice", 102: "link", 202: "video",
+               300: "news", 500: "space_file", 501: "file", 503: "folder",
+               1200: "markdown", 1201: "action_card", 1400: "doc_comment",
+               1600: "ding", 2900: "card", 2950: "card", 3100: "miniapp"}
+_LABELS = {"text": "消息", "image": "图片", "voice": "语音", "video": "视频",
+           "link": "链接", "news": "资讯", "space_file": "群文件",
+           "file": "文件", "folder": "文件夹", "markdown": "卡片",
+           "action_card": "卡片", "doc_comment": "文档评论", "ding": "DING",
            "card": "卡片", "miniapp": "小程序", "other": "非文本消息"}
 #: 每一类先取哪几个字段当"这句话"（顺序 = 实测里哪个字段真是人看的那一格；
 #: `LastMessageI18n` 是互动卡片那句"最后一条"的多语言表，`_pick` 那一头再挑一种语言）。
@@ -560,6 +724,82 @@ def _attachment_texts(parsed: dict) -> list[str]:
     return out
 
 
+#: 语音（3）／视频（202）／资讯（300）三个类型各有自己的**那一格**（11-17 真机实测）。
+VOICE_TYPE = 3
+VIDEO_TYPE = 202
+NEWS_TYPE = 300
+
+
+def _seconds(raw: Any) -> str:
+    """时长那一格 → 人读的一句（`23` 秒）。读不出来就空串。"""
+    try:
+        number = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+    if abs(number - round(number)) < 0.05:
+        return f"{int(round(number))} 秒"
+    return f"{number:.1f} 秒"
+
+
+def _voice_text(parsed: dict) -> str:
+    """语音：**时长**（`audioContent.duration` 是**毫秒**——这台现读 1000 ＝ 1 秒）。"""
+    audio = parsed.get("audioContent")
+    body = audio if isinstance(audio, dict) else {}
+    try:
+        millis = float(str(body.get("duration") or 0).strip())
+    except (TypeError, ValueError):
+        millis = 0.0
+    length = _seconds(millis / 1000) if millis > 0 else ""
+    return f"语音（{length}）" if length else "语音"
+
+
+def _video_text(parsed: dict) -> str:
+    """视频：**时长**（秒）＋ **大小**（字节）。
+
+    这一族本机没有文件名（消息体里只有 `authMediaId` 与媒体 id）——**不编一个名字出来**。
+    """
+    for item in parsed.get("attachments") or []:
+        if not isinstance(item, dict):
+            continue
+        body = _loads(item.get("extension")) if isinstance(item.get("extension"), str) else item.get("extension")
+        if not isinstance(body, dict):
+            continue
+        length = _seconds(body.get("duration"))
+        size = _human_size(item.get("size") or body.get("size"))
+        detail = "，".join(piece for piece in (length, size) if piece)
+        return f"视频（{detail}）" if detail else "视频"
+    return ""
+
+
+def _news_text(parsed: dict) -> str:
+    """资讯（300）：`b_form` 里那几对 `{k, v}` 里的**标题**。
+
+    这一族的正文就是一张表单（这台现读：`[{"k":"新闻标题：","v":"第九期…"}]`），
+    标题在那对里，不在 `title` 那一格。
+    """
+    for item in parsed.get("attachments") or []:
+        if not isinstance(item, dict):
+            continue
+        body = _loads(item.get("extension")) if isinstance(item.get("extension"), str) else item.get("extension")
+        if not isinstance(body, dict):
+            continue
+        form = _loads(body.get("b_form"))
+        if isinstance(form, list):
+            for pair in form:
+                if not isinstance(pair, dict):
+                    continue
+                key = str(pair.get("k") or "")
+                value = str(pair.get("v") or "").strip()
+                if value and ("标题" in key or key in ("title", "name")):
+                    return value
+        title = _pick(body.get("title"))
+        if title:
+            return title
+    return ""
+
+
 def describe_of(content: Any, content_type: int) -> str:
     """这一条消息**给人读的那一句**。解析不出来就回空串，由调用方落回中文名词。
 
@@ -569,8 +809,15 @@ def describe_of(content: Any, content_type: int) -> str:
     parsed = _loads(content)
     if not isinstance(parsed, dict):
         return ""
-    if int(content_type or 0) == TEXT_TYPE:
+    ctype = int(content_type or 0)
+    if ctype == TEXT_TYPE:
         return str(parsed.get("text") or "")
+    if ctype == VOICE_TYPE:
+        return _voice_text(parsed)
+    if ctype == VIDEO_TYPE:
+        return _video_text(parsed)
+    if ctype == NEWS_TYPE:
+        return _news_text(parsed)
     pieces = _attachment_texts(parsed)
     if not pieces:  # 图片那一类把名字与尺寸放在**顶层**，不在 attachments 里
         name = next((_pick(parsed.get(key)) for key in ("filename", "title", "text", "nick")
@@ -614,7 +861,10 @@ def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
             out.append({"cid": str(cid), "mid": str(mid), "sender_id": str(sender or ""),
                         "created_at": str(created or ""), "content_type": int(content_type or 0),
                         "text": describe_of(content, int(content_type or 0)),
-                        "at_ids": str(at_ids or ""), "shard": shard})
+                        "at_ids": str(at_ids or ""), "shard": shard,
+                        # 消息体里**原样**带着的钉钉自家媒体 URL（真字节那一半的入口）。
+                        # 自己拼的那些一律 404（见 `media_urls_of` 的档头），所以这里只搬现成的。
+                        "media_urls": media_urls_of(content)})
     # 按**数**排不按字符串排：毫秒时间戳位数一变，字典序会把 9xxx 那批排到 10xxx 之后。
     out.sort(key=lambda row: int(row["created_at"] or 0))
     return out[-limit:]
