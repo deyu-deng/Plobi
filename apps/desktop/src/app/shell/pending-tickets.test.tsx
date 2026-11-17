@@ -47,7 +47,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function mockBothLists(reports: unknown[] = []) {
+function mockBothLists(reports: unknown[] = [], lessons: unknown[] = [], drafts: unknown[] = []) {
   api.mockImplementation((req: { path?: string, method?: string }) => {
     if (req.method === 'POST') {
       return Promise.resolve({ ok: true })
@@ -55,9 +55,27 @@ function mockBothLists(reports: unknown[] = []) {
     if (req.path?.includes('/api/tickets/escalations')) {
       return Promise.resolve({ ok: true, data: { tickets: reports } })
     }
+    if (req.path?.includes('/api/lessons?status=proposed')) {
+      return Promise.resolve({ ok: true, data: { lessons: drafts } })
+    }
+    if (req.path?.includes('/api/lessons')) {
+      return Promise.resolve({ ok: true, data: { lessons } })
+    }
     return Promise.resolve({ ok: true, data: { tickets: [TICKET] } })
   })
 }
+
+const DRAFT = {
+  id: 'les_draft1',
+  status: 'proposed',
+  scope: 'router:general',
+  rule: '配色这类你自己定',
+  question: '',
+  user_words: '以后配色这类你定',
+  evidence: ''
+}
+
+const LIVE = { ...DRAFT, id: 'les_live1', status: 'approved' }
 
 describe('PendingTicketsButton', () => {
   it('外部事件票与需人汇报都进收件箱，数量摆在图标角标上', async () => {
@@ -109,6 +127,44 @@ describe('PendingTicketsButton', () => {
       method: 'POST',
       body: { comment: '以后配色这类你定', kind: 'comment' },
       path: `/api/tickets/${TICKET.id}/decision`
+    })))
+  })
+
+  it('授权草稿用图标批准/驳回，走 lesson 端点而非票端点', async () => {
+    mockBothLists([], [], [DRAFT])
+    render(<PendingTicketsButton />)
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    expect(await screen.findByText('配色这类你自己定')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '批准授权' }))
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      path: `/api/lessons/${DRAFT.id}/approve`
+    })))
+
+    fireEvent.click(screen.getByRole('button', { name: '驳回授权' }))
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      path: `/api/lessons/${DRAFT.id}/reject`
+    })))
+
+    const ticketPosts = api.mock.calls.filter(
+      call => String(call[0]?.path ?? '').includes('/decision')
+    )
+    expect(ticketPosts).toHaveLength(0), '授权动作不许走票的三态端点'
+  })
+
+  it('已生效授权只给撤回图标，走 lesson revoke', async () => {
+    mockBothLists([], [LIVE], [])
+    render(<PendingTicketsButton />)
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    expect(await screen.findByText('配色这类你自己定')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '批准授权' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '撤回授权' }))
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      path: `/api/lessons/${LIVE.id}/revoke`
     })))
   })
 

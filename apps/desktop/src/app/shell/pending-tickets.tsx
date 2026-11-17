@@ -4,7 +4,8 @@ import type { DispatchTicket } from '@/app/chat/sidebar/ticket-badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useI18n } from '@/i18n'
 import {
-  Bell, Check, Clock, GitBranch, iconSize, Mail, MessageSquareText, Server, X
+  ArchiveOff, Bell, Check, CheckCircle2, Clock, GitBranch, iconSize, Mail,
+  MessageSquareText, Pencil, Server, X
 } from '@/lib/icons'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -34,18 +35,49 @@ function sourceIcon(ticket: DispatchTicket): IconComponent {
   return Bell
 }
 
-type InboxItem = DispatchTicket & { one_line?: string }
-type DecisionKind = 'accept' | 'reject' | 'comment'
+/** 带前缀的动作：票的 accept/reject/comment，授权的 approve/reject/revoke。 */
+type DecisionKind =
+  | 'ticket:accept' | 'ticket:reject' | 'ticket:comment'
+  | 'lesson:approve' | 'lesson:reject' | 'lesson:revoke'
+
+/** 收件箱里的一件：票（派活/汇报）或授权 lesson（草稿/已生效）。 */
+type InboxItem =
+  | (DispatchTicket & { kind: 'ticket', one_line?: string })
+  | {
+    kind: 'lesson'
+    id: string
+    status: string
+    scope: string
+    rule: string
+    question: string
+    words: string
+  }
+
+type LessonRow = {
+  id: string
+  status: string
+  scope: string
+  rule: string
+  question: string
+  user_words: string
+  evidence: string
+}
 
 async function fetchPending(): Promise<InboxItem[]> {
-  const [observed, reports] = await Promise.all([
+  const [observed, reports, drafts, live] = await Promise.all([
     window.plobiDesktop.api<{
       data?: { tickets?: DispatchTicket[] }, error?: string, ok: boolean
     }>({ path: '/api/tickets?status=observed&leg=trigger&limit=50' }),
     window.plobiDesktop.api<{
       data?: { tickets?: Array<{ id: string, goal: string, leg: string, state: string, one_line: string, status: string }> },
       error?: string, ok: boolean
-    }>({ path: '/api/tickets/escalations?limit=50' })
+    }>({ path: '/api/tickets/escalations?limit=50' }),
+    window.plobiDesktop.api<{
+      data?: { lessons?: LessonRow[] }, error?: string, ok: boolean
+    }>({ path: '/api/lessons?status=proposed&limit=50' }),
+    window.plobiDesktop.api<{
+      data?: { lessons?: LessonRow[] }, error?: string, ok: boolean
+    }>({ path: '/api/lessons?limit=50' })
   ])
 
   if (!observed?.ok) {
@@ -54,18 +86,61 @@ async function fetchPending(): Promise<InboxItem[]> {
 
   const escalated: InboxItem[] = reports?.ok
     ? (reports.data?.tickets ?? []).map(row => ({
+      kind: 'ticket' as const,
       id: row.id, goal: row.goal, leg: row.leg, status: row.status,
       one_line: row.one_line, refs: {}, triggered_by: 'report'
     }) as unknown as InboxItem)
     : []
 
-  return [...escalated, ...(observed.data?.tickets ?? [])]
+  const lessonItems: InboxItem[] = []
+  if (drafts?.ok) {
+    for (const row of drafts.data?.lessons ?? []) {
+      lessonItems.push({
+        kind: 'lesson', id: row.id, status: row.status, scope: row.scope,
+        rule: row.rule, question: row.question, words: row.user_words || row.evidence
+      })
+    }
+  }
+  if (live?.ok) {
+    for (const row of live.data?.lessons ?? []) {
+      lessonItems.push({
+        kind: 'lesson', id: row.id, status: row.status, scope: row.scope,
+        rule: row.rule, question: row.question, words: row.user_words || row.evidence
+      })
+    }
+  }
+
+  return [
+    ...lessonItems,
+    ...escalated,
+    ...(observed.data?.tickets ?? []).map(
+      ticket => ({ kind: 'ticket' as const, ...ticket } as InboxItem)
+    )
+  ]
+}
+
+/** 人点按钮的 lesson 动作：点击本身就是授权证据，不填 user_words（那是 Agent 那侧要的）。 */
+function lessonDecide(id: string, action: 'approve' | 'reject' | 'revoke'): Promise<void> {
+  return window.plobiDesktop
+    .api<{ error?: string, ok: boolean }>({
+      method: 'POST',
+      path: `/api/lessons/${encodeURIComponent(id)}/${action}`
+    })
+    .then(body => {
+      if (!body?.ok) {
+        throw new Error(body?.error || 'request failed')
+      }
+    })
 }
 
 function decide(id: string, kind: DecisionKind, comment = ''): Promise<void> {
+  if (kind.startsWith('lesson:')) {
+    return lessonDecide(id, kind.slice('lesson:'.length) as 'approve' | 'reject' | 'revoke')
+  }
+
   return window.plobiDesktop
     .api<{ error?: string, ok: boolean }>({
-      body: { comment, kind },
+      body: { comment, kind: kind.slice('ticket:'.length) },
       method: 'POST',
       path: `/api/tickets/${encodeURIComponent(id)}/decision`
     })
@@ -85,6 +160,59 @@ function PendingRow({
 }) {
   const [commentOpen, setCommentOpen] = useState(false)
   const [commentText, setCommentText] = useState('')
+
+  if (ticket.kind === 'lesson') {
+    const draft = ticket.status === 'proposed'
+    const Icon = draft ? Pencil : CheckCircle2
+    const summary = ticket.rule || ticket.question || ticket.scope
+    return (
+      <div className="flex items-center gap-1.5 rounded-md border border-(--ui-stroke-tertiary) px-1.5 py-1">
+        <Icon aria-hidden className={cn(iconSize.sm, 'shrink-0 text-(--ui-text-tertiary)')} />
+        <span
+          className="min-w-0 flex-1 truncate text-[0.7rem]"
+          title={ticket.words || summary}
+        >
+          {summary}
+        </span>
+        {draft ? (
+          <>
+            <button
+              aria-label="批准授权"
+              className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+              disabled={busy}
+              onClick={() => onDecide(ticket.id, 'lesson:approve')}
+              title="批准授权"
+              type="button"
+            >
+              <Check className={iconSize.xs} />
+            </button>
+            <button
+              aria-label="驳回授权"
+              className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+              disabled={busy}
+              onClick={() => onDecide(ticket.id, 'lesson:reject')}
+              title="驳回授权"
+              type="button"
+            >
+              <X className={iconSize.xs} />
+            </button>
+          </>
+        ) : (
+          <button
+            aria-label="撤回授权"
+            className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+            disabled={busy}
+            onClick={() => onDecide(ticket.id, 'lesson:revoke')}
+            title="撤回授权"
+            type="button"
+          >
+            <ArchiveOff className={iconSize.xs} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
   const Source = sourceIcon(ticket)
   const summary = ticket.one_line || ticket.refs?.prompt_excerpt || ticket.goal
 
@@ -93,7 +221,7 @@ function PendingRow({
     if (!text) {
       return
     }
-    onDecide(ticket.id, 'comment', text)
+    onDecide(ticket.id, 'ticket:comment', text)
     setCommentText('')
     setCommentOpen(false)
   }
@@ -110,7 +238,7 @@ function PendingRow({
           aria-label="接纳"
           className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
           disabled={busy}
-          onClick={() => onDecide(ticket.id, 'accept')}
+          onClick={() => onDecide(ticket.id, 'ticket:accept')}
           title="接纳"
           type="button"
         >
@@ -120,7 +248,7 @@ function PendingRow({
           aria-label="拒绝"
           className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
           disabled={busy}
-          onClick={() => onDecide(ticket.id, 'reject')}
+          onClick={() => onDecide(ticket.id, 'ticket:reject')}
           title="拒绝"
           type="button"
         >
