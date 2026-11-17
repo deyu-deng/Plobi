@@ -122,7 +122,7 @@ test('a machine that already has a plugin set is never touched', () => {
   }
 })
 
-test('a magpie that was updated on its own keeps the plugins it manages', () => {
+test('a machine with no set gets the floor even when its magpie is newer', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-magpie-plugins-'))
 
   try {
@@ -130,10 +130,34 @@ test('a magpie that was updated on its own keeps the plugins it manages', () => 
     const packaged = makePackagedSet(root)
 
     const result = seedMagpiePlugins(home, { packagedDir: packaged, runningMagpieVersion: 'v0.1.3500' })
-    assert.equal(result.seeded, false)
+    assert.equal(result.seeded, true, result.reason)
     assert.match(result.reason, /newer than the packaged set/)
 
-    assert.ok(!fs.existsSync(path.join(home, 'magpie', 'plugins.json')))
+    // An empty set means every subscription card reads "not installed" — worse
+    // than a floor a few versions behind. magpie takes the set over on its own.
+    assert.ok(fs.existsSync(path.join(home, 'magpie', 'plugins.json')))
+    assert.ok(fs.existsSync(path.join(home, 'magpie', 'plugin-providers.json')))
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a machine that has a set keeps it even when its magpie is newer', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-magpie-plugins-'))
+
+  try {
+    const home = makeHome(root)
+    const packaged = makePackagedSet(root)
+    const listPath = path.join(home, 'magpie', 'plugins.json')
+    const existing = '{"plugins":[{"spec":"@magpie-community/opencode-grok-auth@latest"}]}'
+    fs.writeFileSync(listPath, existing, 'utf8')
+
+    const result = seedMagpiePlugins(home, { packagedDir: packaged, runningMagpieVersion: 'v0.1.3500' })
+    assert.equal(result.seeded, false)
+    assert.match(result.reason, /already has a plugin set/)
+
+    assert.equal(fs.readFileSync(listPath, 'utf8'), existing)
+    assert.ok(!fs.existsSync(path.join(home, 'magpie', 'plugins-set.json')), 'it left a marker behind')
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }

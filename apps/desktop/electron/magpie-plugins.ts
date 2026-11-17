@@ -171,12 +171,16 @@ export interface SeedResult {
  *
  *  1. this build carries no set → nothing to do (a dev tree without a build);
  *  2. the data directory already has a plugin set → **never touch it**;
- *  3. the magpie we are about to run is **newer** than the packaged one → do not
- *     push an older set at it: that magpie came from the channel and manages
- *     its own plugins, and rolling its set back is the one thing that would
- *     make an independently updated magpie misbehave;
- *  4. otherwise: write the plugin list, copy the tarballs where magpie looks
+ *  3. otherwise: write the plugin list, copy the tarballs where magpie looks
  *     for them (`plugins/dist/`), and copy the roster.
+ *
+ * Rule 3 has no exception for a **newer** magpie (裁定 229). magpie is an
+ * independent machine: it installs the plugins its list names, it rewrites
+ * that list in its own `@latest` form, and it updates them from there (the
+ * runtime's `plugin-updates.json` is its ledger). So the packaged set is a
+ * **floor**, not a ceiling — and leaving a machine empty because its magpie
+ * happens to be newer is the one outcome nobody wants: an empty set means
+ * every subscription card reads "not installed".
  *
  * The tarballs land under **magpie's own file names** — that is the name its
  * installer produces, so its resolver finds them the same way it would find
@@ -200,14 +204,16 @@ export function seedMagpiePlugins(
     return { seeded: false, reason: 'this machine already has a plugin set — left alone' }
   }
 
+  // A newer magpie is not a reason to leave the machine empty — we seed
+  // anyway and say so in the reason. magpie takes the set over on its own: it
+  // rewrites the list in its own `@latest` form and updates it from there.
+  let note = ''
+
   if (options.runningMagpieVersion && set.magpie) {
     const order = compareMagpieVersion(options.runningMagpieVersion, set.magpie)
 
     if (order > 0) {
-      return {
-        seeded: false,
-        reason: `magpie ${options.runningMagpieVersion} is newer than the packaged set (${set.magpie}) — its own plugins stay`
-      }
+      note = `; magpie ${options.runningMagpieVersion} is newer than the packaged set (${set.magpie}) and will take it over`
     }
   }
 
@@ -241,7 +247,7 @@ export function seedMagpiePlugins(
     'utf8'
   )
 
-  return { seeded: true, reason: `seeded plugin set ${set.setVersion} (${copied} plugins)`, dataDir }
+  return { seeded: true, reason: `seeded plugin set ${set.setVersion} (${copied} plugins)${note}`, dataDir }
 }
 
 export default {

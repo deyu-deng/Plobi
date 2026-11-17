@@ -36,5 +36,5 @@
     }
   },
   "checked_at": "2026-11-09",
-  "note": "magpie 是我们的厂商那一层（MIT）。这个文件是**唯一一份钉子**：发行包里的本体、打包脚本、机器人，都从这儿读版本与 sha256。每个平台一行（windows/darwin/linux × x64/arm64），按 process.platform + process.arch 取自己那一行——曾经只有 windows 一行，而取件脚本只按平台改名不改地址，mac 上打出来的是一个 Windows PE。机器人（scripts/plobi/check_magpie_release.py + .github/workflows/magpie-release-watch.yml）盯着上游发布，有新版就把所有平台一起升这里——不自动合、不自动发版。"
+  "note": "magpie 是我们的厂商那一层（MIT）。这个文件是**唯一一份钉子**：发行包里的本体与打包脚本都从这儿读版本与 sha256。每个平台一行（windows/darwin/linux × x64/arm64），按 process.platform + process.arch 取自己那一行——曾经只有 windows 一行，而取件脚本只按平台改名不改地址，mac 上打出来的是一个 Windows PE。**这份是地板，不是天花板**：magpie 是一台独立的机器，它自己能更新本体、自己管插件（`magpie plugin add/update`，运行期的 `plugin-updates.json` 是它的账本），Plobi 只是它的输入输出面。盯上游的机器人 2026-11-17 退休（它 11-10 起每天跑、每天红、零 PR，且上游一天几十版，跟一个 PR 一天一次不是一回事）⇒ **地板改在 Plobi 发版前手工刷一次**：`scripts/plobi/check_magpie_release.py --write` 升本体，`scripts/plobi/refresh_magpie_plugins.py` 重生成插件集。机器侧的用户手动更新走 `apps/desktop/electron/magpie-channel.ts`（状态栏「magpie 适配器」块）。"
 }
