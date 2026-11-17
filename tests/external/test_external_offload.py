@@ -1000,3 +1000,68 @@ def test_kilo_probe_asks_for_auth_not_for_models():
     """
     assert offload.LOGIN_PROBE_ARGV["kilo"] == ("auth", "list")
     assert "0 credentials" in offload._LOGIN_ABSENT_MARKERS, "厂商那句「一个凭据都没有」要认"
+
+
+# ── 出口那一格：直连的那几家不走出口（WP-OFFLOAD-EGRESS-DIRECT，11-17） ──────
+
+def _fake_egress(monkeypatch, url: str = "http://exit.invalid:1") -> None:
+    """把出口投影换成假的（这台机器上有没有出口，测试不许看）。"""
+    def _project(env):
+        env["HTTPS_PROXY"] = url
+        env["HTTP_PROXY"] = url
+        return "network.egress"
+
+    monkeypatch.setattr(offload, "resolve_proxy", lambda: ("", "none"))
+    monkeypatch.setattr(offload, "project_egress_onto", _project)
+    monkeypatch.setattr(offload, "egress_is_reachable", lambda proxy, timeout=3.0: (True, ""))
+
+
+def test_a_direct_family_gets_no_proxy_and_bypasses_everything(monkeypatch, tmp_path):
+    """写着「直连」的那一家 ⇒ 子进程**没有代理键** ＋ ``NO_PROXY=*``。
+
+    11-17 实测：带着出口代理，它连不上自己的服务（``session/new`` 当场 -32603）。
+    """
+    _fake_egress(monkeypatch)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    prep, _task = offload.prepare_offload("只回 OK", agent="opencode", cwd=str(workdir))
+
+    assert prep.proxy == ""
+    assert prep.proxy_source == "vendor.direct"
+    assert "HTTP_PROXY" not in prep.env
+    assert "HTTPS_PROXY" not in prep.env
+    assert prep.env["NO_PROXY"] == "*"
+    assert prep.env["no_proxy"] == "*"
+
+
+def test_the_families_that_did_not_opt_in_still_get_the_egress_projection(monkeypatch, tmp_path):
+    """没写那一格的家 ⇒ 行为**一个字不变**（照旧照 ``network.egress`` 那张表投影）。"""
+    _fake_egress(monkeypatch)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    prep, _task = offload.prepare_offload("只回 OK", agent="codebuddy", cwd=str(workdir))
+
+    assert prep.proxy == "http://exit.invalid:1"
+    assert prep.proxy_source == "network.egress"
+    assert prep.env["HTTPS_PROXY"] == "http://exit.invalid:1"
+    assert "NO_PROXY" not in prep.env
+
+
+def test_apply_direct_egress_clears_every_proxy_spelling():
+    """大小写两套代理键都要清干净（curl 认小写，urllib 认大写）。
+
+    留一个漏网的 ⇒ 子进程还是会走那个出口 ⇒ 那家的服务照旧连不上。
+    """
+    env = {
+        "HTTP_PROXY": "http://a", "HTTPS_PROXY": "http://b", "ALL_PROXY": "http://c",
+        "http_proxy": "http://d", "https_proxy": "http://e", "all_proxy": "http://f",
+        "NO_PROXY": "example.com", "no_proxy": "example.com",
+    }
+    assert offload.apply_direct_egress(env) == ""
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy",
+                "all_proxy"):
+        assert key not in env, key
+    assert env["NO_PROXY"] == "*"
+    assert env["no_proxy"] == "*"

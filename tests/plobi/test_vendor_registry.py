@@ -140,6 +140,7 @@ def test_every_contract_row_matches_its_row_in_the_one_table():
         assert contract.acp_args == row.acp_args
         assert contract.acp_command == row.acp_command
         assert contract.acp_env == row.acp_env
+        assert contract.direct_egress == row.direct_egress
         assert contract.acp_note == row.acp_note
         assert contract.resume_argv == row.resume_argv
         assert contract.resume_note == row.resume_note
@@ -490,3 +491,27 @@ def test_the_contract_row_carries_the_acp_entry_point():
         row = vr.vendor_row(name)
         assert row is not None, name
         assert contract.acp_command == row.acp_command, name
+
+
+# ── 出口那一格（WP-OFFLOAD-EGRESS-DIRECT，11-17） ────────────────────────────
+
+def test_the_direct_egress_cell_is_registered_for_exactly_the_three_that_need_it():
+    """走云服务的那三家写着「直连」；其余家**一个字都不许有**（默认行为不变）。
+
+    11-17 实测：出口代理投影给客席子进程 ⇒ 它们连不上自己的服务
+    （``session/new`` 当场 -32603「… service failure」）；直连就通。
+    """
+    direct = {row.id for row in vr.VENDOR_ROWS if row.direct_egress}
+    assert direct == {"opencode", "kilo", "deveco"}
+
+
+def test_the_channel_reads_that_cell_instead_of_branching_by_vendor_name():
+    """代码**不按厂商名分叉**（裁定 94 族）：答案只在真源表那一格里。
+
+    没登记的那家（表里没有）⇒ 照旧（不直连），不许凭名字猜。
+    """
+    assert channel.uses_direct_egress("opencode") is True
+    assert channel.uses_direct_egress("kilo") is True
+    assert channel.uses_direct_egress("deveco") is True
+    assert channel.uses_direct_egress("codebuddy") is False
+    assert channel.uses_direct_egress("__not_a_vendor__") is False

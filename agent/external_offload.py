@@ -480,6 +480,36 @@ def acp_env(agent: str) -> dict[str, str]:
     return dict(contract.acp_env)
 
 
+def uses_direct_egress(agent: str) -> bool:
+    """这一家**直连**吗（不走出口代理）。
+
+    那一格写在真源表里（``VendorRow.direct_egress``）⇒ **代码不按厂商分叉**。
+    **只有一份答案**（裁定 94 族）：派活腿与登录探针都读它。
+
+    为什么有这一格（11-17 实测）：``network.egress`` 的 catch-all 会把出口代理投影给
+    客席子进程，而走云服务的那几家**走那个出口连不上自己的服务**——``session/new``
+    当场被拒（-32603「… service failure」）。直连就通。
+    """
+    contract = OFFLOAD_CONTRACT.get(agent)
+    if contract is None:
+        return False
+    return bool(contract.direct_egress)
+
+
+def apply_direct_egress(env: dict[str, str]) -> str:
+    """把「直连」写进子进程那一包环境（口径与出口表的 direct 那一支一致）。
+
+    清掉代理键 ＋ ``NO_PROXY=*``（全部直连）⇒ **不靠「父进程恰好没有代理变量」这种碰巧**。
+    返回空串＝没有代理（调用方据此不去验出口可达性）。
+    """
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+                "http_proxy", "https_proxy", "all_proxy", "no_proxy"):
+        env.pop(key, None)
+    env["NO_PROXY"] = "*"
+    env["no_proxy"] = "*"
+    return ""
+
+
 LOGIN_PROBE_TIMEOUT_S = 45.0
 
 #: 厂商自己承认"没登录"的原话（小写匹配）。认不出来的输出一律记 ``None``，**不判成不能**。
@@ -1119,7 +1149,11 @@ def prepare_offload(
     if reply_file is not None:
         env[REPLY_FILE_ENV] = str(reply_file)
     try:
-        proxy, proxy_source = _project_proxy(env)
+        if uses_direct_egress(agent):
+            # 这一家在真源表里写着「直连」：走出口连不上它自己的服务（11-17 实测 -32603）。
+            proxy, proxy_source = apply_direct_egress(env), "vendor.direct"
+        else:
+            proxy, proxy_source = _project_proxy(env)
         # Ask before spending: a dead exit must not turn into a child that reports
         # something else (agy says "Please sign in") and a task that burns tokens.
         if proxy:

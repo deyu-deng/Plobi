@@ -201,6 +201,9 @@ class VendorContract:
     acp_command: tuple[str, ...] = ()
     #: ACP 那一腿**要带的环境变量**（官方注册表写明的那些；不带就开不了那一腿）。
     acp_env: tuple[tuple[str, str], ...] = ()
+    #: 这一家**直连**（不走出口代理）——走云服务的那几家，走出口连不上它们自己的服务。
+    #: 空 = 照旧照 ``network.egress`` 那张表投影（默认行为一个字不变）。
+    direct_egress: bool = False
     #: 这一家**有哪几条腿**（``cli``／``acp``，11-16 19:0x 主人拍板并存）。
     #: ACP 腿的那几家**入口命令就是它自己**——旗标可以空（glm 那台 ACP server
     #: 不接旗标），所以「有没有 ACP 入口」不能只看旗标。
@@ -657,6 +660,10 @@ class VendorRow:
     #: 例：Muse 要 ``MUSE_EXPERIMENTAL_ACP=on``、VTCode 要 ``VT_ACP_ENABLED=1``——
     #: 不带它，它根本不开 ACP 那一腿。空 = 不带任何环境变量（多数家）。
     acp_env: tuple[tuple[str, str], ...] = ()
+    #: 这一家**直连**（不走出口代理）——见 :attr:`VendorContract.direct_egress`。
+    #: 走云服务的那几家：**走出口连不上自己的服务**（11-17 实测 ``session/new`` 当场
+    #: 被拒 -32603「… service failure」）；直连就通 ⇒ 这一格是结构性事实。
+    direct_egress: bool = False
     acp_command: tuple[str, ...] = ()
     acp_note: str = ""
     # ── 派活腿 ───────────────────────────────────────────────────────────
@@ -710,6 +717,7 @@ class VendorRow:
             acp_args=self.acp_args,
             acp_command=self.acp_command,
             acp_env=self.acp_env,
+            direct_egress=self.direct_egress,
             acp_note=self.acp_note,
             legs=self.legs,
             resume_argv=self.resume_argv,
@@ -1106,7 +1114,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         legs=("cli", "acp"),
         acp_registry_id="opencode",
         acp_args=("acp",),
-        acp_note="11-16 现核：握手登录着（它自己开了会话），但真派活那一趟 session/new 被拒，原话「Internal error: Internal service failure」（连跑两趟一样）；11-16 它的派活腿接上 ACP",
+        direct_egress=True,
+        acp_note="11-16 现核：握手登录着（它自己开了会话），但真派活那一趟 session/new 被拒，原话「Internal error: Internal service failure」（连跑两趟一样）；11-16 它的派活腿接上 ACP；**11-17 实测：根因是我们这边**——这条腿把 network.egress 的出口代理投影给客席子进程，它走那个出口连不上自己的服务（session/new 当场 -32603）；直连（不走出口）⇒ **走我们那条腿真派活成了**（15.1s，回「OK」，end_turn，8,539 in / 3 out）⇒ 真源表里给它写了「直连」那一格",
         resume_note=NO_RESUME_FLAG,
         session=SessionSpec(
             vendor=AGENT_OPENCODE,
@@ -1452,7 +1461,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         legs=("cli", "acp"),
         acp_registry_id="kilo",
         acp_args=("acp",),
-        acp_note="11-16 现核：握手登录着，但真派活那一趟 session/new 被拒，原话「Internal error: OpenCode service failure」（连跑两趟一样；它与 opencode 同源）；11-16 它的派活腿接上 ACP",
+        direct_egress=True,
+        acp_note="11-16 现核：握手登录着，但真派活那一趟 session/new 被拒，原话「Internal error: OpenCode service failure」（连跑两趟一样；它与 opencode 同源）；11-16 它的派活腿接上 ACP；**11-17 实测：同源同因**（走出口代理 ⇒ session/new 被拒 -32603；直连 ⇒ 开得出会话 4.0s），但**派活那一步 240s 没回话**（未查清，照实记）⇒ 真源表里给它写了「直连」那一格",
         resume_note=NO_RESUME_FLAG,
         # ── 会话腿（11-15 现读）─────────────────────────────────────────
         # ``~/.local/share/kilo/kilo.db``：会话层 ``session`` 表；
@@ -2218,7 +2228,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
         offloadable=True,
         legs=("acp",),
         acp_args=("acp",),
-        acp_note="11-15 本机实测：握手通了、开出了会话，档是 ACP 的 session mode，但它那四档（build／ask／goal／plan）是 agent 模式不是权限档；发一句 prompt 它回 refusal；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）",
+        direct_egress=True,
+        acp_note="11-15 本机实测：握手通了、开出了会话，档是 ACP 的 session mode，但它那四档（build／ask／goal／plan）是 agent 模式不是权限档；11-16 它的派活腿接上 ACP（这一族没有一条跑通的命令行腿）；**11-17 实测：直连下它真的回话**（回「OK」，end_turn）——原先那句「发一句 prompt 它回 refusal」是**服务协议变更**要人接受（主人 11-17 授权后已接受）；带出口代理时 session/new 被拒 -32603「DevEco Code service failure」⇒ 真源表里给它写了「直连」那一格",
         acp_modes=AcpModeMap(
             kind="agent",
             note="11-15 现读：它的四档（build／ask／goal／plan）是 agent 模式（干活的那个／问答的那个／出主意的那个），不是权限档 ⇒ 我们不替它选那一档",

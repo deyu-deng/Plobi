@@ -273,6 +273,19 @@ def _send(proc, message_id: int, method: str, params: dict) -> None:
     proc.stdin.flush()
 
 
+def _probe_env(vendor: str) -> dict[str, str]:
+    """探针那一包环境：**直连的那几家**按同一口径摆（其余家照旧＝继承父进程那一份）。
+
+    口径与派活腿共用 :func:`agent.external_offload.apply_direct_egress`（裁定 94 族）。
+    """
+    from agent import external_offload as channel
+
+    env = {**os.environ.copy(), **channel.acp_env(vendor)}
+    if channel.uses_direct_egress(vendor):
+        channel.apply_direct_egress(env)
+    return env
+
+
 def probe_acp_login(
     vendor: str,
     *,
@@ -315,7 +328,7 @@ def probe_acp_login(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=tempfile.gettempdir(),
-            env={**os.environ.copy(), **channel.acp_env(key)},
+            env=_probe_env(key),
         )
         assert proc.stdin is not None and proc.stdout is not None
         threading.Thread(target=_read_lines, args=(proc.stdout, lines), daemon=True).start()
