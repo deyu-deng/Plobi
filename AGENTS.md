@@ -19,13 +19,11 @@ releases) does not apply here and is not repeated in this file.
 
 ## 0. The rules that bite
 
-1. **Per-conversation prompt caching is sacred.** A long-lived conversation
-   reuses a cached prefix every turn. Anything that mutates past context, swaps
-   toolsets, or rebuilds the system prompt mid-conversation invalidates that
-   cache and multiplies the user's cost. The only exception is context
-   compression. Commands that mutate system-prompt state (skills, tools,
-   memory) must default to deferred invalidation (effective next session),
-   with an opt-in `--now` for immediate effect.
+1. **Per-conversation prompt caching is sacred.** A long-lived conversation reuses a
+   cached prefix every turn; anything that mutates past context, swaps toolsets, or
+   rebuilds the system prompt invalidates it and multiplies the user's cost. The only
+   exception is context compression. Commands that mutate system-prompt state (skills,
+   tools, memory) default to deferred invalidation (next session), `--now` opts in.
 2. **The core is a narrow waist; capability lives at the edges.** Every model
    tool ships on every API call, so the bar for a new *core* tool is high.
 3. **Behavior contracts, not change-detector tests.** Assert how two pieces of
@@ -46,6 +44,10 @@ releases) does not apply here and is not repeated in this file.
 9. **Don't type an identifier from memory.** Any commit SHA, package digest, or
    version literal must be produced by a command in the same session and pasted
    — never recalled. Then re-read the written value once against the source.
+10. **Fix the source tree; never patch the installed copy.** Edit here, run
+    `scripts/run_tests.sh`, commit; the installed copy and its data root are read-only
+    for agents. "The app still starts" is never evidence, and dev-tree green is not
+    shipped-green. Full rule: `../Docs/runbooks/dev-workflow.md` §3.7.
 
 ### Footprint ladder (new capability decision)
 
@@ -74,8 +76,8 @@ the current drive, `c:\...` is not absolute in Git Bash; use `tempfile`/`pathlib
 
 **Never leave runtime data on C:** use `get_plobi_home()`, never `.plobi` under `Path.home()`.
 **Scratch and verification dirs go to `D:\Temp\plobi-work\<YYYYMMDD>\<name>`** — a folder per
-day, a subfolder per task, nothing loose in `D:\Temp` (11-14: 116 folders + 765 files, 38 GB),
-only rebuildable junk, delete it when done.
+day, a subfolder per task, nothing loose in `D:\Temp`, only rebuildable junk, delete it
+when done.
 
 **Tests.** The single entry point is `scripts/run_tests.sh`; direct `pytest`
 calls are forbidden (the wrapper unsets credential vars, forces UTC/C.UTF-8,
@@ -100,12 +102,11 @@ knowing:
 | `model_tools.py` / `toolsets.py` | Tool registry dispatch, toolset definitions |
 | `tools/` | Core tool implementations (auto-discovered via `tools/registry.py`) |
 | `plobi_cli/` | CLI subcommands, config, plugins loader, skin engine |
-| `tui_gateway/` | Python JSON-RPC backend for the TUI |
+| `tui_gateway/`, `ui-tui/` | Python JSON-RPC backend for the TUI + the Ink (React) terminal UI |
 | `gateway/` | Messaging gateway (session, run, platform adapters) |
 | `plugins/` | Bundled plugins (platforms, memory providers, model providers, kanban…) |
 | `apps/desktop/` | Electron + React renderer; `apps/shared/` is the transport package |
 | `cron/` | Scheduler and job store |
-| `ui-tui/` | Ink (React) terminal UI |
 | `tests/` | Pytest suite — one file per behavior, subprocess-isolated |
 
 ---
@@ -194,10 +195,9 @@ registry.register(
 )
 ```
 
-Then add the name to a toolset in `toolsets.py` — auto-discovery registers the
-schema, but the tool only reaches an agent if a toolset lists it. Handlers must
-return a JSON string. Tool schema descriptions must not name tools from other
-toolsets (they may be unavailable, which invites hallucinated calls).
+Then add the name to a toolset in `toolsets.py` — auto-discovery registers the schema, but the
+tool only reaches an agent if a toolset lists it. Handlers must return a JSON string, and a
+schema description must not name tools from other toolsets (they may be unavailable).
 
 **State files** go under `get_plobi_home()` (profile-aware), never
 `~/.plobi` literals. `agent/memory_provider.py` / `agent/memory_manager.py`
@@ -276,7 +276,6 @@ Profile-safe code rules:
 
 ## 11. Known pitfalls
 
-- **Do not hardcode `~/.plobi`** in code or tests.
 - **Do not use `simple_term_menu`** — it has ghost-duplication rendering bugs;
   use `plobi_cli/curses_ui.py`.
 - **Do not emit `\033[K`** (ANSI erase-to-EOL) — it leaks as literal text under
@@ -286,9 +285,6 @@ Profile-safe code rules:
 - **The gateway has two message guards** (base adapter + gateway runner); any
   new command that must reach a running agent has to bypass both and dispatch
   inline.
-- **Do not wire in dead code** without E2E proof.
-- **Tests must not write to the real `~/.plobi/`** — the wrapper's isolation is
-  the mechanism.
 
 ---
 
