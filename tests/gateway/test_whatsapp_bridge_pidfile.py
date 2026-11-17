@@ -29,7 +29,7 @@ from plugins.platforms.whatsapp.adapter import (
     _listener_pids_on_port,
     _write_bridge_pidfile,
 )
-from gateway.status import get_process_start_time, _pid_exists
+from gateway.status import get_process_start_time, _pid_exists, _read_process_cmdline
 
 
 def _spawn_sleeper(*extra_argv) -> subprocess.Popen:
@@ -45,6 +45,25 @@ def _wait_dead(proc: subprocess.Popen, timeout: float = 5.0) -> bool:
         if proc.poll() is not None:
             return True
         time.sleep(0.05)
+    return False
+
+
+def _wait_cmdline_ready(proc: subprocess.Popen, timeout: float = 5.0) -> bool:
+    """Wait until the child's command line is readable.
+
+    ``Popen`` returns after fork, but the child's ``/proc/<pid>/cmdline`` is only
+    filled in once ``execve`` has run. In that window the guard reads an empty
+    command line — and it is *right* to refuse to signal then ("read nothing ⇒
+    don't kill a stranger"), so the test lost a race it did not know about. On a
+    loaded CI machine (2301 files × 4 workers) that window is wide enough to
+    fail at random (2026-11-17: it reddened one CI run out of three).
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        cmdline = _read_process_cmdline(proc.pid)
+        if cmdline:
+            return True
+        time.sleep(0.02)
     return False
 
 
@@ -107,6 +126,10 @@ class TestIdentityGuard:
         # Shape the cmdline to look like the node bridge for this session.
         proc = _spawn_sleeper("node", str(tmp_path))
         try:
+            # Wait for the command line to exist before handing the pid to the
+            # guard: Popen returns before execve, and the guard (rightly) refuses
+            # to signal a process whose command line it cannot read.
+            assert _wait_cmdline_ready(proc), "the child's command line never became readable"
             (tmp_path / "bridge.pid").write_text(str(proc.pid))  # legacy: pid only
             _kill_stale_bridge_by_pidfile(tmp_path)
             assert _wait_dead(proc), "a cmdline-confirmed bridge should be killed"
