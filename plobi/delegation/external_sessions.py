@@ -54,6 +54,11 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
+#: **形状读法只有一份**（11-17）：opencode 那套「逐行 JSON 事件」住在通道层
+#: （``agent/external_offload.py``）——「厂商的回包长什么样」是通道的事，
+#: 派活腿与会话面共用同一份读法（裁定 94 族）。这里仍用这两个名字，别处引用不动。
+from agent.external_offload import _opencode_events, _parse_opencode_stream  # noqa: E402,F401
+
 VENDOR_QODER = "qoder"
 VENDOR_CODEBUDDY = "codebuddy"
 VENDOR_MARVIS = "marvis"
@@ -1374,10 +1379,53 @@ def _identity_words(entry) -> list[str]:
     return [word.strip().lower() for word in words if len(word.strip()) >= 2]
 
 
-def _related(entry, session: dict[str, Any], marks: dict[str, bool]) -> tuple[Optional[bool], str]:
+def _plobi_dispatch_owners() -> dict[str, str]:
+    """**Plobi 自己派出去的活**：那家自己的会话号 → 派它的那个 agent（空串＝不知道是谁派的）。
+
+    真源是台账（``offload_rounds.jsonl``）：每一行有 ``external_session``（那家自己的
+    会话号）与 ``reply_to``（派活那个 agent 的名字）。台账里没有 ⇒ 不是我们派的。
+
+    **读不出来就当没有**（不猜）：台账读不动时返回空表 ⇒ 判据退回老样子。
+    """
+    try:
+        from plobi.delegation.offload import RoundLedger
+
+        rows = RoundLedger().rows()
+    except Exception:  # noqa: BLE001 - 台账读不动 ≠ 「没有这趟活」
+        return {}
+    out: dict[str, str] = {}
+    for row in rows:
+        sid = str(row.get("external_session") or "").strip()
+        if not sid:
+            continue
+        out[sid] = str(row.get("reply_to") or "").strip()
+    return out
+
+
+def _related(
+    entry,
+    session: dict[str, Any],
+    marks: dict[str, bool],
+    dispatch: Optional[dict[str, str]] = None,
+) -> tuple[Optional[bool], str]:
     key = f"{session['vendor']}:{session['id']}"
     if key in marks:
         return marks[key], "l2"
+
+    # ── 这一条是 **Plobi 自己派出去的活**（11-17）────────────────────────
+    # 判据在**台账**里（那一趟的 external_session ＋ 派它的那个 agent 的名字），
+    # 不靠目录猜：会话目录是派活工作区（``<家>/offload/<日期>``），不是任何人的
+    # 项目目录 ⇒ 照老规矩会命中 path-miss 判成「无关」，于是它自己的活它自己也接不上。
+    if dispatch is None:
+        dispatch = _plobi_dispatch_owners()
+    owner = dispatch.get(str(session.get("id") or ""))
+    if owner is not None:
+        mine = str(getattr(entry, "name", "") or "")
+        if not owner:
+            return None, "plobi"        # 是我们派的，但不知道是谁派的 ⇒ 留给 L2 判
+        if owner == mine:
+            return True, "plobi"        # 就是它派的 ⇒ 它自己的活
+        return None, "plobi-other"      # 别的 agent 派的 ⇒ 不是「无关」，是待判断
 
     project = _norm(session.get("project"))
     project_paths = _project_paths(entry)
@@ -1407,13 +1455,15 @@ def sessions_for_agent(agent_name: str) -> dict[str, Any]:
     marks = load_marks(entry.name if hasattr(entry, "name") else agent_name)
     agent_key = entry.name if hasattr(entry, "name") else agent_name
     ledger = _agent_index(_load_index(), agent_key)
+    #: 台账里那些「Plobi 派出去的活」——**整轮只读一次**（每条会话读一遍太浪费）。
+    dispatch = _plobi_dispatch_owners()
     sessions = []
     for session in all_sessions():
         record = _entry_for_session(ledger, session["vendor"], session["id"])
         if isinstance(record.get("deleted"), dict):
             # 删掉的是**读数**：它还在盘上（或只在账本里藏着），但这一屏不再列。
             continue
-        related, source = _related(entry, session, marks)
+        related, source = _related(entry, session, marks, dispatch)
         if isinstance(record.get("title"), str) and record["title"].strip():
             session = {**session, "title": record["title"].strip()}
         sessions.append({
@@ -1455,7 +1505,7 @@ def _in_agent_scope(agent_name: str, vendor: str, session_id: str) -> bool:
     session = _locate(vendor, session_id)
     if session is None:
         return False
-    related, _source = _related(entry, session, marks)
+    related, _source = _related(entry, session, marks, _plobi_dispatch_owners())
 
     return related is not False
 
@@ -1848,74 +1898,6 @@ def _send_argv(vendor: str, binary: str, session_id: str, body: str) -> list[str
     if vendor == VENDOR_QODER:
         return [binary, "--resume", session_id, "--output-format", "json", "-p", body]
     raise ValueError(f"没登记这家怎么续接：{vendor}")
-
-
-def _opencode_events(stdout: str) -> list[dict[str, Any]]:
-    """把回包拆成事件。
-
-    官方形状是**逐行一个 JSON 对象**；但**不假设它一定逐行**——整段能当一个对象解析时
-    也认（`{"type": "text", …}`），实在认不出就交回空列表（**不编**）。
-    """
-    text = (stdout or "").strip()
-    if not text:
-        return []
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        payload = None
-    if isinstance(payload, dict):
-        return [payload]
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    events: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict):
-            events.append(event)
-
-    return events
-
-
-def _parse_opencode_stream(stdout: str) -> tuple[str, dict[str, Any], list[str]]:
-    """``opencode run --format json`` 的回包是**逐行 JSON 事件**（不是一整个对象）。
-
-    认得三种：``text``（正文在 ``part.text``）／``step_finish``（``part.cost`` 是美元、
-    ``part.tokens`` 是用量）／``error``（``error.data.message`` 是它自己的原话）。
-    **认不出的行跳过**——回包形状变了最多回一句「没读懂」，不许编一段出来。
-    """
-    parts: list[str] = []
-    usage: dict[str, Any] = {}
-    errors: list[str] = []
-    for event in _opencode_events(stdout):
-        part = event.get("part") if isinstance(event.get("part"), dict) else {}
-        kind = event.get("type")
-        if kind == "text":
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                parts.append(text.strip())
-        elif kind == "step_finish":
-            cost = part.get("cost")
-            if isinstance(cost, (int, float)):
-                usage["total_cost_usd"] = float(cost)
-            tokens = part.get("tokens")
-            if isinstance(tokens, dict):
-                usage["tokens"] = tokens
-        elif kind == "error":
-            error = event.get("error")
-            if isinstance(error, dict):
-                data = error.get("data")
-                message = data.get("message") if isinstance(data, dict) else None
-                text = str(message or error.get("name") or "").strip()
-                if text:
-                    errors.append(text)
-
-    return "\n".join(parts).strip(), usage, errors
 
 
 def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: float = 600.0) -> dict[str, Any]:

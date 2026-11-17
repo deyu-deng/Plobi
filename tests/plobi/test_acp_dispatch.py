@@ -68,13 +68,19 @@ while True:
         continue
     method = msg.get("method")
     ident = msg.get("id")
+    calls = CONFIG.get("calls_log")
+    if calls and method:
+        with open(calls, "a", encoding="utf-8") as handle:
+            handle.write(str(method) + "\n")
     if method is None:
         # 这是客户端对我们那个授权问句的答复。
         log("answer_log", json.dumps(msg, ensure_ascii=False))
         continue
     if method == "initialize":
+        # 它**自己宣告**能不能续接（11-17：真厂商那几家宣告 loadSession）。
+        caps = {"loadSession": True} if CONFIG.get("load_session") else {}
         send({"jsonrpc": "2.0", "id": ident, "result": {
-            "protocolVersion": 1, "agentCapabilities": {}}})
+            "protocolVersion": 1, "agentCapabilities": caps}})
     elif method == "session/new":
         if CONFIG.get("session_error"):
             send({"jsonrpc": "2.0", "id": ident, "error": CONFIG["session_error"]})
@@ -87,6 +93,15 @@ while True:
                 "availableModes": modes,
             }
         send({"jsonrpc": "2.0", "id": ident, "result": result})
+    elif method == "session/load":
+        # 续接那一发：记下我们发了什么，回**同一个**会话号。
+        params = msg.get("params") or {}
+        log("load_log", json.dumps(params, ensure_ascii=False))
+        if CONFIG.get("load_error"):
+            send({"jsonrpc": "2.0", "id": ident, "error": CONFIG["load_error"]})
+            continue
+        send({"jsonrpc": "2.0", "id": ident, "result": {
+            "sessionId": params.get("sessionId") or SESSION_ID}})
     elif method == "session/set_mode":
         log("mode_log", json.dumps(msg.get("params") or {}, ensure_ascii=False))
         send({"jsonrpc": "2.0", "id": ident, "result": {}})
@@ -148,6 +163,56 @@ def workdir(tmp_path):
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+# ── 续接（11-17）────────────────────────────────────────────────────────
+
+def test_resuming_goes_through_session_load_and_never_creates_a_new_session(
+    tmp_path, workdir, monkeypatch,
+):
+    """给了会话号 ⇒ **续接**那条，不新建（协议级的 ``session/load``）。
+
+    11-17 真跑：opencode／deveco／kilo 的 ACP server 都宣告 ``loadSession``，
+    续接后它**记得**上一轮说过什么。
+    """
+    calls = tmp_path / "calls.txt"
+    _install_fake_server(tmp_path, monkeypatch, {
+        "say": "接着做完了",
+        "load_session": True,
+        "calls_log": str(calls),
+    })
+
+    result = offload.run_task("接着干", cwd=workdir, agent="glm", session_id="sess-old")
+
+    assert result.ok, result.error
+    assert result.text == "接着做完了"
+    # 续的是**给的那一条**，不是新开的一条。
+    assert result.external_session == "sess-old"
+    # 台账那一格分得开：续接 ≠ 新建。
+    assert result.external_session_source == "acp.load"
+    sent = calls.read_text(encoding="utf-8").split()
+    assert "session/load" in sent
+    assert "session/new" not in sent
+
+
+def test_a_server_that_cannot_load_refuses_honestly(tmp_path, workdir, monkeypatch):
+    """服务器没宣告 ``session/load`` ⇒ **如实报错**，不假装能续。"""
+    _install_fake_server(tmp_path, monkeypatch, {"say": "OK"})
+
+    result = offload.run_task("接着干", cwd=workdir, agent="glm", session_id="sess-old")
+
+    assert result.ok is False
+    assert "session/load" in result.error
+
+
+def test_the_ledger_tells_a_new_dispatch_from_a_resume(tmp_path, workdir, monkeypatch):
+    """新建那一趟的来源那一格是 ``acp.sessionId``（**不许**与续接混）。"""
+    _install_fake_server(tmp_path, monkeypatch, {"say": "干完了", "load_session": True})
+
+    result = offload.run_task("干活", cwd=workdir, agent="glm")
+
+    assert result.ok, result.error
+    assert result.external_session_source == "acp.sessionId"
 
 
 # ── 整趟派活 ────────────────────────────────────────────────────────────

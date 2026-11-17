@@ -28,7 +28,11 @@ from typing import Optional
 PERMISSION_LEVELS = ("read_only", "edit", "full_auto")
 
 # 动作名 → 能力位。工具的闸门与 scan 的能力位都用这一份，别处不许再列一份。
-ACTIONS = ("read", "rename", "edit", "model", "permission", "send", "attachments", "archive", "delete", "mark")
+ACTIONS = ("read", "rename", "edit", "model", "permission", "send", "attachments", "archive", "delete", "mark",
+            # 「ACP 腿派出去的活能不能接着聊」（11-17）：ACP 的 ``session/load`` 是协议级的，
+            # 这一格只登记**实测过**的那几家 ⇒ 读数真源在 ``agent/vendor_registry.py``
+            # 那一行的 ``acp_note``。
+            "acp_resume")
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,9 @@ class VendorCapabilities:
     # 能不能存「下次续接用什么模型/权限档」的会话预设
     model: bool = True
     permission: bool = True
+    #: **ACP 腿派出去的活能不能接着聊**（11-17 实测：ACP 的 ``session/load`` 真能续）。
+    #: 今天只有 opencode 一家验通了「派完 → 落进它自己的会话库 → 会话面看得见 → 能接着说」。
+    acp_resume: bool = False
     # 续接时能不能真把预设带上去。今天没有一家验证过，一律 False。
     apply_on_send: bool = False
     # 归一化档 → 这家 CLI 的真名（只用于派新活，见 external_offload.run_task）
@@ -66,11 +73,14 @@ class VendorCapabilities:
             out.append("permission")
         if self.apply_on_send:
             out.append("apply_on_send")
+        if self.acp_resume:
+            out.append("acp_resume")
 
         return out
 
     def as_dict(self) -> dict:
         return {
+            "acp_resume": self.acp_resume,
             "apply_on_send": self.apply_on_send,
             "attachments": self.attachments,
             "capabilities": self.as_list(),
@@ -110,7 +120,9 @@ VENDORS: dict[str, VendorCapabilities] = {
     # OpenCode：**能续接说话**（现读 `opencode run --help`：`--session <id>` 续接那条会话）。
     # 它的回包是**逐行 JSON 事件**（不是 Qoder 那种一个对象）⇒ 解析在
     # `external_sessions.py::_parse_opencode_stream` 里，不在能力表这一层。
-    "opencode": VendorCapabilities(vendor="opencode", label="OpenCode", send=True),
+    # 11-17 实测：它的 ACP server 宣告 ``loadSession`` ⇒ ``session/load`` 真能续；
+    # 它开出来的会话**落进它自己的会话库** ⇒ 会话面看得见、能接着说。
+    "opencode": VendorCapabilities(vendor="opencode", label="OpenCode", send=True, acp_resume=True),
     # ── 11-15 新接会话腿的那三家（都**只读**：回跳旗标没实测过）────────────
     "kiro": VendorCapabilities(vendor="kiro", label="Kiro"),
     "copilot": VendorCapabilities(vendor="copilot", label="GitHub Copilot CLI"),

@@ -898,6 +898,77 @@ def _keep_evidence(root: Path, completed: "subprocess.CompletedProcess[str]") ->
         (root / ".offload-stderr.txt").write_text(completed.stderr or "", encoding="utf-8")
 
 
+def _opencode_events(stdout: str) -> list[dict[str, Any]]:
+    """把回包拆成事件。
+
+    官方形状是**逐行一个 JSON 对象**；但**不假设它一定逐行**——整段能当一个对象解析时
+    也认（``{"type": "text", …}``），实在认不出就交回空列表（**不编**）。
+
+    **这一份住在通道层**（11-17）：「厂商的回包长什么样」是通道的事——派活腿与
+    会话面共用同一份读法（裁定 94 族）。
+    """
+    text = (stdout or "").strip()
+    if not text:
+        return []
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        return [payload]
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    events: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+
+    return events
+
+
+def _parse_opencode_stream(stdout: str) -> tuple[str, dict[str, Any], list[str]]:
+    """``opencode run --format json`` 的回包是**逐行 JSON 事件**（不是一整个对象）。
+
+    认得三种：``text``（正文在 ``part.text``）／``step_finish``（``part.cost`` 是美元、
+    ``part.tokens`` 是用量）／``error``（``error.data.message`` 是它自己的原话）。
+    **认不出的行跳过**——回包形状变了最多回一句「没读懂」，不许编一段出来。
+    """
+    parts: list[str] = []
+    usage: dict[str, Any] = {}
+    errors: list[str] = []
+    for event in _opencode_events(stdout):
+        part = event.get("part") if isinstance(event.get("part"), dict) else {}
+        kind = event.get("type")
+        if kind == "text":
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        elif kind == "step_finish":
+            cost = part.get("cost")
+            if isinstance(cost, (int, float)):
+                usage["total_cost_usd"] = float(cost)
+            tokens = part.get("tokens")
+            if isinstance(tokens, dict):
+                usage["tokens"] = tokens
+        elif kind == "error":
+            error = event.get("error")
+            if isinstance(error, dict):
+                data = error.get("data")
+                message = data.get("message") if isinstance(data, dict) else None
+                text = str(message or error.get("name") or "").strip()
+                if text:
+                    errors.append(text)
+
+    return "\n".join(parts).strip(), usage, errors
+
+
 def _session_handle(records: list[dict[str, Any]]) -> tuple[str, str]:
     """The external session id plus **which key it was read from**.
 
@@ -922,9 +993,16 @@ def _session_handle(records: list[dict[str, Any]]) -> tuple[str, str]:
             break
 
     process_id = ""
+    process_key = ""
     for record in records:
-        if (found := _str(record, "sessionId")):
-            process_id = found
+        # ``sessionID``（大写 D）是 opencode 事件流那个键名（11-17 实测）；
+        # ``sessionId`` 是 CodeBuddy 那一族。两个都认，**认出哪个就说哪个**。
+        for key in ("sessionID", "sessionId"):
+            if (found := _str(record, key)):
+                process_id = found
+                process_key = key
+                break
+        if process_id:
             break
 
     if result_id:
@@ -932,7 +1010,7 @@ def _session_handle(records: list[dict[str, Any]]) -> tuple[str, str]:
             return result_id, "result.session_id!=sessionId"
         return result_id, "result.session_id"
     if process_id:
-        return process_id, "sessionId"
+        return process_id, process_key
 
     for record in records:
         if (found := _str(record, "conversation_id")):
@@ -953,9 +1031,21 @@ def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any], str, str]:
     try:
         payload = json.loads(text_out)
     except json.JSONDecodeError:
-        return text_out, {}, "", ""
+        payload = None
 
-    records = payload if isinstance(payload, list) else [payload]
+    if isinstance(payload, dict):
+        records = [payload]
+    elif isinstance(payload, list):
+        records = [r for r in payload if isinstance(r, dict)]
+    else:
+        # **逐行 JSON 事件**（11-17 实测：opencode 的 ``run --format json`` 就是这个
+        # 形状）——整体解析失败**不是**「没回话」，是**另一种信封** ⇒ 逐行再试一次。
+        events = _opencode_events(text_out)
+        if not events:
+            return text_out, {}, "", ""
+        answer, usage, _errors = _parse_opencode_stream(text_out)
+        return answer, usage, *_session_handle(events)
+
     records = [r for r in records if isinstance(r, dict)]
 
     usage: dict[str, Any] = {}
@@ -1226,6 +1316,7 @@ def run_acp_task(
     permission_mode: Optional[str] = None,
     timeout: float = 900.0,
     reply_to: str = "",
+    session_id: str = "",
 ) -> OffloadResult:
     """**ACP 派活腿**：把一段活交给那台 ACP server。
 
@@ -1239,6 +1330,12 @@ def run_acp_task(
 
     **它自己说的话原样带出去**：拒了、没登录、没 API key —— 那些都是它的原话，
     我们不替它翻译成「失败了」。
+
+    **续接（11-17）**：给了 ``session_id`` ⇒ **不新建会话**，改走 ACP 的 ``session/load``
+    （协议级的，不按厂商分叉）；能不能续**由服务器自己说**——握手回的
+    ``agentCapabilities.loadSession`` 没有这一格就如实报错，不假装能续。
+    台账那格 ``external_session_source`` 也跟着分：``acp.sessionId``＝新建、
+    ``acp.load``＝续接。
     """
     from agent.acp_client import (
         CLIENT_CAPABILITIES,
@@ -1252,6 +1349,8 @@ def run_acp_task(
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     sandboxed = is_sandboxed()
     reply_to = (reply_to or "").strip()
+    #: 这一趟是**续接**（给了会话号）还是**新建**（没给）。
+    resumed = bool(str(session_id or "").strip())
     #: 它问了几次授权（读数；闭包读的是**当前值** ⇒ 跑完之后那一格才是真数）。
     questions = 0
 
@@ -1270,7 +1369,7 @@ def run_acp_task(
             exit_code=None, duration_s=0.0, argv=argv, usage=usage or {}, cost=cost,
             cost_status=cost_status, artifacts=(), text="", ok=False, error=message,
             external_session=session,
-            external_session_source="acp.sessionId" if session else "",
+            external_session_source=("acp.load" if resumed else "acp.sessionId") if session else "",
             leg="acp", permission_requests=questions,
         )
 
@@ -1293,7 +1392,8 @@ def run_acp_task(
     # （裁定 99 一：子进程跑在它自己那档上，Plobi 自己的闸门一道都不松）。
     client.allow_permissions = (permission_mode or "").strip() != "read_only"
 
-    session_id = ""
+    #: 这一趟**真正在跑**的那条会话号（新建出来的，或续接上去的那条）。
+    active_session = ""
     flags: tuple[str, ...] = ()
     usage: dict[str, Any] = {}
     stop_reason = ""
@@ -1308,14 +1408,32 @@ def run_acp_task(
         if "error" in init:
             return fail(f"initialize 被拒：{error_text(init['error'])}", argv=argv)
 
-        new = client.request("session/new", {
-            "cwd": str(prep.workdir),
-            "mcpServers": [],
-        }, ACP_SESSION_TIMEOUT)
-        if "error" in new:
-            return fail(f"session/new 被拒：{error_text(new['error'])}", argv=argv)
-        created = new.get("result") or {}
-        session_id = str(created.get("sessionId") or "")
+        if resumed:
+            # 续接：**服务器自己宣告**有没有 ``session/load``（11-17 实测 opencode／
+            # deveco／kilo 都宣告了）—— 没宣告就如实报错，不假装能续。
+            caps = (init.get("result") or {}).get("agentCapabilities") or {}
+            if not caps.get("loadSession"):
+                return fail("这一家不能续接那条会话：它的 ACP server 没宣告 session/load。",
+                            argv=argv)
+            loaded = client.request("session/load", {
+                "sessionId": str(session_id).strip(),
+                "cwd": str(prep.workdir),
+                "mcpServers": [],
+            }, ACP_SESSION_TIMEOUT)
+            if "error" in loaded:
+                return fail(f"续接被拒：{error_text(loaded['error'])}", argv=argv,
+                            session=str(session_id).strip())
+            created = loaded.get("result") or {}
+            active_session = str(created.get("sessionId") or str(session_id).strip())
+        else:
+            new = client.request("session/new", {
+                "cwd": str(prep.workdir),
+                "mcpServers": [],
+            }, ACP_SESSION_TIMEOUT)
+            if "error" in new:
+                return fail(f"session/new 被拒：{error_text(new['error'])}", argv=argv)
+            created = new.get("result") or {}
+            active_session = str(created.get("sessionId") or "")
         state = created.get("modes") or {}
         available = [
             str(mode.get("id"))
@@ -1328,34 +1446,34 @@ def run_acp_task(
         target, complaint = _pick_acp_mode(
             ACP_MODE_MAPS.get(agent), (permission_mode or "").strip(), available)
         if complaint:
-            return fail(complaint, argv=argv, session=session_id)
+            return fail(complaint, argv=argv, session=active_session)
         if target and target in available and target != current:
             switched = client.request("session/set_mode", {
-                "sessionId": session_id,
+                "sessionId": active_session,
                 "modeId": target,
             }, ACP_SESSION_TIMEOUT)
             if "error" in switched:
                 return fail(f"切档被拒：{error_text(switched['error'])}",
-                            argv=argv, session=session_id)
+                            argv=argv, session=active_session)
         # 生效的那一档：**切了就是切的那一档，没切就是它自己当前那档**
         # （台账里那一格写的就是它真在跑的那一档）。
         effective = target if (target and target in available) else current
         flags = (f"acp-mode:{effective}",) if effective else ()
 
         prompt = client.request("session/prompt", {
-            "sessionId": session_id,
+            "sessionId": active_session,
             "prompt": [{"type": "text", "text": task}],
         }, timeout)
         if "error" in prompt:
             return fail(f"它自己拒了这一趟：{error_text(prompt['error'])}",
-                        argv=argv, flags=flags, session=session_id)
+                        argv=argv, flags=flags, session=active_session)
         answered = prompt.get("result") or {}
         stop_reason = str(answered.get("stopReason") or "")
         reported = answered.get("usage")
         usage = dict(reported) if isinstance(reported, dict) else {}
     except AcpError as exc:
         questions = client.permission_requests
-        return fail(str(exc), argv=argv, flags=flags, session=session_id)
+        return fail(str(exc), argv=argv, flags=flags, session=active_session)
     finally:
         questions = client.permission_requests
         client.close()
@@ -1385,7 +1503,8 @@ def run_acp_task(
         usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,
         text=text, ok=ok, error=error, produced=produced,
         proxy=prep.proxy, proxy_source=prep.proxy_source,
-        external_session=session_id, external_session_source="acp.sessionId" if session_id else "",
+        external_session=active_session,
+        external_session_source=("acp.load" if resumed else "acp.sessionId") if active_session else "",
         job=prep.job, reply=reply, reply_status=reply_status, reply_to=reply_to,
         account=prep.account, leg="acp", permission_requests=questions,
     )
@@ -1400,11 +1519,14 @@ def run_task(
     timeout: float = 900.0,
     reply_to: str = "",
     leg: str = "",
+    session_id: str = "",
 ) -> OffloadResult:
     """Hand one real task to a local external agent and report the four answers.
 
     ``reply_to`` 是**派活那一侧的 Agent 名字**（可空），只进台账当"该向谁交代"的读数；
     回执本身走文件（见 :func:`reply_instructions`），不靠它填收件人。
+
+    ``session_id`` 是**要续接的那条会话号**（ACP 腿专用；空＝新建会话）。
 
     ``leg`` 点名走哪一条腿（``cli``／``acp``）；**不点名 ⇒ 走默认腿**
     （真源表声明的「实测跑通过的那条」⇒ 行为一个字不变）。
@@ -1426,7 +1548,7 @@ def run_task(
     if wanted == "acp":
         return run_acp_task(
             task, cwd=cwd, agent=agent, permission_mode=permission_mode,
-            timeout=timeout, reply_to=reply_to,
+            timeout=timeout, reply_to=reply_to, session_id=session_id,
         )
 
     workdir = Path(cwd).resolve() if cwd else default_workdir()

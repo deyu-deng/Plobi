@@ -544,6 +544,56 @@ def test_agy_gives_titles_and_its_transcript(homes):
     assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
 
 
+def test_a_session_plobi_dispatched_belongs_to_the_agent_that_dispatched_it(
+    homes, monkeypatch,
+):
+    """**Plobi 自己派出去的那一趟**：是派它的那个 agent 的活（11-17）。
+
+    照老规矩，它的目录是派活工作区（不是任何人的项目目录）⇒ 命中 path-miss 判成
+    「无关」⇒ 连话都递不进去。这一格改的就是它：台账说了算。
+    """
+    qoder_session(homes.qoder, r"D:\Temp\plobi-offload\20261117", "bbbbbbbb-2222",
+                  prompt="干活", reply="干完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    monkeypatch.setattr(es, "_plobi_dispatch_owners", lambda: {"bbbbbbbb-2222": "Sindri"})
+
+    rows = {f"{item['vendor']}:{item['id']}": item
+            for item in es.sessions_for_agent("Sindri")["sessions"]}
+
+    assert rows["qoder:bbbbbbbb-2222"]["related"] is True
+    assert rows["qoder:bbbbbbbb-2222"]["related_source"] == "plobi"
+
+
+def test_another_agents_dispatched_session_is_not_unrelated_but_not_theirs(
+    homes, monkeypatch,
+):
+    """别的 agent 派的那一趟 ⇒ **待判断**，不是「无关」（它是 Plobi 的活）。"""
+    qoder_session(homes.qoder, r"D:\Temp\plobi-offload\20261117", "cccccccc-3333",
+                  prompt="干活", reply="干完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    monkeypatch.setattr(es, "_plobi_dispatch_owners", lambda: {"cccccccc-3333": "另一个人"})
+
+    rows = {f"{item['vendor']}:{item['id']}": item
+            for item in es.sessions_for_agent("Sindri")["sessions"]}
+
+    assert rows["qoder:cccccccc-3333"]["related"] is None
+    assert rows["qoder:cccccccc-3333"]["related_source"] == "plobi-other"
+
+
+def test_a_session_that_is_not_in_the_ledger_keeps_the_old_verdict(homes, monkeypatch):
+    """台账里没有 ⇒ 照老规矩判（path-miss ⇒ 无关），一个字都不许变。"""
+    qoder_session(homes.qoder, r"D:\Temp\plobi-offload\20261117", "dddddddd-4444",
+                  prompt="干活", reply="干完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    monkeypatch.setattr(es, "_plobi_dispatch_owners", lambda: {})
+
+    rows = {f"{item['vendor']}:{item['id']}": item
+            for item in es.sessions_for_agent("Sindri")["sessions"]}
+
+    assert rows["qoder:dddddddd-4444"]["related"] is False
+    assert rows["qoder:dddddddd-4444"]["related_source"] == "path-miss"
+
+
 def test_related_comes_from_path_then_title_then_l2_marks(homes, monkeypatch):
     qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
     codebuddy_session(homes.codebuddy, r"D:\Temp", "01a1140d-30ed", prompt="给 Sindri 写个脚本", reply="写好了")

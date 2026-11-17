@@ -37,6 +37,21 @@ def test_the_six_vendors_are_the_only_truth_and_the_text_is_generated():
     )
 
 
+def test_only_the_family_we_measured_can_resume_over_acp():
+    """「这一家派完能接着聊」那一格：**只给实测过的那家**开（11-17）。
+
+    真读数在 ``agent/vendor_registry.py`` 那一行的 ``acp_note``：opencode 的 ACP
+    server 宣告 ``loadSession``、它开出来的会话落进它自己的会话库 ⇒ 会话面看得见、
+    能接着说。其余家没实测过 ⇒ 不许开。
+    """
+    resumable = {name for name, spec in caps.VENDORS.items() if spec.acp_resume}
+    assert resumable == {"opencode"}
+    assert "acp_resume" in caps.VENDORS["opencode"].as_list()
+    assert "acp_resume" not in caps.VENDORS["qoder"].as_list()
+    assert caps.supports("opencode", "acp_resume") is True
+    assert caps.supports("qoder", "acp_resume") is False
+
+
 def test_qoder_and_opencode_can_speak_and_nobody_takes_attachments_yet():
     assert caps.supports("qoder", "send") is True
     # OpenCode：`opencode run --session <id>` 能续接那条会话（现读 `--help`）。

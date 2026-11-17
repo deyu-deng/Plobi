@@ -314,6 +314,33 @@ def test_an_envelope_with_no_session_key_yields_empty_and_the_turn_still_lands()
     assert session == "" and source == ""
 
 
+def test_the_line_by_line_json_stream_is_read_too():
+    """opencode 的 ``run --format json`` 回包是**逐行 JSON 事件**（11-17 真跑）。
+
+    整体 ``json.loads`` 解析失败**不是**「没回话」，是**另一种信封** ⇒ 逐行再试一次：
+    正文在 ``part.text``、会话号在 ``sessionID``、花费在 ``part.cost``。
+    读不出会话号 ⇒ 台账那一格空着 ⇒ 「派出去的活」接不回来（11-17 实测的断点）。
+    """
+    sid = "ses_e18da605effelcz6gBMy7xFei9"
+    stdout = "\n".join([
+        json.dumps({"type": "step_start", "sessionID": sid,
+                    "part": {"id": "prt_1", "type": "step-start"}}),
+        json.dumps({"type": "text", "sessionID": sid,
+                    "part": {"id": "prt_1_text-0", "type": "text", "text": "OK"}}),
+        json.dumps({"type": "step_finish", "sessionID": sid,
+                    "part": {"type": "step-finish", "cost": 0.01,
+                             "tokens": {"input": 10, "output": 2}}}),
+    ])
+
+    text, usage, session, source = offload._parse_envelope(stdout)
+
+    assert text == "OK"
+    assert session == sid
+    # 认出哪个键就说哪个（``sessionID`` 是大写 D，CodeBuddy 那一族是 ``sessionId``）。
+    assert source == "sessionID"
+    assert usage["total_cost_usd"] == 0.01
+
+
 def test_run_task_carries_the_handle_out_on_the_result(workdir, monkeypatch):
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(offload, "egress_is_reachable", lambda proxy: (True, ""))
