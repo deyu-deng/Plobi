@@ -180,16 +180,19 @@ def discover_memory_providers() -> List[Tuple[str, str, bool]]:
     return results
 
 
-# 官方脑不是插件（裁定 198）：内核模块，plugins/memory/mind/ 已退役。
-# 第三方 provider 仍走下面的目录发现——那条路是给别人的。
+# 官方记忆脑不是插件（裁定 198；用户 10-25「不要再是插件形态了」）：它是内核一等公民
+# plobi.mind.provider.MindProvider，与下面这八家第三方服务不是同一类东西。
+# 这里只保留 *一个* 装载函数做统一入口：官方名短路到内核，不查插件目录；
+# 目录发现那条路只服务第三方。类名沿用 MemoryProvider 是 ABC 契约，不是身份声明。
 CORE_PROVIDERS = {"mind": ("plobi.mind.provider", "MindProvider")}
 
 
 def load_memory_provider(name: str) -> Optional["MemoryProvider"]:
-    """Load and return a MemoryProvider instance by name.
+    """Return the memory face for ``name``.
 
-    名字在 CORE_PROVIDERS 里 ⇒ 直接从内核构造，不查插件目录；其余名字仍按 bundled
-    （plugins/memory/<name>/）与用户安装目录发现。
+    官方名（``agent.memory_manager.OFFICIAL_MEMORY_PROVIDER``）⇒ 直接从内核构造
+    官方记忆脑，**不经过插件发现**；其余名字仍按 bundled（plugins/memory/<name>/）
+    与用户安装目录发现。
     """
     core = CORE_PROVIDERS.get((name or "").strip())
     if core:

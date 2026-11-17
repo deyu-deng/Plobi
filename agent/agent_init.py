@@ -1381,8 +1381,9 @@ def init_agent(
     
 
 
-    # Memory provider plugin (external — one at a time, alongside built-in)
-    # Reads memory.provider from config to select which plugin to activate.
+    # 官方记忆脑（内核 plobi/mind）+ 可选的一家第三方记忆服务，一次只挂一家。
+    # memory.provider 缺省即官方脑；显式空串 = 关；显式别的名字 = 那家第三方。
+    # 装载函数统一在 plugins.memory.load_memory_provider，但官方脑不走插件发现。
     agent._memory_manager = None
     if not skip_memory:
         try:
