@@ -356,6 +356,38 @@ def sync_project_declarations(
         )
 
     if not verifier_path.is_file():
+        # 脑仓**没有**自己那把门禁 ⇒ 再看第二件事实：这份 AGENTS.md 到底声明不声明项目。
+        #
+        # * **不声明**（`declared_projects()` 是 None）⇒ 没有声明要保持一致：脑仓的门禁对
+        #   这种库只报 WARN（``AGENTS §1 未找到项目列表声明``——见 `render_declaration` 的同一
+        #   口径），而 ``Dossiers/projects/INDEX.md`` 只由那个脚本生成 ⇒ 没有它就没有要更新的
+        #   INDEX。于是**只建档案与记忆文件，不往脑里写任何东西**。
+        #   这正是**装机版自动建的那份最小脑**（`paths.ensure_root`：一份 AGENTS.md ＋ 目录
+        #   骨架，没有 .git、没有 verifier、没有 §1 声明）——2026-11-17 用户现场：最小脑建完，
+        #   projects 品类的 Agent 一个都建不出来（弹窗红字「带着 AGENTS.md，却没有脑仓自己的
+        #   Mind/scripts/verifier.py」）。写入侧同一把 verifier 缺了是放行的
+        #   （`MindWriter._verify` → ``"verifier not present"``）——两侧口径一致才叫规矩。
+        # * **声明着** ⇒ 仍判失败：那份 §1 会与盘上漂，而 INDEX.md 又只能由那个脚本生成
+        #   （不许自己另写一套）——半装的真脑仓得先装齐。
+        if agents_path.is_file():
+            try:
+                declared = declared_projects(agents_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError) as exc:
+                raise DeclarationSyncError(f"{AGENTS_RELATIVE} 读不成：{exc}") from exc
+            if declared is None:
+                logger.info(
+                    "mind: %s 的 %s 一个项目都不声明，也没有 %s —— 没有声明要同步，"
+                    "项目 %s 只落盘上不落声明",
+                    root, AGENTS_RELATIVE, VERIFIER_RELATIVE, name,
+                )
+                return DeclarationSync(
+                    dir_name=name,
+                    skipped=(
+                        f"这个 Mind 库的 {AGENTS_RELATIVE} 不声明项目清单，"
+                        f"也没有 {VERIFIER_RELATIVE}，没有声明要同步"
+                    ),
+                    root=root,
+                )
         raise DeclarationSyncError(
             f"{root} 带着 {AGENTS_RELATIVE}，却没有脑仓自己的 {VERIFIER_RELATIVE}："
             "Dossiers/projects/INDEX.md 只由那个脚本的 --fix-projects 生成，不另写一套。"
