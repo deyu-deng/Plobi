@@ -96,6 +96,10 @@ def media_of(raw: dict) -> list[dict]:
 class ChatMessage:
     msg_id: str
     talker: str
+    #: 发件人的**显示名**（人名）。**空串是合法读数**：侧车没给名字时它就是空的——
+    #: 旧形状这里塞的是微信 ID，于是"我"自己发的那些在池里长成自己的机器号
+    #: （11-17 真机现核：1115 条 `sender=wxid_bipxx6h3hlvp22`，全是本机账号）。
+    #: 机器号归 :attr:`sender_id` 那一格，这里只放名字。
     sender: str
     sent_at: str
     content: str
@@ -107,6 +111,9 @@ class ChatMessage:
     #: 这条消息带的媒体件（`media_of` 的量法）。空元组是一个读数：这条没有媒体，
     #: 或这一版的 `contents` 长得不认识——两种都**不许**被读成"取失败了"。
     media: tuple[dict, ...] = ()
+    #: 发件人的**微信 id**（`wxid_…`），不是名字。空串＝侧车没给。
+    #: 它是"是谁发的"那一格的**身份证据**，与 :attr:`sender`（人名）分开两格。
+    sender_id: str = ""
 
     @property
     def is_empty(self) -> bool:
@@ -218,7 +225,19 @@ def normalize_message(raw: Any, *, fallback_talker: str = "") -> Optional[ChatMe
         return None
 
     talker = str(_first(raw, "talker", "Talker", "chatroom", "roomId") or fallback_talker or "")
-    sender = str(_first(raw, "senderName", "sender", "Sender", "nickname", "from") or "")
+    # 发件人**分两格**：id（微信号）与显示名（人名）。
+    #
+    # 旧形状只留一格，取值链是 `_first(raw, "senderName", "sender", …)`——而 `_first`
+    # **跳过空串**。上游 Go 侧对**本人**的消息**故意**把 `senderName` 留空
+    # （`vendor/chatlog/internal/wechatdb/repository/message.go:55`：
+    # `if msg.SenderName == "" && !msg.IsSelf`）⇒ 留空就被 `_first` 跳过，
+    # 落到下一个键 `sender`＝**微信 ID** ⇒ "我"自己发的那些在池里长成自己的机器号
+    # （11-17 真机现核：1115 行 `sender=wxid_bipxx6h3hlvp22`，全是本机账号）。
+    #
+    # 现在：id 归 id 那一格，名字归名字那一格。**两格都拿不到就都空着**——
+    # 宁可空着，也不把机器号冒充成人名。
+    sender_id = str(_first(raw, "sender", "Sender", "from", "senderId", "sender_id") or "")
+    sender = str(_first(raw, "senderName", "sender_name", "displayName") or "")
     sent_at = str(_first(raw, "time", "Time", "createTime", "timestamp", "date") or "")
 
     raw_id = _first(raw, "id", "msgId", "MsgId", "seq", "Seq")
@@ -232,6 +251,7 @@ def normalize_message(raw: Any, *, fallback_talker: str = "") -> Optional[ChatMe
         content=content,
         is_self=_parse_is_self(raw),
         media=media,
+        sender_id=sender_id,
     )
 
 

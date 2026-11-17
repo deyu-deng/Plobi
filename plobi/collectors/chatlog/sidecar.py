@@ -88,6 +88,66 @@ def engine_config_dir(env: Mapping[str, str]) -> Path:
     return get_plobi_home() / "chatlog"
 
 
+def _engine_config(env: Mapping[str, str]) -> dict:
+    """引擎自己那份配置（`chatlog-server.json` / `chatlog.json`）——**只读形状，不外带值**。
+
+    这里返回的是整份 dict，调用方**只许取 `data_dir`／`account` 这类形状**；
+    `data_key` 的值一个字都不许往外带（`data_key_present` 那条纪律：密钥只判"有没有"）。
+    """
+    directory = engine_config_dir(env)
+    for name in ENGINE_CONFIG_FILES:
+        try:
+            loaded = json.loads((directory / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(loaded, dict):
+            return loaded
+    return {}
+
+
+def account_candidates(env: Optional[Mapping[str, str]] = None) -> list[str]:
+    """本机账号的**候选**微信 id（按可能性从高到低，重复的只留第一次）。
+
+    WeChat 4.x 把数据放在 `…/xwechat_files/{账号目录名}/`，而**目录名不是裸 wxid**：
+    上游 Go 侧把整段叫 `AccountName`（`vendor/chatlog/internal/wechat/process/windows/
+    detector_windows.go:38`），这台现读是 `wxid_bipxx6h3hlvp22_c19c`——真正的 wxid 是
+    `wxid_bipxx6h3hlvp22`，末尾那四截是目录哈希。
+
+    所以这里只**摆候选**：账号目录名的每一个下划线前缀 ＋ 整段 ＋ 配置里的 `account`
+    那一格（老配置直接写账号名）。**谁是真的由名单验**（`roster.account_username`）——
+    这一档不联网、不查库，只负责把候选摆出来。
+
+    目录名一个下划线都没有时（形状不对），候选就只剩那整段；验不过就是验不过，
+    **不许拿会话号顶替**（那是"知道是谁"与"有个号"两件事）。
+    """
+    config = _engine_config(env if env is not None else os.environ)
+    raw: list[str] = []
+
+    data_dir = str(config.get("data_dir") or "").strip()
+    if data_dir:
+        raw.append(Path(data_dir.replace("\\", "/")).name)
+    account = str(config.get("account") or "").strip()
+    if account:
+        raw.append(account)
+
+    out: list[str] = []
+    for item in raw:
+        if not item:
+            continue
+        candidates = [item]
+        # 每一个下划线处的前缀：`wxid_bipxx6h3hlvp22_c19c` ⇒ `wxid`／`wxid_bipxx6h3hlvp22`
+        # ／整段。**不假设后缀是几位**（这一格现读是四位，但那是巧合不是规则）。
+        head = item
+        while "_" in head:
+            head = head.rsplit("_", 1)[0]
+            if head:
+                candidates.append(head)
+        for candidate in candidates:
+            if candidate not in out:
+                out.append(candidate)
+    return out
+
+
 def data_key_present(env: Mapping[str, str]) -> bool:
     """`data_key` 到底有没有——**只看有没有，绝不读值、绝不外传长度之外的东西**。
 

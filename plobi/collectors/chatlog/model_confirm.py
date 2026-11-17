@@ -155,6 +155,11 @@ def _build_prompt(
     weekday = "一二三四五六日"[sent_ref.weekday()]
 
     sender = (message.sender or "").strip()
+    # 侧车对**本人**的消息**故意**把 senderName 留空（`vendor/chatlog/internal/
+    # wechatdb/repository/message.go:55`），于是"我"自己发的那条在提示词里会变成
+    # 一串微信 ID。这一格说的是"谁说的"——本人那条说「我」，别让模型去猜。
+    if message.is_self is True and (not sender or sender.startswith("wxid_")):
+        sender = "我"
     talker_name = (context.talker_name if context else None) or ""
     talker_label = talker_name.strip() or (message.talker.strip() or "未知")
 

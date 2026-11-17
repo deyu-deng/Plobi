@@ -100,6 +100,39 @@ def display_names(client: Any) -> dict[str, str]:
     return names
 
 
+def account_username(client: Any, candidates: list[str]) -> str:
+    """候选里**哪一个是真的本机账号**——靠联系人名单验。
+
+    WeChat 把自己也当联系人放在 `/api/v1/contact` 那份名单里（这台现核：`contact` 表
+    6324 行，`local_type=1 ∧ flag=1 ∧ username 像 wxid_` 全库只命中一行＝本机账号）。
+    侧车那份名单只返五个字段（`vendor/chatlog/internal/model/contact.go:3-9`），
+    没有 `flag`／`local_type`，所以**认自己只能靠"候选在不在名单里"这一验**。
+
+    候选里**在名单里、且以 `wxid_` 开头**的那个就是它；都不在 ⇒ **空串**。
+    验不过就空着："有个号"与"知道那是谁"是两件事，把会话号顶上来会让
+    "是不是我发的"那一格变成一句假话。
+    """
+    known = {_clean(row.get("userName") or row.get("username"))
+             for row in _items(client, "/api/v1/contact")}
+    known.discard("")
+    for candidate in candidates or []:
+        token = _clean(candidate)
+        if token.startswith("wxid_") and token in known:
+            return token
+    return ""
+
+
+def sender_label(sender_id: str, names: dict[str, str]) -> str:
+    """发件人 id → 他认得出的名字（备注 ＞ 昵称 ＞ **空**）。
+
+    查不到就**空着**：这一格空着是"没查到"，冒充成会话号是"编了一个名字"。
+    """
+    token = _clean(sender_id)
+    if not token:
+        return ""
+    return _clean(names.get(token))
+
+
 def label_for(talker: str, session_hint: str, names: dict[str, str]) -> tuple[str, bool]:
     """上屏的那个名字 + **它是不是真名字**（查不到就是 `(号, False)`，不假装是个人）。
 

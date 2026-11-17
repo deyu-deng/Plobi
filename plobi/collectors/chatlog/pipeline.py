@@ -117,6 +117,7 @@ def _topic_tokens(text: str) -> set[str]:
     return {word for word in _MATCH_KEYWORDS if word in text}
 
 
+from . import roster
 from . import sidecar
 
 
@@ -143,6 +144,8 @@ class ChatlogPipeline:
         self.confirmer = confirmer or self._default_confirmer()
         # talker id → chatlog display name, resolved once, best-effort.
         self._talker_names: Optional[dict[str, str]] = None
+        # 本机账号的微信 id（`wxid_…`）——验出来就是它，验不出是空串。
+        self._account: Optional[str] = None
 
     def health(self) -> dict:
         """Collector-protocol health：探活仍复用已有那一条，**多答一句"为什么"**。
@@ -263,16 +266,25 @@ class ChatlogPipeline:
         return FallbackConfirmer(primary=heuristic, fallback=model)
 
     def _talker_name_map(self) -> dict[str, str]:
-        """Best-effort id → display-name map from chatlog's session list.
+        """会话号／微信号 → 他看得懂的名字。
 
-        Cached for the pipeline's lifetime. Any failure (chatlog down, client
-        without the method) yields an empty map — the board falls back to the id
-        and nothing about collection changes.
+        **先问联系人与群那两张表**（`roster.display_names`），**再退回 session 列表**：
+        4.x 的 session 那一格 `nickName` 是 `LastSenderDisplayName`——**最后发言者的昵称**，
+        不是群名（`vendor/chatlog/internal/model/session_v4.go:50`；上游自己在
+        `roster.py` 档头第 2 条就写过"拿它当群名就是一句假话"）。11-17 真机现核：
+        池里 2427/5035 条的 `talker_name` 仍是机器号或会话号。
+
+        任何一步失败（侧车没在听）都退到空表：界面上退回号，采集本身不受影响。
         """
         if self._talker_names is not None:
             return self._talker_names
 
         mapping: dict[str, str] = {}
+        try:
+            mapping.update(roster.display_names(self.client))
+        except Exception as exc:  # best-effort; never block collection
+            logger.debug("chatlog: display-name lookup failed: %s", exc)
+
         lister = getattr(self.client, "list_talker_sessions", None)
         if callable(lister):
             try:
@@ -280,11 +292,28 @@ class ChatlogPipeline:
                     session_id = getattr(session, "id", None)
                     session_name = getattr(session, "name", None)
                     if session_id and session_name:
-                        mapping[str(session_id)] = str(session_name)
+                        mapping.setdefault(str(session_id), str(session_name))
             except Exception as exc:  # best-effort; never block collection
                 logger.debug("chatlog: talker display-name lookup failed: %s", exc)
         self._talker_names = mapping
         return mapping
+
+    def _account_username(self) -> str:
+        """本机账号的微信 id（`wxid_…`），或者**空串**（没验出来）。
+
+        候选由 `sidecar.account_candidates` 摆（引擎配置里的账号目录名），
+        **由联系人名单验**（`roster.account_username`）。一轮采集只查一次。
+        验不出来时它是空串 —— 那一格于是保持"不知道"，而不是被一个会话号顶成假话。
+        """
+        if self._account is not None:
+            return self._account
+        try:
+            candidates = sidecar.account_candidates()
+            self._account = roster.account_username(self.client, candidates) if candidates else ""
+        except Exception as exc:  # best-effort; never block collection
+            logger.debug("chatlog: account lookup failed: %s", exc)
+            self._account = ""
+        return self._account
 
     # --- single message -----------------------------------------------------
 
@@ -330,12 +359,37 @@ class ChatlogPipeline:
             # 只是不带上一个编出来的时间。计数格留着——它说的是"这条为什么只是普通消息"。
             report.unresolved += 1
 
+        # 「是不是我发的」这一格：**本人 wxid 对照最硬**——4.x 的 `isSelf` 在群里只认
+        # `Status==2`，上游自己在 `vendor/chatlog/internal/model/message_v4.go:60`
+        # 标了 FIXME「后续通过 UserName 判断…目前可能不准确」；侧车那个只当退路。
+        #
+        # **三态**：True／False／**None（"不知道"）**。侧车没说、也没验出本机账号时，
+        # 那一格就是 None —— 不知道就说不知道，不猜（与 `client._parse_is_self` 同一口径）。
+        is_self = message.is_self
+        account = self._account_username()
+        if account and message.sender_id:
+            is_self = message.sender_id == account
+
+        # 「谁说的」那一格：**人名**。侧车没给名字就查联系人名单；再查不到就**空着**——
+        # 空着是"没查到"，拿会话号顶上就是"编了一个名字"。
+        #
+        # 本人那条：**先写本机账号的昵称**（联系人名单里有就写真名），连它也查不到才写
+        # 「我」——那一格是确定的（就是本人），写「我」不是编名字，是"这一格没有名字可写"。
+        sender_label = (message.sender or "").strip()
+        if not sender_label and message.sender_id:
+            sender_label = roster.sender_label(message.sender_id, self._talker_name_map())
+        if is_self is True and not sender_label:
+            sender_label = "我"
+
         evidence = {
             "msg_id": message.msg_id,
             "talker": message.talker,
-            # Who said it — the board shows this ("谁说的"). Empty string means
-            # chatlog did not name the sender; we never substitute the talker id.
-            "sender": message.sender,
+            # 谁说的：**人名**（本机账号那条写它的昵称，查不到才写「我」）。空串＝没查到名字。
+            "sender": sender_label,
+            # 发件人的微信 id：身份证据，与名字**分开两格**（机器号归它，不许冒充人名）。
+            "sender_id": message.sender_id,
+            # 是不是本人发出：三态（True／False／None＝"侧车没说，也没验出来"）。
+            "is_self": is_self,
             "sent_at": message.sent_at,
         }
         if hit is not None:
