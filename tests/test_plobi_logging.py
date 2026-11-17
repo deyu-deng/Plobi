@@ -20,6 +20,29 @@ import plobi_logging
 from plobi_logging import RotatingFileHandler
 
 
+def _real_setup_logging(*args, **kwargs):
+    """真的那一个 ``setup_logging``（不是 conftest 包过的那一层）。
+
+    11-16 起 ``tests/conftest.py`` 把 ``plobi_logging.setup_logging`` 包了一层：
+    测试期间文件落点钉到会话临时目录（不让失败路径上的 WARNING 灌进主人真的
+    ``~/.plobi/logs/errors.log``）。**这一档测的就是 setup_logging 本身**——落点、
+    两个文件、两个级别、轮转、gateway 模式 ⇒ 落点断言必须对着真的那个家走，
+    否则整档的判据都被带偏（那 15 条红就是它）。
+
+    原函数还在包装层的闭包里（conftest 里叫 ``_real_setup_logging``）⇒ 取回来用；
+    哪天包装层改名了，这一档会当场报「取不到」，而不是悄悄测错东西。
+    """
+    fn = plobi_logging.setup_logging
+    real = getattr(fn, "__wrapped__", None)
+    if real is None:
+        # 包装层是 conftest 里定义的 ⇒ 它的 ``__globals__`` 就是 conftest 的命名空间
+        # ⇒ 原函数（conftest 里叫 ``_real_setup_logging``）就在那儿。
+        real = (fn.__globals__ or {}).get("_real_setup_logging")
+    assert real is not None, "取不到真的 setup_logging（conftest 的包装层变了？）"
+    return real(*args, **kwargs)
+
+
+
 @pytest.fixture(autouse=True)
 def _reset_logging_state():
     """Reset the module-level sentinel and clean up root logger handlers
@@ -69,12 +92,12 @@ class TestSetupLogging:
     """setup_logging() creates agent.log + errors.log with RotatingFileHandler."""
 
     def test_creates_log_directory(self, plobi_home):
-        log_dir = plobi_logging.setup_logging(plobi_home=plobi_home)
+        log_dir = _real_setup_logging(plobi_home=plobi_home)
         assert log_dir == plobi_home / "logs"
         assert log_dir.is_dir()
 
     def test_creates_agent_log_handler(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         root = logging.getLogger()
 
         agent_handlers = [
@@ -86,7 +109,7 @@ class TestSetupLogging:
         assert agent_handlers[0].level == logging.INFO
 
     def test_creates_errors_log_handler(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         root = logging.getLogger()
 
         error_handlers = [
@@ -98,8 +121,8 @@ class TestSetupLogging:
         assert error_handlers[0].level == logging.WARNING
 
     def test_idempotent_no_duplicate_handlers(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
-        plobi_logging.setup_logging(plobi_home=plobi_home)  # second call — should be no-op
+        _real_setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)  # second call — should be no-op
 
         root = logging.getLogger()
         agent_handlers = [
@@ -110,10 +133,10 @@ class TestSetupLogging:
         assert len(agent_handlers) == 1
 
     def test_force_reinitializes(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         # Force still won't add duplicate handlers because _add_rotating_handler
         # checks by resolved path.
-        plobi_logging.setup_logging(plobi_home=plobi_home, force=True)
+        _real_setup_logging(plobi_home=plobi_home, force=True)
 
         root = logging.getLogger()
         agent_handlers = [
@@ -124,7 +147,7 @@ class TestSetupLogging:
         assert len(agent_handlers) == 1
 
     def test_custom_log_level(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home, log_level="DEBUG")
+        _real_setup_logging(plobi_home=plobi_home, log_level="DEBUG")
 
         root = logging.getLogger()
         agent_handlers = [
@@ -135,7 +158,7 @@ class TestSetupLogging:
         assert agent_handlers[0].level == logging.DEBUG
 
     def test_custom_max_size_and_backup(self, plobi_home):
-        plobi_logging.setup_logging(
+        _real_setup_logging(
             plobi_home=plobi_home, max_size_mb=10, backup_count=5
         )
 
@@ -149,14 +172,14 @@ class TestSetupLogging:
         assert agent_handlers[0].backupCount == 5
 
     def test_suppresses_noisy_loggers(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
 
         assert logging.getLogger("openai").level >= logging.WARNING
         assert logging.getLogger("httpx").level >= logging.WARNING
         assert logging.getLogger("httpcore").level >= logging.WARNING
 
     def test_writes_to_agent_log(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
 
         test_logger = logging.getLogger("test_plobi_logging.write_test")
         test_logger.info("test message for agent.log")
@@ -170,7 +193,7 @@ class TestSetupLogging:
         assert "test message for agent.log" in content
 
     def test_warnings_appear_in_both_logs(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
 
         test_logger = logging.getLogger("test_plobi_logging.warning_test")
         test_logger.warning("this is a warning")
@@ -183,7 +206,7 @@ class TestSetupLogging:
         assert "this is a warning" in errors_log.read_text()
 
     def test_info_not_in_errors_log(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
 
         test_logger = logging.getLogger("test_plobi_logging.info_test")
         test_logger.info("info only message")
@@ -200,7 +223,7 @@ class TestSetupLogging:
         config = {"logging": {"level": "DEBUG", "max_size_mb": 2, "backup_count": 1}}
         (plobi_home / "config.yaml").write_text(yaml.dump(config))
 
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
 
         root = logging.getLogger()
         agent_handlers = [
@@ -218,7 +241,7 @@ class TestSetupLogging:
         config = {"logging": {"level": "DEBUG"}}
         (plobi_home / "config.yaml").write_text(yaml.dump(config))
 
-        plobi_logging.setup_logging(plobi_home=plobi_home, log_level="WARNING")
+        _real_setup_logging(plobi_home=plobi_home, log_level="WARNING")
 
         root = logging.getLogger()
         agent_handlers = [
@@ -230,7 +253,7 @@ class TestSetupLogging:
 
     def test_record_factory_installed(self, plobi_home):
         """The custom record factory injects session_tag on all records."""
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         factory = logging.getLogRecordFactory()
         assert getattr(factory, "_plobi_session_injector", False), (
             "Record factory should have _plobi_session_injector marker"
@@ -244,7 +267,7 @@ class TestGatewayMode:
     """setup_logging(mode='gateway') creates a filtered gateway.log."""
 
     def test_gateway_log_created(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
         root = logging.getLogger()
 
         gw_handlers = [
@@ -255,7 +278,7 @@ class TestGatewayMode:
         assert len(gw_handlers) == 1
 
     def test_gateway_log_not_created_in_cli_mode(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="cli")
+        _real_setup_logging(plobi_home=plobi_home, mode="cli")
         root = logging.getLogger()
 
         gw_handlers = [
@@ -267,8 +290,8 @@ class TestGatewayMode:
 
     def test_gateway_log_created_after_cli_init(self, plobi_home):
         """Gateway mode attaches gateway.log even after earlier CLI init."""
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="cli")
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="cli")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
 
         root = logging.getLogger()
         gw_handlers = [
@@ -288,9 +311,9 @@ class TestGatewayMode:
 
     def test_gateway_log_created_after_cli_init_without_duplicate_handlers(self, plobi_home):
         """Repeated gateway setup calls do not attach duplicate gateway handlers."""
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="cli")
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="cli")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
 
         root = logging.getLogger()
         gw_handlers = [
@@ -302,7 +325,7 @@ class TestGatewayMode:
 
     def test_gateway_log_receives_gateway_records(self, plobi_home):
         """gateway.log captures records from gateway.* loggers."""
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
 
         gw_logger = logging.getLogger("plugins.platforms.telegram.adapter")
         gw_logger.info("telegram connected")
@@ -315,7 +338,7 @@ class TestGatewayMode:
 
     def test_gateway_log_rejects_non_gateway_records(self, plobi_home):
         """gateway.log does NOT capture records from tools.*, agent.*, etc."""
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
 
         tool_logger = logging.getLogger("tools.terminal_tool")
         tool_logger.info("running command")
@@ -333,7 +356,7 @@ class TestGatewayMode:
 
     def test_agent_log_still_receives_all(self, plobi_home):
         """agent.log (catch-all) still receives gateway AND tool records."""
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
 
         gw_logger = logging.getLogger("gateway.run")
         file_logger = logging.getLogger("tools.file_tools")
@@ -359,7 +382,7 @@ class TestGuiMode:
     """setup_logging(mode='gui') creates a filtered gui.log."""
 
     def test_gui_log_created(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gui")
+        _real_setup_logging(plobi_home=plobi_home, mode="gui")
         root = logging.getLogger()
 
         gui_handlers = [
@@ -370,8 +393,8 @@ class TestGuiMode:
         assert len(gui_handlers) == 1
 
     def test_gui_log_created_after_cli_init(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="cli")
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gui")
+        _real_setup_logging(plobi_home=plobi_home, mode="cli")
+        _real_setup_logging(plobi_home=plobi_home, mode="gui")
 
         root = logging.getLogger()
         gui_handlers = [
@@ -382,7 +405,7 @@ class TestGuiMode:
         assert len(gui_handlers) == 1
 
     def test_gui_log_receives_only_gui_components(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gui")
+        _real_setup_logging(plobi_home=plobi_home, mode="gui")
 
         logging.getLogger("plobi_cli.web_server").info("dashboard online")
         logging.getLogger("tui_gateway.ws").info("ws connected")
@@ -403,7 +426,7 @@ class TestSessionContext:
 
     def test_session_tag_in_log_output(self, plobi_home):
         """When session context is set, log lines include [session_id]."""
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         plobi_logging.set_session_context("abc123")
 
         test_logger = logging.getLogger("test.session_tag")
@@ -418,7 +441,7 @@ class TestSessionContext:
 
     def test_no_session_tag_without_context(self, plobi_home):
         """Without session context, log lines have no session tag."""
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         plobi_logging.clear_session_context()
 
         test_logger = logging.getLogger("test.no_session")
@@ -437,7 +460,7 @@ class TestSessionContext:
 
     def test_clear_session_context(self, plobi_home):
         """After clearing, session tag disappears."""
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         plobi_logging.set_session_context("xyz789")
         plobi_logging.clear_session_context()
 
@@ -452,7 +475,7 @@ class TestSessionContext:
 
     def test_session_context_thread_isolated(self, plobi_home):
         """Session context is per-thread — one thread's context doesn't leak."""
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
 
         results = {}
 
@@ -619,7 +642,7 @@ class TestSetupVerboseLogging:
     """setup_verbose_logging() adds a DEBUG-level console handler."""
 
     def test_adds_stream_handler(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         plobi_logging.setup_verbose_logging()
 
         root = logging.getLogger()
@@ -633,7 +656,7 @@ class TestSetupVerboseLogging:
         assert verbose_handlers[0].level == logging.DEBUG
 
     def test_idempotent(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         plobi_logging.setup_verbose_logging()
         plobi_logging.setup_verbose_logging()  # second call
 
@@ -1048,7 +1071,7 @@ class TestExternalRotationRecovery:
         records leaking to agent.log) when something external rotates the
         file between setup_logging() calls.
         """
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
         gw_path = plobi_home / "logs" / "gateway.log"
         rotated = plobi_home / "logs" / "gateway.log.1"
 
@@ -1063,7 +1086,7 @@ class TestExternalRotationRecovery:
         # Caller (or some restart path) re-enters setup_logging.  This used
         # to silently no-op due to the per-path dedup check, leaving the
         # stale fd in place.
-        plobi_logging.setup_logging(plobi_home=plobi_home, mode="gateway")
+        _real_setup_logging(plobi_home=plobi_home, mode="gateway")
 
         logging.getLogger("gateway.run").info("line AFTER rotation")
         plobi_logging.flush_log_queue()
@@ -1152,7 +1175,7 @@ class TestAsyncQueueLogging:
     cross-process rotation lock (Windows event-loop-stall fix)."""
 
     def test_file_handlers_not_on_root(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         root = logging.getLogger()
         # Rotating file handlers live on the async listener, never on root.
         assert not any(isinstance(h, RotatingFileHandler) for h in root.handlers)
@@ -1168,14 +1191,14 @@ class TestAsyncQueueLogging:
         )
 
     def test_records_reach_file_through_queue(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         logging.getLogger("test_async.queue").info("through the queue")
         plobi_logging.flush_log_queue()
         agent_log = plobi_home / "logs" / "agent.log"
         assert "through the queue" in agent_log.read_text()
 
     def test_queue_preserves_per_handler_levels(self, plobi_home):
-        plobi_logging.setup_logging(plobi_home=plobi_home)
+        _real_setup_logging(plobi_home=plobi_home)
         logging.getLogger("test_async.levels").info("info-level line")
         plobi_logging.flush_log_queue()
         errors_log = plobi_home / "logs" / "errors.log"
