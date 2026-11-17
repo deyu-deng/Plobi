@@ -607,6 +607,60 @@ def _ensure_current_event_loop(request):
 _LIVE_SYSTEM_GUARD_BYPASS_MARK = "live_system_guard_bypass"
 
 
+def _win_liveness_probe(pid: int) -> None:
+    """Windows 上 ``os.kill(pid, 0)`` 的等价物：**只问，不发信号**。
+
+    POSIX 的 ``os.kill(pid, 0)`` 是纯探活：进程还在就成功返回，不在就抛
+    ``ProcessLookupError``。Windows 上不是这么回事——CPython 把 ``sig=0``
+    与 ``CTRL_C_EVENT`` 在 C 层撞成同一个值，走 ``GenerateConsoleCtrlEvent``，
+    等于**给共享控制台的每个进程发 Ctrl+C**（bpo-14484）。
+
+    这个函数的契约与 POSIX 那一支逐字对齐，让调用方的
+    ``except ProcessLookupError`` / ``except PermissionError`` 继续成立：
+
+    * 进程还在 → 返回 ``None``（与 POSIX 成功返回同形）；
+    * 进程没了 → 抛 ``ProcessLookupError``；
+    * 进程还在但我们碰不着 → 抛 ``PermissionError``。
+
+    判据用 ``OpenProcess`` + ``WaitForSingleObject``（``psutil.pid_exists``
+    在 Windows 上底层也是这一对），**不发任何信号**。
+    """
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    # 钉住返回类型：ctypes 默认 restype 是有符号 c_int，会把句柄弄成负数。
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+    kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+    kernel32.GetLastError.restype = ctypes.c_uint32
+    kernel32.CloseHandle.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    SYNCHRONIZE = 0x00100000
+    ERROR_ACCESS_DENIED = 5
+    ERROR_INVALID_PARAMETER = 87
+
+    handle = kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, int(pid)
+    )
+    if not handle:
+        err = int(kernel32.GetLastError())
+        if err == ERROR_ACCESS_DENIED:
+            # 进程在，但不属于我们 —— POSIX 那边是 PermissionError。
+            raise PermissionError(pid)
+        # 其余（含 87＝这个 pid 不存在）一律按「没了」算。
+        raise ProcessLookupError(pid)
+    try:
+        # 句柄拿到手就已经证明「这个 pid 存在」；它是不是僵尸 POSIX 那边也
+        # 算「还在」（僵尸仍占着 pid），所以这里不再区分。
+        kernel32.WaitForSingleObject(handle, 0)
+        return None
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def pytest_configure(config):  # noqa: D401 — pytest hook
     """Register markers used by hermetic conftest."""
     config.addinivalue_line(
@@ -697,12 +751,31 @@ def _live_system_guard(request, monkeypatch):
     real_kill = _os.kill
 
     def _guarded_kill(pid, sig, *args, **kwargs):
-        # Signal 0 is a pure liveness probe — it cannot terminate anything.
-        # psutil.pid_exists() uses os.kill(pid, 0) on POSIX, and probing a
-        # just-killed grandchild that was reparented to init (zombie with a
-        # foreign parent chain) must not trip the guard. Flaked in CI on
-        # test_entire_tree_is_sigkilled_not_just_parent.
+        # Signal 0 is a pure liveness probe on POSIX — it cannot terminate
+        # anything. psutil.pid_exists() uses os.kill(pid, 0) on POSIX, and
+        # probing a just-killed grandchild that was reparented to init
+        # (zombie with a foreign parent chain) must not trip the guard.
+        # Flaked in CI on test_entire_tree_is_sigkilled_not_just_parent.
         if int(sig) == 0:
+            # On Windows it is NOT a pure probe: sig=0 collides with
+            # CTRL_C_EVENT (bpo-14484) and GenerateConsoleCtrlEvent hands
+            # a Ctrl+C to EVERY process sharing the console — the pytest
+            # runner, the shell that launched it, and whatever else is
+            # attached. A test that "just checks whether a pid is alive"
+            # would therefore kill the whole suite mid-run.
+            #
+            # That is not hypothetical: it killed three full-suite runs on
+            # this machine. The runner died in
+            # ThreadPoolExecutor.shutdown → t.join() with a
+            # KeyboardInterrupt (exit 130) and every result collected so
+            # far was lost with it.
+            #
+            # So on Windows we answer the question the caller actually
+            # asked ("is this pid alive?") WITHOUT sending anything. The
+            # exception shape stays POSIX-shaped, so callers that branch
+            # on ProcessLookupError / PermissionError keep working.
+            if sys.platform == "win32":
+                return _win_liveness_probe(int(pid))
             return real_kill(pid, sig, *args, **kwargs)
         if _is_own_subtree(int(pid)):
             return real_kill(pid, sig, *args, **kwargs)

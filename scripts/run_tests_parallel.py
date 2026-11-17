@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -65,6 +66,59 @@ for _stream in (sys.stdout, sys.stderr):
 
 # Default test discovery roots.
 _DEFAULT_ROOTS = ["tests"]
+
+
+# ── Ctrl+C handling ─────────────────────────────────────────────────────────
+#
+# On Windows, a Ctrl+C is a CONSOLE-WIDE event: ``GenerateConsoleCtrlEvent``
+# hands it to every process attached to the console. A test that "just checks
+# whether a pid is alive" via ``os.kill(pid, 0)`` therefore Ctrl+C's the whole
+# console — the runner, the shell that launched it, and every sibling pytest
+# child — because on Windows ``sig=0`` collides with ``CTRL_C_EVENT`` at the C
+# level (bpo-14484).
+#
+# That is not theoretical: it killed three full-suite runs on this machine.
+# The runner died inside ``ThreadPoolExecutor.shutdown`` → ``t.join()`` with a
+# KeyboardInterrupt (exit 130) and the summary — plus every result collected
+# so far — was lost with it.
+#
+# Python's default SIGINT handler raises KeyboardInterrupt, which is exactly
+# the "lose everything" behaviour. We install our own: the first Ctrl+C stops
+# scheduling NEW files, the files already running are finished, and the
+# summary is still printed (with an explicit "interrupted" banner, so a
+# truncated run can never be mistaken for a complete one). A second Ctrl+C
+# means "stop now" and exits immediately.
+_interrupt_count = 0
+
+
+def _install_interrupt_handler() -> None:
+    """Take Ctrl+C away from KeyboardInterrupt and give it a useful meaning."""
+
+    def _handler(signum: int, frame) -> None:  # noqa: ARG001 — signal API
+        global _interrupt_count
+        _interrupt_count += 1
+        if _interrupt_count == 1:
+            print(
+                "\n[interrupt] Ctrl+C received — no new test files will be "
+                "started; the running ones are finished and the summary is "
+                "printed. Press Ctrl+C again to exit immediately.",
+                flush=True,
+            )
+        else:
+            print(
+                "\n[interrupt] Second Ctrl+C — exiting now (no summary).",
+                flush=True,
+            )
+            os._exit(130)
+
+    try:
+        signal.signal(signal.SIGINT, _handler)
+    except (ValueError, OSError):  # pragma: no cover — not the main thread
+        pass
+
+
+def _interrupted() -> bool:
+    return _interrupt_count > 0
 
 
 def _split_path_list(raw: str) -> List[str]:
@@ -629,6 +683,10 @@ def _slice_files(
 
 
 def main() -> int:
+    # Take Ctrl+C away from KeyboardInterrupt BEFORE anything else: a
+    # console-wide Ctrl+C (bpo-14484 — any sibling's os.kill(pid, 0) does it)
+    # must cost us the "stop and summarize" behaviour, not the whole run.
+    _install_interrupt_handler()
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -959,23 +1017,51 @@ def main() -> int:
             except Exception as disp_exc:  # noqa: BLE001
                 _report_internal_error("_print_progress", disp_exc)
 
-    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+    # Pool lifecycle: ``shutdown(wait=True)`` joins the worker threads, and
+    # those threads run each done-callback inline — so every result is
+    # recorded by the time we summarize. The executor swallows an exception
+    # raised inside a callback, which is why _on_done captures runner-side
+    # errors into internal_errors instead of letting one escape.
+    #
+    # We deliberately do NOT use the ``with`` block here: a Ctrl+C has to be
+    # able to drop the files that have not started yet.
+    # ``shutdown(cancel_futures=True)`` does that; the context manager's
+    # plain ``shutdown(wait=True)`` would run every one of them.
+    pool = ThreadPoolExecutor(max_workers=args.jobs)
+    try:
         for file in files:
+            if _interrupted():
+                print(
+                    f"[interrupt] stopping submission — {files_done} of "
+                    f"{len(files)} files have finished; the rest are skipped.",
+                    flush=True,
+                )
+                break
             t0 = time.monotonic()
             fut = pool.submit(
                 _run_one_file, file, pytest_passthrough, repo_root, args.file_timeout
             )
             fut.add_done_callback(lambda f, file=file, t0=t0: _on_done(file, t0, f))
-        # Pool shutdown (context-manager exit) joins the worker threads, which
-        # run each done-callback inline — so every result is recorded by the
-        # time we summarize. The executor swallows an exception raised inside a
-        # callback, which is why _on_done captures runner-side errors into
-        # internal_errors instead of letting one escape.
+    finally:
+        try:
+            pool.shutdown(wait=True, cancel_futures=_interrupted())
+        except TypeError:  # pragma: no cover — Python < 3.9
+            pool.shutdown(wait=True)
 
     elapsed = time.monotonic() - started
     print()
     pct = min(100, (tests_done / approx_total_tests * 100)) if approx_total_tests else 0
     print(f"=== Summary: {len(files)} files, {tests_passed} tests passed, {tests_failed} failed ({pct:.0f}% complete) in {elapsed:.1f}s ({args.jobs} workers) ===")
+
+    # A run that was cut short must never be mistaken for a complete one:
+    # the counts above only cover the files that FINISHED.
+    interrupted = _interrupted()
+    if interrupted:
+        print(
+            f"=== Interrupted: Ctrl+C was received — {files_done} of {len(files)} "
+            f"files ran. The counts above cover ONLY the files that finished; "
+            f"files that never started are not in them. ==="
+        )
 
     # Save durations for future --slice runs. Each slice writes its own
     # partial test_durations.json; a CI merge step joins them later.
@@ -1046,6 +1132,11 @@ def main() -> int:
             for file, s in no_tests_ran:
                 print(f"  {_format_file(file, repo_root)}")
 
+    if interrupted:
+        # 130 = 128 + SIGINT: the shell's own convention for "interrupted".
+        # The summary above is intact, so the run is not lost — but it is
+        # incomplete, and 130 says so.
+        return 130
     if failures or internal_errors:
         return 1
 

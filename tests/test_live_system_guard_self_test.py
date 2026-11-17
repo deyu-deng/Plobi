@@ -24,9 +24,20 @@ import sys
 
 import pytest
 
-# A guaranteed-foreign PID: PID 1 (init).  Owned by root, not us, and
-# always exists. A sane guard refuses to signal it.
-FOREIGN_PID = 1
+# A guaranteed-foreign PID. On POSIX that is PID 1 (init): owned by root,
+# not us, and always exists. Windows has no init — PID 1 is usually free
+# there (so the guard reads it as a stale pid and lets the call through,
+# which is correct: there is nothing to protect), while PID 4 is the
+# System process: always alive, never ours.
+FOREIGN_PID = 4 if sys.platform == "win32" else 1
+
+# The read-only systemctl probes need systemctl itself to exist. Windows
+# has no systemd, so there is nothing to let through there — the guard's
+# Windows behaviour is covered by the kill-primitive tests above.
+requires_systemctl = pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="needs systemd's systemctl on PATH",
+)
 
 
 # ──────────────────── kill primitives ─────────────────────────
@@ -47,6 +58,44 @@ def test_os_kill_blocks_negative_one():
 def test_os_killpg_blocks_foreign_pgid():
     with pytest.raises(RuntimeError, match="live-system guard"):
         os.killpg(FOREIGN_PID, signal.SIGTERM)
+
+
+# ──────────────────── the sig=0 probe ────────────────────
+#
+# ``os.kill(pid, 0)`` is "just asking whether the pid is alive". On POSIX
+# that is true. On Windows it is NOT: sig=0 collides with CTRL_C_EVENT at
+# the C level (bpo-14484), so the call becomes GenerateConsoleCtrlEvent —
+# a Ctrl+C for every process sharing the console, the pytest runner
+# included. That is what killed three full-suite runs here (the runner died
+# in ThreadPoolExecutor.shutdown → t.join() with a KeyboardInterrupt, exit
+# 130, and the summary plus every result collected so far was lost).
+#
+# The guard now answers that question WITHOUT sending anything. These two
+# tests are the reverse tests for it — the canary must fail if the guard is
+# weakened back to waving sig=0 through.
+
+
+def test_os_kill_zero_probe_answers_without_signalling():
+    """``os.kill(pid, 0)`` must answer, not signal.
+
+    A pid that does not exist proves which path ran: the raw Windows path
+    raises OSError(EINVAL) out of GenerateConsoleCtrlEvent, while the
+    guard's signal-free probe raises ProcessLookupError — the shape POSIX
+    has always had, so callers branching on it keep working.
+    """
+    dead_pid = 0x7FFFFFF0  # far above any live pid on Windows
+    with pytest.raises(ProcessLookupError):
+        os.kill(dead_pid, 0)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only helper")
+def test_win_liveness_probe_is_signal_free():
+    """The Windows stand-in answers for a live pid without sending anything."""
+    from tests.conftest import _win_liveness_probe
+
+    assert _win_liveness_probe(os.getpid()) is None
+    with pytest.raises(ProcessLookupError):
+        _win_liveness_probe(0x7FFFFFF0)
 
 
 # ──────────────────── subprocess regex bypasses ────────────────
@@ -145,6 +194,7 @@ def test_os_popen_systemctl_blocked():
 # ──────────────────── pty.spawn ────────────────────────────────
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="no pty module on Windows")
 def test_pty_spawn_systemctl_blocked():
     import pty
     with pytest.raises(RuntimeError, match="live-system guard"):
@@ -205,6 +255,7 @@ def test_subprocess_killall_plobi_blocked():
 # ──────────────────── pass-through cases (must NOT raise) ──────
 
 
+@requires_systemctl
 def test_systemctl_status_passes_through():
     """Read-only systemctl probes (status/show/list-units) are fine."""
     # Run with check=False so we don't fail on the gateway's exit code.
@@ -217,6 +268,7 @@ def test_systemctl_status_passes_through():
     assert r is not None  # Did not raise — the guard let it through.
 
 
+@requires_systemctl
 def test_systemctl_show_passes_through():
     r = subprocess.run(
         ["systemctl", "--user", "show", "plobi-gateway", "--no-pager"],
@@ -227,6 +279,7 @@ def test_systemctl_show_passes_through():
     assert r is not None
 
 
+@requires_systemctl
 def test_systemctl_list_units_passes_through():
     r = subprocess.run(
         ["systemctl", "--user", "list-units", "fake-not-real-unit*", "--no-pager"],
@@ -237,6 +290,7 @@ def test_systemctl_list_units_passes_through():
     assert r is not None
 
 
+@requires_systemctl
 def test_systemctl_unrelated_unit_passes_through():
     """systemctl restart of a non-plobi unit is allowed (we only protect plobi)."""
     # Use --dry-run so we don't actually try to restart anything; just
@@ -259,8 +313,14 @@ def test_kill_own_subtree_passes_through():
         os.kill(p.pid, signal.SIGTERM)
     finally:
         p.wait(timeout=2)
-    # SIGTERM = 15; subprocess returncode is -15 on POSIX.
-    assert p.returncode in {-signal.SIGTERM, 128 + int(signal.SIGTERM)}
+    # SIGTERM = 15; subprocess returncode is -15 on POSIX. On Windows
+    # os.kill(SIGTERM) is TerminateProcess, so the child exits with 15.
+    expected = (
+        {15}
+        if sys.platform == "win32"
+        else {-signal.SIGTERM, 128 + int(signal.SIGTERM)}
+    )
+    assert p.returncode in expected
 
 
 def test_subprocess_pkill_with_unrelated_pattern_passes_through():
@@ -329,9 +389,26 @@ def test_bypass_marker_disables_guard():
     """The bypass marker exists for tests that genuinely need real signal delivery
     (e.g. PTY tests SIGINTing their own child). Verify it works.
 
-    We use it harmlessly here by signaling our own PID 0 (own group) so we
+    On POSIX we use it harmlessly by signaling our own PID 0 (own group) so we
     don't actually kill anything — but the call goes through real os.kill.
+
+    On Windows that call is NOT harmless: ``os.kill(pid, 0)`` is not a
+    liveness probe there, it is ``GenerateConsoleCtrlEvent(0, pid)`` — a
+    Ctrl+C handed to EVERY process sharing the console (bpo-14484). Making
+    it here killed the pytest runner mid-suite (it died in
+    ``ThreadPoolExecutor.shutdown`` → ``t.join()`` with a KeyboardInterrupt,
+    exit 130) and took the whole run's summary with it. So on Windows we
+    assert the structural fact instead: with the bypass marker the guard
+    never installs its wrapper, so ``os.kill`` is still the native one.
     """
+    if sys.platform == "win32":
+        # The guard's wrapper is named ``_guarded_kill``; the native os.kill
+        # is the builtin ``kill``. Bypassed ⇒ native.
+        assert os.kill.__name__ == "kill", (
+            f"bypass marker did not restore the native os.kill "
+            f"(got {os.kill.__name__!r})"
+        )
+        return
     # With bypass, the guard yields without installing the monkeypatch,
     # so we get the real os.kill. Calling os.kill(os.getpid(), 0) just
     # checks that the PID exists — harmless.

@@ -166,16 +166,39 @@ cleanup_scratch_home() {
     # "/tmp/…" string, so telling it that is telling it nothing (裁定 79). The
     # leftover usually means something still holds a handle — a live gateway or a
     # test that spawned and forgot to reap.
+    #
+    # 「活管道喂 wc」在这台机器上是老坑：Git Bash 的 wc 读 MSYS 管道时会**空转
+    # 吃满一个核**（写端还没结束就轮询式读）；外层命令一被打断，wc 就成了没人
+    # 管的孤儿，一路空转到天荒地老（11-14 那六个孤儿就是它）。所以这里不把
+    # find 的输出喂进管道：**先落文件，再数**（wc 读文件，不读管道）。
+    LIST_FILE="$(mktemp "$TEMP_ROOT/plobi-leftovers.XXXXXX" 2>/dev/null || true)"
+    if [ -z "$LIST_FILE" ]; then
+      echo "warning: could not remove scratch test home" >&2
+      echo "           bash:   $SCRATCH_HOME" >&2
+      echo "           native: $(to_native "$SCRATCH_HOME")" >&2
+      echo "         leftovers under $(to_native "$TEMP_ROOT") (could not list them: no scratch list file)" >&2
+      echo "         safe to delete once nothing is running; it is inside the temp root, not the drive root." >&2
+      return 0
+    fi
+    find "$TEMP_ROOT" -maxdepth 1 -name 'plobi-tests-home.*' 2>/dev/null > "$LIST_FILE" || true
+    LEFT_COUNT=0
+    while IFS= read -r _LEFT; do LEFT_COUNT=$((LEFT_COUNT + 1)); done < "$LIST_FILE"
     echo "warning: could not remove scratch test home" >&2
     echo "           bash:   $SCRATCH_HOME" >&2
     echo "           native: $(to_native "$SCRATCH_HOME")" >&2
-    echo "         leftovers under $(to_native "$TEMP_ROOT"): $(find "$TEMP_ROOT" -maxdepth 1 -name 'plobi-tests-home.*' 2>/dev/null | wc -l | tr -d ' ') plobi-tests-home.* dir(s)" >&2
+    echo "         leftovers under $(to_native "$TEMP_ROOT"): $LEFT_COUNT plobi-tests-home.* dir(s)" >&2
     # Name what actually survived — that is the handle holder's address, and twice
     # now (10-09 11:2x, 12:5x) this warning fired with nobody able to say why.
     echo "         still present inside it:" >&2
-    find "$SCRATCH_HOME" -mindepth 1 -maxdepth 3 2>/dev/null | head -n 8 |
-      while read -r LEFT; do echo "           $(to_native "$LEFT")" >&2; done
+    find "$SCRATCH_HOME" -mindepth 1 -maxdepth 3 2>/dev/null > "$LIST_FILE" || true
+    SHOWN=0
+    while IFS= read -r LEFT; do
+      [ "$SHOWN" -ge 8 ] && break
+      echo "           $(to_native "$LEFT")" >&2
+      SHOWN=$((SHOWN + 1))
+    done < "$LIST_FILE"
     echo "         safe to delete once nothing is running; it is inside the temp root, not the drive root." >&2
+    rm -f "$LIST_FILE" 2>/dev/null || true
   fi
 }
 trap cleanup_scratch_home EXIT INT TERM HUP

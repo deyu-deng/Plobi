@@ -352,3 +352,83 @@ def test_runner_side_crash_exits_nonzero(tmp_path: Path) -> None:
     assert proc.returncode != 0, proc.stdout
     assert "runner error in _print_progress" in proc.stdout, proc.stdout
     assert "NOT trustworthy" in proc.stdout, proc.stdout
+
+
+# ── A console-wide Ctrl+C must cost the run its "stop", not its summary ─────
+#
+# On Windows, ``os.kill(pid, 0)`` is NOT a liveness probe: CPython maps
+# sig=0 to CTRL_C_EVENT (the two collide at the C level, bpo-14484) and
+# routes it through GenerateConsoleCtrlEvent — a Ctrl+C handed to every
+# process attached to the console. A test that "just checks whether a pid
+# is alive" therefore interrupts the whole console, the pytest runner
+# included.
+#
+# That killed three full-suite runs on this machine: the runner died in
+# ThreadPoolExecutor.shutdown → t.join() with a KeyboardInterrupt (exit
+# 130) and the summary — plus every result collected so far — was lost.
+#
+# The runner must now read Ctrl+C as "stop scheduling, finish what is
+# running, then summarize".
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows console broadcast")
+def test_runner_survives_console_ctrl_c(tmp_path: Path) -> None:
+    """A console-wide Ctrl+C stops the run but must not eat the summary."""
+    probe_dir = tmp_path / "probe"
+    probe_dir.mkdir()
+    probe = probe_dir / "test_ctrl_c_broadcast.py"
+    probe.write_text(
+        "import os\n"
+        "\n"
+        "\n"
+        "def test_broadcasts_ctrl_c_to_the_console():\n"
+        "    # Windows: os.kill(pid, 0) == GenerateConsoleCtrlEvent(0, pid)\n"
+        "    # => a Ctrl+C for every process sharing this console.\n"
+        "    os.kill(os.getpid(), 0)\n",
+        encoding="utf-8",
+    )
+
+    repo_root = Path(__file__).resolve().parent.parent
+    runner = repo_root / "scripts" / "run_tests_parallel.py"
+    out_path = tmp_path / "runner.out"
+
+    # CREATE_NEW_CONSOLE is the whole point: the broadcast reaches every
+    # process attached to the console, so the runner needs a console of its
+    # own — otherwise this test would Ctrl+C the pytest process running it.
+    with open(out_path, "w", encoding="utf-8") as out:
+        proc = subprocess.Popen(
+            [
+                sys.executable, str(runner),
+                "--paths", str(probe_dir),
+                "-j", "1",
+                "--file-timeout", "60",
+            ],
+            cwd=repo_root, stdout=out, stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+        proc.wait(timeout=180)
+
+    output = out_path.read_text(encoding="utf-8", errors="replace")
+    assert "KeyboardInterrupt" not in output, output
+    assert "=== Summary:" in output, output
+    assert "[interrupt]" in output, output
+    # 130 = 128 + SIGINT: interrupted, but the summary is intact.
+    assert proc.returncode == 130, (proc.returncode, output)
+
+
+def test_run_tests_sh_never_feeds_a_live_pipe_into_wc() -> None:
+    """``wc`` must not read a live pipe on this machine.
+
+    Git Bash's ``wc`` polls an MSYS pipe instead of blocking on it, so it
+    spins at 100% CPU while the writer is still running — and if the outer
+    command is killed, ``wc`` is orphaned and keeps spinning for hours (six
+    such orphans burned 32 CPU-hours on this box). Counting a FILE instead
+    of a pipe removes the whole class.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    script = (repo_root / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
+    for live_pipe in ("| wc", "| head", "| tail"):
+        assert live_pipe not in script, (
+            f"run_tests.sh still pipes into {live_pipe.strip()} — "
+            f"that is how the runaway wc orphans were born"
+        )
