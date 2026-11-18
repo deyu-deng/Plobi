@@ -40,6 +40,8 @@ import sys
 import time
 from pathlib import Path
 
+from agent.egress.winspawn import NO_WINDOW
+
 log = logging.getLogger("plobi.egress.proxy_guard")
 
 POLL_SECONDS = 5
@@ -134,6 +136,7 @@ def _engine_running() -> bool:
         out = subprocess.run(
             ["tasklist", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, timeout=10,
+            creationflags=NO_WINDOW,
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return False
@@ -224,6 +227,7 @@ def _kill_pid(pid: int) -> None:
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/F"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=NO_WINDOW,
         )
     except OSError:
         try:

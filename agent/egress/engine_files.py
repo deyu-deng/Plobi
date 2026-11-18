@@ -19,13 +19,22 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-#: What we pinned, measured on this box 2026-10-15 09:5x (`sha256` of the file actually in use,
+#: What we pinned, measured on this box 2026-11-17 (`sha256` of the file actually in use,
 #: `mihomo -v` for the version).  A digest we did not compute does not go in here.
+#:
+#: 11-17 之前这三行是错的：`BINARY` 记 `04f8d7fc…` / 61_276_672 B，`GEOSITE` 记 `5800301b…`，
+#: `GEOIP` 记 `605026f1…`，而盘上那份实测是 `beb98789…` / 61_219_840 B 和另外两个值——四件里
+#: 三项对不上，一份都没对过账。当天复核的办法是把它钉回发布源：官方 tag v1.19.32 的
+#: `mihomo-windows-amd64-v1.19.32.zip`（sha256 `1ac84e79…`, 22_492_402 B）解出的
+#: `mihomo-windows-amd64.exe` 与本机这份**字节相同**，wintun 同理（官方 zip 的 sha256
+#: `07c25618…` 与本机 dll `e5da8447…` 也对得上）。所以下面这两组值不是"看起来像"的常量，
+#: 是这次现读出来的。
 ENGINE_VERSION = "v1.19.32"
 
 
@@ -47,25 +56,29 @@ BINARY = Artifact(
     key="binary",
     basename="mihomo.exe",
     subdir="bin",
-    bytes=61_276_672,
-    sha256="04f8d7fc2b314771e1ecbf15951d59f0e1cb7914503c88cfb6972ff6a824e314",
-    note=f"Mihomo Meta {ENGINE_VERSION} windows amd64 with_gvisor；来源 URL 未核，不凭印象填",
+    bytes=61_219_840,
+    sha256="beb9878924d7bd38c67176b441ab5e668cc378bfe751c8dc8fef3eb5aaf566d5",
+    note=(f"Mihomo Meta {ENGINE_VERSION} windows amd64 with_gvisor；钉的是官方 tag v1.19.32 的"
+          "mihomo-windows-amd64-v1.19.32.zip（zip sha256 1ac84e79…，22_492_402 B）解出的那个 exe，"
+          "11-17 与本机文件比对字节相同"),
 )
 GEOSITE = Artifact(
     key="geosite",
     basename="GeoSite.dat",
     subdir="",
-    bytes=4_290_986,
-    sha256="5800301b7bb0a04607c660b5d456aeca2c2262849fb77e6c7962174829a6b0f4",
-    note="引擎按 geosite: 规则分类用；缺失时 mihomo 会自己打印 start download",
+    bytes=4_355_007,
+    sha256="ab2c9f7217c91632057a8bff7810a6eb02ce05a8be4342cf7319ec1970d29733",
+    note=("引擎按 geosite: 规则分类用；缺失时 mihomo 会自己打印 start download。"
+          "这份来自 MetaCubeX/meta-rules-dat 的滚动 `latest`——官方不保留历史 tag，钉不住某个"
+          "版本，所以这里钉的是「这次装进包里的那一份」，构建期由随包的 egress-manifest.json 覆盖"),
 )
 GEOIP = Artifact(
     key="geoip",
     basename="geoip.metadb",
     subdir="",
-    bytes=8_414_245,
-    sha256="605026f19311038efd07e7a006e49a59f1dec3e2b7d4e07b4ca47967fbb73e81",
-    note="geoip 规则用，同上",
+    bytes=8_406_197,
+    sha256="f1c738b02773b766afd7a67592d37d3b40ce6a900751660635e28db5f7b294bf",
+    note="geoip 规则用，同上：本机这份 + 随包清单覆盖，理由见 GEOSITE",
 )
 
 ARTIFACTS = (BINARY, GEOSITE, GEOIP)
@@ -265,6 +278,41 @@ def roots_note() -> str:
     return f"随包落点 {bundle}" if bundle else "没有随包落点（源码态或这版构建没带）"
 
 
+#: 构建期清单，落在随包目录根下（`apps/desktop/scripts/fetch-egress-assets.mjs` 下完件、
+#: 校验完 zip 之后写）。它记的是**这一包里实际装进去的那几个字节**：mihomo 与 wintun 能按发布
+#: tag 钉死（zip 的 sha256 由官方 release 给），但 GeoSite.dat / geoip.metadb 来自
+#: meta-rules-dat 的滚动 `latest`，官方不保留历史 tag，钉不住——只能钉"构建那天下到的那份"。
+#: 源码态没有清单，退回上面那组常量。
+MANIFEST_NAME = "egress-manifest.json"
+
+
+def manifest() -> dict[str, dict[str, Any]]:
+    """随包清单里逐文件的那几条，按文件名索引；读不到/不像样就当没有。"""
+    root = bundle_dir()
+    if root is None:
+        return {}
+    try:
+        data = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    entries = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    return {str(item["name"]): item for item in entries
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+            and isinstance(item.get("sha256"), str) and len(item["sha256"]) == 64}
+
+
+def expected(artifact: Artifact, *, overrides: dict[str, dict[str, Any]] | None = None) -> tuple[int, str]:
+    """(字节数, sha256) 期望值：随包清单优先，其次常量。清单里哪一项不像样，就整条不采信。"""
+    table = manifest() if overrides is None else overrides
+    entry = table.get(artifact.basename) or {}
+    size = entry.get("bytes")
+    sha = entry.get("sha256")
+    return (size if isinstance(size, int) and size > 0 else artifact.bytes,
+            sha if isinstance(sha, str) and len(sha) == 64 else artifact.sha256)
+
+
 def _digest(path: Path, limit: int = 64 * 1024 * 1024) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -288,8 +336,10 @@ def locate(artifact: Artifact, *, home: str | Path | None = None, workdir: str |
     the panel/tray loop slower than the thing it reports on.
     """
     path = artifact_path(artifact, home=home, workdir=workdir)
+    size, sha = expected(artifact)
     out: dict[str, Any] = {"key": artifact.key, "path": str(path), "exists": path.is_file(),
-                           "expected_bytes": artifact.bytes, "human": artifact.human, "sha256": ""}
+                           "expected_bytes": size, "expected_sha256": sha,
+                           "human": f"{size / 1024 / 1024:.1f} MB", "sha256": ""}
     if out["exists"]:
         out["bytes"] = path.stat().st_size
         if verify:
@@ -298,7 +348,14 @@ def locate(artifact: Artifact, *, home: str | Path | None = None, workdir: str |
 
 
 def match(entry: dict[str, Any], artifact: Artifact) -> bool:
-    return bool(entry["exists"]) and (entry.get("sha256") in ("", artifact.sha256))
+    """在不在，以及（算过指纹时）是不是清单/常量里那一个。"""
+    if not entry["exists"]:
+        return False
+    actual = entry.get("sha256") or ""
+    if not actual:
+        # verify=False 只回答"在不在"——状态轮询不去哈希 60MB，就没资格判"对不对"。
+        return True
+    return actual == (entry.get("expected_sha256") or artifact.sha256)
 
 
 def default_binary(*, home: str | Path | None = None) -> str:

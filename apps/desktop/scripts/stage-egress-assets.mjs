@@ -134,5 +134,19 @@ export default async function stageEgressAssets({ srcDir = process.env.PLOBI_EGR
     log(`[egress-assets] 这版没带：${absent.join('、')}（已在包内留 MISSING.txt，运行期会照实报）`)
   }
 
+  // 构建期清单：`fetch-egress-assets.mjs` 下完件之后把「这一包里实际装进去的字节」写一份，
+  // 运行期 `engine_files.expected()` 用它盖掉常量钉值——mihomo/wintun 能按 tag 钉死，
+  // GeoSite.dat / geoip.metadb 只有滚动的 latest，钉不住，只能钉"这天下的这一份"。
+  // 清单缺席（源码态、手工投料）不是缺件：运行期退回常量钉值。
+  const srcManifest = srcDir ? path.join(srcDir, 'egress-manifest.json') : ''
+
+  if (srcManifest && fs.existsSync(srcManifest)) {
+    const destManifest = path.join(destDir, 'egress-manifest.json')
+
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.copyFileSync(srcManifest, destManifest)
+    log(`[egress-assets] 随包清单：${destManifest}`)
+  }
+
   return plan
 }

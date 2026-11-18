@@ -23,6 +23,7 @@ import sys
 from typing import Any, Optional
 
 from agent.egress.rules import Table
+from agent.egress.winspawn import NO_WINDOW
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ def _ps_objects(script: str) -> tuple[list[dict[str, Any]], str]:
             ["powershell", "-NoProfile", "-Command", script],
             capture_output=True,
             timeout=PROBE_TIMEOUT,
+            creationflags=NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return [], f"{type(exc).__name__}: {exc}"

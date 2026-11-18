@@ -175,9 +175,12 @@ export default async function beforePack(context) {
     console.warn(`[before-pack] build junk scrub did not run (${err.message}); continuing`)
   }
 
-  // 随包分发（用户 10-12 拍「随包全带」，裁定 134 规定不进仓）：从 PLOBI_EGRESS_SRC 投放三件套。
-  // 缺源不炸构建——但会在包里留 MISSING.txt，运行期的 `plobi network status` 照实说"这版没带"，
-  // 而不是让人从一台挂住的引擎现场倒推。
+  // 随包分发（用户 10-12 拍「随包全带」，裁定 134 规定不进仓）：从 PLOBI_EGRESS_SRC 投放四件套。
+  // 缺件在**发版构建**里是硬失败（11-17 定的）：0.3.2 就是从下面这条 warn 出去的——缺源只警告，
+  // 包里留了张 MISSING.txt，用户装上之后开关报 `engine binary " " is not on disk`。
+  // 「缺件只警告」只在开发构建里成立（本地没投料是常态），发版路径一件都不许漏。
+  const releaseBuild = process.env.PLOBI_RELEASE_BUILD === '1'
+
   try {
     const srcDir = resolveEgressSrc(projectDir)
     const plan = await stageEgressAssets({ srcDir, destDir: path.join(projectDir, 'build', 'egress') })
@@ -187,14 +190,24 @@ export default async function beforePack(context) {
     } else {
       // 缺源时把「从哪儿找起、找到哪一层」一起打出来。11-11 那次包里四项全缺，日志里
       // 只有「源：未找到」一句，等于要人从零复现一遍 hook 的推导过程 —— 这行成本最低。
-      console.warn(
+      const report =
         `[before-pack] 随包仍缺路由引擎：${plan.missing.join('、')}\n` +
-          `  找过的起点：${projectDir}\n` +
-          `  找过的地方：${describeEgressCandidates(projectDir).join('、')}\n` +
-          `  想指定源：PLOBI_EGRESS_SRC=<含 ${EGRESS_ASSETS.map((asset) => asset.name).join('/')} 的目录>`
-      )
+        `  找过的起点：${projectDir}\n` +
+        `  找过的地方：${describeEgressCandidates(projectDir).join('、')}\n` +
+        `  想指定源：PLOBI_EGRESS_SRC=<含 ${EGRESS_ASSETS.map((asset) => asset.name).join('/')} 的目录>`
+
+      if (releaseBuild) {
+        throw new Error(`${report}\n  PLOBI_RELEASE_BUILD=1：发版构建不许出缺件的包。`)
+      }
+
+      console.warn(report)
     }
   } catch (err) {
+    if (releaseBuild) {
+      // 发版构建里 staging 根本没跑成（权限、路径、脚本自身报错）与「缺件」同级：都不许出包。
+      throw err instanceof Error ? err : new Error(String(err))
+    }
+
     console.warn(`[before-pack] egress asset staging did not run (${err.message}); the app will report the engine as not shipped`)
   }
   try {

@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from agent.egress.rules import Table, load_table
+from agent.egress.winspawn import NO_WINDOW, hidden
 
 log = logging.getLogger(__name__)
 
@@ -90,9 +91,16 @@ def _start_guard(home: str | Path | None = None) -> bool:
         # (egress/egress) and split the pid/backup/log into the wrong directory.
         if home is not None:
             args += ["--home", str(home)]
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-        )
+        # ``CREATE_NO_WINDOW`` (not ``DETACHED_PROCESS``) on the shim, and the
+        # difference matters — measured 11-17.  ``DETACHED_PROCESS`` gives cmd *no*
+        # console at all, and then `start /b` (which means "do not create a window,
+        # inherit mine") has nothing to inherit, so Windows gives the guard a fresh
+        # **visible** console: a black window that stays for the guard's whole life.
+        # ``CREATE_NO_WINDOW`` instead gives cmd a console that exists but is hidden;
+        # `start /b` then hands that hidden console to the guard, and nothing shows.
+        # Orphanhood is unaffected — that comes from the shim exiting, not from
+        # ``DETACHED_PROCESS``.
+        flags = hidden(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
         # `cmd /c start "" /b <exe> <args>`: the shim exits at once, orphaning the
         # guard. `""` is `start`'s (empty) window title, not an argument.
         subprocess.Popen(
@@ -133,6 +141,7 @@ def _stop_guard(home: str | Path | None = None) -> None:
             subprocess.run(
                 ["taskkill", "/PID", str(old), "/F"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=NO_WINDOW,
             )
         except OSError:
             pass

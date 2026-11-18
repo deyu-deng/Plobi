@@ -40,6 +40,7 @@ import yaml
 from agent.egress.mihomo_config import CONFIG_BASENAME, compile_config, verify_with_binary
 from agent.egress import engine_files
 from agent.egress.rules import Table, load_table
+from agent.egress.winspawn import NO_WINDOW, hidden
 
 #: The known answer.  ``generate_204`` returns 204 with an empty body only if the
 #: request actually left the machine; a captive portal or a dead proxy gives
@@ -495,7 +496,22 @@ def _spawn(snap: _Snapshot, log_path: Path) -> tuple[int, float]:
     flags = 0
     kwargs: dict[str, Any] = {}
     if os.name == "nt":
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        # `CREATE_NO_WINDOW` is belt-and-braces next to `DETACHED_PROCESS` (measured
+        # 11-17): mihomo is a **console-subsystem** binary (PE Subsystem=3), and the
+        # backend that spawns it is itself console-less under Electron's
+        # `windowsHide`, so any path where the detach flag fails to keep the console
+        # away shows the user a black window.  Both flags mean "no visible console",
+        # so setting them together cannot regress the current behaviour — it only
+        # removes the dependency on which one Windows honours first.
+        #
+        # Do not read that as "CREATE_NO_WINDOW is doing the work here": MSDN says it
+        # is **ignored** when combined with DETACHED_PROCESS.  On this path the detach
+        # is what keeps the window away (and the pid really has no conhost child,
+        # measured 11-17).  The flag stays as a guard for whoever later drops the
+        # detach — that is the change that would put a black window back on screen.
+        flags = hidden(
+            subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0)
+        )
     else:
         kwargs["start_new_session"] = True
     log = open(log_path, "ab")  # noqa: SIM115 - the child keeps the handle, we close ours below
@@ -628,9 +644,17 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
         return current
 
     if not snap.binary or not os.path.isfile(snap.binary):
-        return replace(current, state=FAILED,
-                       detail=f"cannot start: engine binary '{snap.binary}' is not on disk "
-                              f"(shipping it is its own decision)")
+        # 这句话是给用户看的，不是给写代码的人看的。0.3.2 的安装包漏了四件套，界面上
+        # 显示的是 `engine binary " " is not on disk`——一个空字符串加一句英文自嘲，
+        # 用户既不知道"是什么没带"，也不知道"该怎么办"。现在说清三件事：缺的是什么、
+        # 期望在哪儿、怎么补。
+        where = snap.binary or "（这一版没有随包带引擎，连路径都是空的）"
+        return replace(
+            current, state=FAILED,
+            detail=("这版没带路由引擎，所以开关打不开：找不到 mihomo.exe。"
+                    f"期望位置：{where}。"
+                    "换一个带到引擎的版本，或者手动把 mihomo.exe 放进 egress 目录的 bin 子目录再试。"),
+        )
     if snap.workdir is None or snap.config_path is None:
         return replace(current, state=FAILED, detail=",".join(snap.notes) or "no workdir resolved")
 
@@ -827,6 +851,7 @@ def restrict_file_acl(path: Path) -> tuple[bool, str]:
             ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
             capture_output=True,
             timeout=20,
+            creationflags=NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"icacls 没跑起来：{type(exc).__name__}: {exc}"

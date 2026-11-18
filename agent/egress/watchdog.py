@@ -29,6 +29,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from agent.egress.winspawn import hidden
+
 log = logging.getLogger(__name__)
 
 RECORD_BASENAME = "watchdog.json"
@@ -309,7 +311,6 @@ def start(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS)
     kwargs: dict[str, Any] = {}
     spawn_cmd = cmd
     if os.name == "nt":
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
         # `DETACHED_PROCESS` alone is **not** enough on Windows (measured 11-04): it
         # detaches the console, not the parent/child link, so the worker is still a
         # descendant of the backend — and the desktop's `taskkill /T /F` on quit reaps
@@ -322,6 +323,17 @@ def start(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS)
         # parent is then a *dead* PID, which the tree walk cannot reach.  The worker
         # registers its own pid in the record, so the shim's pid is never mistaken
         # for it.
+        #
+        # ``CREATE_NO_WINDOW``, not ``DETACHED_PROCESS``, for the shim (measured
+        # 11-17, this was the black window the user kept seeing): with
+        # ``DETACHED_PROCESS`` cmd gets *no* console, so `start /b` — "do not create a
+        # window, inherit mine" — has nothing to inherit and Windows hands the worker
+        # a brand new **visible** console.  The worker is a long-lived supervisor
+        # ticking every 20 s, so that window did not flash, it stayed parked on the
+        # desktop.  ``CREATE_NO_WINDOW`` gives cmd a console that exists but is
+        # hidden; `start /b` passes that one on and nothing shows.  Orphanhood is
+        # unchanged — the shim exiting is what breaks the parent link.
+        flags = hidden(subprocess.CREATE_NEW_PROCESS_GROUP)
         spawn_cmd = ["cmd.exe", "/c", "start", "", "/b", *cmd]
     else:
         kwargs["start_new_session"] = True

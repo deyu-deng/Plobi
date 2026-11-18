@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 import yaml
 
 from agent.egress.rules import EgressConfigError, Node, Table
+from agent.egress.winspawn import NO_WINDOW
 
 _SCHEME_TO_TYPE = {"http": "http", "https": "http", "socks5": "socks5", "socks5h": "socks5h"}
 _DEFAULT_PORT = {"http": 80, "socks5": 1080, "socks5h": 1080}
@@ -358,6 +359,9 @@ def verify_with_binary(binary: str, config_path: str) -> tuple[str, str]:
             capture_output=True,
             text=True,
             timeout=60,
+            #: 别让 `mihomo -t` 在用户桌面上闪一个黑窗：backend 没有控制台，
+            #: 而 capture_output 只挪走输出，不阻止系统给它分配控制台窗口。
+            creationflags=NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return "UNVERIFIED", f"could not run '{path}': {exc}"

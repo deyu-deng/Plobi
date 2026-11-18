@@ -165,9 +165,18 @@ def test_switched_off_never_spawns(monkeypatch, tmp_path, fake_binary):
 
 
 def test_a_missing_binary_is_named_not_downloaded(inert, tmp_path):
+    """The message has to say which file is missing, where we looked, and what to do next.
+
+    It used to read ``engine binary '...' is not on disk (shipping it is its own
+    decision)`` -- true, but written for whoever wrote the code, not for the person
+    who just paid for a build that shipped without the engine (0.3.2 did exactly
+    that).  Asserted on the three things a user needs, not on the wording around them.
+    """
     rep = ensure(_table(binary="D:/nowhere/mihomo.exe"), home=tmp_path, wait_s=0)
     assert rep.state == FAILED
-    assert "not on disk" in rep.detail
+    assert "mihomo.exe" in rep.detail
+    assert "D:/nowhere/mihomo.exe" in rep.detail
+    assert "放进 egress 目录的 bin 子目录" in rep.detail
     assert inert["spawn"] == []
 
 
