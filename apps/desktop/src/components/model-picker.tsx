@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { requestModelOptions } from '@/lib/model-options'
-import { currentPickerSelection, displayModelName } from '@/lib/model-status-label'
+import { currentPickerSelection, displayModelName, providerIdentity } from '@/lib/model-status-label'
 import { remainingPhrase, unavailableOf } from '@/lib/model-unavailable'
 import { normalize } from '@/lib/text'
 import { quotaProviders } from '@/store/desktop-quotas'
@@ -78,7 +78,7 @@ export function ModelPickerDialog({
     : null
 
   const selectModel = (provider: ModelOptionProvider, model: string) => {
-    onSelect({ provider: provider.slug, model })
+    onSelect({ provider: providerIdentity(provider, model), model })
     onOpenChange(false)
   }
 
@@ -224,7 +224,9 @@ function ModelResults({
               </div>
             )}
             {models.map(model => {
-              const isCurrent = model === currentModel && provider.slug === currentProvider
+              const isCurrent =
+                model === currentModel && providerIdentity(provider, model) === currentProvider
+
               const price = provider.pricing?.[model]
               const locked = unavailable.has(model)
 

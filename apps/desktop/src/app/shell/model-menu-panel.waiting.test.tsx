@@ -138,9 +138,11 @@ describe('ModelMenuPanel — a model that is only waiting', () => {
     // The click lands on the row's own trigger — the text span is inside it.
     fireEvent.click(trigger)
     await waitFor(() => {
-      // The pick keeps the hub's slug (that is the routing identity) and the
-      // joined id the catalog speaks.
-      expect(onSelectModel).toHaveBeenCalledWith({ model: 'opencode_api/big-pickle', provider: 'bezel' })
+      // The pick carries the **software name** (`opencode_api`) and the joined id
+      // the catalog speaks — NOT the hub's internal slug: the gateway name stays
+      // out of the user's config (WP-PROVIDER-SOFTWARE-IDENTITY, 主人 11-17 18:5x：
+      // 「bezel 是内部名称……provider 下面适配的是一个一个软件名，而不是 bezel」).
+      expect(onSelectModel).toHaveBeenCalledWith({ model: 'opencode_api/big-pickle', provider: 'opencode_api' })
     })
   })
 })

@@ -1128,6 +1128,73 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("qwen-oauth",     "Qwen OAuth (Portal)",      "Qwen OAuth (Reuses local Qwen CLI login)"),
 ]
 
+#: 本机额度网关（``bezel``）适配的**软件**：id → 品牌名。
+#:
+#: id 就是 hub 名册里的 app id，也正是**模型 id 的前缀**（``workbuddy/hy4free`` ⇒
+#: ``workbuddy``）—— 「哪一家软件在服务这个模型」这件事，数据里本来就有。
+#:
+#: 这一张表是**屏上与配置里那个名字**的真源：网关自己的机器标识（``bezel``）是
+#: **内部名**，不许写进用户的配置、不许上屏（主人 11-17 18:5x：「bezel 是内部名称……
+#: provider 下面适配的是一个一个软件名，而不是 bezel」）。
+HUB_SOFTWARE: dict[str, str] = {
+    "workbuddy": "WorkBuddy",
+    "workbuddy_api": "WorkBuddy (API)",
+    "antigravity": "Antigravity",
+    "cursor": "Cursor",
+    "qoder": "Qoder",
+    "qoder_intl": "Qoder (International)",
+    "opencode_api": "OpenCode Zen",
+    "kiro_cli": "Kiro Code",
+    "cline_cli": "Cline",
+}
+
+#: 模型 id 的前缀落在这一组里 ⇒ 这个 provider 名是**软件名**，不是机器名。
+HUB_SOFTWARE_IDS = frozenset(HUB_SOFTWARE)
+
+#: 网关那几条腿的**传输**：软件名 → 网关自己的机器标识。
+#:
+#: 网关的机器标识（``bezel``）是**内部名** —— 它不进用户的配置、不上屏，只留在这张
+#: 映射与日志／doctor 行 id 里。配置里写的是**软件名**（``workbuddy``），解析时经这张
+#: 表换到传输（``bezel``）那一腿。
+#:
+#: **为什么软件名不进 `CANONICAL_PROVIDERS`、也不进全局别名表**：那两张表是
+#: 「可配置的 provider」的宇宙，而网关那几行**不是**一家一家可单独配置的 provider（它们
+#: 共用网关那一份凭据，屏上由 `quotaProviders` 一行一个软件地克隆出来）。软件名一旦
+#: 进了那张表，就会被当成「另一个 provider」⇒ ① 抢走 env 归属（`/api/env` 的
+#: provider 归属会认成软件名）、② 破掉 GUI⇄CLI 的 parity 契约（规范表里有的东西
+#: 必须在桌面 Providers 页可配置）。两条都是既有契约（见
+#: `tests/plobi_cli/test_provider_parity.py` 与
+#: `tests/plobi_cli/test_bezel_provider_plugin.py::test_bezel_declares_no_aliases`）。
+HUB_TRANSPORT: dict[str, str] = {slug: "bezel" for slug in HUB_SOFTWARE}
+
+#: 传输那一侧用到的机器标识集合（配置里那个 provider 名换到传输时认它）。
+HUB_TRANSPORTS = frozenset(HUB_TRANSPORT.values())
+
+
+def transport_for_software(name: str) -> str:
+    """配置里那个 provider 名 ⇒ 传输用的机器标识。
+
+    软件名（``workbuddy``）⇒ 网关（``bezel``）；别的名字原样返回。
+    """
+    key = (name or "").strip().lower()
+    return HUB_TRANSPORT.get(key, key)
+
+
+def config_provider_name(provider_id: str, model_id: str = "") -> str:
+    """配置里那个 provider 叫什么。
+
+    网关那几行：写**软件名**（``workbuddy``）——机器标识是内部名，不许进用户的配置
+    （主人 11-17 18:5x）。软件名从**模型 id 的前缀**取（``workbuddy/hy4free`` ⇒
+    ``workbuddy``）：「哪一家软件在服务这个模型」数据里本来就有。
+
+    别家 provider：写自己的 slug。
+    """
+    pid = (provider_id or "").strip().lower()
+    prefix = (model_id or "").strip().split("/", 1)[0].strip().lower()
+    if pid in HUB_TRANSPORTS and prefix in HUB_SOFTWARE_IDS:
+        return prefix
+    return pid
+
 # Auto-extend CANONICAL_PROVIDERS with any provider registered in providers/
 # that is not already in the list above.  Adding plugins/model-providers/<name>/
 # is sufficient to expose a new provider in the model picker, /model, and all

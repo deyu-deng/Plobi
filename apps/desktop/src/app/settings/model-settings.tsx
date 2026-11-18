@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { AlertTriangle, Loader2 } from '@/lib/icons'
-import { displayModelName } from '@/lib/model-status-label'
+import { displayModelName, providerIdentity } from '@/lib/model-status-label'
 import { cn } from '@/lib/utils'
 import {
   getAuxiliaryModels,
@@ -41,8 +41,8 @@ import { humanizeProviderRows } from '../shell/model-provider-label'
 
 import { CONTROL_TEXT } from './constants'
 import { getNested, setNested } from './helpers'
-import { mainProviderRows } from './provider-rows'
 import { ListRow, Pill, SettingsGroup } from './primitives'
+import { mainProviderRows } from './provider-rows'
 
 // Skeleton mirror of the Model settings DOM so the page keeps its shape while
 // the provider/model catalog loads, instead of collapsing to a centered
@@ -250,10 +250,12 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
         if (prev && rows.some(row => (row.ui_key ?? row.slug) === prev)) {
           return prev
         }
+
         const match =
           rows.find(
             row => row.slug === modelInfo.provider && (row.models ?? []).includes(modelInfo.model)
           ) ?? rows.find(row => row.slug === modelInfo.provider)
+
         return match?.ui_key ?? match?.slug ?? modelInfo.provider
       })
       setSelectedModel(prev => prev || modelInfo.model)
@@ -298,12 +300,14 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
 
   const providerOptions = providers.length ? providers : NO_PROVIDERS
   const connectedApps = useStore($connectedDesktopApps)
+
   const mainProviderOptions = useMemo(
     () => mainProviderRows(providers.length ? providers : []),
     // `connectedApps` is read inside quotaProviders; including it here makes the
     // rows recompute when the shell pushes a fresh quota frame.
     [providers, connectedApps]
   )
+
   // Auxiliary slots (MoA references / aggregators) must only offer legs the
   // picker can actually serve: a provider the switch turned off, or one the
   // gateway marks `selectable:false`, must not appear as a dead choice.
@@ -321,9 +325,11 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     if (!selectedProvider) {
       return
     }
+
     if (mainProviderOptions.some(row => (row.ui_key ?? row.slug) === selectedProvider)) {
       return
     }
+
     const match =
       mainProviderOptions.find(row => row.slug === selectedProvider) ??
       (mainModel
@@ -331,6 +337,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             row => row.slug === mainModel.provider && (row.models ?? []).includes(mainModel.model)
           )
         : undefined)
+
     if (match) {
       setSelectedProvider(match.ui_key ?? match.slug)
     }
@@ -572,7 +579,11 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     setError('')
 
     try {
-      const providerForSave = selectedProviderRow?.slug ?? selectedProvider
+      // 网关那几行一行一个软件 ⇒ 存的是**软件名**（`workbuddy`…），不是网关的机器标识
+      // （主人 11-17 18:5x：bezel 是内部名，不许进用户的配置）。
+      const providerForSave =
+        (selectedProviderRow ? providerIdentity(selectedProviderRow) : '') || selectedProvider
+
       const result = await setModelAssignment({
         model: selectedModel,
         provider: providerForSave,

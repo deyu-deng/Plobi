@@ -17,12 +17,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useI18n } from '@/i18n'
 import { requestModelOptions } from '@/lib/model-options'
-import {
-  currentPickerSelection,
-  displayModelName,
-  modelDisplayParts,
-  reasoningEffortLabel
-} from '@/lib/model-status-label'
+import { currentPickerSelection, displayModelName, modelDisplayParts, providerIdentity, reasoningEffortLabel } from '@/lib/model-status-label'
 import { remainingPhrase, unavailableOf } from '@/lib/model-unavailable'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
@@ -147,6 +142,12 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   // next session.create (see selectModel). The default lives in Settings → Model.
   const switchTo = (model: string, provider: string) => onSelectModel({ model, provider })
 
+  // 写侧只此一处算身份：选中的那一行交出去的是**软件名**（`workbuddy`…），不是网关
+  // 的机器标识（`bezel`）。两处切换——行本身、hover 编辑里的 fast 兄弟——都走它，
+  // 所以身份这件事只有一个地方能算错。
+  const switchToIdentity = (model: string, providerRow: ModelOptionProvider) =>
+    switchTo(model, providerIdentity(providerRow, model))
+
   // Explicit "Refresh Models": re-fetch the catalog with refresh:true so the
   // backend busts its 1h provider-model disk cache and re-pulls each provider's
   // live list. Fixes live-only models (e.g. OpenCode Zen free tier) vanishing
@@ -185,7 +186,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
     const variantFast = !(caps?.fast ?? false) && !!family.fastId
     const targetId = variantFast && preset.fast === true ? family.fastId! : family.id
 
-    if ((await switchTo(targetId, provider.slug)) === false) {
+    if ((await switchToIdentity(targetId, provider)) === false) {
       return
     }
 
@@ -269,7 +270,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                 // The active id may be the base or its -fast sibling; either
                 // way this one family row represents both.
                 const activeId =
-                  group.provider.slug === optionsProvider &&
+                  providerIdentity(group.provider, family.id) === optionsProvider &&
                   (optionsModel === family.id || optionsModel === family.fastId)
                     ? optionsModel
                     : null
@@ -391,7 +392,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                           })
                         }
                       }}
-                      onSelectModel={nextModel => switchTo(nextModel, group.provider.slug)}
+                      onSelectModel={nextModel => switchToIdentity(nextModel, group.provider)}
                       provider={group.provider.slug}
                       reasoning={caps?.reasoning ?? true}
                       requestGateway={requestGateway}
@@ -500,7 +501,7 @@ function groupModels(
     // stable curated order (filter `allFamilies`, never reorder), so selecting
     // a model can't shuffle the list.
     const activeId =
-      provider.slug === current.provider && current.model
+      providerIdentity(provider, current.model) === current.provider && current.model
         ? allFamilies.find(family => family.id === current.model || family.fastId === current.model)?.id
         : undefined
 

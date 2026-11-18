@@ -253,7 +253,12 @@ export interface ModelOptionProvider {
   slug: string
   /** UI-only stable key when several display groups share one routing slug
    *  (e.g. the local quota hub exposes WorkBuddy and Antigravity under the
-   *  same `bezel` route). Never send this to the backend; use `slug`. */
+   *  same `bezel` route). It also carries that row's **identity**: the segment
+   *  after `::` is the software name (`bezel::workbuddy` ⇒ `workbuddy`).
+   *  Never send this to the backend — send the **identity**
+   *  (`providerIdentity()`), not the routing slug: the gateway's slug is an
+   *  internal machine id and must not reach the user's config
+   *  (WP-PROVIDER-SOFTWARE-IDENTITY, 主人 11-17 18:5x). */
   ui_key?: string
   total_models?: number
   warning?: string

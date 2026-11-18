@@ -1275,6 +1275,15 @@ def _normalize_main_model_assignment(provider: str, model: str) -> tuple[str, st
     model_in = (model or "").strip()
     canonical = normalize_provider(prov_in)
 
+    # 网关那几行：配置里那个 provider 是**软件名**（`workbuddy`），机器标识是内部名。
+    # 软件名不是「可配置的 provider」⇒ 不在 `_KNOWN_PROVIDER_NAMES` 里 ⇒ 下面那条
+    # 「不认识就回落 openrouter」的分支会把它改写成 openrouter（模型 id 带 `/` ⇒ 正好
+    # 命中那条）。所以先认下它：**原样落盘**，由解析侧换到网关那条腿。
+    from plobi_cli.models import HUB_SOFTWARE_IDS
+
+    if prov_in.strip().lower() in HUB_SOFTWARE_IDS:
+        return prov_in.strip().lower(), model_in
+
     if canonical not in _KNOWN_PROVIDER_NAMES and "/" in model_in:
         # Vendor prefix posing as a provider (analytics fallback). Resolve
         # against the user's current provider when it's an aggregator that

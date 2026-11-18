@@ -1832,11 +1832,23 @@ def resolve_provider(
     try:
         from plobi_cli.config import load_config
 
-        _model_cfg = (load_config() or {}).get("model")
+        _cfg = load_config() or {}
+        # 存量配置里若还是**网关的机器标识**（`aigw`／`bezel`）⇒ 一次性迁成**软件名**
+        # 并写回磁盘（网关名是内部名，不许留在用户的配置里 —— 主人 11-17 18:5x）。
+        migrate_legacy_hub_provider(_cfg)
+        _model_cfg = _cfg.get("model")
         if isinstance(_model_cfg, dict):
             _cfg_provider = _model_cfg.get("provider")
-            if isinstance(_cfg_provider, str) and _cfg_provider.strip().lower() in PROVIDER_REGISTRY:
-                return _cfg_provider.strip().lower()
+            if isinstance(_cfg_provider, str):
+                # 配置里写的是**软件名**（`workbuddy`／`qoder`…）⇒ 换到**传输**
+                # （网关那条腿）。直接拿它去查注册表会得到「不认识的 provider」。
+                from plobi_cli.models import transport_for_software
+
+                _cfg_slug = _cfg_provider.strip().lower()
+                _cfg_transport = transport_for_software(_cfg_slug)
+                _cfg_transport = _PROVIDER_ALIASES.get(_cfg_transport, _cfg_transport)
+                if _cfg_transport in PROVIDER_REGISTRY:
+                    return _cfg_transport
     except Exception as e:
         logger.debug("Could not read config.yaml model.provider for auto-resolution: %s", e)
 
@@ -6816,6 +6828,72 @@ def _get_config_provider() -> Optional[str]:
         return None
     provider = provider.strip().lower()
     return provider or None
+
+
+def hub_software_for_model(model_default: str) -> Optional[str]:
+    """模型 id 的前缀就是服务它的那家软件（`workbuddy/hy4free` ⇒ `workbuddy`）。
+
+    「哪一家软件在服务这个模型」这件事数据里本来就有 —— 模型 id 自带那个前缀。
+    """
+    from plobi_cli.models import HUB_SOFTWARE_IDS
+
+    prefix = (model_default or "").strip().split("/", 1)[0].strip().lower()
+    return prefix if prefix in HUB_SOFTWARE_IDS else None
+
+
+def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
+    """把配置里**网关的机器标识**换成**软件名**，并**写回磁盘**（一次性迁移）。
+
+    2026-11-15 那刀按「内测版没有用户，不用管老配置文件，不接受为兼容付代价」把读侧
+    兜底删了 —— 可**内测版的用户就是这一台**，它的 `model.provider` 还是改名前的机器
+    标识（`aigw`／`bezel`）⇒ 换模型就只剩一句「Unknown provider 'aigw'」。
+
+    主人 11-17 18:5x 拍板：网关的机器标识是**内部名**，**屏上与用户的配置里都不该出现**；
+    `model.provider` 本该是**软件名**（`workbuddy`、`qoder`…）。软件名从 `model.default`
+    的前缀取得到（模型 id 自带前缀 ⇒ 哪一家软件在服务它，数据里本来就有）。
+
+    迁移完把新值**写回磁盘** ⇒ 兼容表不留着，下一台机器也不会再撞它。
+    这与 11-15 那次撕掉的**永久**读侧兜底不是一回事：那三张表里有一张是**假模型 id**，
+    而这里只迁 `model.provider` 一个字段、迁完即落新值。
+    """
+    from plobi_cli.models import HUB_SOFTWARE_IDS
+
+    if not isinstance(config, dict):
+        return None
+    model_cfg = config.get("model")
+    if not isinstance(model_cfg, dict):
+        return None
+    current = model_cfg.get("provider")
+    if not isinstance(current, str):
+        return None
+    current = current.strip().lower()
+    # 已经是软件名 ⇒ 没什么要迁的。
+    if current in HUB_SOFTWARE_IDS:
+        return None
+    # 只认**网关那几代机器标识**；别的名字不碰（那是别的问题）。
+    if current not in {"bezel", "aigw", "quota_hub"}:
+        return None
+    software = hub_software_for_model(str(model_cfg.get("default") or ""))
+    if not software:
+        # 认不出是哪一家软件（模型 id 没有前缀）⇒ 迁不了，照实记一笔。
+        logger.warning(
+            "plobi: config.yaml model.provider is the hub's internal id %r and model.default "
+            "carries no software prefix — cannot migrate it to a software name; "
+            "pick a model again to write the right shape.",
+            current,
+        )
+        return None
+    model_cfg["provider"] = software
+    try:
+        from plobi_constants import PLOBI_HOME, config_path_for_home
+        from utils import atomic_yaml_write
+
+        path = config_path_for_home(PLOBI_HOME)
+        atomic_yaml_write(path, config, sort_keys=False)
+        logger.info("plobi: migrated config.yaml model.provider %r -> %r (software name)", current, software)
+    except Exception as e:  # noqa: BLE001 — 迁不成也不该把读取路径炸掉
+        logger.warning("plobi: could not write the migrated provider name back: %s", e)
+    return software
 
 
 def _config_provider_matches(provider_id: Optional[str]) -> bool:

@@ -6,6 +6,7 @@ import type { ClientSessionState, CommandDispatchResponse } from '@/app/types'
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { type ChatMessage, type ChatMessagePart, chatMessageText, textPart } from '@/lib/chat-messages'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
+import { providerIdentity } from '@/lib/model-status-label'
 import { normalize } from '@/lib/text'
 import { stripInternalDirectives } from '@/lib/visible-user-text'
 import type { ComposerAttachment } from '@/store/composer'
@@ -322,11 +323,11 @@ export function quickModelOptions(
 
   for (const provider of providers) {
     const models = [...(provider.models ?? [])].sort((a, b) => {
-      if (provider.slug === currentProvider && a === currentModel) {
+      if (providerIdentity(provider, a) === currentProvider && a === currentModel) {
         return -1
       }
 
-      if (provider.slug === currentProvider && b === currentModel) {
+      if (providerIdentity(provider, b) === currentProvider && b === currentModel) {
         return 1
       }
 

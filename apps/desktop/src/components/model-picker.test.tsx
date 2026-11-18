@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $connectedDesktopApps, markConnected } from '@/store/desktop-quotas'
@@ -38,7 +38,10 @@ function gatewayReturning(providers: ModelOptionProvider[]) {
   } as never
 }
 
-async function renderPicker(providers: ModelOptionProvider[]) {
+async function renderPicker(
+  providers: ModelOptionProvider[],
+  onSelect: (selection: { provider: string; model: string }) => void = () => {}
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const gw = gatewayReturning(providers)
   render(
@@ -49,7 +52,7 @@ async function renderPicker(providers: ModelOptionProvider[]) {
         currentProvider="bezel"
         gw={gw}
         onOpenChange={() => {}}
-        onSelect={() => {}}
+        onSelect={onSelect}
         open
         sessionId="s-1"
       />
@@ -110,4 +113,32 @@ it('prints the model without its upstream provider prefix', async () => {
 
   const rows = Array.from(document.querySelectorAll('[cmdk-item]')).map(el => el.textContent ?? '')
   expect(rows.join(' | ')).not.toContain('workbuddy/')
+})
+
+it('a picked hub leg reports the software name, not the hub slug', async () => {
+  // 网关（`bezel`）是内部名：选中的那一行交出去的是**软件名**（主人 11-17 18:5x：
+  // 「bezel 是内部名称……provider 下面适配的是一个一个软件名，而不是 bezel」）。
+  // 这一条盯的是模型框自己的写侧——聊天面板那一处由
+  // `model-menu-panel.waiting.test.tsx` 盯着。
+  //
+  // 上面那两条测试没有 await `renderPicker`，它们的 DOM 会留在页面里；模型框的
+  // 行是从 `document.body` 里查的，所以这里先清一次——否则点到的是上一次的
+  // 那个模型框（它的回调是默认的空函数）。
+  cleanup()
+  $connectedDesktopApps.set({})
+  markConnected({ id: 'workbuddy', models: ['hy3'], name: 'WorkBuddy' })
+
+  const onSelect = vi.fn()
+
+  await renderPicker(catalog, onSelect)
+
+  const items = Array.from(document.querySelectorAll('[cmdk-item]'))
+  expect(items).toHaveLength(2) // zai's glm-5.2 + the one connected hub leg
+
+  // items[1] is the WorkBuddy leg.
+  fireEvent.click(items[1])
+
+  expect(onSelect).toHaveBeenCalledWith({ provider: 'workbuddy', model: 'workbuddy/hy3' })
+  // The hub's machine id never leaves the picker.
+  expect(JSON.stringify(onSelect.mock.calls)).not.toContain('bezel')
 })

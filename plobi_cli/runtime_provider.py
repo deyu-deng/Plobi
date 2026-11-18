@@ -534,13 +534,17 @@ def _resolve_runtime_from_pool_entry(
 
 def resolve_requested_provider(requested: Optional[str] = None) -> str:
     """Resolve provider request from explicit arg, config, then env."""
+    # 配置里那个 provider 名可能是**软件名**（`workbuddy`）——网关的机器标识是内部名，
+    # 不进配置；解析时经 `transport_for_software` 换到传输（`bezel`）那一腿。
+    from plobi_cli.models import transport_for_software
+
     if requested and requested.strip():
-        return requested.strip().lower()
+        return transport_for_software(requested)
 
     model_cfg = _get_model_config()
     cfg_provider = model_cfg.get("provider")
     if isinstance(cfg_provider, str) and cfg_provider.strip():
-        return cfg_provider.strip().lower()
+        return transport_for_software(cfg_provider)
 
     # Prefer the persisted config selection over any stale shell/.env
     # provider override so chat uses the endpoint the user last saved.

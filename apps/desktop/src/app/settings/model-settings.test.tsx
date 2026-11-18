@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { $connectedDesktopApps, markConnected } from '@/store/desktop-quotas'
+
 // Radix Select calls scrollIntoView on its items when the content opens; jsdom
 // doesn't implement it (nor hasPointerCapture / releasePointerCapture), so stub
 // them to let the dropdown open in tests.
@@ -45,6 +47,9 @@ vi.mock('@/store/onboarding', () => ({
 }))
 
 beforeEach(() => {
+  // The connected-app registry is persisted; a leftover from another test would
+  // turn the hub row into a software row behind this test's back.
+  $connectedDesktopApps.set({})
   getGlobalModelInfo.mockResolvedValue({ provider: 'nous', model: 'hermes-4' })
   getGlobalModelOptions.mockResolvedValue({
     providers: [
@@ -189,5 +194,45 @@ describe('ModelSettings', () => {
 
     // Banner present on load, no switch required.
     expect(await screen.findByText(/still run on/)).toBeTruthy()
+  })
+
+  it('saves the software name as the main provider, never the hub slug', async () => {
+    // 网关那几行一行一个软件 ⇒ 存进配置的是**软件名**（`workbuddy`），不是网关的
+    // 机器标识（主人 11-17 18:5x：「bezel 是内部名称……provider 下面适配的是一个
+    // 一个软件名，而不是 bezel」）。这一条正是把机器标识写进用户配置的那道口子。
+    markConnected({ id: 'workbuddy', models: ['hy3'], name: 'WorkBuddy' })
+    getGlobalModelInfo.mockResolvedValue({ provider: 'bezel', model: 'workbuddy/hy3' })
+    getGlobalModelOptions.mockResolvedValue({
+      providers: [
+        {
+          name: 'Local Quota Hub',
+          slug: 'bezel',
+          models: ['workbuddy/hy3'],
+          authenticated: true,
+          capabilities: { 'workbuddy/hy3': { reasoning: true, fast: true } }
+        }
+      ]
+    })
+    setModelAssignment.mockResolvedValue({
+      provider: 'workbuddy',
+      model: 'workbuddy/hy3',
+      gateway_tools: []
+    })
+
+    await renderModelSettings()
+    await waitFor(() => expect(getGlobalModelInfo).toHaveBeenCalled())
+
+    const applyButton = await screen.findByRole('button', { name: 'Apply' })
+    fireEvent.click(applyButton)
+
+    await waitFor(() =>
+      expect(setModelAssignment).toHaveBeenCalledWith({
+        model: 'workbuddy/hy3',
+        provider: 'workbuddy',
+        scope: 'main'
+      })
+    )
+    // And the hub's machine id is nowhere in what was written.
+    expect(JSON.stringify(setModelAssignment.mock.calls)).not.toContain('bezel')
   })
 })
