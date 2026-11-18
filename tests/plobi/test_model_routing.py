@@ -19,7 +19,7 @@ def test_defaults_put_the_flagship_on_l1_and_cheap_models_below(tmp_path):
     router = ModelRouter.load(tmp_path / "missing.json")
 
     assert router.resolve(CONDUCTOR).model == "kimi-k3"
-    assert router.resolve(PRINCIPAL).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
+    assert router.resolve(PRINCIPAL).qualified == "workbuddy/workbuddy/deepseek-v4.1-flash"
     assert router.violations() == []
 
 
@@ -33,7 +33,7 @@ def test_config_overrides_defaults(tmp_path):
     router = ModelRouter.load(path)
     assert router.resolve(CONDUCTOR).qualified == "openai/gpt-5.6"
     # Unspecified roles keep their defaults.
-    assert router.resolve(PRINCIPAL).qualified == "bezel/workbuddy/deepseek-v4.1-flash"
+    assert router.resolve(PRINCIPAL).qualified == "workbuddy/workbuddy/deepseek-v4.1-flash"
 
 
 # ---------------------------------------------------------------------------

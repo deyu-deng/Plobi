@@ -72,7 +72,7 @@ KNOWN_ROLES = (CONDUCTOR, PRINCIPAL)
 # agent (ruling 205). Direct ``deepseek`` API routes are retired.
 DEFAULT_ROUTES: dict[str, dict[str, str]] = {
     CONDUCTOR: {"provider": "moonshot", "model": "kimi-k3"},
-    PRINCIPAL: {"provider": "bezel", "model": "workbuddy/deepseek-v4.1-flash"},
+    PRINCIPAL: {"provider": "workbuddy", "model": "workbuddy/deepseek-v4.1-flash"},
 }
 
 # 2026-11-15：读侧迁移代码全部退场。上一刀为 ``aigw`` → ``bezel``、假模型 id

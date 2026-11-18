@@ -141,12 +141,9 @@ const NO_PROVIDERS: readonly ModelOptionProvider[] = [{ name: '—', slug: '', m
 /**
  * Provider rows for the main-model picker.
  *
- * The quota hub (`bezel`) is routing plumbing, not a vendor the user picks. When
- * the shell has pushed at least one connected quota app, replace the hub row
- * with one row per software (`WorkBuddy`, `Antigravity`) — all still routing to
- * `bezel` but carrying a unique `ui_key` so the Select can tell them apart.
- * Before the first frame (or when no app is connected) keep one neutral
- * fallback row instead of showing the internal hub name.
+ * 11-18 第三处之后，网关那几家软件各自就是一个 provider（一行一家，slug 就是软件
+ * 名，`ui_key` 也等于 slug），不再有「一行代表整个网关、再在渲染层按 `ui_key` 拆
+ * 成多行」这回事。一帧都还没到时给一行中性名兜底。
  */
 // Radix <Select> renders a blank trigger when `value` matches no <SelectItem>.
 // A custom model (e.g. one added via config that isn't in the provider's
@@ -317,31 +314,6 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     () => humanizeProviderRows(providerOptions.filter(p => isProviderReady(p))),
     [providerOptions]
   )
-
-  // A hub frame can arrive after the model list. If the current selection still
-  // holds the raw routing slug (`bezel`), move it to the matching software row
-  // instead of leaving a value the Select no longer offers.
-  useEffect(() => {
-    if (!selectedProvider) {
-      return
-    }
-
-    if (mainProviderOptions.some(row => (row.ui_key ?? row.slug) === selectedProvider)) {
-      return
-    }
-
-    const match =
-      mainProviderOptions.find(row => row.slug === selectedProvider) ??
-      (mainModel
-        ? mainProviderOptions.find(
-            row => row.slug === mainModel.provider && (row.models ?? []).includes(mainModel.model)
-          )
-        : undefined)
-
-    if (match) {
-      setSelectedProvider(match.ui_key ?? match.slug)
-    }
-  }, [mainProviderOptions, mainModel, selectedProvider])
 
   // MoA reference/aggregator slots must never be the moa virtual provider —
   // that would create a recursive MoA tree (the backend rejects it on save).

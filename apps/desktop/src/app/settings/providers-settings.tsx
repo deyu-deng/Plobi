@@ -18,6 +18,7 @@ import { normalize } from '@/lib/text'
 import { disconnectOAuthProvider, getGlobalModelOptions, listOAuthProviders } from '@/plobi'
 import {
   $connectedDesktopApps,
+  isHubSoftwareRow,
   markConnected,
   markDisconnected,
   quotaAppVerdict,
@@ -374,17 +375,16 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
   const [errInfo, setErrInfo] = useState<Record<string, { code?: string; message?: string; installHint?: string }>>({})
 
   // The chat picker's row filter (`quotaProviders` in store/desktop-quotas) drops the
-  // whole hub row when the backend catalog marks it `selectable === false` — the
-  // switch must not light next to a dropdown that offers nothing. The card mirrors
-  // the same catalog row (`BEZEL_ROW` is store-local; the aggregate slug is
-  // `bezel`). `null` means "no hub row in the catalog", which we leave untouched
-  // rather than inventing a verdict.
+  // hub's rows when the backend catalog marks them `selectable === false` — the
+  // switch must not light next to a dropdown that offers nothing. 11-18 第三处之后
+  // 网关那几家软件各是一行（不再有 `bezel` 聚合行），所以这里按「还有没有任何一家
+  // 可选」来判：全熄才熄。「一行都没有」仍是 `null`，不凭空编判决。
   const [hubSelectable, setHubSelectable] = useState<null | boolean>(null)
 
   const readHubSelectable = useCallback(() => {
     void getGlobalModelOptions().then(({ providers }) => {
-      const hubRow = (providers ?? []).find(p => /^bezel$/i.test(p.slug))
-      setHubSelectable(hubRow ? hubRow.selectable !== false : null)
+      const hubRows = (providers ?? []).filter(isHubSoftwareRow)
+      setHubSelectable(hubRows.length ? hubRows.some(row => row.selectable !== false) : null)
     })
   }, [])
 
@@ -595,7 +595,8 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
 
         // The frame's row-level honesty: a hub row that answered with zero selectable
         // models is exactly "selectable === false" in the picker's words; the backend
-        // catalog's `bezel` aggregate carries the same flag for the whole hub.
+        // catalog carries the same flag per software row, and `hubSelectable` is the
+        // "any of them still pickable" roll-up of those rows.
         const legUsable = Boolean(record?.answered === true && (record.models?.length ?? 0) > 0)
         const hubUsable = hubSelectable !== false
 

@@ -6,7 +6,6 @@ import { type ChatScope } from '@/app/console/chat/scope'
 import { translateNow, useI18n } from '@/i18n'
 import {
   $connectedDesktopApps,
-  findQuotaHubRow,
   firstSelectableQuotaModel,
   isQuotaAppSlug,
   quotaSelectionBlock,
@@ -125,31 +124,6 @@ export function useModelControls({
     }
   }, [scope])
 
-  // The hub answers in its own vocabulary (app slug + bare model id) while the
-  // Plobi backend answers in `<hub provider>` + `<app>/<model>`. Every pick that
-  // comes from the hub's verdict — the default leg, the fallback, and a selection
-  // a pre-backend-routing build persisted — arrives in the first form, so the join
-  // happens here, at the one funnel, instead of in each caller. The hub's provider
-  // slug is read off the backend's own catalog row rather than written down: it is
-  // a routing value, and 裁定 45.4 keeps that word out of the renderer.
-  const hubProviderSlug = useCallback(async (): Promise<string | null> => {
-    for (const [, data] of queryClient.getQueriesData<ModelOptionsResponse>({ queryKey: ['model-options'] })) {
-      const slug = findQuotaHubRow(data?.providers ?? [])
-
-      if (slug) {
-        return slug
-      }
-    }
-
-    try {
-      const next = await requestGateway<ModelOptionsResponse>('model.options', { explicit_only: true })
-
-      return findQuotaHubRow(next?.providers ?? [])
-    } catch {
-      return null
-    }
-  }, [queryClient, requestGateway])
-
   // Returns whether the switch succeeded so callers can await it before applying
   // follow-up changes. The composer model is plain UI state: with no live
   // session it's just stored (and shipped on the next session.create); with one
@@ -167,20 +141,10 @@ export function useModelControls({
 
       let selection = pick
 
+      // 11-18 第三处之后，网关软件自己就是 provider：`workbuddy` + `hy3` 直接拼成
+      // `workbuddy/hy3`，不必再回头去找一个「hub 的 slug」。
       if (isQuotaAppSlug(pick.provider)) {
-        const hub = await hubProviderSlug()
-
-        if (!hub) {
-          notify({
-            kind: 'error',
-            message: translateNow('desktop.quotaReason.not_offered'),
-            title: copy.modelSwitchFailed
-          })
-
-          return false
-        }
-
-        selection = { model: `${pick.provider}/${pick.model}`, provider: hub }
+        selection = { model: `${pick.provider}/${pick.model}`, provider: pick.provider }
       }
 
       // Snapshot for rollback: the switch is applied optimistically, so a
@@ -222,7 +186,7 @@ export function useModelControls({
         return false
       }
     },
-    [activeSessionId, copy.modelSwitchFailed, hubProviderSlug, isAgentSession, queryClient, requestGateway, scope, updateModelOptionsCache]
+    [activeSessionId, copy.modelSwitchFailed, isAgentSession, queryClient, requestGateway, scope, updateModelOptionsCache]
   )
 
   // The hub's verdict can change underneath a conversation that is just sitting

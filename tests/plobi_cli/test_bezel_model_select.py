@@ -37,7 +37,6 @@ from unittest.mock import patch
 import pytest
 
 from plobi_cli.inventory import (
-    BEZEL_SLUG,
     ConfigContext,
     build_models_payload,
 )
@@ -48,6 +47,10 @@ from plobi_cli.providers import (
     normalize_provider,
     resolve_provider_full,
 )
+
+#: 网关那 22 家软件里的一家 —— 它**自己**就是 provider（11-18 第三处），`bezel`
+#: 只是这些软件共用的传输名，不再是 provider 宇宙里的一个成员。
+HUB_SOFTWARE = "workbuddy"
 
 #: 网关答的那批可选 id（真机上是 magpie 那 29 个，这里只取两条）。
 HUB_SELECTABLE = ["opencode-zen-free/big-pickle", "workbuddy/glm-5.3"]
@@ -67,20 +70,37 @@ HUB_WAITING = {
 # --------------------------------------------------------------------------- #
 
 
-def test_the_hub_resolves_through_the_plugin_registry():
-    """`bezel` 只由插件注册 ⇒ 这一格必须答得出它的端点与钥匙名。
+def test_each_hub_software_resolves_through_the_plugin_registry():
+    """网关那几家**软件**只由插件注册 ⇒ 这一格必须答得出端点与钥匙名。
 
     端点与钥匙名都从插件那份 profile 读，**不在这里再抄一遍**——抄一遍就有两处
-    真源，改一处就漂一处。
+    真源，改一处就漂一处。11-18 第三处之后，`bezel` 不再是 provider：机器标识
+    只剩传输这一层，屏上与配置里都不该再出现它。
     """
-    pdef = resolve_provider_full(BEZEL_SLUG, {}, [])
+    pdef = resolve_provider_full(HUB_SOFTWARE, {}, [])
 
-    assert pdef is not None, "网关那条腿解析不出来 ⇒ --provider bezel 必红"
-    assert pdef.id == BEZEL_SLUG
+    assert pdef is not None, "这家软件解析不出来 ⇒ 选中网关那条腿必红"
+    assert pdef.id == HUB_SOFTWARE
     assert pdef.base_url.startswith("http://127.0.0.1:"), pdef.base_url
     assert pdef.api_key_env_vars, "钥匙名得从插件那份 profile 来"
     assert pdef.transport == "openai_chat"
     assert pdef.source == "plugin"
+    # 机器标识仍在「查不到 provider 时的兜底」那条缝上（内部还有路径按这个名字
+    # 要凭据与请求字段），但它不在 provider 名单里 ⇒ 不上屏、不进 picker。
+    from providers import list_providers
+
+    assert "bezel" not in {row.name for row in list_providers()}
+    assert "bezel" not in HUB_SOFTWARE, "机器标识不许混进软件名单"
+
+
+def test_every_hub_software_is_its_own_provider():
+    """22 家各是一个 provider，谁也不靠 `bezel` 代替自己。"""
+    from providers.hub_software import HUB_SOFTWARE_IDS
+
+    for software in HUB_SOFTWARE_IDS:
+        pdef = get_provider(software)
+        assert pdef is not None, software
+        assert pdef.id == software
 
 
 def test_the_hub_is_not_an_aggregator():
@@ -89,7 +109,7 @@ def test_the_hub_is_not_an_aggregator():
     聚合器会被选择框的「同名去重」扫掉与自己重名的模型——对网关来说，那等于把
     订阅腿的清单掏空。
     """
-    pdef = get_provider(BEZEL_SLUG)
+    pdef = get_provider(HUB_SOFTWARE)
 
     assert pdef is not None
     assert pdef.is_aggregator is False
@@ -137,19 +157,19 @@ def test_an_alias_still_resolves_to_the_same_place():
 
 
 def test_switching_to_a_hub_model_succeeds(monkeypatch):
-    """点一个网关的模型 ⇒ 切得过去，不再是「Unknown provider 'bezel'」。"""
+    """点一个网关的模型 ⇒ 切得过去，provider 落在软件名上，不是机器标识。"""
     _stub_the_network(monkeypatch)
 
     result = switch_model(
         HUB_SELECTABLE[0],
-        current_provider=BEZEL_SLUG,
+        current_provider=HUB_SOFTWARE,
         current_model="",
-        explicit_provider=BEZEL_SLUG,
+        explicit_provider=HUB_SOFTWARE,
     )
 
     assert result.success is True, result.error_message
     assert result.new_model == HUB_SELECTABLE[0]
-    assert result.target_provider == BEZEL_SLUG
+    assert result.target_provider == HUB_SOFTWARE
 
 
 def test_the_hub_model_id_survives_the_switch(monkeypatch):
@@ -162,9 +182,9 @@ def test_the_hub_model_id_survives_the_switch(monkeypatch):
 
     result = switch_model(
         HUB_SELECTABLE[0],
-        current_provider=BEZEL_SLUG,
+        current_provider=HUB_SOFTWARE,
         current_model="",
-        explicit_provider=BEZEL_SLUG,
+        explicit_provider=HUB_SOFTWARE,
     )
 
     assert result.success is True, result.error_message
@@ -193,7 +213,7 @@ def _hub_answers(monkeypatch):
     )
 
 
-def _ctx(provider: str = BEZEL_SLUG, model: str = "") -> ConfigContext:
+def _ctx(provider: str = HUB_SOFTWARE, model: str = "") -> ConfigContext:
     return ConfigContext(
         current_provider=provider,
         current_model=model,
@@ -211,7 +231,8 @@ def test_the_backend_picks_a_model_when_the_config_expresses_none(monkeypatch):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
     assert payload["model"] == HUB_SELECTABLE[0]
-    assert payload["provider"] == BEZEL_SLUG
+    # 配置里点名的是哪家软件，payload 就答哪家 —— 不再是共用的机器标识。
+    assert payload["provider"] == HUB_SOFTWARE
 
 
 def test_the_picked_model_is_one_the_hub_offers(monkeypatch):
@@ -244,7 +265,7 @@ def test_the_pick_happens_even_when_the_catalogue_already_carries_the_hub(monkey
     _hub_answers(monkeypatch)
 
     listed = {
-        "slug": BEZEL_SLUG,
+        "slug": HUB_SOFTWARE,
         "name": "订阅额度",
         "is_current": True,
         "is_user_defined": False,
@@ -258,7 +279,7 @@ def test_the_pick_happens_even_when_the_catalogue_already_carries_the_hub(monkey
 
     assert payload["model"] == HUB_SELECTABLE[0]
     # 那一行还是那一行：它带的是完整清单，不许被挑选改写。
-    hub_row = next(r for r in payload["providers"] if r["slug"] == BEZEL_SLUG)
+    hub_row = next(r for r in payload["providers"] if r["slug"] == HUB_SOFTWARE)
     assert "some/leg-the-hub-refuses" in hub_row["models"]
 
 
@@ -304,13 +325,13 @@ def test_a_silent_hub_picks_nothing(monkeypatch):
 def _stub_the_network(monkeypatch) -> None:
     """切换那条路上的两处网络接缝：凭据解析与模型校验。
 
-    真机上这两处分别去问网关与厂商；本档只关心「解析得出 bezel」这一件事，
+    真机上这两处分别去问网关与厂商；本档只关心「解析得出这家软件」这一件事，
     不该去花额度，也不该让答案随机器变。
     """
     monkeypatch.setattr(
         "plobi_cli.runtime_provider.resolve_runtime_provider",
         lambda **kwargs: {
-            "provider": BEZEL_SLUG,
+            "provider": HUB_SOFTWARE,
             "api_mode": "chat_completions",
             "base_url": "http://127.0.0.1:8000/v1",
             "api_key": "sk-test",

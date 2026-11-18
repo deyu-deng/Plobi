@@ -201,12 +201,12 @@ describe('ModelSettings', () => {
     // 机器标识（主人 11-17 18:5x：「bezel 是内部名称……provider 下面适配的是一个
     // 一个软件名，而不是 bezel」）。这一条正是把机器标识写进用户配置的那道口子。
     markConnected({ id: 'workbuddy', models: ['hy3'], name: 'WorkBuddy' })
-    getGlobalModelInfo.mockResolvedValue({ provider: 'bezel', model: 'workbuddy/hy3' })
+    getGlobalModelInfo.mockResolvedValue({ provider: 'workbuddy', model: 'workbuddy/hy3' })
     getGlobalModelOptions.mockResolvedValue({
       providers: [
         {
-          name: 'Local Quota Hub',
-          slug: 'bezel',
+          name: 'WorkBuddy',
+          slug: 'workbuddy',
           models: ['workbuddy/hy3'],
           authenticated: true,
           capabilities: { 'workbuddy/hy3': { reasoning: true, fast: true } }

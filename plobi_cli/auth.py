@@ -1729,6 +1729,47 @@ def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
         return ""
 
 
+def hub_provider_identity(provider_name: str) -> str:
+    """把 provider 名归一到「注册表里查得到的那一个」。
+
+    网关那一坨的命名规矩（主人 11-17 18:5x / 11-18）：**provider 是软件名**
+    （``workbuddy``、``opencode-zen-free``…），网关自己的机器标识（``bezel``）只是
+    **传输**。所以这里要收两道：
+
+    ① 存量配置里若还是机器标识（``aigw``／``bezel``／``quota_hub``）⇒ 按
+       ``model.default`` 的前缀一次性迁成软件名，并写回磁盘（``migrate_legacy_hub_provider``）。
+       迁完的配置下一台机器也不会再撞——不留永久兼容表。
+    ② 软件名 ⇒ 换到网关传输那一腿（``bezel``）。软件名不进注册表（那是「可配置的
+       provider」宇宙），拿它直接查注册表只会得到「不认识的 provider」。
+
+    别的名字原样返回——那不是这几个函数该管的问题。
+    """
+    from plobi_cli.models import HUB_SOFTWARE_IDS, transport_for_software
+
+    name = (provider_name or "").strip().lower()
+    if not name:
+        return name
+
+    # 软件名**自己就是 provider**（11-18 第三处：bezel 降级成纯传输后，软件名在
+    # providers 层注册成独立 profile，端点与凭据仍是网关那一份）。所以这里原样
+    # 返回，不再换成 `bezel` —— 换过去注册表里已经没有那个名字了。
+    if name in HUB_SOFTWARE_IDS:
+        return name
+    if name not in {"bezel", "aigw", "quota_hub"}:
+        return name
+
+    # 机器标识：想尽办法换成软件名。换不出来就原样交回去——让下游按「不认识的
+    # provider」如实报错，比在这里猜一个软件名好。
+    try:
+        from plobi_cli.config import load_config
+
+        migrated = migrate_legacy_hub_provider(load_config() or {})
+    except Exception:  # noqa: BLE001 — 迁不成不该把解析路径炸掉
+        migrated = None
+
+    return migrated or name
+
+
 def resolve_provider(
     requested: Optional[str] = None,
     *,
@@ -1797,7 +1838,21 @@ def resolve_provider(
                     _PROVIDER_ALIASES[_alias] = _pp.name
     except Exception:
         pass
-    normalized = _PROVIDER_ALIASES.get(normalized, normalized)
+    # 归一成**能进注册表的那一个**（主人 11-18：「bezel 不该是 provider，provider
+    # 下头适配的是一个个软件名」）：
+    #   ① 软件名（`workbuddy`／`opencode-zen-free`…）**自己就是 provider**，原样返回；
+    #   ② 存量配置里还是网关**机器标识**（`aigw`／`bezel`／`quota_hub`）⇒ 按
+    #      `model.default` 的前缀一次性迁成**软件名**并写回磁盘，不留永久兼容表。
+    # 必须在下面那个 `raise AuthError("Unknown provider")` **之前**：迁移原先是写在
+    # `auto` 段里的，而显式 provider 早就抛出去了，于是存量配置 `provider: aigw`
+    # 永远走不到迁移 —— 换模型只剩一句红字。
+    # 也必须在这个别名表**之前**：`grok` 既是网关那家软件、也是 xAI 的近义词，
+    # 这里的答案是那家软件（裁定 47）—— 答成 `xai` 会让切换落到别家。
+    normalized = hub_provider_identity(normalized)
+    from plobi_cli.models import is_hub_software as _is_hub_software
+
+    if not _is_hub_software(normalized):
+        normalized = _PROVIDER_ALIASES.get(normalized, normalized)
 
     if normalized == "openrouter":
         return "openrouter"
@@ -1833,22 +1888,22 @@ def resolve_provider(
         from plobi_cli.config import load_config
 
         _cfg = load_config() or {}
-        # 存量配置里若还是**网关的机器标识**（`aigw`／`bezel`）⇒ 一次性迁成**软件名**
-        # 并写回磁盘（网关名是内部名，不许留在用户的配置里 —— 主人 11-17 18:5x）。
-        migrate_legacy_hub_provider(_cfg)
+        # 存量配置的迁移**不在这里**：`hub_provider_identity`（上面那道归一）已经做过，
+        # 而且它做在显式 provider 那条路必经的位置上。这里再调一次只是同一件事做两遍，
+        # 还容易让人以为「只有 auto 才会迁」—— 那正是 11-18 之前的病根。
         _model_cfg = _cfg.get("model")
         if isinstance(_model_cfg, dict):
             _cfg_provider = _model_cfg.get("provider")
             if isinstance(_cfg_provider, str):
-                # 配置里写的是**软件名**（`workbuddy`／`qoder`…）⇒ 换到**传输**
-                # （网关那条腿）。直接拿它去查注册表会得到「不认识的 provider」。
-                from plobi_cli.models import transport_for_software
-
-                _cfg_slug = _cfg_provider.strip().lower()
-                _cfg_transport = transport_for_software(_cfg_slug)
-                _cfg_transport = _PROVIDER_ALIASES.get(_cfg_transport, _cfg_transport)
-                if _cfg_transport in PROVIDER_REGISTRY:
-                    return _cfg_transport
+                # 配置里写的就是**软件名**（`workbuddy`／`qoder`…），它本身已经是
+                # provider（11-18 第三处：`bezel` 降级成纯传输），所以直接认它；
+                # 只有还残留机器标识时才在内存里就地归一（磁盘那份上面已迁过）。
+                _cfg_identity = hub_provider_identity(_cfg_provider)
+                # 软件名不过别名表：`grok` 是那家软件，答成 `xai` 就落到别家了。
+                if not _is_hub_software(_cfg_identity):
+                    _cfg_identity = _PROVIDER_ALIASES.get(_cfg_identity, _cfg_identity)
+                if _cfg_identity in PROVIDER_REGISTRY:
+                    return _cfg_identity
     except Exception as e:
         logger.debug("Could not read config.yaml model.provider for auto-resolution: %s", e)
 
@@ -6885,10 +6940,10 @@ def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
         return None
     model_cfg["provider"] = software
     try:
-        from plobi_constants import PLOBI_HOME, config_path_for_home
+        from plobi_constants import config_path_for_home, get_plobi_home
         from utils import atomic_yaml_write
 
-        path = config_path_for_home(PLOBI_HOME)
+        path = config_path_for_home(get_plobi_home())
         atomic_yaml_write(path, config, sort_keys=False)
         logger.info("plobi: migrated config.yaml model.provider %r -> %r (software name)", current, software)
     except Exception as e:  # noqa: BLE001 — 迁不成也不该把读取路径炸掉

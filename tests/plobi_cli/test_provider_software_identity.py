@@ -58,10 +58,15 @@ def home(tmp_path, monkeypatch):
     return fake
 
 
-def test_软件名解析得到网关那条腿(home):
-    """配置里写软件名 ⇒ 解析得到网关（不是「不认识的 provider」）。"""
+def test_软件名解析成它自己(home):
+    """配置里写软件名 ⇒ 解析得到**这家软件自己**（它已经是 provider）。
+
+    11-18 第三处把 `bezel` 从 provider 宇宙里摘掉之后，软件名不再是「换到传输」
+    的入口，而是直接成为 provider；传输映射只留给凭据与请求字段兜底。
+    """
     _write_config(home, "workbuddy")
-    assert resolve_provider("auto") == "bezel"
+    assert resolve_provider("auto") == "workbuddy"
+    assert transport_for_software("workbuddy") == "bezel"
 
 
 def test_运行时那条路也认软件名(home):
@@ -73,8 +78,8 @@ def test_运行时那条路也认软件名(home):
     from plobi_cli.runtime_provider import resolve_requested_provider
 
     _write_config(home, "workbuddy")
-    assert resolve_requested_provider() == "bezel"
-    assert resolve_requested_provider("workbuddy") == "bezel"
+    assert resolve_requested_provider() == "workbuddy"
+    assert resolve_requested_provider("workbuddy") == "workbuddy"
     # 别家 provider 原样（不误伤）。
     _write_config(home, "openrouter")
     assert resolve_requested_provider() == "openrouter"
@@ -90,7 +95,7 @@ def test_模型_id的前缀就是那家软件():
 def test_存量配置里的机器标识被一次性迁成软件名(home):
     """`provider: aigw`（网关改名前的机器标识）⇒ 迁成 `workbuddy` 并**写回磁盘**。"""
     path = _write_config(home, "aigw")
-    assert resolve_provider("auto") == "bezel"
+    assert resolve_provider("auto") == "workbuddy"
 
     with io.open(path, encoding="utf-8") as fh:
         written = fh.read()
@@ -126,8 +131,8 @@ def test_配置里那个名字是软件名_机器标识只在映射里():
     assert transport_for_software("openrouter") == "openrouter"
 
 
-def test_软件名不进全局provider宇宙():
-    """**两条既有契约的守护**（这一刀差点把它们破了）：
+def test_软件名是provider宇宙的成员_bezel不是():
+    """**两条既有契约的守护**：
 
     ① 网关那张 profile **不许声明别名**（别名会漏进全局别名表）——
        `tests/plobi_cli/test_bezel_provider_plugin.py::test_bezel_declares_no_aliases`；
@@ -140,9 +145,11 @@ def test_软件名不进全局provider宇宙():
     assert get_provider_profile("bezel").aliases == ()
 
     slugs = {p.slug for p in CANONICAL_PROVIDERS}
+    # 11-18 第三处反转：**软件名**才是 provider 宇宙的成员，`bezel` 不在里面。
+    assert "bezel" not in slugs
     for software in HUB_SOFTWARE:
-        assert software not in slugs, f"{software} 进了规范表 ⇒ 它被当成另一个 provider"
-        assert software not in HUB_TRANSPORT or HUB_TRANSPORT[software] == "bezel"
+        assert software in slugs, f"{software} 没进规范表 ⇒ picker 里选不到这家软件"
+        assert HUB_TRANSPORT[software] == "bezel"
 
 
 def test_写入口原样落软件名():
@@ -161,3 +168,43 @@ def test_写入口原样落软件名():
 def test_软件名那张表和传输映射对得上():
     assert set(HUB_TRANSPORT) == set(HUB_SOFTWARE_IDS)
     assert set(HUB_TRANSPORT.values()) == {"bezel"}
+
+
+# ─── 第一处：迁移必须做在「显式 provider 抛错」之前 ────────────────────────
+
+
+def test_显式传机器标识也走迁移(home):
+    """`resolve_provider("aigw")` —— 不是 `auto`，是**显式**那个名字。
+
+    这是第一处的病根：迁移原先只写在 `auto` 段里，而显式 provider 早在那之前
+    就 `raise AuthError("Unknown provider")` 抛出去了，于是存量配置
+    `provider: aigw` 永远走不到迁移 —— 换模型只剩一句红字。
+    """
+    path = _write_config(home, "aigw")
+
+    assert resolve_provider("aigw") == "workbuddy"
+
+    with io.open(path, encoding="utf-8") as fh:
+        written = fh.read()
+    assert "provider: workbuddy" in written
+    assert "aigw" not in written
+
+
+@pytest.mark.parametrize("machine_name", ["aigw", "quota_hub", "bezel"])
+def test_三个机器标识都能迁(home, machine_name):
+    """`aigw`／`quota_hub`／`bezel` 三个都算存量，一个都不许漏。"""
+    _write_config(home, machine_name, default="qoder/sonus")
+    assert resolve_provider(machine_name) == "qoder"
+
+
+def test_迁移做在别名表之前(home):
+    """`grok` 既是那家软件、也是 xAI 的近义词 —— 这里的答案是那家软件。
+
+    别名表若先跑一遍，`grok` 会被改写成 `xai`，切换就落到别家去了
+    （`providers.normalize_provider` 里同一个裁定）。
+    """
+    _write_config(home, "grok")
+    assert resolve_provider("auto") == "grok"
+    assert resolve_provider("grok") == "grok"
+    # 厂商别名照旧：`anthropic` 还是 Anthropic，没被软件名那套吞掉。
+    assert resolve_provider("anthropic") == "anthropic"

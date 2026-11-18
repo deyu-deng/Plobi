@@ -37,10 +37,10 @@ from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 
-#: The local quota hub's own provider slug.  A routing value, never display copy —
-#: 裁定 45.4 keeps the word off the screen, so the renderer only ever *matches*
-#: it (the row it matches is the carrier every hub-backed pick joins against).
-BEZEL_SLUG = "bezel"
+#: 网关那几家软件的通吃判断：它们各自是 provider，`bezel` 只是共用的传输名
+#: （11-18 第三处）。任何「这家其实是网关在服务」的判断都走这里，别再散着写
+#: ``== "bezel"`` —— 那种写法只认机器标识，软件名一进来就漏。
+from plobi_cli.models import is_hub_software as _is_hub_software  # noqa: E402
 
 
 # ─── Public types ───────────────────────────────────────────────────────
@@ -226,13 +226,27 @@ def build_models_payload(
     # "This channel is not currently offered by the gateway" for a gateway that
     # was offering 58 — and the switches the hub itself calls "connected"
     # changed nothing in the picker.
-    if not any(str(row.get("slug", "")).lower() == BEZEL_SLUG for row in rows):
-        hub_row, hub_selectable = _bezel_row(ctx.current_provider)
-
-        if hub_row is not None:
+    hub_rows, hub_selectable = _hub_software_rows(ctx.current_provider)
+    for hub_row in hub_rows:
+        existing = next(
+            (row for row in rows if str(row.get("slug", "")).lower() == hub_row["slug"]),
+            None,
+        )
+        if existing is None:
             rows.append(hub_row)
-    else:
-        hub_selectable = []
+            continue
+        # 这家软件自己的 profile 已经产出过一行，但那一行未必知道「网关正答着可用
+        # 目录」—— 凭据是网关那一份，别让它被 authenticated 过滤掉。
+        existing["authenticated"] = True
+        existing.setdefault("auth_type", "api_key")
+        merged = list(existing.get("models") or [])
+        seen = set(merged)
+        for mid in hub_row["models"]:
+            if mid not in seen:
+                merged.append(mid)
+                seen.add(mid)
+        existing["models"] = merged
+        existing["total_models"] = len(merged)
 
     # --- The default selection, when the config expresses none ---
     # 用户 11-10 拍板：存着的默认模型清空，**让后端自己挑**一条网关那批可选 id 里
@@ -242,7 +256,7 @@ def build_models_payload(
     # 挑的判据是**网关自己的可选清单**，不是目录里那一行带了多少个模型：目录里
     # 那一行可能是完整清单（连不可选的那些也在），而「可选」才是能真跑起来的那批。
     effective_model = ctx.current_model
-    if not effective_model and (ctx.current_provider or "").strip().lower() == BEZEL_SLUG:
+    if not effective_model and _is_hub_software(ctx.current_provider):
         selectable = hub_selectable or _hub_selectable_ids()
         if selectable:
             effective_model = selectable[0]
@@ -424,7 +438,7 @@ def _apply_capabilities(rows: list[dict]) -> None:
         # (user, 2026-11-08 21:3x). A leg the user can fix does not: its models are
         # not offered at all (「我配置不了就不应该出现在这个模型框里面呀」).
         hub_waiting: dict[str, dict] = {}
-        if slug.lower() == "bezel":
+        if _is_hub_software(slug):
             try:
                 from plobi.agents.registry import bezel_api_key, bezel_base_url
                 from plobi.quota.gateway import catalog_tuning
@@ -872,34 +886,27 @@ def _apply_pricing(
                 row["unavailable_models"] = []
 
 
-def _bezel_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
-    """The quota hub's own catalog row — the carrier every hub-backed pick joins against.
+def _hub_software_rows(current_provider: str = "") -> tuple[list[dict], list[str]]:
+    """网关那几家**软件**各自一行 —— 订阅额度那组行的唯一出处。
 
-    The hub is not one of the user's configured providers: it is this machine's own
-    local gateway (the desktop starts it), and 裁定 46 makes its catalogue the single
-    source of truth for the subscription legs.  It therefore needs no ``config.yaml``
-    entry to be routable — the ``model-providers/bezel`` profile resolves its key and
-    base URL on its own (裁定 81) — but it DID need a row in this payload, because that
-    row is what the desktop's picker joins against: without it the subscription models
-    never reach the picker, and a switch the hub itself calls "connected" changes
-    nothing.
+    11-18 第三处：`bezel` 只是传输名，不再是一个 provider，所以 payload 里不能再
+    塞一行 slug=`bezel` 让桌面去「克隆」。这里按模型 id 的前缀（``workbuddy/hy4free``
+    ⇒ 软件 `workbuddy`）把网关的可选清单切成一家软件一行，slug 与 name 都是软件
+    自己的 —— 屏上「订阅额度」那组的每一行，就是这里的一行。
 
-    Measured 2026-11-08 on this machine: the hub answered 58 selectable ids while the
-    payload carried no hub row at all, so the desktop reported "This channel is not
-    currently offered by the gateway" for a gateway that was offering 58.
+    裁定 46 仍然成立：网关是本机自己的服务，不是用户在 ``config.yaml`` 里声明的
+    provider，所以这些行**由这里补进 payload**，不走「用户配置过才出现」那条过滤。
+    凭据也只有一份（网关那把 key），所以每行都标 ``authenticated: True``：否则
+    渲染层自己的过滤器会把整组行丢掉。
 
-    Returns ``(row, selectable_ids)``.  The two lists are not the same: the row also
-    carries the models that are only *waiting* (greyed out), and the default pick
-    (the "no preference" branch in :func:`build_models_payload`) must not land on
-    one of those.
-
-    ``(None, [])`` when the hub does not answer: an unreachable hub must never be
-    reported as "you have no models" — the same rule the hub's own frame follows.
+    Returns ``(rows, selectable_ids)``。``selectable_ids`` 是网关**当下能真跑**的
+    全量清单（跨软件），默认选择只从这里面挑 —— 「在等」的那些是标灰的，拿它当默认
+    等于开局就红。网关不应答时返回 ``([], [])``：连不上不能说成「你没有模型」。
     """
     selectable = _hub_selectable_ids()
 
     if not selectable:
-        return None, []
+        return [], []
 
     ids = list(selectable)
 
@@ -919,34 +926,39 @@ def _bezel_row(current_provider: str = "") -> tuple[dict | None, list[str]]:
     ids = list(ids) + [mid for mid in waiting_ids if mid not in set(ids)]
 
     try:
-        from plobi_cli.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
+        from providers.hub_software import HUB_SOFTWARE
 
-        label = next(
-            (entry.label for entry in CANONICAL_PROVIDERS if entry.slug == BEZEL_SLUG),
-            "订阅额度",
+        names: dict[str, str] = dict(HUB_SOFTWARE)
+    except Exception:  # noqa: BLE001 — 名字只是屏上的字，行本身不是
+        names = {}
+
+    current = (current_provider or "").strip().lower()
+    by_software: dict[str, list[str]] = {}
+    for mid in ids:
+        software = (mid or "").split("/", 1)[0].strip().lower()
+        if software:
+            by_software.setdefault(software, []).append(mid)
+
+    rows: list[dict] = []
+    for software, models in by_software.items():
+        rows.append(
+            {
+                "slug": software,
+                "name": names.get(software, software),
+                "is_current": current == software,
+                "is_user_defined": False,
+                "models": list(models),
+                "total_models": len(models),
+                "source": "hub-software",
+                # 网关答出了可用目录 ⇒ 这一行带着**能用**的凭据。少了它，渲染层
+                # 自己的过滤（``authenticated === false``）会把行丢掉，整组订阅
+                # 额度又消失一次 —— 这正是这些行存在的理由。
+                "authenticated": True,
+                "auth_type": "api_key",
+            }
         )
-        name = _PROVIDER_LABELS.get(BEZEL_SLUG, label)
-    except Exception:  # noqa: BLE001 — the label is cosmetic, the row is not
-        name = "订阅额度"
-
-    return (
-        {
-            "slug": BEZEL_SLUG,
-            "name": name,
-            "is_current": (current_provider or "").strip().lower() == BEZEL_SLUG,
-            "is_user_defined": False,
-            "models": list(ids),
-            "total_models": len(ids),
-            "source": "bezel",
-            # The hub answered with a usable catalogue, so this row carries a working
-            # credential.  Without it the renderer's own filter drops the row
-            # (``authenticated === false``) and the whole subscription leg disappears
-            # again — the very bug this row exists to fix.
-            "authenticated": True,
-            "auth_type": "api_key",
-        },
-        selectable,
-    )
+    rows.sort(key=lambda row: str(row.get("name") or "").lower())
+    return rows, selectable
 
 
 def _moa_provider_row(current_provider: str = "") -> dict | None:

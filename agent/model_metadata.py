@@ -489,7 +489,13 @@ _URL_TO_PROVIDER: Dict[str, str] = {
 # Any provider with a base_url not already in the map gets added automatically.
 try:
     from providers import list_providers as _list_providers
+    from providers.hub_software import HUB_SOFTWARE_IDS as _HUB_SOFTWARE_IDS
     for _pp in _list_providers():
+        # 网关那 22 家软件**共用同一个 loopback 端点**：从 URL 反查猜不出是哪一家，
+        # 猜出来的那个只是「先到先得」的第一家（11-18 实测：`127.0.0.1:8000` 曾
+        # 被认成 `workbuddy`）。共用端点就诚实地不给答案，别让反查替用户选软件。
+        if _pp.name in _HUB_SOFTWARE_IDS:
+            continue
         _host = _pp.get_hostname()
         if _host and _host not in _URL_TO_PROVIDER:
             _URL_TO_PROVIDER[_host] = _pp.name
@@ -2316,7 +2322,10 @@ def get_model_context_length(
     # deepseek-3.2). These numbers are what decides when Plobi compresses, and before
     # this step the subscription legs fell through the whole probe chain to the 256K
     # fallback — a guess, on a model whose real window the vendor had already told us.
-    if effective_provider == "bezel":
+    # 11-18 第三处：网关那 22 家软件各自就是 provider，`bezel` 只是传输名。
+    # 只认机器标识会让 `workbuddy/...` 这种软件名漏掉厂商自己给的窗口值。
+    from plobi_cli.models import is_hub_software as _is_hub_software
+    if _is_hub_software(effective_provider):
         try:
             from plobi.agents.registry import bezel_api_key, bezel_base_url
             from plobi.quota.gateway import catalog_tuning

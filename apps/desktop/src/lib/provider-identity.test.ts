@@ -3,25 +3,22 @@ import { describe, expect, it } from 'vitest'
 import { providerIdentity } from './model-status-label'
 
 /**
- * provider 的**身份**（WP-PROVIDER-SOFTWARE-IDENTITY）。
+ * provider 的**身份**（WP-PROVIDER-SOFTWARE-IDENTITY，11-18 第三处收口）。
  *
- * 网关（`bezel`）是**内部名**：用户的配置与屏上写的是**软件名**（`workbuddy`、
- * `qoder`…），机器标识只留在日志／doctor 行 id／路由值里（主人 11-17 18:5x：
- * 「bezel 是内部名称……provider 下面适配的是一个一个软件名，而不是 bezel」）。
- *
- * 网关那几行一行一个软件（`quotaProviders` 用 hub 名册重排过），`ui_key` 形如
- * `bezel::<软件 id>` ⇒ 那一段就是这一行的身份。
+ * 网关那几家软件**各自就是 provider**：行的 slug 就是软件名（`workbuddy`、
+ * `qoder`…），`ui_key` 只做 Select 里的唯一键，不再靠 `::` 编码身份；也没有「一行
+ * 代表整个网关、身份藏在模型 id 前缀里」这回事了。机器标识（传输别名）不出现在这
+ * 一层（主人 11-17 18:5x）。
  */
 describe('providerIdentity', () => {
-  it('网关那几行：身份是**软件名**（ui_key 里 `::` 后面那一段）', () => {
-    expect(providerIdentity({ slug: 'bezel', ui_key: 'bezel::workbuddy' })).toBe('workbuddy')
-    expect(providerIdentity({ slug: 'bezel', ui_key: 'bezel::qoder' })).toBe('qoder')
-    expect(providerIdentity({ slug: 'bezel', ui_key: 'bezel::opencode_api' })).toBe('opencode_api')
+  it('网关那几行：身份就是那一行自己的软件名', () => {
+    expect(providerIdentity({ slug: 'workbuddy', ui_key: 'workbuddy' })).toBe('workbuddy')
+    expect(providerIdentity({ slug: 'qoder', ui_key: 'qoder' })).toBe('qoder')
+    expect(providerIdentity({ slug: 'opencode_api', ui_key: 'opencode_api' })).toBe('opencode_api')
   })
 
-  it('没有 ui_key 的网关行：模型 id 的前缀就是那家软件', () => {
-    expect(providerIdentity({ slug: 'bezel' }, 'workbuddy/hy4free')).toBe('workbuddy')
-    expect(providerIdentity({ slug: 'bezel' }, 'cursor/sonus')).toBe('cursor')
+  it('ui_key 与 slug 不一致时也认 slug：ui_key 不编码身份', () => {
+    expect(providerIdentity({ slug: 'workbuddy', ui_key: 'row-7' })).toBe('workbuddy')
   })
 
   it('别家 provider：身份就是它的 slug', () => {
@@ -30,8 +27,7 @@ describe('providerIdentity', () => {
   })
 
   it('身份里不出现网关的机器标识', () => {
-    const identity = providerIdentity({ slug: 'bezel', ui_key: 'bezel::workbuddy' })
-    expect(identity).not.toBe('bezel')
+    const identity = providerIdentity({ slug: 'workbuddy', ui_key: 'workbuddy' })
     expect(identity).not.toContain('bezel')
   })
 })

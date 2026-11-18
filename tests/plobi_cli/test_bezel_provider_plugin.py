@@ -1,14 +1,15 @@
-"""Ruling 45 ① — `bezel` must be a resolvable runtime provider.
+"""`bezel` 是**传输**，不是 provider —— 那 22 家软件各自才是 provider。
 
-Guards for ``plugins/model-providers/bezel/``:
+（本档原名守裁定 45 ①「`bezel` 必须是一个能解析的 runtime provider」，11-18
+第三处已把这个裁定反过来：主人 11-17 18:5x「bezel 是内部名称，provider 下面
+适配的是一个一个软件名，而不是 bezel。」下面保留的断言分两段读：
 
-* ``resolve_provider("bezel")`` no longer raises ``invalid_provider`` (the name
-  is written into the agent profiles and ``plobi/routing/models.py`` L2 default).
-* Registering it is **purely additive**: every other provider keeps resolving to
-  what it resolved to before, and the loopback base URL does not hijack local
-  endpoints that belong to other providers (Ollama / vLLM on 127.0.0.1).
+* 上半段（本文件的旧名）：注册是**纯加法** —— 别家 provider 一个都不许被改；
+  回环地址不许抢别人家（Ollama / vLLM 在 127.0.0.1）。
+* 下半段（``11-18 第三处`` 起）：`bezel` 只剩传输这一身份，不上屏、不进 picker、
+  不在注册表；软件名才是可选的 provider。
 
-Deliberately *not* asserted: totals or counts — those are change-detectors.
+刻意不断言的：总数、条数 —— 那些是变更探测器，不是契约。
 """
 
 import pytest
@@ -34,53 +35,11 @@ _ALIAS_TARGETS = (
 )
 
 
-def test_bezel_resolves_as_a_provider():
-    assert resolve_provider("bezel") == "bezel"
-
-
-def test_bezel_profile_is_registered():
-    profile = get_provider_profile("bezel")
-    assert profile is not None
-    assert profile.name == "bezel"
-    assert profile in list_providers()
-
-
-def test_bezel_is_in_the_provider_registry():
-    cfg = PROVIDER_REGISTRY.get("bezel")
-    assert cfg is not None
-    assert cfg.auth_type == "api_key"
-
-
 def test_bezel_base_url_points_at_the_local_gateway():
     """Base URL comes from the agents layer, not a second copy of env parsing."""
     from plobi.agents.registry import bezel_base_url
 
     assert get_provider_profile("bezel").base_url == bezel_base_url()
-
-
-def test_bezel_key_env_vars_are_existing_ones():
-    """No new PLOBI_* var was invented for this provider.
-
-    清单与顺序的**唯一**定义点在 :data:`plobi.agents.registry.BEZEL_KEY_ENV_VARS`
-    （WP-BEZEL-CRED-SOURCE / 裁定 81）——这里断言的是"插件用的就是那一份"，
-    不是再抄一遍顺序：抄一遍就会有第二个真相，网关那边加一个 ``BEZEL_API_KEY``
-    之后这条就变成一条只证明自己过时的红灯。
-    """
-    from plobi.agents.registry import BEZEL_KEY_ENV_VARS, BEZEL_URL_ENV_VARS
-
-    cfg = PROVIDER_REGISTRY["bezel"]
-    assert cfg.api_key_env_vars == BEZEL_KEY_ENV_VARS
-    # 唯一的新变量只能是本插件自己的那把（``PLOBI_`` 前缀），其余必须是上游既有的。
-    assert {v for v in cfg.api_key_env_vars if v.startswith("PLOBI_")} == {
-        "PLOBI_QUOTA_BEZEL_KEY"
-    }
-    # 端点变量同理：``PROVIDER_REGISTRY`` 是从 ``env_vars`` 里挑出第一个 ``*_URL``
-    # 落成 ``base_url_env_var``（见 plobi_cli/auth.py 的自动注册段），所以这里只能
-    # 断言"它就是 registry 那份清单的首位"。写死 ``PLOBI_BEZEL_URL`` 的那版后来变成
-    # 了一条只证明自己过时的红灯——桌面端把 ``PLOBI_BEZEL_URL`` 提到首位之后，
-    # 解析出来的就是它，而两处行为都对。
-    assert cfg.base_url_env_var == BEZEL_URL_ENV_VARS[0]
-    assert cfg.base_url_env_var in BEZEL_URL_ENV_VARS
 
 
 def test_bezel_declares_no_aliases():
@@ -120,11 +79,67 @@ def test_unknown_provider_still_rejected():
     assert exc.value.code == "invalid_provider"
 
 
-def test_loopback_base_url_does_not_hijack_other_local_endpoints():
-    """`127.0.0.1` must not become a provider key — Ollama/vLLM live there too."""
+
+# ---------------------------------------------------------------------------
+# 11-18 第三处：`bezel` **不是 provider**，它是那 22 家软件共用的传输。
+#
+# 主人 11-17 18:5x：「bezel 是内部名称。provider 下面适配的是一个一个软件名，
+# 而不是 bezel。」所以下面这几条把原来的「bezel 是 provider」全部反过来钉死：
+# 它不在注册表、不在 picker、不上屏；软件名才是 provider。
+# ---------------------------------------------------------------------------
+
+
+def test_bezel_is_no_longer_a_provider():
+    assert "bezel" not in PROVIDER_REGISTRY
+
+
+def test_bezel_is_no_longer_in_the_picker():
+    from plobi_cli.models import CANONICAL_PROVIDERS
+
+    assert all(p.name != "bezel" for p in list_providers())
+    canonical = {e.slug for e in CANONICAL_PROVIDERS}
+    assert "bezel" not in canonical
+
+
+def test_bezel_is_only_the_transport_name():
+    from plobi.agents.registry import bezel_base_url
+    from providers.hub_software import TRANSPORT_NAME, TRANSPORT_PROFILE
+
+    assert TRANSPORT_NAME == "bezel"
+    # 内部路径还能按这个名字要凭据兜底与请求字段，但它没有注册。
+    profile = get_provider_profile("bezel")
+    assert profile is TRANSPORT_PROFILE
+    assert profile.base_url == bezel_base_url()
+    assert profile.fallback_api_key()
+
+
+def test_each_software_is_its_own_provider():
+    for software in ("workbuddy", "opencode-zen-free", "qoder-cn", "agy-cli"):
+        profile = get_provider_profile(software)
+        assert profile is not None, software
+        assert profile.name == software
+        assert software in PROVIDER_REGISTRY
+
+
+def test_software_profiles_share_the_gateway_endpoint_and_credentials():
+    from plobi.agents.registry import BEZEL_KEY_ENV_VARS, BEZEL_URL_ENV_VARS, bezel_base_url
+
+    profile = get_provider_profile("workbuddy")
+    assert profile.base_url == bezel_base_url()
+    assert list(profile.env_vars) == list(BEZEL_KEY_ENV_VARS) + list(BEZEL_URL_ENV_VARS)
+    assert profile.fallback_api_key() == get_provider_profile("bezel").fallback_api_key()
+
+
+def test_shared_loopback_endpoint_names_no_single_software():
+    """22 家共用 `127.0.0.1:8000`：反查猜不出是哪一家，就不许猜。"""
     from agent.model_metadata import _URL_TO_PROVIDER, _infer_provider_from_url
 
-    assert _infer_provider_from_url("http://127.0.0.1:11434/v1") != "bezel"
-    assert _infer_provider_from_url("http://127.0.0.1:8000/v1") == "bezel"
-    # a bare-host key would substring-match every loopback endpoint
+    assert _infer_provider_from_url("http://127.0.0.1:8000/v1") is None
+    assert "127.0.0.1:8000" not in _URL_TO_PROVIDER
     assert "127.0.0.1" not in _URL_TO_PROVIDER
+
+
+def test_local_ollama_is_still_not_hijacked():
+    from agent.model_metadata import _infer_provider_from_url
+
+    assert _infer_provider_from_url("http://127.0.0.1:11434/v1") != "bezel"

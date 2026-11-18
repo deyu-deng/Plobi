@@ -55,7 +55,22 @@ def _acp_slugs() -> set[str]:
     }
 
 
-_EXEMPT = {"custom"} | _VIRTUAL | _acp_slugs()
+def _hub_software_slugs() -> set[str]:
+    """网关适配的那些**软件名**（``workbuddy``、``opencode-zen-free``…）。
+
+    它们现在是真 provider（11-18 第三处：``bezel`` 降级成纯传输，软件名在
+    ``providers/hub_software.py`` 注册），但**共用网关那一份凭据与端点** ——
+    屏上不是 22 张 API-key 卡，而是「订阅额度」那一组：一行一家软件、由额度卡片
+    驱动。运维那张卡（``BEZEL_KEY_ENV_VARS``）只该出现一次，所以它们不参与
+    keys/accounts 两栏的 parity 并集。派生自 ``HUB_SOFTWARE_IDS``，新增一家自动覆盖。
+    """
+    from plobi_cli.models import HUB_SOFTWARE_IDS
+
+    canonical = {e.slug for e in CANONICAL_PROVIDERS}
+    return set(HUB_SOFTWARE_IDS) & canonical
+
+
+_EXEMPT = {"custom"} | _VIRTUAL | _acp_slugs() | _hub_software_slugs()
 
 # Providers that legitimately offer BOTH auth methods and so intentionally
 # appear on both desktop tabs (an API-key card AND an account sign-in card).

@@ -335,18 +335,6 @@ export function isQuotaAppSlug(slug: string): boolean {
   return Boolean(app?.connected && !app.optedOut)
 }
 
-/**
- * The Plobi backend provider that serves every hub-backed model. This is a
- * routing value, never display copy — 裁定 45.4 keeps the word out of renderer
- * string literals — so it is only ever *matched* here, and the value the UI
- * selects is the catalog row's own slug.
- */
-const BEZEL_ROW = /^bezel$/i
-
-export function findQuotaHubRow(providers: readonly Pick<ModelOptionProvider, 'slug'>[]): string | null {
-  return providers.find(provider => BEZEL_ROW.test(provider.slug))?.slug ?? null
-}
-
 /** The bare ids the hub still says are usable for one app, as backend model ids. */
 function pickableModelIds(app: ConnectedDesktopApp): string[] {
   // Only ids the hub actually reported for this app. Nothing is inferred, revived,
@@ -355,24 +343,51 @@ function pickableModelIds(app: ConnectedDesktopApp): string[] {
 }
 
 /**
- * The chat model selector's provider list, with the hub's own catalog row
- * replaced by one row per connected app.
+ * True when this row is one of the gateway's software rows: the backend links a
+ * software row to its own models (`<slug>/<model>`), so a row whose ids all start
+ * with its own slug is a software. 11-18 第三处之后这种行自己就是 provider。
+ */
+export function isHubSoftwareRow(provider: Pick<ModelOptionProvider, 'models' | 'slug'>): boolean {
+  const slug = String(provider.slug ?? '').trim()
+
+  if (!slug) {
+    return false
+  }
+
+  return (provider.models ?? []).some(model => String(model).startsWith(`${slug}/`))
+}
+
+export function findQuotaHubRow(providers: readonly ModelOptionProvider[]): string | null {
+  // 11-18 第三处之后没有「网关那一行」了：网关那几家软件各自就是 provider，行的
+  // slug 就是软件自己的名字。这里留给还按「取一个 hub slug」写的老调用点，答案是
+  // **第一条软件行自己的 slug**。
+  const apps = $connectedDesktopApps.get()
+
+  for (const provider of providers) {
+    if (isHubSoftwareRow(provider)) {
+      return provider.slug
+    }
+
+    if (Object.prototype.hasOwnProperty.call(apps, String(provider.slug ?? '').toLowerCase())) {
+      return provider.slug
+    }
+  }
+
+  return null
+}
+
+/**
+ * The chat model selector's provider list, narrowed to what the hub vouches for.
  *
- * Two things happen here and both are the user's ruling, not decoration:
+ * 11-18 第三处之后，后端**已经**按软件给行（一行一家软件，slug 就是软件名，模型
+ * id 是 `<软件>/<模型>`），所以这里不再「克隆」任何东西，只做两件事：
  *
- * 1. **A pick is an ordinary backend model.** The rows keep the hub row's slug
- *    and carry the joined id the catalog already speaks (`<app>/<model>`), so
- *    selecting one goes through `config.set` / `session.create` / `prompt.submit`
- *    like any other model — the transcript, the memory and the tool calls all
- *    come back through the pipeline that persists them.
- * 2. **Only what the hub says is usable survives.** The catalog's hub row lists
- *    every channel it aggregates, including the CLI leg (no tool calls) and any
- *    app whose credential has expired; the verdict from `/v1/models?selectable=1`
- *    is what filters them out, and an id the backend does not offer is dropped
- *    here too, so nothing in this list can fail for a reason we already knew.
+ * 1. **只留 hub 说可用的。** 后端那行带的是网关全量清单（连额度冷却中的也在），而
+ *    `/v1/models?selectable=1` 的判决才是「现在真能跑」。两层取交集，一个已知跑
+ *    不动的 id 就不会出现在选择器里。
+ * 2. **在等的那几条留着，标灰。** 额度桶自己会回血，用户看得到倒计时（11-08 21:3x）。
  *
- * Without the backend's hub row there is nothing to route the picks through, so
- * the input comes back untouched rather than a list of promises we cannot keep.
+ * 不属于网关软件的 provider 行原样穿过 —— 那些是用户自己配的，不归这里管。
  */
 export function quotaProviders(providers: readonly ModelOptionProvider[]): ModelOptionProvider[] {
   // A provider the user's config names but whose credential is not there cannot serve
@@ -386,32 +401,44 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
     provider => provider.selectable !== false && provider.authenticated !== false
   )
 
-  const hubRow = usable.find(provider => BEZEL_ROW.test(provider.slug))
+  const apps = $connectedDesktopApps.get()
+  const out: ModelOptionProvider[] = []
 
-  if (!hubRow) {
-    return [...usable]
-  }
+  for (const row of usable) {
+    const key = String(row.slug ?? '').toLowerCase()
+    const app = Object.prototype.hasOwnProperty.call(apps, key) ? apps[key] : undefined
 
-  const offered = new Set(hubRow.models ?? [])
-  const groups: ModelOptionProvider[] = []
+    if (!app) {
+      out.push(row)
 
-  for (const app of Object.values($connectedDesktopApps.get())) {
+      continue
+    }
+
     // A demo channel is not a quota the user owns, so it never reaches the
     // selector. This is the single place that rule lives for hub-backed rows (the
     // backend's own rows are filtered by `humanizeProviders`). `optedOut` is the
     // same rule with the user as the authority: they said stop, so its models are
     // not offered even though the hub is still serving them happily.
-    if (!app.connected || app.optedOut || isMockProvider({ slug: app.id })) {
+    if (app.optedOut || isMockProvider({ slug: app.id })) {
       continue
     }
+
+    const offered = new Set(row.models ?? [])
 
     // A model of a leg that is only *waiting* — its bucket ran out and refills on its
     // own — stays in the list: greyed out, with the time left on it (user, 2026-11-08
     // 21:3x). The hub calls it unselectable, so it is normally not in this app's frame;
     // it comes from the catalog row, which lists it with the reason and the time.
-    const waiting = (hubRow.models ?? []).filter(
-      model => model.startsWith(`${app.id}/`) && unavailableOf(hubRow.capabilities?.[model])
+    //
+    // 一条腿整个桶都空了的时候 `connected` 是 false（开关不能说自己能用），但这一行
+    // 还得在：灰着的模型加倒计时才是它该有的样子。
+    const waiting = (row.models ?? []).filter(
+      model => model.startsWith(`${app.id}/`) && unavailableOf(row.capabilities?.[model])
     )
+
+    if (!app.connected && !hasWaitingModel(app.blocked)) {
+      continue
+    }
 
     // The catalog row and the app frame can both name the same model (the backend
     // keeps a waiting model in the row so the reason has somewhere to live), so the
@@ -424,32 +451,28 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
       continue
     }
 
-    const pricing: Record<string, ModelPricing> = { ...hubRow.pricing }
+    const pricing: Record<string, ModelPricing> = { ...row.pricing }
 
     // The draw is the user's own subscription quota, not a metered API call.
     for (const model of models) {
       pricing[model] = { free: true } as ModelPricing
     }
 
-    groups.push({
-      ...hubRow,
+    out.push({
+      ...row,
       free_tier: true,
       models,
-      name: app.name,
+      // 这一行的身份就是它自己的软件名：`ui_key` 曾经是 `<网关>::<软件>`，那是
+      // 「一行代表整个网关」的遗留，11-18 第三处之后不再有这种东西。
+      name: app.name?.trim() ? app.name : row.name,
       pricing,
       total_models: models.length,
-      // Every clone row carries the HUB's slug (that is the routing identity a pick
-      // must keep), so `slug` alone cannot tell two rows apart and the display name
-      // cannot either — two legs of one software humanize to the same brand by
-      // design. This key is the row's own identity: one software LEG per hub app id.
-      // The picker groups on it; 设置页 also keys on it.
-      ui_key: `${hubRow.slug}::${app.id}`
+      ui_key: row.ui_key ?? row.slug
     })
   }
 
-  return [...usable.filter(provider => provider !== hubRow), ...groups]
+  return out
 }
-
 
 /**
  * Ask the shell to re-read the hub and push a fresh frame — that is the only way to

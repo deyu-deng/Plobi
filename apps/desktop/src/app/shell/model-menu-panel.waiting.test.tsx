@@ -26,14 +26,16 @@ vi.mock('@/plobi', () => ({
  * The backend's catalog as `model.options` returns it: one hub row whose model
  * ids already carry the `<app>/` prefix, plus that row's capabilities.
  */
-function catalog(models: string[], capabilities?: Record<string, unknown>) {
+function // 后端现在是一家软件一行，行的 `slug` 就是软件名；下面这些用例都只看
+// `opencode_api` 这一家。
+catalog(models: string[], capabilities?: Record<string, unknown>) {
   return [
     {
       authenticated: true,
       capabilities,
       models,
-      name: 'Local Quota Hub',
-      slug: 'bezel',
+      name: 'OpenCode Free',
+      slug: 'opencode_api',
       total_models: models.length
     }
   ]

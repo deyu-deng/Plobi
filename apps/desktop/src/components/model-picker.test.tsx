@@ -21,15 +21,14 @@ beforeAll(() => {
   Element.prototype.releasePointerCapture = vi.fn()
 })
 
-// Two legs of one software. `quotaProviders` clones the hub row once per app, and
-// every clone keeps the HUB's slug — that is the routing identity a pick must keep.
-// Which means any key built off `slug` (or off the humanized `name`, same brand by
-// design) collides, and React then unmounts one subtree and mounts the other on
-// every render: the picker re-fires its mount effect and asks the hub again. That
-// self-sustaining loop is the 2026-10-26 "一打开模型选择框整个聊天框就一直闪".
+// Two legs of one software, one row each (11-18)：后端给的就是一家软件一行，行的
+// `slug` 是这家软件自己的名字。两条腿同名（同属一个品牌），所以任何拿 `name` 当 key
+// 的写法都会撞——撞了 React 就卸载一棵子树再挂另一棵，模型框每次渲染都重新问一遍
+// 网关，那就是 2026-10-26 「一打开模型选择框整个聊天框就一直闪」。
 const catalog: ModelOptionProvider[] = [
   { models: ['glm-5.2'], name: 'Z.AI', slug: 'zai' },
-  { models: ['workbuddy/hy3', 'workbuddy_api/hy3'], name: 'Local Quota Hub', slug: 'bezel' }
+  { models: ['workbuddy/hy3'], name: 'WorkBuddy', slug: 'workbuddy' },
+  { models: ['workbuddy_api/hy3'], name: 'WorkBuddy', slug: 'workbuddy_api' }
 ]
 
 function gatewayReturning(providers: ModelOptionProvider[]) {
@@ -49,7 +48,7 @@ async function renderPicker(
       <ModelPickerDialog
         contentClassName=""
         currentModel="workbuddy/hy3"
-        currentProvider="bezel"
+        currentProvider="workbuddy"
         gw={gw}
         onOpenChange={() => {}}
         onSelect={onSelect}
@@ -130,7 +129,8 @@ it('a picked hub leg reports the software name, not the hub slug', async () => {
 
   const onSelect = vi.fn()
 
-  await renderPicker(catalog, onSelect)
+  // 后端只列已授权的软件，所以这里也只给那一行。
+  await renderPicker(catalog.filter(row => row.slug !== 'workbuddy_api'), onSelect)
 
   const items = Array.from(document.querySelectorAll('[cmdk-item]'))
   expect(items).toHaveLength(2) // zai's glm-5.2 + the one connected hub leg

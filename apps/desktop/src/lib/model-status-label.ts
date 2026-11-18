@@ -4,41 +4,15 @@ import type { ModelOptionProvider } from '@/types/plobi'
 /**
  * 一行 provider 在**配置那个宇宙**里的名字。
  *
- * 网关（`bezel`）是**内部名**：用户的配置与屏上写的是**软件名**（`workbuddy`、
- * `qoder`…），机器标识只留在日志／doctor 行 id／路由值里（主人 11-17 18:5x）。
- * 网关那几行一行一个软件（`quotaProviders` 用 hub 名册重排过），`ui_key` 形如
- * `bezel::<软件 id>` ⇒ 那一段就是这一行的身份。
- *
- * 别家 provider 没有这一层 ⇒ 身份就是它的 slug。
+ * 11-18 第三处之后这层等价关系消失了：网关那几家软件**各自就是 provider**，行的
+ * slug 本身就是软件名（`workbuddy`、`qoder`…），`ui_key` 只是 Select 里的唯一键，
+ * 不再编码身份。机器标识（传输别名）只留在日志／doctor 行 id 里。
  */
 export function providerIdentity(
   provider: Pick<ModelOptionProvider, 'slug' | 'ui_key'>,
-  model?: string
+  _model?: string
 ): string {
-  const key = (provider.ui_key ?? '').trim()
-  const sep = key.indexOf('::')
-
-  if (sep >= 0) {
-    const software = key.slice(sep + 2).trim().toLowerCase()
-
-    if (software) {
-      return software
-    }
-  }
-
-  const slug = (provider.slug ?? '').trim()
-
-  // 没有 ui_key 的网关行（后端原样发来的那几行）：模型 id 的前缀就是那家软件
-  // （`workbuddy/hy4free` ⇒ `workbuddy`）。
-  if (/^bezel$/i.test(slug) && model) {
-    const prefix = model.split('/', 1)[0]?.trim().toLowerCase()
-
-    if (prefix) {
-      return prefix
-    }
-  }
-
-  return slug
+  return (provider.slug ?? '').trim()
 }
 
 

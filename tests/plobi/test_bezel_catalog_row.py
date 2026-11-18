@@ -1,18 +1,14 @@
-"""网关那一行必须在后端目录里 —— 桌面选择框就是拿它做接头的。
+"""订阅额度那组行：**一家软件一行** —— `bezel` 不再是 provider。
 
-现场（2026-11-08 本机现核）：网关在 `:8000` 上答了 **58** 个可选 id，而
-`model.options`（`explicit_only=1`）的 payload 里**一行 `bezel` 都没有**。后果有两处，
-都在同一根上：
+规矩（主人 11-17 18:5x / 11-18）：「bezel 是内部名称。provider 下面适配的是一个一个
+软件名，而不是 bezel。」所以这一组行的形状也换了：
 
-* 桌面选择框按 `quotaProviders()`（`store/desktop-quotas.ts`）把网关那一行**克隆**成
-  每条腿一组（CodeBuddy / OpenCode Zen…）；没有那一行 ⇒ 订阅模型一条都进不了选择框，
-  L2 分身的模型框于是永远是「无模型」；
-* 切换时 `hubProviderSlug()` 去目录里找那一行，找不到 ⇒ 报 `not_offered`
-  （「该通道当前未在网关中列出」）—— 而网关明明在列 58 条。那句话在撒谎。
+* 旧样：目录里补**一行** slug=`bezel`，桌面再把它克隆成每条腿一组；
+* 现样：目录里直接是**一家软件一行**（slug=`workbuddy`…），名字是那家软件的品牌名，
+  模型只留自己前缀下的 —— 切到 `workbuddy` 不该看见别家的模型。
 
-修法不是让用户去 `config.yaml` 里手写 `providers.bezel`：网关是这台机器自己的本地服务
-（裁定 46：额度清单只有一份真源、来自网关；裁定 81：钥匙由网关自己的配置声明），
-它不需要用户声明才可路由，但它的**那一行**必须在目录里。
+切分靠**模型 id 的前缀**（`workbuddy/hy3` ⇒ `workbuddy`），不靠任何手抄名单：
+网关名册新上一家，前缀一出现就有行，不必等谁去改常量。
 
 本档零网络、零额度：网关那一读的接缝（`plobi_cli.models.hub_selectable_model_ids`）
 被替换成假应答，其余 provider 行由 `list_authenticated_providers` 的替身给出。
@@ -24,22 +20,18 @@ from unittest.mock import patch
 
 import pytest
 
-from plobi_cli.inventory import (
-    BEZEL_SLUG,
-    ConfigContext,
-    build_models_payload,
-)
+from plobi_cli.inventory import ConfigContext, build_models_payload
 
-#: 网关答的那批 id —— 前缀是卡 id，渲染层就是按这个前缀接头的。
-HUB_IDS = ["workbuddy/hy3", "opencode_api/gpt-5.5"]
+#: 网关答的那批 id —— 前缀就是那家软件（模型 id 里本来就有「谁在服务它」）。
+HUB_IDS = ["workbuddy/hy3", "opencode-zen-free/gpt-5.5"]
 
 #: 额度冷却中的那条腿：模型不在可选清单里，但它只是「等一会儿」。
-WAITING_IDS = ["opencode_api/big-pickle"]
+WAITING_IDS = ["opencode-zen-free/big-pickle"]
 WAITING_VERDICT = {
-    "opencode_api/big-pickle": {
+    "opencode-zen-free/big-pickle": {
         "reason": "quota_exhausted",
         "retry_after_seconds": 1754,
-        "available_at": "2026-11-08T23:13:02",
+        "available_at": "2026-11-18T23:13:02",
     }
 }
 
@@ -94,89 +86,119 @@ def _providers(rows: list[dict]):
 
 
 def _hub_rows(payload: dict) -> list[dict]:
+    """网关那组行 —— 它们的出处是这一处，不是用户配置。"""
     return [
         row
         for row in payload.get("providers") or []
-        if str(row.get("slug", "")).lower() == BEZEL_SLUG
+        if row.get("source") == "hub-software"
     ]
 
 
-def test_the_hub_row_is_in_the_catalogue_when_the_hub_answers(hub_answers):
-    """网关答了，那一行就得在目录里 —— 它带的是网关那批可选 id，加上在等的那些。
+def _hub_row(payload: dict, slug: str) -> dict:
+    for row in payload.get("providers") or []:
+        if str(row.get("slug", "")).lower() == slug:
+            return row
+    raise AssertionError(f"目录里没有 {slug} 这一行：{[r.get('slug') for r in payload.get('providers') or []]}")
 
-    「在等」的那批不在网关的**可选**清单里（那正是「在等」的意思），但它们要
-    在这一行里 —— 否则它们连被标灰的机会都没有（用户 11-08 21:3x：等恢复的标灰
-    保留并写剩余时间）。
-    """
+
+def test_one_row_per_software_and_only_its_own_models(hub_answers):
+    """一家软件一行；行里只留自己前缀下的模型（切过去不看见别家的）。"""
     with _providers([]):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
-    rows = _hub_rows(payload)
-    assert len(rows) == 1, payload.get("providers")
-    row = rows[0]
-    assert list(row["models"]) == HUB_IDS + WAITING_IDS
-    assert row["total_models"] == len(HUB_IDS) + len(WAITING_IDS)
+    workbuddy = _hub_row(payload, "workbuddy")
+    assert list(workbuddy["models"]) == ["workbuddy/hy3"]
+    assert workbuddy["total_models"] == 1
+
+    opencode = _hub_row(payload, "opencode-zen-free")
+    # 「在等」的那条也在自己这一行里 —— 否则它连被标灰的机会都没有
+    # （用户 11-08 21:3x：等恢复的标灰保留并写剩余时间）。
+    assert list(opencode["models"]) == ["opencode-zen-free/gpt-5.5", "opencode-zen-free/big-pickle"]
 
 
-def test_the_explicit_filter_does_not_drop_the_hub_row(hub_answers):
-    """这一行不是「用户配过的 provider」，但它不许被那个过滤器扫掉。
+def test_the_machine_name_is_not_a_row(hub_answers):
+    """`bezel` 只是传输：它不许再作为一行出现在目录里（那是旧形状的病根）。"""
+    with _providers([]):
+        payload = build_models_payload(_ctx(), explicit_only=True)
 
-    过滤器问的是「用户配过这一家吗」；网关不是这个问题的答案——它是产品自己的本地
+    slugs = [str(row.get("slug", "")).lower() for row in payload.get("providers") or []]
+    assert "bezel" not in slugs, slugs
+
+
+def test_the_rows_are_named_after_the_software(hub_answers):
+    """裁定 45.4：屏上是软件名（品牌名），不是网关的机器标识。"""
+    with _providers([]):
+        payload = build_models_payload(_ctx(), explicit_only=True)
+
+    assert _hub_row(payload, "workbuddy")["name"] == "WorkBuddy"
+    assert _hub_row(payload, "opencode-zen-free")["name"] == "OpenCode Free"
+    for row in _hub_rows(payload):
+        assert "bezel" not in str(row.get("name", "")).lower()
+
+
+def test_the_explicit_filter_does_not_drop_these_rows(hub_answers):
+    """它们不是「用户配过的 provider」，但不许被那个过滤器扫掉。
+
+    过滤器问的是「用户配过这一家吗」；网关不是这个问题的答案 —— 它是产品自己的本地
     服务，用户从没在 `config.yaml` 里写过它，可它照样是订阅模型唯一的路由。
     """
     with _providers([]):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
-    assert _hub_rows(payload), "explicit_only 把网关那一行扫掉了"
+    assert {row["slug"] for row in _hub_rows(payload)} == {"workbuddy", "opencode-zen-free"}
 
 
-def test_the_hub_row_carries_a_working_credential(hub_answers):
-    """渲染层按 `authenticated === false` 丢行；这一行答了，就得带着凭据。"""
+def test_the_rows_carry_a_working_credential(hub_answers):
+    """渲染层按 `authenticated === false` 丢行；网关答了，这些行就得带着凭据。"""
     with _providers([]):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
-    row = _hub_rows(payload)[0]
-    assert row["authenticated"] is True
-    assert row.get("auth_type") == "api_key"
-
-
-def test_the_hub_row_shows_no_internal_vocabulary(hub_answers):
-    """裁定 45.4：屏上不许出现内部代号。名字是软件那一侧的叫法，slug 是路由值。"""
-    with _providers([]):
-        payload = build_models_payload(_ctx(), explicit_only=True)
-
-    row = _hub_rows(payload)[0]
-    assert row["name"] == "订阅额度"
-    assert BEZEL_SLUG not in row["name"].lower()
+    for row in _hub_rows(payload):
+        assert row["authenticated"] is True
+        assert row.get("auth_type") == "api_key"
 
 
 def test_a_model_that_is_only_waiting_is_in_the_row_with_its_verdict(hub_answers):
-    """等恢复的模型要进这一行，且带上原因与剩余时间。
+    """等恢复的模型要进自己那一行，且带上原因与剩余时间。
 
-    它不在网关的**可选**清单里（那正是「在等」的意思），所以它只能从另一条
-    读法进来；判词挂在 `capabilities[model].unavailable` 上 —— 那是唯一一条
-    能把「为什么现在不能选、还要等多久」带到屏幕上的通道。
+    它不在网关的**可选**清单里（那正是「在等」的意思），所以它只能从另一条读法进来；
+    判词挂在 `capabilities[model].unavailable` 上 —— 那是唯一一条能把「为什么现在
+    不能选、还要等多久」带到屏幕上的通道。
     """
     with _providers([]):
         payload = build_models_payload(_ctx(), explicit_only=True, capabilities=True)
 
-    row = _hub_rows(payload)[0]
-    assert WAITING_IDS[0] in row["models"]
-    assert row["capabilities"][WAITING_IDS[0]]["unavailable"] == WAITING_VERDICT[WAITING_IDS[0]]
+    opencode = _hub_row(payload, "opencode-zen-free")
+    assert WAITING_IDS[0] in opencode["models"]
+    assert opencode["capabilities"][WAITING_IDS[0]]["unavailable"] == WAITING_VERDICT[WAITING_IDS[0]]
+    # 别家那一行不许沾上这条判词。
+    workbuddy = _hub_row(payload, "workbuddy")
+    assert WAITING_IDS[0] not in workbuddy["capabilities"]
+    for model in workbuddy["models"]:
+        assert "unavailable" not in workbuddy["capabilities"].get(model, {})
 
 
-def test_a_waiting_model_does_not_claim_a_pickable_row(hub_answers):
-    """普通行不该带「不可用」的标记 —— 只有冷却中的那批带。"""
+def test_a_software_the_roster_never_heard_of_still_gets_a_row(hub_answers, monkeypatch):
+    """切分靠**模型前缀**，不靠手抄名单（第二处那根病根）。
+
+    网关名册新上一家、软件名还没进生成表时，旧实现会静默丢掉这条腿（只打一行
+    warning）；现在它照样成行 —— 名字退回 slug，至少用户能看见、能选。
+    """
+    monkeypatch.setattr(
+        "plobi_cli.models.hub_selectable_model_ids",
+        lambda api_key, base_url, **kwargs: ["brand-new-app/some-model"],
+    )
     with _providers([]):
-        payload = build_models_payload(_ctx(), explicit_only=True, capabilities=True)
+        payload = build_models_payload(_ctx(), explicit_only=True)
 
-    row = _hub_rows(payload)[0]
-    for model in HUB_IDS:
-        assert "unavailable" not in row["capabilities"].get(model, {})
+    row = _hub_row(payload, "brand-new-app")
+    assert list(row["models"]) == ["brand-new-app/some-model"]
+    assert row["name"] == "brand-new-app"
+    assert row["authenticated"] is True
 
 
 def test_a_silent_hub_leaves_no_row_and_claims_nothing(hub_silent):
-    """网关读不到 ⇒ 没有那一行；但绝不能因此把别的 provider 说成没有。
+    """网关读不到 ⇒ 没有这些行；但绝不能因此把别的 provider 说成没有。
 
     「我们没问到」与「那里没有」是两件事（hub 那一帧也是这么分的）。
     """
@@ -186,24 +208,26 @@ def test_a_silent_hub_leaves_no_row_and_claims_nothing(hub_silent):
     with _providers([other]):
         payload = build_models_payload(_ctx())
 
-    assert not _hub_rows(payload)
+    assert _hub_rows(payload) == []
     kept = [row for row in payload["providers"] if row["slug"] == "openrouter"]
     assert len(kept) == 1, payload["providers"]
     assert list(kept[0]["models"]) == ["m1"]
 
 
-def test_a_configured_hub_row_is_not_duplicated(hub_answers):
-    """用户自己在 `config.yaml` 里写过 `providers.bezel` 时，目录里只留一行。
+def test_a_configured_software_row_is_merged_not_duplicated(hub_answers):
+    """用户自己在 `config.yaml` 里写过 `providers.workbuddy` 时，目录里只留一行。
 
-    那一行是用户自己的声明（可能指着别处），不许被我们再补一行同名的那把它盖掉。
+    那一行是用户自己的声明（可能指着别处），不许被我们再补一行同名的盖掉；网关答出的
+    模型并进它，但 `source` 仍归用户。
     """
-    configured = {"slug": BEZEL_SLUG, "name": "订阅额度", "models": ["workbuddy/hy3"],
+    configured = {"slug": "workbuddy", "name": "WorkBuddy", "models": ["workbuddy/pinned"],
                   "total_models": 1, "is_current": False, "is_user_defined": True,
                   "source": "user-config", "authenticated": True}
 
     with _providers([configured]):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
-    rows = _hub_rows(payload)
+    rows = [row for row in payload["providers"] if row["slug"] == "workbuddy"]
     assert len(rows) == 1, [row["slug"] for row in payload["providers"]]
     assert rows[0]["source"] == "user-config"
+    assert "workbuddy/hy3" in rows[0]["models"], "网关答出的模型没有并进用户那一行"

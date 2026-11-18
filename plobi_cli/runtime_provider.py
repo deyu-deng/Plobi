@@ -534,17 +534,22 @@ def _resolve_runtime_from_pool_entry(
 
 def resolve_requested_provider(requested: Optional[str] = None) -> str:
     """Resolve provider request from explicit arg, config, then env."""
-    # 配置里那个 provider 名可能是**软件名**（`workbuddy`）——网关的机器标识是内部名，
-    # 不进配置；解析时经 `transport_for_software` 换到传输（`bezel`）那一腿。
-    from plobi_cli.models import transport_for_software
+    # 配置里那个 provider 名本该是**软件名**（`workbuddy`、`opencode-zen-free`…）——
+    # 网关的机器标识（`bezel`）是内部名，不进配置。这一层收两件事：
+    #   ① 存量配置里还留着机器标识（`aigw`／`bezel`／`quota_hub`）⇒ 一次性迁成软件名
+    #      并写回磁盘；
+    #   ② 软件名 ⇒ 换到网关传输（`bezel`）那一腿，否则下游按名字查注册表会落空。
+    # 这里是聊天真正走的那条路（11-18 实测：只改 auth.resolve_provider 不够，
+    # 聊天走的是本函数），所以迁移必须也挂在这里。
+    from plobi_cli.auth import hub_provider_identity
 
     if requested and requested.strip():
-        return transport_for_software(requested)
+        return hub_provider_identity(requested)
 
     model_cfg = _get_model_config()
     cfg_provider = model_cfg.get("provider")
     if isinstance(cfg_provider, str) and cfg_provider.strip():
-        return transport_for_software(cfg_provider)
+        return hub_provider_identity(cfg_provider)
 
     # Prefer the persisted config selection over any stale shell/.env
     # provider override so chat uses the endpoint the user last saved.

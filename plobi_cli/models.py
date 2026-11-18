@@ -1128,28 +1128,12 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
     ProviderEntry("qwen-oauth",     "Qwen OAuth (Portal)",      "Qwen OAuth (Reuses local Qwen CLI login)"),
 ]
 
-#: 本机额度网关（``bezel``）适配的**软件**：id → 品牌名。
+#: 本机额度网关适配的**软件**：id → 品牌名。**真源在 `providers/hub_software.py`**，
+#: 这里只转一手，保持既有 `from plobi_cli.models import HUB_SOFTWARE` 的调用点不动。
 #:
-#: id 就是 hub 名册里的 app id，也正是**模型 id 的前缀**（``workbuddy/hy4free`` ⇒
-#: ``workbuddy``）—— 「哪一家软件在服务这个模型」这件事，数据里本来就有。
-#:
-#: 这一张表是**屏上与配置里那个名字**的真源：网关自己的机器标识（``bezel``）是
-#: **内部名**，不许写进用户的配置、不许上屏（主人 11-17 18:5x：「bezel 是内部名称……
-#: provider 下面适配的是一个一个软件名，而不是 bezel」）。
-HUB_SOFTWARE: dict[str, str] = {
-    "workbuddy": "WorkBuddy",
-    "workbuddy_api": "WorkBuddy (API)",
-    "antigravity": "Antigravity",
-    "cursor": "Cursor",
-    "qoder": "Qoder",
-    "qoder_intl": "Qoder (International)",
-    "opencode_api": "OpenCode Zen",
-    "kiro_cli": "Kiro Code",
-    "cline_cli": "Cline",
-}
-
-#: 模型 id 的前缀落在这一组里 ⇒ 这个 provider 名是**软件名**，不是机器名。
-HUB_SOFTWARE_IDS = frozenset(HUB_SOFTWARE)
+#: 11-18 那次把手抄的表挪进了 providers 层：软件名从「映射到 bezel 的东西」升格成
+#: **provider 本身**，所以名册跟着 profile 一起住在 `providers/hub_software.py`。
+from providers.hub_software import HUB_SOFTWARE, HUB_SOFTWARE_IDS  # noqa: E402
 
 #: 网关那几条腿的**传输**：软件名 → 网关自己的机器标识。
 #:
@@ -1158,17 +1142,39 @@ HUB_SOFTWARE_IDS = frozenset(HUB_SOFTWARE)
 #: 表换到传输（``bezel``）那一腿。
 #:
 #: **为什么软件名不进 `CANONICAL_PROVIDERS`、也不进全局别名表**：那两张表是
-#: 「可配置的 provider」的宇宙，而网关那几行**不是**一家一家可单独配置的 provider（它们
-#: 共用网关那一份凭据，屏上由 `quotaProviders` 一行一个软件地克隆出来）。软件名一旦
-#: 进了那张表，就会被当成「另一个 provider」⇒ ① 抢走 env 归属（`/api/env` 的
-#: provider 归属会认成软件名）、② 破掉 GUI⇄CLI 的 parity 契约（规范表里有的东西
-#: 必须在桌面 Providers 页可配置）。两条都是既有契约（见
-#: `tests/plobi_cli/test_provider_parity.py` 与
-#: `tests/plobi_cli/test_bezel_provider_plugin.py::test_bezel_declares_no_aliases`）。
+#: 11-18 第三处把这件事彻底摆正：**软件名就是 provider**（`providers/hub_software.py`
+#: 给 22 家各注册了一个 profile，凭据与端点共用网关那一份），`bezel` 只剩**传输**这一个
+#: 身份 —— 它不在 `PROVIDER_REGISTRY`、不进 picker、不上屏。这张表因此只剩一个用途：
+#: 由软件名反查「它走哪条传输」（`transport_for_software`），供凭据兜底与请求字段复用。
+#: 屏上仍是「订阅额度」一组、一行一家软件：它们共用一份 key，不是 22 张独立凭据卡，
+#: 所以在 `tests/plobi_cli/test_provider_parity.py` 里按 `HUB_SOFTWARE_IDS` 整体豁免。
 HUB_TRANSPORT: dict[str, str] = {slug: "bezel" for slug in HUB_SOFTWARE}
 
 #: 传输那一侧用到的机器标识集合（配置里那个 provider 名换到传输时认它）。
 HUB_TRANSPORTS = frozenset(HUB_TRANSPORT.values())
+
+
+def is_hub_software(name: str) -> bool:
+    """这家 provider 是不是网关那几家**软件**之一（机器标识本身也算）。
+
+    11-18 第三处之后，网关那 22 家软件各自就是 provider，`bezel` 只是它们共用的
+    传输名。凡是「这家实际上由网关在服务」的判断都走这里，别再散着写
+    `== "bezel"` —— 那种写法只认机器标识，软件名一进来就漏。
+    """
+    key = (name or "").strip().lower()
+    return key in HUB_SOFTWARE_IDS or key in HUB_TRANSPORTS
+
+
+def hub_models_for_software(software: str, models: list[str]) -> list[str]:
+    """网关那条腿的模型清单 ⇒ 这家软件**自己**的那几条（``qoder/xxx``）。
+
+    机器标识直接调用时给全量：那是内部路径（例如额度总览）要的就是一张总表；
+    软件名调用时只留自己前缀下的，否则切到 ``workbuddy`` 会看见别家的模型。
+    """
+    key = (software or "").strip().lower()
+    if key not in HUB_SOFTWARE_IDS:
+        return models
+    return [m for m in models if (m or "").split("/", 1)[0].strip().lower() == key]
 
 
 def transport_for_software(name: str) -> str:
@@ -1191,6 +1197,10 @@ def config_provider_name(provider_id: str, model_id: str = "") -> str:
     """
     pid = (provider_id or "").strip().lower()
     prefix = (model_id or "").strip().split("/", 1)[0].strip().lower()
+    # 软件名自己就是 provider（11-18 第三处）⇒ 原样落盘，不再往后找前缀。
+    if pid in HUB_SOFTWARE_IDS:
+        return pid
+    # 还残着机器标识（`bezel`／`aigw`）⇒ 按模型 id 前缀换成软件名。
     if pid in HUB_TRANSPORTS and prefix in HUB_SOFTWARE_IDS:
         return prefix
     return pid
@@ -2535,7 +2545,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     normalized = normalize_provider(provider)
     if normalized == "openrouter":
         return model_ids(force_refresh=force_refresh)
-    if normalized == "bezel":
+    if is_hub_software(normalized):
         # The quota hub answers for itself which legs can serve a turn.
         api_key, base_url = "", ""
         try:
@@ -2553,7 +2563,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
             try:
                 from plobi_cli.auth import resolve_api_key_provider_credentials
 
-                creds = resolve_api_key_provider_credentials("bezel")
+                creds = resolve_api_key_provider_credentials(normalized)
                 api_key = api_key or str(creds.get("api_key") or "").strip()
                 base_url = str(creds.get("base_url") or "").strip()
             except Exception:  # noqa: BLE001
@@ -2567,7 +2577,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
         # (see `inventory._apply_capabilities`).
         hub_models = hub_selectable_model_ids(api_key, base_url)
         if hub_models is not None:
-            return hub_models
+            return hub_models_for_software(normalized, hub_models)
         # The hub did not answer. A cached hub catalog is exactly how a model that
         # cannot be called stays on screen: measured 2026-10-27, port 8000 was held
         # by an unrelated `http.server` (404 on /v1/models) while
@@ -3014,8 +3024,8 @@ def cached_provider_model_ids(
     # read straight out of `$PLOBI_HOME/provider_models_cache.json` — 17 of which
     # were already dead (expired credential, text-only transport) even while the hub
     # WAS up. A cached hub list is a promise the hub did not just make.
-    if normalized == "bezel":
-        return provider_model_ids("bezel")
+    if is_hub_software(normalized):
+        return provider_model_ids(normalized)
 
     cache = _load_provider_models_cache()
     fp = _credential_fingerprint(normalized)

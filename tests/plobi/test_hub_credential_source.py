@@ -1,4 +1,4 @@
-"""WP-BEZEL-CRED-SOURCE — the gateway credential has ONE resolution order.
+"""网关凭据只有一个解析顺序 —— 而且它现在挂在**软件名**上，不是 `bezel`。
 
 裁定 81: ``plobi_cli.auth`` owns "what did the user give us explicitly", the
 provider profile owns "where to fall back when nothing was given", and the chat
@@ -37,9 +37,10 @@ def _load_by_path(relpath: str, module_name: str):
 # module object, so a second copy under another name could not prove it.
 from plobi.agents import registry
 
-plugin = _load_by_path(
-    "plugins/model-providers/bezel/__init__.py", "plobi_bezel_cred_plugin"
-)
+# 11-18 第三处：`bezel` 不再是 provider（插件已删），22 家软件各自是 provider，
+# 共用网关那一份凭据。这些断言原本挂在插件上，现在挂在 `providers.hub_software`。
+from providers import hub_software
+
 doctor = _load_by_path("scripts/plobi/doctor.py", "plobi_bezel_cred_doctor")
 
 
@@ -74,23 +75,24 @@ def gateway_config(tmp_path, monkeypatch):
 
 
 def test_profile_and_agents_layer_share_one_env_var_list():
-    """The plugin must import the agents layer's tuples, not restate them."""
-    assert plugin._KEY_VARS is registry.BEZEL_KEY_ENV_VARS
-    assert plugin._URL_VARS is registry.BEZEL_URL_ENV_VARS
+    """软件 profile 必须 import agents 层那两个元组，不许自己再抄一遍。"""
+    assert hub_software._KEY_VARS is registry.BEZEL_KEY_ENV_VARS
+    assert hub_software._URL_VARS is registry.BEZEL_URL_ENV_VARS
 
 
 def test_auth_table_picks_up_the_declared_names():
     """The bridge must hand the resolver exactly the agents layer's names."""
     from plobi_cli.auth import PROVIDER_REGISTRY
 
-    cfg = PROVIDER_REGISTRY["bezel"]
+    assert "bezel" not in PROVIDER_REGISTRY, "机器标识不该再是一张 provider 卡"
+    cfg = PROVIDER_REGISTRY["workbuddy"]
     assert cfg.api_key_env_vars == registry.BEZEL_KEY_ENV_VARS
     assert cfg.base_url_env_var in registry.BEZEL_URL_ENV_VARS
 
 
 @pytest.mark.parametrize(
     "relpath",
-    ["scripts/plobi/doctor.py", "plugins/model-providers/bezel/__init__.py"],
+    ["scripts/plobi/doctor.py", "providers/hub_software.py"],
 )
 def test_no_second_copy_of_the_credential_lives_elsewhere(relpath):
     """Guard against re-adding a private default or an unlisted env var name.
@@ -156,7 +158,7 @@ def test_explicit_env_value_outranks_the_declared_fallback(monkeypatch):
 
     marker = "sk-test-explicit-wins"
     monkeypatch.setenv(registry.BEZEL_KEY_ENV_VARS[0], marker)
-    creds = resolve_api_key_provider_credentials("bezel")
+    creds = resolve_api_key_provider_credentials("workbuddy")
     assert creds["api_key"] == marker
     # Source names the explicit var, not the fallback: the order is a real order.
     assert creds["source"] == registry.BEZEL_KEY_ENV_VARS[0]
@@ -168,28 +170,50 @@ def test_fallback_is_observable_when_nothing_explicit_is_set(monkeypatch):
     from plobi_cli.auth import resolve_api_key_provider_credentials
 
     monkeypatch.setattr("agent.credential_pool.load_pool", lambda provider: None)
-    creds = resolve_api_key_provider_credentials("bezel")
+    creds = resolve_api_key_provider_credentials("workbuddy")
     assert creds["source"].startswith("profile_fallback:")
     assert creds["api_key"] == registry.bezel_api_key()
     assert creds["api_key"], "the gateway credential resolved to nothing"
 
 
 def test_chat_path_and_probe_path_resolve_the_same_answer():
-    """``--provider bezel`` and the model picker may not disagree (裁定 81)."""
+    """``--provider workbuddy`` and the model picker may not disagree (裁定 81)."""
     from plobi_cli.auth import resolve_api_key_provider_credentials
     from plobi_cli.runtime_provider import resolve_runtime_provider
 
-    probed = resolve_api_key_provider_credentials("bezel")
-    chat = resolve_runtime_provider(requested="bezel", target_model="workbuddy/x")
+    probed = resolve_api_key_provider_credentials("workbuddy")
+    chat = resolve_runtime_provider(requested="workbuddy", target_model="workbuddy/x")
     assert chat["api_key"] == probed["api_key"]
     assert chat["base_url"] == probed["base_url"]
     assert chat["source"] == probed["source"]
 
 
 def test_profile_no_longer_fills_the_key_at_the_call_site():
-    """The second ``or`` is gone: ``fetch_models`` is the base implementation."""
-    assert "fetch_models" not in vars(plugin.BezelProfile)
-    assert callable(plugin.BezelProfile.fallback_api_key)
+    """第二个 ``or`` 已经没了：``fetch_models`` 走基类实现，钥匙只从兜底来。"""
+    assert "fetch_models" not in vars(hub_software.HubSoftwareProfile)
+    assert callable(hub_software.HubSoftwareProfile.fallback_api_key)
+
+
+def test_every_software_answers_with_the_gateway_credential():
+    """22 家软件各自是 provider，凭据却只有网关那一份 —— 每一家都得答得出。"""
+    from plobi_cli.auth import resolve_api_key_provider_credentials
+
+    for sid in hub_software.HUB_SOFTWARE:
+        creds = resolve_api_key_provider_credentials(sid)
+        assert creds["api_key"], f"{sid} 没解析出凭据"
+        assert creds["source"].startswith("profile_fallback:")
+
+
+def test_the_transport_name_is_not_a_provider_but_keeps_the_credential():
+    """`bezel` 只剩传输这一个身份：不进注册表、不上屏，但内部路径仍拿得到凭据。
+
+    这几条腿共用一份钥匙，传输名的 profile 兜底就是它们共用的那个答案。
+    """
+    import providers
+
+    assert hub_software.TRANSPORT_NAME == "bezel"
+    assert "bezel" not in {p.name for p in providers.list_providers()}
+    assert providers.get_provider_profile("bezel").fallback_api_key() == registry.bezel_api_key()
 
 
 # ─── 必做 3: no silent skip, and doctor doesn't stay green on a mismatch ───

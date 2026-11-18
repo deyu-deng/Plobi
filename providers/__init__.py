@@ -69,8 +69,33 @@ def get_provider_profile(name: str) -> ProviderProfile | None:
     """
     if not _discovered:
         _discover_providers()
+    # 注册表里已经有一家的名字，就别拿全局别名去改写它。模型的厂商别名
+    # （``grok`` → ``xai`` 之类）服务的是「用户手写了个近义词」那种情况；而
+    # 网关那 22 家软件里有几家的名字本身就跟厂商别名撞字（`grok`）。撞上时
+    # 该答的是**这家软件**——它的模型 id 前缀就是这个名字，答成别名就等于把
+    # 订阅那条腿切到别家去。裁定 47：软件名先于别名。
+    profile = _REGISTRY.get(name)
+    if profile is not None:
+        return profile
     canonical = _ALIASES.get(name, name)
-    return _REGISTRY.get(canonical)
+    profile = _REGISTRY.get(canonical)
+    if profile is not None:
+        return profile
+    # 网关的机器标识（`bezel`）不是 provider —— 它是那 22 家软件共用的**传输**。
+    # 内部还有路径按这个名字要凭据兜底与请求字段，所以在**查不到 provider 时**
+    # 才落到传输 profile 上。它不进 `_REGISTRY` ⇒ `list_providers()` 里没有它，
+    # 不上屏、不进 picker、不进 parity 契约。
+    transport = _hub_transport_profile(canonical)
+    return transport
+
+
+def _hub_transport_profile(name: str):
+    """传输名 ⇒ 传输 profile；不是传输名就返回 None。"""
+    try:
+        from providers.hub_software import TRANSPORT_NAME, TRANSPORT_PROFILE
+    except Exception:  # pragma: no cover - 传输层没装好时按「不认识的 provider」
+        return None
+    return TRANSPORT_PROFILE if (name or "").strip().lower() == TRANSPORT_NAME else None
 
 
 def list_providers() -> list[ProviderProfile]:

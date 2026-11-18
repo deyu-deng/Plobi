@@ -31,40 +31,54 @@ function frame(id: string, over: Partial<QuotaAppFrame> = {}): QuotaAppFrame {
   }
 }
 
+const OPENAI_ROW = { models: ['gpt-4o'], name: 'OpenAI', slug: 'openai', total_models: 1 } as ModelOptionProvider
+
 /**
- * The backend's own catalog, as `model.options` returns it: one row for an
- * ordinary provider and one for the local quota hub, whose model ids already
- * carry the `<app>/` prefix. `quotaProviders` reshapes this list — it is not a
- * renderer-side invention, which is why the tests are written against it.
+ * 网关那几家软件在 `model.options` 里**各占一行**，slug 就是软件名，模型 id 是
+ * `<软件>/<模型>`（11-18 第三处）。`quotaProviders` 只按网关判决收窄，不再把一行
+ * 拆成多行 —— 所以测试也按「一家软件一行」喂它。
  */
-function catalog(hubModels: string[] = []): ModelOptionProvider[] {
-  return [
-    { models: ['gpt-4o'], name: 'OpenAI', slug: 'openai', total_models: 1 } as ModelOptionProvider,
-    {
+function softwareRows(
+  models: string[],
+  capabilities?: Record<string, unknown>
+): ModelOptionProvider[] {
+  const bySoftware = new Map<string, string[]>()
+
+  for (const model of models) {
+    const software = model.split('/')[0]
+
+    bySoftware.set(software, [...(bySoftware.get(software) ?? []), model])
+  }
+
+  return [...bySoftware].map(([slug, list]) => {
+    const caps = capabilities
+      ? Object.fromEntries(list.filter(model => model in capabilities).map(model => [model, capabilities[model]]))
+      : null
+
+    return {
       authenticated: true,
-      models: hubModels,
-      name: 'Local Quota Hub',
-      slug: 'bezel',
-      total_models: hubModels.length
+      ...(caps && Object.keys(caps).length > 0 ? { capabilities: caps } : {}),
+      models: list,
+      name: slug,
+      slug,
+      total_models: list.length
     } as ModelOptionProvider
-  ]
+  })
 }
 
-const rows = (hubModels: string[]) => quotaProviders(catalog(hubModels)).filter(row => row.slug === 'bezel')
+/** `model.options` 的形状：普通 provider 一行 + 网关那几家软件各一行。 */
+function catalog(hubModels: string[] = []): ModelOptionProvider[] {
+  return [OPENAI_ROW, ...softwareRows(hubModels)]
+}
 
-/** The hub row with the per-model verdicts the backend attaches to it. */
+/** 网关那几家软件的行（去掉普通 provider 行）。 */
+const rows = (hubModels: string[]) => quotaProviders(catalog(hubModels)).filter(row => row.slug !== 'openai')
+
+/** 只取某一家软件的行：后端会同时给好几家，断言得指名道姓。 */
+const rowsOf = (hubModels: string[], slug: string) => rows(hubModels).filter(row => row.slug === slug)
+
 function catalogWithCapabilities(hubModels: string[], capabilities?: Record<string, unknown>) {
-  return [
-    { models: ['gpt-4o'], name: 'OpenAI', slug: 'openai', total_models: 1 } as ModelOptionProvider,
-    {
-      authenticated: true,
-      capabilities,
-      models: hubModels,
-      name: 'Local Quota Hub',
-      slug: 'bezel',
-      total_models: hubModels.length
-    } as ModelOptionProvider
-  ]
+  return [OPENAI_ROW, ...softwareRows(hubModels, capabilities)]
 }
 
 // `quotaProviders` is the single combinator behind all three picker surfaces
@@ -77,23 +91,29 @@ describe('quotaProviders', () => {
     $connectedDesktopApps.set({})
   })
 
-  it('rewrites the hub row into one row per connected app, keyed by the hub provider', () => {
+  it('一家软件一行，行的 slug 就是软件名，不是网关的机器名', () => {
     markConnected({ id: 'workbuddy_api', models: ['glm-5.3', 'hy3'], name: 'Workbuddy' })
 
     const [row] = rows(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3', 'antigravity/gemini-3-pro'])
 
-    expect(row?.slug).toBe('bezel')
+    expect(row?.slug).toBe('workbuddy_api')
     expect(row?.name).toBe('Workbuddy')
     expect(row?.models).toEqual(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3'])
     expect(row?.total_models).toBe(2)
-    // The hub's own 44-channel row is replaced, not stacked next to these.
-    expect(rows(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3', 'antigravity/gemini-3-pro'])).toHaveLength(1)
+    // 这一家只出一行，不会再多出一行代表整个网关（另一家的行照旧各占自己的位）。
+    expect(
+      rowsOf(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3', 'antigravity/gemini-3-pro'], 'workbuddy_api')
+    ).toHaveLength(1)
+    expect(rows(['workbuddy_api/glm-5.3', 'workbuddy_api/hy3', 'antigravity/gemini-3-pro'])).toHaveLength(2)
   })
 
   it('keeps the rest of the catalog untouched', () => {
     markConnected({ id: 'workbuddy_api', models: ['glm-5.3'] })
 
-    expect(quotaProviders(catalog(['workbuddy_api/glm-5.3'])).map(row => row.slug)).toEqual(['openai', 'bezel'])
+    expect(quotaProviders(catalog(['workbuddy_api/glm-5.3'])).map(row => row.slug)).toEqual([
+      'openai',
+      'workbuddy_api'
+    ])
   })
 
   it('drops a channel the hub does not vouch for, even though the backend lists it', () => {
@@ -104,7 +124,7 @@ describe('quotaProviders', () => {
       frame('workbuddy_api', { blocked: { 'glm-5.2': 'credential_expired' }, models: ['hy3'] })
     ])
 
-    const [row] = rows(['workbuddy/glm-5.3', 'workbuddy_api/hy3', 'workbuddy_api/glm-5.2'])
+    const [row] = rowsOf(['workbuddy/glm-5.3', 'workbuddy_api/hy3', 'workbuddy_api/glm-5.2'], 'workbuddy_api')
 
     expect(row?.models).toEqual(['workbuddy_api/hy3'])
   })
@@ -185,9 +205,10 @@ describe('quotaProviders', () => {
     // never be what the picker shows.
     markConnected({ id: 'opencode_api', models: ['big-pickle'] })
 
-    const row = quotaProviders(catalog(['opencode_api/big-pickle'])).find(r => r.slug === 'bezel')
+    const row = quotaProviders(catalog(['opencode_api/big-pickle'])).find(r => r.slug === 'opencode_api')
 
-    expect(row?.name).toBe('OpenCode Zen')
+    expect(row?.slug).toBe('opencode_api')
+    expect(row?.slug).not.toContain('bezel')
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
   })
 
@@ -196,7 +217,8 @@ describe('quotaProviders', () => {
     // `cursor/gpt-4o`, and the catalog says there is no such channel.
     markConnected({ id: 'cursor', models: [] })
 
-    expect(rows(['workbuddy_api/hy3'])).toEqual([])
+    // 后端只给 workbuddy_api 一行：cursor 不会因为 seed 而在清单里凭空多出一行。
+    expect(rows(['workbuddy_api/hy3']).map(row => row.slug)).toEqual(['workbuddy_api'])
   })
 })
 
@@ -225,7 +247,7 @@ describe('a model that is only waiting', () => {
           unavailable: { reason: 'quota_exhausted', retry_after_seconds: 1754 }
         }
       })
-    ).filter(r => r.slug === 'bezel')
+    ).filter(r => r.slug !== 'openai')
 
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
   })
@@ -244,7 +266,7 @@ describe('a model that is only waiting', () => {
           unavailable: { reason: 'credential_expired' }
         }
       })
-    ).filter(r => r.slug === 'bezel')
+    ).filter(r => r.slug !== 'openai')
 
     expect(row?.models ?? []).toEqual([])
   })
@@ -261,7 +283,7 @@ describe('a model that is only waiting', () => {
           unavailable: { reason: 'quota_exhausted', retry_after_seconds: 1754 }
         }
       })
-    ).filter(r => r.slug === 'bezel')
+    ).filter(r => r.slug !== 'openai')
 
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
   })
@@ -270,7 +292,7 @@ describe('a model that is only waiting', () => {
     markConnected({ id: 'opencode_api', models: ['big-pickle'], name: 'OpenCode Free' })
 
     const [row] = quotaProviders(catalogWithCapabilities(['opencode_api/big-pickle'])).filter(
-      r => r.slug === 'bezel'
+      r => r.slug === 'opencode_api'
     )
 
     expect(row?.models).toEqual(['opencode_api/big-pickle'])
@@ -339,7 +361,7 @@ describe('hub verdict frames', () => {
 
 describe('findQuotaHubRow', () => {
   it('returns the backend row that routes hub-backed picks', () => {
-    expect(findQuotaHubRow(catalog(['workbuddy_api/hy3']))).toBe('bezel')
+    expect(findQuotaHubRow(catalog(['workbuddy_api/hy3']))).toBe('workbuddy_api')
     expect(findQuotaHubRow([catalog()[0]])).toBeNull()
   })
 
@@ -579,11 +601,11 @@ describe('quota store hygiene', () => {
     markConnected({ id: 'workbuddy_api', models: ['hy3'], name: 'Workbuddy' })
 
     const rows = quotaProviders(catalog(['workbuddy/hy3', 'workbuddy_api/hy3'])).filter(
-      row => row.slug === 'bezel'
+      row => row.slug !== 'openai'
     )
 
     expect(rows).toHaveLength(2)
-    expect(rows.map(row => row.ui_key)).toEqual(['bezel::workbuddy', 'bezel::workbuddy_api'])
+    expect(rows.map(row => row.ui_key)).toEqual(['workbuddy', 'workbuddy_api'])
     expect(new Set(rows.map(row => row.ui_key)).size).toBe(2)
   })
 })
