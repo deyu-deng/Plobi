@@ -29,8 +29,24 @@ class StubClient:
         return True
 
 
+def _enable_wechat_source() -> None:
+    """把微信这一条**打开**。
+
+    11-08 起这一条**默认关**（用户 11-05 原话「用户没有配置微信。就不采集。」）。
+    关着的时候 `ChatlogPipeline.health()` 答的是第四态 `disabled`，采集那一格就**不开跑**。
+
+    2026-11-17（`WP-COLLECT-UNIFY`）：这一族**也**受那道开关管了——从前 webhook 那一路
+    自己处理推送来的消息，**绕过了开关**（用户关了它，推送照样落池）；现在触发面收成一处，
+    那一族自己的 `collect()` 说了算 ⇒ 开关是**真的**开关。
+    """
+    from plobi.collectors import sources_config
+
+    sources_config.set_enabled("wechat", True)
+
+
 @pytest.fixture()
 def client(tmp_path):
+    _enable_wechat_source()
     pipeline = ChatlogPipeline(
         config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=StubClient(),

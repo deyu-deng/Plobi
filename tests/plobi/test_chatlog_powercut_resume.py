@@ -57,14 +57,16 @@ def make_pipeline(tmp_path, *, real_ingest=None):
 def run_ingest_step(pipeline, *, die_after: bool):
     """在写入那一层"断电"：die_after=False 是还没写就死，True 是写完才死。
 
-    WP-POOL：那一层现在叫 `pool_land`（落点是池，不是日程库）。
+    WP-POOL：那一层现在叫 `land_occurrences`（落点是池，不是日程库）。
+    2026-11-17（`WP-COLLECT-UNIFY`）：它从 `pool_land` 换成了 `land_occurrences`——
+    **全仓唯一一处**写池的代码就在那儿，微信这条腿不再自己调 `pool.land`。
     """
-    real = pipeline_module.pool_land
+    real = pipeline_module.land_occurrences
 
-    def fake(items):
+    def fake(occurrences, **kwargs):
         if not die_after:
             raise PowerCut("killed before anything was written")
-        result = real(items)
+        result = real(occurrences, **kwargs)
         raise PowerCut("killed right after the write committed")
 
     return fake
@@ -92,7 +94,7 @@ class TestKilledBeforeTheWrite:
         pipeline, service = make_pipeline(tmp_path)
         monkeypatch.setattr(
             pipeline_module,
-            "pool_land",
+            "land_occurrences",
             run_ingest_step(pipeline, die_after=False),
         )
 
@@ -108,7 +110,7 @@ class TestKilledBeforeTheWrite:
         pipeline, service = make_pipeline(tmp_path)
         monkeypatch.setattr(
             pipeline_module,
-            "pool_land",
+            "land_occurrences",
             run_ingest_step(pipeline, die_after=False),
         )
 
@@ -128,7 +130,7 @@ class TestKilledAfterTheWrite:
         pipeline, service = make_pipeline(tmp_path)
         monkeypatch.setattr(
             pipeline_module,
-            "pool_land",
+            "land_occurrences",
             run_ingest_step(pipeline, die_after=True),
         )
 
@@ -154,7 +156,7 @@ class TestLibraryStaysWhole:
         pipeline.handle_message(message("后天下午三点组会", msg_id="m1"), IngestReport())
         monkeypatch.setattr(
             pipeline_module,
-            "pool_land",
+            "land_occurrences",
             run_ingest_step(pipeline, die_after=False),
         )
         with pytest.raises(PowerCut):

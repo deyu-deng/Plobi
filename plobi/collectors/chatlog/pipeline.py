@@ -17,17 +17,20 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from plobi.agenda import AgendaService, get_service
 from plobi.agenda.rules import match as rule_match
 from plobi.agenda.rules import snippet
 # WP-POOL（`specs/source-pool.md`）：采集器的落点是**池**，不是日程库。这一层刻意
 # 不再 import `ingest_occurrences` —— 少一个 import 就少一条「顺手落日程」的路。
-from plobi.pool import PoolItem
-from plobi.pool import land as pool_land
+#
+# 2026-11-17（`WP-COLLECT-UNIFY`）：落池走 `base.land_occurrences`——**全仓唯一一处**写池
+# 的代码。这一层从前自己 `pool_land([PoolItem(...)])`，那是**第二条落池路**，而分岔点
+# （`collect()` 还是 `pull()`）是运行时探测出来的隐藏协议 ⇒ 落池语义取决于你抄了谁。
+from ..base import Occurrence, land_occurrences
 
-from .client import ChatlogClient, ChatlogUnavailable, ChatMessage
+from .client import ChatlogClient, ChatlogUnavailable, ChatMessage, normalize_message
 from .client import pool_columns as client_pool_columns
 from .config import CollectorConfig
 from .confirm import Candidate, Confirmer, ConfirmContext, HeuristicConfirmer
@@ -147,6 +150,18 @@ class ChatlogPipeline:
         # 本机账号的微信 id（`wxid_…`）——验出来就是它，验不出是空串。
         self._account: Optional[str] = None
 
+    def _switch_on(self) -> tuple[bool, str]:
+        """那道开关（`sources.yaml` 的 `enabled`）现在是什么。
+
+        **一处读口**：探活（`health`）与「消息在手那一路」（`collect(records=…)`）都问它。
+        从前 webhook 那一路**不问**——它自己处理推送来的消息，绕过了开关（用户关了它，
+        推送照样落池）。2026-11-17（`WP-COLLECT-UNIFY`）收进公共触发面之后，
+        那一族自己的 `collect()` 说了算 ⇒ 开关是**真的**开关。
+        """
+        from plobi.collectors import sources_config
+
+        return sources_config.effective_enabled("wechat")
+
     def health(self) -> dict:
         """Collector-protocol health：探活仍复用已有那一条，**多答一句"为什么"**。
 
@@ -160,9 +175,7 @@ class ChatlogPipeline:
         而不健康就被拿去拉起 sidecar，拉不起来就落红。开关关着的时候，「没打开」不是
         「坏了」：这里给一个第四态，桌面据此**不 spawn、不弹红**。
         """
-        from plobi.collectors import sources_config
-
-        enabled, origin = sources_config.effective_enabled("wechat")
+        enabled, origin = self._switch_on()
         if not enabled:
             return {
                 "ok": False,
@@ -183,7 +196,7 @@ class ChatlogPipeline:
         state, why = sidecar.diagnose(healthy=False, repo_root=None)
         return {"ok": False, "detail": f"chatlog 采不到：{why}", "state": state, "binary": binary}
 
-    def collect(self, service: Optional[AgendaService] = None) -> dict:
+    def collect(self, service: Optional[AgendaService] = None, **params: Any) -> dict:
         """The executor's collector protocol (`plobi.collectors.sweep`).
 
         This is the piece that was missing: ``wechat`` was declared as a source
@@ -193,18 +206,34 @@ class ChatlogPipeline:
 
         Probes before spending: an unhealthy chatlog raises :class:`ChatlogDead`
         carrying the diagnosed state instead of returning a clean-looking zero.
+
+        ``params`` 是**公共触发面递进来的参数字典**（键由这一族自己认，公共层不解释
+        语义）：现在只有 ``lookback_days``（回看几天）。那几条私有触发路径要把
+        「回看三天」这一格递进来，而公共层不按信源名字分支 ⇒ 只能由触发方自己递。
         """
         if service is not None:
             self.service = service
 
-        health = self.health()
-        if not health["ok"]:
-            health, note = self._heal_and_reprobe(health)
-        if not health["ok"]:
-            detail = health["detail"] + (note or "")
-            raise ChatlogDead(detail, state=health["state"], detail=detail)
-
-        report = self.run_once()
+        lookback_days = params.get("lookback_days")
+        records = params.get("records")
+        if records:
+            # 消息**已经在手**（侧车推来的那批）：这一路只问那道开关，**不问侧车在不在**。
+            # 为什么：① 探活要多一次往返，而侧车刚把消息推过来（它此刻显然在）；
+            # ② 更要紧的是——此刻断连也不该让**在手**的消息白丢（下一轮扫会补上，
+            # 但此刻能落就该落）。
+            enabled, origin = self._switch_on()
+            if not enabled:
+                detail = f"微信信源没有打开（sources.yaml：{origin}），不采集。"
+                raise ChatlogDead(detail, state="disabled", detail=detail)
+            report = self._ingest_records(records)
+        else:
+            health = self.health()
+            if not health["ok"]:
+                health, note = self._heal_and_reprobe(health)
+            if not health["ok"]:
+                detail = health["detail"] + (note or "")
+                raise ChatlogDead(detail, state=health["state"], detail=detail)
+            report = self.run_once(lookback_days=int(lookback_days)) if lookback_days else self.run_once()
         return {
             "state": "ready",
             "rows_seen": report.scanned,
@@ -212,12 +241,40 @@ class ChatlogPipeline:
             "updated": len(report.updated),
             "unchanged": report.skipped_duplicate,
             "pending": report.pending_ids,
+            # **逐条**的那两格（列表）也带出去：通知与读数都要它们。上面那三个是**计数**，
+            # 两边不是一回事——从前微信那条的通知就是靠逐条那份。
+            "created_ids": list(report.created),
+            "updated_ids": list(report.updated),
+            "pending_ids": report.pending_ids,
+            # 腿自己那份完整读数：公共触发面把它原样带走（`sweep` 的 `report` 格），
+            # 触发方从那儿拿这一轮的全貌，不必去翻腿的内部。
+            "report": report.as_dict(),
             # 媒体那一腿的三个数要跟着这一轮的读数走（裁 91：跑完 ≠ 观测过）。
             # `absent` 与 `pending` 分开：前者是"侧车今天还不知道"，后者是"还欠着件、没记 seen 的那些条"。
             "media_saved": report.media_saved,
             "media_absent": report.media_absent,
             "media_pending_messages": report.media_pending_messages,
         }
+
+    def _ingest_records(self, records: list[Any]) -> IngestReport:
+        """侧车推来的那批消息：逐条过一遍——**落点仍是公共那一个**。
+
+        这一格存在的理由（2026-11-17 `WP-COLLECT-UNIFY`）：webhook 那一路从前**自己**
+        处理推送来的消息，那是**另一条落池路**；现在触发面只有一处，那一批消息就作为
+        **参数**递进来，由这一族自己决定怎么用——落点、seen 账、准入过滤全走同一条路。
+
+        一条坏消息不许带沉整批：没记 seen 的那些下一轮还会被扫到。
+        """
+        report = IngestReport()
+        for raw in records or []:
+            message = normalize_message(raw)
+            if message is None or message.is_empty:
+                continue
+            try:
+                self.handle_message(message, report)
+            except Exception:
+                logger.exception("chatlog: 处理一条推送来的消息失败")
+        return report
 
     def _heal_and_reprobe(self, health: dict) -> tuple[dict, str]:
         """探到没人听就当场拉一把，再问一次；限速位与状态都归 ``Watchdog``。
@@ -441,22 +498,23 @@ class ChatlogPipeline:
         # 裁 187①：这两列在**写侧**带上，值就是手里那份 username——不回填旧行，
         # 旧的留空是拍过的口径（`plobi/pool/store.py:61-63`）。
         columns = client_pool_columns(message.talker)
-        result = pool_land(
+        result = land_occurrences(
             [
-                PoolItem(
+                Occurrence(
                     source=self.source_id,
                     external_id=message.msg_id,
                     kind=(candidate.kind if candidate is not None else "") or "message",
                     title=(candidate.title if candidate is not None else "") or _media_title(message),
                     body=message.content or "",
-                    context=evidence,
+                    start_at=message.sent_at,
+                    evidence=evidence,
                     # 形状由池那一侧唯一的归一点管（`store.normalize_time`：aware→本机 naive、
                     # epoch 秒/毫秒都收，原样自动落进 `context.sent_at_raw`），采集侧不再自己拼一种。
-                    occurred_at=message.sent_at,
                     visibility=columns["visibility"],
                     conversation=columns["conversation"],
                 )
-            ]
+            ],
+            source=self.source_id,
         )
 
         if result["created"]:

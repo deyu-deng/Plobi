@@ -1,7 +1,8 @@
 """ZjuCollector —— 学在浙大的作业清单 → :class:`Occurrence`（判据 5）。
 
-只读源、只交数据：**落点全在公共层** —— 进池走 :func:`plobi.collectors.base.pool_items_of`
-+ ``plobi.pool.land()``（裁定 186：采集器只写信息池，「要不要变成日程」的判断权在 Agent 那侧），
+只读源、只交数据：**落点全在公共层** —— 进池走 :func:`plobi.collectors.base.land_occurrences`
+（**全仓唯一一处**写池的代码，2026-11-17 `WP-COLLECT-UNIFY` 收口；裁定 186：采集器只写信息池，
+「要不要变成日程」的判断权在 Agent 那侧），
 完成态走 :func:`plobi.collectors.ingest.authoritative_round`。本包不碰存储层（判据 3：
 加一个平台 = 登记一行 + 实现 Collector，公共层一行不动）。
 
@@ -34,7 +35,7 @@ from typing import Any, Callable, Mapping, Optional
 from plobi.agenda import get_service
 from plobi.agenda.service import AgendaService
 
-from ..base import Occurrence, pool_items_of
+from ..base import Occurrence, land_occurrences
 from ..ingest import authoritative_round
 from . import auth
 from .auth import Transport
@@ -275,7 +276,7 @@ class ZjuCollector:
         self._record_attempt(report)
         return report
 
-    def collect(self, *, service: Optional[AgendaService] = None) -> dict:
+    def collect(self, *, service: Optional[AgendaService] = None, **_params: Any) -> dict:
         """pull + land：**落点是信息池**（裁定 186），完成态由公共层按声明执行（裁定 190／191）。
 
         ``service`` 现在只被**完成态那一半**用到——:func:`authoritative_round` 要把"本轮没出现的
@@ -283,13 +284,11 @@ class ZjuCollector:
         一起删了**：池子不分那两档，留着那个参数就是留着「顺手落日程」那条路（``sweep.py`` 里
         同一格 10-19 已删，这边补上另一半，别留一个"看着还在"的档位）。
         """
-        from plobi.pool import land as pool_land
-
         report = self.pull_report()
         if not report.ok:
             raise ZjuUnavailable(report.state, report.detail)
 
-        landed = pool_land(pool_items_of(report.occurrences, source=SOURCE_ID))
+        landed = land_occurrences(report.occurrences, source=SOURCE_ID)
         closed = authoritative_round(service or get_service(), report.occurrences)
         return {
             **landed,

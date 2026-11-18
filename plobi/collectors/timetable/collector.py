@@ -6,7 +6,7 @@
    （``apply="confirmed"``，把课表行直接坐进 ``events``）——那是最后一条还在直落日程的信源。
    裁定 193 的原话是
    「**全部都要直接进池。不能直接落别的库**」，所以这一格没有过渡期：走
-   :func:`plobi.collectors.base.pool_items_of` + ``plobi.pool.land()``，与微信、学在浙大同一条路。
+   :func:`plobi.collectors.base.land_occurrences`（**全仓唯一一处**写池的代码），与微信、学在浙大同一条路。
 2. **`apply` 那一档跟着日程落点一起删了**（池子不分待确认／坐实）。连带一个**必须照实说的后果**：
    旧形状里「课表改时间 ⇒ 长一张待确认卡并快照 ``prev_value`` 好回滚」这一条**在这一条信源上没有了**——
    池里那一行被 UPDATE，日程那侧要不要跟着改、怎么改，是读池的那个 Agent 的判断（裁定 186）。
@@ -31,7 +31,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from ..base import Occurrence, pool_items_of
+from ..base import Occurrence
 from .parser import IcsParseError, parse_ics
 
 SOURCE_ID = "timetable"
@@ -114,10 +114,15 @@ def land_occurrences(occurrences: list[Occurrence], *, db_path: Optional[Path] =
     **不为课表另开专用列**（判据：只有全信源共用的形状才配当列）。
 
     ``db_path`` 是给测试钉落点用的（读侧函数其实会写库那一族的坑：不传就会写真的共享池）。
-    """
-    from plobi.pool import land as pool_land
 
-    result = pool_land(pool_items_of(occurrences, source=SOURCE_ID), db_path=db_path)
+    2026-11-17（`WP-COLLECT-UNIFY`）：这一族从前**自己**调 `plobi.pool.land`——那是第四条
+    落池路。现在它只是 :func:`plobi.collectors.base.land_occurrences` 的一个薄壳
+    （**全仓唯一一处**写池的代码在公共层），多出来的 `source`／`landing`／`round` 三格是
+    这一族自己的读数形状，留着。
+    """
+    from ..base import land_occurrences as _land
+
+    result = _land(occurrences, source=SOURCE_ID, db_path=db_path)
     return {**result, "source": SOURCE_ID, "landing": "pool", "round": len(occurrences)}
 
 

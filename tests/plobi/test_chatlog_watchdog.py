@@ -56,6 +56,22 @@ def _make(tmp_path, fail: bool, notifier: RecordingNotifier):
 
 
 @pytest.fixture(autouse=True)
+def _wechat_enabled():
+    """把微信这一条**打开**。
+
+    11-08 起这一条默认关（用户 11-05 原话「用户没有配置微信。就不采集。」）；关着的时候
+    `ChatlogPipeline.health()` 答的是第四态 `disabled`，采集那一格**不开跑**。
+
+    2026-11-17（`WP-COLLECT-UNIFY`）：巡检那一趟**也**改走公共触发面了 ⇒ 这一族自己
+    的 `collect()` 说了算 ⇒ 那道开关是**真的**开关（从前巡检直接调 `run_once`，绕过了它）。
+    """
+    from plobi.collectors import sources_config
+
+    sources_config.set_enabled("wechat", True)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _cleanup():
     yield
     agenda_dispatch._DEFAULT = None
@@ -72,16 +88,20 @@ def test_the_daily_sweep_uses_the_configured_window(tmp_path, monkeypatch) -> No
     class _Reporting:
         config = CollectorConfig()
 
-        def run_once(self, day=None, lookback_days=1):
-            seen["lookback_days"] = lookback_days
-
-            class _R:
-                pending_ids: list = []
-
-                @staticmethod
-                def as_dict():
-                    return {"scanned": 0}
-            return _R()
+        # 2026-11-17（`WP-COLLECT-UNIFY`）：巡检那一趟走公共触发面了 ⇒ 这一族暴露的是
+        # **采集器那一格**（`collect()`），不再是 `pipeline.run_once()`。窗口从哪来、
+        # 走哪条路，都由公共触发面递进来。
+        def collect(self, service=None, **params):
+            seen["lookback_days"] = params.get("lookback_days")
+            return {
+                "state": "ready",
+                "rows_seen": 0,
+                "created": 0,
+                "updated": 0,
+                "unchanged": 0,
+                "pending_ids": [],
+                "report": {"scanned": 0},
+            }
 
         client = None  # Watchdog 构造时会取 pipeline.client 兜底，这里不需要探活
 

@@ -15,7 +15,9 @@
 
 三条不是"顺便"的口径，是被裁定钉的：
 
-- **落点只有池**（裁 193）：`pool_land`，`kind` 区分类型，**不为任何一种数据开专用列**——
+- **落点只有池**（裁 193）：`base.land_occurrences`（**全仓唯一一处**写池的代码 —— 2026-11-17
+  `WP-COLLECT-UNIFY` 把这一族那层自己的 `pool_land` 收掉了），`kind` 区分类型，**不为任何一种
+  数据开专用列**——
   判据是"只有全信源共用的形状才配当列"。日程那侧那四个 `KINDS`（meeting/ddl/class/task）
   比池窄，映射是读池的 Agent 的判断，不由采集器替它做（裁 186）。
 - **`occurred_at` 不许猜**（裁 189）：课表这一家给的是**周模板**（星期×节次），不是日历上的点，
@@ -40,7 +42,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
-from ..base import Occurrence, pool_items_of
+from ..base import Occurrence, land_occurrences
 from .state import read_last_pull_at, read_state, write_state
 from ..zju import auth
 from ..zju.auth import HttpResponse, Transport
@@ -569,14 +571,17 @@ class ZdbkCollector:
         return collected, {"state": STATE_READY, "term": f"{year}/{season}", "counts": counts,
                           "collapsed": collapsed}
 
-    def collect(self, *, service: Any = None) -> dict:
+    def collect(self, *, service: Any = None, **_params: Any) -> dict:
         """`sweep` 那一轮调的就是这一格——**它会把 `service=` 传进来**，签名少了它就每次 `raised`。
 
         池不需要 service（日程那侧的判断权在 Agent，不在这里），所以这一格收下不用；
         收下不用比"不接这个参数"贵：前者是一行读数，后者是一天一轮的红。
+
+        `**_params` 是公共触发面递进来的参数字典（键由这一族自己认）：这一族没有要认的键，
+        收下是为了**别的腿递了参数时这一条不会炸**。
         """
         items, report = self.pull_report()
-        result = pool_land(pool_items_of(items, source=SOURCE_ID))
+        result = land_occurrences(items, source=SOURCE_ID)
         return {**result, "state": report["state"], "source": SOURCE_ID, "counts": report["counts"],
                 "collapsed": report["collapsed"], "term": report["term"]}
 
@@ -612,9 +617,3 @@ def _table_rows(page: str) -> list[dict]:
                 row[f"列·{name}"] = value
         rows.append(row)
     return rows
-
-
-def pool_land(items):                                   # 与 sweep 同一只池入口，不第二份
-    from plobi.pool import land as _land
-
-    return _land(items)

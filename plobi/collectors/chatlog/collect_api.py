@@ -170,8 +170,15 @@ def kick_lookback_sweep(pipeline: ChatlogPipeline, lookback_days: int = DEFAULT_
     ``POST /api/collect/sweep``: tests call this directly instead of waiting
     on the daemon thread. Chatlog being down is already tolerated inside
     ``run_once`` (logged, per-talker); a report is always returned.
+
+    2026-11-17（`WP-COLLECT-UNIFY`）：这一趟**走公共触发面**
+    （`webhook.trigger_round` → `sweep.run_source`），不再自己调
+    `pipeline.run_once` —— 那是一条**私有**触发路径，而触发面必须只有一处。
     """
-    return pipeline.run_once(lookback_days=max(1, int(lookback_days))).as_dict()
+    from .webhook import outcome_shape, trigger_round
+
+    outcome = trigger_round(pipeline=pipeline, lookback_days=max(1, int(lookback_days)))
+    return outcome_shape(outcome)
 
 
 def _kick_in_background(pipeline: ChatlogPipeline) -> None:

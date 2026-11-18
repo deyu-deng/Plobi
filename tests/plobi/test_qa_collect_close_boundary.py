@@ -117,6 +117,15 @@ def test_run_once_default_call_passes_none_not_today(tmp_path):
 
 @pytest.fixture()
 def api(tmp_path):
+    # 把微信这一条**打开**（11-08 起它默认关，用户 11-05 原话「用户没有配置微信。就不采集」）。
+    # 2026-11-17（`WP-COLLECT-UNIFY`）：`/api/collect/sweep` 与 review-complete 的后台回扫
+    # 收进公共触发面之后，**也**受那道开关管了——那一族自己的 `collect()` 说了算。
+    # 这一档量的是「没过审也要真扫」，那就得先把这一条打开（扫不扫与审没审是两件事）。
+    from plobi.collectors import sources_config
+
+    wechat_was = sources_config.effective_enabled("wechat")[0]
+    sources_config.set_enabled("wechat", True)
+
     client = StubApiClient(["班级群", "项目群"])
     pipeline = make_pipeline(tmp_path, client, known=["班级群"], review_done=False)
     webhook_module.set_pipeline(pipeline)
@@ -127,6 +136,7 @@ def api(tmp_path):
         test_client.pipeline = pipeline  # type: ignore[attr-defined]
         test_client.stub = client  # type: ignore[attr-defined]
         yield test_client
+    sources_config.set_enabled("wechat", wechat_was)
     webhook_module.set_pipeline(None)
     collect_api.set_pipeline(None)
 

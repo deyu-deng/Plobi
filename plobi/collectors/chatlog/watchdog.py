@@ -221,13 +221,21 @@ class Watchdog:
         }
 
         # 1) collection sweep (may legitimately no-op when collector disabled)
+        #    2026-11-17（`WP-COLLECT-UNIFY`）：这一趟**走公共触发面**
+        #    （`sweep.run_source`），不再自己调 `pipeline.run_once` —— 那是一条**私有**
+        #    触发路径，而触发面必须只有一处（落点同理，只有 `base.land_occurrences`）。
         if self.pipeline is not None:
             try:
+                from .webhook import trigger_round
+
                 # 窗口从配置来，不在调用处拍大数（Plan 线 09:5x 那条口径）。
-                report = self.pipeline.run_once(
-                    lookback_days=self.pipeline.config.time_window_days)
-                result["sweep"] = report.as_dict()
-                self._notify_pending(report.pending_ids)
+                outcome = trigger_round(
+                    pipeline=self.pipeline,
+                    lookback_days=self.pipeline.config.time_window_days,
+                )
+                raw = outcome.get("report") or {}
+                result["sweep"] = dict(raw.get("report") or {})
+                self._notify_pending(raw.get("pending_ids") or [])
             except Exception:
                 logger.exception("watchdog: sweep failed")
 

@@ -50,6 +50,15 @@ def env(tmp_path, monkeypatch):
     service = AgendaService(tmp_path / "agenda.db")
     monkeypatch.setattr(agenda_service, "_DEFAULT", service)
 
+    # 把微信这一条**打开**（11-08 起它默认关，用户 11-05 原话「用户没有配置微信。就不采集」）。
+    # 2026-11-17（`WP-COLLECT-UNIFY`）：webhook 那一路收进公共触发面之后，**也**受那道
+    # 开关管了——从前它自己处理推送来的消息，绕过了开关（用户关了它，推送照样落池）。
+    # 这一族自己的 `collect()` 说了算 ⇒ 这一档要测「消息能进池」，就得先把这一条打开。
+    from plobi.collectors import sources_config
+
+    wechat_was = sources_config.effective_enabled("wechat")[0]
+    sources_config.set_enabled("wechat", True)
+
     notifier = RecordingNotifier()
     monkeypatch.setattr(
         agenda_dispatch, "_DEFAULT", PendingDispatcher(service=service, notifier=notifier)
@@ -69,6 +78,7 @@ def env(tmp_path, monkeypatch):
     with TestClient(app) as http:
         yield type("Env", (), {"http": http, "service": service, "notifier": notifier})
 
+    sources_config.set_enabled("wechat", wechat_was)
     set_pipeline(None)
     set_dispatcher(None)
 
