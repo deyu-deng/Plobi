@@ -419,6 +419,28 @@ function resolveWindowsPowerShell() {
   return 'powershell.exe'
 }
 
+/**
+ * 把安装器的一坨输出压成一句人话。
+ *
+ * 2026-11-18 装机现场：首启失败时 PowerShell 会把整个解析错误倒出来（带源码片段、
+ * 波浪线、类别名，六十多行）。用户要的是「为什么」，不是那一坨——那一坨在 run log 里。
+ */
+function summarizeScriptFailure(text) {
+  const raw = String(text || '')
+
+  if (/ParserError|MissingEndCurlyBrace|Missing closing/i.test(raw)) {
+    return '安装脚本解析失败（脚本编码或语法有问题）'
+  }
+
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (!lines.length) {
+    return '没有更多线索'
+  }
+
+  const last = lines[lines.length - 1]
+  return last.length > 160 ? `${last.slice(0, 157)}…` : last
+}
+
 function spawnPowerShell(scriptPath, args, { emit, stageName, abortSignal, plobiHome }: any = {}) {
   return new Promise<any>((resolve, reject) => {
     const ps = process.platform === 'win32' ? resolveWindowsPowerShell() : 'pwsh'
@@ -710,8 +732,11 @@ async function fetchManifest({
   })
 
   if (result.code !== 0) {
+    // **只报一句人话**：安装器的原始输出留在 run log 里（每行都在那儿），不该整段
+    // 倒进错误消息与桌面日志——2026-11-18 装机现场：一句失败后面跟着六十行
+    // PowerShell 解析器输出，读的人只想要「为什么」。
     throw new Error(
-      `${isPosix ? 'install.sh --manifest' : 'install.ps1 -Manifest'} failed: exit ${result.code}\n${result.stderr || result.stdout}`
+      `${isPosix ? 'install.sh --manifest' : 'install.ps1 -Manifest'} failed: exit ${result.code} —— ${summarizeScriptFailure(result.stderr || result.stdout)}`
     )
   }
 
@@ -902,11 +927,19 @@ async function runBootstrap(opts) {
 
   // Tee every event to the runLog AND the caller's onEvent. This gives us a
   // forensic trail per bootstrap run AND lets the renderer subscribe live.
+  // **stderr 只进 run log**：那是安装器自己往标准错误写的东西（PowerShell 的警告与报错）。
+  // 把它转发出去，桌面日志会被几十行原始输出灌满——2026-11-18 装机现场就是这样：
+  // 首启失败，desktop.log 里全是 PowerShell 的解析器输出，读的人只想要一句「为什么」。
+  // 需要细节的人看 run log（路径随 failed 事件一起给出）。
   const emit = ev => {
     try {
       runLog.stream.write(JSON.stringify(ev) + '\n')
     } catch {
       void 0
+    }
+
+    if (ev && ev.type === 'log' && ev.stream === 'stderr') {
+      return
     }
 
     try {
@@ -1019,9 +1052,11 @@ async function runBootstrap(opts) {
 
     return { ok: true, marker }
   } catch (err) {
-    emit({ type: 'failed', error: err.message || String(err) })
+    const reason = err.message || String(err)
+    // 失败时**把 run log 的路径一起给出去**：一句话说明失败，详细的那一坨在那个文件里。
+    emit({ type: 'failed', error: `${reason}（完整日志：${runLog.path}）` })
 
-    return { ok: false, error: err.message || String(err) }
+    return { ok: false, error: `${reason}（完整日志：${runLog.path}）` }
   } finally {
     try {
       runLog.stream.end()
@@ -1041,5 +1076,6 @@ export {
   parseStageResult,
   resolveInstallScript,
   resolveLocalInstallScript,
-  runBootstrap
+  runBootstrap,
+  summarizeScriptFailure
 }

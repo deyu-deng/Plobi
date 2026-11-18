@@ -18,6 +18,7 @@ import {
   interpreterCandidates,
   interpreterRoots,
   resolveProjectInterpreter,
+  systemPythonNote,
   VENV_DIR_NAMES,
   venvInterpreterCandidates
 } from './python-resolution'
@@ -213,6 +214,35 @@ test('describeInterpreterFailure: names the override when it was not usable', ()
   })
 
   assert.match(reason, /PLOBI_DESKTOP_PYTHON=\/opt\/broken\/python/)
+})
+
+test('describeInterpreterFailure: 说本机的系统 Python，不拿 macOS 的答案回答 Windows', () => {
+  const windows = describeInterpreterFailure({
+    existingCandidates: [],
+    platform: 'win32',
+    probeFailed: false,
+    roots: ['C:\\plobi']
+  })
+
+  const mac = describeInterpreterFailure({
+    existingCandidates: [],
+    platform: 'darwin',
+    probeFailed: false,
+    roots: ['/repo']
+  })
+
+  // Windows 那台用户看到「on macOS that is /usr/bin/python3」＝一句与她无关的话
+  // （2026-11-18 装机现场）。
+  assert.match(windows, /on Windows that is/)
+  assert.doesNotMatch(windows, /macOS/)
+  assert.match(mac, /on macOS that is \/usr\/bin\/python3/)
+  assert.doesNotMatch(mac, /on Windows that is/)
+})
+
+test('systemPythonNote: 三个平台各说各的', () => {
+  assert.match(systemPythonNote('darwin'), /\/usr\/bin\/python3/)
+  assert.match(systemPythonNote('win32'), /PATH/)
+  assert.match(systemPythonNote('linux'), /python3/)
 })
 
 test('interpreterCandidates: default walk depth is shared by roots and candidates', () => {

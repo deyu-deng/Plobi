@@ -12,7 +12,8 @@ import {
   installedAgentInstallScript,
   resolveBundledBackend,
   resolveInstallScript,
-  runBootstrap
+  runBootstrap,
+  summarizeScriptFailure
 } from './bootstrap-runner'
 
 const SCRIPT_NAME = process.platform === 'win32' ? 'install.ps1' : 'install.sh'
@@ -360,4 +361,101 @@ test('the pin args carry the bundle so the agent is installed from the package',
     '-Wheelhouse',
     'D:\\App\\resources\\wheelhouse'
   ])
+})
+
+// ---------------------------------------------------------------------------
+// 2026-11-18 装机现场：桌面日志里灌了六十多行 PowerShell 解析器输出（同一段
+// 还打了两遍），读的人只想要一句「为什么」。这一族盯的就是那一句。
+// ---------------------------------------------------------------------------
+
+const POWERSHELL_PARSE_ERROR = [
+  '所在位置 D:\\plobi\\resources\\backend\\scripts\\install.ps1:2689 字符: 17',
+  '+         } catch {',
+  '+                 ~',
+  '表达式或语句中包含意外的“}”标记。',
+  '    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException',
+  '    + FullyQualifiedErrorId : MissingEndCurlyBrace'
+].join('\n')
+
+test('summarizeScriptFailure: 解析错误压成一句人话，不带那一坨源码片段', () => {
+  const summary = summarizeScriptFailure(POWERSHELL_PARSE_ERROR)
+
+  assert.match(summary, /解析失败/)
+  assert.doesNotMatch(summary, /install\.ps1:2689/)
+  assert.doesNotMatch(summary, /FullyQualifiedErrorId/)
+  assert.ok(summary.length < 60, `the summary must stay one short line, got ${summary.length} chars`)
+})
+
+test('summarizeScriptFailure: 别的错就留最后一行线索', () => {
+  assert.equal(summarizeScriptFailure('第一行\n\n最后一行\n'), '最后一行')
+  assert.equal(summarizeScriptFailure(''), '没有更多线索')
+  assert.equal(summarizeScriptFailure('   \n  \n'), '没有更多线索')
+})
+
+test('summarizeScriptFailure: 太长的一行截断，不整段搬进错误消息', () => {
+  const summary = summarizeScriptFailure('x'.repeat(400))
+
+  assert.ok(summary.length <= 160, `expected a truncated line, got ${summary.length} chars`)
+  assert.match(summary, /…$/)
+})
+
+test('安装器的 stderr 只进 run log，不灌进桌面日志', async () => {
+  const home = mkTmpHome()
+  const repo = path.join(home, 'repo')
+
+  try {
+    fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true })
+
+    // 假安装器：往 stderr 吐三行，然后失败。
+    const script = process.platform === 'win32'
+      ? ['[Console]::Error.WriteLine("boom line one")',
+         '[Console]::Error.WriteLine("boom line two")',
+         '[Console]::Error.WriteLine("boom line three")',
+         'exit 1'].join('\n')
+      : ['echo "boom line one" >&2',
+         'echo "boom line two" >&2',
+         'echo "boom line three" >&2',
+         'exit 1'].join('\n')
+
+    fs.writeFileSync(path.join(repo, 'scripts', SCRIPT_NAME), script)
+
+    const events: any[] = []
+    const result = await runBootstrap({
+      installStamp: null,
+      activeRoot: path.join(home, 'active'),
+      sourceRepoRoot: repo,
+      plobiHome: home,
+      logRoot: path.join(home, 'logs'),
+      onEvent: ev => events.push(ev),
+      abortSignal: new AbortController().signal
+    })
+
+    assert.equal(result.ok, false)
+
+    // stderr 那一段**不转发**：桌面日志不该被安装器的原始输出灌满。
+    assert.equal(
+      events.filter(ev => ev && ev.type === 'log' && ev.stream === 'stderr').length,
+      0,
+      'stderr lines must not be forwarded to the caller'
+    )
+
+    // 失败事件只带一句人话 ＋ run log 的路径。
+    const failed = events.find(ev => ev && ev.type === 'failed')
+    assert.ok(failed, 'a failed event is emitted')
+    assert.match(failed.error, /完整日志：/)
+    assert.ok(
+      !/boom line one/.test(failed.error) && !/boom line two/.test(failed.error),
+      `the failure message must not carry the raw dump: ${failed.error}`
+    )
+
+    // 那一坨还在 run log 里——要看细节的人去那儿看。
+    const logDir = path.join(home, 'logs')
+    const runLogs = fs.readdirSync(logDir).filter(name => name.startsWith('bootstrap-'))
+    assert.ok(runLogs.length > 0, 'a run log was written')
+    const body = fs.readFileSync(path.join(logDir, runLogs[0]), 'utf8')
+    assert.match(body, /boom line one/)
+    assert.match(body, /boom line three/)
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+  }
 })

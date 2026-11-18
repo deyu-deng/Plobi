@@ -132,6 +132,25 @@ function interpreterCandidates(input: any = {}): string[] {
 }
 
 /**
+ * 这台机器上的「系统 Python」是哪一个——按平台说，别拿 macOS 的答案去回答 Windows。
+ *
+ * 2026-11-18 装机现场：Windows 那台用户看到的是「on macOS that is /usr/bin/python3」，
+ * 一句与本机无关的话（她自己那台根本没有那个路径）。日志不是说明书：这句话要指向
+ * 她自己机器上那个会被拿来顶替的解释器。
+ */
+function systemPythonNote(platform: string = process.platform): string {
+  if (platform === 'darwin') {
+    return 'on macOS that is /usr/bin/python3'
+  }
+
+  if (platform === 'win32') {
+    return 'on Windows that is whatever python.exe happens to sit on PATH'
+  }
+
+  return 'on Linux that is whatever python3 happens to sit on PATH'
+}
+
+/**
  * Human-readable "why nothing could be run", shaped for a UI row rather than a
  * stack trace. Distinguishes the two failure modes so the advice is actionable:
  *   1. no virtualenv on disk at all   → create one (`uv sync` / bootstrap)
@@ -145,6 +164,7 @@ function describeInterpreterFailure({
   roots = [],
   existingCandidates = [],
   env = process.env,
+  platform = process.platform,
   probeFailed = false
 }: any = {}): string {
   const override = String(env?.PLOBI_DESKTOP_PYTHON || '').trim()
@@ -164,7 +184,7 @@ function describeInterpreterFailure({
     `No Plobi project Python under ${looked}${overrideNote}. Expected ` +
     `.venv/bin/python (POSIX) or .venv/Scripts/python.exe (Windows). Create it with \`uv sync\` in ` +
     `${roots[0] || looked}, or run the first-launch bootstrap install. The desktop will not fall ` +
-    `back to a system Python for ${label}: on macOS that is /usr/bin/python3, which has none of the ` +
+    `back to a system Python for ${label}: ${systemPythonNote(platform)}, which has none of the ` +
     `dependencies and dies on the first import.`
   )
 }
@@ -203,6 +223,7 @@ function resolveProjectInterpreter({
       env,
       existingCandidates,
       label,
+      platform,
       probeFailed: existingCandidates.length > 0,
       roots
     }),
@@ -216,6 +237,7 @@ export {
   interpreterCandidates,
   interpreterRoots,
   resolveProjectInterpreter,
+  systemPythonNote,
   VENV_DIR_NAMES,
   venvInterpreterCandidates
 }

@@ -139,6 +139,7 @@ import {
   readEgressIndicator,
   remoteEgressIndicator
 } from './egress-tray'
+import { createChangeOnlyLogger, formatDiagnosticRows } from './desktop-log'
 import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
 import {
   applyDesktopProxy,
@@ -8503,9 +8504,7 @@ async function pollEgressIndicator() {
   const egressDiagKey = JSON.stringify(egressDiag.rows.map(row => [row.label, row.toolTip]))
   if (egressDiagKey !== lastEgressDiagKey) {
     lastEgressDiagKey = egressDiagKey
-    rememberLog(
-      `[egress-tray] diagnostics: ${egressDiag.rows.map(row => `${row.label} :: ${row.toolTip}`).join(' | ')}`
-    )
+    rememberLog(`[egress-tray] diagnostics: ${formatDiagnosticRows(egressDiag.rows)}`)
   }
 
   applyEgressBadge()
@@ -9733,6 +9732,16 @@ function reportBezelKeyReconciliation() {
 // rides through on the app record instead of being re-derived in the UI. A provider
 // whose models are all unusable is still listed, with an empty `models` and its
 // `blocked` reasons: the picker must not offer it, but Settings has to explain it.
+/**
+ * 额度目录那一族的落笔器：**状态没变就不落笔**。
+ *
+ * 2026-11-18 装机现场：目录读不到时，轮询每轮都写一遍同一句话，一次开机刷了四行
+ * 一样的（`product quota catalog unavailable (TypeError: fetch failed); key state
+ * unchanged by this call`）——同一句话说四遍，加上那句内部自述，读的人只看见刷屏。
+ * 现在同一句只在状态变时落一次；恢复正常后擦掉这把钥匙，下次再坏仍要出声。
+ */
+const quotaCatalogLog = createChangeOnlyLogger(line => rememberLog(line))
+
 async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; apiKey: string; baseUrl: string; blocked: Record<string, string>; id: string; models: string[] }>> {
   // Reconcile first, then send: this is one of the two places the shell hands
   // its key to the hub.
@@ -9742,6 +9751,10 @@ async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; ap
       headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
       signal: AbortSignal.timeout(8000)
     })
+
+    // 问到了（哪怕 hub 答的是 401）：状态变了，擦掉那把钥匙——下次再读不到，
+    // 那才是一件新事，值得再落一笔。
+    quotaCatalogLog.clear('catalog')
 
     if (!res.ok) {
       // A hub that rejects our key answered 401, not "no apps". Swallowing it
@@ -9822,7 +9835,14 @@ async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; ap
     // Unreachable/timeout is not "our key was accepted": say which of the two it
     // was, so a hub that is simply down never reads as a key problem -- or the
     // other way round.
-    rememberLog(`[sidecar] product quota catalog unavailable (${String(error)}); key state unchanged by this call`)
+    //
+    // 只写「发生了什么」：原来那句 `; key state unchanged by this call` 是写给
+    // 自个儿看的内部自述，对读日志的人没有信息量——删掉。
+    quotaCatalogLog.emit(
+      'catalog',
+      `[sidecar] product quota catalog unavailable (${String(error)})`
+    )
+
     return []
   }
 }
