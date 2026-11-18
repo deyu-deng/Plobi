@@ -3291,6 +3291,32 @@ async def update_learning_node(body: LearningNodeEdit):
     return res
 
 
+class OnboardingProfile(BaseModel):
+    """引导末步的答案（WP-ONBOARDING-WELCOME-FLOW，主人 11-18 13:5x）。
+
+    关于**用户**的（画像 ＋ 期望的称呼）⇒ `USER.md`；关于**Agent 自己**的（名字 ＋ 性格）
+    ⇒ 顶层 `SOUL.md`。空的那几项不写 —— 用户没答就是没答，不替他编。
+    """
+
+    purpose: str = ""
+    domain: str = ""
+    user_title: str = ""
+    agent_name: str = ""
+    agent_personality: str = ""
+
+
+@app.post("/api/onboarding/profile")
+async def set_onboarding_profile(body: OnboardingProfile):
+    """把引导末步的答案写进那两份文件（各写各的，不另造第三份存储）。"""
+    try:
+        from plobi_cli.onboarding_profile import write_onboarding_profile
+
+        return write_onboarding_profile(body.model_dump())
+    except Exception:
+        _log.exception("POST /api/onboarding/profile failed")
+        raise HTTPException(status_code=500, detail="Failed to save onboarding profile")
+
+
 def _safe_call(mod, fn_name: str, default):
     try:
         fn = getattr(mod, fn_name, None)
