@@ -72,6 +72,11 @@ export interface DesktopOnboardingState {
    *  custom endpoint"). Forces the API-key form with the local option
    *  preselected instead of the OAuth picker. */
   localEndpoint: boolean
+  /** 首装那十步走到哪儿了（WP-ONBOARDING-WELCOME-FLOW）：
+   * `intro` = 欢迎／界面／语言／主题／三张卡（新的那屏）；
+   * `model` = 交给**既有**的 provider 选择器去配模型（那一步的逻辑一个字不动）；
+   * `profile` = 配完了 ⇒ 回到画像／命名／称呼那几屏。 */
+  firstRunPhase?: 'intro' | 'model' | 'profile'
 }
 
 export interface OnboardingContext {
@@ -151,10 +156,16 @@ const INITIAL: DesktopOnboardingState = {
   requested: false,
   firstRunSkipped: readCachedSkipped(),
   manual: false,
-  localEndpoint: false
+  localEndpoint: false,
+  firstRunPhase: 'intro'
 }
 
 export const $desktopOnboarding = atom<DesktopOnboardingState>(INITIAL)
+
+/** 首装那十步的阶段（intro → model → profile）。 */
+export function setFirstRunPhase(phase: 'intro' | 'model' | 'profile'): void {
+  $desktopOnboarding.set({ ...$desktopOnboarding.get(), firstRunPhase: phase })
+}
 
 let pollTimer: number | null = null
 let providersRefreshPromise: null | Promise<void> = null

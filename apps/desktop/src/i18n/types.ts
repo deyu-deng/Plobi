@@ -2541,6 +2541,44 @@ export interface Translations {
   }
 
   onboarding: {
+    firstRun: {
+      welcomeTitle: string
+      welcomeDesc: string
+      preparing: string
+      interfaceTitle: string
+      interfaceDesc: string
+      languageTitle: string
+      languageDesc: string
+      themeTitle: string
+      themeDesc: string
+      themeLight: string
+      themeDark: string
+      themeSystem: string
+      cardsTitle: string
+      cardsDesc: string
+      modelTitle: string
+      modelDesc: string
+      profileTitle: string
+      profileDesc: string
+      profilePurpose: string
+      profilePurposePlaceholder: string
+      profileDomain: string
+      profileDomainPlaceholder: string
+      agentNameTitle: string
+      agentNameDesc: string
+      agentNamePlaceholder: string
+      agentNamePersonality: string
+      agentNamePersonalityPlaceholder: string
+      userTitleTitle: string
+      userTitleDesc: string
+      userTitlePlaceholder: string
+      doneTitle: string
+      doneDesc: string
+      back: string
+      next: string
+      skip: string
+      finish: string
+    }
     headerTitle: string
     headerDesc: string
     preparingInstall: string

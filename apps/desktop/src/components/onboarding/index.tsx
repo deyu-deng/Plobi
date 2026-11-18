@@ -24,11 +24,13 @@ import {
   peekPendingProviderOAuth,
   refreshOnboarding,
   saveOnboardingApiKey,
+  setFirstRunPhase,
   setOnboardingMode,
   startProviderOAuth
 } from '@/store/onboarding'
 import type { ModelOptionProvider, OAuthProvider } from '@/types/plobi'
 
+import { FirstRunFlow } from './first-run'
 import { DocsLink, FlowPanel, Status } from './flow'
 import { FeaturedProviderRow, KeyProviderRow, ProviderRow, sortProviders } from './providers'
 
@@ -194,6 +196,14 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
       return
     }
 
+    // 首装那十步（WP-ONBOARDING-WELCOME-FLOW）：配完模型**不**直接收工 ⇒ 回到
+    // 画像／命名／称呼那几屏（主人 11-17 的顺序：配模型 → 画像 → 命名 → 称呼）。
+    if (onboarding.firstRunPhase === 'model') {
+      setFirstRunPhase('profile')
+
+      return
+    }
+
     const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
     if (reduce) {
@@ -281,6 +291,21 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
   // the surface — same bare, cinematic treatment as the connecting overlay.
   const bare = ready && !showPicker && flow.status === 'confirming_model'
 
+  // 首装那十步（WP-ONBOARDING-WELCOME-FLOW）：自己的那一屏 —— 形状照本机 Antigravity
+  // 的欢迎向导（一步一屏、居中一列、图标 ＋ 一句标题 ＋ 至多一个主按钮）。「配模型」那
+  // 一步交回**既有**的 provider 选择器（phase='model'），配完再回来（phase='profile'）——
+  // 那一步的逻辑一个字不动。
+  if (ready && !onboarding.manual && onboarding.firstRunPhase !== 'model') {
+    return (
+      <FirstRunFlow
+        ctx={ctx}
+        onCompleted={finalizeOnboarding}
+        onModelStep={() => setFirstRunPhase('model')}
+        renderModel={() => <Picker ctx={ctx} />}
+        startAt={onboarding.firstRunPhase === 'profile' ? 'profile' : 'intro'}
+      />
+    )
+  }
   return (
     <div
       className={cn(

@@ -1263,6 +1263,40 @@ export function setModelAssignment(body: ModelAssignmentRequest): Promise<ModelA
   })
 }
 
+export interface OnboardingProfileRequest {
+  /** 用户主要拿 Plobi 做什么。 */
+  purpose?: string
+  /** 用户的工作领域。 */
+  domain?: string
+  /** 用户希望被称呼为什么（落 USER.md）。 */
+  user_title?: string
+  /** 给指挥取的名字（落 SOUL.md）。 */
+  agent_name?: string
+  /** 它的性格／说话的样子（落 SOUL.md）。 */
+  agent_personality?: string
+}
+
+export interface OnboardingProfileResponse {
+  ok: boolean
+  user_entries_added: string[]
+  soul_updated: boolean
+  user_path: string
+  soul_path: string
+}
+
+/**
+ * 引导末步的答案 ⇒ **两份文件**（关于用户的落 `USER.md`，关于 Agent 自己的落顶层
+ * `SOUL.md`）—— 主人 11-18 13:5x 定的落点。
+ */
+export function setOnboardingProfile(body: OnboardingProfileRequest): Promise<OnboardingProfileResponse> {
+  return window.plobiDesktop.api<OnboardingProfileResponse>({
+    ...profileScoped(),
+    path: '/api/onboarding/profile',
+    method: 'POST',
+    body
+  })
+}
+
 export function restartGateway(): Promise<ActionResponse> {
   return window.plobiDesktop.api<ActionResponse>({
     ...profileScoped(),
