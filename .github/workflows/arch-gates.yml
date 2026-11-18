@@ -30,6 +30,13 @@ jobs:
       - name: Backend arch guard
         run: python -m pytest tests/plobi/test_console_arch_guard.py -q --basetemp=.pytest-run
 
+      # Windows 上跑的脚本：**带中文就必须带 UTF-8 BOM**。没有 BOM 时 Windows PowerShell 5.1
+      # 按 ANSI 码页解文件（中文机器＝GBK）⇒ 中文字节被错解 ⇒ 引号与花括号对不上 ⇒
+      # 解析器报「catch 语句缺少右花括号」⇒ 2026-11-17 一个中文 Windows 用户首装 0.3.2 时
+      # 首启 bootstrap 直接死在语法错误上、后端起不来。
+      - name: Windows script encoding gate
+        run: python scripts/plobi/check_script_encoding.py
+
       - name: Setup Node.js
         uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6  # v4.0.4
         with:

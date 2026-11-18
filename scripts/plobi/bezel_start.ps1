@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Start the local quota hub (OpenAI-compatible desktop-quota gateway).
 
@@ -22,6 +22,19 @@
     treated as a match.  Pass -KeyCheck to run the reconciliation alone,
     without touching the port, and exit 0 only on MATCH.
 #>
+# 输出编码：**管道**时用 UTF-8（桌面端把它按 UTF-8 解）；**交互**时保持控制台自己的编码，
+# 这样中文在 GBK 终端里照旧显示。2026-11-18：装机的三个脚本都带 UTF-8 BOM ——
+# 没有 BOM 时 Windows PowerShell 5.1 按 ANSI 码页解文件，中文 Windows（GBK）上中文被错解，
+# 引号与花括号对不上 ⇒ 解析器报「catch 语句缺少右花括号」⇒ 首启 bootstrap 直接死在语法错误上。
+try {
+    if ([Console]::IsOutputRedirected) {
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    }
+} catch {
+    # Some constrained PowerShell hosts disallow encoding mutation.
+    # Mojibake on output is then cosmetic-only, the install still works.
+}
+
 [CmdletBinding()]
 param(
     [string]$Config = "",
