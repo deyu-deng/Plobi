@@ -3,6 +3,7 @@ import { cloneElement, useState } from 'react'
 
 import { PanelSectionLabel } from '@/app/overlays/panel'
 import { Codicon } from '@/components/ui/codicon'
+import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { RowButton } from '@/components/ui/row-button'
 import { cn } from '@/lib/utils'
 
@@ -37,30 +38,71 @@ type PeekTriggerProps = {
   onMouseLeave?: (event: MouseEvent<HTMLElement>) => void
 }
 
-/** 一段：小标题 ＋ 内容槽。 */
+/**
+ * 一段：小标题 ＋ 内容槽。
+ *
+ * **可折叠**（`collapsible`）：小标题变成一个按钮，点了折起整段 —— 这是 Qoder
+ * 任务监控面板的那一层（13 个分区**每个都能单独收起**，11-18 10:0x 拍板 B）。
+ * 折起时只留小标题，内容不渲染。
+ *
+ * 小标题仍是 `PanelSectionLabel`（既成那把尺），只是在这张卡上按 Qoder 的口径
+ * 调了一下：12px、不大写、无字距、三级字色 —— **靠字色分层，不靠描边**。
+ */
 export function RailSection({
   children,
   className,
+  collapsible = false,
+  collapsed = false,
   count,
+  onToggle,
   title,
   trailing
 }: {
   children: ReactNode
   className?: string
+  collapsible?: boolean
+  collapsed?: boolean
   count?: number
+  onToggle?: () => void
   title: string
   trailing?: ReactNode
 }) {
+  const label = (
+    <PanelSectionLabel
+      as={collapsible ? 'span' : 'div'}
+      className="text-[0.68rem] font-normal normal-case tracking-normal text-(--ui-text-tertiary)"
+    >
+      {title}
+    </PanelSectionLabel>
+  )
+
   return (
-    <section className={cn('px-3 pb-3 pt-2.5', className)} data-slot="rail-section">
+    <section
+      className={cn('px-3 pb-3 pt-2.5', className)}
+      data-collapsed={collapsed ? '' : undefined}
+      data-slot="rail-section"
+    >
       <div className="flex items-center gap-1.5">
-        <PanelSectionLabel>{title}</PanelSectionLabel>
+        {collapsible ? (
+          <button
+            aria-expanded={!collapsed}
+            className="flex min-w-0 items-center gap-1 text-left"
+            data-slot="rail-section-toggle"
+            onClick={onToggle}
+            type="button"
+          >
+            <DisclosureCaret className="shrink-0 text-(--ui-text-tertiary)" open={!collapsed} />
+            {label}
+          </button>
+        ) : (
+          label
+        )}
         {typeof count === 'number' && count > 0 ? (
           <span className="text-[0.6rem] tabular-nums text-muted-foreground/60">{count}</span>
         ) : null}
         {trailing ? <span className="ml-auto flex items-center gap-1">{trailing}</span> : null}
       </div>
-      <div className="mt-1.5">{children}</div>
+      {collapsed ? null : <div className="mt-1.5">{children}</div>}
     </section>
   )
 }
@@ -177,6 +219,7 @@ export function DetailPeek({
   const [open, setOpen] = useState(false)
 
   const trigger = children.props
+
   const cloned = cloneElement(children, {
     onBlur: (event: FocusEvent<HTMLElement>) => {
       trigger.onBlur?.(event)

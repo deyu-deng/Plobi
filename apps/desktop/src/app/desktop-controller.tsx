@@ -31,6 +31,7 @@ import { setAgentScope } from '../store/agent-scope'
 import type { ComposerAttachment } from '../store/composer'
 import {
   $chatCardNarrow,
+  $dossierFloatPosition,
   $dossierPanelPinned,
   $dossierPanelVisible,
   $dossierPeekOpen,
@@ -43,6 +44,7 @@ import {
   $cardFocusAnimating,
   setCardFocus,
   setChatCardWidth,
+  setDossierFloatPosition,
   setShellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
@@ -54,6 +56,7 @@ import {
 } from '../store/layout'
 import { cardDragProps, useCardDrop } from './shell/card-drag'
 import { useContainerWidth } from './shell/container-width'
+import { useDraggableFloat } from './shell/floating-position'
 import { useSystemTools } from './shell/system-tools'
 import { resolveWorkbenchAsideClass } from './shell/workbench-aside-class'
 import { respondToApprovalAction } from '../store/native-notifications'
@@ -219,10 +222,16 @@ const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryVi
 // 全屏、收起——都住在那一行，压上去就点不到了（11-09 现场：档案卡一露脸就把自己的
 // 开关盖住了）。`calc` 里减号两边不留空格是**非法值**（浏览器整条丢掉，这一档就白写了），
 // Tailwind 的写法是 `calc(100%_-_2rem)`。
-const DOSSIER_FLOATING =
-  'absolute right-4 top-[calc(var(--card-header-height)+0.5rem)] z-30 w-[19rem] max-w-[calc(100%_-_2rem)] max-h-[calc(100%_-_3.25rem)] rounded-xl border border-(--ui-stroke-tertiary) shadow-xl shadow-black/5'
+// 浮层形态的**壳**（Qoder 口径：11-18 10:0x 实物截图 ③ ——
+// `fixed z-[1000] w-[280px] rounded-lg border border-border-tertiary shadow-lg`，
+// 内部那些块**不描边**，靠字色与留白分层）。位置默认停在抬头下面那一行之下；
+// 拖过之后改用 left/top 落位（位置记在 store 里）。
+const DOSSIER_FLOATING_SHAPE =
+  'z-30 w-[19rem] max-w-[calc(100%_-_2rem)] max-h-[calc(100%_-_3.25rem)] rounded-lg border border-(--ui-stroke-tertiary) shadow-lg shadow-black/5'
 
-const DOSSIER_PINNED = 'w-[22rem] max-w-[45%] shrink-0 border-l border-(--ui-stroke-tertiary)'
+// 固定列形态：**没有左边线**（Qoder 的 `B1-2` aside 本体类名里没有 border）——
+// 那一列靠留白与对话区分开，不靠描边。
+const DOSSIER_PINNED = 'w-[22rem] max-w-[45%] shrink-0'
 
 // ── 文件页签按工作区记住 ──────────────────────────────────────────────────
 // 用户 10-31：在 A 这个 Agent 里开着页签，切去 B 说句话再回来，页签全没了。
@@ -406,6 +415,16 @@ export function DesktopController() {
   const chatCardWidth = useContainerWidth(chatCardElement)
   const chatCardNarrow = useStore($chatCardNarrow)
   const dossierPeekOpen = useStore($dossierPeekOpen)
+
+  // 档案卡浮层：**可拖动并记住位置**（Qoder 的浮层头部 `cursor-grab`，11-18 10:0x）。
+  const dossierFloatPosition = useStore($dossierFloatPosition)
+  const { handleProps: dossierFloatHandle } = useDraggableFloat({
+    height: 560,
+    margin: 16,
+    onChange: setDossierFloatPosition,
+    position: dossierFloatPosition,
+    width: 304
+  })
 
   useEffect(() => {
     setChatCardWidth(chatCardWidth)
@@ -2338,13 +2357,36 @@ export function DesktopController() {
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatRoutes}</div>
       {dossierVisible && !chatCardNarrow ? (
-        <DossierPanel agentId={dossierAgentId} className={dossierPinned ? DOSSIER_PINNED : DOSSIER_FLOATING} />
+        dossierPinned ? (
+          <DossierPanel agentId={dossierAgentId} className={DOSSIER_PINNED} />
+        ) : (
+          <DossierPanel
+            agentId={dossierAgentId}
+            className={cn(
+              'absolute',
+              dossierFloatPosition ? DOSSIER_FLOATING_SHAPE : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]',
+              DOSSIER_FLOATING_SHAPE
+            )}
+            headerDragProps={dossierFloatHandle}
+            style={dossierFloatPosition ? { left: dossierFloatPosition.x, top: dossierFloatPosition.y } : undefined}
+          />
+        )
       ) : null}
       {/* 窄形态：档案卡在对话卡里**折叠**（不占位、不遮挡），点抬头右上角那枚图标
           以**贴头浮层**展开（位置沿用 `DOSSIER_FLOATING`：压在抬头下面那一行之下，
           不盖住抬头右边那几枚）。窄了没有并排列可切 ⇒ 那枚图钉不出现。 */}
       {chatCardNarrow && dossierPeekOpen ? (
-        <DossierPanel agentId={dossierAgentId} className={DOSSIER_FLOATING} showPin={false} />
+        <DossierPanel
+          agentId={dossierAgentId}
+          className={cn(
+            'absolute',
+            dossierFloatPosition ? DOSSIER_FLOATING_SHAPE : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]',
+            DOSSIER_FLOATING_SHAPE
+          )}
+          headerDragProps={dossierFloatHandle}
+          showPin={false}
+          style={dossierFloatPosition ? { left: dossierFloatPosition.x, top: dossierFloatPosition.y } : undefined}
+        />
       ) : null}
     </div>
   )

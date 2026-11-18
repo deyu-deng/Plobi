@@ -402,6 +402,65 @@ $chatCardNarrow.listen(narrow => {
   }
 })
 
+// ── 档案卡的**逐段折叠**（Qoder 那一层，11-18 10:0x 拍板 B）────────────────
+//
+// Qoder 的任务监控面板有 13 个分区，**每个都能单独收起**，折叠时最多露 5 条
+// （`TASK_MONITOR_MAX_COLLAPSED_ITEMS=5`），状态存在
+// `qoder:workbench:task-monitor-section-visibility`。我们照抄**这一层机制**：
+// 档案卡每一段都能折起来，折叠状态跟着这张卡走。
+export const DOSSIER_SECTION_IDS = ['summary', 'stages', 'progress', 'notes'] as const
+
+export type DossierSectionId = (typeof DOSSIER_SECTION_IDS)[number]
+
+export const $dossierCollapsedSections = persistentAtom<Record<string, boolean>>(
+  'plobi.desktop.dossierCollapsedSections',
+  {},
+  Codecs.json<Record<string, boolean>>(value =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, boolean>) : {}
+  )
+)
+
+export function isDossierSectionCollapsed(id: string): boolean {
+  return $dossierCollapsedSections.get()[id] === true
+}
+
+/** 折起／展开一段。折起时只留小标题。 */
+export function toggleDossierSection(id: string): void {
+  const current = $dossierCollapsedSections.get()
+  const next = { ...current, [id]: !current[id] }
+
+  // 全展开时把记录清空（不留一份全 false 的垃圾）。
+  $dossierCollapsedSections.set(Object.values(next).some(Boolean) ? next : {})
+}
+
+// ── 档案卡**浮层的位置**（Qoder 那样可拖动并记住，11-18 10:0x）─────────────
+//
+// Qoder 的浮层是 `fixed z-[1000] w-[280px]`，头部 `h-9` 且 `cursor-grab`，
+// 位置由 `clampTaskMonitorPosition` 夹在窗口内（`TASK_MONITOR_MARGIN=16`）。
+// 我们照抄：**拖得动、拖完记住**，下次开还在原处。
+export interface DossierFloatPosition {
+  x: number
+  y: number
+}
+
+export const $dossierFloatPosition = persistentAtom<DossierFloatPosition | null>(
+  'plobi.desktop.dossierFloatPosition',
+  null,
+  Codecs.json<DossierFloatPosition | null>(value => {
+    if (!value || typeof value !== 'object') {
+      return null
+    }
+
+    const { x, y } = value as { x?: unknown; y?: unknown }
+
+    return typeof x === 'number' && typeof y === 'number' ? { x, y } : null
+  })
+)
+
+export function setDossierFloatPosition(position: DossierFloatPosition | null): void {
+  $dossierFloatPosition.set(position)
+}
+
 export function toggleCardFocus(which: 'chat' | 'workbench'): void {
   $cardFocus.set($cardFocus.get() === which ? null : which)
 }

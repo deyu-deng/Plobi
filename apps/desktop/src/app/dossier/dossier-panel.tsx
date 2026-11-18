@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useMemo, useState } from 'react'
 
 import { AgentNotesList } from '@/app/chat/right-rail/notes-list'
 import { PanelEmpty } from '@/app/overlays/panel'
@@ -11,7 +11,12 @@ import { Codicon } from '@/components/ui/codicon'
 import { ErrorCard } from '@/components/ui/error-state'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { $dossierPanelPinned, toggleDossierPanelPin } from '@/store/layout'
+import {
+  $dossierCollapsedSections,
+  $dossierPanelPinned,
+  toggleDossierPanelPin,
+  toggleDossierSection
+} from '@/store/layout'
 
 import { fetchDossierTasks, setDossierTaskDone } from './dossier-api'
 import { DossierStageBar } from './dossier-stage-bar'
@@ -49,10 +54,22 @@ function isToday(date: string): boolean {
 export function DossierPanel({
   agentId,
   className,
-  showPin = true
+  headerDragProps,
+  showPin = true,
+  style
 }: {
   agentId: string
   className?: string
+  /**
+   * 浮层形态下，头部是**拖把手**（Qoder 的浮层头部 `cursor-grab`，11-18 10:0x）。
+   * 固定列形态不传（那一列不需要拖）。
+   */
+  headerDragProps?: {
+    onPointerCancel?: (event: ReactPointerEvent<HTMLElement>) => void
+    onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void
+    onPointerMove?: (event: ReactPointerEvent<HTMLElement>) => void
+    onPointerUp?: (event: ReactPointerEvent<HTMLElement>) => void
+  }
   /**
    * 那枚**图钉**（切「并排一列／浮层」）还看不看。
    *
@@ -60,12 +77,15 @@ export function DossierPanel({
    * 在那里是个**点不动的按钮** ⇒ 藏起来（用户 11-16 19:4x 拍板的窄形态）。
    */
   showPin?: boolean
+  /** 浮层形态拖动后用它落位（left/top）。 */
+  style?: CSSProperties
 }) {
   const { t } = useI18n()
   const v = t.surface
   const queryClient = useQueryClient()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const pinned = useStore($dossierPanelPinned)
+  const collapsedSections = useStore($dossierCollapsedSections)
 
   // **钩子必须在任何提前 return 之前调用**——agentId 一变就换钩子数 ⇒ React 崩。
   const page = useQuery({
@@ -132,9 +152,24 @@ export function DossierPanel({
     <aside
       className={cn('flex min-h-0 flex-col overflow-hidden bg-(--ui-bg-primary)', className)}
       data-testid="dossier-panel"
+      style={style}
     >
       {/* 抬头：标题 ＋ 那一格是谁 ＋ 图钉（固定／取消固定） */}
-      <header className="flex items-center gap-2 px-3 py-2.5">
+      <header
+        className={cn('flex items-center gap-2 px-3 py-2.5', headerDragProps ? 'cursor-grab active:cursor-grabbing' : undefined)}
+        data-slot="dossier-header"
+        onPointerCancel={headerDragProps?.onPointerCancel}
+        onPointerDown={event => {
+          // 图钉那枚按钮自己要点得动 ⇒ 落在按钮上的按下不当作拖动起手。
+          if (!headerDragProps?.onPointerDown || (event.target as HTMLElement).closest('button')) {
+            return
+          }
+
+          headerDragProps.onPointerDown(event)
+        }}
+        onPointerMove={headerDragProps?.onPointerMove}
+        onPointerUp={headerDragProps?.onPointerUp}
+      >
         <h3 className="shrink-0 text-[0.8rem] font-semibold text-foreground">{v.agentDossier}</h3>
         <span className="min-w-0 flex-1 truncate text-[0.7rem] text-(--ui-text-tertiary)">
           {agent.displayName}
@@ -169,12 +204,22 @@ export function DossierPanel({
         </div>
 
         {/* ②③ 目标（进度条右上角那枚图标）＋ 阶段进度条 */}
-        <RailSection title={v.dossierStagesSection}>
+        <RailSection
+          collapsed={collapsedSections.stages === true}
+          collapsible
+          onToggle={() => toggleDossierSection('stages')}
+          title={v.dossierStagesSection}
+        >
           <DossierStageBar goal={agent.goal} stages={stages} />
         </RailSection>
 
         {/* ④ 进度（按日清单） */}
-        <RailSection title={v.dossierProgressSection}>
+        <RailSection
+          collapsed={collapsedSections.progress === true}
+          collapsible
+          onToggle={() => toggleDossierSection('progress')}
+          title={v.dossierProgressSection}
+        >
             {tasks.isError ? (
               <ErrorCard
                 action={{ label: t.common.retry, onClick: () => void tasks.refetch() }}
@@ -252,7 +297,12 @@ export function DossierPanel({
         </RailSection>
 
         {/* ⑤ 相关笔记（点一条 ⇒ 右栏开一个页签） */}
-        <RailSection title={v.dossierNotesSection}>
+        <RailSection
+          collapsed={collapsedSections.notes === true}
+          collapsible
+          onToggle={() => toggleDossierSection('notes')}
+          title={v.dossierNotesSection}
+        >
           <AgentNotesList agentId={agentId} variant="item" />
         </RailSection>
       </div>

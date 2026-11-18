@@ -290,11 +290,20 @@ export function PanelEmpty({ action, className, description, icon = 'inbox', siz
   )
 }
 
-export function PanelSectionLabel({ children, className }: { children: ReactNode; className?: string }) {
+export function PanelSectionLabel({
+  as: Tag = 'div',
+  children,
+  className
+}: {
+  /** 可换成 `span` —— 放进 `<button>` 里当折叠标题时不能是 div。 */
+  as?: 'div' | 'span'
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <div className={cn('text-[0.6rem] font-medium uppercase tracking-wider text-muted-foreground/50', className)}>
+    <Tag className={cn('text-[0.6rem] font-medium uppercase tracking-wider text-muted-foreground/50', className)}>
       {children}
-    </div>
+    </Tag>
   )
 }
 

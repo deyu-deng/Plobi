@@ -28,9 +28,11 @@ vi.mock('@/store/layout', async () => {
   const { atom } = await import('nanostores')
 
   return {
+    $dossierCollapsedSections: atom({}),
     $dossierPanelPinned: atom(false),
     setDossierPanelMode: vi.fn(),
-    toggleDossierPanelPin: (...args: unknown[]) => toggleDossierPanelPin(...args)
+    toggleDossierPanelPin: (...args: unknown[]) => toggleDossierPanelPin(...args),
+    toggleDossierSection: vi.fn()
   }
 })
 
