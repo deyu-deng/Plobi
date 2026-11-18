@@ -30,11 +30,15 @@ jobs:
       - name: Backend arch guard
         run: python -m pytest tests/plobi/test_console_arch_guard.py -q --basetemp=.pytest-run
 
-      # Windows 上跑的脚本：**带中文就必须带 UTF-8 BOM**。没有 BOM 时 Windows PowerShell 5.1
-      # 按 ANSI 码页解文件（中文机器＝GBK）⇒ 中文字节被错解 ⇒ 引号与花括号对不上 ⇒
-      # 解析器报「catch 语句缺少右花括号」⇒ 2026-11-17 一个中文 Windows 用户首装 0.3.2 时
-      # 首启 bootstrap 直接死在语法错误上、后端起不来。
-      - name: Windows script encoding gate
+      # Windows 上跑的脚本那把闸，两条：
+      # ① **带中文就必须带 UTF-8 BOM**。没有 BOM 时 Windows PowerShell 5.1 按 ANSI 码页解文件
+      #    （中文机器＝GBK）⇒ 中文字节被错解 ⇒ 引号与花括号对不上 ⇒ 解析器报「catch 语句缺少
+      #    右花括号」⇒ 2026-11-17 一个中文 Windows 用户首装 0.3.2 时首启 bootstrap 直接死在
+      #    语法错误上、后端起不来。
+      # ② **param 块必须是脚本的第一句**。前面有代码 ⇒ 解析器报「Unexpected attribute
+      #    'CmdletBinding]'」⇒ 脚本根本起不来（2026-11-18 现场：编码块塞在 param 前面，
+      #    两个脚本当场报废）。这一条是纯文本判据，Linux 机器上也判得出来。
+      - name: Windows script gate (encoding + param first)
         run: python scripts/plobi/check_script_encoding.py
 
       - name: Setup Node.js
