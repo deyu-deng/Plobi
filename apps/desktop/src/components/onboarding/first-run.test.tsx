@@ -3,9 +3,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const listOAuthProviders = vi.fn()
+const getGlobalModelOptions = vi.fn()
 const setOnboardingProfile = vi.fn()
 
 vi.mock('@/plobi', () => ({
+  getGlobalModelOptions: (opts: unknown) => getGlobalModelOptions(opts),
   listOAuthProviders: () => listOAuthProviders(),
   setOnboardingProfile: (body: unknown) => setOnboardingProfile(body)
 }))
@@ -28,25 +30,40 @@ function renderFlow(props: Partial<React.ComponentProps<typeof FirstRunFlow>> = 
 
   return render(
     <QueryClientProvider client={client}>
-      <FirstRunFlow
-        ctx={{ requestGateway: vi.fn() as never }}
-        renderModel={() => <div>provider picker</div>}
-        {...props}
-      />
+      <FirstRunFlow ctx={{ requestGateway: vi.fn() as never }} {...props} />
     </QueryClientProvider>
   )
 }
 
-describe('首装那十步（WP-ONBOARDING-WELCOME-FLOW）', () => {
-  it('步序就是主人 11-17 20:0x 说的那一串', () => {
-    // 变异自检：把「语言」挪到「主题」后面 ⇒ 这条当场红。
+/** 走到指定那一步：欢迎屏自己走完（1.4s），其余一步步按。 */
+async function advanceTo(step: string) {
+  renderFlow()
+  await vi.waitFor(
+    () => expect(screen.getByRole('button', { name: /Continue|继续/ })).toBeTruthy(),
+    { timeout: 4000 }
+  )
+
+  for (const name of FIRST_RUN_STEPS) {
+    if (name === step) {
+      return
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: /Continue|继续/ }))
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Continue|继续/ })).toBeTruthy(), {
+      timeout: 4000
+    })
+  }
+}
+
+describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
+  it('步序就是主人 11-17 20:0x 说的那一串（模型配置并进三张卡那一屏）', () => {
+    // 变异自检：把「语言」挪到「外观」后面 ⇒ 这条当场红。
     expect(FIRST_RUN_STEPS).toEqual([
       'welcome',
       'interface',
       'language',
-      'theme',
+      'appearance',
       'cards',
-      'model',
       'profile',
       'agentName',
       'userTitle',
@@ -54,72 +71,83 @@ describe('首装那十步（WP-ONBOARDING-WELCOME-FLOW）', () => {
     ])
   })
 
-  it('三张卡的名字直接读设置页那三栏（两处不许各说各话）', async () => {
-    listOAuthProviders.mockResolvedValue({ providers: [{ id: 'claude-code', name: 'Claude Code' }] })
-    renderFlow()
+  it('外观那一步同时给主题与明暗（设置页「外观」那一栏就是这两样）', async () => {
+    await advanceTo('appearance')
 
-    // 欢迎那屏自己走完 ⇒ 界面 → 语言 → 主题 → 三张卡。
-    await screen.findByText('Setting up Plobi')
-    await vi.waitFor(() => expect(screen.getByText('This is the screen you will use every day')).toBeTruthy(), { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await vi.waitFor(() => expect(screen.getByText('Pick a language')).toBeTruthy(), { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await vi.waitFor(() => expect(screen.getByText('Pick a theme')).toBeTruthy(), { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await vi.waitFor(() => expect(screen.getByText('Where to start')).toBeTruthy(), { timeout: 4000 })
-
-    // 三个名字＝设置页那三栏（账号 / API 密钥 / 订阅额度）。
-    expect(screen.getAllByText('Accounts').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('API keys').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Subscriptions').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Appearance|外观/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/^Theme$|主题/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Light or dark|明暗/).length).toBeGreaterThan(0)
+    // 明暗三档：浅色 / 深色 / 跟随系统。
+    expect(screen.getByRole('button', { name: /^Light$|浅色/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Dark$|深色/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Follow system|跟随系统/ })).toBeTruthy()
   })
 
-  it('「三张卡」按继续 ⇒ 交回既有的 provider 选择器去配模型', async () => {
+  it('三张卡＝模型配置那一屏，名字直接读设置页那三栏，里面列的是可配置的目录', async () => {
     listOAuthProviders.mockResolvedValue({ providers: [{ id: 'claude-code', name: 'Claude Code' }] })
-    const onModelStep = vi.fn()
-    renderFlow({ onModelStep })
+    getGlobalModelOptions.mockResolvedValue({
+      providers: [
+        { slug: 'openrouter', name: 'OpenRouter', auth_type: 'api_key', key_env: 'OPENROUTER_API_KEY' }
+      ]
+    })
 
-    await vi.waitFor(() => expect(screen.getByText('Setting up Plobi')).toBeTruthy(), { timeout: 4000 })
-    await vi.waitFor(() => expect(screen.getByText('This is the screen you will use every day')).toBeTruthy(), { timeout: 4000 })
+    await advanceTo('cards')
 
-    for (let i = 0; i < 3; i++) {
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-      await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy(), { timeout: 4000 })
-    }
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(onModelStep).toHaveBeenCalled()
+    expect(screen.getAllByText(/^Accounts$|^账号$/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/API keys|API 密钥/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/^Subscriptions$|订阅额度/).length).toBeGreaterThan(0)
+    // 卡里列的是**可配置的目录**，不是「已经配好的」⇒ 一个都没配时照样列得出来。
+    await vi.waitFor(() => expect(screen.getAllByText('Claude Code').length).toBeGreaterThan(0), {
+      timeout: 4000
+    })
+    await vi.waitFor(() => expect(screen.getAllByText('OpenRouter').length).toBeGreaterThan(0), {
+      timeout: 4000
+    })
   })
 
   it('末步把画像与称呼交给后端（USER.md），把名字与性格也交过去（SOUL.md）', async () => {
-    listOAuthProviders.mockResolvedValue({ providers: [{ id: 'claude-code', name: 'Claude Code' }] })
+    listOAuthProviders.mockResolvedValue({ providers: [] })
+    getGlobalModelOptions.mockResolvedValue({ providers: [] })
     setOnboardingProfile.mockResolvedValue({ ok: true })
     const onCompleted = vi.fn()
     renderFlow({ onCompleted, startAt: 'profile' })
 
-    await vi.waitFor(() => expect(screen.getByText('Two questions')).toBeTruthy(), { timeout: 4000 })
+    await vi.waitFor(() => expect(screen.getAllByText(/Two questions|两个问题/).length).toBeGreaterThan(0), {
+      timeout: 4000
+    })
 
-    fireEvent.change(screen.getByLabelText('What do you mainly use Plobi for?'), { target: { value: '写论文' } })
-    fireEvent.change(screen.getByLabelText('What is your field?'), { target: { value: '理论物理' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.change(screen.getByLabelText(/What do you mainly use Plobi for|你主要拿 Plobi 做什么/), {
+      target: { value: 'writing papers' }
+    })
+    fireEvent.change(screen.getByLabelText(/What is your field|你的工作领域/), {
+      target: { value: 'physics' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Continue|继续/ }))
 
-    await vi.waitFor(() => expect(screen.getAllByText('Give it a name').length).toBeGreaterThan(0), { timeout: 4000 })
-    fireEvent.change(screen.getByLabelText('Give it a name'), { target: { value: '小满' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await vi.waitFor(() => expect(screen.getAllByText(/Give it a name|给它取个名字/).length).toBeGreaterThan(0), {
+      timeout: 4000
+    })
+    fireEvent.change(screen.getByLabelText(/Give it a name|给它取个名字/), { target: { value: 'Xiaoman' } })
+    fireEvent.click(screen.getByRole('button', { name: /Continue|继续/ }))
 
-    await vi.waitFor(() => expect(screen.getAllByText('What should it call you').length).toBeGreaterThan(0), { timeout: 4000 })
-    fireEvent.change(screen.getByLabelText('What should it call you'), { target: { value: '邓老师' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await vi.waitFor(
+      () => expect(screen.getAllByText(/What should it call you|该怎么称呼你/).length).toBeGreaterThan(0),
+      { timeout: 4000 }
+    )
+    fireEvent.change(screen.getByLabelText(/What should it call you|该怎么称呼你/), { target: { value: 'Mr. Deng' } })
+    fireEvent.click(screen.getByRole('button', { name: /Continue|继续/ }))
 
-    await vi.waitFor(() => expect(screen.getAllByText('All set').length).toBeGreaterThan(0), { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    await vi.waitFor(() => expect(screen.getAllByText(/All set|好了/).length).toBeGreaterThan(0), {
+      timeout: 4000
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Start|开始用/ }))
 
     await vi.waitFor(() =>
       expect(setOnboardingProfile).toHaveBeenCalledWith({
-        purpose: '写论文',
-        domain: '理论物理',
-        user_title: '邓老师',
-        agent_name: '小满',
+        purpose: 'writing papers',
+        domain: 'physics',
+        user_title: 'Mr. Deng',
+        agent_name: 'Xiaoman',
         agent_personality: ''
       })
     )

@@ -2551,13 +2551,15 @@ export interface Translations {
       languageDesc: string
       themeTitle: string
       themeDesc: string
+      appearanceTitle: string
+      appearanceDesc: string
+      themeLabel: string
+      modeLabel: string
       themeLight: string
       themeDark: string
       themeSystem: string
       cardsTitle: string
       cardsDesc: string
-      modelTitle: string
-      modelDesc: string
       profileTitle: string
       profileDesc: string
       profilePurpose: string

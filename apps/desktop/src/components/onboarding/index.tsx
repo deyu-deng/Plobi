@@ -198,7 +198,7 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
 
     // 首装那十步（WP-ONBOARDING-WELCOME-FLOW）：配完模型**不**直接收工 ⇒ 回到
     // 画像／命名／称呼那几屏（主人 11-17 的顺序：配模型 → 画像 → 命名 → 称呼）。
-    if (onboarding.firstRunPhase === 'model') {
+    if ((onboarding.firstRunPhase ?? 'intro') !== 'profile') {
       setFirstRunPhase('profile')
 
       return
@@ -291,18 +291,20 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
   // the surface — same bare, cinematic treatment as the connecting overlay.
   const bare = ready && !showPicker && flow.status === 'confirming_model'
 
-  // 首装那十步（WP-ONBOARDING-WELCOME-FLOW）：自己的那一屏 —— 形状照本机 Antigravity
-  // 的欢迎向导（一步一屏、居中一列、图标 ＋ 一句标题 ＋ 至多一个主按钮）。「配模型」那
-  // 一步交回**既有**的 provider 选择器（phase='model'），配完再回来（phase='profile'）——
-  // 那一步的逻辑一个字不动。
-  if (ready && !onboarding.manual && onboarding.firstRunPhase !== 'model') {
+  // 首装那几步（WP-ONBOARDING-WELCOME-FLOW）：自己的那一屏 —— 一步一屏、居中一列、
+  // 图标 ＋ 一句标题 ＋ 至多一个主按钮；**三张卡就是模型配置那一屏**（主人 11-18 20:4x）。
+  // 配模型的过程中（登录流程在跑）让位给既有的那一屏，配完再回来（profile）。
+  const firstRunPhase = onboarding.firstRunPhase ?? 'intro'
+  if (
+    ready &&
+    !onboarding.manual &&
+    (firstRunPhase === 'profile' || flow.status === 'idle')
+  ) {
     return (
       <FirstRunFlow
         ctx={ctx}
         onCompleted={finalizeOnboarding}
-        onModelStep={() => setFirstRunPhase('model')}
-        renderModel={() => <Picker ctx={ctx} />}
-        startAt={onboarding.firstRunPhase === 'profile' ? 'profile' : 'intro'}
+        startAt={firstRunPhase === 'profile' ? 'profile' : 'intro'}
       />
     )
   }
