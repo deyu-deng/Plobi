@@ -1,7 +1,7 @@
 """WP-L2-DIET — L1 中收的默认名单；项目 L2 减肥到没有 terminal / code runner。
 
 裁定 33.2 的「收回 memory」那半已被 **裁定 49** 推翻：``memory`` 不在
-``L1_DROP_TOOLSETS``（禁单 = 一律收回），也不在 ``L1_MID_TOOLSETS``（中收默认
+``CONDUCTOR_DROP_TOOLSETS``（禁单 = 一律收回），也不在 ``CONDUCTOR_MID_TOOLSETS``（中收默认
 名单）——它属于「默认不铺、用户在产品里勾了就必须生效」那一类。本文件钉住的
 就是这条区别：默认名单不白送，携带着就不许被自动策略抹掉。
 
@@ -24,12 +24,12 @@ import pytest
 
 def test_memory_is_not_denied_to_l1():
     """禁单是「一律收回」；长期记忆挂在 L1 这个人身上（裁定 42 / 44 / 48），
-    而 432a3414 的 ``L1_SOUL_BLOCK`` 已经命令它「该用 ``memory`` 记就记」——
+    而 432a3414 的 ``CONDUCTOR_SOUL_BLOCK`` 已经命令它「该用 ``memory`` 记就记」——
     两边不许互相打脸。"""
-    from plobi.agents.registry import L1_DROP_TOOLSETS, L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_DROP_TOOLSETS, CONDUCTOR_SOUL_BLOCK
 
-    assert "memory" not in L1_DROP_TOOLSETS
-    assert "memory" in L1_SOUL_BLOCK
+    assert "memory" not in CONDUCTOR_DROP_TOOLSETS
+    assert "memory" in CONDUCTOR_SOUL_BLOCK
 
 
 def test_memory_toolset_backs_the_name_with_a_real_tool():
@@ -46,7 +46,7 @@ def test_mid_narrow_keeps_memory_when_the_profile_carries_it():
 
     out = mid_narrow_toolset_names(["memory", "web", "file"])
     assert "memory" in out
-    # 其它 L1_MID_TOOLSETS 应当被补齐（包括 plobi_core + clarify）。
+    # 其它 CONDUCTOR_MID_TOOLSETS 应当被补齐（包括 plobi_core + clarify）。
     assert "web" in out
     assert "file" in out
     assert "plobi_core" in out
@@ -87,18 +87,18 @@ def test_mid_narrow_drops_plobi_cli_composite():
 
 def test_mid_narrow_default_when_input_empty():
     from plobi.agents.registry import (
-        L1_DROP_TOOLSETS,
-        L1_MID_TOOLSETS,
+        CONDUCTOR_DROP_TOOLSETS,
+        CONDUCTOR_MID_TOOLSETS,
         mid_narrow_toolset_names,
     )
 
     out = mid_narrow_toolset_names(None)
     # 默认名单不铺任何 drop-set 名字；memory 同样不白送——它只是不再被禁
     # （见 test_memory_is_not_denied_to_l1），「默认不给」不等于「不许有」。
-    for forbidden in L1_DROP_TOOLSETS:
+    for forbidden in CONDUCTOR_DROP_TOOLSETS:
         assert forbidden not in out
     assert "memory" not in out
-    for allowed in L1_MID_TOOLSETS:
+    for allowed in CONDUCTOR_MID_TOOLSETS:
         assert allowed in out
 
 
@@ -267,7 +267,7 @@ def _simulate_ui_toggle(profile_dir, platform, name):
 
 def test_diet_strips_a_freshly_materialised_profile_everywhere(tmp_path):
     """首落无回归：clone 来的 profile 顶层 + cli + gateway 三处同时带
-    terminal（``apply_l1_mid_toolsets`` / ``create_profile(clone_config=True)``
+    terminal（``apply_conductor_mid_toolsets`` / ``create_profile(clone_config=True)``
     就是这么三份一起写的），一次 diet 必须三处全剥掉。"""
     from plobi.agents.registry import apply_principal_diet
 
@@ -512,39 +512,39 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
 def test_soul_block_bans_master_tools_as_entry_but_not_any_tool():
     """裁定 49 推翻 33.2 / 33.3 的**收工具**部分：SOUL 仍点名 `plobi_master_*`
     不是日程 / 项目入口，但不再宣布 L1 没有 `terminal` 或不准调用 `memory`。
-    机制层（``L1_DROP_TOOLSETS`` / ``L1_MID_TOOLSETS``）是另一刀，本测试仍按
+    机制层（``CONDUCTOR_DROP_TOOLSETS`` / ``CONDUCTOR_MID_TOOLSETS``）是另一刀，本测试仍按
     原样钉住，见文件头。"""
     import re
 
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
-    assert "派工不是工人" in L1_SOUL_BLOCK
+    assert "派工不是工人" in CONDUCTOR_SOUL_BLOCK
     # 10-24 翻向：那四枚嘴连同 `plobi_secretary_ask` / `plobi_agent_ask` 一起随裁定 183
     # 删了。这一段要钉的是「不许把已删的名字当可用入口」——点整族即可，逐个列死名字
     # 只会让模型去找一个不存在的工具（今天左栏与夜里那轮撞空就是这么来的）。
-    assert "plobi_master_*" in L1_SOUL_BLOCK
+    assert "plobi_master_*" in CONDUCTOR_SOUL_BLOCK
     for gone in ("plobi_secretary_ask", "plobi_agent_ask"):
-        assert gone not in L1_SOUL_BLOCK, gone
+        assert gone not in CONDUCTOR_SOUL_BLOCK, gone
     # 主树治理（人批）留着；「L1 同样没有 terminal」那句死了。
-    assert "D:\\Projects\\Plobi\\Code" in L1_SOUL_BLOCK
-    assert "人批" in L1_SOUL_BLOCK
+    assert "D:\\Projects\\Plobi\\Code" in CONDUCTOR_SOUL_BLOCK
+    assert "人批" in CONDUCTOR_SOUL_BLOCK
     denial_shaped = [
         clause
-        for clause in re.split(r"[。；，、\n]", L1_SOUL_BLOCK)
+        for clause in re.split(r"[。；，、\n]", CONDUCTOR_SOUL_BLOCK)
         if any(t in clause for t in ("terminal", "memory", "computer_use"))
         and any(m in clause for m in ("没有", "不准调用", "禁止调用", "剥掉", "不可用"))
     ]
     assert denial_shaped == [], denial_shaped
-    assert "工具由用户在产品里给" in L1_SOUL_BLOCK
+    assert "工具由用户在产品里给" in CONDUCTOR_SOUL_BLOCK
 
 
 def test_soul_block_first_action_is_the_agenda_atoms_not_a_deleted_mouth():
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
     # 派工不是工人段：第一动作仍然硬钉着，但钉的是现役原子——
     # `plobi_secretary_ask` 已随裁定 183 删除，模板里出现它＝教模型撞空。
-    idx = L1_SOUL_BLOCK.index("派工不是工人")
-    section = L1_SOUL_BLOCK[idx:]
+    idx = CONDUCTOR_SOUL_BLOCK.index("派工不是工人")
+    section = CONDUCTOR_SOUL_BLOCK[idx:]
     assert "plobi_secretary_ask" not in section
     assert "agenda_read" in section
     assert "`ask`" in section

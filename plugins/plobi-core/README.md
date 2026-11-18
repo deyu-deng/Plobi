@@ -12,7 +12,7 @@
 | 每一跳派工授权票、六态回执、Thread 续接（裁定 216） | `channel.py::TICKET_REPORT_SCHEMA` + `plobi/delegation/tickets.py` |
 | 问另一个 Agent 并续在**同一屏** | `agent_ask.py::build_child_command()`（`--resume` + `PLOBI_AGENT_ID`） |
 | 投递之后替收件人起一轮（裁定 200） | `wake.py` |
-| L1 灵魂模板、开口纪律、回合预算 | `l1_soul_template.md`、`l1_budget.py` |
+| L1 灵魂模板、开口纪律、回合预算 | `conductor_soul_template.md`、`conductor_budget.py` |
 | 两句冻结话术的窄硬路由 | `hard_route.py` |
 | 工具注册面 | `__init__.py::register()`、`_CHANNEL_TOOLS`、`_DOMAIN_TOOLS` |
 | 插件 dashboard API | `dashboard/plugin_api.py` |

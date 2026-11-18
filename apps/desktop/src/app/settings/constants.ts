@@ -580,7 +580,7 @@ const MEMORY_GROUPS: DesktopConfigGroup[] = [
       'memory.agent_char_limit',
       'memory.user_char_limit',
       'memory.status_char_limit',
-      'memory.l1_status_char_limit',
+      'memory.conductor_status_char_limit',
       'memory.squeeze_pressure',
       'memory.nudge_interval'
     ]

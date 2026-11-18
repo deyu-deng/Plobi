@@ -81,9 +81,9 @@ def test_the_ledger_treats_empty_agent_id_as_a_real_filter(tmp_path):
     conn.commit()
     conn.close()
 
-    l1_rows = db.list_sessions_rich(limit=50, agent_id="")
-    assert sorted(r["id"] for r in l1_rows) == ["s-l1-a", "s-l1-b"]
-    assert {r["agent_id"] for r in l1_rows} == {""}
+    conductor_rows = db.list_sessions_rich(limit=50, agent_id="")
+    assert sorted(r["id"] for r in conductor_rows) == ["s-l1-a", "s-l1-b"]
+    assert {r["agent_id"] for r in conductor_rows} == {""}
 
     both = db.list_sessions_rich(limit=50, agent_id=None)
     assert len(both) == 4

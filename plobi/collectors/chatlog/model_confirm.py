@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 # Environment variable holding the *full* chat-completions URL. We deliberately
 # do not guess a path: providers disagree on ``/v1`` prefixes and guessing wrong
 # produces a confusing 404 deep inside the collector.
-CHAT_URL_ENV = "PLOBI_L2_CHAT_URL"
-API_KEY_ENV = "PLOBI_L2_API_KEY"
+CHAT_URL_ENV = "PLOBI_PRINCIPAL_CHAT_URL"
+API_KEY_ENV = "PLOBI_PRINCIPAL_API_KEY"
 
 _DEFAULT_TIMEOUT = 20.0
 

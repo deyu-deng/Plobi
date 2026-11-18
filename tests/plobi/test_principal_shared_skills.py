@@ -35,7 +35,7 @@ SHARED_SKILLS = {
 
 
 @pytest.fixture()
-def l2_home(tmp_path, monkeypatch):
+def principal_home(tmp_path, monkeypatch):
     """A throwaway ``~/.plobi`` holding one shared skill root and two skills."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     home = tmp_path / ".plobi"
@@ -140,7 +140,7 @@ def _spawned_home(reg, name: str, home: Path) -> Path:
     assert "profile_dir" not in result, "spawn 又在返回值里泄露家路径了"
     # 2026-11-16（i18n 定名刀）：slug 派生层整层删除，名册 name 自己就是门牌/目录名。
     slug = name
-    # 注意：本档的 ``l2_home`` **已经是** ``<tmp>/.plobi``（见 fixture），别再多套一层。
+    # 注意：本档的 ``principal_home`` **已经是** ``<tmp>/.plobi``（见 fixture），别再多套一层。
     profile_dir = home / "profiles" / slug
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "plobi").mkdir(exist_ok=True)
@@ -155,9 +155,9 @@ def _spawned_home(reg, name: str, home: Path) -> Path:
     return profile_dir
 
 
-def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profile):
-    reg, _ = _registry_with_l2(l2_home)
-    profile_dir = _spawned_home(reg, "demo", l2_home)
+def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(principal_home, in_profile):
+    reg, _ = _registry_with_l2(principal_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
 
     own_skills = profile_dir / "skills"
     # No copied tree: not one SKILL.md under the 分身's own skills root, and no
@@ -188,7 +188,7 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
 
     soul = shared_soul_path_for("demo").read_text(encoding="utf-8")
     assert shared_soul_path_for("demo").is_file(), "身份没落共享层"
-    assert "PLOBI_L2_IDENTITY" in soul
+    assert "PLOBI_PRINCIPAL_IDENTITY" in soul
     assert "shared persona" not in soul  # 顶层那份没有跟着搬进来
     # WP-PROFILE-STOP-SEEDING 之后连那份「只有注释表头」的占位 ``.env`` 也不种了：
     # 密钥顶层一份 + 名册行覆盖，家里没有这个文件才是正确形状（读侧靠
@@ -196,7 +196,7 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
     assert not (profile_dir / ".env").exists()
 
 
-def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
+def test_shared_root_is_written_into_the_one_shared_config(principal_home, in_profile):
     """技能那根线只绑一次：写进**顶层那一份** ``config.yaml``，分身家不再各存一份。
 
     裁 42.3 第 2 条原来落成的形状是「每个分身家自己的 ``config.yaml`` 里写一条
@@ -207,10 +207,10 @@ def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
     ``get_external_skills_dirs`` 走解析器照样解析出同一个共享根。（顶层家自己读那一条
     会被跳过——它等于自己的本地主根，这正好说明同一个值在两边都不出错。）
     """
-    reg, _ = _registry_with_l2(l2_home)
-    profile_dir = _spawned_home(reg, "demo", l2_home)
+    reg, _ = _registry_with_l2(principal_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
 
-    top = yaml.safe_load((l2_home / "config.yaml").read_text(encoding="utf-8"))
+    top = yaml.safe_load((principal_home / "config.yaml").read_text(encoding="utf-8"))
     assert [Path(d) for d in top["skills"]["external_dirs"]] == [shared_skills_root()]
     # 家由 _spawned_home 预建（带一份出厂 config.yaml，给「顶层 external_dirs 读时叠加」
     # 一个落脚点）。B 刀之后 spawn **完全不碰家**，所以那份 config.yaml 必须还是
@@ -232,11 +232,11 @@ def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
 # --------------------------------------------------------------------------- #
 
 
-def test_repeated_spawn_does_not_append_a_second_shared_root(l2_home, in_profile):
+def test_repeated_spawn_does_not_append_a_second_shared_root(principal_home, in_profile):
     """幂等落在顶层那一份上：重复 spawn 不追加第二条，用户自己列的外部根留着。"""
-    reg, _ = _registry_with_l2(l2_home)
-    profile_dir = _spawned_home(reg, "demo", l2_home)
-    top_cfg = l2_home / "config.yaml"
+    reg, _ = _registry_with_l2(principal_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
+    top_cfg = principal_home / "config.yaml"
     before = top_cfg.read_text(encoding="utf-8")
 
     # B 刀：第二次 spawn 同样不建家、不泄露家路径；共享根也不该重复追加。
@@ -288,9 +288,9 @@ def test_apply_shared_skills_root_creates_the_shared_config_when_absent(
 # --------------------------------------------------------------------------- #
 
 
-def test_local_skill_wins_over_shared_root_and_never_doubles(l2_home, in_profile):
-    reg, _ = _registry_with_l2(l2_home)
-    profile_dir = _spawned_home(reg, "demo", l2_home)
+def test_local_skill_wins_over_shared_root_and_never_doubles(principal_home, in_profile):
+    reg, _ = _registry_with_l2(principal_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
 
     collision = "alpha"  # a name the shared root also owns (fixture data)
     local = profile_dir / "skills" / "agent-authored"
@@ -322,10 +322,10 @@ def test_local_skill_wins_over_shared_root_and_never_doubles(l2_home, in_profile
 # --------------------------------------------------------------------------- #
 
 
-def test_shared_skills_are_read_only_to_the_profile_curator(l2_home, in_profile):
+def test_shared_skills_are_read_only_to_the_profile_curator(principal_home, in_profile):
     """The 分身 may discover shared skills but must never curate them."""
-    reg, _ = _registry_with_l2(l2_home)
-    profile_dir = _spawned_home(reg, "demo", l2_home)
+    reg, _ = _registry_with_l2(principal_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
     shared_md = shared_skills_root() / SHARED_SKILLS["alpha"][0] / "SKILL.md"
 
     def check():
@@ -376,7 +376,7 @@ def _assignment_lines(path: Path) -> list[str]:
     ]
 
 
-def test_spawn_lands_no_env_or_config_copy(l2_home):
+def test_spawn_lands_no_env_or_config_copy(principal_home):
     """项目分身上不许有根 ``.env`` / 根 ``config.yaml`` 的副本。
 
     WP-PROFILE-STOP-SEEDING（任务书第 1 步）把这条判据变强了：家里**根本没有**
@@ -384,8 +384,8 @@ def test_spawn_lands_no_env_or_config_copy(l2_home):
     「有 .env 但里面没有凭据」那种形状既测不出复印件、也测不出覆盖丢了；
     现在断的是文件不存在，顶层那一份仍然原样在那儿（存量只隔离不删）。
     """
-    reg, _ = _registry_with_l2(l2_home)
-    profile_dir = _spawned_home(reg, "demo", l2_home)
+    reg, _ = _registry_with_l2(principal_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
 
     assert not (profile_dir / ".env").exists()
 
@@ -402,16 +402,16 @@ def test_spawn_lands_no_env_or_config_copy(l2_home):
     ) == expected_config, "spawn 又往分身家落了 config.yaml"
 
     # 顶层那份是密钥的唯一真源，它带着 TEST_KEY=1 这一行——分身没有第二份。
-    assert _assignment_lines(l2_home / ".env") == ["TEST_KEY=1"]
+    assert _assignment_lines(principal_home / ".env") == ["TEST_KEY=1"]
 
 
-def test_secret_override_never_lands_on_disk(l2_home):
+def test_secret_override_never_lands_on_disk(principal_home):
     """密钥覆盖读得到、注得进环境，但分身的家里一个字都不留。"""
     from dataclasses import replace as _replace
 
     from plobi.agents.registry import apply_secret_overrides
 
-    reg, _ = _registry_with_l2(l2_home)
+    reg, _ = _registry_with_l2(principal_home)
     reg.upsert(
         _replace(
             reg.get("demo"),
@@ -420,7 +420,7 @@ def test_secret_override_never_lands_on_disk(l2_home):
     )
     reg.save()
 
-    profile_dir = _spawned_home(reg, "demo", l2_home)
+    profile_dir = _spawned_home(reg, "demo", principal_home)
     needle = b"sk-project-only"
     leftovers = [
         str(path)

@@ -1790,14 +1790,14 @@ def _apply_rename_step(step: dict, info: dict):
     if kind == "soul-content":
         path = step["path"]
         before = _snapshot_bytes(path)
-        from plobi.agents.registry import ensure_l2_identity_soul, load_registry
+        from plobi.agents.registry import ensure_principal_identity_soul, load_registry
 
         entry = next(
             (e for e in load_registry().entries() if e.name == step["new"]), None
         )
         if entry is None:
             return None
-        ensure_l2_identity_soul(entry)
+        ensure_principal_identity_soul(entry)
         return lambda: _restore_bytes(path, before)
 
     if kind == "sql-update":

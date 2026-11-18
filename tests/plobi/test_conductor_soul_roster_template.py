@@ -10,8 +10,8 @@
 
 这里钉四件事：
 
-1. L1 的 SOUL 合同有**模板文件**那一份真源（``plugins/plobi-core/l1_soul_template.md``），
-   运行时不打补丁：改口令就改这个文件，``L1_SOUL_BLOCK`` 是它的读数。
+1. L1 的 SOUL 合同有**模板文件**那一份真源（``plugins/plobi-core/conductor_soul_template.md``），
+   运行时不打补丁：改口令就改这个文件，``CONDUCTOR_SOUL_BLOCK`` 是它的读数。
 2. 模板里写着「名单从哪来、什么时候问谁、怎么问、问不到怎么说」。
 3. 日程秘书 ``agenda`` 与其他 L2 地位平等（裁定 69），模板不许把它当万事入口。
 4. **生效路径**：已经存在的 L1 家在下一次启动时，围栏以内那一段整段换成新模板，
@@ -42,40 +42,40 @@ def _soul(home):
 
 def test_l1_soul_block_is_read_from_the_template_file():
     from plobi.agents.registry import (
-        L1_SOUL_BLOCK,
-        L1_SOUL_TEMPLATE_PATH,
-        load_l1_soul_template,
+        CONDUCTOR_SOUL_BLOCK,
+        CONDUCTOR_SOUL_TEMPLATE_PATH,
+        load_conductor_soul_template,
     )
 
-    assert L1_SOUL_TEMPLATE_PATH.is_file(), "L1 SOUL 模板文件不见了（唯一真源）"
-    raw = L1_SOUL_TEMPLATE_PATH.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+    assert CONDUCTOR_SOUL_TEMPLATE_PATH.is_file(), "L1 SOUL 模板文件不见了（唯一真源）"
+    raw = CONDUCTOR_SOUL_TEMPLATE_PATH.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
     # 常量 = 模板文件读数，一处不增（运行时往提示词里另打一份补丁就是第二真源）。
-    assert L1_SOUL_BLOCK == load_l1_soul_template()
-    assert L1_SOUL_BLOCK.strip() == raw
+    assert CONDUCTOR_SOUL_BLOCK == load_conductor_soul_template()
+    assert CONDUCTOR_SOUL_BLOCK.strip() == raw
 
 
 def test_a_broken_template_fails_loud_instead_of_quietly_losing_the_contract(tmp_path):
     """围栏缺一道 / 顺序反了 → RegistryError，不能悄悄写出一份没围栏的 SOUL。"""
     import plobi.agents.registry as registry_mod
-    from plobi.agents.registry import L1_SOUL_BEGIN, L1_SOUL_END, RegistryError
+    from plobi.agents.registry import CONDUCTOR_SOUL_BEGIN, CONDUCTOR_SOUL_END, RegistryError
 
-    original = registry_mod.L1_SOUL_TEMPLATE_PATH
+    original = registry_mod.CONDUCTOR_SOUL_TEMPLATE_PATH
     try:
-        no_fence = tmp_path / "l1_soul_template.md"
+        no_fence = tmp_path / "conductor_soul_template.md"
         no_fence.write_text("## 只有正文没有围栏\n", encoding="utf-8")
-        registry_mod.L1_SOUL_TEMPLATE_PATH = no_fence
+        registry_mod.CONDUCTOR_SOUL_TEMPLATE_PATH = no_fence
         with pytest.raises(RegistryError):
-            registry_mod.load_l1_soul_template()
+            registry_mod.load_conductor_soul_template()
 
         reversed_fence = tmp_path / "reversed.md"
         reversed_fence.write_text(
-            f"{L1_SOUL_END}\n{L1_SOUL_BEGIN}\n", encoding="utf-8"
+            f"{CONDUCTOR_SOUL_END}\n{CONDUCTOR_SOUL_BEGIN}\n", encoding="utf-8"
         )
-        registry_mod.L1_SOUL_TEMPLATE_PATH = reversed_fence
+        registry_mod.CONDUCTOR_SOUL_TEMPLATE_PATH = reversed_fence
         with pytest.raises(RegistryError):
-            registry_mod.load_l1_soul_template()
+            registry_mod.load_conductor_soul_template()
     finally:
-        registry_mod.L1_SOUL_TEMPLATE_PATH = original
+        registry_mod.CONDUCTOR_SOUL_TEMPLATE_PATH = original
 
 
 # ---------------------------------------------------------------------------
@@ -84,39 +84,39 @@ def test_a_broken_template_fails_loud_instead_of_quietly_losing_the_contract(tmp
 
 
 def test_template_names_the_mouth_that_asks_the_roster():
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
     # 裁定 183 之后这张嘴叫 `ask`（旧 `plobi_agent_ask` 已删）；钉反方向：
     # 模板里再出现那个名字，就是教 L1 每轮去调一个不存在的工具。
-    assert "`ask`" in L1_SOUL_BLOCK, "L1 的 SOUL 里还是没提这张嘴"
-    assert "plobi_agent_ask" not in L1_SOUL_BLOCK
+    assert "`ask`" in CONDUCTOR_SOUL_BLOCK, "L1 的 SOUL 里还是没提这张嘴"
+    assert "plobi_agent_ask" not in CONDUCTOR_SOUL_BLOCK
     # 名单从哪来 + 每一行的三格。
-    assert "roster" in L1_SOUL_BLOCK
-    assert "askable" in L1_SOUL_BLOCK
-    assert "not_askable_because" in L1_SOUL_BLOCK
-    assert "mind_candidates" in L1_SOUL_BLOCK
+    assert "roster" in CONDUCTOR_SOUL_BLOCK
+    assert "askable" in CONDUCTOR_SOUL_BLOCK
+    assert "not_askable_because" in CONDUCTOR_SOUL_BLOCK
+    assert "mind_candidates" in CONDUCTOR_SOUL_BLOCK
     # 什么时候问、怎么问、问几个。
-    assert "手下名单与当面提问" in L1_SOUL_BLOCK
+    assert "手下名单与当面提问" in CONDUCTOR_SOUL_BLOCK
     for phrase in ("现在的实情", "用他的原话", "一次问一个"):
-        assert phrase in L1_SOUL_BLOCK, phrase
+        assert phrase in CONDUCTOR_SOUL_BLOCK, phrase
     # 摘录不许冒充分身的回答。
-    assert "不能冒充它本人的回答" in L1_SOUL_BLOCK  # 裁定 143④：拟称已从提示词撤掉，钉的是这句意思
+    assert "不能冒充它本人的回答" in CONDUCTOR_SOUL_BLOCK  # 裁定 143④：拟称已从提示词撤掉，钉的是这句意思
 
 
 def test_template_stops_routing_everything_to_the_agenda_secretary():
     """旧文本那句「日程 / 项目 / 排天 / 待确认 第一动作只有 plobi_secretary_ask」
     是这次的答案：项目这一格必须从里头摘出去。"""
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
-    assert "日程 / 项目 / 排天 / 待确认 **第一动作**只有 `plobi_secretary_ask`" not in L1_SOUL_BLOCK
-    assert "日程 / 排天 / 待确认 / 项目进度：第一动作仍是已有的 `plobi_secretary_ask`" not in L1_SOUL_BLOCK
+    assert "日程 / 项目 / 排天 / 待确认 **第一动作**只有 `plobi_secretary_ask`" not in CONDUCTOR_SOUL_BLOCK
+    assert "日程 / 排天 / 待确认 / 项目进度：第一动作仍是已有的 `plobi_secretary_ask`" not in CONDUCTOR_SOUL_BLOCK
     # 10-24 改判这条断言的方向：裁定 183 把那枚带七个 intent 的嘴整批删了，
     # 模板里再留着它，就是教 L1 每轮去调一个不存在的工具（现读真 SOUL.md 里 11 处）。
     # 日程那一摊的入口还在，只是换成了两枚原子 + 一张嘴（裁定 185：工具面只给原子）。
-    assert "plobi_secretary_ask" not in L1_SOUL_BLOCK
-    assert "plobi_agent_ask" not in L1_SOUL_BLOCK
-    assert "agenda_read" in L1_SOUL_BLOCK and "agenda_write" in L1_SOUL_BLOCK
-    assert "`ask`" in L1_SOUL_BLOCK
+    assert "plobi_secretary_ask" not in CONDUCTOR_SOUL_BLOCK
+    assert "plobi_agent_ask" not in CONDUCTOR_SOUL_BLOCK
+    assert "agenda_read" in CONDUCTOR_SOUL_BLOCK and "agenda_write" in CONDUCTOR_SOUL_BLOCK
+    assert "`ask`" in CONDUCTOR_SOUL_BLOCK
 
 
 def test_template_presets_no_builtin_agenda_secretary():
@@ -128,24 +128,24 @@ def test_template_presets_no_builtin_agenda_secretary():
     属于目标置换；软件不该替用户预设任何首席。所以判据反过来：模板里**不许**再把
     agenda 说成系统自带身份。
     """
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
-    assert "名册里没有「日程秘书」这个预设身份" in L1_SOUL_BLOCK
-    assert "软件不预设任何首席" in L1_SOUL_BLOCK
-    assert "测试用 L2" not in L1_SOUL_BLOCK, "旧口径会让人以为装好就自带一个日程助理"
-    assert "归你自己" in L1_SOUL_BLOCK
+    assert "名册里没有「日程秘书」这个预设身份" in CONDUCTOR_SOUL_BLOCK
+    assert "软件不预设任何首席" in CONDUCTOR_SOUL_BLOCK
+    assert "测试用 L2" not in CONDUCTOR_SOUL_BLOCK, "旧口径会让人以为装好就自带一个日程助理"
+    assert "归你自己" in CONDUCTOR_SOUL_BLOCK
 
 
 def test_template_routes_by_roster_domains_not_soft_routing():
     """裁定 218：「谁负责哪一摊」搬进名册行，SOUL 不再手写软路由名单。"""
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
-    assert "域归名册行" in L1_SOUL_BLOCK
-    assert "软路由" not in L1_SOUL_BLOCK, "旧口径会把派给谁交回散文判断"
-    assert "`domain`" in L1_SOUL_BLOCK
-    assert "`category`" in L1_SOUL_BLOCK and "`domains`" in L1_SOUL_BLOCK
-    assert "不会替你改收件人" in L1_SOUL_BLOCK
-    assert "不要写死某个 agent id" in L1_SOUL_BLOCK
+    assert "域归名册行" in CONDUCTOR_SOUL_BLOCK
+    assert "软路由" not in CONDUCTOR_SOUL_BLOCK, "旧口径会把派给谁交回散文判断"
+    assert "`domain`" in CONDUCTOR_SOUL_BLOCK
+    assert "`category`" in CONDUCTOR_SOUL_BLOCK and "`domains`" in CONDUCTOR_SOUL_BLOCK
+    assert "不会替你改收件人" in CONDUCTOR_SOUL_BLOCK
+    assert "不要写死某个 agent id" in CONDUCTOR_SOUL_BLOCK
 
 
 # ---------------------------------------------------------------------------
@@ -155,17 +155,17 @@ def test_template_routes_by_roster_domains_not_soft_routing():
 
 def test_existing_l1_home_upgrades_at_next_boot_and_keeps_user_text(isolated_home):
     from plobi.agents.registry import (
-        L1_SOUL_BEGIN,
-        L1_SOUL_BLOCK,
-        L1_SOUL_END,
+        CONDUCTOR_SOUL_BEGIN,
+        CONDUCTOR_SOUL_BLOCK,
+        CONDUCTOR_SOUL_END,
         ensure_conductor_routing_soul,
     )
 
     # 一份「装机时写过的那版」SOUL：围栏以内是**旧**合同（没有 plobi_agent_ask），
     # 围栏以外是用户自己写的人设。
     old_contract = (
-        f"{L1_SOUL_BEGIN}\n## 旧版\n\n- 项目进度：第一动作仍是已有的 `plobi_secretary_ask`。\n"
-        f"{L1_SOUL_END}\n"
+        f"{CONDUCTOR_SOUL_BEGIN}\n## 旧版\n\n- 项目进度：第一动作仍是已有的 `plobi_secretary_ask`。\n"
+        f"{CONDUCTOR_SOUL_END}\n"
     )
     persona = "我自己写的人设：说话简短，别客套。\n"
     isolated_home.joinpath("SOUL.md").write_text(persona + "\n" + old_contract, encoding="utf-8")
@@ -174,16 +174,16 @@ def test_existing_l1_home_upgrades_at_next_boot_and_keeps_user_text(isolated_hom
 
     text = _soul(isolated_home)
     # 新合同整段进来……
-    assert L1_SOUL_BLOCK.strip() in text
+    assert CONDUCTOR_SOUL_BLOCK.strip() in text
     assert "`ask`" in text
     # ……旧的那一段一个字都不留（否则一份 SOUL 里两段 L1 合同互相打脸）。
     assert "## 旧版" not in text
-    assert text.count(L1_SOUL_BEGIN) == 1
+    assert text.count(CONDUCTOR_SOUL_BEGIN) == 1
     # 围栏以外用户写的字原样留着——这一刀不覆盖用户手改。
     assert "我自己写的人设：说话简短，别客套。" in text
     # 幂等：第二次启动什么都不必改。
     assert ensure_conductor_routing_soul(home=isolated_home) is False
-    assert _soul(isolated_home).count(L1_SOUL_END) == 1
+    assert _soul(isolated_home).count(CONDUCTOR_SOUL_END) == 1
 
 
 def test_boot_path_is_the_backend_startup_hook_not_a_chat_time_patch():
@@ -204,10 +204,10 @@ def test_boot_path_is_the_backend_startup_hook_not_a_chat_time_patch():
 # ---------------------------------------------------------------------------
 
 def _dispatch_section() -> str:
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
-    start = L1_SOUL_BLOCK.index("## 按摊判")
-    return L1_SOUL_BLOCK[start:L1_SOUL_BLOCK.index(":::PLOBI_L1_ASK_END:::")]
+    start = CONDUCTOR_SOUL_BLOCK.index("## 按摊判")
+    return CONDUCTOR_SOUL_BLOCK[start:CONDUCTOR_SOUL_BLOCK.index(":::PLOBI_CONDUCTOR_ASK_END:::")]
 
 
 def test_the_dispatch_checklist_names_both_lists_and_the_two_trails():

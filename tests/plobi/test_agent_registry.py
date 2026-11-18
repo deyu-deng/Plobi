@@ -215,7 +215,7 @@ def test_the_retired_positive_skills_field_is_ignored_and_dropped(home):
                     "principal-agenda": {
                         "name": "principal-agenda",
                         "role": "principal",
-                        "skills": ["plobi-l2-resident"],
+                        "skills": ["plobi-principal-resident"],
                         "description": "日程闭环",
                     }
                 },

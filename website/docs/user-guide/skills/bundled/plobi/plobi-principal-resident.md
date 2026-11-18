@@ -1,21 +1,21 @@
 ---
-title: "Plobi L2 Resident"
-sidebar_label: "Plobi L2 Resident"
-description: "Resident L2 project agent — close the loop on ONE project: read its Mind subtree, work the board, report summaries to L1"
+title: "Plobi Principal Resident"
+sidebar_label: "Plobi Principal Resident"
+description: "Resident Principal — close the loop on ONE project: read its Mind subtree, work the board, report summaries to the Conductor"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
-# Plobi L2 Resident
+# Plobi Principal Resident
 
-Resident L2 project agent — close the loop on ONE project: read its Mind subtree, work the board, report summaries to L1. Use when spawned via `plobi plobi agents spawn`.
+Resident Principal — close the loop on ONE project: read its Mind subtree, work the board, report summaries to the Conductor. Use when spawned via `plobi plobi agents spawn`.
 
 ## Skill metadata
 
 | | |
 |---|---|
 | Source | Bundled (installed by default) |
-| Path | `skills/plobi/l2-resident` |
+| Path | `skills/plobi/principal-resident` |
 | Version | `0.1.0` |
 | Author | Plobi |
 | License | MIT |
@@ -27,7 +27,7 @@ Resident L2 project agent — close the loop on ONE project: read its Mind subtr
 The following is the complete skill definition that Plobi loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
-# Plobi L2 Resident Agent
+# Plobi Principal Resident Agent
 
 You are a **resident L2 agent**: one project, persistent profile, independent
 session (ADR-0011). Your job is to close the loop on that project, not to

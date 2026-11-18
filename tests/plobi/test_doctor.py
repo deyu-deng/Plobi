@@ -292,11 +292,11 @@ def test_deferred_ids_all_have_an_enable_hint_and_no_windows_launcher():
 
 
 def test_soul_has_routing_block_old_html_fence():
-    assert D.soul_has_routing_block("<!-- PLOBI_L1_SECRETARY_ROUTING -->\n")
+    assert D.soul_has_routing_block("<!-- PLOBI_CONDUCTOR_ROUTING -->\n")
 
 
 def test_soul_has_routing_block_new_colon_fence():
-    assert D.soul_has_routing_block(":::PLOBI_L1_ASK_ROUTING:::\n")
+    assert D.soul_has_routing_block(":::PLOBI_CONDUCTOR_ASK_ROUTING:::\n")
 
 
 def test_soul_has_routing_block_missing():
@@ -307,7 +307,7 @@ def test_check_north_star_old_html_fence(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
         "toolsets:\n  - plobi_core\n", encoding="utf-8"
     )
-    (tmp_path / "SOUL.md").write_text("<!-- PLOBI_L1_SECRETARY_ROUTING -->\n", encoding="utf-8")
+    (tmp_path / "SOUL.md").write_text("<!-- PLOBI_CONDUCTOR_ROUTING -->\n", encoding="utf-8")
     row = D.check_north_star(tmp_path)
     assert row["color"] == D.GREEN
 
@@ -316,7 +316,7 @@ def test_check_north_star_new_colon_fence(tmp_path: Path):
     (tmp_path / "config.yaml").write_text(
         "toolsets:\n  - plobi_core\n", encoding="utf-8"
     )
-    (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
+    (tmp_path / "SOUL.md").write_text(":::PLOBI_CONDUCTOR_ASK_ROUTING:::\n", encoding="utf-8")
     row = D.check_north_star(tmp_path)
     assert row["color"] == D.GREEN
 
@@ -328,7 +328,7 @@ def test_check_conductor_form_green(tmp_path: Path):
         "platform_toolsets:\n  cli:\n    - plobi_core\n  gateway:\n    - clarify\n",
         encoding="utf-8",
     )
-    (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
+    (tmp_path / "SOUL.md").write_text(":::PLOBI_CONDUCTOR_ASK_ROUTING:::\n", encoding="utf-8")
     row = D.check_conductor_form(tmp_path)
     assert row["color"] == D.GREEN
     assert row["plugin_enabled"] and row["narrow_toolsets"] and row["soul_fence"]
@@ -341,7 +341,7 @@ def test_check_conductor_form_names_which_question_failed(tmp_path: Path):
         "toolsets:\n  - terminal\n  - plobi_core\n",
         encoding="utf-8",
     )
-    (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
+    (tmp_path / "SOUL.md").write_text(":::PLOBI_CONDUCTOR_ASK_ROUTING:::\n", encoding="utf-8")
     row = D.check_conductor_form(tmp_path)
     assert row["color"] == D.RED
     assert "plugin=yes" in row["detail"]

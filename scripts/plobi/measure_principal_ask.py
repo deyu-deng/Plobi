@@ -6,10 +6,10 @@ Why this exists (`WP-L2-ROUTE-TOOLS`, 裁定 145 的必派清单要靠这条腿)
 所以"撞 180s"是真的，"因为不带 tools"是假的。判据要能事后核，故留这支表：
 
     # 只读，不花钱：打印目标、cwd、argv、当前预算与上限
-    .venv/Scripts/python.exe scripts/plobi/measure_l2_ask.py --plan
+    .venv/Scripts/python.exe scripts/plobi/measure_principal_ask.py --plan
 
     # 真跑一次（会花额度：整整一个 L2 回合），打印耗时 / rc / 工具计数 / 与预算的差
-    .venv/Scripts/python.exe scripts/plobi/measure_l2_ask.py --run [--profile l2-course-chmodern]
+    .venv/Scripts/python.exe scripts/plobi/measure_principal_ask.py --run [--profile l2-course-chmodern]
 
 默认只 --plan：花钱那一支必须显式 --run，别让下一次复跑的人以为这是免费探针。
 """
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     entry = entry or next((e for e in entries if getattr(e, "category", "") == "courses"), entries[0])
 
     ceiling = aa.timeout_seconds()
-    prompt = aa.compose_question(_QUESTION, entry=entry, asker="measure_l2_ask")
+    prompt = aa.compose_question(_QUESTION, entry=entry, asker="measure_principal_ask")
     child_argv, env, cwd = aa.build_child_command(entry, prompt, asked_by="measure")
     print(f"目标分身 : {aa._label(entry)}  profile={entry.agent_id}")
     print(f"它的项目目录 : {cwd or '（未绑定路径）'}")

@@ -13,7 +13,7 @@ from plobi.quota.pool import QuotaPool, get_quota_pool, set_quota_pool
 from plobi.quota.route import (
     QuotaAwareCompleter,
     _default_send,
-    resolve_l2_endpoint,
+    resolve_principal_endpoint,
     spend_timeout,
 )
 from plobi.quota.sources import (
@@ -374,7 +374,7 @@ def test_resolve_l2_endpoint_returns_source_endpoint():
             "workbuddy": ("bezel", HealthStatus.UNAVAILABLE),
         }
     )
-    ep = resolve_l2_endpoint(pool)
+    ep = resolve_principal_endpoint(pool)
     assert ep is not None
     assert ep["model"] == "m"
     assert ep["base_url"] == "http://x/v1"

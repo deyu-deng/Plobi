@@ -93,10 +93,10 @@ def full_home(tmp_path, monkeypatch):
     db.create_session("sess-2", "desktop", agent_id="agenda")
     db.close()
 
-    from plobi.agents.registry import ensure_l2_identity_soul, load_registry
+    from plobi.agents.registry import ensure_principal_identity_soul, load_registry
 
     entry = load_registry().agents["Aura"]
-    assert ensure_l2_identity_soul(entry) is True
+    assert ensure_principal_identity_soul(entry) is True
 
     store = home / "cron" / "agents" / "Aura"
     store.mkdir(parents=True)

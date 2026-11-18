@@ -39,7 +39,7 @@ def _store_for(slug, **limits):
     """Build + load a store for one agent identity, the way agent_init does."""
     kwargs = {"memory_char_limit": 2200, "user_char_limit": 1375,
               "global_char_limit": 2200, "status_char_limit": 200,
-              "l1_status_char_limit": 1500}
+              "conductor_status_char_limit": 1500}
     kwargs.update(limits)
     store = mt.MemoryStore(slug=slug, **kwargs)
     store.load_from_disk()
@@ -307,7 +307,7 @@ def test_l1_reads_status_digests_never_other_agents_memory(mem_root):
         store.add("memory", f"{markers[slug]} 这一条只有它自己该看见")
         store.add("status", f"{slug} 现在在做那一块课表")
 
-    block = _store_for(mt.L1_SLUG).format_for_system_prompt("memory") or ""
+    block = _store_for(mt.CONDUCTOR_SLUG).format_for_system_prompt("memory") or ""
 
     assert "AGENT STATUS DIGEST" in block
     assert "aura 现在在做那一块课表" in block
@@ -323,17 +323,17 @@ def test_l1_status_digest_is_capped_by_its_own_budget(mem_root):
         store = _store_for(f"agent-{i}")
         store.add("status", f"第 {i} 家的近况" + "×" * 80)
 
-    block = _store_for(mt.L1_SLUG, l1_status_char_limit=200).format_for_system_prompt("memory") or ""
+    block = _store_for(mt.CONDUCTOR_SLUG, conductor_status_char_limit=200).format_for_system_prompt("memory") or ""
     assert "其余 Agent 的近况这次没列" in block
     # 摘要按总上限截，不随 Agent 数量线性膨胀
     assert len(block.split("AGENT STATUS DIGEST", 1)[1]) < 500
 
 
 def test_l1_does_not_read_its_own_status_back_at_itself(mem_root):
-    store = _store_for(mt.L1_SLUG)
+    store = _store_for(mt.CONDUCTOR_SLUG)
     store.add("status", "L1 自己的近况")
     store.add("memory", "L1 自己的记忆")
-    block = _store_for(mt.L1_SLUG).format_for_system_prompt("memory") or ""
+    block = _store_for(mt.CONDUCTOR_SLUG).format_for_system_prompt("memory") or ""
     assert "L1 自己的记忆" in block
     assert "L1 自己的近况" not in block
 
@@ -383,17 +383,17 @@ def test_three_limits_come_from_three_config_keys():
         "agent_char_limit": 222,
         "user_char_limit": 333,
         "status_char_limit": 44,
-        "l1_status_char_limit": 555,
+        "conductor_status_char_limit": 555,
         "squeeze_pressure": 0.5,
     })
     assert limits["global_char_limit"] == 111, "全局那一份"
     assert limits["memory_char_limit"] == 222, "本 Agent 那一份（配置键是 agent_char_limit）"
     assert limits["user_char_limit"] == 333, "画像那一份"
     assert limits["status_char_limit"] == 44
-    assert limits["l1_status_char_limit"] == 555
+    assert limits["conductor_status_char_limit"] == 555
     assert limits["squeeze_pressure"] == 0.5
     assert set(limits) == {"global_char_limit", "memory_char_limit", "user_char_limit",
-                           "status_char_limit", "l1_status_char_limit", "squeeze_pressure"}
+                           "status_char_limit", "conductor_status_char_limit", "squeeze_pressure"}
 
 
 def test_limits_fall_back_to_defaults_on_junk_config():
@@ -418,7 +418,7 @@ def test_default_config_declares_the_three_keys():
 
     memory = DEFAULT_CONFIG["memory"]
     for key in ("global_char_limit", "agent_char_limit", "user_char_limit",
-                "status_char_limit", "l1_status_char_limit"):
+                "status_char_limit", "conductor_status_char_limit"):
         assert key in memory, f"memory.{key} missing from DEFAULT_CONFIG"
     assert (memory["global_char_limit"], memory["agent_char_limit"],
             memory["user_char_limit"]) == (2200, 2200, 1375)
@@ -431,7 +431,7 @@ def test_slug_resolution_prefers_the_roster_identity(mem_root, monkeypatch):
     monkeypatch.setenv("PLOBI_AGENT_ID", "Aura")
     assert mt.resolve_agent_slug() == "aura"
     monkeypatch.setenv("PLOBI_AGENT_ID", "")
-    assert mt.resolve_agent_slug() == mt.L1_SLUG
+    assert mt.resolve_agent_slug() == mt.CONDUCTOR_SLUG
     # 名字里带路径分隔符也逃不出 agents/ 那一层
     monkeypatch.setenv("PLOBI_AGENT_ID", "../escape")
     assert mt.resolve_agent_slug() == "escape"
@@ -533,7 +533,7 @@ def test_status_scope_writes_the_digest_file_l1_reads(mem_root):
     assert out["success"] is True
     path = mem_root / "memory" / "agents" / "aura" / "STATUS.md"
     assert "在做配对令牌" in path.read_text(encoding="utf-8")
-    l1 = _store_for(mt.L1_SLUG)
+    l1 = _store_for(mt.CONDUCTOR_SLUG)
     assert "在做配对令牌" in (l1.format_for_system_prompt("memory") or "")
 
 

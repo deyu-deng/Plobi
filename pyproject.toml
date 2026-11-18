@@ -369,9 +369,9 @@ plugins = [
   # L1 总秘书的两份模板（运行时预算 + SOUL 合同）。``plobi/agents/registry.py``
   # 按 ``parents[2]/plugins/plobi-core/<file>`` 读它们，是 L1 合同的唯一真源；
   #  wheel 不带这两个文件的话，sealed 安装上 ``ensure_conductor_form`` /
-  # ``L1_SOUL_BLOCK`` 直接 FileNotFoundError —— 整个 registry 模块都 import 不动。
-  "plobi-core/l1_profile_template.yaml",
-  "plobi-core/l1_soul_template.md",
+  # ``CONDUCTOR_SOUL_BLOCK`` 直接 FileNotFoundError —— 整个 registry 模块都 import 不动。
+  "plobi-core/conductor_profile_template.yaml",
+  "plobi-core/conductor_soul_template.md",
 ]
 
 [tool.setuptools.packages.find]

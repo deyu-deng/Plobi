@@ -15,7 +15,7 @@ class RiskLevel(str, Enum):
     L0_OBSERVE = "L0_observe"
     L1A_ORGANIZE = "L1a_organize"
     L1B_DESTRUCTIVE_LOCAL = "L1b_destructive_local"
-    L2_EXTERNAL_MSG = "L2_external_msg"
+    PRINCIPAL_EXTERNAL_MSG = "PRINCIPAL_EXTERNAL_MSG"
     L3_MONEY_OR_IRREVERSIBLE = "L3_money_or_irreversible"
     L4_SELF_MODIFY = "L4_self_modify"
 
@@ -30,7 +30,7 @@ class RiskLevel(str, Enum):
             if raw == member.value or raw.upper() == member.name.upper():
                 return member
         lowered = raw.lower()
-        if lowered == LEGACY_L1_VALUE.lower():
+        if lowered == LEGACY_CONDUCTOR_VALUE.lower():
             return cls.L1A_ORGANIZE
         short = _SHORT_FORMS.get(lowered)
         if short is not None:
@@ -40,7 +40,7 @@ class RiskLevel(str, Enum):
 
 #: 历史值。裁定 160 拍定它映射到 ``L1a``（「历史上默认那格就是它」），存量任务不许解析失败。
 #: 只管**已经写成这个字符串的存量**——新任务没填等级是另一回事，见 ``UNDECLARED``。
-LEGACY_L1_VALUE = "L1_local_mutate"
+LEGACY_CONDUCTOR_VALUE = "L1_local_mutate"
 
 #: 空值 / 缺字段 / 裸 ``L1`` 一律算「没说是哪一级」，落到重的那格：契约的分界是轻重，
 #: 判不出轻重就当重的，比「看着像 L1a 就放行」安全——本刀要收的就是这一半。
@@ -51,7 +51,7 @@ _SHORT_FORMS = {
     "l1": UNDECLARED,
     "l1a": RiskLevel.L1A_ORGANIZE,
     "l1b": RiskLevel.L1B_DESTRUCTIVE_LOCAL,
-    "l2": RiskLevel.L2_EXTERNAL_MSG,
+    "l2": RiskLevel.PRINCIPAL_EXTERNAL_MSG,
     "l3": RiskLevel.L3_MONEY_OR_IRREVERSIBLE,
     "l4": RiskLevel.L4_SELF_MODIFY,
 }
@@ -75,7 +75,7 @@ def requires_human(risk: RiskLevel) -> bool:
     """契约那张表里「人审 = 是」的几格；``L1b`` 是本刀新添的一格。"""
     return risk in {
         RiskLevel.L1B_DESTRUCTIVE_LOCAL,
-        RiskLevel.L2_EXTERNAL_MSG,
+        RiskLevel.PRINCIPAL_EXTERNAL_MSG,
         RiskLevel.L3_MONEY_OR_IRREVERSIBLE,
         RiskLevel.L4_SELF_MODIFY,
     }

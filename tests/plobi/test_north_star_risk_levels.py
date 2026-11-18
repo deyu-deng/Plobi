@@ -29,7 +29,7 @@ CONTRACT_LEVELS = [
     "L0_observe",
     "L1a_organize",
     "L1b_destructive_local",
-    "L2_external_msg",
+    "PRINCIPAL_EXTERNAL_MSG",
     "L3_money_or_irreversible",
     "L4_self_modify",
 ]
@@ -129,7 +129,7 @@ def test_night_table_only_observe_and_organize_pass_by_default(risk):
         "L0_observe": True,
         "L1a_organize": True,          # 契约：可自动
         "L1b_destructive_local": False,  # 本刀收的就是这一格
-        "L2_external_msg": False,
+        "PRINCIPAL_EXTERNAL_MSG": False,
         "L3_money_or_irreversible": False,
         "L4_self_modify": False,
     }

@@ -101,7 +101,7 @@ def test_shared_layer_has_exactly_one_copy_of_each(home):
     assert models.is_file(), models
     soul = root / "souls" / "agenda.md"
     assert soul.is_file(), soul
-    assert "PLOBI_L2_IDENTITY" in soul.read_text(encoding="utf-8")
+    assert "PLOBI_PRINCIPAL_IDENTITY" in soul.read_text(encoding="utf-8")
 
     profiles_root = root / "profiles"
     stray = (

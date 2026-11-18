@@ -74,7 +74,7 @@ logger = logging.getLogger(__name__)
 # 裁定 181: one shared root, split by **Agent identity** (a roster row), never by
 # profile home.  裁定 44 already proved that per-profile ledger copies were unread
 # residue — every profile resolved to the same file anyway.
-L1_SLUG = "l1"
+CONDUCTOR_SLUG = "l1"
 _SLUG_UNSAFE_RE = re.compile(r"[^a-z0-9\u4e00-\u9fff_-]+")
 
 # Scope -> (filename, is it per-agent).  The per-agent half is what 裁定 179/181
@@ -126,7 +126,7 @@ def resolve_agent_slug(slug: Optional[str] = None) -> str:
         # 这一步让"每个 Agent 有自己的记忆"在**不依赖前端改动**的前提下成立。
         raw = _agent_slug_from_current_session()
     name = _SLUG_UNSAFE_RE.sub("-", raw.lower()).strip("-")
-    return name or L1_SLUG
+    return name or CONDUCTOR_SLUG
 
 
 def _agent_slug_from_current_session() -> str:
@@ -165,8 +165,8 @@ def _agent_slug_from_current_session() -> str:
         return ""
 
 
-def is_l1_slug(slug: str) -> bool:
-    return slug == L1_SLUG
+def is_conductor_slug(slug: str) -> bool:
+    return slug == CONDUCTOR_SLUG
 
 
 def get_memory_dir() -> Path:
@@ -306,7 +306,7 @@ class MemoryStore:
 
     def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375,
                  *, global_char_limit: int = 2200, status_char_limit: int = 200,
-                 l1_status_char_limit: int = 1500, squeeze_pressure: float = 0.9,
+                 conductor_status_char_limit: int = 1500, squeeze_pressure: float = 0.9,
                  slug: Optional[str] = None):
         self.slug = resolve_agent_slug(slug)
         self.global_entries: List[str] = []
@@ -318,7 +318,7 @@ class MemoryStore:
         self.global_char_limit = global_char_limit
         self.memory_char_limit = memory_char_limit
         self.status_char_limit = status_char_limit
-        self.l1_status_char_limit = l1_status_char_limit
+        self.conductor_status_char_limit = conductor_status_char_limit
         # 下沉压线（见 :meth:`_at_capacity`）—— 也是配置流进来的，不是魔数。
         try:
             self.squeeze_pressure = min(1.0, max(0.0, float(squeeze_pressure)))
@@ -406,7 +406,7 @@ class MemoryStore:
 
         global_block = self._render_block("global", sanitized_global)
         own_block = self._render_block("memory", sanitized_memory)
-        digest_block = self._build_l1_status_digest() if is_l1_slug(self.slug) else ""
+        digest_block = self._build_conductor_status_digest() if is_conductor_slug(self.slug) else ""
 
         # Capture frozen snapshot for system prompt injection.  ``memory`` is what
         # gets injected; the per-scope keys exist for diagnostics (prompt size,
@@ -420,12 +420,12 @@ class MemoryStore:
             "status_digest": digest_block,
         }
 
-    def _build_l1_status_digest(self) -> str:
+    def _build_conductor_status_digest(self) -> str:
         """Render the STATUS digest L1 sees: a few lines per *other* agent.
 
         Only ``STATUS.md`` is read here — never another agent's ``MEMORY.md``.
         Slug order is sorted so the block is byte-stable for the session, and the
-        aggregate is capped by ``memory.l1_status_char_limit`` (2200 x N agents
+        aggregate is capped by ``memory.conductor_status_char_limit`` (2200 x N agents
         would be paid on every turn and would shatter the cached prefix).
         """
         agents_root = get_memory_dir() / "agents"
@@ -445,7 +445,7 @@ class MemoryStore:
             body = "\n".join(f"- {line}" for entry in safe for line in entry.splitlines() if line)
             if not body:
                 continue
-            room = self.l1_status_char_limit - used
+            room = self.conductor_status_char_limit - used
             if room <= 0:
                 sections.append("…（其余 Agent 的近况这次没列，超出 L1 摘要上限）")
                 break
@@ -457,7 +457,7 @@ class MemoryStore:
             return ""
         header = (
             f"AGENT STATUS DIGEST ({len(sections)} 项，L1 只看摘要，不读各 Agent 全文) "
-            f"[{used:,}/{self.l1_status_char_limit:,} chars]"
+            f"[{used:,}/{self.conductor_status_char_limit:,} chars]"
         )
         separator = "═" * 46
         return f"{separator}\n{header}\n{separator}\n" + "\n".join(sections)
@@ -603,7 +603,7 @@ class MemoryStore:
 
         ``memory.agent_char_limit`` / ``memory.global_char_limit`` /
         ``memory.user_char_limit`` (plus ``memory.status_char_limit`` for the
-        per-agent STATUS file and ``memory.l1_status_char_limit`` for the digest
+        per-agent STATUS file and ``memory.conductor_status_char_limit`` for the digest
         L1 reads).  Defaults come from ``DEFAULT_CONFIG`` in
         :mod:`plobi_cli.config`; this class only carries the numbers.
         """
@@ -1226,7 +1226,7 @@ _MEMORY_LIMIT_KEYS = {
     "global_char_limit": "global_char_limit",
     "user_char_limit": "user_char_limit",
     "status_char_limit": "status_char_limit",
-    "l1_status_char_limit": "l1_status_char_limit",
+    "conductor_status_char_limit": "conductor_status_char_limit",
     "squeeze_pressure": "squeeze_pressure",
 }
 _MEMORY_LIMIT_DEFAULTS = {
@@ -1234,7 +1234,7 @@ _MEMORY_LIMIT_DEFAULTS = {
     "global_char_limit": 2200,
     "user_char_limit": 1375,
     "status_char_limit": 200,
-    "l1_status_char_limit": 1500,
+    "conductor_status_char_limit": 1500,
     "squeeze_pressure": 0.9,
 }
 

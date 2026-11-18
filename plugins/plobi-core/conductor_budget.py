@@ -13,8 +13,8 @@ P0-2: 把 L1 的压缩触发阈值从默认 0.50 拉到 0.35，让一条 L1 桌�
        的 44s timeout。**不动** ``ContextCompressor`` 默认值；运行时
        覆盖 ``agent.context_compressor.threshold_percent`` 并重算
        ``threshold_tokens``。profile/config 模板值落
-       ``plugins/plobi-core/l1_profile_template.yaml``，便于人工
-       审计与 ``tests/plobi/test_l1_budget.py`` 断言。
+       ``plugins/plobi-core/conductor_profile_template.yaml``，便于人工
+       审计与 ``tests/plobi/test_conductor_budget.py`` 断言。
 
 判定 L1：**profile name 是 ``default``** 且 **plobi_core 工具集启用**。
 L2-agenda / L3 通常有自己的 plobi profile（不在 ``default``），自然不会被误伤。
@@ -38,20 +38,20 @@ logger = logging.getLogger(__name__)
 
 #: L1 总秘书压缩阈值的**上限**（任务书 §2：6–8 万 token 前切开）。
 #: 0.50 → 200K ctx 上 ~100K 触发；0.35 → ~70K 触发。
-#: 真源是 ``plugins/plobi-core/l1_profile_template.yaml`` 的
+#: 真源是 ``plugins/plobi-core/conductor_profile_template.yaml`` 的
 #: ``compression.threshold``（那条路径 ``agent/agent_init.py`` 才会读）；这个常量只在
 #: 配置缺席时兜底，并且充当"声明值不许更松"的天花板——``_tighten_compressor`` 取两者较小值。
 #: 不要与 ``ContextCompressor`` 默认 ``threshold_percent=0.50`` 混用。
-L1_COMPRESSION_THRESHOLD: float = 0.35
+CONDUCTOR_COMPRESSION_THRESHOLD: float = 0.35
 
 #: L1 总秘书在 default profile 上对外暴露的工具集名。
 #: 与 ``plugins/plobi-core/__init__.py::TOOLSET`` 同名。
-L1_TOOLSET: str = "plobi_core"
+CONDUCTOR_TOOLSET: str = "plobi_core"
 
 #: L1 默认 profile 名。``plobi_cli.agent_identity.get_active_profile_name`` 在
 #: ``PLOBI_HOME`` 是 ``~/.plobi`` 或 ``~/.plobi/profiles/default/`` 时
 #: 都返回这个字符串。L2/L3 用自定义 profile 名，自动豁免。
-L1_PROFILE_NAME: str = "default"
+CONDUCTOR_PROFILE_NAME: str = "default"
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ def _has_plobi_core(agent: Any) -> bool:
                 key = str(entry)
             except Exception:
                 continue
-            if key == L1_TOOLSET:
+            if key == CONDUCTOR_TOOLSET:
                 return True
             # 兼容 toolsets 写成旧插件名 / 旧总秘书名的别名（裁定 217）
             if key in {"plobi-core", "plobi-north-star", "plobi_master"}:
@@ -114,7 +114,7 @@ def _profile_name(agent: Any) -> Optional[str]:
         return None
 
 
-def is_l1_default_profile(agent: Any) -> bool:
+def is_conductor_default_profile(agent: Any) -> bool:
     """Return True iff ``agent`` 看起来是 default profile 上的 L1 总秘书。
 
     判定纯读 agent 属性 + ``plobi_cli.agent_identity.get_active_profile_name``
@@ -125,7 +125,7 @@ def is_l1_default_profile(agent: Any) -> bool:
         return False
 
     profile = _profile_name(agent)
-    if profile != L1_PROFILE_NAME:
+    if profile != CONDUCTOR_PROFILE_NAME:
         return False
 
     return _has_plobi_core(agent)
@@ -150,7 +150,7 @@ def _disable_curators(agent: Any) -> None:
             if getattr(agent, attr, None) is not None:
                 setattr(agent, attr, 0)
         except Exception as exc:  # pragma: no cover - 防御
-            logger.debug("l1_budget: failed to zero %s: %s", attr, exc)
+            logger.debug("conductor_budget: failed to zero %s: %s", attr, exc)
 
     # 顺手把已累计的计数也清零，避免 hook 跑在 turn 1 但计数器已经满了
     # （罕见，但 ``_iters_since_skill`` 不会自动清）。
@@ -162,7 +162,7 @@ def _disable_curators(agent: Any) -> None:
 
 
 def _tighten_compressor(agent: Any) -> bool:
-    """把 L1 的 compressor 阈值改成 ``L1_COMPRESSION_THRESHOLD`` 并重算 threshold_tokens。
+    """把 L1 的 compressor 阈值改成 ``CONDUCTOR_COMPRESSION_THRESHOLD`` 并重算 threshold_tokens。
 
     Returns True if applied, False if the compressor isn't there yet or
     the threshold can't be safely updated (e.g. the compressor is a mock
@@ -185,7 +185,7 @@ def _tighten_compressor(agent: Any) -> bool:
     try:
         from agent.context_compressor import ContextCompressor
     except Exception:  # pragma: no cover - import 失败时跳过即可
-        logger.debug("l1_budget: ContextCompressor import failed; skipping threshold tighten")
+        logger.debug("conductor_budget: ContextCompressor import failed; skipping threshold tighten")
         return False
 
     context_length = int(getattr(compressor, "context_length", 0) or 0)
@@ -206,9 +206,9 @@ def _tighten_compressor(agent: Any) -> bool:
     except (TypeError, ValueError):
         declared = None
     new_pct = (
-        min(declared, float(L1_COMPRESSION_THRESHOLD))
+        min(declared, float(CONDUCTOR_COMPRESSION_THRESHOLD))
         if declared is not None
-        else float(L1_COMPRESSION_THRESHOLD)
+        else float(CONDUCTOR_COMPRESSION_THRESHOLD)
     )
 
     # L1 显式跳过 ``_effective_threshold_percent`` 的小窗 floor——
@@ -226,11 +226,11 @@ def _tighten_compressor(agent: Any) -> bool:
             context_length, new_pct, max_tokens,
         )
     except Exception as exc:  # pragma: no cover - 防御
-        logger.debug("l1_budget: recompute threshold_tokens failed: %s", exc)
+        logger.debug("conductor_budget: recompute threshold_tokens failed: %s", exc)
         return False
 
     logger.info(
-        "l1_budget: tightened L1 compressor threshold to %.2f "
+        "conductor_budget: tightened L1 compressor threshold to %.2f "
         "(threshold_tokens=%d, context_length=%d, max_tokens=%s)",
         new_pct,
         int(getattr(compressor, "threshold_tokens", 0) or 0),
@@ -240,12 +240,12 @@ def _tighten_compressor(agent: Any) -> bool:
     return True
 
 
-def apply_l1_budget(agent: Any) -> bool:
+def apply_conductor_budget(agent: Any) -> bool:
     """Apply all L1 budget knobs to ``agent``. Returns True iff it was an L1 agent.
 
     Hook 调用入口。测试也可以直接调用，不必走 ``invoke_hook``。
     """
-    if not is_l1_default_profile(agent):
+    if not is_conductor_default_profile(agent):
         return False
 
     _disable_curators(agent)
@@ -274,11 +274,11 @@ def on_session_start(**kwargs: Any) -> None:
         # production 主回路永远会传（conversation_loop 改造后）。
         return
     try:
-        if apply_l1_budget(agent):
+        if apply_conductor_budget(agent):
             logger.info(
-                "l1_budget: applied L1 default-profile knobs (curators off, "
+                "conductor_budget: applied L1 default-profile knobs (curators off, "
                 "compressor threshold=%.2f)",
-                L1_COMPRESSION_THRESHOLD,
+                CONDUCTOR_COMPRESSION_THRESHOLD,
             )
     except Exception as exc:  # noqa: BLE001 - 钩子必须 fail-open
-        logger.warning("l1_budget: hook failed (non-fatal): %s", exc)
+        logger.warning("conductor_budget: hook failed (non-fatal): %s", exc)

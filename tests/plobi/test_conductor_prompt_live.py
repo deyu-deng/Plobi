@@ -51,9 +51,9 @@ def _load_conversation_loop():
     return mod
 
 
-def _load_l1_budget():
-    """``plugins/plobi-core/l1_budget.py`` —— 拿真实的 ``is_l1_default_profile``。"""
-    name = "plobi_plugins.plobi_core.l1_budget"
+def _load_conductor_budget():
+    """``plugins/plobi-core/conductor_budget.py`` —— 拿真实的 ``is_conductor_default_profile``。"""
+    name = "plobi_plugins.plobi_core.conductor_budget"
     if name in sys.modules:
         return sys.modules[name]
     if "plobi_plugins" not in sys.modules:
@@ -73,7 +73,7 @@ def _load_l1_budget():
         sys.modules[parent_name] = parent_mod
     l1_path = (
         Path(__file__).resolve().parents[2]
-        / "plugins" / "plobi-core" / "l1_budget.py"
+        / "plugins" / "plobi-core" / "conductor_budget.py"
     )
     spec = importlib.util.spec_from_file_location(name, l1_path)
     assert spec and spec.loader
@@ -90,8 +90,8 @@ def cl():
 
 
 @pytest.fixture(scope="module")
-def l1_budget():
-    return _load_l1_budget()
+def conductor_budget():
+    return _load_conductor_budget()
 
 
 # ─── helper ────────────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ def _make_prompt(model: str, provider: str, body: str) -> str:
 def test_l1_old_prompt_without_marker_is_stale(cl, monkeypatch):
     """L1 + 老提示（缺「Plobi 指挥」）→ matcher False，触发重建。"""
     # Force the lazy is_l1_default check to return True for the stub agent.
-    cl._l1_default_check_cache["impl"] = lambda a: True
+    cl._conductor_default_check_cache["impl"] = lambda a: True
     agent = _Agent()
     old_prompt = _make_prompt(
         "deepseek-chat",
@@ -140,7 +140,7 @@ def test_l1_old_prompt_without_marker_is_stale(cl, monkeypatch):
 
 def test_l1_new_prompt_with_marker_and_same_model_matches(cl, monkeypatch):
     """L1 + 含 marker + Model 一致 → matcher True（继续复用，避免每回合 miss cache）。"""
-    cl._l1_default_check_cache["impl"] = lambda a: True
+    cl._conductor_default_check_cache["impl"] = lambda a: True
     agent = _Agent()
     prompt = _make_prompt(
         "deepseek-chat",
@@ -152,7 +152,7 @@ def test_l1_new_prompt_with_marker_and_same_model_matches(cl, monkeypatch):
 
 def test_l2_old_prompt_does_not_force_rebuild(cl, monkeypatch):
     """L2 / 非 default profile 不进身份规则——身份段是 L1 的特权。"""
-    cl._l1_default_check_cache["impl"] = lambda a: False
+    cl._conductor_default_check_cache["impl"] = lambda a: False
     agent = _Agent(profile="l2-Plobi")
     # 老提示、Model 一致——按旧逻辑（仅 Model/Provider）应该 match；现在
     # 也仍 match（L2 不被身份规则打成 False）。
@@ -166,7 +166,7 @@ def test_l2_old_prompt_does_not_force_rebuild(cl, monkeypatch):
 
 def test_l2_with_marker_is_also_a_match(cl, monkeypatch):
     """L2 偶然带了 marker 也无妨——matcher 仍 True。"""
-    cl._l1_default_check_cache["impl"] = lambda a: False
+    cl._conductor_default_check_cache["impl"] = lambda a: False
     agent = _Agent(profile="l2-Plobi")
     prompt = _make_prompt(
         "deepseek-chat",
@@ -178,7 +178,7 @@ def test_l2_with_marker_is_also_a_match(cl, monkeypatch):
 
 def test_model_rotation_still_trips_for_l1(cl, monkeypatch):
     """身份规则不能废 Model / Provider 检查——rotation 必须独立打 False。"""
-    cl._l1_default_check_cache["impl"] = lambda a: True
+    cl._conductor_default_check_cache["impl"] = lambda a: True
     agent = _Agent(model="deepseek-chat")
     rotated = _Agent(model="kimi-k3")
     prompt = _make_prompt(
@@ -193,7 +193,7 @@ def test_model_rotation_still_trips_for_l1(cl, monkeypatch):
 
 def test_provider_rotation_still_trips_for_l1(cl, monkeypatch):
     """Provider 字段单独旋转也必须打 False。"""
-    cl._l1_default_check_cache["impl"] = lambda a: True
+    cl._conductor_default_check_cache["impl"] = lambda a: True
     prompt = _make_prompt(
         "deepseek-chat",
         "bezel",
@@ -210,10 +210,10 @@ def test_blank_prompt_returns_truthy_to_skip_rebuild(cl, monkeypatch):
     被空 prompt 触发早退。所以这里只验「空 prompt 不会让本函数自己判 stale」
     ——它返回 True 不造成语义错（因为外层 if 不进）。Production 路径不变。
 
-    关键点是 _l1_identity_is_stale 的 defensive ``if not prompt`` 必须短路——
+    关键点是 _conductor_identity_is_stale 的 defensive ``if not prompt`` 必须短路——
     不让本函数对空 prompt 抛异常或返回 False 然后被 caller 误判。"""
-    cl._l1_default_check_cache["impl"] = lambda a: True
-    # Empty prompt: 不调用 is_l1_default_profile（defensive 短路）。
+    cl._conductor_default_check_cache["impl"] = lambda a: True
+    # Empty prompt: 不调用 is_conductor_default_profile（defensive 短路）。
     # Returns True (no model/provider mismatch, no identity drift to detect).
     assert cl._stored_prompt_matches_runtime(_Agent(), "") is True
 
@@ -222,28 +222,28 @@ def test_blank_prompt_returns_truthy_to_skip_rebuild(cl, monkeypatch):
 
 
 def test_marker_constant_matches_plobi_total_secretary():
-    """``_L1_IDENTITY_MARKER`` 必须与 SOUL 身份段一字不差——这是 token，不是
+    """``_CONDUCTOR_IDENTITY_MARKER`` 必须与 SOUL 身份段一字不差——这是 token，不是
     regex。SOUL 改了，这边要同步改。"""
     cl = _load_conversation_loop()
-    assert cl._L1_IDENTITY_MARKER == "Plobi 指挥"
+    assert cl._CONDUCTOR_IDENTITY_MARKER == "Plobi 指挥"
 
 
 def test_marker_present_in_l1_soul_block():
     """SOUL 身份段必须含 marker；测试这一对关系保证两边同步。"""
     cl = _load_conversation_loop()
-    from plobi.agents.registry import L1_SOUL_BLOCK
+    from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK
 
-    assert cl._L1_IDENTITY_MARKER in L1_SOUL_BLOCK
-
-
-# ─── integration: real is_l1_default_profile path ───────────────────────────
+    assert cl._CONDUCTOR_IDENTITY_MARKER in CONDUCTOR_SOUL_BLOCK
 
 
-def test_real_l1_default_profile_triggers_stale_for_old_prompt(cl, l1_budget):
-    """真实 ``is_l1_default_profile``（从 ``l1_budget`` 加载）→ 老提示标
+# ─── integration: real is_conductor_default_profile path ───────────────────────────
+
+
+def test_real_l1_default_profile_triggers_stale_for_old_prompt(cl, conductor_budget):
+    """真实 ``is_conductor_default_profile``（从 ``conductor_budget`` 加载）→ 老提示标
     记 stale；不是 mock。"""
-    # 清掉 cache 让真实 is_l1_default_profile 走一遍。
-    cl._l1_default_check_cache["impl"] = None
+    # 清掉 cache 让真实 is_conductor_default_profile 走一遍。
+    cl._conductor_default_check_cache["impl"] = None
 
     # Agent with default profile + plobi_core toolset → 真 L1。
     agent = _Agent(profile="default")
@@ -257,10 +257,10 @@ def test_real_l1_default_profile_triggers_stale_for_old_prompt(cl, l1_budget):
     assert cl._stored_prompt_matches_runtime(agent, old_prompt) is False
 
 
-def test_real_l2_agent_is_not_affected_by_identity_rule(cl, l1_budget):
-    """真实 ``is_l1_default_profile``（从 ``l1_budget`` 加载）→ L2 agent
+def test_real_l2_agent_is_not_affected_by_identity_rule(cl, conductor_budget):
+    """真实 ``is_conductor_default_profile``（从 ``conductor_budget`` 加载）→ L2 agent
     不被身份规则强迫重建。"""
-    cl._l1_default_check_cache["impl"] = None
+    cl._conductor_default_check_cache["impl"] = None
 
     # L2 agent — profile 不是 default。
     agent = _Agent(profile="l2-Prism")

@@ -28,7 +28,7 @@ agents:
     provider: bezel
     model: workbuddy/deepseek-v4.1-flash
     mind_subtree: Dossiers/projects/Plobi
-    skills: [plobi-l2-resident]
+    skills: [plobi-principal-resident]
     domains: [schedule]
     # 描述写这一行「管的事」，别写某套流水线（原先那句「SQLite → 看板 → 消息推送」
     # 是某一家的实现，抄出去的人会以为这就是首席的出厂长相）。

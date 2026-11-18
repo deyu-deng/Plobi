@@ -245,7 +245,7 @@ def register(ctx) -> None:
     ctx.register_hook("pre_prompt_submit", HR.on_pre_prompt_submit)
     # WP-L1-BUDGET: 在 brand-new session 第一回合开头收紧 L1 默认 profile 的
     # 回合后 curator + 压缩阈值。handler 内部做 L1/L2 判定，非 L1 直接 return。
-    from . import l1_budget as _l1b
+    from . import conductor_budget as _l1b
     ctx.register_hook("on_session_start", _l1b.on_session_start)
     logger.info(
         "plobi-core: registered deep tool 'plobi' + the say/ask channel "

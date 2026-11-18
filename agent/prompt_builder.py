@@ -1931,10 +1931,10 @@ def _soul_agent_id() -> str:
     if env_id:
         return env_id
     try:
-        from tools.memory_tool import is_l1_slug, resolve_agent_slug
+        from tools.memory_tool import is_conductor_slug, resolve_agent_slug
 
         slug = resolve_agent_slug()
-        if is_l1_slug(slug):
+        if is_conductor_slug(slug):
             return ""
         # slug 是**记忆那颗键**，不保证等于名册那一行的 name（名字里带全角括号
         # 时两者不同：「电子工程训练（乙）」→ slug「电子工程训练-乙」）。拿 slug
@@ -1966,7 +1966,7 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
     soul_path = get_plobi_home() / "SOUL.md"
     # WP-AGENT-SOUL-SHARED（2026-10-23）：L2 的身份不再由「一整个家」承载，而是
     # 共享层下按 agent 一份（裁定 42 §42.2 第 6 项；写侧见
-    # `plobi/agents/registry.ensure_l2_identity_soul`）。
+    # `plobi/agents/registry.ensure_principal_identity_soul`）。
     #
     # 只有手里有 `PLOBI_AGENT_ID` 才进这个分支——`build_child_command` 与桌面
     # 都会放它，L1（无该变量）**逐字不走这里**，行为与改动前一致。
@@ -1984,9 +1984,9 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
             soul_path = _shared
         else:
             # 这一份还没生成：**别退回顶层那份（那是 L1 的秘书 SOUL）**，就地按名册生成身份。
-            _is_l1_row = False
+            _is_conductor_row = False
             try:
-                from plobi.agents.registry import build_l2_identity_soul_block, load_registry
+                from plobi.agents.registry import build_principal_identity_soul_block, load_registry
 
                 entry = next(
                     (e for e in load_registry().entries() if e.name == _agent_id), None
@@ -1995,17 +1995,17 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
                 # 人设在顶层 SOUL.md 上，不许按 L2 形状给它造一份「本项目统筹者」。
                 # 11-05 名册进了 L1 行以后，`-p default` 会把 PLOBI_AGENT_ID 写成它的 name，
                 # 于是共享层找不到、下面这支就会把秘书写成 L2。
-                _is_l1_row = entry is not None and getattr(entry, "role", "") == "conductor"
-                if entry is not None and not _is_l1_row:
+                _is_conductor_row = entry is not None and getattr(entry, "role", "") == "conductor"
+                if entry is not None and not _is_conductor_row:
                     return _truncate_content(
-                        build_l2_identity_soul_block(entry),
+                        build_principal_identity_soul_block(entry),
                         "SOUL.md",
                         context_length=context_length,
                         read_path=str(_shared) if _shared is not None else "SOUL.md",
                     )
             except Exception as exc:  # noqa: BLE001 - 生成不了就当没身份，别读错的
                 logger.debug("soul block for %s unavailable: %s", _agent_id, exc)
-            if _is_l1_row:
+            if _is_conductor_row:
                 logger.debug("identity %r is the L1 row; reading the top-level SOUL.md", _agent_id)
             else:
                 # 认不出是哪一行 ⇒ **宁可不给身份**，也不把 L1 的秘书合同印到分身身上

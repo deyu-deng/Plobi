@@ -1061,7 +1061,7 @@ def test_startup_puts_the_default_home_into_conductor_shape(
     """
     import yaml
 
-    from plobi.agents.registry import L1_MID_TOOLSETS, L1_SOUL_BEGIN
+    from plobi.agents.registry import CONDUCTOR_MID_TOOLSETS, CONDUCTOR_SOUL_BEGIN
     from plobi_cli import web_server
 
     home = tmp_path / ".plobi"
@@ -1077,9 +1077,9 @@ def test_startup_puts_the_default_home_into_conductor_shape(
     assert [row["id"] for row in rows] == []
     cfg = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
     assert "plobi-core" in cfg["plugins"]["enabled"]
-    assert cfg["toolsets"] == list(L1_MID_TOOLSETS)
+    assert cfg["toolsets"] == list(CONDUCTOR_MID_TOOLSETS)
     assert "terminal" not in cfg["platform_toolsets"]["cli"]
-    assert (home / "SOUL.md").read_text(encoding="utf-8").count(L1_SOUL_BEGIN) == 1
+    assert (home / "SOUL.md").read_text(encoding="utf-8").count(CONDUCTOR_SOUL_BEGIN) == 1
     assert not (home / "profiles").exists()
 
 

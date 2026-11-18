@@ -1056,7 +1056,7 @@ class AgentRegistry:
         """把一个注册条目落地为常驻 profile + 模型路由。
 
         1. **不再建家**（WP-REGISTRY-NO-HOME，B 刀）：只把共享层那一份接好
-           （:meth:`_ensure_shared_layer`）。身份走 :func:`ensure_l2_identity_soul`
+           （:meth:`_ensure_shared_layer`）。身份走 :func:`ensure_principal_identity_soul`
            写进共享层 `souls/<name>.md`（A 刀），密钥走
            :func:`apply_secret_overrides` 注入子进程环境。
         2. 把该 agent 的路由写进**共享层那一份** ``plobi/models.json``（裁 166 决定一）。
@@ -1086,7 +1086,7 @@ class AgentRegistry:
         # WP-L2-IDENTITY / 裁定 42 §6(c): 分身缺的是「我是谁」。身份现在落在
         # 共享层那一份（A 刀），**不传 home**——传了就又写回分身家，前功尽弃。
         try:
-            ensure_l2_identity_soul(entry)
+            ensure_principal_identity_soul(entry)
         except Exception as exc:
             logger.warning(
                 "plobi: L2 identity SOUL not written for %s: %s", entry.name, exc
@@ -1924,9 +1924,9 @@ def _resolve_project_path(name: str, front: dict[str, str]) -> str:
 #
 # 这句桩话**唯一**的用途是渲染：分身那段身份里「这个项目在做的事」不能印机器写的
 # 备注（实测会把 ``principal for Mind project Aura`` 当用途念出来）。所以「生成桩」
-# 和「识别桩」共用下面这一份常量——识别只在 :func:`build_l2_identity_soul_block` 里
+# 和「识别桩」共用下面这一份常量——识别只在 :func:`build_principal_identity_soul_block` 里
 # 用，别拿它当任何判据。
-L2_PLACEHOLDER_DESCRIPTION_PREFIX = "principal for Mind project "
+PRINCIPAL_PLACEHOLDER_DESCRIPTION_PREFIX = "principal for Mind project "
 
 
 def _is_placeholder_project_description(description: str) -> bool:
@@ -1935,13 +1935,13 @@ def _is_placeholder_project_description(description: str) -> bool:
     **只服务渲染**：这一句判断的是「这行文字是不是播种机自己写的备注」，所以它不进
     名册成员资格（:attr:`AgentEntry.registered`）、也不进可问性判据
     （:func:`agent_askability`）——那两处读的是盘上的事实，一个字都不看 ``description``
-    （R-072；:mod:`tests.plobi.test_l1_roster_source` 钉的就是这条边界）。
+    （R-072；:mod:`tests.plobi.test_conductor_roster_source` 钉的就是这条边界）。
 
-    Single source of truth: :data:`L2_PLACEHOLDER_DESCRIPTION_PREFIX` — the exact
+    Single source of truth: :data:`PRINCIPAL_PLACEHOLDER_DESCRIPTION_PREFIX` — the exact
     string :func:`ensure_mind_project_agents` writes (the `` (raw dir name: …)``
     variant still starts with it, so one prefix check covers both shapes).
     """
-    return (description or "").strip().startswith(L2_PLACEHOLDER_DESCRIPTION_PREFIX)
+    return (description or "").strip().startswith(PRINCIPAL_PLACEHOLDER_DESCRIPTION_PREFIX)
 
 
 def _mind_project_trees(root: Path) -> list[tuple[str, Path]]:
@@ -2010,7 +2010,7 @@ def ensure_mind_project_agents(
         if _project_is_skipped(front):
             continue
         safe_id = _project_safe_id(entry.name)
-        description = f"{L2_PLACEHOLDER_DESCRIPTION_PREFIX}{entry.name}"
+        description = f"{PRINCIPAL_PLACEHOLDER_DESCRIPTION_PREFIX}{entry.name}"
         if safe_id != entry.name:
             description += f" (raw dir name: {entry.name})"
         project_path = _resolve_project_path(entry.name, front)
@@ -2234,7 +2234,7 @@ MASTER_TOOLSET_NAME = "plobi_core"
 # ``memory`` 按裁定 42 / 44 / 48（长期记忆挂在每个人身上）从禁单里拿出来：
 # 上一笔 432a3414 的 SOUL 已经写明「该用 ``memory`` 记就记，不用等用户催」，
 # 再把它留在禁单里就是 prompt 和 toolset 互相打脸。
-L1_DROP_TOOLSETS = frozenset(
+CONDUCTOR_DROP_TOOLSETS = frozenset(
     {
         "terminal",
         "session_search",
@@ -2252,7 +2252,7 @@ def _is_full_plobi_composite(name: str) -> bool:
 # 中收默认名单（对齐 docs/plobi/profiles/master/config.yaml，略宽于「只剩一个」）。
 # ``memory`` 既不在这里、也不在禁单里（裁定 49）：默认不铺给 L1，可 profile 一旦
 # 携带它（含用户在产品里勾上），``mid_narrow_toolset_names`` 就当 extras 留着。
-L1_MID_TOOLSETS: tuple[str, ...] = (
+CONDUCTOR_MID_TOOLSETS: tuple[str, ...] = (
     "web",
     "file",
     "skills",
@@ -2263,15 +2263,15 @@ L1_MID_TOOLSETS: tuple[str, ...] = (
 )
 
 # Colon fence — no HTML comments, no "secret" substring (html_comment_injection).
-L1_SOUL_BEGIN = ":::PLOBI_L1_ASK_ROUTING:::"
-L1_SOUL_END = ":::PLOBI_L1_ASK_END:::"
-L1_SOUL_LEGACY_BEGIN = "<!-- PLOBI_L1_SECRETARY_ROUTING -->"
-L1_SOUL_LEGACY_END = "<!-- /PLOBI_L1_SECRETARY_ROUTING -->"
+CONDUCTOR_SOUL_BEGIN = ":::PLOBI_CONDUCTOR_ASK_ROUTING:::"
+CONDUCTOR_SOUL_END = ":::PLOBI_CONDUCTOR_ASK_END:::"
+CONDUCTOR_SOUL_LEGACY_BEGIN = "<!-- PLOBI_CONDUCTOR_ROUTING -->"
+CONDUCTOR_SOUL_LEGACY_END = "<!-- /PLOBI_CONDUCTOR_ROUTING -->"
 # L2 counterpart: same colon-fence style (no HTML comments — the threat scanner
 # flags them, see the comment above). Rendered per agent by
-# :func:`build_l2_identity_soul_block`, never shared between 分身.
-L2_SOUL_BEGIN = ":::PLOBI_L2_IDENTITY:::"
-L2_SOUL_END = ":::PLOBI_L2_IDENTITY_END:::"
+# :func:`build_principal_identity_soul_block`, never shared between 分身.
+PRINCIPAL_SOUL_BEGIN = ":::PLOBI_PRINCIPAL_IDENTITY:::"
+PRINCIPAL_SOUL_END = ":::PLOBI_PRINCIPAL_IDENTITY_END:::"
 # 上游出厂就塞在每个 profile ``SOUL.md`` 里的那段样板身份（512 B，无一句人设）。
 # 两个品牌变体（``plobi_cli/default_soul.py:4`` 的 "the Plobi team" 与旧装机写下的
 # "Nous Research"）句式同一个头，历史模板脚手架另起一行标题——只认**行头**，多写的
@@ -2284,51 +2284,51 @@ _SOUL_BOILERPLATE_HEADS = (
 #: 这儿改；它不是运行时打补丁——后端启动时 :func:`ensure_conductor_routing_soul`
 #: 只把 ``SOUL.md`` 里**围栏以内**那一段整段换成它的内容，围栏以外用户自己写的
 #: 人设一个字都不碰（同一个文件里也不许再有第二段 L1 合同，见那道 strip）。
-L1_SOUL_TEMPLATE_PATH = (
+CONDUCTOR_SOUL_TEMPLATE_PATH = (
     Path(__file__).resolve().parents[2]
     / "plugins"
     / "plobi-core"
-    / "l1_soul_template.md"
+    / "conductor_soul_template.md"
 )
 
 
-def load_l1_soul_template() -> str:
-    r"""Parse :data:`L1_SOUL_TEMPLATE_PATH` — the one L1 secretary SOUL template.
+def load_conductor_soul_template() -> str:
+    r"""Parse :data:`CONDUCTOR_SOUL_TEMPLATE_PATH` — the one L1 secretary SOUL template.
 
-    Same shape as :func:`load_l1_profile_template`: the template file is the
+    Same shape as :func:`load_conductor_profile_template`: the template file is the
     source, the runtime ``SOUL.md`` is what it lands into. Fail loud here —
     a template with a missing or reversed fence would make
     :func:`ensure_conductor_routing_soul` either strip user text or stack a
     second contract into the same file, and neither is recoverable from the
     secretary's side.
     """
-    text = L1_SOUL_TEMPLATE_PATH.read_text(encoding="utf-8-sig").replace("\r\n", "\n").strip()
-    if text.count(L1_SOUL_BEGIN) != 1 or text.count(L1_SOUL_END) != 1:
+    text = CONDUCTOR_SOUL_TEMPLATE_PATH.read_text(encoding="utf-8-sig").replace("\r\n", "\n").strip()
+    if text.count(CONDUCTOR_SOUL_BEGIN) != 1 or text.count(CONDUCTOR_SOUL_END) != 1:
         raise RegistryError(
-            f"{L1_SOUL_TEMPLATE_PATH}: L1 SOUL 模板必须有且只有一对围栏"
-            f"（{L1_SOUL_BEGIN} / {L1_SOUL_END}）"
+            f"{CONDUCTOR_SOUL_TEMPLATE_PATH}: L1 SOUL 模板必须有且只有一对围栏"
+            f"（{CONDUCTOR_SOUL_BEGIN} / {CONDUCTOR_SOUL_END}）"
         )
-    if text.index(L1_SOUL_BEGIN) > text.index(L1_SOUL_END):
-        raise RegistryError(f"{L1_SOUL_TEMPLATE_PATH}: L1 SOUL 模板的两道围栏顺序反了")
+    if text.index(CONDUCTOR_SOUL_BEGIN) > text.index(CONDUCTOR_SOUL_END):
+        raise RegistryError(f"{CONDUCTOR_SOUL_TEMPLATE_PATH}: L1 SOUL 模板的两道围栏顺序反了")
     return text + "\n"
 
 
 #: 载入一次，让读这个常量的那些测试与 :func:`ensure_conductor_routing_soul`
 #: 落到盘上的那份字节完全一致。
-L1_SOUL_BLOCK = load_l1_soul_template()
+CONDUCTOR_SOUL_BLOCK = load_conductor_soul_template()
 
 
-def _l1_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
+def _conductor_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
     """Current fence first, then the HTML comment pair that threat-scan blocked."""
     return (
-        (L1_SOUL_BEGIN, L1_SOUL_END),
-        (L1_SOUL_LEGACY_BEGIN, L1_SOUL_LEGACY_END),
+        (CONDUCTOR_SOUL_BEGIN, CONDUCTOR_SOUL_END),
+        (CONDUCTOR_SOUL_LEGACY_BEGIN, CONDUCTOR_SOUL_LEGACY_END),
     )
 
 
-def _l2_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
+def _principal_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
     """The L2 identity fence (colon style, same reason as L1's)."""
-    return ((L2_SOUL_BEGIN, L2_SOUL_END),)
+    return ((PRINCIPAL_SOUL_BEGIN, PRINCIPAL_SOUL_END),)
 
 
 def _strip_soul_spans(text: str, pairs: tuple[tuple[str, str], ...]) -> str:
@@ -2351,14 +2351,14 @@ def _strip_soul_spans(text: str, pairs: tuple[tuple[str, str], ...]) -> str:
     return remaining
 
 
-def _strip_l1_soul_spans(text: str) -> str:
+def _strip_conductor_soul_spans(text: str) -> str:
     """Remove every known L1 routing fence (old HTML or current colon markers)."""
-    return _strip_soul_spans(text, _l1_soul_fence_pairs())
+    return _strip_soul_spans(text, _conductor_soul_fence_pairs())
 
 
-def _strip_l2_soul_spans(text: str) -> str:
+def _strip_principal_soul_spans(text: str) -> str:
     """Remove every L2 identity fence from ``text``."""
-    return _strip_soul_spans(text, _l2_soul_fence_pairs())
+    return _strip_soul_spans(text, _principal_soul_fence_pairs())
 
 
 def mid_narrow_toolset_names(names: list[str] | None, keep=()) -> list[str]:
@@ -2367,35 +2367,35 @@ def mid_narrow_toolset_names(names: list[str] | None, keep=()) -> list[str]:
     ``keep`` is the same explicit user opt-in escape hatch as
     :func:`_filter_principal_toolsets` (both passes share the discriminator in
     :func:`_explicit_toolset_optins`): drop-set names in it survive the narrow,
-    but only ``L1_DROP_TOOLSETS`` ones — a ``plobi-*`` composite is never an
+    but only ``CONDUCTOR_DROP_TOOLSETS`` ones — a ``plobi-*`` composite is never an
     opt-in, because ``_save_platform_tools`` refuses to write platform default
-    toolsets (see :func:`apply_l1_mid_toolsets` for the baseline).
+    toolsets (see :func:`apply_conductor_mid_toolsets` for the baseline).
     """
     raw = [str(n) for n in (names or []) if str(n).strip()]
     keep_names = set(keep)
     if not raw or any(_is_full_plobi_composite(n) for n in raw) or any(
-        n in L1_DROP_TOOLSETS for n in raw
+        n in CONDUCTOR_DROP_TOOLSETS for n in raw
     ):
         extras = [
             n
             for n in raw
             if not _is_full_plobi_composite(n)
-            and n not in L1_DROP_TOOLSETS
-            and n not in L1_MID_TOOLSETS
+            and n not in CONDUCTOR_DROP_TOOLSETS
+            and n not in CONDUCTOR_MID_TOOLSETS
         ]
         # ``kept`` is only ever non-empty on this branch: an opt-in name is by
         # definition a drop-set name, which is what sent us here. The tail
         # ``extras + kept`` is a fixed point, so re-running stays unchanged.
-        kept = [n for n in raw if n in keep_names and n in L1_DROP_TOOLSETS]
-        return list(L1_MID_TOOLSETS) + extras + kept
-    result = [n for n in raw if n not in L1_DROP_TOOLSETS]
+        kept = [n for n in raw if n in keep_names and n in CONDUCTOR_DROP_TOOLSETS]
+        return list(CONDUCTOR_MID_TOOLSETS) + extras + kept
+    result = [n for n in raw if n not in CONDUCTOR_DROP_TOOLSETS]
     for required in (MASTER_TOOLSET_NAME, "clarify"):
         if required not in result:
             result.append(required)
     return result
 
 
-def apply_l1_mid_toolsets(config: dict) -> bool:
+def apply_conductor_mid_toolsets(config: dict) -> bool:
     """Mutate active-profile config: mid-narrow cli/gateway + top-level toolsets.
 
     Runs at every plugin load via :func:`ensure_north_star_toolset`, so it is
@@ -2489,10 +2489,10 @@ def _explicit_toolset_optins(platform_names, baseline_names) -> set:
     """Names the user opted into through the product's own toggle.
 
     Shared discriminator for BOTH narrowing passes — :func:`apply_principal_diet`
-    and :func:`apply_l1_mid_toolsets` — so there is only one rule about who
+    and :func:`apply_conductor_mid_toolsets` — so there is only one rule about who
     wrote what. Their own output, and every policy pass that seeds a profile's
     ``config.yaml``, writes the top-level ``toolsets`` together with the platform
-    lists (:func:`apply_l1_mid_toolsets` does exactly that triple write, and a
+    lists (:func:`apply_conductor_mid_toolsets` does exactly that triple write, and a
     profile created with ``create_profile(clone_config=True)`` arrives holding
     all three from its clone source).
     So a drop-set name that shows up in ONE platform list while absent from the
@@ -2739,20 +2739,20 @@ def ensure_conductor_routing_soul(*, home: Path | str | None = None) -> bool:
     """Upsert soft-routing instructions into the active profile ``SOUL.md``.
 
     L1 and L2 contracts are mutually exclusive: writing the L1 block also drops
-    any L2 identity fence in the same file (see :func:`ensure_l2_identity_soul`).
+    any L2 identity fence in the same file (see :func:`ensure_principal_identity_soul`).
     """
     from plobi_constants import get_plobi_home
 
     soul_path = Path(home) / "SOUL.md" if home is not None else get_plobi_home() / "SOUL.md"
     if not soul_path.parent.is_dir():
         # 家目录都还没落地就没有 L1 可写：为了一份 SOUL.md 把 profile 建出来是
-        # 第二真源（同 :func:`ensure_l2_identity_soul` 的判据），交给播种方跳过。
+        # 第二真源（同 :func:`ensure_principal_identity_soul` 的判据），交给播种方跳过。
         return False
     existing = ""
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
-    stripped = _strip_l1_soul_spans(_strip_l2_soul_spans(existing)).rstrip()
-    updated = (stripped + "\n\n" if stripped else "") + L1_SOUL_BLOCK.strip() + "\n"
+    stripped = _strip_conductor_soul_spans(_strip_principal_soul_spans(existing)).rstrip()
+    updated = (stripped + "\n\n" if stripped else "") + CONDUCTOR_SOUL_BLOCK.strip() + "\n"
     if updated == existing:
         return False
     soul_path.write_text(updated, encoding="utf-8")
@@ -2774,7 +2774,7 @@ def strip_conductor_routing_soul(*, home: Path | str | None = None) -> bool:
     if not soul_path.is_file():
         return False
     existing = soul_path.read_text(encoding="utf-8")
-    stripped = _strip_l1_soul_spans(existing)
+    stripped = _strip_conductor_soul_spans(existing)
     if stripped == existing:
         return False
     stripped = stripped.strip()
@@ -2792,7 +2792,7 @@ def _soul_persona_text(text: str) -> str:
     profile, so a plain "anything outside the fence" test would mistake it for a
     persona.
     """
-    body = _strip_l1_soul_spans(_strip_l2_soul_spans(text))
+    body = _strip_conductor_soul_spans(_strip_principal_soul_spans(text))
     try:
         # 旧装机种过一版纯注释脚手架（同样是零人设）。判据复用底座那一份，
         # 不在这里再抄一遍模板。
@@ -2810,7 +2810,7 @@ def _soul_persona_text(text: str) -> str:
     return "\n".join(kept).strip()
 
 
-def build_l2_identity_soul_block(
+def build_principal_identity_soul_block(
     entry: AgentEntry, *, persona_written: bool = False
 ) -> str:
     """Render one 分身's **assignment** from fields the registry already has.
@@ -2831,7 +2831,7 @@ def build_l2_identity_soul_block(
     # Mind 那棵子树的末段上。
     project = (entry.mind_subtree or "").rstrip("/").rsplit("/", 1)[-1].strip() or who
     lines = [
-        L2_SOUL_BEGIN,
+        PRINCIPAL_SOUL_BEGIN,
         "## 你负责的这一摊（WP-L2-IDENTITY，硬规则，不可绕过）",
         "",
         f"- 你是 **{who}**。用户这么叫你，你就这么自称；这个名字之外没有别的身份等着你认领。",
@@ -2918,7 +2918,7 @@ def build_l2_identity_soul_block(
         lines.append(
             "- 上面这些是你的**分工**，不是你这个人。你说话的样子、你的脾气写在这份文件围栏之外；那里还空着，用户想让你更像个人的时候就补在那里。"
         )
-    lines.append(L2_SOUL_END)
+    lines.append(PRINCIPAL_SOUL_END)
     return "\n".join(lines) + "\n"
 
 
@@ -3007,7 +3007,7 @@ def identity_name_for_key(key: str | None) -> str:
     return ""
 
 
-def ensure_l2_identity_soul(
+def ensure_principal_identity_soul(
     entry: AgentEntry, *, home: Path | str | None = None
 ) -> bool:
     """Upsert a project 分身's OWN assignment into its identity file.
@@ -3055,8 +3055,8 @@ def ensure_l2_identity_soul(
     existing = ""
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
-    stripped = _strip_l1_soul_spans(_strip_l2_soul_spans(existing)).rstrip()
-    block = build_l2_identity_soul_block(
+    stripped = _strip_conductor_soul_spans(_strip_principal_soul_spans(existing)).rstrip()
+    block = build_principal_identity_soul_block(
         entry, persona_written=bool(_soul_persona_text(existing))
     ).strip()
     updated = (stripped + "\n\n" if stripped else "") + block + "\n"
@@ -3076,19 +3076,19 @@ def ensure_l2_identity_soul(
 #: that *nothing used to*: the file existed, the budget hook only touched a live
 #: agent, and the plugin that would have persisted these knobs never loaded
 #: because the plugin itself was the thing missing.
-L1_PROFILE_TEMPLATE_PATH = (
-    Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "l1_profile_template.yaml"
+CONDUCTOR_PROFILE_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "conductor_profile_template.yaml"
 )
 
 
-def load_l1_profile_template() -> dict:
-    """Parse :data:`L1_PROFILE_TEMPLATE_PATH` (the template is the single source)."""
+def load_conductor_profile_template() -> dict:
+    """Parse :data:`CONDUCTOR_PROFILE_TEMPLATE_PATH` (the template is the single source)."""
     import yaml
 
-    return yaml.safe_load(L1_PROFILE_TEMPLATE_PATH.read_text(encoding="utf-8")) or {}
+    return yaml.safe_load(CONDUCTOR_PROFILE_TEMPLATE_PATH.read_text(encoding="utf-8")) or {}
 
 
-def _merge_l1_profile_template(config: dict) -> bool:
+def _merge_conductor_profile_template(config: dict) -> bool:
     """Deep-merge the L1 template into ``config`` in place; True when it changed.
 
     Merged rather than assigned so every key the user already wrote — model
@@ -3096,7 +3096,7 @@ def _merge_l1_profile_template(config: dict) -> bool:
     """
     from plobi_cli.config import _deep_merge
 
-    merged = _deep_merge(config, load_l1_profile_template())
+    merged = _deep_merge(config, load_conductor_profile_template())
     if merged == config:
         return False
     config.clear()
@@ -3138,16 +3138,16 @@ def _apply_conductor_config(config: dict) -> bool:
     :func:`ensure_conductor_form`) so the plugin path and the boot path
     cannot disagree about what the shape is.
     """
-    changed = _merge_l1_profile_template(config)
-    changed = apply_l1_mid_toolsets(config) or changed
+    changed = _merge_conductor_profile_template(config)
+    changed = apply_conductor_mid_toolsets(config) or changed
     changed = _enable_north_star_plugin(config) or changed
     return changed
 
 
-def refresh_l2_identity_souls() -> int:
+def refresh_principal_identity_souls() -> int:
     """按**当前**契约重渲染名册里每个未归档 L2 的身份围栏，返回改写了几份。
 
-    身份块只在 ``spawn()`` 时落盘（:func:`ensure_l2_identity_soul`），所以契约
+    身份块只在 ``spawn()`` 时落盘（:func:`ensure_principal_identity_soul`），所以契约
     改版以后，已经在盘上的分身不会自己更新。桌面 / 网关每次启动过一遍，新契约
     才不会只对以后新建的 Agent 生效（用户 10-31：「L1 和 L2 干活第一反应都不是
     统筹，而是自己干活」——改的正是这段围栏）。只动围栏以内：围栏外人写的人设
@@ -3163,7 +3163,7 @@ def refresh_l2_identity_souls() -> int:
         if entry.archived:
             continue
         try:
-            if ensure_l2_identity_soul(entry):
+            if ensure_principal_identity_soul(entry):
                 updated += 1
         except Exception as exc:
             logger.debug(
@@ -3184,7 +3184,7 @@ def ensure_conductor_form() -> bool:
     default profile, not a ``master`` one), never writes outside a home that
     already exists, and returns False once the shape is in place.
 
-    It also refreshes every L2 identity fence (:func:`refresh_l2_identity_souls`)
+    It also refreshes every L2 identity fence (:func:`refresh_principal_identity_souls`)
     for the same reason one level down: those fences are written at spawn time,
     so a contract change would otherwise never reach an agent that already
     exists.
@@ -3203,7 +3203,7 @@ def ensure_conductor_form() -> bool:
     changed = _apply_conductor_config(config)
     if changed:
         save_config(config)
-    refreshed = refresh_l2_identity_souls()
+    refreshed = refresh_principal_identity_souls()
     return ensure_conductor_routing_soul() or changed or refreshed > 0
 
 
@@ -3230,8 +3230,8 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
         # 前任何 profile 只要启用本插件就被永久盖成总秘书（l2-agenda 那份 --clone
         # 的 SOUL 就是已经发作的实例）。非 default profile 不仅要跳过写入，还要把
         # 已经印上去的 L1 合同纠掉。判据与
-        # ``plugins/plobi-core/l1_budget.py:115 is_l1_default_profile()``
-        # 同源（get_active_profile_name() == L1_PROFILE_NAME），只是没有 agent 实例。
+        # ``plugins/plobi-core/conductor_budget.py:115 is_conductor_default_profile()``
+        # 同源（get_active_profile_name() == CONDUCTOR_PROFILE_NAME），只是没有 agent 实例。
         from plobi_cli.agent_identity import get_active_profile_name
 
         if get_active_profile_name() == "default":

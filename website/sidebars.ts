@@ -275,7 +275,7 @@ const sidebars: SidebarsConfig = {
                   items: [
                     'user-guide/skills/bundled/plobi/plobi-butler-extended',
                     'user-guide/skills/bundled/plobi/plobi-info-scout',
-                    'user-guide/skills/bundled/plobi/plobi-l2-resident',
+                    'user-guide/skills/bundled/plobi/plobi-principal-resident',
                     'user-guide/skills/bundled/plobi/plobi-message-digest',
                     'user-guide/skills/bundled/plobi/plobi-morning-report',
                     'user-guide/skills/bundled/plobi/plobi-night-autonomy',

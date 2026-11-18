@@ -1,9 +1,9 @@
 """L2 wiring (B3): route the L2 loop through the quota pool.
 
 ``ModelConfirmer`` (and any future L2 call site) currently spends against a
-single ``PLOBI_L2_CHAT_URL`` endpoint. B3 makes that spend *source-aware*:
+single ``PLOBI_PRINCIPAL_CHAT_URL`` endpoint. B3 makes that spend *source-aware*:
 
-- :func:`resolve_l2_endpoint` returns the endpoint of the source the pool picks
+- :func:`resolve_principal_endpoint` returns the endpoint of the source the pool picks
   (cheap-first, bezel-fallback, skip-unavailable);
 - :class:`QuotaAwareCompleter` is a drop-in completer that wraps a per-source
   ``send`` and does real failover — when a source errors, it is marked failed
@@ -62,7 +62,7 @@ def spend_timeout(source: QuotaSource) -> float:
     return _KIND_TIMEOUTS.get(source.kind, _DEFAULT_TIMEOUT)
 
 
-def resolve_l2_endpoint(pool: Optional[QuotaPool] = None) -> Optional[dict]:
+def resolve_principal_endpoint(pool: Optional[QuotaPool] = None) -> Optional[dict]:
     """Return ``{base_url, api_key, model}`` for the source the pool picks.
 
     ``None`` when no source is usable (caller degrades — never hard-block).

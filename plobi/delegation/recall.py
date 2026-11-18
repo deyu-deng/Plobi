@@ -2,7 +2,7 @@
 
 DeepSeek Super-agent 的「Thread 订阅 + 链式召回」在 Plobi 的递归模型里要改一层：
 **持全局记忆的不是 L1，是每个 L2**（``DECISIONS.md`` §4 #34 已答）。L1 是纯调度，
-``l1_soul_template.md`` 本来就禁 ``session_search``；L3 无长期记忆。
+``conductor_soul_template.md`` 本来就禁 ``session_search``；L3 无长期记忆。
 
 所以这里不新建检索件：``plobi_state.SessionDB.search_messages`` 原生支持
 ``agent_id`` 限定域（``plobi_state.py:4849-4860``），FTS5 / trigram / short-CJK

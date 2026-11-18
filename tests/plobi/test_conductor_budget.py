@@ -1,11 +1,11 @@
 """WP-L1-BUDGET — L1 总秘书"这期完了"不再 40 秒空转 + 10 万 token 提前切。
 
-P0-1: ``plugins/plobi-core/l1_budget.py::on_session_start`` 在 L1
+P0-1: ``plugins/plobi-core/conductor_budget.py::on_session_start`` 在 L1
        default profile 上把 ``_memory_nudge_interval`` / ``_skill_nudge_interval``
        置 0，间接关掉 ``agent/turn_finalizer.py`` 末尾的
        ``_spawn_background_review`` 调用。L2/L3 / 自定义 profile 不被误伤。
 
-P0-2: ``plugins/plobi-core/l1_profile_template.yaml`` 是仓库内唯一
+P0-2: ``plugins/plobi-core/conductor_profile_template.yaml`` 是仓库内唯一
        L1 默认 profile 模板（任务书 §2 的"profile/config 模板"），显式写
        ``context.compressor.threshold_percent: 0.35``。hook 在运行时同步把
        ``agent.context_compressor.threshold_percent`` 改成 0.35 并重算
@@ -34,7 +34,7 @@ import pytest
 def _gate_off_here(monkeypatch):
     """这一档测的是摘要的 fail-open 与提交行为，不是写脑那道闸。
 
-    闸有自己的测试档（tests/plobi/test_mind_l1_gate.py / test_mind_trust_ramp.py）；
+    闸有自己的测试档（tests/plobi/test_mind_conductor_gate.py / test_mind_trust_ramp.py）；
     这里若让闸按出厂默认（先问）参与，摘要会变成待确认计划，测的就不是 fail-open 了。
     """
     import plobi.mind.writer as writer_mod
@@ -53,15 +53,15 @@ def _plugin_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "plugins" / "plobi-core"
 
 
-def _load_l1_budget():
-    """Load ``plugins/plobi-core/l1_budget.py`` directly.
+def _load_conductor_budget():
+    """Load ``plugins/plobi-core/conductor_budget.py`` directly.
 
-    ``l1_budget.py`` is a leaf module (only stdlib imports) so we don't have
+    ``conductor_budget.py`` is a leaf module (only stdlib imports) so we don't have
     to spin up the full plugin package — which would pull in
     ``hard_route`` / ``tools`` / ``channel`` and fail in tests where
     the rest of the plugin isn't on sys.path.
     """
-    name = "plobi_plugins.plobi_core.l1_budget"
+    name = "plobi_plugins.plobi_core.conductor_budget"
     if name in sys.modules:
         return sys.modules[name]
     if "plobi_plugins" not in sys.modules:
@@ -77,7 +77,7 @@ def _load_l1_budget():
         parent_mod.__package__ = "plobi_plugins"
         sys.modules[parent_name] = parent_mod
 
-    l1_path = _plugin_dir() / "l1_budget.py"
+    l1_path = _plugin_dir() / "conductor_budget.py"
     spec = importlib.util.spec_from_file_location(name, l1_path)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
@@ -88,18 +88,18 @@ def _load_l1_budget():
 
 
 @pytest.fixture(scope="module")
-def l1_budget():
+def conductor_budget():
     """Module-level fixture that gives every test access to the loaded
-    ``l1_budget`` module. Module scope because the plugin is pure-Python
+    ``conductor_budget`` module. Module scope because the plugin is pure-Python
     and has no per-test state."""
-    return _load_l1_budget()
+    return _load_conductor_budget()
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
 
 class _FakeAgent:
-    """Bare-bones stand-in for ``AIAgent`` covering what ``l1_budget`` touches.
+    """Bare-bones stand-in for ``AIAgent`` covering what ``conductor_budget`` touches.
 
     The hook only reads:
       * ``profile`` / ``profile_name`` (L1 detection)
@@ -147,7 +147,7 @@ class _FakeCompressor:
 # ─── P0-1: L1 curator disable ───────────────────────────────────────────────
 
 
-def test_north_star_hook_disables_memory_nudge_for_l1(l1_budget):
+def test_north_star_hook_disables_memory_nudge_for_l1(conductor_budget):
     """L1 default profile + north-star toolset → memory & skill nudges → 0."""
     agent = _FakeAgent(
         profile="default",
@@ -157,7 +157,7 @@ def test_north_star_hook_disables_memory_nudge_for_l1(l1_budget):
         skill_nudge=10,
     )
 
-    applied = l1_budget.apply_l1_budget(agent)
+    applied = conductor_budget.apply_conductor_budget(agent)
 
     assert applied is True
     assert agent._memory_nudge_interval == 0
@@ -167,14 +167,14 @@ def test_north_star_hook_disables_memory_nudge_for_l1(l1_budget):
     assert agent._iters_since_skill == 0
 
 
-def test_north_star_hook_does_not_touch_l2(l1_budget):
+def test_north_star_hook_does_not_touch_l2(conductor_budget):
     """L2-agenda / 自定义 profile → nudge intervals 不动。
 
     L2 通常有自己的 plobi profile（不在 ``default`` 上），自动豁免；这里
     还多覆盖一个"profile 是 default 但工具集不是 north-star"的边缘情况——
     那不是 L1（可能是别的 default 用户），hook 必须不碰。
     """
-    l2_default_toolsets = {
+    principal_default_toolsets = {
         "agenda",
         "kanban",
         "memory",
@@ -183,7 +183,7 @@ def test_north_star_hook_does_not_touch_l2(l1_budget):
     }
     l2_agent = _FakeAgent(
         profile="l2-agenda",
-        enabled_toolsets=l2_default_toolsets,
+        enabled_toolsets=principal_default_toolsets,
         valid_tool_names={"memory", "skill_manage", "agenda_create"},
         memory_nudge=8,
         skill_nudge=12,
@@ -196,30 +196,30 @@ def test_north_star_hook_does_not_touch_l2(l1_budget):
         skill_nudge=14,
     )
 
-    assert l1_budget.apply_l1_budget(l2_agent) is False
+    assert conductor_budget.apply_conductor_budget(l2_agent) is False
     assert l2_agent._memory_nudge_interval == 8
     assert l2_agent._skill_nudge_interval == 12
 
-    assert l1_budget.apply_l1_budget(custom_profile_agent) is False
+    assert conductor_budget.apply_conductor_budget(custom_profile_agent) is False
     assert custom_profile_agent._memory_nudge_interval == 7
     assert custom_profile_agent._skill_nudge_interval == 14
 
 
-def test_north_star_hook_handles_missing_agent_gracefully(l1_budget):
+def test_north_star_hook_handles_missing_agent_gracefully(conductor_budget):
     """``on_session_start`` 在 ``agent=`` kwarg 缺席时不能炸（向后兼容旧 caller）。"""
     # session_id/model/platform 是历史 kwargs；agent 是 WP-L1-BUDGET 新加的。
     # 没有 agent 时 hook 必须立刻 return，绝不抛。
-    l1_budget.on_session_start(session_id="sess-x", model="claude", platform="cli")
+    conductor_budget.on_session_start(session_id="sess-x", model="claude", platform="cli")
 
 
 # ─── P0-2: profile template + runtime threshold tightening ──────────────────
 
 
 def _template_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "l1_profile_template.yaml"
+    return Path(__file__).resolve().parents[2] / "plugins" / "plobi-core" / "conductor_profile_template.yaml"
 
 
-def _load_l1_template() -> dict:
+def _load_conductor_template() -> dict:
     import yaml
 
     template_path = _template_path()
@@ -234,7 +234,7 @@ def test_l1_template_declares_compression_on_the_path_code_reads():
     （``plobi_cli/config.py``），所以三行键被并进 config 之后没有任何人读，
     ``protect_first_n: 1`` 的承诺从来没发生过。这条测试防它长回去。
     """
-    template = _load_l1_template()
+    template = _load_conductor_template()
 
     assert "compressor" not in (template.get("context") or {}), (
         "context.compressor.* 是一条没人读的路径；压缩参数请写在 compression.* 下"
@@ -263,13 +263,13 @@ def test_every_l1_compression_key_is_actually_read_by_the_agent():
     source = (
         Path(__file__).resolve().parents[2] / "agent" / "agent_init.py"
     ).read_text(encoding="utf-8")
-    for key in _load_l1_template()["compression"]:
+    for key in _load_conductor_template()["compression"]:
         assert re.search(r'_compression_cfg\.get\(\s*["\']%s["\']' % re.escape(key), source), (
             f"模板声明了 compression.{key}，但 agent_init 里没有对应的读取点"
         )
 
 
-def test_tighten_uses_the_declared_value_when_it_is_tighter(l1_budget):
+def test_tighten_uses_the_declared_value_when_it_is_tighter(conductor_budget):
     """配置声明得更紧时以配置为准；常量是天花板，不是硬覆盖。"""
     compressor = _FakeCompressor(context_length=200_000)
     compressor._configured_threshold_percent = 0.25
@@ -280,12 +280,12 @@ def test_tighten_uses_the_declared_value_when_it_is_tighter(l1_budget):
         compressor=compressor,
     )
 
-    assert l1_budget.apply_l1_budget(agent) is True
+    assert conductor_budget.apply_conductor_budget(agent) is True
     assert compressor.threshold_percent == pytest.approx(0.25)
     assert compressor._configured_threshold_percent == pytest.approx(0.25)
 
 
-def test_tighten_never_lets_the_config_loosen_past_the_ceiling(l1_budget):
+def test_tighten_never_lets_the_config_loosen_past_the_ceiling(conductor_budget):
     """声明得比任务书上限更松时，常量兜住——L1 不许悄悄回到 0.50。"""
     compressor = _FakeCompressor(context_length=200_000)
     compressor._configured_threshold_percent = 0.50
@@ -296,11 +296,11 @@ def test_tighten_never_lets_the_config_loosen_past_the_ceiling(l1_budget):
         compressor=compressor,
     )
 
-    assert l1_budget.apply_l1_budget(agent) is True
-    assert compressor.threshold_percent == pytest.approx(l1_budget.L1_COMPRESSION_THRESHOLD)
+    assert conductor_budget.apply_conductor_budget(agent) is True
+    assert compressor.threshold_percent == pytest.approx(conductor_budget.CONDUCTOR_COMPRESSION_THRESHOLD)
 
 
-def test_north_star_hook_tightens_compressor_for_l1(l1_budget):
+def test_north_star_hook_tightens_compressor_for_l1(conductor_budget):
     """L1 agent 的 compressor.threshold_percent 必须被 hook 改成 0.35 并重算 threshold_tokens。"""
     compressor = _FakeCompressor(context_length=200_000, max_tokens=None)
     agent = _FakeAgent(
@@ -310,7 +310,7 @@ def test_north_star_hook_tightens_compressor_for_l1(l1_budget):
         compressor=compressor,
     )
 
-    applied = l1_budget.apply_l1_budget(agent)
+    applied = conductor_budget.apply_conductor_budget(agent)
 
     assert applied is True
     # 0.50 → 0.35（200K 窗口不会触发 85% 小窗兜底，所以期望就是精确 0.35）。
@@ -323,16 +323,16 @@ def test_north_star_hook_tightens_compressor_for_l1(l1_budget):
     assert compressor._configured_threshold_percent == pytest.approx(0.35)
 
 
-def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(l1_budget):
+def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(conductor_budget):
     """模板 ``compression.threshold`` 是数值真源；常量只保证"不许更松"。
 
     以前这两处靠人肉同步（模板注释自己写着"两者必须保持同步"），所以模板里那行
     其实没人读。现在 ``_tighten_compressor`` 取 ``min(声明值, 常量)``：这条断言钉住
     那个关系——声明漂到比上限还松，或常量被改到比声明还紧而没人发现，都会红。
     """
-    template_threshold = float(_load_l1_template()["compression"]["threshold"])
+    template_threshold = float(_load_conductor_template()["compression"]["threshold"])
 
-    assert template_threshold <= l1_budget.L1_COMPRESSION_THRESHOLD + 1e-9, (
+    assert template_threshold <= conductor_budget.CONDUCTOR_COMPRESSION_THRESHOLD + 1e-9, (
         "模板声明的值不许比任务书上限更松（否则 L1 会在 6–8 万 token 之后才切开）"
     )
 
@@ -344,9 +344,9 @@ def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(l1_
         valid_tool_names={"memory"},
         compressor=compressor,
     )
-    assert l1_budget.apply_l1_budget(agent) is True
+    assert conductor_budget.apply_conductor_budget(agent) is True
     assert compressor.threshold_percent == pytest.approx(
-        min(template_threshold, l1_budget.L1_COMPRESSION_THRESHOLD)
+        min(template_threshold, conductor_budget.CONDUCTOR_COMPRESSION_THRESHOLD)
     )
 
 
@@ -392,7 +392,7 @@ def test_l1_template_opens_l0_and_keeps_the_curator_off():
 
 
 @pytest.fixture()
-def l1_home(tmp_path, monkeypatch):
+def conductor_home(tmp_path, monkeypatch):
     """一个从未启用过 plobi-core 的 default profile 家目录。"""
     home = tmp_path / ".plobi"
     home.mkdir()
@@ -416,7 +416,7 @@ def _template_leaves(node: dict, prefix: tuple[str, ...] = ()):
             yield prefix + (key,), value
 
 
-def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
+def test_conductor_template_is_applied_into_the_default_profile_config(conductor_home):
     """模板的**每一个**叶子必须在运行时真的生效（不是"文件里有这一行"）。
 
     逐叶遍历而不是写死 0.35：写死就把「模板被应用」退化成又一条模板快照检查。
@@ -430,7 +430,7 @@ def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
 
     assert ensure_conductor_form() is True
 
-    written = _loaded_yaml(l1_home / "config.yaml")
+    written = _loaded_yaml(conductor_home / "config.yaml")
     effective = _deep_merge(dict(DEFAULT_CONFIG), written)
     for path, expected in _template_leaves(_loaded_yaml(_template_path())):
         node = effective
@@ -440,50 +440,50 @@ def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
         assert node == expected, f"{path}: 解析出来是 {node!r}，模板要 {expected!r}"
 
 
-def test_conductor_form_narrows_toolsets_and_enables_the_plugin(l1_home):
+def test_conductor_form_narrows_toolsets_and_enables_the_plugin(conductor_home):
     """窄名单 + 插件启用是同一趟播种的另外两件产物，缺一件 L1 就还是工人。"""
-    from plobi.agents.registry import L1_DROP_TOOLSETS, L1_MID_TOOLSETS, ensure_conductor_form
+    from plobi.agents.registry import CONDUCTOR_DROP_TOOLSETS, CONDUCTOR_MID_TOOLSETS, ensure_conductor_form
 
     ensure_conductor_form()
 
-    written = _loaded_yaml(l1_home / "config.yaml")
+    written = _loaded_yaml(conductor_home / "config.yaml")
     assert "plobi-core" in written["plugins"]["enabled"]
-    assert written["toolsets"] == list(L1_MID_TOOLSETS)
+    assert written["toolsets"] == list(CONDUCTOR_MID_TOOLSETS)
     for platform in ("cli", "gateway"):
         listed = written["platform_toolsets"][platform]
-        assert not set(listed) & L1_DROP_TOOLSETS, f"{platform} keeps worker tools: {listed}"
+        assert not set(listed) & CONDUCTOR_DROP_TOOLSETS, f"{platform} keeps worker tools: {listed}"
         assert "plobi_core" in listed
 
 
-def test_conductor_form_keeps_the_keys_the_user_wrote(l1_home):
+def test_conductor_form_keeps_the_keys_the_user_wrote(conductor_home):
     """补齐不是覆盖：他自己写过的键必须原样活着。"""
     from plobi.agents.registry import ensure_conductor_form
 
-    (l1_home / "config.yaml").write_text(
+    (conductor_home / "config.yaml").write_text(
         "terminal:\n  cwd: /srv/his-workspace\n  timeout: 90\n", encoding="utf-8"
     )
 
     ensure_conductor_form()
 
-    written = _loaded_yaml(l1_home / "config.yaml")
+    written = _loaded_yaml(conductor_home / "config.yaml")
     assert written["terminal"]["cwd"] == "/srv/his-workspace"
     assert written["terminal"]["timeout"] == 90
 
 
-def test_conductor_form_is_idempotent_and_never_creates_a_profile(l1_home):
+def test_conductor_form_is_idempotent_and_never_creates_a_profile(conductor_home):
     """已经启用的家重复开机：不重写 config，不把 SOUL 栅栏写两遍，也不建 profile。"""
-    from plobi.agents.registry import L1_SOUL_BEGIN, ensure_conductor_form
+    from plobi.agents.registry import CONDUCTOR_SOUL_BEGIN, ensure_conductor_form
 
     assert ensure_conductor_form() is True
-    config_bytes = (l1_home / "config.yaml").read_bytes()
-    soul_text = (l1_home / "SOUL.md").read_text(encoding="utf-8")
-    assert soul_text.count(L1_SOUL_BEGIN) == 1
+    config_bytes = (conductor_home / "config.yaml").read_bytes()
+    soul_text = (conductor_home / "SOUL.md").read_text(encoding="utf-8")
+    assert soul_text.count(CONDUCTOR_SOUL_BEGIN) == 1
 
     assert ensure_conductor_form() is False
 
-    assert (l1_home / "config.yaml").read_bytes() == config_bytes
-    assert (l1_home / "SOUL.md").read_text(encoding="utf-8") == soul_text
-    assert not (l1_home / "profiles").exists()
+    assert (conductor_home / "config.yaml").read_bytes() == config_bytes
+    assert (conductor_home / "SOUL.md").read_text(encoding="utf-8") == soul_text
+    assert not (conductor_home / "profiles").exists()
 
 
 def test_conductor_form_does_not_create_a_missing_home(tmp_path, monkeypatch):
@@ -502,7 +502,7 @@ def test_conductor_form_does_not_create_a_missing_home(tmp_path, monkeypatch):
 
 
 class TestApplyL1BudgetEveryTurn:
-    """P0-1：apply_l1_budget 必须在每一个回合都被调用——三条路径：
+    """P0-1：apply_conductor_budget 必须在每一个回合都被调用——三条路径：
 
     * continuation 早退路径（_restore_or_build_system_prompt 命中 stored_prompt）
     * 每回合新 agent 构造路径（init_agent 末尾）
@@ -511,25 +511,25 @@ class TestApplyL1BudgetEveryTurn:
     既有测试只覆盖第三条；这一组覆盖前两条 + 幂等性。
     """
 
-    def test_every_turn_continuation_calls_apply(self, l1_budget, monkeypatch):
-        """续聊早退前：apply_l1_budget 必须被调一次。
+    def test_every_turn_continuation_calls_apply(self, conductor_budget, monkeypatch):
+        """续聊早退前：apply_conductor_budget 必须被调一次。
 
         模拟"_restore_or_build_system_prompt 命中 stored_prompt"的桌面路径：
         conversation_history 非空 + 已有 system_prompt 命中 → 走早退 return。
-        在 production 代码里早退前已加 apply_l1_budget(agent)；
-        这里直接验``is_l1_default_profile`` + ``apply_l1_budget`` 的端到端
+        在 production 代码里早退前已加 apply_conductor_budget(agent)；
+        这里直接验``is_conductor_default_profile`` + ``apply_conductor_budget`` 的端到端
         行为（因为 production 早退路径通过 ``plobi_plugins.*`` 命名空间
         拉函数，import 失败会 swallow——见 conftest 的 sys.path 注入）。
         """
-        # 记录 apply_l1_budget 调用次数
+        # 记录 apply_conductor_budget 调用次数
         calls = {"n": 0}
-        original = l1_budget.apply_l1_budget
+        original = conductor_budget.apply_conductor_budget
 
         def spy(agent):
             calls["n"] += 1
             return original(agent)
 
-        monkeypatch.setattr(l1_budget, "apply_l1_budget", spy)
+        monkeypatch.setattr(conductor_budget, "apply_conductor_budget", spy)
 
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
@@ -540,8 +540,8 @@ class TestApplyL1BudgetEveryTurn:
         )
         # 模拟桌面续聊：history 非空
         history = [{"role": "user", "content": "今天有什么"}]
-        # 走的是 production 早退前的 apply_l1_budget(agent) 段
-        result = l1_budget.apply_l1_budget(agent)
+        # 走的是 production 早退前的 apply_conductor_budget(agent) 段
+        result = conductor_budget.apply_conductor_budget(agent)
         assert result is True
         assert calls["n"] == 1
         # 触发后断言 4 项收紧
@@ -553,16 +553,16 @@ class TestApplyL1BudgetEveryTurn:
         # 这里只断言单次调用即可。
         assert history  # history 不会因此被消费
 
-    def test_every_turn_new_agent_calls_apply(self, l1_budget, monkeypatch):
-        """每回合新 agent：apply_l1_budget 同样被调一次（init_agent 末尾窄钩子）。"""
+    def test_every_turn_new_agent_calls_apply(self, conductor_budget, monkeypatch):
+        """每回合新 agent：apply_conductor_budget 同样被调一次（init_agent 末尾窄钩子）。"""
         calls = {"n": 0}
-        original = l1_budget.apply_l1_budget
+        original = conductor_budget.apply_conductor_budget
 
         def spy(agent):
             calls["n"] += 1
             return original(agent)
 
-        monkeypatch.setattr(l1_budget, "apply_l1_budget", spy)
+        monkeypatch.setattr(conductor_budget, "apply_conductor_budget", spy)
 
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
@@ -572,23 +572,23 @@ class TestApplyL1BudgetEveryTurn:
             compressor=compressor,
         )
 
-        result = l1_budget.apply_l1_budget(agent)
+        result = conductor_budget.apply_conductor_budget(agent)
         assert result is True
         assert calls["n"] == 1
         # 与 continuation 路径期望一致
         assert agent._memory_nudge_interval == 0
         assert compressor.threshold_percent == pytest.approx(0.35)
 
-    def test_skips_l2_profile(self, l1_budget, monkeypatch):
+    def test_skips_l2_profile(self, conductor_budget, monkeypatch):
         """L2 profile 不被收紧（与既有 L2 测试不冲突）。"""
         calls = {"n": 0}
-        original = l1_budget.apply_l1_budget
+        original = conductor_budget.apply_conductor_budget
 
         def spy(agent):
             calls["n"] += 1
             return original(agent)
 
-        monkeypatch.setattr(l1_budget, "apply_l1_budget", spy)
+        monkeypatch.setattr(conductor_budget, "apply_conductor_budget", spy)
 
         # L2-agenda profile + 不含 plobi_core toolset
         agent = _FakeAgent(
@@ -598,14 +598,14 @@ class TestApplyL1BudgetEveryTurn:
             memory_nudge=8,
             skill_nudge=12,
         )
-        result = l1_budget.apply_l1_budget(agent)
+        result = conductor_budget.apply_conductor_budget(agent)
         assert result is False
-        # L2 profile 上 apply_l1_budget 不应触达 收紧动作
+        # L2 profile 上 apply_conductor_budget 不应触达 收紧动作
         assert agent._memory_nudge_interval == 8
         assert agent._skill_nudge_interval == 12
         assert calls["n"] == 1  # spy 自己跑了一次（hook 调用 1 次 + 不改状态）
 
-    def test_is_idempotent(self, l1_budget):
+    def test_is_idempotent(self, conductor_budget):
         """连调三次不报错且最终值正确。"""
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
@@ -616,16 +616,16 @@ class TestApplyL1BudgetEveryTurn:
         )
 
         # 第一次：把 _turns_since_memory / _iters_since_skill 清零
-        assert l1_budget.apply_l1_budget(agent) is True
+        assert conductor_budget.apply_conductor_budget(agent) is True
         # 模拟过几个回合后重新挂钩
         agent._turns_since_memory = 7
         agent._iters_since_skill = 5
         # 第二次：再次清零
-        assert l1_budget.apply_l1_budget(agent) is True
+        assert conductor_budget.apply_conductor_budget(agent) is True
         assert agent._turns_since_memory == 0
         assert agent._iters_since_skill == 0
         # 第三次：仍正确
-        assert l1_budget.apply_l1_budget(agent) is True
+        assert conductor_budget.apply_conductor_budget(agent) is True
         assert agent._memory_nudge_interval == 0
         assert agent._skill_nudge_interval == 0
         assert compressor.threshold_percent == pytest.approx(0.35)
@@ -633,15 +633,15 @@ class TestApplyL1BudgetEveryTurn:
 
 
 class TestRestoreOrBuildCallsApply:
-    """P0-1：_restore_or_build_system_prompt 的早退 return 路径会调 apply_l1_budget。
+    """P0-1：_restore_or_build_system_prompt 的早退 return 路径会调 apply_conductor_budget。
 
     不直接 import conversation_loop（要拉整套 agent.turn_finalizer 等），改为
-    monkeypatch conversation_loop 模块级别的 apply_l1_budget 引用，断言
+    monkeypatch conversation_loop 模块级别的 apply_conductor_budget 引用，断言
     续聊早退前会触发它。fallback：如果 conversation_loop 还没装进 sys.modules，
     跳过本组（CI 独立环境跑不到也不影响其它测试）。
     """
 
-    def test_continuation_early_return_calls_apply(self, l1_budget, monkeypatch):
+    def test_continuation_early_return_calls_apply(self, conductor_budget, monkeypatch):
         import sys
 
         # 这一组是 WP-L1-EVERY-TURN 的核心断言：早退前必须 apply。
@@ -649,7 +649,7 @@ class TestRestoreOrBuildCallsApply:
         # AIAgent，CI 太重。这里用 mock 模拟两个 production 调用点
         # （continuation 早退前 + init_agent 末尾），验证它们都会触发。
         recorded = {"continuation": 0, "init_agent": 0}
-        # 直接调 apply_l1_budget —— 模拟 production 续聊早退前的调用
+        # 直接调 apply_conductor_budget —— 模拟 production 续聊早退前的调用
         compressor = _FakeCompressor(context_length=200_000)
         agent = _FakeAgent(
             profile="default",
@@ -658,7 +658,7 @@ class TestRestoreOrBuildCallsApply:
             compressor=compressor,
         )
         recorded["continuation"] += 1
-        assert l1_budget.apply_l1_budget(agent) is True
+        assert conductor_budget.apply_conductor_budget(agent) is True
         # 模拟 production init_agent 末尾的调用
         agent2 = _FakeAgent(
             profile="default",
@@ -667,7 +667,7 @@ class TestRestoreOrBuildCallsApply:
             compressor=_FakeCompressor(context_length=128_000),
         )
         recorded["init_agent"] += 1
-        assert l1_budget.apply_l1_budget(agent2) is True
+        assert conductor_budget.apply_conductor_budget(agent2) is True
         # 三条路径（on_session_start + continuation + init_agent）必须
         # 在任何一次会话里都被调过至少一次。
         assert recorded["continuation"] == 1
@@ -684,15 +684,15 @@ class TestRestoreOrBuildCallsApply:
         # 这里用 sys.modules 探针即可（不强行 import）：
         if "agent.conversation_loop" in sys.modules:
             cl = sys.modules["agent.conversation_loop"]
-            # 找到 _restore_or_build_system_prompt 源码里包含"apply_l1_budget"
+            # 找到 _restore_or_build_system_prompt 源码里包含"apply_conductor_budget"
             import inspect
 
             try:
                 src = inspect.getsource(cl._restore_or_build_system_prompt)
             except (TypeError, OSError):
                 src = ""
-            assert "apply_l1_budget" in src, (
-                "_restore_or_build_system_prompt must call apply_l1_budget on the "
+            assert "apply_conductor_budget" in src, (
+                "_restore_or_build_system_prompt must call apply_conductor_budget on the "
                 "continuation early-return path (WP-L1-EVERY-TURN P0-1)."
             )
 

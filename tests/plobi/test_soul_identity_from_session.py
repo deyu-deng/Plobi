@@ -38,7 +38,7 @@ def test_an_agent_without_its_own_soul_gets_its_own_identity_not_the_secretary(m
     entry = SimpleNamespace(name="Sindri", role="principal", profile_name="", display_name="Sindri")
     monkeypatch.setattr(R, "shared_soul_path_for", lambda name: __import__("pathlib").Path("/nonexistent/x.md"))
     monkeypatch.setattr(R, "load_registry", lambda *a, **k: SimpleNamespace(entries=lambda: [entry]))
-    monkeypatch.setattr(R, "build_l2_identity_soul_block", lambda e, **kw: "你是 Sindri（测试用身份块）")
+    monkeypatch.setattr(R, "build_principal_identity_soul_block", lambda e, **kw: "你是 Sindri（测试用身份块）")
 
     text = PB.load_soul_md()
     assert text and "Sindri" in text

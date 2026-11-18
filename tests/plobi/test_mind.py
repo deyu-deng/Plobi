@@ -14,7 +14,7 @@ import pytest
 def _l1_gate_off_here(monkeypatch):
     """这一档测的是「写/提交」那条管线本身，不是 L1 那道闸。
 
-    闸有自己的测试档（``tests/plobi/test_mind_l1_gate.py``）；这里按「显式要求时才拦」跑，
+    闸有自己的测试档（``tests/plobi/test_mind_conductor_gate.py``）；这里按「显式要求时才拦」跑，
     否则每个用例都会被正确地问一次「要不要点头」，把管线测试变成待确认层测试。
     """
     import plobi.mind.writer as writer_mod

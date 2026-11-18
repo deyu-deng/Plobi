@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from plobi.agents.registry import L1_SOUL_BLOCK, build_l2_identity_soul_block
+from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK, build_principal_identity_soul_block
 from plobi.delegation.expert_roles import DUTIES
 
 ROLES = ("指挥", "首席", "名手", "客席")
@@ -34,15 +34,15 @@ def _one_l2_block() -> str:
         description="",
         archived=False,
     )
-    return build_l2_identity_soul_block(entry)
+    return build_principal_identity_soul_block(entry)
 
 
 def test_l1_fence_names_all_four_roles_and_says_they_are_not_ranks():
     """指挥的 SOUL 必须同时给四个名字，并明写「角色名不是等级」（裁定 220 边界①）。"""
     for role in ROLES:
-        assert role in L1_SOUL_BLOCK, f"L1 围栏里缺角色名：{role}"
-    assert "角色名，不是等级" in L1_SOUL_BLOCK
-    assert "不说 `L1 / L2 / L3` 这类内部代号" in L1_SOUL_BLOCK
+        assert role in CONDUCTOR_SOUL_BLOCK, f"L1 围栏里缺角色名：{role}"
+    assert "角色名，不是等级" in CONDUCTOR_SOUL_BLOCK
+    assert "不说 `L1 / L2 / L3` 这类内部代号" in CONDUCTOR_SOUL_BLOCK
 
 
 def test_l1_fence_dropped_codes_used_as_names():
@@ -56,14 +56,14 @@ def test_l1_fence_dropped_codes_used_as_names():
         "登记 L2 Agent",
         "**L2 Agent**",
     ):
-        assert stale not in L1_SOUL_BLOCK, f"旧代号仍当称呼用：{stale}"
+        assert stale not in CONDUCTOR_SOUL_BLOCK, f"旧代号仍当称呼用：{stale}"
 
 
 def test_l1_still_understands_a_user_asking_with_the_old_code():
     """兼容是刻意的：用户还会问「你是 L1 吗」，指挥得听懂、但回答不跟着念。"""
-    assert "你是 L1 吗" in L1_SOUL_BLOCK
-    assert "你是指挥吗" in L1_SOUL_BLOCK
-    assert "不要跟着念" in L1_SOUL_BLOCK
+    assert "你是 L1 吗" in CONDUCTOR_SOUL_BLOCK
+    assert "你是指挥吗" in CONDUCTOR_SOUL_BLOCK
+    assert "不要跟着念" in CONDUCTOR_SOUL_BLOCK
 
 
 def test_l2_fence_names_its_role_without_the_parenthesized_code():

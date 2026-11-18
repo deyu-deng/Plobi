@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from tools.memory_tool import L1_SLUG, resolve_agent_slug
+from tools.memory_tool import CONDUCTOR_SLUG, resolve_agent_slug
 
 
 def test_profile_home_and_roster_name_resolve_to_the_same_slug(monkeypatch):
@@ -30,7 +30,7 @@ def test_profile_home_and_roster_name_resolve_to_the_same_slug(monkeypatch):
 
 def test_no_identity_still_falls_back_to_l1(monkeypatch):
     monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
-    assert resolve_agent_slug() == L1_SLUG
+    assert resolve_agent_slug() == CONDUCTOR_SLUG
 
 
 def test_the_session_row_binds_identity_when_there_is_no_env(tmp_path, monkeypatch):

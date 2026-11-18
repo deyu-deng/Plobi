@@ -2166,14 +2166,14 @@ def init_agent(
     # the 9-5 L1 conversation (and any continuation turn) tightens the
     # compressor + zeros the curator nudges every turn, not just session
     # open. Idempotent and a no-op for L2 / non-default profiles. See
-    # ``plugins/plobi-core/l1_budget.py::apply_l1_budget``.
+    # ``plugins/plobi-core/conductor_budget.py::apply_conductor_budget``.
     try:
-        from plobi_plugins.plobi_core.l1_budget import (
-            apply_l1_budget as _apply_l1_budget_init,
+        from plobi_plugins.plobi_core.conductor_budget import (
+            apply_conductor_budget as _apply_conductor_budget_init,
         )
-        _apply_l1_budget_init(agent)
+        _apply_conductor_budget_init(agent)
     except Exception as exc:  # noqa: BLE001 - never break init_agent on plugin miss
-        logger.debug("apply_l1_budget on init_agent path failed (non-fatal): %s", exc)
+        logger.debug("apply_conductor_budget on init_agent path failed (non-fatal): %s", exc)
 
 
 

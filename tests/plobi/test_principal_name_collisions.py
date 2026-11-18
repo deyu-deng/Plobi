@@ -151,7 +151,7 @@ def test_reading_an_existing_case_pair_and_editing_its_own_row_still_work(
 
 
 def test_same_home_hits_collapse_to_one_row(fresh_registry, tmp_path):
-    from plobi.agents.registry import L2_PLACEHOLDER_DESCRIPTION_PREFIX
+    from plobi.agents.registry import PRINCIPAL_PLACEHOLDER_DESCRIPTION_PREFIX
 
     # 同一个家（小写 profile 名都是 nymo）两条：用户登记过的那条 + 播种机投影那条。
     # 投影那条盖的是 ``registered=False``——这就是播种机实际写进盘上的那一格
@@ -160,7 +160,7 @@ def test_same_home_hits_collapse_to_one_row(fresh_registry, tmp_path):
     configured = _project("Nymo", description="用户的 Nymo 项目分身")
     placeholder = _project(
         "nymo",
-        description=f"{L2_PLACEHOLDER_DESCRIPTION_PREFIX}Nymo",
+        description=f"{PRINCIPAL_PLACEHOLDER_DESCRIPTION_PREFIX}Nymo",
         registered=False,
     )
     fresh_registry.agents["Nymo"] = configured

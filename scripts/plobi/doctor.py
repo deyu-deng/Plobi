@@ -1050,8 +1050,15 @@ def check_dingtalk(home: Path | None = None) -> dict[str, Any]:
 
 
 def soul_has_routing_block(soul: str) -> bool:
-    """True if SOUL has L1 routing fence (old HTML or :::PLOBI_L1_ASK_ROUTING:::)."""
-    return "PLOBI_L1" in (soul or "")
+    """True if SOUL carries the conductor routing fence.
+
+    两代围栏都认：现行冒号围栏 ``:::PLOBI_CONDUCTOR_ASK_ROUTING:::`` 与更早的
+    HTML 注释围栏 ``<!-- PLOBI_CONDUCTOR_ROUTING -->``。判据是**标记本身**，
+    不是 ``"PLOBI_L1" in soul`` 那种前缀试探——前缀会随改名失效，而失效时
+    这个函数只会静默返回 False，看起来像「用户没装围栏」。
+    """
+    text = soul or ""
+    return "PLOBI_CONDUCTOR_ASK_ROUTING" in text or "PLOBI_CONDUCTOR_ROUTING" in text
 
 
 def _toolsets_from_config(cfg: dict) -> set[str]:
@@ -1143,7 +1150,7 @@ def check_conductor_form(home: Path | None = None) -> dict[str, Any]:
     here means that pass never ran, was skipped, or something reverted it after.
     """
     from plobi.agents.registry import (
-        L1_DROP_TOOLSETS,
+        CONDUCTOR_DROP_TOOLSETS,
         MASTER_TOOLSET_NAME,
         _is_full_plobi_composite,
     )
@@ -1171,7 +1178,7 @@ def check_conductor_form(home: Path | None = None) -> dict[str, Any]:
     plugin_on = isinstance(enabled, list) and NORTH_STAR_PLUGIN in {str(n) for n in enabled}
 
     names = _authored_l1_toolsets(cfg)
-    workers = sorted(n for n in names if n in L1_DROP_TOOLSETS or _is_full_plobi_composite(n))
+    workers = sorted(n for n in names if n in CONDUCTOR_DROP_TOOLSETS or _is_full_plobi_composite(n))
     narrow = bool(names) and MASTER_TOOLSET_NAME in names and not workers
 
     soul = (root / "SOUL.md").read_text(encoding="utf-8") if (root / "SOUL.md").is_file() else ""

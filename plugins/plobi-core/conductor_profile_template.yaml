@@ -1,8 +1,8 @@
 # WP-L1-BUDGET — L1 总秘书（default profile）运行时预算模板
 #
 # 这是仓库内唯一的 "L1 默认 profile 模板"：被
-# ``plugins/plobi-core/l1_budget.py`` 引用，也是
-# ``tests/plobi/test_l1_budget.py::test_compression_threshold_in_default_profile_template``
+# ``plugins/plobi-core/conductor_budget.py`` 引用，也是
+# ``tests/plobi/test_conductor_budget.py::test_compression_threshold_in_default_profile_template``
 # 的解析对象。
 #
 # 不要把 PLOBI_HOME 下的运行时 config.yaml 当作交付物（任务书禁令）。
@@ -24,7 +24,7 @@
 # ``protect_first_n: 1`` 这条承诺从来没发生过（实际一直用默认 3）。10-12 接回真路径。
 compression:
   # 0.50 → 0.35。声明值可以比这里更紧、不能更松：
-  # ``l1_budget._tighten_compressor`` 取 min(配置值, L1_COMPRESSION_THRESHOLD)，
+  # ``conductor_budget._tighten_compressor`` 取 min(配置值, CONDUCTOR_COMPRESSION_THRESHOLD)，
   # 并且绕开小窗口的 0.75 floor（任务书要的就是 6–8 万 token 前切开）。
   threshold: 0.35
   # 头部只保留系统提示 + 第一条用户消息；长会话滚动压缩时不要把开场三轮钉死。
@@ -32,7 +32,7 @@ compression:
   protect_first_n: 1
 
 # 回合后 skill / memory curator——L1 关闭。
-# ``l1_budget._disable_curators`` 把 ``agent._memory_nudge_interval`` 与
+# ``conductor_budget._disable_curators`` 把 ``agent._memory_nudge_interval`` 与
 # ``agent._skill_nudge_interval`` 置 0，对应 ``agent/turn_context.py:307-314``
 # 与 ``agent/turn_finalizer.py:480-485`` 的两段 ``_should_review_*`` 判定：
 # 间隔 ≤ 0 时直接跳过 ``_spawn_background_review``，不会再 fork

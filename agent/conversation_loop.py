@@ -339,14 +339,14 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
         # session never re-tightens its compressor (and keeps its
         # post-finalize curator count over budget). Idempotent + no-op
         # for L2 / non-default profiles. See plugins/plobi-core/
-        # l1_budget.py::apply_l1_budget.
+        # conductor_budget.py::apply_conductor_budget.
         try:
-            from plobi_plugins.plobi_core.l1_budget import (
-                apply_l1_budget as _apply_l1_budget,
+            from plobi_plugins.plobi_core.conductor_budget import (
+                apply_conductor_budget as _apply_conductor_budget,
             )
-            _apply_l1_budget(agent)
+            _apply_conductor_budget(agent)
         except Exception as exc:  # noqa: BLE001 - never break continuation restore
-            logger.debug("apply_l1_budget on continuation path failed (non-fatal): %s", exc)
+            logger.debug("apply_conductor_budget on continuation path failed (non-fatal): %s", exc)
         agent._cached_system_prompt = stored_prompt
         return
     if stored_prompt:
@@ -416,7 +416,7 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
     # session is created (not on continuation).  Plugins can use this
     # to initialise session-scoped state (e.g. warm a memory cache).
     # WP-L1-BUDGET: also pass ``agent=`` so ``plugins/plobi-core/
-    # l1_budget.py`` can tighten the L1 default-profile knobs in-place.
+    # conductor_budget.py`` can tighten the L1 default-profile knobs in-place.
     # Existing handlers accept ``**kwargs`` so the new kwarg is
     # backwards-compatible.
     try:
@@ -497,10 +497,10 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
         return False
 
     # WP-L1-PROMPT-LIVE / 裁定 40: identity drift only triggers when this is
-    # actually the L1 default-profile secretary. ``is_l1_default_profile``
-    # lives in ``l1_budget`` (same plugin) — import here is local so the
+    # actually the L1 default-profile secretary. ``is_conductor_default_profile``
+    # lives in ``conductor_budget`` (same plugin) — import here is local so the
     # early-return stays cheap and the optional dep stays optional.
-    if prompt and _l1_identity_is_stale(agent, prompt):
+    if prompt and _conductor_identity_is_stale(agent, prompt):
         return False
 
     return True
@@ -509,16 +509,16 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
 # WP-L1-PROMPT-LIVE / 裁定 40: marker used by the identity-drift check. The
 # wording mirrors the heading ``## 身份（WP-L1-IDENTITY...）段 so a future
 # rephrase of the SOUL still keeps the L1 marker recognisable. If you
-# change this token, also update ``L1_SOUL_BLOCK`` (the token must remain
-# present) and the assertion in ``test_l1_prompt_live.py``.
-_L1_IDENTITY_MARKER = "Plobi 指挥"
+# change this token, also update ``CONDUCTOR_SOUL_BLOCK`` (the token must remain
+# present) and the assertion in ``test_conductor_prompt_live.py``.
+_CONDUCTOR_IDENTITY_MARKER = "Plobi 指挥"
 
-# Lazy import so we don't pull l1_budget into every conversation-loop call
+# Lazy import so we don't pull conductor_budget into every conversation-loop call
 # path when the agent is L2 / non-default.
-_l1_default_check_cache = {"impl": None}
+_conductor_default_check_cache = {"impl": None}
 
 
-def _l1_identity_is_stale(agent, prompt: str) -> bool:
+def _conductor_identity_is_stale(agent, prompt: str) -> bool:
     """True iff ``agent`` is the L1 default secretary and the persisted
     prompt does not declare the Plobi 指挥 identity marker.
 
@@ -528,19 +528,19 @@ def _l1_identity_is_stale(agent, prompt: str) -> bool:
     """
     if not prompt:
         return False
-    if _L1_IDENTITY_MARKER in prompt:
+    if _CONDUCTOR_IDENTITY_MARKER in prompt:
         return False  # already has the new identity — cache is fine.
 
-    impl = _l1_default_check_cache["impl"]
+    impl = _conductor_default_check_cache["impl"]
     if impl is None:
         try:
-            from plobi_plugins.plobi_core.l1_budget import (
-                is_l1_default_profile,
+            from plobi_plugins.plobi_core.conductor_budget import (
+                is_conductor_default_profile,
             )
-            impl = is_l1_default_profile
+            impl = is_conductor_default_profile
         except Exception:  # noqa: BLE001 - profile helpers may be absent in tests
             impl = lambda a: False  # type: ignore[assignment]
-        _l1_default_check_cache["impl"] = impl
+        _conductor_default_check_cache["impl"] = impl
     try:
         return bool(impl(agent))
     except Exception:  # noqa: BLE001
