@@ -85,14 +85,40 @@ def test_unknown_role_raises(tmp_path):
         router.resolve("l9_imaginary")
 
 
-def test_custom_roles_survive_a_round_trip(tmp_path):
-    path = tmp_path / "models.json"
-    router = ModelRouter.load(path)
-    router.routes["l2_srtp"] = ModelRoute(role="l2_srtp", provider="deepseek", model="deepseek-chat")
-    router.save(path)
+def test_retired_role_keys_are_dropped_and_never_written_back(tmp_path):
+    """盘上还剩四代退休档位时，读进来只有两个角色，存回去也不再出现。
 
-    reloaded = ModelRouter.load(path)
-    assert reloaded.resolve("l2_srtp").qualified == "deepseek/deepseek-chat"
+    2026-11-19 用户：「怎么还有 role=-projects 的东西呀。不是说了 projects 只是
+    principal 里面的一个分类吗？不要做旧数据兼容层了」——``l2_project`` 是 category，
+    不是角色；读侧收下它，设置页就会把它列成一个可选角色。
+    """
+    path = tmp_path / "models.json"
+    path.write_text(json.dumps({"roles": {
+        "l1_secretary": {"provider": "moonshot", "model": "kimi-k3"},
+        "l2_agenda": {"provider": "aigw", "model": "workbuddy/deepseek-v4.1-flash"},
+        "l2_planner": {"provider": "aigw", "model": "workbuddy/deepseek-v4.1-flash"},
+        "l2_project": {"provider": "aigw", "model": "workbuddy/deepseek-v4.1-flash"},
+        CONDUCTOR: {"provider": "moonshot", "model": "kimi-k3"},
+    }}), encoding="utf-8")
+
+    router = ModelRouter.load(path)
+    assert set(router.routes) == {CONDUCTOR, PRINCIPAL}
+    with pytest.raises(RoutingError):
+        router.resolve("l2_project")
+
+    router.save(path)
+    written = json.loads(path.read_text(encoding="utf-8"))["roles"]
+    assert set(written) == {CONDUCTOR, PRINCIPAL}
+
+
+def test_a_dirty_key_in_routes_is_not_persisted(tmp_path):
+    """就算有人往 ``routes`` 里塞了退休键，``save()`` 也只写这两个角色。"""
+    path = tmp_path / "models.json"
+    router = ModelRouter.load(tmp_path / "missing.json")
+    router.routes["l2_srtp"] = ModelRoute(role="l2_srtp", provider="deepseek", model="deepseek-chat")
+
+    router.save(path)
+    assert set(json.loads(path.read_text(encoding="utf-8"))["roles"]) == {CONDUCTOR, PRINCIPAL}
 
 
 def test_config_path_honours_env_override(tmp_path, monkeypatch):

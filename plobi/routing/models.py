@@ -192,15 +192,17 @@ class ModelRouter:
             model = str(entry.get("model") or defaults["model"])
             routes[role] = ModelRoute(role=role, provider=provider, model=model)
 
-        # Roles the operator invented (extra project agents) are kept as-is.
-        for role, entry in raw.items():
-            if role in routes or not isinstance(entry, dict):
-                continue
-            routes[role] = ModelRoute(
-                role=role,
-                provider=str(entry.get("provider") or ""),
-                model=str(entry.get("model") or ""),
-            )
+        # 名册里认得出的角色只有两个（:data:`KNOWN_ROLES`），盘上多出来的键**一律丢**。
+        # 2026-11-19 用户原话「怎么还有 role=-projects 的东西呀。不是说了 projects 只是
+        # principal 里面的一个分类吗？不要做旧数据兼容层了」：上一版把不认识的键当
+        # 「operator invented roles」原样收下，于是四代退休档位（``l1_secretary``／
+        # ``l2_agenda``／``l2_planner``／``l2_project``）在设置页列着、被 ``save()`` 一遍遍
+        # 写回去——而 ``l2_project`` 本来只是 ``principal`` 的一个 category，不是角色。
+        # 这里不做迁移、不做别名：内测版没有用户，旧配置文件不值得留一条读侧分支。
+        dropped = sorted(k for k in raw if k not in routes and isinstance(raw.get(k), dict))
+        if dropped:
+            logger.info("plobi: dropping %d retired model-route key(s): %s",
+                        len(dropped), ", ".join(dropped))
 
         return cls(routes=routes)
 
@@ -213,6 +215,10 @@ class ModelRouter:
                 "roles": {
                     role: {"provider": route.provider, "model": route.model}
                     for role, route in sorted(self.routes.items())
+                    # 只写得出这两个角色（:data:`KNOWN_ROLES`）。读侧已经丢掉退休键，
+                    # 写侧再挡一道：谁把脏键塞进 ``routes`` 都不会被持久化——
+                    # 「配一次大家都能用」不能变成「复印一次退档一次」。
+                    if role in KNOWN_ROLES
                 }
             },
             ensure_ascii=False,
