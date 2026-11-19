@@ -2852,6 +2852,8 @@ export const ja = defineLocale({
 
   onboarding: {
     firstRun: {
+      configureLabel: '{name} を設定',
+      toggleLabel: '{name} を使う',
       welcomeTitle: 'Plobi を準備しています',
       welcomeDesc: '初回は少しだけ時間がかかります。一つずつ進めましょう。',
       preparing: '準備中…',

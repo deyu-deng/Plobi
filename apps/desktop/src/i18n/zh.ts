@@ -3103,6 +3103,8 @@ export const zh: Translations = {
 
   onboarding: {
     firstRun: {
+      configureLabel: '配置 {name}',
+      toggleLabel: '启用 {name}',
       welcomeTitle: '正在准备 Plobi',
       welcomeDesc: '第一次安装需要一点时间。准备完成后将逐步进行设置。',
       preparing: '准备中…',

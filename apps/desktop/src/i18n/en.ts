@@ -2969,6 +2969,8 @@ export const en: Translations = {
 
   onboarding: {
     firstRun: {
+      configureLabel: 'Configure {name}',
+      toggleLabel: 'Enable {name}',
       welcomeTitle: 'Setting up Plobi',
       welcomeDesc: 'First setup takes a moment. The steps follow one after another.',
       preparing: 'Setting up…',

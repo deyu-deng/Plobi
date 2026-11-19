@@ -25,6 +25,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
+import { ConfigCard } from '@/app/settings/config-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -32,7 +33,7 @@ import { type Locale, LOCALE_META, useI18n } from '@/i18n'
 import { getGlobalModelOptions, listOAuthProviders, setOnboardingProfile } from '@/plobi'
 import { useTheme } from '@/themes/context'
 
-import type { OnboardingContext } from '../../store/onboarding'
+import { type OnboardingContext, startProviderOAuth } from '../../store/onboarding'
 
 /** 那几步的步序（判据盯的就是这一串）。 */
 export const FIRST_RUN_STEPS = [
@@ -133,7 +134,7 @@ export function FirstRunFlow({ ctx, onCompleted, startAt = 'intro' }: FirstRunFl
               themes={availableThemes}
             />
           ) : null}
-          {step === 'cards' ? <CardsStep copy={copy} /> : null}
+          {step === 'cards' ? <CardsStep copy={copy} ctx={ctx} /> : null}
           {step === 'profile' ? (
             <ProfileStep answers={answers} copy={copy} onChange={patch => setAnswers(a => ({ ...a, ...patch }))} />
           ) : null}
@@ -342,9 +343,9 @@ function AppearanceStep({
  *   账号 ⇒ OAuth 目录；密钥 ⇒ 后端 model options 里的 api_key 那批；
  *   订阅额度 ⇒ hub 的名册。三份都与配没配过无关 ⇒ 一个都没配时照样列得出来。
  */
-function CardsStep({ copy }: { copy: Copy }) {
+function CardsStep({ copy, ctx }: { copy: Copy; ctx: OnboardingContext }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState<'accounts' | 'keys' | 'desktop'>('accounts')
+  const [lane, setLane] = useState<'accounts' | 'keys' | 'desktop' | null>(null)
 
   const { data: oauth } = useQuery({
     queryKey: ['first-run-oauth-providers'],
@@ -374,86 +375,76 @@ function CardsStep({ copy }: { copy: Copy }) {
     staleTime: 5 * 60 * 1000
   })
 
+  const lanes = [
+    { count: (oauth ?? []).length, id: 'accounts' as const, label: t.settings.nav.providerAccounts },
+    { count: (keyProviders ?? []).length, id: 'keys' as const, label: t.settings.nav.providerApiKeys },
+    { count: (roster ?? []).length, id: 'desktop' as const, label: t.settings.nav.providerSubscriptions }
+  ]
+
+  // 第一屏：左中右三张大卡片（主人 11-19 07:5x）。
+  if (!lane) {
+    return (
+      <Screen>
+        <Title>{copy.cardsTitle}</Title>
+        <Desc>{copy.cardsDesc}</Desc>
+        <div className="fr-lanes">
+          {lanes.map(l => (
+            <button className="fr-lane" key={l.id} onClick={() => setLane(l.id)} type="button">
+              <span className="fr-lane-name">{l.label}</span>
+              <span className="fr-lane-count">{l.count}</span>
+            </button>
+          ))}
+        </div>
+      </Screen>
+    )
+  }
+
+  // 第二屏：那一栏的供应商，**滚动列表**，每张卡就是设置页那一张（`ConfigCard`）。
+  const current = lanes.find(l => l.id === lane)
+
   return (
     <Screen>
-      <Title>{copy.cardsTitle}</Title>
-      <Desc>{copy.cardsDesc}</Desc>
-      <div className="fr-cards">
-        <ProviderCard
-          body={
-            (oauth ?? []).length > 0 ? (
-              (oauth ?? []).map(p => (
-                <div className="fr-row" key={p.id}>
-                  <span className="fr-dot" />
-                  <span>{p.name}</span>
-                </div>
-              ))
-            ) : (
-              <div className="fr-row fr-muted">{t.settings.nav.providerAccounts}</div>
-            )
-          }
-          label={t.settings.nav.providerAccounts}
-          onClick={() => setOpen('accounts')}
-          open={open === 'accounts'}
-        />
-        <ProviderCard
-          body={
-            (keyProviders ?? []).length > 0 ? (
-              (keyProviders ?? []).map(p => (
-                <div className="fr-row" key={p.slug}>
-                  <span className="fr-dot" />
-                  <span>{p.name}</span>
-                </div>
-              ))
-            ) : (
-              <div className="fr-row fr-muted">{t.settings.nav.providerApiKeys}</div>
-            )
-          }
-          label={t.settings.nav.providerApiKeys}
-          onClick={() => setOpen('keys')}
-          open={open === 'keys'}
-        />
-        <ProviderCard
-          body={
-            (roster ?? []).length > 0 ? (
-              (roster ?? []).map(row => (
-                <div className="fr-row" key={row.id}>
-                  <span className="fr-dot" />
-                  <span>{row.id}</span>
-                </div>
-              ))
-            ) : (
-              <div className="fr-row fr-muted">{t.settings.nav.providerSubscriptions}</div>
-            )
-          }
-          label={t.settings.nav.providerSubscriptions}
-          onClick={() => setOpen('desktop')}
-          open={open === 'desktop'}
-        />
+      <Title>{current?.label}</Title>
+      <div className="fr-list-scroll">
+        {lane === 'accounts'
+          ? (oauth ?? []).map(p => (
+              <ConfigCard
+                configureLabel={copy.configureLabel.replace('{name}', p.name)}
+                key={p.id}
+                mode="configure"
+                monogram={p.name.trim().slice(0, 1).toUpperCase()}
+                name={p.name}
+                onConfigure={() => void startProviderOAuth(p, ctx)}
+                toggleLabel={copy.toggleLabel.replace('{name}', p.name)}
+              />
+            ))
+          : null}
+        {lane === 'keys'
+          ? (keyProviders ?? []).map(p => (
+              <ConfigCard
+                configureLabel={copy.configureLabel.replace('{name}', p.name)}
+                key={p.slug}
+                mode="configure"
+                monogram={p.name.trim().slice(0, 1).toUpperCase()}
+                name={p.name}
+                toggleLabel={copy.toggleLabel.replace('{name}', p.name)}
+              />
+            ))
+          : null}
+        {lane === 'desktop'
+          ? (roster ?? []).map(row => (
+              <ConfigCard
+                configureLabel={copy.configureLabel.replace('{name}', row.id)}
+                key={row.id}
+                mode="configure"
+                monogram={row.id.trim().slice(0, 1).toUpperCase()}
+                name={row.id}
+                toggleLabel={copy.toggleLabel.replace('{name}', row.id)}
+              />
+            ))
+          : null}
       </div>
     </Screen>
-  )
-}
-
-function ProviderCard({
-  label,
-  body,
-  open,
-  onClick
-}: {
-  label: string
-  body: React.ReactNode
-  open: boolean
-  onClick: () => void
-}) {
-  return (
-    <div className={open ? 'fr-card open' : 'fr-card'}>
-      <button className="fr-card-head" onClick={onClick} type="button">
-        <span>{label}</span>
-        <span className="fr-chev">›</span>
-      </button>
-      <div className="fr-card-body">{body}</div>
-    </div>
   )
 }
 
@@ -637,15 +628,12 @@ const FIRST_RUN_CSS = `
 .fr-themes { display: flex; flex-wrap: wrap; gap: 0.375rem; }
 .fr-theme { border-radius: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); padding: 0.375rem 0.625rem; font-size: 0.75rem; color: var(--ui-text-primary); }
 .fr-theme[aria-pressed='true'] { border-color: var(--ui-accent); }
-.fr-cards { display: flex; width: 100%; flex-direction: column; gap: 0.625rem; margin-bottom: 1.25rem; }
-.fr-card { border-radius: 0.75rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); overflow: hidden; text-align: left; }
-.fr-card-head { display: flex; width: 100%; align-items: center; gap: 0.75rem; padding: 0.875rem 1rem; font-size: 0.8125rem; font-weight: 500; color: var(--ui-text-primary); }
-.fr-chev { margin-left: auto; color: var(--ui-text-tertiary); }
-.fr-card-body { display: none; padding: 0 1rem 0.875rem; }
-.fr-card.open .fr-card-body { display: block; }
-.fr-row { display: flex; align-items: center; gap: 0.5625rem; border-top: 1px solid var(--ui-stroke-tertiary); padding: 0.4375rem 0; font-size: 0.78125rem; color: var(--ui-text-primary); }
-.fr-row.fr-muted { color: var(--ui-text-tertiary); }
-.fr-dot { width: 0.375rem; height: 0.375rem; border-radius: 9999px; background: var(--ui-accent); }
+.fr-lanes { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+.fr-lane { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; border-radius: 0.75rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); padding: 1rem; text-align: left; }
+.fr-lane:hover { background: var(--ui-bg-tertiary); }
+.fr-lane-name { font-size: 0.875rem; font-weight: 500; color: var(--ui-text-primary); }
+.fr-lane-count { font-size: 0.75rem; color: var(--ui-text-tertiary); }
+.fr-list-scroll { display: flex; width: 100%; max-height: 58vh; flex-direction: column; gap: 0.5rem; overflow-y: auto; padding-right: 0.25rem; }
 .fr-label { display: block; margin-bottom: 0.375rem; font-size: 0.75rem; color: var(--ui-text-secondary); }
 .fr-dots { display: flex; gap: 0.375rem; }
 .fr-dots i { width: 0.3125rem; height: 0.3125rem; border-radius: 9999px; background: var(--ui-bg-tertiary); }

@@ -2780,6 +2780,8 @@ export const zhHant = defineLocale({
 
   onboarding: {
     firstRun: {
+      configureLabel: '設定 {name}',
+      toggleLabel: '啟用 {name}',
       welcomeTitle: '正在準備 Plobi',
       welcomeDesc: '第一次安裝需要一點時間。準備完成後將逐步進行設定。',
       preparing: '準備中…',

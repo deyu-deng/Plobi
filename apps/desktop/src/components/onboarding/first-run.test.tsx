@@ -83,7 +83,7 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
     expect(screen.getByRole('button', { name: /Follow system|跟随系统/ })).toBeTruthy()
   })
 
-  it('三张卡＝模型配置那一屏，名字直接读设置页那三栏，里面列的是可配置的目录', async () => {
+  it('三张卡＝左中右三张大卡片；点一张变成一屏滚动列表，里面是设置页那一张卡', async () => {
     listOAuthProviders.mockResolvedValue({ providers: [{ id: 'claude-code', name: 'Claude Code' }] })
     getGlobalModelOptions.mockResolvedValue({
       providers: [
@@ -93,16 +93,18 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
 
     await advanceTo('cards')
 
+    // 三张大卡片（名字直接读设置页那三栏）。
     expect(screen.getAllByText(/^Accounts$|^账号$/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/API keys|API 密钥/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/^Subscriptions$|订阅额度/).length).toBeGreaterThan(0)
-    // 卡里列的是**可配置的目录**，不是「已经配好的」⇒ 一个都没配时照样列得出来。
-    await vi.waitFor(() => expect(screen.getAllByText('Claude Code').length).toBeGreaterThan(0), {
-      timeout: 4000
-    })
+
+    // 点「密钥」那一张 ⇒ 变成一屏滚动列表，每张卡就是设置页那一张（名字 ＋ ＋）。
+    fireEvent.click(screen.getByText(/API keys|API 密钥/))
     await vi.waitFor(() => expect(screen.getAllByText('OpenRouter').length).toBeGreaterThan(0), {
       timeout: 4000
     })
+    // ＋ 那颗的可达名字（设置页同款）。
+    expect(screen.getByRole('button', { name: /Configure OpenRouter|配置 OpenRouter/ })).toBeTruthy()
   })
 
   it('末步把画像与称呼交给后端（USER.md），把名字与性格也交过去（SOUL.md）', async () => {

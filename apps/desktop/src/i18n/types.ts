@@ -2542,6 +2542,8 @@ export interface Translations {
 
   onboarding: {
     firstRun: {
+      configureLabel: string
+      toggleLabel: string
       welcomeTitle: string
       welcomeDesc: string
       preparing: string
