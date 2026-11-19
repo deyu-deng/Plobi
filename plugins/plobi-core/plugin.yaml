@@ -7,3 +7,4 @@ description: >-
 author: Plobi
 hooks:
   - pre_gateway_dispatch
+  - pre_llm_call

@@ -237,6 +237,10 @@ def register(ctx) -> None:
     except Exception:
         logger.debug("plobi-core: toolset ensure on active profile skipped", exc_info=True)
     ctx.register_hook("pre_gateway_dispatch", _on_pre_gateway_dispatch)
+    # 裁定 232：回合入口的强制汇报上下文。只对指挥、只读、API-call-time 注入；
+    # 判据坏/身份读不出都静默返回空，永不打断回合。
+    from . import forced_report as _forced
+    ctx.register_hook("pre_llm_call", _forced.on_pre_llm_call)
     # WP-BE-13 / 裁定 21.1: pin §8.2's two frozen L1 utterances onto the
     # ``ask`` atom at the GUI/dashboard user-turn boundary (裁定 183 换了嘴：
     # 旧那 7 枚 intent 枚举全删，硬路由跟着指 ask，标签留在 hard_route 的表里).
