@@ -1655,6 +1655,11 @@ def profile_config_overlay(profile_name: str) -> dict:
             if not provider_is_resolvable(provider):
                 # 那句点名的 warning 是从 ``_write_profile_config`` 原样搬来的：闸还是那道闸，
                 # 但"为什么这个分身没吃到你给它选的模型"必须说得出名字，不能静默留空。
+                from plobi_cli.models import provider_name_for_message
+
+                # 念给用户听的那个名字仍是**软件名**：配置里残留的 `bezel`／`aigw`
+                # 是传输名，不进这句 warning。
+                shown_provider = provider_name_for_message(provider) or "<internal id>"
                 logger.warning(
                     "plobi: model override NOT applied for %r — the runtime provider "
                     "resolver does not know provider %r (model %r), and applying it would "
@@ -1665,7 +1670,7 @@ def profile_config_overlay(profile_name: str) -> dict:
                     entry.name,
                     provider,
                     model,
-                    provider,
+                    shown_provider,
                 )
             else:
                 section = {
@@ -2842,11 +2847,11 @@ def build_principal_identity_soul_block(
         # 所以这句只说「登记的是哪里」，打不打得开交给分身自己判——它得问，不能跑到
         # 别的项目目录里去干活。
         lines.append(
-            f"- 你手上只有 **{project}** 这一个项目，它登记的工作目录是 `{entry.project_path}`：代码、文件、命令都在这个地方发生，别的目录不归你动。这个目录打不开，就是路径还没对本平台改过来——问用户一句，不要去别的项目里干活。"
+            f"- 你手上只有 **{project}** 这一个项目，它登记的工作目录是 `{entry.project_path}`：代码、文件、命令都在这个地方发生，别的目录不归你动。这个目录打不开，就是路径还没对本平台改过来——问用户一句。"
         )
     else:
         lines.append(
-            f"- 你手上只有 **{project}** 这一个项目，但它的工作目录还没定下来。要动文件先问用户一句，不要替他猜一个路径。"
+            f"- 你手上只有 **{project}** 这一个项目，但它的工作目录还没定下来。要动文件先问用户一句，路径由他定。"
         )
     if entry.mind_subtree:
         from plobi.mind.paths import normalize_logical
@@ -2872,12 +2877,12 @@ def build_principal_identity_soul_block(
     # 是「L2 是统筹者，不是独力干将」——这一句以前只在文档里，围栏里只有「你手上只有
     # 这一个项目」和「统筹归 L1」，于是一个项目 Agent 读到的岗位是干活的。
     lines.append(
-        "- **你是这一摊的统筹者，不是独力干将**：拿到一件事先拆开，能派出去的就派——"
+        "- **你是这一摊的统筹者**：拿到一件事先拆开，能派出去的就派——"
         "整理文件、查网页、操作软件/电脑这类活优先交给即用即丢的专家（`delegate_task`"
         " 的 expert 填 file / browser / software / computer）；你手上若还给了外包口"
         "（把活交给本机别的 AI 软件），也优先外包。你自己做的是判断、拆解、验收、"
         "把结果收成一句人话。工具没给或专家起不来，就如实说一句「这个我现在做不了」，"
-        "再退回自己扛——不要一声不响全自己干。"
+        "再自己扛。"
     )
     # 11-02：上一版只写了「能派的就派」——那是一句品德，不是一个判据，模型照样
     # 自己上手。用户这一轮点名要的是**界线**，所以这里给一条它每件事都能自问的：
@@ -2901,14 +2906,14 @@ def build_principal_identity_soul_block(
     # 别让用户自己去一条条点（用户 11-04：目录相同肯定是有关的，剩下交给 L2 判）。
     lines.append(
         "- 本机别的 AI 软件里的会话，扫描时每条都带一个判断：**工作目录或标题点到你的直接算有关**，"
-        "剩下的停在「未判」。未判的别放着——用 `external_sessions_scan` 扫一遍，读标题与项目判一次，"
-        "再用 `external_sessions_mark` 记下来；判不准就留空，不要猜。"
+        "剩下的停在「未判」。未判的用 `external_sessions_scan` 扫一遍，读标题与项目判一次，"
+        "再用 `external_sessions_mark` 记下来；判不准就留空。"
     )
     lines += [
-        "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",
-        "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，不要拿别的项目的进度顶。",
-        "- **职责不是从共享记忆里挑一个来当**。账本里写着别人的分工——比如指挥那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位，不是你的。上面没写你的职责，就照项目归属说话；说不准就问用户一句，不要自己认领一个头衔。",
-        "- 你**不是**本机 Plobi 指挥，**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。跨项目的派工、日程入口、跨项目统筹归**指挥**（裁定 44：一嘴一个 Agent）——**本项目内部的统筹是你自己的**；不要转述调度器的角色，不要替别的项目作答，也不要自称指挥。",
+        "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本记的是发生过什么；**「我是谁」以这份文件为准**。",
+        "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，别拿别的项目的进度顶。",
+        "- 你的职责以**这份文件**为准。账本里写着别人的分工——比如指挥那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位。上面没写到的，就照项目归属说话；说不准就问用户一句。",
+        "- 你的位置在这一个项目里：**本项目内部的统筹由你做主**；跨项目的派工、日程入口、跨项目统筹归**指挥**（裁定 44：一嘴一个 Agent）。别的项目的事由那一摊自己回答，你只说这一摊。",
     ]
     if persona_written:
         lines.append(
