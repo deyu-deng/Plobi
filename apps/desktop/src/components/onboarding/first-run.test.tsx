@@ -107,6 +107,40 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
     expect(screen.getByRole('button', { name: /Configure OpenRouter|配置 OpenRouter/ })).toBeTruthy()
   })
 
+  it('三张卡是玻璃磨砂的大卡：标题＋一句简介＋左下角设置页那几家的品牌图标', async () => {
+    listOAuthProviders.mockResolvedValue({ providers: [{ id: 'claude-code', name: 'Claude Code' }] })
+    getGlobalModelOptions.mockResolvedValue({
+      providers: [
+        { slug: 'openrouter', name: 'OpenRouter', auth_type: 'api_key', key_env: 'OPENROUTER_API_KEY' }
+      ]
+    })
+
+    await advanceTo('cards')
+
+    const cards = Array.from(document.querySelectorAll('.fr-lane'))
+
+    expect(cards.length).toBe(3)
+
+    for (const card of cards) {
+      // 上面：名字 ＋ 一句简介；下面：左下角那排品牌图标 ＋ 右下角那颗箭头。
+      expect(card.querySelector('.fr-lane-name')?.textContent?.trim()).toBeTruthy()
+      expect(card.querySelector('.fr-lane-desc')?.textContent?.trim()).toBeTruthy()
+      expect(card.querySelector('.fr-lane-marks')).toBeTruthy()
+      expect(card.querySelector('.fr-lane-go')).toBeTruthy()
+    }
+
+    // 账号那张的左下角＝那一栏里那几家的品牌图标（设置页同一枚壳：ProviderBrand）。
+    // 目录是异步回来的 ⇒ 等它到齐再断言（变异自检：把 marks 去掉 ⇒ 当场红）。
+    await vi.waitFor(
+      () => {
+        const card = document.querySelectorAll('.fr-lane')[0]
+
+        expect(card?.querySelectorAll('.fr-lane-marks > *').length ?? 0).toBeGreaterThan(0)
+      },
+      { timeout: 4000 }
+    )
+  })
+
   it('末步把画像与称呼交给后端（USER.md），把名字与性格也交过去（SOUL.md）', async () => {
     listOAuthProviders.mockResolvedValue({ providers: [] })
     getGlobalModelOptions.mockResolvedValue({ providers: [] })

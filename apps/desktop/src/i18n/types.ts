@@ -2562,6 +2562,10 @@ export interface Translations {
       themeSystem: string
       cardsTitle: string
       cardsDesc: string
+      cardsDescAccounts: string
+      cardsDescKeys: string
+      cardsDescSubscriptions: string
+      cardsCount: string
       profileTitle: string
       profileDesc: string
       profilePurpose: string

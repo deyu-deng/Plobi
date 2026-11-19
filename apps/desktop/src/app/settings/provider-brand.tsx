@@ -2,15 +2,17 @@ import {
   SiAlibabacloud,
   SiAnthropic,
   SiDeepseek,
+  SiGithubcopilot,
   SiGooglegemini,
   SiHuggingface,
   SiMeta,
   SiMinimax,
-  SiMoonshotai,
   SiMistralai,
+  SiMoonshotai,
   SiNvidia,
   SiOllama,
   SiOpenrouter,
+  SiQwen,
   SiVercel,
   SiXiaomi
 } from '@icons-pack/react-simple-icons'
@@ -50,14 +52,22 @@ const BY_ENV_PREFIX: Array<[string, typeof SiAnthropic, string]> = [
   ['MINIMAX', SiMinimax, '#F23F79'],
   ['KIMI', SiMoonshotai, '#16191E'],
   ['MOONSHOT', SiMoonshotai, '#16191E'],
-  ['XIAOMI', SiXiaomi, '#FF6900']
+  ['XIAOMI', SiXiaomi, '#FF6900'],
+  ['QWEN', SiQwen, '#6950EF'],
+  ['GITHUB_COPILOT', SiGithubcopilot, '#000000']
 ]
 
 /** The same table for rows that carry a provider slug instead of a credential var. */
+/**
+ * 下标指的是 `BY_ENV_PREFIX` 里的第几行 —— 老表变长时这行忘了跟着挪，导致
+ * deepseek 显示 Gemini、openrouter 显示 Ollama（2026-11-19 修）。**加表项时两处一起改。**
+ */
 const BY_SLUG: Record<string, number> = {
-  anthropic: 0, deepseek: 2, gemini: 3, vertex: 3, nvidia: 5, 'ollama-cloud': 8,
-  openrouter: 9, alibaba: 10, 'alibaba-cn': 10, 'ai-gateway': 11, 'meta-ai': 12,
-  minimax: 13, 'minimax-cn': 13, 'kimi-coding': 14, 'kimi-coding-cn': 14, xiaomi: 15
+  anthropic: 0, 'claude-code': 0, deepseek: 4, gemini: 2, vertex: 3, nvidia: 5,
+  'ollama-cloud': 9, openrouter: 10, alibaba: 12, 'alibaba-cn': 12, 'ai-gateway': 13,
+  'meta-ai': 14, minimax: 15, 'minimax-cn': 15, 'minimax-oauth': 15, 'kimi-coding': 16,
+  'kimi-coding-cn': 16, xiaomi: 18, 'qwen-oauth': 19, 'qwen-cli': 19, qwen: 19,
+  'github-copilot': 20, copilot: 20
 }
 
 export function ProviderBrand({
@@ -75,9 +85,11 @@ export function ProviderBrand({
 }) {
   const upper = (envKey || '').toUpperCase()
   const bySlug = BY_SLUG[slug.toLowerCase()]
+
   const hit = bySlug !== undefined
     ? BY_ENV_PREFIX[bySlug]
     : BY_ENV_PREFIX.find(([prefix]) => upper.startsWith(prefix))
+
   const monogram = (name || envKey || '?').trim().charAt(0).toUpperCase()
 
   if (!hit) {

@@ -26,13 +26,16 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ConfigCard } from '@/app/settings/config-card'
+import { ProviderBrand } from '@/app/settings/provider-brand'
 import { QuotaAppIcon } from '@/app/settings/quota-app-icon'
-import { buildLoginCards, isConfigured, type LoginCard } from '@/app/settings/quota-login-cards'
+import { buildLoginCards, cardDetail, isConfigured, type LoginCard } from '@/app/settings/quota-login-cards'
 import { SubscriptionSetupDialog } from '@/app/settings/subscription-setup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { type Locale, LOCALE_META, useI18n } from '@/i18n'
+import { ChevronRight } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 import { getGlobalModelOptions, listOAuthProviders, setOnboardingProfile } from '@/plobi'
 import { useTheme } from '@/themes/context'
 
@@ -41,6 +44,8 @@ import {
   setOnboardingMode,
   startProviderOAuth
 } from '../../store/onboarding'
+
+import { providerTitle } from './providers'
 
 /** 那几步的步序（判据盯的就是这一串）。 */
 export const FIRST_RUN_STEPS = [
@@ -56,6 +61,9 @@ export const FIRST_RUN_STEPS = [
 ] as const
 
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number]
+
+/** 三张卡里那一栏（点开一张卡之后的那一屏）。 */
+export type ProviderLane = 'accounts' | 'keys' | 'desktop'
 
 export interface FirstRunFlowProps {
   ctx: OnboardingContext
@@ -94,6 +102,9 @@ export function FirstRunFlow({
   const { t } = useI18n()
   const { mode, setMode, availableThemes, setTheme, themeName } = useTheme()
   const [step, setStep] = useState<FirstRunStep>(startAt === 'profile' ? 'profile' : 'welcome')
+  // 「三张卡」里点开的那一栏（null ＝ 还在三张卡那屏）。**状态在这一层**——
+  // 底下那两颗按钮也得知道：列表屏的「返回」该回三张卡，不是退到上一步。
+  const [lane, setLane] = useState<ProviderLane | null>(null)
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -130,11 +141,15 @@ export function FirstRunFlow({
     }
   }
 
+  // 「挑一家模型」那一步单独占一列：**46rem 宽**（≥ `--container-2xl` 的 42rem ⇒
+  // 设置页那张卡靠右那颗控件才排得进同一行）＋ **撑满高度**（卡贴着下面两颗按钮）。
+  const wideStep = step === 'cards'
+
   return (
-    <div className="fixed inset-0 z-1300 flex items-center justify-center bg-(--ui-chat-surface-background) p-6">
+    <div className="fixed inset-0 z-1300 flex items-center justify-center bg-[color-mix(in_srgb,var(--ui-chat-surface-background)_78%,transparent)] backdrop-blur-[1.125rem] backdrop-saturate-[1.08] p-6">
       <style>{FIRST_RUN_CSS}</style>
-      <div className="flex w-full max-w-[30rem] flex-col items-center">
-        <div className="flex min-h-[22rem] w-full flex-col items-center" key={step}>
+      <div className={cn('flex w-full flex-col items-center', wideStep ? 'min-h-full max-w-[46rem]' : 'max-w-[30rem]')}>
+        <div className={cn('flex min-h-[22rem] w-full flex-col items-center', wideStep && 'flex-1')} key={step}>
           {step === 'welcome' ? <WelcomeStep copy={copy} /> : null}
           {step === 'interface' ? <InterfaceStep copy={copy} /> : null}
           {step === 'language' ? <LanguageStep copy={copy} /> : null}
@@ -148,7 +163,9 @@ export function FirstRunFlow({
               themes={availableThemes}
             />
           ) : null}
-          {step === 'cards' ? <CardsStep copy={copy} ctx={ctx} onConfigureKey={onConfigureKey} /> : null}
+          {step === 'cards' ? (
+            <CardsStep copy={copy} ctx={ctx} lane={lane} onConfigureKey={onConfigureKey} onLaneChange={setLane} />
+          ) : null}
           {step === 'profile' ? (
             <ProfileStep answers={answers} copy={copy} onChange={patch => setAnswers(a => ({ ...a, ...patch }))} />
           ) : null}
@@ -174,6 +191,13 @@ export function FirstRunFlow({
         <StepFooter
           copy={copy}
           onBack={() => {
+            // 点开的那一栏 ⇒ 先回三张卡那屏（不是退到上一步）。
+            if (step === 'cards' && lane) {
+              setLane(null)
+
+              return
+            }
+
             const index = FIRST_RUN_STEPS.indexOf(step)
 
             if (index > 0) {
@@ -224,8 +248,8 @@ export function FirstRunFlow({
 }
 
 /** 一步一屏：图标 ＋ 标题 ＋ 一段话 ＋ 至多一个主按钮。 */
-function Screen({ children }: { children: React.ReactNode }) {
-  return <div className="fr-screen">{children}</div>
+function Screen({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn('fr-screen', className)}>{children}</div>
 }
 
 function Title({ children }: { children: React.ReactNode }) {
@@ -360,14 +384,18 @@ function AppearanceStep({
 function CardsStep({
   copy,
   ctx,
-  onConfigureKey
+  lane,
+  onConfigureKey,
+  onLaneChange
 }: {
   copy: Copy
   ctx: OnboardingContext
+  lane: ProviderLane | null
   onConfigureKey?: () => void
+  onLaneChange: (lane: ProviderLane | null) => void
 }) {
   const { t } = useI18n()
-  const [lane, setLane] = useState<'accounts' | 'keys' | 'desktop' | null>(null)
+  const setLane = onLaneChange
 
   const { data: oauth } = useQuery({
     queryKey: ['first-run-oauth-providers'],
@@ -402,22 +430,66 @@ function CardsStep({
   const quotaCards = useMemo(() => buildLoginCards(roster ?? []), [roster])
 
   const lanes = [
-    { count: (oauth ?? []).length, id: 'accounts' as const, label: t.settings.nav.providerAccounts },
-    { count: (keyProviders ?? []).length, id: 'keys' as const, label: t.settings.nav.providerApiKeys },
-    { count: (roster ?? []).length, id: 'desktop' as const, label: t.settings.nav.providerSubscriptions }
+    {
+      count: (oauth ?? []).length,
+      desc: copy.cardsDescAccounts,
+      id: 'accounts' as const,
+      label: t.settings.nav.providerAccounts,
+      // 左下角那排＝**设置页同一栏里那几家人的品牌矢量图标**（同一个品牌表、同一枚
+      // 首字母底染）：首装与设置页从此看到同一批标志，不是两套画法。
+      marks: (oauth ?? []).slice(0, 4).map(p => (
+        <ProviderBrand key={p.id} name={providerTitle(p)} slug={p.id} />
+      ))
+    },
+    {
+      count: (keyProviders ?? []).length,
+      desc: copy.cardsDescKeys,
+      id: 'keys' as const,
+      label: t.settings.nav.providerApiKeys,
+      marks: (keyProviders ?? []).slice(0, 4).map(p => (
+        <ProviderBrand envKey={p.key_env} key={p.slug} name={p.name} slug={p.slug} />
+      ))
+    },
+    {
+      count: (roster ?? []).length,
+      desc: copy.cardsDescSubscriptions,
+      id: 'desktop' as const,
+      label: t.settings.nav.providerSubscriptions,
+      marks: quotaCards.slice(0, 4).map(card => (
+        <QuotaAppIcon id={card.id} key={card.id} name={card.name} />
+      ))
+    }
   ]
 
-  // 第一屏：左中右三张大卡片（主人 11-19 07:5x）。
+  // 第一屏：左中右三张大卡片（主人 11-19 08:4x：「卡片高度加一点，底部应该靠近下面
+  // 两个按钮……下面左下角有设置里里面对应的矢量图标……卡片有主题色的渐变效果，
+  // 符合主界面底部的玻璃渐变磨砂气质」）。
   if (!lane) {
     return (
-      <Screen>
-        <Title>{copy.cardsTitle}</Title>
-        <Desc>{copy.cardsDesc}</Desc>
+      <Screen className="fr-cards">
+        <div className="fr-cards-head">
+          <Title>{copy.cardsTitle}</Title>
+          <Desc>{copy.cardsDesc}</Desc>
+        </div>
         <div className="fr-lanes">
           {lanes.map(l => (
             <button className="fr-lane" key={l.id} onClick={() => setLane(l.id)} type="button">
-              <span className="fr-lane-name">{l.label}</span>
-              <span className="fr-lane-count">{l.count}</span>
+              <span className="fr-lane-body">
+                <span className="fr-lane-top">
+                  <span className="fr-lane-name">{l.label}</span>
+                  <span className="fr-lane-count">{copy.cardsCount.replace('{n}', String(l.count))}</span>
+                </span>
+                <span className="fr-lane-desc">{l.desc}</span>
+                <span className="fr-lane-foot">
+                  <span className="fr-lane-marks">
+                    {l.marks}
+                    {l.count > l.marks.length ? (
+                      <span className="fr-lane-more">+{l.count - l.marks.length}</span>
+                    ) : null}
+                  </span>
+                  <ChevronRight className="fr-lane-go" />
+                </span>
+              </span>
             </button>
           ))}
         </div>
@@ -429,25 +501,28 @@ function CardsStep({
   const current = lanes.find(l => l.id === lane)
 
   return (
-    <Screen>
+    <Screen className="fr-lane-screen">
       <Title>{current?.label}</Title>
       <div className="fr-list-scroll">
         {lane === 'accounts'
           ? (oauth ?? []).map(p => (
               <ConfigCard
-                configureLabel={copy.configureLabel.replace('{name}', p.name)}
+                avatar={<ProviderBrand name={providerTitle(p)} slug={p.id} />}
+                configureLabel={copy.configureLabel.replace('{name}', providerTitle(p))}
+                description={t.onboarding.flowSubtitles[p.flow]}
                 key={p.id}
                 mode="configure"
-                monogram={p.name.trim().slice(0, 1).toUpperCase()}
-                name={p.name}
+                monogram={providerTitle(p).trim().slice(0, 1).toUpperCase()}
+                name={providerTitle(p)}
                 onConfigure={() => void startProviderOAuth(p, ctx)}
-                toggleLabel={copy.toggleLabel.replace('{name}', p.name)}
+                toggleLabel={copy.toggleLabel.replace('{name}', providerTitle(p))}
               />
             ))
           : null}
         {lane === 'keys'
           ? (keyProviders ?? []).map(p => (
               <ConfigCard
+                avatar={<ProviderBrand envKey={p.key_env} name={p.name} slug={p.slug} />}
                 configureLabel={copy.configureLabel.replace('{name}', p.name)}
                 key={p.slug}
                 mode="configure"
@@ -466,6 +541,7 @@ function CardsStep({
               <ConfigCard
                 avatar={<QuotaAppIcon id={card.id} name={card.name} />}
                 configureLabel={copy.configureLabel.replace('{name}', card.name)}
+                description={cardDetail(card)}
                 key={card.id}
                 mode={isConfigured(card.state) ? 'toggle' : 'configure'}
                 monogram={card.name.trim().slice(0, 1).toUpperCase()}
@@ -682,11 +758,26 @@ const FIRST_RUN_CSS = `
 .fr-themes { display: flex; flex-wrap: wrap; gap: 0.375rem; }
 .fr-theme { border-radius: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); padding: 0.375rem 0.625rem; font-size: 0.75rem; color: var(--ui-text-primary); }
 .fr-theme[aria-pressed='true'] { border-color: var(--ui-accent); }
-.fr-lanes { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
-.fr-lane { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; border-radius: 0.75rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); padding: 1rem; text-align: left; }
-.fr-lane:hover { background: var(--ui-bg-tertiary); }
-.fr-lane-name { font-size: 0.875rem; font-weight: 500; color: var(--ui-text-primary); }
-.fr-lane-count { font-size: 0.75rem; color: var(--ui-text-tertiary); }
+/* 三张卡那一屏：标题在上、卡贴着下面那两颗按钮（主人 11-19 08:4x）。 */
+.fr-cards { flex: 1; }
+.fr-cards-head { display: flex; width: 100%; flex: 1; flex-direction: column; justify-content: center; }
+.fr-lanes { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+/* 玻璃磨砂的大卡：半透底 ＋ 模糊 ＋ 主题色渐变 ＋ 左下角那团柔光。 */
+.fr-lane { position: relative; display: flex; min-height: 11.5rem; flex-direction: column; overflow: hidden; border-radius: 1rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 72%, transparent); background: color-mix(in srgb, var(--dt-card) 58%, transparent); backdrop-filter: blur(0.75rem) saturate(1.12); -webkit-backdrop-filter: blur(0.75rem) saturate(1.12); text-align: left; color: var(--ui-text-primary); transition: transform 0.18s ease, border-color 0.18s ease; }
+.fr-lane:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--ui-accent) 45%, transparent); }
+.fr-lane::before { content: ''; position: absolute; inset: 0; background: linear-gradient(152deg, color-mix(in srgb, var(--ui-accent) 26%, transparent), transparent 58%); pointer-events: none; }
+.fr-lane::after { content: ''; position: absolute; left: -25%; bottom: -60%; width: 95%; height: 95%; border-radius: 9999px; background: radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 30%, transparent), transparent 70%); filter: blur(14px); pointer-events: none; }
+.fr-lane-body { position: relative; z-index: 1; display: flex; height: 100%; flex-direction: column; padding: 0.875rem; }
+.fr-lane-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.fr-lane-name { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; color: var(--ui-text-primary); }
+.fr-lane-count { font-size: 0.6875rem; color: var(--ui-text-tertiary); }
+.fr-lane-desc { margin-top: 0.3125rem; font-size: 0.75rem; line-height: 1.5; color: var(--ui-text-secondary); }
+.fr-lane-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: auto; padding-top: 0.75rem; }
+.fr-lane-marks { display: flex; align-items: center; gap: 0.25rem; }
+.fr-lane-more { margin-left: 0.125rem; font-size: 0.6875rem; color: var(--ui-text-tertiary); }
+.fr-lane-go { width: 1rem; height: 1rem; color: var(--ui-text-tertiary); transition: transform 0.18s ease, color 0.18s ease; }
+.fr-lane:hover .fr-lane-go { transform: translateX(2px); color: var(--ui-accent); }
+.fr-lane-screen .fr-list-scroll { flex: 1; max-height: none; }
 .fr-list-scroll { display: flex; width: 100%; max-height: 58vh; flex-direction: column; gap: 0.5rem; overflow-y: auto; padding-right: 0.25rem; }
 .fr-label { display: block; margin-bottom: 0.375rem; font-size: 0.75rem; color: var(--ui-text-secondary); }
 .fr-dots { display: flex; gap: 0.375rem; }
