@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
 import { openMonitorFace } from '@/store/layout'
 
 /**
@@ -11,6 +14,15 @@ import { openMonitorFace } from '@/store/layout'
  * 三段东西：共用纪律（GLOBAL）／你的画像（USER 精简版）／这个 Agent 自己的记忆。
  * 「忘掉」直接调 `POST /api/memory/forget`，后端删掉那一条并写一行回执；
  * 这一页不做脑里正典的浏览——那是知识库那一屏的事。
+ *
+ * **一份一行、条目进抽屉**（用户 11-19 21:2x：「这些记忆具体内容应该放到抽屉里面。
+ * 这样展开太丑了」）：原来三份各自带边框、各自把条目全摊在行上，长的能占两屏，
+ * 把下面十四个开关一路顶下去。现在行上只剩名字与读数（已用/上限 · 几条），
+ * 点开右边抽屉才逐条读、逐条忘。
+ *
+ * **四个名字由前端给**（用户同一句里的「有些语言没有产品化」）：`memory_api.py`
+ * 那四句标签是写死的中文，切到英/日就只剩它们还是中文。这里按 `key` 译，
+ * 认不出的 key 才回落后端那个 `label`。
  *
  * 四语文案放在这里而不是加进 `i18n/{types,en,zh,ja,zh-hant}.ts`：那五档此刻由别线在派持有
  * （认领门按整档路径挡），而"新屏要四语齐全"这条不能因此不做。等那五档空出来整体搬进中心表。
@@ -96,6 +108,15 @@ interface LedgerCopy {
   streakLabel: (streak: number, threshold: number) => string
   confirmForget: string
   needsRestart: string
+  /**
+   * 三份记忆各自叫什么。**这一格取代后端给的 `label`**（`memory_api.py` 里那四句
+   * 是写死的中文）：换成英/日之后原来只有这四个名字还是中文，那一屏就等于没翻。
+   * 认不出的 key（后端将来多一份）才回落到它给的 `label`，不让名字整格空着。
+   */
+  scopeLabels: Record<string, string>
+  /** 折叠行右边那一段读数：已用/上限 ＋ 几条。 */
+  scopeMeta: (chars: number, limit: number, count: number) => string
+  openAria: (label: string) => string
   // ——— 写入边界（WP-MIND-SILENCE-VISIBLE）———
   boundaryTitle: string
   boundaryRule: (n: number, k: number, days: number) => string
@@ -120,13 +141,21 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     streakLabel: (streak, threshold) => `${streak}/${threshold} nods (report)`,
     confirmForget: 'Confirm forget',
     needsRestart: 'Backend is older than this page — restart Plobi to load it.',
-    unbound: 'Secretary — no agent bound',
+    unbound: 'Conductor — no agent bound',
     openPending: 'Review pending',
     empty: 'Nothing remembered yet',
     forget: 'Forget',
     forgetHint: 'Delete this entry and leave a receipt',
     failed: 'Not deleted',
     unavailable: 'Memory is not readable right now',
+    scopeLabels: {
+      global: 'Shared rules',
+      user: 'About you',
+      memory: "This agent's memory",
+      status: "This agent's state"
+    },
+    scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} ${count === 1 ? 'entry' : 'entries'}`,
+    openAria: label => `Open ${label}`,
     boundaryTitle: 'Write boundary',
     boundaryRule: (n, k, days) => `${n} in a row earns it · ${k} rejections in ${days} days stops everything`,
     breakerAlert: (count, k, days) =>
@@ -149,17 +178,24 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}（汇报）`,
     confirmForget: '确认忘掉',
     needsRestart: '后端还是旧进程，重启 Plobi 后这一页就能读。',
-    unbound: '总秘书（没有绑定到某个 Agent）',
+    unbound: '指挥（没有绑定到某个 Agent）',
     openPending: '看等你点头的',
     empty: '还没记住什么',
     forget: '忘掉',
     forgetHint: '删掉这一条，并留一行回执',
     failed: '没删成',
     unavailable: '现在读不到记忆',
+    scopeLabels: {
+      global: '共用纪律',
+      user: '你的画像',
+      memory: '这个 Agent 的记忆',
+      status: '这个 Agent 的状态'
+    },
+    scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 条`,
+    openAria: label => `展开${label}`,
     boundaryTitle: '写入边界',
     boundaryRule: (n, k, days) => `连采 ${n} 次才够格 · ${days} 天内驳回 ${k} 次就全停`,
-    breakerAlert: (count, k, days) =>
-      `全部暂停：${days} 天内驳回 ${count}/${k} 次 ⇒ 全交回人，等你翻过一遍再说`,
+    breakerAlert: (count, k, days) => `全部暂停：${days} 天内驳回 ${count}/${k} 次 ⇒ 全交回人，等你翻过一遍再说`,
     writeStreak: (streak, n) => `连采 ${streak}/${n}（写入）`,
     rejectedTimes: n => `驳回 ${n}`,
     granted: '已授权',
@@ -178,17 +214,24 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}（報告）`,
     confirmForget: '忘れる（確認）',
     needsRestart: 'バックエンドが古いままです。Plobi を再起動してください。',
-    unbound: '秘書（エージェント未割当）',
+    unbound: '指揮者（エージェント未割当）',
     openPending: '承認待ちを見る',
     empty: 'まだ何も覚えていません',
     forget: '忘れる',
     forgetHint: 'この項目を削除し、記録を残します',
     failed: '削除できませんでした',
     unavailable: '今は記憶を読めません',
+    scopeLabels: {
+      global: '共通ルール',
+      user: 'あなたのプロフィール',
+      memory: 'この Agent の記憶',
+      status: 'この Agent の状態'
+    },
+    scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 件`,
+    openAria: label => `${label} を開く`,
     boundaryTitle: '書き込みの境界',
     boundaryRule: (n, k, days) => `連続 ${n} 回で資格 · ${days} 日以内に ${k} 回却下で全部停止`,
-    breakerAlert: (count, k, days) =>
-      `全停止中：${days} 日以内に ${count}/${k} 回却下 ⇒ すべて確認に戻りました`,
+    breakerAlert: (count, k, days) => `全停止中：${days} 日以内に ${count}/${k} 回却下 ⇒ すべて確認に戻りました`,
     writeStreak: (streak, n) => `連続 ${streak}/${n}（書き込み）`,
     rejectedTimes: n => `却下 ${n}`,
     granted: '許可済み',
@@ -207,17 +250,24 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}（匯報）`,
     confirmForget: '確認忘掉',
     needsRestart: '後端還是舊進程，重啟 Plobi 後這一頁就能讀。',
-    unbound: '總秘書（沒有綁定到某個 Agent）',
+    unbound: '指揮（不屬於某個 Agent）',
     openPending: '看等你點頭的',
     empty: '還沒記住什麼',
     forget: '忘掉',
     forgetHint: '刪掉這一條，並留一行回執',
     failed: '沒刪成',
     unavailable: '現在讀不到記憶',
+    scopeLabels: {
+      global: '共用紀律',
+      user: '你的畫像',
+      memory: '這個 Agent 的記憶',
+      status: '這個 Agent 的狀態'
+    },
+    scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 條`,
+    openAria: label => `展開${label}`,
     boundaryTitle: '寫入邊界',
     boundaryRule: (n, k, days) => `連採 ${n} 次才夠格 · ${days} 天內駁回 ${k} 次就全停`,
-    breakerAlert: (count, k, days) =>
-      `全部暫停：${days} 天內駁回 ${count}/${k} 次 ⇒ 全交回人，等你翻過一遍再說`,
+    breakerAlert: (count, k, days) => `全部暫停：${days} 天內駁回 ${count}/${k} 次 ⇒ 全交回人，等你翻過一遍再說`,
     writeStreak: (streak, n) => `連採 ${streak}/${n}（寫入）`,
     rejectedTimes: n => `駁回 ${n}`,
     granted: '已授權',
@@ -257,8 +307,11 @@ export function MemoryLedgers() {
   const [data, setData] = useState<LedgersPayload | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 抽屉里那一份（null = 关着）。条目不再铺在行上：三份加起来能有几十条，
+  // 全摊开就把下面十四个开关一路顶到屏外，读起来也没有「这是同一份里的几条」这个层次。
+  const [openScope, setOpenScope] = useState<string | null>(null)
   // 两下才删：真删不可逆，误点一次不该丢一条。第一下只把这一颗变成「确认忘掉」。
-  const [armed, setArmed] = useState<string | null>(null)
+  const [armed, setArmed] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -280,14 +333,16 @@ export function MemoryLedgers() {
     setBusy(`${scope}:${index}`)
 
     try {
-      const payload = await window.plobiDesktop.api<LedgersPayload & { ok?: boolean; error?: string }>({
+      const payload = await window.plobiDesktop.api<LedgersPayload & { ok?: boolean }>({
         body: { index, scope },
         method: 'POST',
         path: '/api/memory/forget'
       })
 
       setData({ agent: payload.agent, scopes: payload.scopes })
-      setError(payload.ok === false ? payload.error || m.failed : null)
+      // 后端那几个失败串是中文（`memory_api.py` 的 `_forget`）——不往屏幕上搬，
+      // 否则一切到英/日就漏出中文。出了什么事以「没删成」为准，明细在回执里。
+      setError(payload.ok === false ? m.failed : null)
     } catch {
       setError(m.failed)
     } finally {
@@ -295,70 +350,127 @@ export function MemoryLedgers() {
     }
   }
 
+  const scopes = data?.scopes ?? []
+  const active = scopes.find(scope => scope.key === openScope) ?? null
+  const labelOf = (scope: MemoryScope) => m.scopeLabels[scope.key] ?? scope.label
+
+  const close = () => {
+    setOpenScope(null)
+    setArmed(null)
+  }
+
   return (
-    <div className="mt-3 flex flex-col gap-4" data-testid="memory-ledgers">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-muted-foreground text-xs">{data ? (data.agent && data.agent !== 'l1' ? m.agentLine(data.agent) : m.unbound) : null}</div>
-        <Button onClick={() => openMonitorFace('mind-pending')} size="sm" variant="ghost">
-          {m.openPending}
-        </Button>
+    <>
+      <div className="mt-3 flex flex-col gap-1" data-testid="memory-ledgers">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-muted-foreground text-xs">
+            {data ? (data.agent && data.agent !== 'l1' ? m.agentLine(data.agent) : m.unbound) : null}
+          </div>
+          <Button onClick={() => openMonitorFace('mind-pending')} size="sm" variant="ghost">
+            {m.openPending}
+          </Button>
+        </div>
+
+        {error ? (
+          <div className="text-destructive text-xs" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        {/* 一份一行：名字 + 读数 + 一个尖角。条目本身在抽屉里（点开那一行才看）。 */}
+        {scopes.map((scope, index) => (
+          <div
+            className={cn('border-border/60', index > 0 && 'border-t')}
+            data-testid={`memory-scope-${scope.key}`}
+            key={scope.key}
+          >
+            <button
+              aria-label={m.openAria(labelOf(scope))}
+              className="row-hover flex w-full items-center gap-3 rounded-md px-1 py-2 text-left"
+              onClick={() => {
+                setArmed(null)
+                setOpenScope(scope.key)
+              }}
+              type="button"
+            >
+              <span className="min-w-0 flex-1 truncate text-[0.8rem] text-foreground">{labelOf(scope)}</span>
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                {m.scopeMeta(scope.chars, scope.limit, scope.entries.length)}
+              </span>
+              <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.8125rem" />
+            </button>
+          </div>
+        ))}
       </div>
 
-      {error ? (
-        <div className="text-destructive text-xs" role="alert">
-          {error}
-        </div>
-      ) : null}
+      {/* 抽屉：一份记忆的全部条目。忘掉仍是两下——第一下只上膛，第二下才真删。 */}
+      <Sheet
+        onOpenChange={next => {
+          if (!next) {
+            close()
+          }
+        }}
+        open={Boolean(active)}
+      >
+        <SheetContent className="sm:max-w-md" side="right">
+          {active ? (
+            <>
+              <SheetHeader>
+                <SheetTitle>{labelOf(active)}</SheetTitle>
+                <SheetDescription>
+                  <span className="tabular-nums">{m.scopeMeta(active.chars, active.limit, active.entries.length)}</span>
+                  {active.key === 'user' ? null : (
+                    <>
+                      {' · '}
+                      <span title={m.forgetHint}>{m.streakLabel(active.streak ?? 0, active.threshold ?? 8)}</span>
+                    </>
+                  )}
+                </SheetDescription>
+              </SheetHeader>
 
-      {(data?.scopes ?? []).map(scope => (
-        <section className="border-border rounded-lg border p-3" key={scope.key}>
-          <header className="flex items-baseline justify-between gap-3">
-            <h4 className="text-sm font-medium">{scope.label}</h4>
-            <span className="text-muted-foreground flex items-center gap-2 text-xs tabular-nums">
-              {scope.key === 'user' ? null : (
-                <span title={m.forgetHint}>{m.streakLabel(scope.streak ?? 0, scope.threshold ?? 8)}</span>
-              )}
-              <span>
-                {scope.chars}/{scope.limit}
-              </span>
-            </span>
-          </header>
+              <div className="min-h-0 flex-1 overflow-y-auto px-3" data-testid="memory-drawer">
+                {error ? (
+                  <div className="text-destructive mb-2 text-xs" role="alert">
+                    {error}
+                  </div>
+                ) : null}
 
-          {scope.entries.length === 0 ? (
-            <p className="text-muted-foreground mt-2 text-xs">{m.empty}</p>
-          ) : (
-            <ul className="mt-2 flex flex-col gap-2">
-              {scope.entries.map(entry => (
-                <li className="flex items-start justify-between gap-3 text-[0.8rem]" key={entry.index}>
-                  <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{entry.text}</span>
-                  <Button
-                    aria-label={m.forget}
-                    disabled={busy === `${scope.key}:${entry.index}`}
-                    onClick={() => {
-                      const key = `${scope.key}:${entry.index}`
+                {active.entries.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">{m.empty}</p>
+                ) : (
+                  <ul className="flex flex-col gap-3">
+                    {active.entries.map(entry => (
+                      <li className="flex items-start justify-between gap-3 text-[0.8rem]" key={entry.index}>
+                        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{entry.text}</span>
+                        <Button
+                          aria-label={m.forget}
+                          disabled={busy === `${active.key}:${entry.index}`}
+                          onClick={() => {
+                            if (armed !== entry.index) {
+                              setArmed(entry.index)
 
-                      if (armed !== key) {
-                        setArmed(key)
+                              return
+                            }
 
-                        return
-                      }
-
-                      setArmed(null)
-                      void forget(scope.key, entry.index)
-                    }}
-                    size="sm"
-                    title={m.forgetHint}
-                    variant="ghost"
-                  >
-                    {armed === `${scope.key}:${entry.index}` ? m.confirmForget : m.forget}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ))}
-    </div>
+                            setArmed(null)
+                            void forget(active.key, entry.index)
+                          }}
+                          size="sm"
+                          title={m.forgetHint}
+                          variant="ghost"
+                        >
+                          {armed === entry.index ? m.confirmForget : m.forget}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }
 

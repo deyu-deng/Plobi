@@ -1,36 +1,72 @@
 /**
- * 设置里那一页「记忆」：三份按条列出、忘掉两下才真删且带走回执。
+ * 设置里那一页「记忆」：一份一行、条目进抽屉、忘掉两下才真删且带走回执。
  * 另有一块「写入边界」（`WP-MIND-SILENCE-VISIBLE`），**不再嵌在这一页里**——
  * 它挂在 `memory.mind_write_auto_approve` 那一行下面，位置由 `mount.test.tsx`
  * 钉住；本档只测它自己画得对不对，不测它被塞在哪。
  *
  * 现核那两条链：
- * - `GET /api/memory/ledgers` → 逐条渲染 → 第一下只上膛 → 第二下
- *   `POST /api/memory/forget`，页面必须换成服务器回来的新快照（不是本地先删）。
+ * - `GET /api/memory/ledgers` → 三行读数（不铺条目）→ 点开那一行进抽屉 → 逐条渲染 →
+ *   第一下只上膛 → 第二下 `POST /api/memory/forget`，页面必须换成服务器回来的新快照
+ *   （不是本地先删）。
  * - `GET /api/memory/boundary` → 熔断／每类连采／已生效政策／最近 trace。
  *   两个「连采」不是一回事：上面那行是 L0 汇报信任（门槛 8），下面每类是
  *   L1 写入信任（门槛 5，由后端给），所以断言里必须能分辨这两个数。
+ *
+ * 用户 11-19 21:2x 的两句是本档的判据来源：条目摊在行上「太丑」⇒ 折叠行进抽屉；
+ * 「有些语言没有产品化」⇒ 四份记忆的名字由前端按 key 译，后端那个中文 `label`
+ * 在英/日里**一个字都不许上屏**（快照里故意给中文 label 来钉这一条）。
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MemoryBoundary, MemoryLedgers } from './ledgers'
 
+// 抽屉（`Sheet`）内部要读 `t.common.close`，locale 要能逐档换 ⇒ 用可变对象，
+// 不是每档重新 mock 一次模块。
+const i18nState = vi.hoisted(() => ({ locale: 'zh' }))
+
 // 这一档跑在 vitest 的 globals:false 下，testing-library 不会自己注册 afterEach
 // cleanup ⇒ 不手动清的话 `screen` 会跨档累加（新加的边界面板每个档都渲染一次，
 // 到第三档就有三个 `data-testid="memory-boundary"`）。
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  i18nState.locale = 'zh'
+})
 
 vi.mock('@/i18n', () => ({
-  useI18n: () => ({ locale: 'zh', t: {} })
+  useI18n: () => ({ locale: i18nState.locale, t: { common: { close: 'Close' } } })
 }))
+
+// 抽屉里那颗「看等你点头的」按钮会跳去写脑待批那一面，这档不验它。
+vi.mock('@/store/layout', () => ({ openMonitorFace: () => undefined }))
 
 const snapshot = {
   agent: 'l2-course-x',
   scopes: [
-    { chars: 6, entries: [{ index: 0, text: '共用甲' }, { index: 1, text: '共用乙' }], key: 'global', label: '共用纪律', limit: 2200, present: true, streak: 0, threshold: 8 },
+    {
+      chars: 6,
+      entries: [
+        { index: 0, text: '共用甲' },
+        { index: 1, text: '共用乙' }
+      ],
+      key: 'global',
+      label: '共用纪律',
+      limit: 2200,
+      present: true,
+      streak: 0,
+      threshold: 8
+    },
     { chars: 0, entries: [], key: 'user', label: '你的画像', limit: 1375, present: false, streak: 0, threshold: 8 },
-    { chars: 8, entries: [{ index: 0, text: '周三有实验' }], key: 'memory', label: '这个 Agent 自己的记忆', limit: 2200, present: true, streak: 3, threshold: 8 }
+    {
+      chars: 8,
+      entries: [{ index: 0, text: '周三有实验' }],
+      key: 'memory',
+      label: '这个 Agent 自己的记忆',
+      limit: 2200,
+      present: true,
+      streak: 3,
+      threshold: 8
+    }
   ]
 }
 
@@ -38,16 +74,48 @@ const boundary = {
   breaker: { count: 0, threshold: 3, tripped: false, window_days: 7 },
   canon: 'Mind/wiki/memory/preferences.md',
   categories: {
-    notes: { adopted: 2, category: 'notes', edited: 0, last_ts: 1, recent: [], rejected: 0, streak: 2, streak_source: 'consent_events' },
-    wiki: { adopted: 5, category: 'wiki', edited: 0, last_ts: 1, recent: [], rejected: 1, streak: 3, streak_source: 'consent_events' }
+    notes: {
+      adopted: 2,
+      category: 'notes',
+      edited: 0,
+      last_ts: 1,
+      recent: [],
+      rejected: 0,
+      streak: 2,
+      streak_source: 'consent_events'
+    },
+    wiki: {
+      adopted: 5,
+      category: 'wiki',
+      edited: 0,
+      last_ts: 1,
+      recent: [],
+      rejected: 1,
+      streak: 3,
+      streak_source: 'consent_events'
+    }
   },
   db: '/tmp/consent.db',
   policies: [
-    { category: 'wiki', evidence: ['cev_1'], key: 'promote:wiki', state: 'active', text: '类别 wiki 的写入：你连着点头 5 次，以后这类我不再问。' }
+    {
+      category: 'wiki',
+      evidence: ['cev_1'],
+      key: 'promote:wiki',
+      state: 'active',
+      text: '类别 wiki 的写入：你连着点头 5 次，以后这类我不再问。'
+    }
   ],
   thresholds: { k_reject: 3, n_adopt: 5, window_days: 7 },
   traces: [
-    { category: 'wiki', id: 'trc_1', reason: '够格静默（五条全过）', silent: true, target: 'Mind/wiki/daily/2026-11-17.md', trace: { policy_keys: ['promote:wiki'] }, ts: 1 }
+    {
+      category: 'wiki',
+      id: 'trc_1',
+      reason: '够格静默（五条全过）',
+      silent: true,
+      target: 'Mind/wiki/daily/2026-11-17.md',
+      trace: { policy_keys: ['promote:wiki'] },
+      ts: 1
+    }
   ]
 }
 
@@ -56,15 +124,20 @@ function installApi(overrides: { boundary?: unknown; boundaryFails?: boolean } =
     if (path === '/api/memory/ledgers') {
       return snapshot
     }
+
     if (path === '/api/memory/boundary') {
       if (overrides.boundaryFails) {
         throw new Error('404 Not Found')
       }
+
       return overrides.boundary ?? boundary
     }
+
     return { ...snapshot, ok: true, removed: '周三有实验', scopes: [{ ...snapshot.scopes[2], chars: 0, entries: [] }] }
   })
+
   ;(window as unknown as { plobiDesktop: { api: typeof api } }).plobiDesktop = { api }
+
   return api
 }
 
@@ -74,33 +147,67 @@ beforeEach(() => {
   installApi()
 })
 
+/** 点开某一份的抽屉（抽屉挂在 body 的 portal 上，用 `screen` 查）。 */
+async function openScope(key: string) {
+  const row = await screen.findByTestId(`memory-scope-${key}`)
+  fireEvent.click(within(row).getByRole('button'))
+
+  return screen.findByTestId('memory-drawer')
+}
+
 describe('MemoryLedgers', () => {
-  it('按条列出三份记忆，并显示已用/上限与信任账', async () => {
+  it('一份一行：行上只有名字与读数，条目一条都不铺在行上', async () => {
     render(<MemoryLedgers />)
 
-    expect(await screen.findByText('共用甲')).toBeTruthy()
-    expect(screen.getByText('共用乙')).toBeTruthy()
-    expect(screen.getByText('周三有实验')).toBeTruthy()
-    expect(screen.getByText('6/2200')).toBeTruthy()
-    // L0 那一个数必须自报口径，否则会被读成「记忆写入攒到几了」
+    // 四个名字由前端给（后端 label 只作兜底），读数带条数。
+    expect(await screen.findByText('共用纪律')).toBeTruthy()
+    expect(screen.getByText('你的画像')).toBeTruthy()
+    expect(screen.getByText('这个 Agent 的记忆')).toBeTruthy()
+    expect(screen.getByText('6/2200 · 2 条')).toBeTruthy()
+    expect(screen.getByText('0/1375 · 0 条')).toBeTruthy()
+
+    // 用户 11-19 的原话是「这样展开太丑了」：没点开之前，条目一个字都不在屏上。
+    expect(screen.queryByText('共用甲')).toBeNull()
+    expect(screen.queryByText('周三有实验')).toBeNull()
+    expect(screen.queryByTestId('memory-drawer')).toBeNull()
+  })
+
+  it('点开那一行才进抽屉：逐条列，L0 那个数在抽屉抬头自报口径', async () => {
+    render(<MemoryLedgers />)
+
+    const drawer = await openScope('memory')
+    expect(within(drawer).getByText('周三有实验')).toBeTruthy()
+    // L0 那一个数必须自报口径，否则会被读成「记忆写入攒到几了」。它在抽屉抬头
+    // （不在滚动区里），所以这里按整屏查。
     expect(screen.getByText('连采 3/8（汇报）')).toBeTruthy()
-    expect(screen.getAllByText('还没记住什么').length).toBe(1)
+
+    // 同一份里的条目只在这一份的抽屉里；别份的条目不在。
+    expect(within(drawer).queryByText('共用甲')).toBeNull()
+  })
+
+  it('空的那一份点开说的是「还没记住什么」，不留白', async () => {
+    render(<MemoryLedgers />)
+
+    const drawer = await openScope('user')
+    expect(within(drawer).getByText('还没记住什么')).toBeTruthy()
   })
 
   it('忘掉要两下：第一下只上膛，第二下才真删并用新快照替换', async () => {
-    // 档间不自动 cleanup：断言"不存在"必须 within 当前容器
-    const view = render(<MemoryLedgers />)
-    const box = within(view.container)
-    await box.findByText('周三有实验')
+    render(<MemoryLedgers />)
 
+    const drawer = await openScope('memory')
     const api = (window as unknown as { plobiDesktop: { api: ReturnType<typeof vi.fn> } }).plobiDesktop.api
-    fireEvent.click(box.getAllByText('忘掉')[2])
+
+    fireEvent.click(within(drawer).getByText('忘掉'))
     expect(api).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/api/memory/forget' }))
 
-    fireEvent.click(box.getByText('确认忘掉'))
+    fireEvent.click(within(drawer).getByText('确认忘掉'))
 
-    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST', path: '/api/memory/forget' })), { timeout: 3000 })
-    await waitFor(() => expect(box.queryByText('周三有实验')).toBeNull(), { timeout: 3000 })
+    await waitFor(
+      () => expect(api).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST', path: '/api/memory/forget' })),
+      { timeout: 3000 }
+    )
+    await waitFor(() => expect(screen.queryByText('周三有实验')).toBeNull(), { timeout: 3000 })
   })
 
   it('后端还是旧进程（404）时说的是「重启后可用」，不是笼统的读不到', async () => {
@@ -112,6 +219,35 @@ describe('MemoryLedgers', () => {
     render(<MemoryLedgers />)
 
     expect(await screen.findByText('后端还是旧进程，重启 Plobi 后这一页就能读。')).toBeTruthy()
+  })
+
+  it('切到英文/日文时四个名字跟着走，后端那四句中文 label 一个字都不上屏', async () => {
+    // L1 那份（agent 是 'l1'）才走到「没有绑定到某个 Agent」那一句。
+    ;(window as unknown as { plobiDesktop: { api: unknown } }).plobiDesktop = {
+      api: vi.fn(async ({ path }: { path: string }) =>
+        path === '/api/memory/ledgers' ? { ...snapshot, agent: 'l1' } : boundary
+      )
+    }
+
+    i18nState.locale = 'en'
+    const view = render(<MemoryLedgers />)
+
+    expect(await screen.findByText('Shared rules')).toBeTruthy()
+    expect(screen.getByText('About you')).toBeTruthy()
+    expect(screen.getByText("This agent's memory")).toBeTruthy()
+
+    // 后端 `memory_api.py` 写死的中文标签不许当兜底漏出来。
+    for (const leaked of ['共用纪律', '你的画像', '这个 Agent 自己的记忆']) {
+      expect(view.container.textContent).not.toContain(leaked)
+    }
+
+    // 这一行原先写的是「总秘书」——早就不叫这个名字了。
+    expect(view.container.textContent).toContain('Conductor')
+
+    i18nState.locale = 'ja'
+    const ja = render(<MemoryLedgers />)
+    expect(await screen.findByText('共通ルール')).toBeTruthy()
+    expect(ja.container.textContent).not.toContain('共用纪律')
   })
 })
 
