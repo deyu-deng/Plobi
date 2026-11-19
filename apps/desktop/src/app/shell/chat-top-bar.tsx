@@ -83,20 +83,41 @@ export function ChatTopBar({
   const entries = chatTopBarRailEntries({ edgeControls: edgeControls ?? {}, scope })
 
   return (
-    <div className="flex h-(--card-header-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]">
+    <>
+      {/*
+       * 这一行横跨**整卡**（对话区 ＋ 并排列那一列），不是对话区那一列的一条。
+       *
+       * 用户 11-19 22:50x：「**这几个图标还是没有放到卡片的最右边呀。**」
+       * —— 那三枚入口本来住在这一行里、用 `ml-auto` 贴**它自己那一列**的右缘；
+       * 并排列钉开时对话区被挤窄 ⇒ 三枚图标就停在并排列**左边**，离卡片最右边差了整整一列。
+       *
+       * ⇒ 这一行**脱离对话区那一列的流**，绝对定位在**卡片**上（包含块＝对话卡本体，
+       * `desktop-controller.tsx` 的 `chatCard` 是 `relative`，中间没有别的定位祖先）：
+       * 这一行跨满整卡 ⇒ 那三枚入口（`ml-auto`）落在**整卡**的右缘。
+       *
+       * 上一把刀（`WP-QODER-MONITOR-UI`）把**那道线**接过去了（并排列那一条空条
+       * `MonitorTopBarRow`）⇒ 顶栏看着横跨整卡；这一刀把**内容**也接过去。
+       */}
       <div
-        className={cn('flex h-full min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing')}
-        data-chat-topbar=""
-        title={name}
-        {...cardDragProps('chat')}
+        className="absolute inset-x-0 top-0 z-20 flex h-(--card-header-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]"
+        data-chat-topbar-row=""
       >
-        <span className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground">{name}</span>
+        <div
+          className={cn('flex h-full min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing')}
+          data-chat-topbar=""
+          title={name}
+          {...cardDragProps('chat')}
+        >
+          <span className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground">{name}</span>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center" data-chat-topbar-actions="">
+          {entries.map(entry => (
+            <Fragment key={entry.id}>{entry.render()}</Fragment>
+          ))}
+        </div>
       </div>
-      <div className="ml-auto flex shrink-0 items-center">
-        {entries.map(entry => (
-          <Fragment key={entry.id}>{entry.render()}</Fragment>
-        ))}
-      </div>
-    </div>
+      {/* 占位：这一行不在流里 ⇒ 下面那一块自己让出它的高度（原来这一行就在流里）。 */}
+      <div aria-hidden className="h-(--card-header-height) shrink-0" data-chat-topbar-spacer="" />
+    </>
   )
 }

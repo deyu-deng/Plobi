@@ -12,7 +12,7 @@ import {
   setChatCardWidth
 } from '@/store/layout'
 
-import { chatTopBarRailEntries } from './chat-top-bar'
+import { ChatTopBar, chatTopBarRailEntries } from './chat-top-bar'
 
 /**
  * 对话卡右上角那一列：**三枚入口是同一个组件、同一个行为**。
@@ -149,5 +149,52 @@ describe('对话卡右上角那一列', () => {
     fireEvent.click(screen.getByRole('button', { name: /档案|Dossier/ }))
 
     expect($monitorPeekOpen.get()).toBe(false)
+  })
+})
+
+/**
+ * 顶栏那一行**横跨整卡**（用户 11-19 22:50x：「**这几个图标还是没有放到卡片的最右边呀。**」）。
+ *
+ * 原来那一行住在**对话区那一列**里、按钮组靠 `ml-auto` 贴**本列**的右缘 ⇒
+ * 并排列钉开时那三枚入口停在并排列**左边**，离卡片最右边差了整整一列。
+ * ⇒ 这一行改成**卡级**的：绝对定位跨满整卡（包含块＝对话卡本体）。
+ */
+describe('顶栏那一行横跨整卡', () => {
+  function renderTopBar() {
+    return render(<ChatTopBar edgeControls={{}} scope={{ id: 'Aura', kind: 'agent' }} />)
+  }
+
+  it('那一行是**卡级**的：绝对定位跨满整卡（不在对话区那一列的流里）', () => {
+    const { container } = renderTopBar()
+    const row = container.querySelector('[data-chat-topbar-row]')
+
+    expect(row).toBeTruthy()
+    expect(row?.className).toContain('absolute')
+    expect(row?.className).toContain('inset-x-0')
+    expect(row?.className).toContain('z-20')
+  })
+
+  it('那一行不在流里 ⇒ 底下补一个同高的占位（下面那一块不被它压住）', () => {
+    const { container } = renderTopBar()
+    const spacer = container.querySelector('[data-chat-topbar-spacer]')
+
+    expect(spacer).toBeTruthy()
+    expect(spacer?.className).toContain('h-(--card-header-height)')
+  })
+
+  it('那三枚入口还在同一行里、还是贴那一行的右端（`ml-auto`）', () => {
+    const { container } = renderTopBar()
+    const row = container.querySelector('[data-chat-topbar-row]')
+    const actions = container.querySelector('[data-chat-topbar-actions]')
+
+    expect(row?.contains(actions as Node)).toBe(true)
+    expect(actions?.className).toContain('ml-auto')
+    expect(container.querySelectorAll('[data-top-bar-icon]').length).toBe(3)
+  })
+
+  it('浮层默认落点认的那一行还在（`data-chat-topbar`：名字那一块的拖把手）', () => {
+    const { container } = renderTopBar()
+
+    expect(container.querySelector('[data-chat-topbar]')).toBeTruthy()
   })
 })
