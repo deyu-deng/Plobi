@@ -70,6 +70,8 @@ vi.mock('@/i18n', () => ({
   })
 }))
 
+import { $dossierCollapsedSections } from '@/store/layout'
+
 import { DossierPanel } from './dossier-panel'
 
 function agent(overrides: Record<string, unknown> = {}) {
@@ -113,12 +115,12 @@ function days(items: Record<string, Record<string, unknown>[]> = {}) {
   }
 }
 
-function renderPanel() {
+function renderPanel(props: Partial<React.ComponentProps<typeof DossierPanel>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
   return render(
     <QueryClientProvider client={client}>
-      <DossierPanel agentId="Aura" />
+      <DossierPanel agentId="Aura" {...props} />
     </QueryClientProvider>
   )
 }
@@ -126,6 +128,8 @@ function renderPanel() {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  // 折叠态住在 store 里 ⇒ 每档之后复位，别串到下一档。
+  $dossierCollapsedSections.set({})
 })
 
 describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔记）', () => {
@@ -303,5 +307,97 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
 
     expect(await screen.findByText('清单读不出来')).toBeTruthy()
     expect(screen.queryByText('这份档案还没有按天列的任务。')).toBeNull()
+  })
+})
+
+/**
+ * 11-19 16:0x 那一刀：档案卡的壳与零件全部换成统一容器
+ * （`app/shell/monitor-panel.tsx`）。
+ *
+ * 这里钉的是**新规格**（Qoder 那把尺），不是旧类名：280px 列、28px 行、24px 方形
+ * 图标托、12px 字、零描边、hover 才出底色、**分区标题没有常驻折角**。
+ */
+describe('档案卡走统一容器（Qoder 那把尺）', () => {
+  it('外层是统一容器：固定列本体没有描边', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    const { container } = renderPanel()
+
+    await screen.findByText('阶段')
+
+    const panel = container.querySelector('[data-monitor-panel]') as HTMLElement
+
+    expect(panel).toBeTruthy()
+    expect(panel.getAttribute('data-monitor-mode')).toBe('column')
+    // 描边：Qoder 那边靠字色与留白分层，固定列本体一律不要描边。
+    expect(panel.className).not.toMatch(/(^|\s)border(-[trblxy])?(\s|$)/)
+  })
+
+  it('浮层形态走同一个容器（mode=float），浮层本体仍带 data-testid（拖动定位靠它找本体）', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    const { container } = renderPanel({ headerDragProps: {} })
+
+    await screen.findByText('阶段')
+
+    const panel = container.querySelector('[data-monitor-panel]') as HTMLElement
+
+    expect(panel.getAttribute('data-monitor-mode')).toBe('float')
+    // 拖动定位（floating-position.ts）按这枚 testid 找浮层本体 ⇒ 不能丢。
+    expect(container.querySelector('[data-testid="dossier-panel"]')).toBeTruthy()
+  })
+
+  it('分区标题没有常驻折角，折叠状态用一颗状态点表达', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+    $dossierCollapsedSections.set({ stages: true })
+
+    const { container } = renderPanel()
+
+    await screen.findByText('阶段')
+
+    const toggle = container.querySelector('[data-monitor-section-toggle]') as HTMLElement
+
+    expect(toggle).toBeTruthy()
+    // 标题行里不许有常驻的折角（svg）。
+    expect(toggle.querySelector('svg')).toBeNull()
+    // 折起的那一段：内容不渲染，右侧出一颗状态点。
+    expect(container.querySelector('[data-monitor-collapsed-dot]')).toBeTruthy()
+    expect(screen.queryByTestId('dossier-stage-bar')).toBeNull()
+  })
+
+  it('段内的条目是 28px 的行、零描边，图标在 24px 方形托里', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days({ '2026-11-08': [{ id: 'a', title: '写代码' }] }))
+
+    const { container } = renderPanel()
+
+    await screen.findByTestId('dossier-task-a')
+
+    const row = container.querySelector('[data-monitor-row]') as HTMLElement
+
+    expect(row.className).toContain('min-h-7')
+    expect(row.className).toContain('border-0')
+    expect(row.className).toContain('hover:bg-(--ui-row-hover-background)')
+
+    const icon = container.querySelector('[data-monitor-icon]') as HTMLElement
+
+    expect(icon).toBeTruthy()
+    expect(icon.className).toContain('size-6')
+  })
+
+  it('空的那块是一行破折号（不写「暂无…」这类安慰话）', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days({ '2026-11-08': [] }))
+
+    const { container } = renderPanel()
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-monitor-empty]')).toBeTruthy()
+    })
+
+    expect(screen.getByText('—')).toBeTruthy()
   })
 })

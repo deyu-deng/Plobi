@@ -1,18 +1,23 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
+  MONITOR_MAX_HEIGHT,
+  MonitorEmpty,
+  MonitorHeaderTitle,
+  MonitorIcon,
+  MonitorPanel,
+  MonitorRow,
+  MonitorSection
+} from '@/app/shell/monitor-panel'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
-import { Check, MessageSquareText, X } from '@/lib/icons'
+import { Check, Clipboard, FileText, MessageSquareText, X } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 import {
   $mindPending,
+  $mindPendingCount,
   $mindPendingOpen,
   actOnMindPending,
   commentOnMindPending,
@@ -25,6 +30,18 @@ import {
  *
  * 屏幕只写「这是什么」：一条＝要写进脑的哪一格；机制（TTL、信任账、哈希绑根）留在这里之外。
  * 过期那张仍然列出来并标「已过期」——它批不动，但藏着不让人知道更糟。
+ *
+ * **壳与零件已换成统一件**（用户 11-19 16:0x：「把对话卡右上角的东西的容器都统一用一个组件。
+ * 就是我说的 Qoder 任务监控那样的」）：这一族（档案／待放行／写脑待批）统一走
+ * `app/shell/monitor-panel.tsx`——Qoder 那把尺：280px 列、28px 行、24px 方形图标托、12px 字、
+ * 三级字色、6/16px 间距、**零描边**、hover 才出底色。
+ *
+ * 这一刀**只换外观**：计数、装载、点头／驳回／评论、错误提示、空态全部照旧，一行行为没改。
+ *
+ * 为什么外壳还挂着模态框（而不是贴头浮层）：真做成 Qoder 那种浮层要动挂载点
+ * （`desktop-controller.tsx`）与入口那一列（`chat-top-bar.tsx`），那两档是别的刀在改，
+ * 碰了会撞线 ⇒ 这一刀先把**内部零件**与**外框那把尺**（280px、rounded-lg、一道淡边框、shadow-lg）
+ * 统一，模态/浮层形态待那一刀拍板。
  */
 export function MindPendingOverlay() {
   const { t } = useI18n()
@@ -35,6 +52,8 @@ export function MindPendingOverlay() {
   const noteWord = t.workbench.office.note
   const open = useStore($mindPendingOpen)
   const state = useStore($mindPending)
+  // 分区标题那个数＝角标那个数（只数还批得动的），两处口径一致。
+  const actionable = useStore($mindPendingCount)
   const [busy, setBusy] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [commentFor, setCommentFor] = useState<string | null>(null)
@@ -94,140 +113,171 @@ export function MindPendingOverlay() {
 
   return (
     <Dialog onOpenChange={setMindPendingOpen} open={open}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{m.title}</DialogTitle>
-          <DialogDescription>{state.gate ? m.desc : m.gateOff}</DialogDescription>
-        </DialogHeader>
-
-        {failed ? (
-          <div className="text-destructive text-sm" role="alert">
-            {failed}
-          </div>
-        ) : null}
-
-        {state.items.length === 0 ? (
-          <div className="text-muted-foreground py-6 text-center text-sm">{m.empty}</div>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {state.items.map(item => (
-              <li className="rounded-md border border-border p-3" key={item.id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    {item.paths.length > 0 ? (
-                      <div className="truncate text-sm" title={item.paths.join('\n')}>
-                        {item.paths[0]}
-                        {item.paths.length > 1 ? ` +${item.paths.length - 1}` : ''}
-                        {item.agent ? ` · ${item.agent}` : ''}
-                      </div>
-                    ) : (
-                      <div className="text-sm">{item.summary || item.id}</div>
-                    )}
-                    {item.expired ? (
-                      <div className="text-muted-foreground text-xs">{m.expired}</div>
-                    ) : null}
-                  </div>
-                  {/* 三枚矢量图标，对齐票面那组：接纳 / 驳回 / 评论。
-                      四语键被在派格认领，本刀不碰 i18n；label 复用现有键、图标自身表意。
-                      用户 11-16 21:4x 拍定（规格 §8 第 1 条）：三平行，但**点评论弹一个小输入框**
-                      ——不是占掉一整行。「评论＋顺手点头」是最自然的动作，所以评论写下的
-                      那一刻就落盘（`pending_feedback`），不靠这个框存在。 */}
-                  <div className="relative flex shrink-0 gap-1">
-                    <Button
-                      aria-label={m.approve}
-                      disabled={Boolean(busy) || item.expired}
-                      onClick={() => void act(item.id, 'approve')}
-                      size="sm"
-                      title={m.approve}
-                      variant="ghost"
-                    >
-                      <Check aria-hidden className="size-4" />
-                    </Button>
-                    <Button
-                      aria-label={m.reject}
-                      disabled={Boolean(busy)}
-                      onClick={() => void act(item.id, 'reject')}
-                      size="sm"
-                      title={m.reject}
-                      variant="ghost"
-                    >
-                      <X aria-hidden className="size-4" />
-                    </Button>
-                    <Button
-                      aria-label={noteWord}
-                      disabled={Boolean(busy)}
-                      onClick={() => {
-                        setCommentFor(commentFor === item.id ? null : item.id)
-                        setCommentText('')
-                      }}
-                      size="sm"
-                      title={noteWord}
-                      variant="ghost"
-                    >
-                      <MessageSquareText aria-hidden className="size-4" />
-                    </Button>
-                    {commentFor === item.id ? (
-                      <div
-                        className="border-border bg-popover absolute top-full right-0 z-20 mt-1 w-64 rounded-md border p-2 shadow-md"
-                        data-testid="mind-pending-comment-box"
-                      >
-                        <input
-                          autoFocus
-                          className="border-border bg-background w-full rounded-md border px-2 py-1 text-sm"
-                          onChange={e => setCommentText(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && commentText.trim() && !busy) {
-                              void comment(item.id)
-                            }
-                          }}
-                          placeholder={t.workbench.office.notePlaceholder}
-                          value={commentText}
-                        />
-                        <div className="mt-1 flex items-center justify-end gap-1">
-                          <Button
-                            onClick={() => {
-                              setCommentFor(null)
-                              setCommentText('')
-                            }}
-                            size="sm"
-                            variant="ghost"
-                          >
-                            {t.common.cancel}
-                          </Button>
-                          <Button
-                            disabled={Boolean(busy) || !commentText.trim()}
-                            onClick={() => void comment(item.id)}
-                            size="sm"
-                          >
-                            {t.common.save}
-                          </Button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                {/* 要点头就得看见要写什么：默认折叠，点开看具体正文。 */}
-                {item.changes && item.changes.length > 0 ? (
-                  <details className="mt-2 text-sm">
-                    <summary className="cursor-pointer text-muted-foreground text-xs">
-                      {item.summary || m.desc}
-                    </summary>
-                    {item.changes.map((change, idx) => (
-                      <div className="mt-2 border-border border-l-2 pl-2" key={`${item.id}:${idx}`}>
-                        <div className="text-muted-foreground text-xs">{change.path} · {change.mode}</div>
-                        <pre className="whitespace-pre-wrap font-sans text-xs">{change.content}</pre>
-                      </div>
-                    ))}
-                  </details>
-                ) : item.summary ? (
-                  <div className="text-muted-foreground mt-1 truncate text-xs" title={item.summary}>
-                    {item.summary}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+      {/* 外框按浮层那把尺描齐（280px ＋ rounded-lg ＋ 一道淡边框 ＋ shadow-lg），
+          里面那块交给 `MonitorPanel`。读屏要的标题藏在里头（Radix 少了它会出声）。 */}
+      <DialogContent
+        className={cn(
+          'max-w-[280px] gap-0 p-0',
+          'rounded-lg border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) shadow-lg'
         )}
+      >
+        <DialogTitle className="sr-only">{m.title}</DialogTitle>
+        <MonitorPanel
+          // 模态里是**内容定高**（不是撑满一列）⇒ 覆盖掉固定列那把尺的 `h-full`。
+          className="h-auto max-w-full"
+          header={
+            <span className="flex min-w-0 flex-1 items-center gap-2 pr-6">
+              <MonitorIcon>
+                <Clipboard className="size-3" />
+              </MonitorIcon>
+              <MonitorHeaderTitle>{m.title}</MonitorHeaderTitle>
+              <span className="ml-auto min-w-0 truncate text-xs text-(--ui-text-quaternary)">
+                {state.gate ? m.desc : m.gateOff}
+              </span>
+            </span>
+          }
+          mode="column"
+          style={{ maxHeight: MONITOR_MAX_HEIGHT }}
+        >
+          {failed ? (
+            <div className="px-1 text-xs text-destructive" role="alert">
+              {failed}
+            </div>
+          ) : null}
+
+          {state.items.length === 0 ? (
+            // 空的那块就空着：一行破折号，不写「没有要点头的」这类安慰话。
+            <MonitorEmpty />
+          ) : (
+            <MonitorSection count={actionable} title={m.label}>
+              {state.items.map(item => (
+                <div className="flex min-w-0 flex-col gap-1" key={item.id}>
+                  <MonitorRow
+                    actions={
+                      <div className="relative flex shrink-0 gap-0.5">
+                        <Button
+                          aria-label={m.approve}
+                          className="text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)"
+                          disabled={Boolean(busy) || item.expired}
+                          onClick={() => void act(item.id, 'approve')}
+                          size="icon-xs"
+                          title={m.approve}
+                          variant="ghost"
+                        >
+                          <Check aria-hidden className="size-3" />
+                        </Button>
+                        <Button
+                          aria-label={m.reject}
+                          className="text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)"
+                          disabled={Boolean(busy)}
+                          onClick={() => void act(item.id, 'reject')}
+                          size="icon-xs"
+                          title={m.reject}
+                          variant="ghost"
+                        >
+                          <X aria-hidden className="size-3" />
+                        </Button>
+                        <Button
+                          aria-label={noteWord}
+                          className="text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)"
+                          disabled={Boolean(busy)}
+                          onClick={() => {
+                            setCommentFor(commentFor === item.id ? null : item.id)
+                            setCommentText('')
+                          }}
+                          size="icon-xs"
+                          title={noteWord}
+                          variant="ghost"
+                        >
+                          <MessageSquareText aria-hidden className="size-3" />
+                        </Button>
+                        {commentFor === item.id ? (
+                          <div
+                            className="border-border bg-popover absolute top-full right-0 z-20 mt-1 w-64 rounded-md border p-2 shadow-md"
+                            data-testid="mind-pending-comment-box"
+                          >
+                            <input
+                              autoFocus
+                              className="border-border bg-background w-full rounded-md border px-2 py-1 text-sm"
+                              onChange={e => setCommentText(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && commentText.trim() && !busy) {
+                                  void comment(item.id)
+                                }
+                              }}
+                              placeholder={t.workbench.office.notePlaceholder}
+                              value={commentText}
+                            />
+                            <div className="mt-1 flex items-center justify-end gap-1">
+                              <Button
+                                onClick={() => {
+                                  setCommentFor(null)
+                                  setCommentText('')
+                                }}
+                                size="sm"
+                                variant="ghost"
+                              >
+                                {t.common.cancel}
+                              </Button>
+                              <Button
+                                disabled={Boolean(busy) || !commentText.trim()}
+                                onClick={() => void comment(item.id)}
+                                size="sm"
+                              >
+                                {t.common.save}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    }
+                    icon={<FileText className="size-3" />}
+                    label={
+                      item.paths.length > 0 ? (
+                        <span title={item.paths.join('\n')}>
+                          {item.paths[0]}
+                          {item.paths.length > 1 ? ` +${item.paths.length - 1}` : ''}
+                          {item.agent ? ` · ${item.agent}` : ''}
+                        </span>
+                      ) : (
+                        item.summary || item.id
+                      )
+                    }
+                  >
+                    {item.expired ? (
+                      <span className="text-xs text-(--ui-text-quaternary)">{m.expired}</span>
+                    ) : null}
+                  </MonitorRow>
+                  {/* 要点头就得看见要写什么：默认折叠，点开看具体正文。 */}
+                  {item.changes && item.changes.length > 0 ? (
+                    <details className="px-1">
+                      <summary className="cursor-pointer text-xs text-(--ui-text-tertiary)">
+                        {item.summary || m.desc}
+                      </summary>
+                      {item.changes.map((change, idx) => (
+                        <div
+                          className="mt-2 border-l-2 border-(--ui-stroke-tertiary) pl-2"
+                          key={`${item.id}:${idx}`}
+                        >
+                          <div className="text-xs text-(--ui-text-quaternary)">
+                            {change.path} · {change.mode}
+                          </div>
+                          <pre className="font-sans text-xs whitespace-pre-wrap text-(--ui-text-tertiary)">
+                            {change.content}
+                          </pre>
+                        </div>
+                      ))}
+                    </details>
+                  ) : item.summary ? (
+                    <div className="truncate px-1 text-xs text-(--ui-text-tertiary)" title={item.summary}>
+                      {item.summary}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </MonitorSection>
+          )}
+        </MonitorPanel>
       </DialogContent>
     </Dialog>
   )

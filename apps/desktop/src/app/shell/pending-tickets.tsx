@@ -10,6 +10,10 @@ import {
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
+import {
+  MonitorEmpty, MonitorHeaderTitle, MonitorIcon,
+  MonitorPanel, MonitorRow
+} from './monitor-panel'
 import { TopBarIconButton } from './top-bar-icon-button'
 
 /**
@@ -165,51 +169,49 @@ function PendingRow({
     const draft = ticket.status === 'proposed'
     const Icon = draft ? Pencil : CheckCircle2
     const summary = ticket.rule || ticket.question || ticket.scope
+
     return (
-      <div className="flex items-center gap-1.5 rounded-md border border-(--ui-stroke-tertiary) px-1.5 py-1">
-        <Icon aria-hidden className={cn(iconSize.sm, 'shrink-0 text-(--ui-text-tertiary)')} />
-        <span
-          className="min-w-0 flex-1 truncate text-[0.7rem]"
-          title={ticket.words || summary}
-        >
-          {summary}
-        </span>
-        {draft ? (
-          <>
+      <MonitorRow
+        actions={
+          draft ? (
+            <>
+              <button
+                aria-label="批准授权"
+                className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+                disabled={busy}
+                onClick={() => onDecide(ticket.id, 'lesson:approve')}
+                title="批准授权"
+                type="button"
+              >
+                <Check className={iconSize.xs} />
+              </button>
+              <button
+                aria-label="驳回授权"
+                className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+                disabled={busy}
+                onClick={() => onDecide(ticket.id, 'lesson:reject')}
+                title="驳回授权"
+                type="button"
+              >
+                <X className={iconSize.xs} />
+              </button>
+            </>
+          ) : (
             <button
-              aria-label="批准授权"
+              aria-label="撤回授权"
               className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
               disabled={busy}
-              onClick={() => onDecide(ticket.id, 'lesson:approve')}
-              title="批准授权"
+              onClick={() => onDecide(ticket.id, 'lesson:revoke')}
+              title="撤回授权"
               type="button"
             >
-              <Check className={iconSize.xs} />
+              <ArchiveOff className={iconSize.xs} />
             </button>
-            <button
-              aria-label="驳回授权"
-              className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
-              disabled={busy}
-              onClick={() => onDecide(ticket.id, 'lesson:reject')}
-              title="驳回授权"
-              type="button"
-            >
-              <X className={iconSize.xs} />
-            </button>
-          </>
-        ) : (
-          <button
-            aria-label="撤回授权"
-            className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
-            disabled={busy}
-            onClick={() => onDecide(ticket.id, 'lesson:revoke')}
-            title="撤回授权"
-            type="button"
-          >
-            <ArchiveOff className={iconSize.xs} />
-          </button>
-        )}
-      </div>
+          )
+        }
+        icon={<Icon aria-hidden />}
+        label={<span title={ticket.words || summary}>{summary}</span>}
+      />
     )
   }
 
@@ -226,52 +228,54 @@ function PendingRow({
     setCommentOpen(false)
   }
 
+  /* 评论展开时那格输入框照旧：长在行的下面，不占行内的地方。 */
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-(--ui-stroke-tertiary) px-1.5 py-1">
-      <div className="flex items-center gap-1.5">
-        <Source aria-hidden className={cn(iconSize.sm, 'shrink-0 text-(--ui-text-tertiary)')} />
-        <span className="min-w-0 flex-1 truncate text-[0.7rem]" title={ticket.refs?.prompt || ticket.goal}>
-          {summary}
-        </span>
-        <Clock aria-hidden className={cn(iconSize.xs, 'shrink-0 text-(--ui-text-quaternary)')} />
-        <button
-          aria-label="接纳"
-          className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
-          disabled={busy}
-          onClick={() => onDecide(ticket.id, 'ticket:accept')}
-          title="接纳"
-          type="button"
-        >
-          <Check className={iconSize.xs} />
-        </button>
-        <button
-          aria-label="拒绝"
-          className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
-          disabled={busy}
-          onClick={() => onDecide(ticket.id, 'ticket:reject')}
-          title="拒绝"
-          type="button"
-        >
-          <X className={iconSize.xs} />
-        </button>
-        <button
-          aria-label="评论"
-          className={cn(
-            'grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)',
-            commentOpen && 'bg-(--ui-control-hover-background)'
-          )}
-          disabled={busy}
-          onClick={() => setCommentOpen(!commentOpen)}
-          title="评论"
-          type="button"
-        >
-          <MessageSquareText className={iconSize.xs} />
-        </button>
-      </div>
+    <div className="flex flex-col gap-1">
+      <MonitorRow
+        actions={
+          <>
+            <button
+              aria-label="接纳"
+              className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+              disabled={busy}
+              onClick={() => onDecide(ticket.id, 'ticket:accept')}
+              title="接纳"
+              type="button"
+            >
+              <Check className={iconSize.xs} />
+            </button>
+            <button
+              aria-label="拒绝"
+              className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
+              disabled={busy}
+              onClick={() => onDecide(ticket.id, 'ticket:reject')}
+              title="拒绝"
+              type="button"
+            >
+              <X className={iconSize.xs} />
+            </button>
+            <button
+              aria-label="评论"
+              className={cn(
+                'grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)',
+                commentOpen && 'bg-(--ui-control-hover-background)'
+              )}
+              disabled={busy}
+              onClick={() => setCommentOpen(!commentOpen)}
+              title="评论"
+              type="button"
+            >
+              <MessageSquareText className={iconSize.xs} />
+            </button>
+          </>
+        }
+        icon={<Source aria-hidden />}
+        label={<span title={ticket.refs?.prompt || ticket.goal}>{summary}</span>}
+      />
       {commentOpen ? (
-        <div className="flex items-center gap-1 px-0.5">
+        <div className="flex items-center gap-1 px-1">
           <input
-            className="min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-transparent px-1.5 py-0.5 text-[0.68rem] outline-none"
+            className="min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-transparent px-1.5 py-0.5 text-xs outline-none"
             onChange={event => setCommentText(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'Enter') {
@@ -284,7 +288,7 @@ function PendingRow({
           />
           <button
             aria-label="提交评论"
-            className="shrink-0 rounded px-1.5 py-0.5 text-[0.68rem] hover:bg-(--ui-control-hover-background)"
+            className="shrink-0 rounded px-1.5 py-0.5 text-xs hover:bg-(--ui-control-hover-background)"
             disabled={busy || !commentText.trim()}
             onClick={submitComment}
             title="提交评论"
@@ -298,6 +302,13 @@ function PendingRow({
   )
 }
 
+/**
+ * 抬头右上角那一族里的「待放行」入口（入口那颗按钮的形状归统一入口那把刀）。
+ *
+ * 11-19 视觉规格迁移：**容器**换成统一组件 `monitor-panel.tsx`（Qoder 任务监控那一把尺）——
+ * 浮层 280px、行 28px、图标托 24px、字 12px、零描边、hover 才出底色。
+ * 装载（5 秒轮询）、接纳／拒绝／撤回／评论、错误显示一个字没改。
+ */
 export function PendingTicketsButton() {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -351,33 +362,51 @@ export function PendingTicketsButton() {
           pressed={open}
         />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-2" side="bottom">
-        <div className="flex items-center gap-2 px-1 pb-1.5">
-          <Bell className={iconSize.sm} />
-          <span className="text-[0.75rem] font-medium">{t.surface.pendingTickets}</span>
-          <span className="ml-auto font-mono text-[0.68rem] text-(--ui-text-tertiary)">
-            {tickets.length}
-          </span>
-        </div>
-        {failed ? (
-          <div className="px-1 py-2 text-[0.7rem] text-(--ui-red)">{t.surface.pendingTicketsFailed}</div>
-        ) : tickets.length === 0 ? (
-          <div className="px-1 py-2 text-[0.7rem] text-(--ui-text-tertiary)">{t.surface.pendingTicketsEmpty}</div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {tickets.map(ticket => (
-              <PendingRow
-                busy={busy === ticket.id}
-                key={ticket.id}
-                onDecide={decideOne}
-                ticket={ticket}
-              />
-            ))}
-          </div>
-        )}
-        {error ? (
-          <div className="px-1 pt-1 text-[0.68rem] text-(--ui-red)">{error}</div>
-        ) : null}
+      <PopoverContent
+        align="end"
+        // 这层壳只管定位（Radix 的碰撞避让、点外面关掉），**不画皮**：
+        // 皮由下面那块统一容器画，所以壳要透明、无描边、无内边距。
+        // `[&>span]:hidden` 藏掉 Radix 自带的那枚箭头（Qoder 那个浮层没有箭头）。
+        className="w-[280px] border-0 bg-transparent p-0 [&>span]:hidden"
+        side="bottom"
+      >
+        <MonitorPanel
+          // 壳里再套一层 `fixed` 会让 Radix 量不到高度（浮层会掉出窗口下沿），
+          // 所以改成 `relative`：定位仍归 Radix，皮仍是浮层那一套。
+          className="relative"
+          header={
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <MonitorIcon>
+                <Bell aria-hidden />
+              </MonitorIcon>
+              <MonitorHeaderTitle>{t.surface.pendingTickets}</MonitorHeaderTitle>
+              <span className="ml-auto text-xs tabular-nums text-(--ui-text-tertiary)">
+                {tickets.length}
+              </span>
+            </div>
+          }
+          mode="float"
+        >
+          {failed ? (
+            <div className="text-xs text-(--ui-red)">{t.surface.pendingTicketsFailed}</div>
+          ) : tickets.length === 0 ? (
+            <MonitorEmpty />
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {tickets.map(ticket => (
+                <PendingRow
+                  busy={busy === ticket.id}
+                  key={ticket.id}
+                  onDecide={decideOne}
+                  ticket={ticket}
+                />
+              ))}
+            </div>
+          )}
+          {error ? (
+            <div className="text-xs text-(--ui-red)">{error}</div>
+          ) : null}
+        </MonitorPanel>
       </PopoverContent>
     </Popover>
   )

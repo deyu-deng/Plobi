@@ -1,11 +1,11 @@
 import type { ComponentProps, FocusEvent, MouseEvent, ReactElement, ReactNode } from 'react'
 import { cloneElement, useState } from 'react'
 
-import { PanelSectionLabel } from '@/app/overlays/panel'
 import { Codicon } from '@/components/ui/codicon'
-import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { RowButton } from '@/components/ui/row-button'
 import { cn } from '@/lib/utils'
+
+import { MonitorEmpty, MonitorSection } from './monitor-panel'
 
 /**
  * 对话卡右上角那条 rail（档案 / 待放行 / 以后新增）**共用的一套壳**。
@@ -41,12 +41,16 @@ type PeekTriggerProps = {
 /**
  * 一段：小标题 ＋ 内容槽。
  *
+ * **这一刀（11-19 16:0x）它变成薄壳**：真正实现搬进 `monitor-panel.tsx`
+ * （对话卡右上角那一族的**唯一容器**，Qoder 任务监控面板的规格表）。
+ * 留这个导出是因为既有用它的地方还在用（`dossier-stage-bar.tsx` 等）；
+ * 凡是新加的东西直接用 `MonitorSection`，别再从这里长一套。
+ *
  * **可折叠**（`collapsible`）：小标题变成一个按钮，点了折起整段 —— 这是 Qoder
  * 任务监控面板的那一层（13 个分区**每个都能单独收起**，11-18 10:0x 拍板 B）。
  * 折起时只留小标题，内容不渲染。
  *
- * 小标题仍是 `PanelSectionLabel`（既成那把尺），只是在这张卡上按 Qoder 的口径
- * 调了一下：12px、不大写、无字距、三级字色 —— **靠字色分层，不靠描边**。
+ * 小标题按 Qoder 的口径：12px、不大写、无字距、三级字色 —— **靠字色分层，不靠描边**。
  */
 export function RailSection({
   children,
@@ -67,42 +71,17 @@ export function RailSection({
   title: string
   trailing?: ReactNode
 }) {
-  const label = (
-    <PanelSectionLabel
-      as={collapsible ? 'span' : 'div'}
-      className="text-[0.68rem] font-normal normal-case tracking-normal text-(--ui-text-tertiary)"
-    >
-      {title}
-    </PanelSectionLabel>
-  )
-
   return (
-    <section
-      className={cn('px-3 pb-3 pt-2.5', className)}
-      data-collapsed={collapsed ? '' : undefined}
-      data-slot="rail-section"
-    >
-      <div className="flex items-center gap-1.5">
-        {collapsible ? (
-          <button
-            aria-expanded={!collapsed}
-            className="flex min-w-0 items-center gap-1 text-left"
-            data-slot="rail-section-toggle"
-            onClick={onToggle}
-            type="button"
-          >
-            <DisclosureCaret className="shrink-0 text-(--ui-text-tertiary)" open={!collapsed} />
-            {label}
-          </button>
-        ) : (
-          label
-        )}
-        {typeof count === 'number' && count > 0 ? (
-          <span className="text-[0.6rem] tabular-nums text-muted-foreground/60">{count}</span>
-        ) : null}
-        {trailing ? <span className="ml-auto flex items-center gap-1">{trailing}</span> : null}
-      </div>
-      {collapsed ? null : <div className="mt-1.5">{children}</div>}
+    <section className={cn('px-3 pb-3 pt-2.5', className)} data-collapsed={collapsed ? '' : undefined} data-slot="rail-section">
+      <MonitorSection
+        collapsed={collapsed}
+        count={count}
+        onToggle={collapsible ? onToggle : undefined}
+        title={title}
+        trailing={trailing}
+      >
+        {children}
+      </MonitorSection>
     </section>
   )
 }
@@ -157,7 +136,7 @@ export function RailRow({ className, ...props }: ComponentProps<typeof RowButton
 export function RailEmpty({ className }: { className?: string }) {
   return (
     <span className={cn('block px-1 text-[0.62rem] text-(--ui-text-tertiary)', className)} data-slot="rail-empty">
-      —
+      <MonitorEmpty className="px-0 text-[0.62rem]" />
     </span>
   )
 }

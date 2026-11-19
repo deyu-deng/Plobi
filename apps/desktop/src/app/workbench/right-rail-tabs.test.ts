@@ -22,6 +22,14 @@ function read(relative: string): string {
   return readFileSync(join(APP, relative), 'utf8')
 }
 
+/**
+ * 对话卡右上角那一族的**唯一容器**（11-19 16:0x 统一容器那一刀）。
+ * 列宽、浮层那层皮、高度上限都在它那儿 ⇒ 这几件事的判据读它，不读控制器。
+ */
+function monitorPanel(): string {
+  return read('shell/monitor-panel.tsx')
+}
+
 describe('右栏页签：资料页签没了，换成笔记', () => {
   it('RightRailTab 里没有 progress，有 notes', () => {
     const src = read('workbench/right-rail.tsx')
@@ -82,18 +90,32 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     // 钉住那一套：对话右侧的一列（固定窄宽、不收缩）；对话容器在钉住时是并排。
     // 11-18 按 Qoder 实况去掉了这条左边线，列靠背景分区 ⇒ 这里认「固定宽度的一列」，
     // 不再认 border，否则测试会和实现对着干。
-    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*w-\[22rem\][^']*shrink-0'/)
+    // 11-19 16:0x 统一容器那一刀：**列宽不再由控制器写**（那把尺归
+    // `shell/monitor-panel.tsx` 那个件管，Qoder `w-[280px]`），控制器只给这一列
+    // 「不收缩 ＋ 别把对话挤没」两件事。
+    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*shrink-0'/)
+    expect(monitorPanel()).toMatch(/MONITOR_COLUMN_SHAPE\s*=\s*'[^']*w-\[280px\]/)
     expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
 
-    // 浮层是**用户切出来**的另一种形态：抬起来的一层（z-30 ＋ 圆角 ＋ 描边 ＋ 投影）。
-    // 11-18 按 Qoder 实物换成 `rounded-lg`，位置也从壳里挪走（浮层可拖 ⇒ 落在 JSX 里）。
-    expect(controller).toMatch(/DOSSIER_FLOATING_SHAPE\s*=\s*\n\s*'[^']*z-30[^']*rounded-lg[^']*shadow-lg/)
+    // 浮层是**用户切出来**的另一种形态：抬起来的一层（圆角 ＋ 淡边框 ＋ 投影）。
+    // 11-19 16:0x 起这层皮归统一容器那个件（`MONITOR_FLOAT_SHAPE`），
+    // 控制器只给定位（`absolute` ＋ `right-4 top-…`），不再自己长一张皮。
+    const floatBlock = monitorPanel().slice(
+      monitorPanel().indexOf('export const MONITOR_FLOAT_SHAPE'),
+      monitorPanel().indexOf('export const MONITOR_COLUMN_SHAPE')
+    )
+    expect(floatBlock).toContain('rounded-lg')
+    expect(floatBlock).toContain('shadow-lg')
+    expect(floatBlock).toContain('w-[280px]')
+    expect(controller).not.toContain('DOSSIER_FLOATING_SHAPE')
     // 浮层压在**抬头下面**：抬头右边那几枚（档案图标本身、全屏、收起）都住在那一行，
     // 压上去就点不到了（11-09：档案卡一露脸就把自己的开关盖住了）。
     // 减号两边不留空格的 calc 是**非法 CSS** ⇒ 浏览器整条丢掉（这一档就白写了）。
     expect(controller).toContain('top-[calc(var(--card-header-height)+0.5rem)]')
-    const floating = controller.match(/DOSSIER_FLOATING_SHAPE\s*=\s*\n\s*'([^']*)'/)?.[1] ?? ''
-    expect(floating).not.toMatch(/calc\(100%-[0-9]/)
+    // 高度上限是**一个数**（Qoder `max-h-[560px]`）：不许再写「按百分比算」那种
+    // 减号两边留空格的非法 calc。
+    expect(floatBlock).toContain('max-h-[560px]')
+    expect(floatBlock).not.toMatch(/calc\(100%-[0-9]/)
     // 对话容器要 relative，浮层才贴得住它的右上角。
     expect(controller).toContain("'relative flex h-full min-h-0'")
   })
@@ -219,7 +241,9 @@ describe('只有两张卡：预览轨的实现删掉了，笔记落工作区卡�
     expect(layout).toMatch(/focus === 'chat'/)
     // 形态：默认并排（对话右侧占一列）⇒ 对话从不被它盖住。
     expect(layout).toMatch(/\$dossierPanelPinned\s*=\s*atom\(true\)/)
-    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*w-\[22rem\][^']*shrink-0'/)
+    // 列宽归统一容器那个件（Qoder `w-[280px]`），控制器只给「不收缩」。
+    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*shrink-0'/)
+    expect(monitorPanel()).toMatch(/MONITOR_COLUMN_SHAPE\s*=\s*'[^']*w-\[280px\]/)
     // 对话容器在钉住时是并排（`flex-row`），浮层那档才用 absolute。
     expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
   })
