@@ -141,6 +141,27 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
     )
   })
 
+  it('其余几屏的内容落进同一块玻璃面（与那三张卡同一套材质）', async () => {
+    await advanceTo('language')
+
+    // 语言那屏：四行落在玻璃面里。
+    const panel = document.querySelector('.fr-panel')
+
+    expect(panel).toBeTruthy()
+    expect(panel?.querySelector('.fr-list')).toBeTruthy()
+  })
+
+  it('那三张卡那屏不再有「和设置页分组一致」那句机制说明', async () => {
+    listOAuthProviders.mockResolvedValue({ providers: [] })
+    getGlobalModelOptions.mockResolvedValue({ providers: [] })
+
+    await advanceTo('cards')
+
+    // 标题下面只留那三张卡，标题本身不带说明句。
+    expect(document.querySelector('.fr-cards-head .fr-title')?.textContent?.trim()).toBeTruthy()
+    expect(document.querySelector('.fr-cards-head .fr-desc')).toBeNull()
+  })
+
   it('末步把画像与称呼交给后端（USER.md），把名字与性格也交过去（SOUL.md）', async () => {
     listOAuthProviders.mockResolvedValue({ providers: [] })
     getGlobalModelOptions.mockResolvedValue({ providers: [] })

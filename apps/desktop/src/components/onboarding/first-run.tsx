@@ -252,6 +252,15 @@ function Screen({ children, className }: { children: React.ReactNode; className?
   return <div className={cn('fr-screen', className)}>{children}</div>
 }
 
+/**
+ * 每屏那块**玻璃面**：与那三张卡同一套材质（半透 ＋ 模糊 ＋ 主题色渐变 ＋ 发丝边）。
+ * 标题与一句说明仍是素文字——玻璃只托内容（主人 11-19 09:2x：「其他引导页的气质也统一
+ * 一下」）。
+ */
+function Panel({ children }: { children: React.ReactNode }) {
+  return <div className="fr-panel">{children}</div>
+}
+
 function Title({ children }: { children: React.ReactNode }) {
   return <h1 className="fr-title">{children}</h1>
 }
@@ -303,21 +312,23 @@ function LanguageStep({ copy }: { copy: Copy }) {
     <Screen>
       <Title>{copy.languageTitle}</Title>
       <Desc>{copy.languageDesc}</Desc>
-      <div className="fr-list">
-        {locales.map(([code, meta]) => (
-          <button
-            aria-pressed={code === locale}
-            className="fr-item"
-            key={code}
-            onClick={() => {
-              void setLocale(code)
-            }}
-            type="button"
-          >
-            <span>{meta.name}</span>
-          </button>
-        ))}
-      </div>
+      <Panel>
+        <div className="fr-list">
+          {locales.map(([code, meta]) => (
+            <button
+              aria-pressed={code === locale}
+              className="fr-item"
+              key={code}
+              onClick={() => {
+                void setLocale(code)
+              }}
+              type="button"
+            >
+              <span>{meta.name}</span>
+            </button>
+          ))}
+        </div>
+      </Panel>
     </Screen>
   )
 }
@@ -342,7 +353,8 @@ function AppearanceStep({
     <Screen>
       <Title>{copy.appearanceTitle}</Title>
       <Desc>{copy.appearanceDesc}</Desc>
-      <div className="fr-group">
+      <Panel>
+        <div className="fr-group">
         <span className="fr-label">{copy.modeLabel}</span>
         <SegmentedControl
           onChange={onMode}
@@ -355,21 +367,22 @@ function AppearanceStep({
         />
       </div>
       <div className="fr-group">
-        <span className="fr-label">{copy.themeLabel}</span>
-        <div className="fr-themes">
-          {themes.map(theme => (
-            <button
-              aria-pressed={theme.name === themeName}
-              className="fr-theme"
-              key={theme.name}
-              onClick={() => onTheme(theme.name)}
-              type="button"
-            >
-              {theme.label}
-            </button>
-          ))}
+          <span className="fr-label">{copy.themeLabel}</span>
+          <div className="fr-themes">
+            {themes.map(theme => (
+              <button
+                aria-pressed={theme.name === themeName}
+                className="fr-theme"
+                key={theme.name}
+                onClick={() => onTheme(theme.name)}
+                type="button"
+              >
+                {theme.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      </Panel>
     </Screen>
   )
 }
@@ -469,7 +482,6 @@ function CardsStep({
       <Screen className="fr-cards">
         <div className="fr-cards-head">
           <Title>{copy.cardsTitle}</Title>
-          <Desc>{copy.cardsDesc}</Desc>
         </div>
         <div className="fr-lanes">
           {lanes.map(l => (
@@ -591,7 +603,7 @@ function ProfileStep({
     <Screen>
       <Title>{copy.profileTitle}</Title>
       <Desc>{copy.profileDesc}</Desc>
-      <div className="w-full">
+      <Panel>
         <label className="fr-label" htmlFor="fr-purpose">
           {copy.profilePurpose}
         </label>
@@ -610,7 +622,7 @@ function ProfileStep({
           placeholder={copy.profileDomainPlaceholder}
           value={answers.domain}
         />
-      </div>
+      </Panel>
     </Screen>
   )
 }
@@ -628,7 +640,7 @@ function AgentNameStep({
     <Screen>
       <Title>{copy.agentNameTitle}</Title>
       <Desc>{copy.agentNameDesc}</Desc>
-      <div className="w-full">
+      <Panel>
         <label className="fr-label" htmlFor="fr-agent-name">
           {copy.agentNameTitle}
         </label>
@@ -647,7 +659,7 @@ function AgentNameStep({
           placeholder={copy.agentNamePersonalityPlaceholder}
           value={answers.agent_personality}
         />
-      </div>
+      </Panel>
     </Screen>
   )
 }
@@ -746,24 +758,30 @@ const FIRST_RUN_CSS = `
 .fr-screen { display: flex; width: 100%; flex-direction: column; align-items: center; text-align: center; animation: fr-fade-in 0.4s ease; }
 .fr-title { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.5rem; color: var(--ui-text-primary); }
 .fr-desc { font-size: 0.8125rem; line-height: 1.6; color: var(--ui-text-secondary); margin-bottom: 1.25rem; }
-.fr-icon { display: flex; width: 4.5rem; height: 4.5rem; align-items: center; justify-content: center; border-radius: 1.25rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-tertiary); margin-bottom: 1.25rem; color: var(--ui-text-primary); }
+.fr-icon { display: flex; width: 4.5rem; height: 4.5rem; align-items: center; justify-content: center; border-radius: 1.25rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 70%, transparent); background: color-mix(in srgb, var(--dt-card) 58%, transparent); backdrop-filter: blur(0.75rem) saturate(1.12); -webkit-backdrop-filter: blur(0.75rem) saturate(1.12); box-shadow: 0 16px 36px -24px color-mix(in srgb, var(--ui-text-primary) 45%, transparent); margin-bottom: 1.25rem; color: var(--ui-text-primary); }
 .fr-loader { display: flex; gap: 0.45rem; margin-bottom: 1rem; }
 .fr-loader i { width: 0.45rem; height: 0.45rem; border-radius: 9999px; background: var(--ui-text-secondary); animation: fr-dot-pulse 1.1s ease-in-out infinite; }
 .fr-loader i:nth-child(2) { animation-delay: 0.18s; }
 .fr-loader i:nth-child(3) { animation-delay: 0.36s; }
-.fr-list { display: flex; width: 100%; flex-direction: column; gap: 0.5rem; }
-.fr-item { width: 100%; border-radius: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); padding: 0.75rem 0.875rem; text-align: left; font-size: 0.8125rem; color: var(--ui-text-primary); }
-.fr-item[aria-pressed='true'] { border-color: var(--ui-accent); }
+/* 每屏那块玻璃面：与那三张卡同一套材质。 */
+.fr-panel { position: relative; width: 100%; overflow: hidden; text-align: left; border-radius: 1rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 70%, transparent); background: color-mix(in srgb, var(--dt-card) 58%, transparent); backdrop-filter: blur(0.75rem) saturate(1.12); -webkit-backdrop-filter: blur(0.75rem) saturate(1.12); padding: 1rem; box-shadow: 0 18px 40px -28px color-mix(in srgb, var(--ui-text-primary) 45%, transparent); }
+.fr-panel::before { content: ''; position: absolute; inset: 0; background: linear-gradient(152deg, color-mix(in srgb, var(--ui-accent) 22%, transparent), transparent 58%); pointer-events: none; }
+.fr-panel > * { position: relative; z-index: 1; }
+.fr-list { display: flex; width: 100%; flex-direction: column; gap: 0.375rem; }
+.fr-item { width: 100%; border-radius: 0.625rem; border: 1px solid transparent; background: color-mix(in srgb, var(--dt-card) 34%, transparent); padding: 0.6875rem 0.875rem; text-align: left; font-size: 0.8125rem; color: var(--ui-text-primary); transition: background-color 0.15s ease, border-color 0.15s ease; }
+.fr-item:hover { background: color-mix(in srgb, var(--dt-card) 52%, transparent); }
+.fr-item[aria-pressed='true'] { border-color: color-mix(in srgb, var(--ui-accent) 55%, transparent); background: color-mix(in srgb, var(--ui-accent) 12%, transparent); }
 .fr-group { width: 100%; margin-bottom: 1rem; text-align: left; }
+.fr-panel .fr-group:last-child { margin-bottom: 0; }
 .fr-themes { display: flex; flex-wrap: wrap; gap: 0.375rem; }
-.fr-theme { border-radius: 0.5rem; border: 1px solid var(--ui-stroke-tertiary); background: var(--ui-bg-secondary); padding: 0.375rem 0.625rem; font-size: 0.75rem; color: var(--ui-text-primary); }
-.fr-theme[aria-pressed='true'] { border-color: var(--ui-accent); }
+.fr-theme { border-radius: 0.5rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 55%, transparent); background: color-mix(in srgb, var(--dt-card) 40%, transparent); padding: 0.375rem 0.625rem; font-size: 0.75rem; color: var(--ui-text-primary); }
+.fr-theme[aria-pressed='true'] { border-color: color-mix(in srgb, var(--ui-accent) 60%, transparent); background: color-mix(in srgb, var(--ui-accent) 12%, transparent); }
 /* 三张卡那一屏：标题在上、卡贴着下面那两颗按钮（主人 11-19 08:4x）。 */
-.fr-cards { flex: 1; }
-.fr-cards-head { display: flex; width: 100%; flex: 1; flex-direction: column; justify-content: center; }
+.fr-cards { flex: 1; justify-content: flex-end; }
+.fr-cards-head { display: flex; width: 100%; flex: none; flex-direction: column; margin-bottom: 1.25rem; }
 .fr-lanes { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 /* 玻璃磨砂的大卡：半透底 ＋ 模糊 ＋ 主题色渐变 ＋ 左下角那团柔光。 */
-.fr-lane { position: relative; display: flex; min-height: 11.5rem; flex-direction: column; overflow: hidden; border-radius: 1rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 72%, transparent); background: color-mix(in srgb, var(--dt-card) 58%, transparent); backdrop-filter: blur(0.75rem) saturate(1.12); -webkit-backdrop-filter: blur(0.75rem) saturate(1.12); text-align: left; color: var(--ui-text-primary); transition: transform 0.18s ease, border-color 0.18s ease; }
+.fr-lane { position: relative; display: flex; min-height: 13rem; flex-direction: column; overflow: hidden; border-radius: 1rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 72%, transparent); background: color-mix(in srgb, var(--dt-card) 58%, transparent); backdrop-filter: blur(0.75rem) saturate(1.12); -webkit-backdrop-filter: blur(0.75rem) saturate(1.12); text-align: left; color: var(--ui-text-primary); transition: transform 0.18s ease, border-color 0.18s ease; }
 .fr-lane:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--ui-accent) 45%, transparent); }
 .fr-lane::before { content: ''; position: absolute; inset: 0; background: linear-gradient(152deg, color-mix(in srgb, var(--ui-accent) 26%, transparent), transparent 58%); pointer-events: none; }
 .fr-lane::after { content: ''; position: absolute; left: -25%; bottom: -60%; width: 95%; height: 95%; border-radius: 9999px; background: radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 30%, transparent), transparent 70%); filter: blur(14px); pointer-events: none; }

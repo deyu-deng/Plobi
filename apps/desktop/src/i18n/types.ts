@@ -2561,7 +2561,6 @@ export interface Translations {
       themeDark: string
       themeSystem: string
       cardsTitle: string
-      cardsDesc: string
       cardsDescAccounts: string
       cardsDescKeys: string
       cardsDescSubscriptions: string
