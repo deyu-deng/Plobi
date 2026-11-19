@@ -15,8 +15,10 @@
 * ``plobi.agents.registry._active_agent_profile_name`` 同样读空 ⇒ per-agent 的
   模型/工具集/记忆分持全部按 L1 算。
 
-这一档钉的是那一跳：**身份从会话认出来后必须落进 ContextVar**，认不出仍是空
-（= L1，不猜）。
+这一档钉三件事：上下文里能带身份；身份从会话怎么认（含缓存）；**上下文这一档
+自己不去读名册**（resume/后台那些路径的测试把 ``plobi_constants`` 整个 mock 掉，
+在那一层读名册会在 yaml 解析里打转 —— 11-19 现读，test_protocol 的 resume
+那两个线程就卡在这）。
 """
 
 from __future__ import annotations
@@ -63,48 +65,85 @@ def _drop(sid: str) -> None:
     server._sessions.pop(sid, None)
 
 
-def test_context_carries_the_named_agent(identity_double, monkeypatch):
-    """前端显式带名册名（``agent_name_hint``）时，上下文就报这个名字。"""
+def test_context_carries_the_agent_id_it_is_given(monkeypatch):
+    """给了身份就落进 ContextVar——记忆那颗键与 SOUL 那一跳都认这一格。"""
     from gateway.session_context import get_session_env
     from tools.memory_tool import resolve_agent_slug
 
     monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
-    identity_double(name_by_hint="Stithy")
-    _register("ident-hint", "ident-hint-key", agent_name_hint="Stithy")
+    _register("ident-carry", "ident-carry-key")
 
-    tokens = server._set_session_context("ident-hint-key")
+    tokens = server._set_session_context("ident-carry-key", agent_id="Stithy")
     try:
         assert get_session_env("PLOBI_AGENT_ID") == "Stithy"
-        assert get_session_env("PLOBI_SESSION_ID") == "ident-hint-key"
-        # 记忆那颗键（以及 SOUL 那一跳）认的是同一个 ContextVar：
-        # 不再是 "l1" ⇒ 读它自己那份 SOUL，不再借顶层秘书那份。
+        # 会话 id 与 session_key 同源：memory_tool 那条"会话行反推"的兜底才走得通
+        assert get_session_env("PLOBI_SESSION_ID") == "ident-carry-key"
         assert resolve_agent_slug() != "l1"
         assert resolve_agent_slug() == "stithy"
     finally:
         server._clear_session_context(tokens)
-        _drop("ident-hint")
+        _drop("ident-carry")
 
     assert get_session_env("PLOBI_AGENT_ID") == ""
 
 
-def test_context_falls_back_to_the_session_folder(identity_double, monkeypatch, tmp_path):
-    """桌面正路不带名字 ⇒ 按会话目录归属认人（课程那些行本来就有 project_path）。"""
-    from gateway.session_context import get_session_env
-    from tools.memory_tool import resolve_agent_slug
+def test_session_identity_prefers_the_explicit_roster_name(identity_double, monkeypatch):
+    """前端显式带名册名（``agent_name_hint``）⇒ 会话归那个 Agent。"""
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+    identity_double(name_by_hint="Stithy")
+    session = _register("ident-hint", "ident-hint-key", agent_name_hint="Stithy")
 
+    try:
+        assert server._session_agent_id(session) == "Stithy"
+    finally:
+        _drop("ident-hint")
+
+
+def test_session_identity_falls_back_to_the_session_folder(
+    identity_double, monkeypatch, tmp_path
+):
+    """桌面正路不带名字 ⇒ 按会话目录归属认人（课程那些行本来就有 project_path）。"""
     monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
     identity_double(name_by_path="agenda")
     folder = tmp_path / "agenda"
     folder.mkdir()
-    _register("ident-cwd", "ident-cwd-key", cwd=str(folder), agent=_LiveAgent())
+    session = _register("ident-cwd", "ident-cwd-key", cwd=str(folder), agent=_LiveAgent())
 
-    tokens = server._set_session_context("ident-cwd-key")
     try:
-        assert get_session_env("PLOBI_AGENT_ID") == "agenda"
-        assert resolve_agent_slug() != "l1"
+        assert server._session_agent_id(session) == "agenda"
     finally:
-        server._clear_session_context(tokens)
         _drop("ident-cwd")
+
+
+def test_session_identity_is_cached_and_self_invalidating(identity_double, monkeypatch):
+    """同一个会话第二次问不再读名册；名字提示晚到 ⇒ 键变了自动重算。"""
+    import plobi.mind.identity as identity
+
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+    identity_double()
+    calls: list[str] = []
+
+    def counting_resolve(path):
+        calls.append(str(path))
+        return "agenda" if "agenda" in str(path) else ""
+
+    monkeypatch.setattr(identity, "resolve_agent_for_path", counting_resolve, raising=False)
+    session = _register("ident-cache", "ident-cache-key", cwd="/x/agenda")
+
+    try:
+        assert server._session_agent_id(session) == "agenda"
+        assert len(calls) == 1
+        assert server._session_agent_id(session) == "agenda"
+        assert len(calls) == 1, "第二次必须走缓存"
+
+        # 名册名提示后来才到（prompt.submit 那一跳）⇒ 缓存键变了，重新认
+        monkeypatch.setattr(
+            identity, "resolve_agent_name", lambda value: "Stithy", raising=False
+        )
+        session["agent_name_hint"] = "Stithy"
+        assert server._session_agent_id(session) == "Stithy"
+    finally:
+        _drop("ident-cache")
 
 
 def test_unresolvable_session_stays_conductor(identity_double, monkeypatch):
@@ -113,14 +152,56 @@ def test_unresolvable_session_stays_conductor(identity_double, monkeypatch):
 
     monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
     identity_double()
-    _register("ident-none", "ident-none-key", cwd="")
+    session = _register("ident-none", "ident-none-key", cwd="")
 
-    tokens = server._set_session_context("ident-none-key")
+    tokens = server._set_session_context(
+        "ident-none-key", agent_id=server._session_agent_id(session)
+    )
     try:
         assert get_session_env("PLOBI_AGENT_ID") == ""
     finally:
         server._clear_session_context(tokens)
         _drop("ident-none")
+
+
+def test_agent_id_from_row_only_trusts_a_real_string():
+    """行上的 ``agent_id`` 只认真字符串；Mock/None/缺列一律空（= L1）。"""
+    from unittest.mock import MagicMock
+
+    assert server._agent_id_from_row({"agent_id": " Stithy "}) == "Stithy"
+    assert server._agent_id_from_row({"agent_id": ""}) == ""
+    assert server._agent_id_from_row({"agent_id": None}) == ""
+    assert server._agent_id_from_row({}) == ""
+    assert server._agent_id_from_row(None) == ""
+    assert server._agent_id_from_row(MagicMock()) == "", "整档被 mock 掉时不许把 Mock 当名字"
+
+
+def test_setting_the_context_does_not_read_the_roster(identity_double, monkeypatch):
+    """上下文这一档自己不去读名册：resume/后台那几条路把它当纯搬运工。"""
+    import plobi.mind.identity as identity
+
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+    touched: list[str] = []
+    monkeypatch.setattr(
+        identity,
+        "resolve_agent_for_path",
+        lambda path: touched.append("path") or "agenda",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        identity,
+        "resolve_agent_name",
+        lambda value: touched.append("name") or "agenda",
+        raising=False,
+    )
+    _register("ident-norooster", "ident-norooster-key", cwd="/x/agenda")
+
+    tokens = server._set_session_context("ident-norooster-key")
+    try:
+        assert touched == [], "不带 agent_id 时不该去认身份"
+    finally:
+        server._clear_session_context(tokens)
+        _drop("ident-norooster")
 
 
 def test_ephemeral_task_without_a_session_does_not_invent_an_identity(

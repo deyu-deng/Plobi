@@ -1386,7 +1386,12 @@ def _start_agent_build(sid: str, session: dict) -> None:
         home_token = None
         profile_home = current.get("profile_home")
         try:
-            tokens = _set_session_context(key)
+            # 身份要在 **构造 AIAgent 之前** 进上下文：SOUL 是构造时读的
+            # （``load_soul_md`` → ``_soul_agent_id`` → ``resolve_agent_slug``），
+            # 晚了就只能读到顶层那份 L1 秘书 SOUL。
+            tokens = _set_session_context(
+                key, **_identity_kwargs(_session_agent_id(current))
+            )
             # Build against the session's profile (global-remote): bind its
             # PLOBI_HOME so config/skills/model resolve to it, and hand the
             # agent that profile's db so turns persist to the right state.db.
@@ -2087,6 +2092,59 @@ def _cwd_for_session_key(session_key: str) -> str:
     return ""
 
 
+def _agent_id_from_row(row) -> str:
+    """会话行上的 ``agent_id`` 列；不是 dict / 不是 str 一律回空（= L1）。
+
+    只读不猜：resume 那条路手上就有行（``found``），不必再去读名册；测试把
+    ``plobi_constants`` 整个 mock 掉时，行也可能是 Mock —— 这里挡掉，
+    别把 ``"<MagicMock …>"`` 当成一个 Agent 的名字写进上下文。
+    """
+    if not isinstance(row, dict):
+        return ""
+    value = row.get("agent_id")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _identity_kwargs(agent_id: str) -> dict:
+    """把"这条会话归谁"装成 ``_set_session_context`` 的关键字——**空身份就不占位**。
+
+    ``set_session_vars`` 那边 ``None`` 与 ``""`` 同义（都是显式置空 = L1），所以
+    认不出是谁时压根不需要这个键；调用形状与改动前逐字一致，谁的替身都还认。
+    """
+    ident = (agent_id or "").strip()
+    return {"agent_id": ident} if ident else {}
+
+
+def _session_agent_id(session: dict) -> str:
+    """这条会话归谁——给"要读 SOUL / 要落记忆"的那几条路用。
+
+    判据与写库那一格同一个（``_agent_id_for_session``：显式名册名 → profile
+    家名 → 会话目录归属），认不出回 ``""`` = L1，不猜。
+
+    **结果按会话缓存**：判据里要读名册（``load_registry`` → yaml 解析），每轮
+    现算就是每轮一次文件读。缓存的键是三个输入本身（名册名提示、家、cwd）——
+    前端那一跳可能晚到（``prompt.submit`` 才写 ``agent_name_hint``），键变了
+    就自己失效，不需要外部记得来清缓存。
+    """
+    if not isinstance(session, dict):
+        return ""
+    key = (
+        str(session.get("agent_name_hint") or ""),
+        str(session.get("profile_home") or ""),
+        str(session.get("cwd") or ""),
+        str(session.get("agent_id") or ""),
+    )
+    cached = session.get("_agent_identity_cache")
+    if isinstance(cached, tuple) and cached[0] == key:
+        return cached[1]
+    try:
+        resolved = _agent_id_for_session(session)
+    except Exception:  # noqa: BLE001 - 认不出就是 L1，别让身份这一跳弄挂一个 turn
+        resolved = ""
+    session["_agent_identity_cache"] = (key, resolved)
+    return resolved
+
+
 def _set_session_context(
     session_key: str,
     cwd: str | None = None,
@@ -2107,10 +2165,10 @@ def _set_session_context(
       拿到 ``l1`` ⇒ 读**顶层那份 L1 秘书 SOUL** ⇒ Principal 那屏问「你是谁」，
       它答「我是你的 Plobi 总秘书」（10-31 现读；11-18 复核仍在）。
 
-    ``agent_id=None``（默认）表示"按会话认"：与写库那一格同一个判据
-    （``_agent_id_for_session``：显式名册名 → profile 家名 → 会话目录归属），
-    认不出仍是 ``""`` = L1，不猜。显式传值只给"这条会话不在 ``_sessions`` 里"
-    的调用方留口子。
+    **这一档自己不做身份解析**（不读名册、不碰 DB）：它被 resume / 后台任务等
+    许多 RPC 路径共用，而那些路径的测试会把 ``plobi_constants`` 整个 mock 掉，
+    一读名册就在 yaml 解析里打转。要身份的是"读 SOUL / 落记忆"那几条路，
+    由它们带着 ``agent_id`` 进来（``_session_agent_id`` / ``_agent_id_from_row``）。
     """
     try:
         from gateway.session_context import set_session_vars
@@ -2121,16 +2179,11 @@ def _set_session_context(
         # it instead of falling back to the gateway launch dir.
         resolved = cwd if cwd is not None else _cwd_for_session_key(session_key)
         source = _resolve_session_platform()
-        owner = None
         with _sessions_lock:
             for sess in list(_sessions.values()):
                 if sess.get("session_key") == session_key:
                     source = _session_source(sess)
-                    owner = sess
                     break
-        # 身份解析放在锁外：它要读名册/判目录，别在 _sessions_lock 底下做 IO。
-        if agent_id is None:
-            agent_id = _agent_id_for_session(owner) if owner else ""
         return set_session_vars(
             session_key=session_key,
             # 会话 id 与 session_key 同源（``_make_agent`` 也是 ``session_id or key``）；
@@ -4515,7 +4568,10 @@ def _preview_restart_callbacks(parent: str, task_id: str) -> dict:
 
 
 def _reset_session_agent(sid: str, session: dict) -> dict:
-    tokens = _set_session_context(session["session_key"])
+    # /new 重建 agent 会重新读 SOUL —— 身份得跟着一起进来，否则重置一次就退回 L1。
+    tokens = _set_session_context(
+        session["session_key"], **_identity_kwargs(_session_agent_id(session))
+    )
     try:
         # Preserve this session's chosen model AND reasoning across /new so a
         # reset doesn't silently revert to global config (or to a model
@@ -6087,7 +6143,12 @@ def _(rid, params: dict) -> dict:
         ]
         history = sanitize_replay_history(raw_history)
         messages = _history_to_messages(display_history)
-        tokens = _set_session_context(target)
+        # resume 这条路上身份就在手边：行上那一列（``sessions.agent_id``）就是
+        # 上一次落库的答案，不必再读名册。少了它，重开一个 Principal 的会话会
+        # 按顶层那份 L1 SOUL 重建 agent。
+        tokens = _set_session_context(
+            target, **_identity_kwargs(_agent_id_from_row(found))
+        )
         try:
             # Pass the profile's db so the agent persists turns to the right
             # state.db; home override is active here so config/skills/model
@@ -9250,6 +9311,9 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Option
             approval_token = set_current_session_key(session["session_key"])
             session_tokens = _set_session_context(
                 session["session_key"],
+                # 每轮都带着身份跑：工具里的 ``resolve_agent_slug``（记忆分持）
+                # 与 ``_active_agent_profile_name``（per-agent 覆盖）都读这一格。
+                **_identity_kwargs(_session_agent_id(session)),
                 ui_session_id=sid,
             )
             _profile_home_str = session.get("profile_home")
