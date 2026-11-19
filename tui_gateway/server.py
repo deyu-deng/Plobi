@@ -13433,7 +13433,9 @@ def _(rid, params: dict) -> dict:
 
         pconfig = PROVIDER_REGISTRY.get(slug)
         if not pconfig:
-            return _err(rid, 4002, f"unknown provider: {slug}")
+            from plobi_cli.models import unknown_provider_label
+
+            return _err(rid, 4002, f"unknown provider: {unknown_provider_label(slug)}")
         if pconfig.auth_type != "api_key":
             return _err(
                 rid,

@@ -75,10 +75,11 @@ DEFAULT_ROUTES: dict[str, dict[str, str]] = {
     PRINCIPAL: {"provider": "workbuddy", "model": "workbuddy/deepseek-v4.1-flash"},
 }
 
-# 2026-11-15：读侧迁移代码全部退场。上一刀为 ``aigw`` → ``bezel``、假模型 id
+# 2026-11-15：读侧迁移代码全部退场。上一刀为网关旧机器标识 → ``bezel``、假模型 id
 # ``workbuddy/deepseek-chat``、「三档 L2」的 ``l2_planner`` 各留了一张兼容表；用户裁定
 # 「内测版没有用户，不用管老配置文件，不接受为兼容付代价」——所以三张表连同
 # :func:`_migrated_provider` 一起删掉。写侧本来就只出新值，读侧不再替旧值兜底。
+# 2026-11-19 再收一刀：最老那两代机器标识连同读侧兼容壳一并剔除（不留任何识别路径）。
 # 真机核查（11-15）：本机没有生产 ``models.json``，只有 pytest 临时目录里的夹具残渣。
 
 

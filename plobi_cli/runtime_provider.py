@@ -536,8 +536,8 @@ def resolve_requested_provider(requested: Optional[str] = None) -> str:
     """Resolve provider request from explicit arg, config, then env."""
     # 配置里那个 provider 名本该是**软件名**（`workbuddy`、`opencode-zen-free`…）——
     # 网关的机器标识（`bezel`）是内部名，不进配置。这一层收两件事：
-    #   ① 存量配置里还留着机器标识（`aigw`／`bezel`／`quota_hub`）⇒ 一次性迁成软件名
-    #      并写回磁盘；
+    #   ① 存量配置里还留着网关**现役传输名**（`bezel`）⇒ 一次性迁成软件名并写回磁盘；
+    #      已退役的旧机器标识不迁（11-19「彻底剔除、不做兼容」），当不认识的 provider。
     #   ② 软件名 ⇒ 换到网关传输（`bezel`）那一腿，否则下游按名字查注册表会落空。
     # 这里是聊天真正走的那条路（11-18 实测：只改 auth.resolve_provider 不够，
     # 聊天走的是本函数），所以迁移必须也挂在这里。

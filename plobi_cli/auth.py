@@ -1736,15 +1736,16 @@ def hub_provider_identity(provider_name: str) -> str:
     （``workbuddy``、``opencode-zen-free``…），网关自己的机器标识（``bezel``）只是
     **传输**。所以这里要收两道：
 
-    ① 存量配置里若还是机器标识（``aigw``／``bezel``／``quota_hub``）⇒ 按
-       ``model.default`` 的前缀一次性迁成软件名，并写回磁盘（``migrate_legacy_hub_provider``）。
-       迁完的配置下一台机器也不会再撞——不留永久兼容表。
+    ① 存量配置里若还是网关**现役传输名**（``bezel``）⇒ 按 ``model.default`` 的前缀
+       一次性迁成软件名，并写回磁盘（``migrate_legacy_hub_provider``）。迁完的配置
+       下一台机器也不会再撞——不留永久兼容表。**已退役的旧机器标识不走这里**：
+       主人 11-19 定「彻底剔除、不做兼容」，它们就是「不认识的 provider」，不修正。
     ② 软件名 ⇒ 换到网关传输那一腿（``bezel``）。软件名不进注册表（那是「可配置的
        provider」宇宙），拿它直接查注册表只会得到「不认识的 provider」。
 
     别的名字原样返回——那不是这几个函数该管的问题。
     """
-    from plobi_cli.models import HUB_SOFTWARE_IDS, transport_for_software
+    from plobi_cli.models import HUB_SOFTWARE_IDS, HUB_TRANSPORTS
 
     name = (provider_name or "").strip().lower()
     if not name:
@@ -1755,7 +1756,9 @@ def hub_provider_identity(provider_name: str) -> str:
     # 返回，不再换成 `bezel` —— 换过去注册表里已经没有那个名字了。
     if name in HUB_SOFTWARE_IDS:
         return name
-    if name not in {"bezel", "aigw", "quota_hub"}:
+    # 只认**现役传输名**。已退役的旧机器标识（11-19 彻底剔除）与别家名字一样，
+    # 原样返回，交给下游按「不认识的 provider」如实报错——不做任何猜测或迁移。
+    if name not in HUB_TRANSPORTS:
         return name
 
     # 机器标识：想尽办法换成软件名。换不出来就原样交回去——让下游按「不认识的
@@ -1841,10 +1844,11 @@ def resolve_provider(
     # 归一成**能进注册表的那一个**（主人 11-18：「bezel 不该是 provider，provider
     # 下头适配的是一个个软件名」）：
     #   ① 软件名（`workbuddy`／`opencode-zen-free`…）**自己就是 provider**，原样返回；
-    #   ② 存量配置里还是网关**机器标识**（`aigw`／`bezel`／`quota_hub`）⇒ 按
-    #      `model.default` 的前缀一次性迁成**软件名**并写回磁盘，不留永久兼容表。
+    #   ② 存量配置里还是网关**现役传输名**（`bezel`）⇒ 按 `model.default` 的
+    #      前缀一次性迁成**软件名**并写回磁盘，不留永久兼容表。已退役的旧机器
+    #      标识不在此列（主人 11-19：彻底剔除、不做兼容）。
     # 必须在下面那个 `raise AuthError("Unknown provider")` **之前**：迁移原先是写在
-    # `auto` 段里的，而显式 provider 早就抛出去了，于是存量配置 `provider: aigw`
+    # `auto` 段里的，而显式 provider 早就抛出去了，于是存量配置 `provider: bezel`
     # 永远走不到迁移 —— 换模型只剩一句红字。
     # 也必须在这个别名表**之前**：`grok` 既是网关那家软件、也是 xAI 的近义词，
     # 这里的答案是那家软件（裁定 47）—— 答成 `xai` 会让切换落到别家。
@@ -1862,12 +1866,13 @@ def resolve_provider(
         return normalized
     if normalized != "auto":
         # Check for common config.yaml issues that cause this error
+        from plobi_cli.models import format_unknown_provider
+
         _config_hint = _get_config_hint_for_unknown_provider(normalized)
-        msg = f"Unknown provider '{normalized}'."
         if _config_hint:
-            msg += f"\n\n{_config_hint}"
+            msg = format_unknown_provider(normalized, tail=f"\n\n{_config_hint}")
         else:
-            msg += " Check 'plobi model' for available providers, or run 'plobi doctor' to diagnose config issues."
+            msg = format_unknown_provider(normalized)
         raise AuthError(msg, code="invalid_provider")
 
     # Explicit one-off CLI creds always mean openrouter/custom
@@ -6901,7 +6906,10 @@ def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
 
     2026-11-15 那刀按「内测版没有用户，不用管老配置文件，不接受为兼容付代价」把读侧
     兜底删了 —— 可**内测版的用户就是这一台**，它的 `model.provider` 还是改名前的机器
-    标识（`aigw`／`bezel`）⇒ 换模型就只剩一句「Unknown provider 'aigw'」。
+    标识（`bezel`）⇒ 换模型就只剩一句「Unknown provider 'bezel'」。
+
+    2026-11-19 再收一刀：**只迁现役传输名**。更早那两代机器标识已经彻底剔除，
+    配置里碰上它们一律当「不认识的 provider」如实报错——不迁、不猜、不写盘。
 
     主人 11-17 18:5x 拍板：网关的机器标识是**内部名**，**屏上与用户的配置里都不该出现**；
     `model.provider` 本该是**软件名**（`workbuddy`、`qoder`…）。软件名从 `model.default`
@@ -6911,7 +6919,7 @@ def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
     这与 11-15 那次撕掉的**永久**读侧兜底不是一回事：那三张表里有一张是**假模型 id**，
     而这里只迁 `model.provider` 一个字段、迁完即落新值。
     """
-    from plobi_cli.models import HUB_SOFTWARE_IDS
+    from plobi_cli.models import HUB_SOFTWARE_IDS, HUB_TRANSPORTS
 
     if not isinstance(config, dict):
         return None
@@ -6925,8 +6933,8 @@ def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
     # 已经是软件名 ⇒ 没什么要迁的。
     if current in HUB_SOFTWARE_IDS:
         return None
-    # 只认**网关那几代机器标识**；别的名字不碰（那是别的问题）。
-    if current not in {"bezel", "aigw", "quota_hub"}:
+    # 只认**现役传输名**；已退役的旧机器标识与别家名字一样不碰（11-19 彻底剔除）。
+    if current not in HUB_TRANSPORTS:
         return None
     software = hub_software_for_model(str(model_cfg.get("default") or ""))
     if not software:
@@ -8653,7 +8661,9 @@ def logout_command(args) -> None:
     provider_id = getattr(args, "provider", None)
 
     if provider_id and not is_known_auth_provider(provider_id):
-        print(f"Unknown provider: {provider_id}")
+        from plobi_cli.models import unknown_provider_label
+
+        print(f"Unknown provider: {unknown_provider_label(provider_id)}")
         raise SystemExit(1)
 
     active = get_active_provider()

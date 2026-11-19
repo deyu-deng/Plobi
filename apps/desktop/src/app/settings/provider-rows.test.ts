@@ -19,29 +19,18 @@ describe('mainProviderRows', () => {
     setRuntimeI18nLocale('en')
   })
 
-  it('只会有一行中性名兜底：一帧都还没到、清单里没有在册软件行时', () => {
+  it('不再造假 hub 行：清单里没有在册软件行时，也不塞一行写下去就坏的兜底行', () => {
+    // 那行旧兜底的 slug 是 `hub`——用户点中它，配置里就会写出 `provider: hub`，
+    // 后端根本没有这个 provider，下一帧就只剩一句「不认识的 provider」。
     const rows = mainProviderRows([{ models: ['glm-5.2'], name: 'Z.AI', slug: 'zai' }])
 
-    expect(rows.map(row => row.name)).toEqual(['Z.AI', 'Subscriptions'])
-    expect(rows.find(row => row.name === 'Subscriptions')?.ui_key).toBe('hub')
+    expect(rows.map(row => row.slug)).toEqual(['zai'])
+    expect(rows.some(row => row.slug === 'hub')).toBe(false)
   })
 
-  it('兜底那行的名字跟界面语言走，不是写死的中文', () => {
-    // 那一行原来写死「订阅额度」——日文与繁中界面上也是中文。
-    setRuntimeI18nLocale('zh')
-
-    try {
-      const rows = mainProviderRows([{ models: ['glm-5.2'], name: 'Z.AI', slug: 'zai' }])
-
-      expect(rows.map(row => row.name)).toEqual(['Z.AI', '订阅额度'])
-    } finally {
-      setRuntimeI18nLocale('en')
-    }
-  })
-
-  it('一帧都还没到（apps 表是空的）时，后端发来的软件行原样留着，不塞兜底行', () => {
+  it('一帧都还没到（apps 表是空的）时，后端发来的软件行原样留着，不塞任何兜底行', () => {
     // 第一帧之前 `$connectedDesktopApps` 是空的：这时不能把后端已经裁过的行丢掉，
-    // 否则选择器会比后端知道得还少。兜底行只在「清单里一条软件行都没有」时出现。
+    // 否则选择器会比后端知道得还少。11-19 起连兜底行都没有了——清单空就空着。
     const rows = mainProviderRows(catalog)
 
     expect(rows.map(row => row.slug)).toEqual(['zai', 'workbuddy', 'antigravity'])

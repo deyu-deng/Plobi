@@ -1186,6 +1186,71 @@ def transport_for_software(name: str) -> str:
     return HUB_TRANSPORT.get(key, key)
 
 
+def software_name_for_model(model_id: str) -> str:
+    """模型 id 的前缀 ⇒ 服务它的那家软件（``workbuddy/hy4free`` ⇒ ``workbuddy``）。"""
+    prefix = (model_id or "").strip().split("/", 1)[0].strip().lower()
+    return prefix if prefix in HUB_SOFTWARE_IDS else ""
+
+
+def provider_name_for_message(provider_name: str) -> str:
+    """报错／屏上该念的那个 provider 名。
+
+    机器标识（``bezel`` 等内部传输名）不是 provider，**不进任何用户可见
+    文案**：能按 ``model.default`` 的前缀换成软件名就换，换不出来返回 ``""`` ——
+    宁可不念名字，也不把内部标识端到用户面前。别的名字原样返回。
+    """
+    name = (provider_name or "").strip().lower()
+    if not name:
+        return ""
+    if name in HUB_SOFTWARE_IDS:
+        return name
+    if name not in HUB_TRANSPORTS:
+        return name
+
+    candidates: list[str] = []
+    try:
+        from plobi_cli.config import load_config
+
+        model_cfg = (load_config() or {}).get("model")
+        if isinstance(model_cfg, dict):
+            candidates.append(str(model_cfg.get("default") or ""))
+        elif isinstance(model_cfg, str):
+            candidates.append(model_cfg)
+    except Exception:  # noqa: BLE001 — 读不到配置就只剩环境变量这条线索
+        pass
+    candidates.append(str(os.getenv("PLOBI_MODEL") or ""))
+    for candidate in candidates:
+        software = software_name_for_model(candidate)
+        if software:
+            return software
+    return ""
+
+
+def unknown_provider_label(provider_name: str) -> str:
+    """短文案里那个名字：机器标识换软件名，实在换不出来给占位符。"""
+    return provider_name_for_message(provider_name) or "<internal id>"
+
+
+#: ``Unknown provider ...`` 的尾巴。软件名与「说不出来」两种情况共用同一句指引。
+UNKNOWN_PROVIDER_HINT = (
+    " Check 'plobi model' for available providers, or run 'plobi doctor' "
+    "to diagnose config issues."
+)
+
+
+def format_unknown_provider(
+    provider_name: str, tail: str = UNKNOWN_PROVIDER_HINT
+) -> str:
+    """``Unknown provider 'X'.`` + 指引；X 永远是**软件名**，绝不会是机器标识。"""
+    shown = provider_name_for_message(provider_name)
+    if shown:
+        return f"Unknown provider '{shown}'.{tail}"
+    return (
+        "Unknown provider. Your config names the gateway's internal transport, "
+        "not one of the software providers." + tail
+    )
+
+
 def config_provider_name(provider_id: str, model_id: str = "") -> str:
     """配置里那个 provider 叫什么。
 
@@ -1200,7 +1265,7 @@ def config_provider_name(provider_id: str, model_id: str = "") -> str:
     # 软件名自己就是 provider（11-18 第三处）⇒ 原样落盘，不再往后找前缀。
     if pid in HUB_SOFTWARE_IDS:
         return pid
-    # 还残着机器标识（`bezel`／`aigw`）⇒ 按模型 id 前缀换成软件名。
+    # 还残着机器标识（`bezel`）⇒ 按模型 id 前缀换成软件名。
     if pid in HUB_TRANSPORTS and prefix in HUB_SOFTWARE_IDS:
         return prefix
     return pid

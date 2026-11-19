@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -316,3 +317,36 @@ def test_doctor_401_says_the_gateway_rejected_our_credential(monkeypatch):
     assert "rejected our credential" in row["detail"]
     # The row says *where* the credential came from, never what it is.
     assert row["credential"].startswith(("env:", "gateway config", "development default"))
+
+
+# ─── 11-19: one list of env names, written on both sides ──────────────────────
+def test_electron_reads_the_same_env_names_in_the_same_order():
+    """``registry.BEZEL_KEY_ENV_VARS`` 与 electron 的 ``ENV_ORDER`` 同名同序。
+
+    两张表是同一份约定写了两遍，历史上各演化过一次：Python 认
+    ``PLOBI_QUOTA_BEZEL_KEY``，electron 认 ``PLOBI_BEZEL_API_KEY``。只设一个
+    名字的用户，另一端静默回退到 ``bezel/config.yaml`` 或 dev default ——
+    症状是「key 明明配了，网关还 401」。11-19 合并到 ``PLOBI_BEZEL_API_KEY``
+    且不留别名；这条断言钉的是**名字本身**，不是解析逻辑（解析逻辑早有
+    parity 覆盖，名字没有，才让分叉活了下来）。
+    """
+    source = (REPO / "apps/desktop/electron/bezel-key-reconcile.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"ENV_ORDER\s*=\s*\[([^\]]*)\]", source)
+    assert match, "bezel-key-reconcile.ts 里找不到 ENV_ORDER"
+    order = tuple(re.findall(r"""['"]([A-Z0-9_]+)['"]""", match.group(1)))
+    assert order == registry.BEZEL_KEY_ENV_VARS
+
+
+def test_main_process_ladder_reads_no_key_name_outside_that_list():
+    """主进程那条 ``a || b || dev-default`` 阶梯不许再冒出第三个名字。
+
+    阶梯是手写的 ``process.env.X || process.env.Y``，最容易成为下一次分叉的
+    出生地：加一个名字不报错、也不影响任何 parity 断言。这里只取以
+    ``BEZEL_API_KEY`` 结尾的 env 名（``PLOBI_BEZEL_DIR`` / ``_PORT`` 不是凭据，
+    归别的配置管）。
+    """
+    source = (REPO / "apps/desktop/electron/main.ts").read_text(encoding="utf-8")
+    names = set(re.findall(r"process\.env\.([A-Z0-9_]*BEZEL_API_KEY)", source))
+    assert names == set(registry.BEZEL_KEY_ENV_VARS)

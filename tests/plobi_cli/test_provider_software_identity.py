@@ -7,7 +7,8 @@ provider 下面适配的是一个一个软件名，而不是 bezel。」
 
 * 配置里写**软件名**（`workbuddy`）⇒ 解析得到**网关那条腿**，不是「不认识的 provider」；
 * 运行时那条路（`resolve_runtime_provider`）也认软件名 ⇒ 聊天真能跑；
-* 存量配置里还是**网关的机器标识**（`aigw`／`bezel`）⇒ **一次性迁成软件名并写回磁盘**；
+* 存量配置里还是**网关的现役传输名**（`bezel`）⇒ **一次性迁成软件名并写回磁盘**；
+  更早那两代机器标识 11-19 已彻底剔除：碰上就如实报「不认识的 provider」，不迁不猜；
 * 迁完**写回新值** ⇒ 兼容表不留着；
 * 模型 id 的前缀就是那家软件 ⇒ 软件名不用另造（数据里本来就有）；
 * **软件名不进全局 provider 宇宙**（规范表／别名表）——那是「可配置的 provider」的
@@ -93,14 +94,14 @@ def test_模型_id的前缀就是那家软件():
 
 
 def test_存量配置里的机器标识被一次性迁成软件名(home):
-    """`provider: aigw`（网关改名前的机器标识）⇒ 迁成 `workbuddy` 并**写回磁盘**。"""
-    path = _write_config(home, "aigw")
+    """`provider: bezel`（网关的**现役传输名**）⇒ 迁成 `workbuddy` 并**写回磁盘**。"""
+    path = _write_config(home, "bezel")
     assert resolve_provider("auto") == "workbuddy"
 
     with io.open(path, encoding="utf-8") as fh:
         written = fh.read()
     assert "provider: workbuddy" in written
-    assert "aigw" not in written
+    assert "provider: bezel" not in written
 
 
 def test_迁移只干一次_不是永久兼容表(home):
@@ -174,27 +175,46 @@ def test_软件名那张表和传输映射对得上():
 
 
 def test_显式传机器标识也走迁移(home):
-    """`resolve_provider("aigw")` —— 不是 `auto`，是**显式**那个名字。
+    """`resolve_provider("bezel")` —— 不是 `auto`，是**显式**那个名字。
 
     这是第一处的病根：迁移原先只写在 `auto` 段里，而显式 provider 早在那之前
     就 `raise AuthError("Unknown provider")` 抛出去了，于是存量配置
-    `provider: aigw` 永远走不到迁移 —— 换模型只剩一句红字。
+    `provider: bezel` 永远走不到迁移 —— 换模型只剩一句红字。
     """
-    path = _write_config(home, "aigw")
+    path = _write_config(home, "bezel")
 
-    assert resolve_provider("aigw") == "workbuddy"
+    assert resolve_provider("bezel") == "workbuddy"
 
     with io.open(path, encoding="utf-8") as fh:
         written = fh.read()
     assert "provider: workbuddy" in written
-    assert "aigw" not in written
+    assert "provider: bezel" not in written
 
 
-@pytest.mark.parametrize("machine_name", ["aigw", "quota_hub", "bezel"])
-def test_三个机器标识都能迁(home, machine_name):
-    """`aigw`／`quota_hub`／`bezel` 三个都算存量，一个都不许漏。"""
-    _write_config(home, machine_name, default="qoder/sonus")
-    assert resolve_provider(machine_name) == "qoder"
+def test_现役传输名能迁(home):
+    """`bezel` 是唯一的现役传输名，还认得、还迁得动。"""
+    _write_config(home, "bezel", default="qoder/sonus")
+    assert resolve_provider("bezel") == "qoder"
+
+
+@pytest.mark.parametrize("retired", ["aigw", "quota_hub"])
+def test_已退役的机器标识不再迁_如实报不认识的provider(home, retired):
+    """11-19「彻底剔除、不做兼容」：这两代连同读侧兼容壳一起删了。
+
+    配置里还写着它们 ⇒ 走到「不认识的 provider」，且**不写盘**（不留任何
+    猜测出来的迁移结果）。
+    """
+    from plobi_cli.auth import AuthError
+
+    path = _write_config(home, retired, default="qoder/sonus")
+    with io.open(path, encoding="utf-8") as fh:
+        before = fh.read()
+
+    with pytest.raises(AuthError):
+        resolve_provider(retired)
+
+    with io.open(path, encoding="utf-8") as fh:
+        assert fh.read() == before
 
 
 def test_迁移做在别名表之前(home):

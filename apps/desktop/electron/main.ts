@@ -9679,7 +9679,7 @@ const PRODUCT_QUOTA_PORT = Number(process.env.PLOBI_BEZEL_PORT || 8000)
 const PRODUCT_QUOTA_BASE = `http://127.0.0.1:${PRODUCT_QUOTA_PORT}/v1`
 
 function productQuotaApiKey(): string {
-  return process.env.BEZEL_API_KEY || process.env.QUOTA_HUB_API_KEY || process.env.PLOBI_BEZEL_API_KEY || 'sk-local-dev-key'
+  return process.env.BEZEL_API_KEY || process.env.PLOBI_BEZEL_API_KEY || 'sk-local-dev-key'
 }
 
 // WP-AIGW-KEY-LITERALS (consumer's half, 裁定 94). Both sides of one rule:

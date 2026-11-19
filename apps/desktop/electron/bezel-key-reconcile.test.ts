@@ -136,20 +136,22 @@ test('the shell ladder keeps BEZEL_API_KEY ahead of PLOBI_BEZEL_API_KEY', () => 
 const mainTs = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.ts'), 'utf-8')
 
 test('main.ts productQuotaApiKey() is still the ladder this module mirrors', () => {
-  const wanted = `process.env.${ENV_ORDER[0]} || process.env.${ENV_ORDER[1]} || process.env.${ENV_ORDER[2]} || '${DEV_DEFAULT_API_KEY}'`
+  const wanted = `process.env.${ENV_ORDER[0]} || process.env.${ENV_ORDER[1]} || '${DEV_DEFAULT_API_KEY}'`
   assert.ok(mainTs.includes(wanted), `main.ts 的取值阶梯与本模块不同：要找「${wanted}」`)
 })
 
-// ── 已知分叉，钉住而不是悄悄抹平（要合并就两处一起改，本行同步更新） ────────────────
-test('the ladder carries the new name and both legacy rungs', () => {
-  // BEZEL_API_KEY is the new owner; the two old names stay after it so a
-  // user who set either one keeps working through the rename.
-  assert.equal(ENV_ORDER[0], 'BEZEL_API_KEY')
-  assert.equal(ENV_ORDER[1], 'QUOTA_HUB_API_KEY')
-  assert.equal(ENV_ORDER[2], 'PLOBI_BEZEL_API_KEY')
+// ── 已退役的旧名不再占位（11-19 彻底剔除，不做兼容） ─────────────────────────────
+test('the ladder carries only the live names', () => {
+  // BEZEL_API_KEY 是正主，PLOBI_BEZEL_API_KEY 是带前缀的老写法；更早那两个网关
+  // 机器标识（配额中枢那代的 key 名）11-19 连同 Python 侧名单一起删了，别再长回来。
+  assert.deepEqual([...ENV_ORDER], ['BEZEL_API_KEY', 'PLOBI_BEZEL_API_KEY'])
   assert.ok(
     mainTs.includes('PLOBI_BEZEL_API_KEY'),
     'main.ts 不再认 PLOBI_BEZEL_API_KEY —— 那就与本表与 Python 名单一起统一，别只改一边',
+  )
+  assert.ok(
+    !(ENV_ORDER as readonly string[]).includes('QUOTA_HUB_API_KEY'),
+    '退役的旧名回到了取值阶梯里：要加回来得先让 Python 侧的名单也认它',
   )
 })
 

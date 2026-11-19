@@ -1657,8 +1657,8 @@ def profile_config_overlay(profile_name: str) -> dict:
                 # 但"为什么这个分身没吃到你给它选的模型"必须说得出名字，不能静默留空。
                 from plobi_cli.models import provider_name_for_message
 
-                # 念给用户听的那个名字仍是**软件名**：配置里残留的 `bezel`／`aigw`
-                # 是传输名，不进这句 warning。
+                # 念给用户听的那个名字仍是**软件名**：配置里残留的 `bezel` 是传输名，
+                # 不进这句 warning。
                 shown_provider = provider_name_for_message(provider) or "<internal id>"
                 logger.warning(
                     "plobi: model override NOT applied for %r — the runtime provider "
@@ -2135,7 +2135,6 @@ BEZEL_DEFAULT_BASE = "http://127.0.0.1:8000/v1"
 # profile and ``scripts/plobi/doctor.py`` import it instead of writing their own.
 BEZEL_URL_ENV_VARS: tuple[str, ...] = (
     "PLOBI_BEZEL_URL",
-    "PLOBI_QUOTA_HUB_URL",
     "PLOBI_QUOTA_BEZEL_URL",
 )
 
@@ -2157,10 +2156,17 @@ def bezel_base_url() -> str:
 # the agents layer, the ``model-providers/bezel`` profile (as the api-key
 # resolver's declared fallback), ``scripts/plobi/doctor.py`` and
 # ``plobi.quota.config``.  None of them re-implements this chain.
+# 11-19: this list and the electron side's ``ENV_ORDER`` in
+# ``apps/desktop/electron/bezel-key-reconcile.ts`` are **one** list written twice.
+# They had drifted (Python read ``PLOBI_QUOTA_BEZEL_KEY``, electron read
+# ``PLOBI_BEZEL_API_KEY``), so a user who set only one name got a silent fallback
+# on the other side — "key is configured but the gateway says 401".  Merged onto
+# ``PLOBI_BEZEL_API_KEY``; the old name is *gone*, not aliased (a compatibility
+# entry would keep the split alive and hide the next drift).  The mirror is
+# asserted in ``tests/plobi/test_hub_credential_source.py``.
 BEZEL_KEY_ENV_VARS: tuple[str, ...] = (
     "BEZEL_API_KEY",
-    "QUOTA_HUB_API_KEY",
-    "PLOBI_QUOTA_BEZEL_KEY",
+    "PLOBI_BEZEL_API_KEY",
 )
 BEZEL_DEV_DEFAULT_API_KEY = "sk-local-dev-key"
 BEZEL_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "bezel" / "config.yaml"

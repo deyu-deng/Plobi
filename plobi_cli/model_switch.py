@@ -871,10 +871,12 @@ def switch_model(
         if pdef is None and explicit_provider.strip().lower() == "custom":
             pdef = _bare_custom_provider_def(current_base_url)
         if pdef is None:
-            _switch_err = (
-                f"Unknown provider '{explicit_provider}'. "
-                f"Check 'plobi model' for available providers, or define it "
-                f"in config.yaml under 'providers:'."
+            from plobi_cli.models import format_unknown_provider
+
+            _switch_err = format_unknown_provider(
+                explicit_provider,
+                tail=" Check 'plobi model' for available providers, or define it "
+                     "in config.yaml under 'providers:'.",
             )
             # Check for common config issues that cause provider resolution failures
             try:

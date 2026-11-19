@@ -164,7 +164,9 @@ def _format_exhausted_status(entry) -> str:
 def auth_add_command(args) -> None:
     provider = _normalize_provider(getattr(args, "provider", ""))
     if provider not in PROVIDER_REGISTRY and provider != "openrouter" and not provider.startswith(CUSTOM_POOL_PREFIX):
-        raise SystemExit(f"Unknown provider: {provider}")
+        from plobi_cli.models import unknown_provider_label
+
+        raise SystemExit(f"Unknown provider: {unknown_provider_label(provider)}")
 
     requested_type = str(getattr(args, "auth_type", "") or "").strip().lower()
     if requested_type in {AUTH_TYPE_API_KEY, "api-key"}:
@@ -650,7 +652,9 @@ def _pick_provider(prompt: str = "Provider") -> str:
 def _interactive_add() -> None:
     provider = _pick_provider("Provider to add credential for")
     if provider not in PROVIDER_REGISTRY and provider != "openrouter" and not provider.startswith(CUSTOM_POOL_PREFIX):
-        raise SystemExit(f"Unknown provider: {provider}")
+        from plobi_cli.models import unknown_provider_label
+
+        raise SystemExit(f"Unknown provider: {unknown_provider_label(provider)}")
 
     # For OAuth-capable providers, ask which type
     if provider in _OAUTH_CAPABLE_PROVIDERS:

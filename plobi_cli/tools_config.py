@@ -3460,7 +3460,12 @@ def apply_provider_selection(ts_key: str, provider_name: str, config: dict) -> N
     providers = _visible_providers(cat, config, force_fresh=True)
     provider = next((p for p in providers if p.get("name") == provider_name), None)
     if provider is None:
-        raise KeyError(f"Unknown provider {provider_name!r} for toolset {ts_key!r}")
+        from plobi_cli.models import unknown_provider_label
+
+        raise KeyError(
+            f"Unknown provider {unknown_provider_label(provider_name)!r} "
+            f"for toolset {ts_key!r}"
+        )
 
     managed_feature = provider.get("managed_nous_feature")
     _write_provider_config(provider, config, managed_feature=managed_feature)

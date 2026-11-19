@@ -41,7 +41,7 @@ _PS1 = _REPO_ROOT / "scripts" / "plobi" / "bezel_start.ps1"
 
 # Env vars that feed the key this script resolves.  Every run starts from a
 # cleaned env so a developer's real credential cannot decide a verdict.
-_KEY_ENV_VARS = ("BEZEL_API_KEY", "PLOBI_QUOTA_BEZEL_KEY", "BEZEL_KEY")
+_KEY_ENV_VARS = ("BEZEL_API_KEY", "PLOBI_BEZEL_API_KEY", "BEZEL_KEY")
 
 # Test-only stand-ins.  Asserting that these never appear in the output is how
 # the tests prove the script does not leak what it read.

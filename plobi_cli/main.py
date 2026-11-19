@@ -2923,6 +2923,12 @@ def select_provider_and_model(args=None):
     effective_provider = (
         config_provider or os.getenv("PLOBI_INFERENCE_PROVIDER") or "auto"
     )
+    # 存量配置里可能还留着网关的**现役传输名**（`bezel`）——那是传输的名字，不是
+    # provider。这里先按 `model.default` 的前缀迁成软件名，别让内部名上屏（主人 11-19）。
+    # 已退役的旧机器标识不迁：「彻底剔除、不做兼容」，碰上就当不认识的 provider 报错。
+    from plobi_cli.auth import hub_provider_identity as _hub_provider_identity
+
+    effective_provider = _hub_provider_identity(effective_provider)
     compatible_custom_providers = get_compatible_custom_providers(config)
     def _named_custom_provider_map(cfg) -> dict[str, dict[str, str]]:
         from plobi_cli.config import read_raw_config
@@ -3082,11 +3088,9 @@ def select_provider_and_model(args=None):
         if active_def is not None:
             active = active_def.id
         else:
-            warning = (
-                f"Unknown provider '{effective_provider}'. Check 'plobi model' for "
-                "available providers, or run 'plobi doctor' to diagnose config "
-                "issues."
-            )
+            from plobi_cli.models import format_unknown_provider
+
+            warning = format_unknown_provider(effective_provider)
             print(f"Warning: {warning} Falling back to auto provider detection.")
     if not active:
         try:

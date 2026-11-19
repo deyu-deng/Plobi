@@ -183,9 +183,11 @@ async def api_auth_providers() -> Any:
 async def auth_login(request: Request, provider: str, next: str = ""):
     p = get_provider(provider)
     if p is None:
+        from plobi_cli.models import unknown_provider_label
+
         raise HTTPException(
             status_code=404,
-            detail=f"Unknown provider: {provider!r}",
+            detail=f"Unknown provider: {unknown_provider_label(provider)!r}",
         )
     if not getattr(p, "supports_session", True):
         raise HTTPException(
@@ -283,9 +285,11 @@ async def auth_callback(
 
     p = get_provider(provider_name)
     if p is None:
+        from plobi_cli.models import unknown_provider_label
+
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown provider in cookie: {provider_name!r}",
+            detail=f"Unknown provider in cookie: {unknown_provider_label(provider_name)!r}",
         )
 
     if error:

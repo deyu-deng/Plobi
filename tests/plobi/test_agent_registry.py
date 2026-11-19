@@ -373,7 +373,9 @@ def test_spawn_creates_profile_and_models(spawn_env):
     # 裁 172：那张表是「这一类默认用什么」，**不接收任何一行的覆盖**（名册 24 行里
     # principal 占 23 行，折进去就是给一个 Agent 单选 = 整类一起变）。这一行自己的生效值
     # 问 ``route_for``——它仍是 deepseek/deepseek-chat，但只属于 agenda 那一行。
-    assert models["roles"]["principal"]["provider"] == "bezel"
+    # 11-18 第三处之后：**软件名就是 provider**，路由表里写的是 `workbuddy`；
+    # `bezel` 只剩传输身份，不该再出现在这张表里。
+    assert models["roles"]["principal"]["provider"] == "workbuddy"
     assert models["roles"]["principal"]["model"] == "workbuddy/deepseek-v4.1-flash"
     agenda_route = reg.route_for(reg.get("principal-agenda"))
     assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")

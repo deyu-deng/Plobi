@@ -9030,9 +9030,11 @@ async def disconnect_oauth_provider(
         catalog_by_id = {p["id"]: p for p in _build_oauth_catalog()}
         provider = catalog_by_id.get(provider_id)
         if provider is None:
+            from plobi_cli.models import unknown_provider_label
+
             raise HTTPException(
                 status_code=400,
-                detail=f"Unknown provider: {provider_id}. "
+                detail=f"Unknown provider: {unknown_provider_label(provider_id)}. "
                        f"Available: {', '.join(sorted(catalog_by_id))}",
             )
 
@@ -9965,7 +9967,12 @@ async def start_oauth_login(
     _validate_oauth_profile(profile)
     valid = {p["id"] for p in _OAUTH_PROVIDER_CATALOG}
     if provider_id not in valid:
-        raise HTTPException(status_code=400, detail=f"Unknown provider {provider_id}")
+        from plobi_cli.models import unknown_provider_label
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider {unknown_provider_label(provider_id)}",
+        )
     catalog_entry = next(p for p in _OAUTH_PROVIDER_CATALOG if p["id"] == provider_id)
     if catalog_entry["flow"] == "external":
         raise HTTPException(

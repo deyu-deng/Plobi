@@ -1,4 +1,5 @@
-"""软件名册（`HUB_SOFTWARE`）只有一个真源，且存量机器标识**在任何入口**都迁得动。
+"""软件名册（`HUB_SOFTWARE`）只有一个真源；现役传输名**在任何入口**都迁得动，
+退役的两代机器标识则一律如实报「不认识」。
 
 11-18 那两处病根，各钉一条：
 
@@ -9,8 +10,10 @@
   就放弃。现在这张表由 ``scripts/gen_hub_software.py`` 从
   ``bezel/bezel/providers/apps/magpie/providers.yaml`` 生成，本文件负责「漂了就红」。
 * **迁移是死代码** —— 它写在 ``resolve_provider`` 的 ``auto`` 段里，而显式 provider
-  早在上一屏就 ``raise AuthError("Unknown provider")`` 了，所以存量配置
-  ``provider: aigw`` 永远走不到迁移。现在前置到显式分支之前。
+  早在上一屏就 ``raise AuthError("Unknown provider")`` 了，所以现役传输名
+  ``provider: bezel`` 永远走不到迁移。现在前置到显式分支之前。
+* **11-19 主人拍板彻底剔除旧标识** —— ``aigw``／``quota_hub`` 既不是现役传输名，
+  也没有任何迁移路径：显式传它们就是「不认识的 provider」，不写盘、不改配置。
 """
 import io
 import os
@@ -88,29 +91,46 @@ def test_名册不是九家小圈子():
 
 
 def test_显式provider传机器标识也能迁_不再抛Unknown(home):
-    """旧代码这一段直接 `Unknown provider 'aigw'`——迁移在下一屏，永远够不到。"""
-    path = _write_config(home, "aigw")
-    assert resolve_provider("aigw") == "workbuddy"
+    """旧代码这一段直接 `Unknown provider`——迁移在下一屏，永远够不到。
+
+    11-19 起只有**现役传输名**（`bezel`）还走迁移；更早那两代已彻底剔除。
+    """
+    path = _write_config(home, "bezel")
+    assert resolve_provider("bezel") == "workbuddy"
     written = _read(path)
     assert "provider: workbuddy" in written
-    assert "aigw" not in written
+    assert "provider: bezel" not in written
 
 
 def test_显式provider传opencode_zen_free也能迁(home):
-    """本机 dev 家的真实形状：provider 还是机器标识，default 是免费池那条腿。"""
-    path = _write_config(home, "aigw", default="opencode-zen-free/mimo-v2.6-flash-free")
-    assert resolve_provider("aigw") == "opencode-zen-free"
+    """本机 dev 家的真实形状：provider 还是传输名，default 是免费池那条腿。"""
+    path = _write_config(home, "bezel", default="opencode-zen-free/mimo-v2.6-flash-free")
+    assert resolve_provider("bezel") == "opencode-zen-free"
     written = _read(path)
     assert "provider: opencode-zen-free" in written
-    assert "aigw" not in written
+    assert "provider: bezel" not in written
 
 
 def test_运行时显式传机器标识也迁(home):
     from plobi_cli.runtime_provider import resolve_requested_provider
 
-    path = _write_config(home, "aigw")
-    assert resolve_requested_provider("aigw") == "workbuddy"
+    path = _write_config(home, "bezel")
+    assert resolve_requested_provider("bezel") == "workbuddy"
     assert "provider: workbuddy" in _read(path)
+
+
+@pytest.mark.parametrize("retired", ["aigw", "quota_hub"])
+def test_已退役的机器标识不再迁_如实报不认识(home, retired):
+    """11-19「彻底剔除、不做兼容」：配置里还写这两个名字 ⇒ 不迁、不猜、不改盘。"""
+    from plobi_cli.auth import AuthError
+
+    path = _write_config(home, retired)
+    before = _read(path)
+
+    with pytest.raises(AuthError):
+        resolve_provider(retired)
+
+    assert _read(path) == before
 
 
 def test_软件名自己就是provider(home):
