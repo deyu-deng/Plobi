@@ -15,8 +15,8 @@ vi.mock('@/i18n', () => ({
   })
 }))
 
-import { DetailPeek, RailChip, RailEmpty, RailRow, RailSection } from './rail-kit'
 import { chatTopBarRailEntries } from './chat-top-bar'
+import { DetailPeek, RailChip, RailEmpty, RailRow, RailSection } from './rail-kit'
 
 afterEach(() => {
   cleanup()
@@ -114,13 +114,7 @@ describe('rail-kit —— 对话卡右上角那一列共用的一套壳', () => 
 
 describe('右上角那一列是注册表驱动的', () => {
   it('注册表列出现有哪几项', () => {
-    const entries = chatTopBarRailEntries({
-      dossierLabel: '档案',
-      dossierVisible: false,
-      edgeControls: {},
-      narrow: false,
-      peekOpen: false
-    })
+    const entries = chatTopBarRailEntries({ edgeControls: {} })
 
     // 右栏那一列现在是四条记录：档案／待放行／**写脑待批**（11-16 21:4x 拍定从左栏
     // 底部角标搬进对话卡，`WP-MIND-CONSENT-EVENTS`）／贴边那几枚。
@@ -128,13 +122,7 @@ describe('右上角那一列是注册表驱动的', () => {
   })
 
   it('加一条记录就多一项 —— 不用改壳子', () => {
-    const entries = chatTopBarRailEntries({
-      dossierLabel: '档案',
-      dossierVisible: false,
-      edgeControls: {},
-      narrow: false,
-      peekOpen: false
-    })
+    const entries = chatTopBarRailEntries({ edgeControls: {} })
 
     const withExtra = [...entries, { id: 'future', render: () => <button type="button">未来</button> }]
 

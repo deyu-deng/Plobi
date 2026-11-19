@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
-import { setMindPendingOpen } from '@/store/mind-pending'
+import { openMonitorFace } from '@/store/layout'
 
 /**
  * 设置里「记忆」那一页的正文（用户 2026-10-30：入口放设置里、只做个人记忆、
@@ -235,15 +235,19 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
 
 function copyFor(locale: string): LedgerCopy {
   const value = (locale || 'en').toLowerCase()
+
   if (value.startsWith('zh-hant') || value.includes('hant')) {
     return COPY['zh-hant']
   }
+
   if (value.startsWith('zh')) {
     return COPY.zh
   }
+
   if (value.startsWith('ja')) {
     return COPY.ja
   }
+
   return COPY.en
 }
 
@@ -274,12 +278,14 @@ export function MemoryLedgers() {
 
   const forget = async (scope: string, index: number) => {
     setBusy(`${scope}:${index}`)
+
     try {
       const payload = await window.plobiDesktop.api<LedgersPayload & { ok?: boolean; error?: string }>({
         body: { index, scope },
         method: 'POST',
         path: '/api/memory/forget'
       })
+
       setData({ agent: payload.agent, scopes: payload.scopes })
       setError(payload.ok === false ? payload.error || m.failed : null)
     } catch {
@@ -293,7 +299,7 @@ export function MemoryLedgers() {
     <div className="mt-3 flex flex-col gap-4" data-testid="memory-ledgers">
       <div className="flex items-center justify-between gap-3">
         <div className="text-muted-foreground text-xs">{data ? (data.agent && data.agent !== 'l1' ? m.agentLine(data.agent) : m.unbound) : null}</div>
-        <Button onClick={() => setMindPendingOpen(true)} size="sm" variant="ghost">
+        <Button onClick={() => openMonitorFace('mind-pending')} size="sm" variant="ghost">
           {m.openPending}
         </Button>
       </div>
@@ -330,10 +336,13 @@ export function MemoryLedgers() {
                     disabled={busy === `${scope.key}:${entry.index}`}
                     onClick={() => {
                       const key = `${scope.key}:${entry.index}`
+
                       if (armed !== key) {
                         setArmed(key)
+
                         return
                       }
+
                       setArmed(null)
                       void forget(scope.key, entry.index)
                     }}
@@ -377,9 +386,11 @@ export function MemoryBoundary() {
 
   useEffect(() => {
     let alive = true
+
     const load = async () => {
       try {
         const payload = await window.plobiDesktop.api<BoundaryPayload>({ path: '/api/memory/boundary' })
+
         if (alive) {
           setData(payload)
           setMissing(false)
@@ -390,7 +401,9 @@ export function MemoryBoundary() {
         }
       }
     }
+
     void load()
+
     return () => {
       alive = false
     }

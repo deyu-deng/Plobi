@@ -36,7 +36,7 @@ export function TopBarIconButton({ className, count, icon, label, pressed, ...re
     >
       <Codicon name={icon} size="0.8125rem" />
       {count && count > 0 ? (
-        <span className="absolute -top-0.5 -right-0.5 grid min-w-3 place-items-center rounded-full bg-(--ui-accent) px-0.5 text-[0.5rem] leading-3 text-(--ui-text-on-accent)">
+        <span className="absolute -top-0.5 -right-0.5 grid min-w-3 place-items-center rounded-full bg-(--ui-accent) px-0.5 text-[0.5rem] leading-3 text-(--ui-text-primary)">
           {count > 9 ? '9+' : count}
         </span>
       ) : null}

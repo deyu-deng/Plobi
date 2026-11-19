@@ -3,97 +3,139 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
-  $dossierPanelMode,
-  $dossierPanelVisible,
-  $dossierPeekOpen,
+  $monitorFace,
+  $monitorPeekOpen,
+  $monitorSlotMode,
+  $monitorSlotVisible,
   CHAT_CARD_NARROW_WIDTH,
   setChatCardWidth
 } from '@/store/layout'
 
-import { chatTopBarRailEntries, dossierRailPressed } from './chat-top-bar'
+import { chatTopBarRailEntries } from './chat-top-bar'
 
 /**
- * 对话卡右上角那一列里，**档案那枚图标按下去该做什么**。
+ * 对话卡右上角那一列：**三枚入口是同一个组件、同一个行为**。
  *
- * 用户 11-16 19:4x 拍板：「这一列先只做**容器查询**（宽度不够就折叠、不遮对话）」。
- * Qoder 的机制（11-08 逆向报告）：**形状由宽度决定，状态变量只管「在不在」**。
- * 窄到装不下档案列 ⇒ 档案卡折叠（不占位、不遮挡），那枚图标变成**唯一入口**，
- * 点它以贴头浮层展开；宽时它的老样子不变（点图标切换档案卡显隐）。
+ * 用户 11-19 17:0x：「**三枚入口现在还是没有统一…UX也完全一致。要和现在档案的完全一致。**」
+ * 「**完全复用同样的组件。不要写三套代码。只是容器内部的信息和UI细节不同而已。**」
  *
- * 这一档钉的是**行为**（点下去 store 变成什么样），不是源码文字。
+ * 这一档钉的是**行为**（点下去 store 变成什么样）与**形状**（三枚走同一件），
+ * 不是源码文字。
  */
-function dossierEntry(narrow: boolean, peekOpen = false) {
-  const entries = chatTopBarRailEntries({
-    dossierLabel: '档案',
-    dossierVisible: false,
-    edgeControls: {},
-    narrow,
-    peekOpen
-  })
+function entries() {
+  return chatTopBarRailEntries({ edgeControls: {} })
+}
 
-  const dossier = entries.find(entry => entry.id === 'dossier')
+function entry(id: string) {
+  const found = entries().find(item => item.id === id)
 
-  if (!dossier) {
-    throw new Error('注册表里没有档案那项')
+  if (!found) {
+    throw new Error(`注册表里没有 ${id} 那项`)
   }
 
-  return dossier
+  return found
 }
 
 beforeEach(() => {
   setChatCardWidth(CHAT_CARD_NARROW_WIDTH + 200)
-  $dossierPanelMode.set('closed')
-  $dossierPeekOpen.set(false)
+  $monitorSlotMode.set('closed')
+  $monitorFace.set('dossier')
+  $monitorPeekOpen.set(false)
 })
 
 afterEach(() => {
   cleanup()
 })
 
-describe('对话卡右上角那枚档案图标', () => {
-  it('宽时点它 ⇒ 切档案卡本体的显隐（老样子不变）', () => {
-    render(<>{dossierEntry(false).render()}</>)
-
-    fireEvent.click(screen.getByRole('button', { name: '档案' }))
-
-    expect($dossierPanelVisible.get()).toBe(true)
-    expect($dossierPeekOpen.get()).toBe(false)
+describe('对话卡右上角那一列', () => {
+  it('注册表还是那四条：档案 / 待放行 / 写脑待批 / 贴边那几枚', () => {
+    expect(entries().map(item => item.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
   })
 
-  it('窄时点它 ⇒ 开贴头浮层，**不去动**档案卡本体', () => {
-    render(<>{dossierEntry(true).render()}</>)
+  it('三枚入口走的是同一个组件：同一件形状、同一枚按下态', () => {
+    render(
+      <>
+        {entries()
+          .slice(0, 3)
+          .map(item => <div key={item.id}>{item.render()}</div>)}
+      </>
+    )
 
-    fireEvent.click(screen.getByRole('button', { name: '档案' }))
+    const buttons = screen.getAllByRole('button')
 
-    expect($dossierPeekOpen.get()).toBe(true)
-    expect($dossierPanelVisible.get()).toBe(false)
+    expect(buttons).toHaveLength(3)
+
+    for (const button of buttons) {
+      // 同一件形状：`TopBarIconButton` 是那一列的唯一形态。
+      expect(button.getAttribute('data-top-bar-icon')).toBe('')
+      expect(button.className).toContain('size-7')
+    }
+  })
+
+  it('点哪一枚 ⇒ 那一张卡换到那一面', () => {
+    render(<>{entry('pending').render()}</>)
+
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+
+    expect($monitorFace.get()).toBe('pending')
+    expect($monitorSlotVisible.get()).toBe(true)
+  })
+
+  it('再点同一枚 ⇒ 关掉那一张卡', () => {
+    render(<>{entry('pending').render()}</>)
+
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+
+    expect($monitorSlotVisible.get()).toBe(false)
+  })
+
+  it('点另一枚 ⇒ 换面，不是关掉', () => {
+    render(
+      <>
+        {entry('pending').render()}
+        {entry('mind-pending').render()}
+      </>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /写脑|Mind|node|nod/i }))
+
+    expect($monitorFace.get()).toBe('mind-pending')
+    expect($monitorSlotVisible.get()).toBe(true)
+  })
+
+  it('开着的那一枚才算是按下的', () => {
+    render(
+      <>
+        {entry('dossier').render()}
+        {entry('pending').render()}
+      </>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+
+    expect(screen.getByRole('button', { name: /待放行|Pending/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /档案|Dossier/ }).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('窄时点它 ⇒ 开贴头浮层，**不去动**那张卡本体', () => {
+    setChatCardWidth(CHAT_CARD_NARROW_WIDTH - 1)
+    render(<>{entry('dossier').render()}</>)
+
+    fireEvent.click(screen.getByRole('button', { name: /档案|Dossier/ }))
+
+    expect($monitorPeekOpen.get()).toBe(true)
+    expect($monitorSlotVisible.get()).toBe(false)
   })
 
   it('窄时再点一下 ⇒ 浮层收回去', () => {
-    render(<>{dossierEntry(true).render()}</>)
+    setChatCardWidth(CHAT_CARD_NARROW_WIDTH - 1)
+    render(<>{entry('dossier').render()}</>)
 
-    fireEvent.click(screen.getByRole('button', { name: '档案' }))
-    fireEvent.click(screen.getByRole('button', { name: '档案' }))
+    fireEvent.click(screen.getByRole('button', { name: /档案|Dossier/ }))
+    fireEvent.click(screen.getByRole('button', { name: /档案|Dossier/ }))
 
-    expect($dossierPeekOpen.get()).toBe(false)
-  })
-
-  it('那枚图标「开着」的样子：窄时看浮层，宽时看档案卡', () => {
-    expect(dossierRailPressed({ dossierVisible: true, narrow: false, peekOpen: false })).toBe(true)
-    expect(dossierRailPressed({ dossierVisible: false, narrow: false, peekOpen: true })).toBe(false)
-    expect(dossierRailPressed({ dossierVisible: false, narrow: true, peekOpen: true })).toBe(true)
-    expect(dossierRailPressed({ dossierVisible: true, narrow: true, peekOpen: false })).toBe(false)
-  })
-
-  it('那一列还是注册表驱动的：档案 / 待放行 / 边缘三件', () => {
-    const entries = chatTopBarRailEntries({
-      dossierLabel: '档案',
-      dossierVisible: false,
-      edgeControls: {},
-      narrow: false,
-      peekOpen: false
-    })
-
-    expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
+    expect($monitorPeekOpen.get()).toBe(false)
   })
 })

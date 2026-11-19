@@ -2,17 +2,44 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PendingTicketsButton } from './pending-tickets'
+import { PendingTicketsButton, PendingTicketsFace } from './pending-tickets'
 
 const api = vi.fn()
 
-// Radix Popover 在 jsdom 里量尺寸要 ResizeObserver；这里只给空实现，
-// 不测布局，只测数据路径与动作。
-vi.stubGlobal('ResizeObserver', class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+beforeEach(() => {
+  api.mockReset()
+  Object.defineProperty(window, 'plobiDesktop', {
+    configurable: true,
+    value: { ...(window.plobiDesktop || {}), api }
+  })
 })
+
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
+
+function mockBothLists(reports: unknown[] = [], lessons: unknown[] = [], drafts: unknown[] = []) {
+  api.mockImplementation((req: { path?: string, method?: string }) => {
+    if (req.method === 'POST') {
+      return Promise.resolve({ ok: true })
+    }
+
+    if (req.path?.includes('/api/tickets/escalations')) {
+      return Promise.resolve({ ok: true, data: { tickets: reports } })
+    }
+
+    if (req.path?.includes('/api/lessons?status=proposed')) {
+      return Promise.resolve({ ok: true, data: { lessons: drafts } })
+    }
+
+    if (req.path?.includes('/api/lessons')) {
+      return Promise.resolve({ ok: true, data: { lessons } })
+    }
+
+    return Promise.resolve({ ok: true, data: { tickets: [TICKET] } })
+  })
+}
 
 const TICKET = {
   created_at: 0,
@@ -34,37 +61,6 @@ const TICKET = {
   updated_at: 0
 }
 
-beforeEach(() => {
-  api.mockReset()
-  Object.defineProperty(window, 'plobiDesktop', {
-    configurable: true,
-    value: { ...(window.plobiDesktop || {}), api }
-  })
-})
-
-afterEach(() => {
-  cleanup()
-  vi.clearAllMocks()
-})
-
-function mockBothLists(reports: unknown[] = [], lessons: unknown[] = [], drafts: unknown[] = []) {
-  api.mockImplementation((req: { path?: string, method?: string }) => {
-    if (req.method === 'POST') {
-      return Promise.resolve({ ok: true })
-    }
-    if (req.path?.includes('/api/tickets/escalations')) {
-      return Promise.resolve({ ok: true, data: { tickets: reports } })
-    }
-    if (req.path?.includes('/api/lessons?status=proposed')) {
-      return Promise.resolve({ ok: true, data: { lessons: drafts } })
-    }
-    if (req.path?.includes('/api/lessons')) {
-      return Promise.resolve({ ok: true, data: { lessons } })
-    }
-    return Promise.resolve({ ok: true, data: { tickets: [TICKET] } })
-  })
-}
-
 const DRAFT = {
   id: 'les_draft1',
   status: 'proposed',
@@ -77,7 +73,7 @@ const DRAFT = {
 
 const LIVE = { ...DRAFT, id: 'les_live1', status: 'approved' }
 
-describe('PendingTicketsButton', () => {
+describe('待放行那一族', () => {
   it('外部事件票与需人汇报都进收件箱，数量摆在图标角标上', async () => {
     mockBothLists([{ id: 'tkt_r1', goal: '改配色', leg: 'router', state: 'blocked', status: 'active', one_line: '「改配色」卡住了：缺一张图。要我继续，还是你来定？' }])
     render(<PendingTicketsButton />)
@@ -93,9 +89,8 @@ describe('PendingTicketsButton', () => {
 
   it('接纳 / 拒绝各走一条三态 POST，之后重读清单', async () => {
     mockBothLists()
-    render(<PendingTicketsButton />)
+    render(<PendingTicketsFace />)
 
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
     expect(await screen.findByText('顺手把测试补一下')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '接纳' }))
@@ -115,8 +110,7 @@ describe('PendingTicketsButton', () => {
 
   it('评论带原话走同一条 POST，空评论不提交', async () => {
     mockBothLists()
-    render(<PendingTicketsButton />)
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    render(<PendingTicketsFace />)
     expect(await screen.findByText('顺手把测试补一下')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '评论' }))
@@ -132,8 +126,7 @@ describe('PendingTicketsButton', () => {
 
   it('授权草稿用图标批准/驳回，走 lesson 端点而非票端点', async () => {
     mockBothLists([], [], [DRAFT])
-    render(<PendingTicketsButton />)
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    render(<PendingTicketsFace />)
     expect(await screen.findByText('配色这类你自己定')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '批准授权' }))
@@ -151,13 +144,13 @@ describe('PendingTicketsButton', () => {
     const ticketPosts = api.mock.calls.filter(
       call => String(call[0]?.path ?? '').includes('/decision')
     )
+
     expect(ticketPosts).toHaveLength(0), '授权动作不许走票的三态端点'
   })
 
   it('已生效授权只给撤回图标，走 lesson revoke', async () => {
     mockBothLists([], [LIVE], [])
-    render(<PendingTicketsButton />)
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    render(<PendingTicketsFace />)
     expect(await screen.findByText('配色这类你自己定')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '批准授权' })).toBeNull()
 
@@ -173,10 +166,10 @@ describe('PendingTicketsButton', () => {
       if (req.method === 'POST') {
         return Promise.resolve({ ok: true })
       }
+
       return Promise.resolve({ ok: false, error: 'db locked' })
     })
-    render(<PendingTicketsButton />)
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    render(<PendingTicketsFace />)
     expect(await screen.findByText(/读不到待放行清单|Could not load/)).toBeTruthy()
   })
 })

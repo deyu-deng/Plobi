@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const fetchVaultAgent = vi.hoisted(() => vi.fn())
 const fetchDossierTasks = vi.hoisted(() => vi.fn())
 const setDossierTaskDone = vi.hoisted(() => vi.fn())
-const toggleDossierPanelPin = vi.hoisted(() => vi.fn())
 
 vi.mock('@/app/surface/api', () => ({
   fetchVaultAgent: (...args: unknown[]) => fetchVaultAgent(...args)
@@ -21,20 +20,6 @@ vi.mock('./dossier-api', () => ({
 vi.mock('@/app/chat/right-rail/notes-list', () => ({
   AgentNotesList: () => <div data-testid="agent-notes" />
 }))
-
-// 图钉那一档是真的 nanostore atom（组件用 useStore 读它），
-// 其余两个动作这里只记调用次数。
-vi.mock('@/store/layout', async () => {
-  const { atom } = await import('nanostores')
-
-  return {
-    $dossierCollapsedSections: atom({}),
-    $dossierPanelPinned: atom(false),
-    setDossierPanelMode: vi.fn(),
-    toggleDossierPanelPin: (...args: unknown[]) => toggleDossierPanelPin(...args),
-    toggleDossierSection: vi.fn()
-  }
-})
 
 vi.mock('@/i18n', () => ({
   useI18n: () => ({
@@ -70,9 +55,9 @@ vi.mock('@/i18n', () => ({
   })
 }))
 
-import { $dossierCollapsedSections } from '@/store/layout'
+import { $monitorCollapsedSections } from '@/store/layout'
 
-import { DossierPanel } from './dossier-panel'
+import { DossierFace } from './dossier-panel'
 
 function agent(overrides: Record<string, unknown> = {}) {
   return {
@@ -115,12 +100,12 @@ function days(items: Record<string, Record<string, unknown>[]> = {}) {
   }
 }
 
-function renderPanel(props: Partial<React.ComponentProps<typeof DossierPanel>> = {}) {
+function renderFace(props: Partial<React.ComponentProps<typeof DossierFace>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
   return render(
     <QueryClientProvider client={client}>
-      <DossierPanel agentId="Aura" {...props} />
+      <DossierFace agentId="Aura" {...props} />
     </QueryClientProvider>
   )
 }
@@ -129,15 +114,15 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   // 折叠态住在 store 里 ⇒ 每档之后复位，别串到下一档。
-  $dossierCollapsedSections.set({})
+  $monitorCollapsedSections.set({})
 })
 
-describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔记）', () => {
+describe('档案那一面（五段：现状／目标／阶段／进度／相关笔记）', () => {
   it('五段同时在屏上', async () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('阶段')).toBeTruthy()
     expect(screen.getByText('进度')).toBeTruthy()
@@ -150,7 +135,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     const summary = await screen.findByTestId('dossier-summary')
 
@@ -158,11 +143,20 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     expect(summary.textContent).not.toContain('## Goal')
   })
 
+  it('谁的档案写在现状那一块里（卡头那一行现在写的是「档案」这一面本身）', async () => {
+    fetchVaultAgent.mockResolvedValue(agent())
+    fetchDossierTasks.mockResolvedValue(days())
+
+    renderFace()
+
+    expect(await screen.findByText('Aura')).toBeTruthy()
+  })
+
   it('③ 阶段进度条：一个节点一个阶段', async () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     await screen.findByTestId('dossier-stage-bar')
 
@@ -177,7 +171,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     const node = await screen.findByTestId('dossier-stage-s3')
 
@@ -195,7 +189,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     const goal = await screen.findByTestId('dossier-goal')
 
@@ -210,7 +204,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent({ profileError: 'dossier.json is not valid JSON: boom' }))
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('档案读不出来')).toBeTruthy()
     expect(screen.queryByText('这个 Agent 还没有写现状。')).toBeNull()
@@ -220,24 +214,9 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent({ profileExists: false, summary: '' }))
     fetchDossierTasks.mockResolvedValue(days())
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('这个 Agent 还没有写现状。')).toBeTruthy()
-  })
-
-  it('图钉在「固定／取消固定」之间切', async () => {
-    fetchVaultAgent.mockResolvedValue(agent())
-    fetchDossierTasks.mockResolvedValue(days())
-
-    renderPanel()
-
-    const pin = await screen.findByTestId('dossier-pin')
-
-    expect(pin.getAttribute('aria-label')).toBe('固定')
-
-    fireEvent.click(pin)
-
-    expect(toggleDossierPanelPin).toHaveBeenCalled()
   })
 
   it('按日期切换：点另一颗日期就只显示那一天的任务', async () => {
@@ -249,7 +228,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
       })
     )
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('今天要做的事')).toBeTruthy()
 
@@ -264,7 +243,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchDossierTasks.mockResolvedValue(days({ '2026-11-08': [{ id: 'a', title: '写代码' }] }))
     setDossierTaskDone.mockResolvedValue(days({ '2026-11-08': [{ id: 'a', title: '写代码', done: true }] }))
 
-    renderPanel()
+    renderFace()
 
     const row = await screen.findByTestId('dossier-task-a')
 
@@ -279,7 +258,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue({ days: [], error: null, exists: false })
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('这份档案还没有按天列的任务。')).toBeTruthy()
   })
@@ -288,7 +267,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockRejectedValue(new Error('boom'))
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('清单读不出来')).toBeTruthy()
     expect(screen.queryByText('这份档案还没有按天列的任务。')).toBeNull()
@@ -303,7 +282,7 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
       exists: true
     })
 
-    renderPanel()
+    renderFace()
 
     expect(await screen.findByText('清单读不出来')).toBeTruthy()
     expect(screen.queryByText('这份档案还没有按天列的任务。')).toBeNull()
@@ -311,50 +290,19 @@ describe('档案卡 v2（五段：现状／目标／阶段／进度／相关笔�
 })
 
 /**
- * 11-19 16:0x 那一刀：档案卡的壳与零件全部换成统一容器
- * （`app/shell/monitor-panel.tsx`）。
+ * 11-19 16:0x 那一刀：这一族的壳与零件全部换成统一容器
+ * （`app/shell/monitor-panel.tsx`）；17:0x 收成**那一张卡**（`monitor-region.tsx`）。
  *
  * 这里钉的是**新规格**（Qoder 那把尺），不是旧类名：280px 列、28px 行、24px 方形
  * 图标托、12px 字、零描边、hover 才出底色、**分区标题没有常驻折角**。
  */
-describe('档案卡走统一容器（Qoder 那把尺）', () => {
-  it('外层是统一容器：固定列本体没有描边', async () => {
-    fetchVaultAgent.mockResolvedValue(agent())
-    fetchDossierTasks.mockResolvedValue(days())
-
-    const { container } = renderPanel()
-
-    await screen.findByText('阶段')
-
-    const panel = container.querySelector('[data-monitor-panel]') as HTMLElement
-
-    expect(panel).toBeTruthy()
-    expect(panel.getAttribute('data-monitor-mode')).toBe('column')
-    // 描边：Qoder 那边靠字色与留白分层，固定列本体一律不要描边。
-    expect(panel.className).not.toMatch(/(^|\s)border(-[trblxy])?(\s|$)/)
-  })
-
-  it('浮层形态走同一个容器（mode=float），浮层本体仍带 data-testid（拖动定位靠它找本体）', async () => {
-    fetchVaultAgent.mockResolvedValue(agent())
-    fetchDossierTasks.mockResolvedValue(days())
-
-    const { container } = renderPanel({ headerDragProps: {} })
-
-    await screen.findByText('阶段')
-
-    const panel = container.querySelector('[data-monitor-panel]') as HTMLElement
-
-    expect(panel.getAttribute('data-monitor-mode')).toBe('float')
-    // 拖动定位（floating-position.ts）按这枚 testid 找浮层本体 ⇒ 不能丢。
-    expect(container.querySelector('[data-testid="dossier-panel"]')).toBeTruthy()
-  })
-
+describe('档案那一面走统一件（Qoder 那把尺）', () => {
   it('分区标题没有常驻折角，折叠状态用一颗状态点表达', async () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days())
-    $dossierCollapsedSections.set({ stages: true })
+    $monitorCollapsedSections.set({ stages: true })
 
-    const { container } = renderPanel()
+    const { container } = renderFace()
 
     await screen.findByText('阶段')
 
@@ -372,7 +320,7 @@ describe('档案卡走统一容器（Qoder 那把尺）', () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days({ '2026-11-08': [{ id: 'a', title: '写代码' }] }))
 
-    const { container } = renderPanel()
+    const { container } = renderFace()
 
     await screen.findByTestId('dossier-task-a')
 
@@ -392,7 +340,7 @@ describe('档案卡走统一容器（Qoder 那把尺）', () => {
     fetchVaultAgent.mockResolvedValue(agent())
     fetchDossierTasks.mockResolvedValue(days({ '2026-11-08': [] }))
 
-    const { container } = renderPanel()
+    const { container } = renderFace()
 
     await waitFor(() => {
       expect(container.querySelector('[data-monitor-empty]')).toBeTruthy()

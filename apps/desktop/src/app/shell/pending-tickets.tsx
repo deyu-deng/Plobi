@@ -1,7 +1,7 @@
+import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useState } from 'react'
 
 import type { DispatchTicket } from '@/app/chat/sidebar/ticket-badge'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useI18n } from '@/i18n'
 import {
   ArchiveOff, Bell, Check, CheckCircle2, Clock, GitBranch, iconSize, Mail,
@@ -9,12 +9,16 @@ import {
 } from '@/lib/icons'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-
 import {
-  MonitorEmpty, MonitorHeaderTitle, MonitorIcon,
-  MonitorPanel, MonitorRow
-} from './monitor-panel'
-import { TopBarIconButton } from './top-bar-icon-button'
+  $pendingInbox,
+  $pendingInboxError,
+  $pendingInboxFailed,
+  type PendingInboxItem
+} from '@/store/pending-inbox'
+
+import { MonitorEntryButton } from './monitor-entry-button'
+import { useMonitorFace } from './monitor-faces'
+import { MonitorEmpty, MonitorRow } from './monitor-panel'
 
 /**
  * 对话卡抬头右上角、档案图标旁边那一枚（用户 11-10：「和档案一个形态，复用一个组件」）。
@@ -44,18 +48,8 @@ type DecisionKind =
   | 'ticket:accept' | 'ticket:reject' | 'ticket:comment'
   | 'lesson:approve' | 'lesson:reject' | 'lesson:revoke'
 
-/** 收件箱里的一件：票（派活/汇报）或授权 lesson（草稿/已生效）。 */
-type InboxItem =
-  | (DispatchTicket & { kind: 'ticket', one_line?: string })
-  | {
-    kind: 'lesson'
-    id: string
-    status: string
-    scope: string
-    rule: string
-    question: string
-    words: string
-  }
+/** 收件箱里的一件：形状住在 `store/pending-inbox.ts`（快照要活过这一面关着的时候）。 */
+type InboxItem = PendingInboxItem
 
 type LessonRow = {
   id: string
@@ -97,6 +91,7 @@ async function fetchPending(): Promise<InboxItem[]> {
     : []
 
   const lessonItems: InboxItem[] = []
+
   if (drafts?.ok) {
     for (const row of drafts.data?.lessons ?? []) {
       lessonItems.push({
@@ -105,6 +100,7 @@ async function fetchPending(): Promise<InboxItem[]> {
       })
     }
   }
+
   if (live?.ok) {
     for (const row of live.data?.lessons ?? []) {
       lessonItems.push({
@@ -220,9 +216,11 @@ function PendingRow({
 
   const submitComment = () => {
     const text = commentText.trim()
+
     if (!text) {
       return
     }
+
     onDecide(ticket.id, 'ticket:comment', text)
     setCommentText('')
     setCommentOpen(false)
@@ -303,111 +301,88 @@ function PendingRow({
 }
 
 /**
- * 抬头右上角那一族里的「待放行」入口（入口那颗按钮的形状归统一入口那把刀）。
+ * 「待放行」那一面的**内容**（只有内容 —— 壳由 `monitor-region.tsx` 那一张卡统一画）。
  *
- * 11-19 视觉规格迁移：**容器**换成统一组件 `monitor-panel.tsx`（Qoder 任务监控那一把尺）——
- * 浮层 280px、行 28px、图标托 24px、字 12px、零描边、hover 才出底色。
- * 装载（5 秒轮询）、接纳／拒绝／撤回／评论、错误显示一个字没改。
+ * 11-19 17:0x 统一成那一张卡：这一档**只把 Radix Popover 那层壳去掉**，装载
+ * （5 秒轮询）、接纳／拒绝／撤回／评论、错误显示一个字没改。
  */
-export function PendingTicketsButton() {
+export function PendingTicketsFace() {
   const { t } = useI18n()
-  const [open, setOpen] = useState(false)
-  const [tickets, setTickets] = useState<InboxItem[]>([])
-  const [failed, setFailed] = useState(false)
+  const tickets = useStore($pendingInbox)
+  const failed = useStore($pendingInboxFailed)
+  const error = useStore($pendingInboxError)
   const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
 
-  const load = useCallback(async () => {
-    try {
-      setTickets(await fetchPending())
-      setFailed(false)
-    } catch {
-      setFailed(true)
-    }
+  // 刚展开时立刻刷一次（轮询最长要等 5 秒）。
+  useEffect(() => {
+    void loadInbox()
   }, [])
 
-  // 图标上的角标要一直看得见，所以不开面板也轮询；面板打开时立刻刷一次。
+  const decideOne = (id: string, kind: DecisionKind, comment = '') => {
+    setBusy(id)
+    $pendingInboxError.set('')
+    void decide(id, kind, comment)
+      .then(loadInbox)
+      .catch((reason: unknown) => $pendingInboxError.set(String(reason)))
+      .finally(() => setBusy(''))
+  }
+
+  return (
+    <>
+      {failed ? (
+        <div className="text-xs text-(--ui-red)">{t.surface.pendingTicketsFailed}</div>
+      ) : tickets.length === 0 ? (
+        <MonitorEmpty />
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {tickets.map(ticket => (
+            <PendingRow
+              busy={busy === ticket.id}
+              key={ticket.id}
+              onDecide={decideOne}
+              ticket={ticket}
+            />
+          ))}
+        </div>
+      )}
+      {error ? (
+        <div className="text-xs text-(--ui-red)">{error}</div>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * 抬头右上角那一族里的「待放行」**入口**（用户 11-10：「和档案一个形态，复用一个组件」）。
+ *
+ * 形状与行为都在统一件 `monitor-entry-button.tsx` 里；这一档只管**角标上那个数**
+ * —— 所以轮询住在这里：这一枚入口一直挂在抬头上面，面板关着时那个数也准。
+ */
+export function PendingTicketsButton() {
+  usePendingInboxPolling()
+  const face = useMonitorFace('pending')
+
+  return <MonitorEntryButton face={face} />
+}
+
+/** 轮询：角标上那个数要一直看得见，面板开不开都在刷。 */
+function usePendingInboxPolling(): void {
+  const load = useCallback(loadInbox, [])
+
   useEffect(() => {
     void load()
     const timer = setInterval(() => { void load() }, 5000)
 
     return () => clearInterval(timer)
   }, [load])
+}
 
-  const decideOne = (id: string, kind: DecisionKind, comment = '') => {
-    setBusy(id)
-    setError('')
-    void decide(id, kind, comment)
-      .then(load)
-      .catch((reason: unknown) => setError(String(reason)))
-      .finally(() => setBusy(''))
+/** 拉一次清单，写进快照。 */
+async function loadInbox(): Promise<void> {
+  try {
+    $pendingInbox.set(await fetchPending())
+    $pendingInboxFailed.set(false)
+  } catch {
+    $pendingInboxFailed.set(true)
   }
-
-  return (
-    <Popover
-      onOpenChange={next => {
-        setOpen(next)
-
-        if (next) {
-          void load()
-        }
-      }}
-      open={open}
-    >
-      <PopoverTrigger asChild>
-        <TopBarIconButton
-          count={tickets.length}
-          icon="inbox"
-          label={t.surface.pendingTickets}
-          pressed={open}
-        />
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        // 这层壳只管定位（Radix 的碰撞避让、点外面关掉），**不画皮**：
-        // 皮由下面那块统一容器画，所以壳要透明、无描边、无内边距。
-        // `[&>span]:hidden` 藏掉 Radix 自带的那枚箭头（Qoder 那个浮层没有箭头）。
-        className="w-[280px] border-0 bg-transparent p-0 [&>span]:hidden"
-        side="bottom"
-      >
-        <MonitorPanel
-          // 壳里再套一层 `fixed` 会让 Radix 量不到高度（浮层会掉出窗口下沿），
-          // 所以改成 `relative`：定位仍归 Radix，皮仍是浮层那一套。
-          className="relative"
-          header={
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <MonitorIcon>
-                <Bell aria-hidden />
-              </MonitorIcon>
-              <MonitorHeaderTitle>{t.surface.pendingTickets}</MonitorHeaderTitle>
-              <span className="ml-auto text-xs tabular-nums text-(--ui-text-tertiary)">
-                {tickets.length}
-              </span>
-            </div>
-          }
-          mode="float"
-        >
-          {failed ? (
-            <div className="text-xs text-(--ui-red)">{t.surface.pendingTicketsFailed}</div>
-          ) : tickets.length === 0 ? (
-            <MonitorEmpty />
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {tickets.map(ticket => (
-                <PendingRow
-                  busy={busy === ticket.id}
-                  key={ticket.id}
-                  onDecide={decideOne}
-                  ticket={ticket}
-                />
-              ))}
-            </div>
-          )}
-          {error ? (
-            <div className="text-xs text-(--ui-red)">{error}</div>
-          ) : null}
-        </MonitorPanel>
-      </PopoverContent>
-    </Popover>
-  )
 }

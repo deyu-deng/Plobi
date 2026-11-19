@@ -65,9 +65,12 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     // 路上了（11-05 撤了纯对话路由），入口挂在那儿就一次都没在用户眼前出现过
     // （用户 11-08 16:4x：「对了档案的图标怎么还没有出现呀」）。
     const topBar = read('shell/chat-top-bar.tsx')
-    expect(topBar).toContain('toggleDossierPanel')
+    // 11-19 17:0x：三枚入口收成**同一个组件**（`shell/monitor-entry-button.tsx`），
+    // 抬头只管挂那三枚，行为与形状都在那一个件里。
+    expect(topBar).toContain('DossierButton')
+    expect(read('shell/monitor-entry-button.tsx')).toContain('toggleMonitorFace')
     // 旧壳里不留第二份入口——两份形状迟早会漂。
-    expect(read('chat/index.tsx')).not.toContain('toggleDossierPanel')
+    expect(read('chat/index.tsx')).not.toContain('toggleMonitorFace')
   })
 
   it('档案卡默认并排在对话右侧的一列（Qoder 实证：默认 fix ＝ 固定在任务右侧，对话从不被遮挡）', () => {
@@ -81,11 +84,11 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     expect(topBar).not.toContain('Popover')
 
     const controller = read('desktop-controller.tsx')
-    expect(controller).toContain('<DossierPanel')
+    expect(controller).toContain('<MonitorRegion')
 
-    // 默认**并排**：`$dossierPanelPinned` 初值是 true。
+    // 默认**并排**：`$monitorPinned` 初值是 true。
     const layout = readFileSync(join(SRC, 'store', 'layout.ts'), 'utf8')
-    expect(layout).toMatch(/\$dossierPanelPinned\s*=\s*atom\(true\)/)
+    expect(layout).toMatch(/\$monitorPinned\s*=\s*atom\(true\)/)
 
     // 钉住那一套：对话右侧的一列（固定窄宽、不收缩）；对话容器在钉住时是并排。
     // 11-18 按 Qoder 实况去掉了这条左边线，列靠背景分区 ⇒ 这里认「固定宽度的一列」，
@@ -95,7 +98,7 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     // 「不收缩 ＋ 别把对话挤没」两件事。
     expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*shrink-0'/)
     expect(monitorPanel()).toMatch(/MONITOR_COLUMN_SHAPE\s*=\s*'[^']*w-\[280px\]/)
-    expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
+    expect(controller).toMatch(/monitorVisible && monitorPinned[^?]*\? 'flex-row' : 'flex-col'/)
 
     // 浮层是**用户切出来**的另一种形态：抬起来的一层（圆角 ＋ 淡边框 ＋ 投影）。
     // 11-19 16:0x 起这层皮归统一容器那个件（`MONITOR_FLOAT_SHAPE`），
@@ -104,6 +107,7 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
       monitorPanel().indexOf('export const MONITOR_FLOAT_SHAPE'),
       monitorPanel().indexOf('export const MONITOR_COLUMN_SHAPE')
     )
+
     expect(floatBlock).toContain('rounded-lg')
     expect(floatBlock).toContain('shadow-lg')
     expect(floatBlock).toContain('w-[280px]')
@@ -122,13 +126,13 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
 
   it('图钉那一档：浮层与固定由 store 里的一枚图钉切', () => {
     const layout = readFileSync(join(SRC, 'store', 'layout.ts'), 'utf8')
-    expect(layout).toContain('$dossierPanelPinned')
-    expect(layout).toContain('toggleDossierPanelPin')
+    expect(layout).toContain('$monitorPinned')
+    expect(layout).toContain('toggleMonitorPin')
   })
 
   it('显隐口径：对话卡全屏时默认显示，工作区在显示时默认收起，点图标才展开', () => {
     const layout = readFileSync(join(SRC, 'store', 'layout.ts'), 'utf8')
-    expect(layout).toContain('$dossierPanelVisible')
+    expect(layout).toContain('$monitorSlotVisible')
     // `auto` 那一档跟着对话卡全屏与否走（Qoder 的默认形态）。
     expect(layout).toMatch(/focus === 'chat'/)
     // 用户点过之后才固定（open / closed 两档）。
@@ -240,11 +244,11 @@ describe('只有两张卡：预览轨的实现删掉了，笔记落工作区卡�
 
     expect(layout).toMatch(/focus === 'chat'/)
     // 形态：默认并排（对话右侧占一列）⇒ 对话从不被它盖住。
-    expect(layout).toMatch(/\$dossierPanelPinned\s*=\s*atom\(true\)/)
+    expect(layout).toMatch(/\$monitorPinned\s*=\s*atom\(true\)/)
     // 列宽归统一容器那个件（Qoder `w-[280px]`），控制器只给「不收缩」。
     expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*shrink-0'/)
     expect(monitorPanel()).toMatch(/MONITOR_COLUMN_SHAPE\s*=\s*'[^']*w-\[280px\]/)
     // 对话容器在钉住时是并排（`flex-row`），浮层那档才用 absolute。
-    expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
+    expect(controller).toMatch(/monitorVisible && monitorPinned[^?]*\? 'flex-row' : 'flex-col'/)
   })
 })

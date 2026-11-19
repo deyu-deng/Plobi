@@ -7,9 +7,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { MindPendingOverlay } = await import('./mind-pending-overlay')
+const { MindPendingFace } = await import('./mind-pending-overlay')
 
-const { $mindPending, $mindPendingOpen } = await import('@/store/mind-pending')
+const { $mindPending } = await import('@/store/mind-pending')
 const { en } = await import('@/i18n/en')
 
 const ITEM = {
@@ -37,31 +37,29 @@ const listing = (over: Record<string, unknown> = {}) => ({
   ...over
 })
 
-describe('mind pending overlay', () => {
+describe('写脑待批那一面', () => {
   let api: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     api = vi.fn(async ({ path }: { path: string }) => (path.endsWith('/comment') ? listing({ ok: true }) : listing()))
     ;(window as unknown as { plobiDesktop: { api: unknown } }).plobiDesktop = { api }
     $mindPending.set({ auto: false, count: 0, expired_count: 0, gate: true, items: [] })
-    $mindPendingOpen.set(true)
   })
 
   afterEach(() => {
     cleanup()
-    $mindPendingOpen.set(false)
     delete (window as unknown as { plobiDesktop?: unknown }).plobiDesktop
   })
 
   it('shows the actual text that would be written, not just a file name', async () => {
-    render(<MindPendingOverlay />)
+    render(<MindPendingFace />)
 
     expect(await screen.findByText(/正文第一行/)).toBeTruthy()
     expect(screen.getByText('wiki/daily/2026-11-16.md · overwrite')).toBeTruthy()
   })
 
   it('offers approve, reject and comment as three separate buttons', async () => {
-    render(<MindPendingOverlay />)
+    render(<MindPendingFace />)
 
     await screen.findByText(/正文第一行/)
     expect(screen.getByRole('button', { name: en.mindPending.approve })).toBeTruthy()
@@ -70,7 +68,7 @@ describe('mind pending overlay', () => {
   })
 
   it('sends the comment to the paper itself and approves nothing', async () => {
-    render(<MindPendingOverlay />)
+    render(<MindPendingFace />)
 
     fireEvent.click(await screen.findByRole('button', { name: en.workbench.office.note }))
     const box = screen.getByPlaceholderText(en.workbench.office.notePlaceholder)
@@ -92,7 +90,7 @@ describe('mind pending overlay', () => {
       path.endsWith('/comment') ? listing({ ok: true }) : listing({ expired_count: 1, items: [{ ...ITEM, expired: true }] })
     )
 
-    render(<MindPendingOverlay />)
+    render(<MindPendingFace />)
 
     const approve = await screen.findByRole('button', { name: en.mindPending.approve })
     expect((approve as HTMLButtonElement).disabled).toBe(true)

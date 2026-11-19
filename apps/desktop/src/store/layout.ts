@@ -3,6 +3,10 @@ import { atom, computed, type ReadableAtom } from 'nanostores'
 import { Codecs, persistentAtom } from '@/lib/persisted'
 import { arraysEqual, insertUniqueId } from '@/lib/storage'
 
+// 「写脑待批那一面开着没有」这枚旗标住在 `store/mind-pending.ts`（那是那一族的另一条线
+// 立的文件，本刀不改它）⇒ 这里**只调用、不改它**：切面时顺手把它拨到一致，
+// 免得两枚旗标各说各话。
+import { setMindPendingOpen } from './mind-pending'
 import { $paneStates, ensurePaneRegistered, setPaneOpen, setPaneWidthOverride, togglePane } from './panes'
 
 // 主界面「卡片壳」：渐变底 + 对话/右栏两张白卡，左栏不上卡（用户 10-30 定）。
@@ -293,22 +297,38 @@ export function setCardFocus(next: CardFocus): void {
   $cardFocus.set(next)
 }
 
-// 档案卡的显隐口径（用户 11-08 21:1x）：
-// 「对话卡片全屏展开的时候，档案卡片默认显示……如果我们显示工作区卡片的时候档案是默认关闭的。
-// 点击才展开。」
-// 三档而不是一个布尔：默认那档要**跟着对话卡全屏与否走**，用户点过之后才固定。
-export type DossierPanelMode = 'auto' | 'open' | 'closed'
+// ── 这一族（档案／待放行／写脑待批）的**那一张卡** ───────────────────────────
+//
+// 用户 11-19 17:0x：「**完全复用同样的组件。不要写三套代码。只是容器内部的信息和UI细节不同而已。**」
+// 上一刀（`WP-QODER-MONITOR-SPEC`）统一了**长相**，这一刀统一**交互**：
+// 这一族从「档案卡」变成「这一族」——显隐、当前面、钉住、浮层位置都是这一族的事。
+//
+// 显隐口径照旧（用户 11-08 21:1x）：`auto` 跟着对话卡全屏走（默认那档），
+// `open`／`closed` 是用户点过的结果。
 
-export const $dossierPanelMode = atom<DossierPanelMode>('auto')
+/** 这一族有三面：档案、待放行、写脑待批（顺序＝抬头右上角那三枚的顺序）。 */
+export type MonitorFaceId = 'dossier' | 'pending' | 'mind-pending'
+
+export const MONITOR_FACE_IDS: readonly MonitorFaceId[] = ['dossier', 'pending', 'mind-pending']
 
 /**
- * 档案卡此刻该不该露脸：`auto` 跟着对话卡全屏（Qoder 的默认形态），`open`/`closed` 是用户点过的结果。
+ * 显隐口径。**不是容器形态** —— 形态是 `'column'／'float'`，在 `app/shell/monitor-panel.tsx`。
+ *
+ * 三档而不是一个布尔：默认那档要**跟着对话卡全屏与否走**，用户点过之后才固定。
+ */
+export type MonitorSlotMode = 'auto' | 'open' | 'closed'
+
+export const $monitorSlotMode = atom<MonitorSlotMode>('auto')
+
+/**
+ * 这一族的卡此刻该不该露脸：`auto` 跟着对话卡全屏（Qoder 的默认形态），
+ * `open`／`closed` 是用户点过的结果。
  *
  * 回调是**按参数展开**拿值的（nanostores 1.x 的 `computed([a, b], cb)` 调的是 `cb(a, b)`，
  * 不是 `cb([a, b])`）——写成数组解构会把 `'auto'` 这个字符串切成一两个字，
  * 三档全不匹配，于是这张卡**恒为不露脸**（11-09 现场：点图标开不了、全屏也不默认显示）。
  */
-export const $dossierPanelVisible = computed([$dossierPanelMode, $cardFocus], (mode, focus) => {
+export const $monitorSlotVisible = computed([$monitorSlotMode, $cardFocus], (mode, focus) => {
   if (mode === 'open') {
     return true
   }
@@ -320,24 +340,71 @@ export const $dossierPanelVisible = computed([$dossierPanelMode, $cardFocus], (m
   return focus === 'chat'
 })
 
-export function setDossierPanelMode(mode: DossierPanelMode): void {
-  $dossierPanelMode.set(mode)
+export function setMonitorSlotMode(mode: MonitorSlotMode): void {
+  $monitorSlotMode.set(mode)
 }
 
-/** 对话抬头那枚档案图标：现在开着就关掉，没开就打开。 */
-export function toggleDossierPanel(): void {
-  $dossierPanelMode.set($dossierPanelVisible.get() ? 'closed' : 'open')
+/** 当前显示哪一面。默认是档案（这一族的主面）。 */
+export const $monitorFace = atom<MonitorFaceId>('dossier')
+
+export function setMonitorFace(face: MonitorFaceId): void {
+  $monitorFace.set(face)
+}
+
+/**
+ * 三枚入口**同一个点击行为**（用户 11-19 17:0x）：
+ * **点哪一枚 ⇒ 那一张卡显示那一面；再点同一枚 ⇒ 关掉；点另一枚 ⇒ 换面。**
+ *
+ * 窄形态（对话卡装不下那一列）另说：那张卡折起来了 ⇒ 入口展开的是**贴头浮层**，
+ * 面的切换与开合同样走这一条。
+ */
+export function toggleMonitorFace(face: MonitorFaceId): void {
+  if ($chatCardNarrow.get()) {
+    const same = $monitorPeekOpen.get() && $monitorFace.get() === face
+
+    $monitorPeekOpen.set(!same)
+
+    if (!same) {
+      $monitorFace.set(face)
+      setMindPendingOpen(face === 'mind-pending')
+    }
+
+    return
+  }
+
+  const same = $monitorSlotVisible.get() && $monitorFace.get() === face
+
+  $monitorFace.set(face)
+  $monitorSlotMode.set(same ? 'closed' : 'open')
+  setMindPendingOpen(face === 'mind-pending' && !same)
+}
+
+/**
+ * 从别处打开某一面（设置页那一行就是走这条）：切到那一面并展开。
+ *
+ * 窄形态下展开的是贴头浮层 —— 否则点了什么也看不见（那张卡折起来了）。
+ */
+export function openMonitorFace(face: MonitorFaceId): void {
+  $monitorFace.set(face)
+
+  if ($chatCardNarrow.get()) {
+    $monitorPeekOpen.set(true)
+  } else {
+    $monitorSlotMode.set('open')
+  }
+
+  setMindPendingOpen(face === 'mind-pending')
 }
 
 // 「默认」只在这一面算数（用户 11-09：「全屏也不默认显示」）。
 // 点过的那一次——开或关——只在这一面算数：换了面（对话卡全屏 ⇄ 工作区）就回到 `auto`，
 // 否则关过一次之后，全屏也永远不显示了。对话卡全屏 ⇒ 默认显示；工作区 ⇒ 默认收起。
 $cardFocus.listen(() => {
-  $dossierPanelMode.set('auto')
+  $monitorSlotMode.set('auto')
 })
 
 /**
- * 档案卡的形态：**并排一列**（对话右侧，占位）还是**浮层**（压着对话右上角）。
+ * 这一族那张卡的形态：**并排一列**（对话右侧，占位）还是**浮层**（压着对话右上角）。
  *
  * 默认**并排**（Qoder 的实证，11-09 11:5x 从 asar 取的活证据）：Qoder 的
  * `taskMonitorMode` 偏好默认是 `"fix"`——「固定在任务右侧」，`"floating"` 是**用户
@@ -348,10 +415,10 @@ $cardFocus.listen(() => {
  * 遮挡对话区**」⇒ 浮层（absolute 压着对话）不该是默认；对话区单独展开时档案**默认在**，
  * 且**并排**（对话窄一点，但不遮挡）。
  */
-export const $dossierPanelPinned = atom(true)
+export const $monitorPinned = atom(true)
 
-export function toggleDossierPanelPin(): void {
-  $dossierPanelPinned.set(!$dossierPanelPinned.get())
+export function toggleMonitorPin(): void {
+  $monitorPinned.set(!$monitorPinned.get())
 }
 
 /**
@@ -383,36 +450,36 @@ export function setChatCardWidth(width: number): void {
 /**
  * 窄形态下那个**贴头浮层**开没开（用户 11-16 19:4x 拍板：宽度不够就折叠、不遮对话）。
  *
- * 与 `$dossierPanelMode` 是两件事：那张管「档案在不在」，这个管「窄屏下浮层开没开」。
+ * 与 `$monitorSlotMode` 是两件事：那张管「这一族的卡在不在」，这个管「窄屏下浮层开没开」。
  * 宽了自动收起 —— 宽形态有自己的并排列／浮层，窄形态那个入口不该跟过去。
  */
-export const $dossierPeekOpen = atom(false)
+export const $monitorPeekOpen = atom(false)
 
-export function toggleDossierPeek(): void {
-  $dossierPeekOpen.set(!$dossierPeekOpen.get())
+export function toggleMonitorPeek(): void {
+  $monitorPeekOpen.set(!$monitorPeekOpen.get())
 }
 
-export function closeDossierPeek(): void {
-  $dossierPeekOpen.set(false)
+export function closeMonitorPeek(): void {
+  $monitorPeekOpen.set(false)
 }
 
 $chatCardNarrow.listen(narrow => {
   if (!narrow) {
-    $dossierPeekOpen.set(false)
+    $monitorPeekOpen.set(false)
   }
 })
 
-// ── 档案卡的**逐段折叠**（Qoder 那一层，11-18 10:0x 拍板 B）────────────────
+// ── 这一族那张卡的**逐段折叠**（Qoder 那一层，11-18 10:0x 拍板 B）────────────────
 //
 // Qoder 的任务监控面板有 13 个分区，**每个都能单独收起**，折叠时最多露 5 条
 // （`TASK_MONITOR_MAX_COLLAPSED_ITEMS=5`），状态存在
 // `qoder:workbench:task-monitor-section-visibility`。我们照抄**这一层机制**：
-// 档案卡每一段都能折起来，折叠状态跟着这张卡走。
-export const DOSSIER_SECTION_IDS = ['summary', 'stages', 'progress', 'notes'] as const
+// 每一段都能折起来，折叠状态跟着这张卡走。
+export const MONITOR_SECTION_IDS = ['summary', 'stages', 'progress', 'notes'] as const
 
-export type DossierSectionId = (typeof DOSSIER_SECTION_IDS)[number]
+export type MonitorSectionId = (typeof MONITOR_SECTION_IDS)[number]
 
-export const $dossierCollapsedSections = persistentAtom<Record<string, boolean>>(
+export const $monitorCollapsedSections = persistentAtom<Record<string, boolean>>(
   'plobi.desktop.dossierCollapsedSections',
   {},
   Codecs.json<Record<string, boolean>>(value =>
@@ -420,33 +487,36 @@ export const $dossierCollapsedSections = persistentAtom<Record<string, boolean>>
   )
 )
 
-export function isDossierSectionCollapsed(id: string): boolean {
-  return $dossierCollapsedSections.get()[id] === true
+export function isMonitorSectionCollapsed(id: string): boolean {
+  return $monitorCollapsedSections.get()[id] === true
 }
 
 /** 折起／展开一段。折起时只留小标题。 */
-export function toggleDossierSection(id: string): void {
-  const current = $dossierCollapsedSections.get()
+export function toggleMonitorSection(id: string): void {
+  const current = $monitorCollapsedSections.get()
   const next = { ...current, [id]: !current[id] }
 
   // 全展开时把记录清空（不留一份全 false 的垃圾）。
-  $dossierCollapsedSections.set(Object.values(next).some(Boolean) ? next : {})
+  $monitorCollapsedSections.set(Object.values(next).some(Boolean) ? next : {})
 }
 
-// ── 档案卡**浮层的位置**（Qoder 那样可拖动并记住，11-18 10:0x）─────────────
+// ── 这一族那张卡**浮层的位置**（Qoder 那样可拖动并记住，11-18 10:0x）─────────────
 //
 // Qoder 的浮层是 `fixed z-[1000] w-[280px]`，头部 `h-9` 且 `cursor-grab`，
 // 位置由 `clampTaskMonitorPosition` 夹在窗口内（`TASK_MONITOR_MARGIN=16`）。
 // 我们照抄：**拖得动、拖完记住**，下次开还在原处。
-export interface DossierFloatPosition {
+export interface MonitorFloatPosition {
   x: number
   y: number
 }
 
-export const $dossierFloatPosition = persistentAtom<DossierFloatPosition | null>(
+// **存储键保持原样**（`plobi.desktop.dossierFloatPosition`）：这一族只是把「档案卡的位置」
+// 接管成「这一族那张卡的位置」—— 那个键装的是**位置**，不是名字；改了键＝把用户
+// 已经摆好的位置作废。
+export const $monitorFloatPosition = persistentAtom<MonitorFloatPosition | null>(
   'plobi.desktop.dossierFloatPosition',
   null,
-  Codecs.json<DossierFloatPosition | null>(value => {
+  Codecs.json<MonitorFloatPosition | null>(value => {
     if (!value || typeof value !== 'object') {
       return null
     }
@@ -457,8 +527,8 @@ export const $dossierFloatPosition = persistentAtom<DossierFloatPosition | null>
   })
 )
 
-export function setDossierFloatPosition(position: DossierFloatPosition | null): void {
-  $dossierFloatPosition.set(position)
+export function setMonitorFloatPosition(position: MonitorFloatPosition | null): void {
+  $monitorFloatPosition.set(position)
 }
 
 export function toggleCardFocus(which: 'chat' | 'workbench'): void {

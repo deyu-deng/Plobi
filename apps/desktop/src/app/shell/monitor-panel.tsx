@@ -215,6 +215,51 @@ export function MonitorIcon({ children, className }: { children: ReactNode; clas
 }
 
 /**
+ * **那一张卡的头**（用户 11-19 17:0x：这一族只留一张卡，头也是一份）。
+ *
+ * 头的四件东西：图标托 ＋ 标题 ＋ 角标那个数 ＋ 尾部动作（那一枚图钉）。
+ *
+ * **拖把手只裹住「图标 ＋ 标题」** —— 尾部的按钮自己要点得动，不该启动拖动
+ * （Qoder 的浮层头 `h-9 cursor-grab`，图钉那一枚是另一个按钮）。
+ */
+export function MonitorCardHeader({
+  count,
+  dragProps,
+  icon,
+  title,
+  trailing
+}: {
+  count?: number
+  dragProps?: Record<string, unknown>
+  icon?: ReactNode
+  title: ReactNode
+  trailing?: ReactNode
+}) {
+  const identity = (
+    <>
+      {icon ? <MonitorIcon>{icon}</MonitorIcon> : null}
+      <MonitorHeaderTitle>{title}</MonitorHeaderTitle>
+    </>
+  )
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2" data-monitor-card-header="">
+      {dragProps ? (
+        <MonitorDragHandle className="min-w-0 flex-1" {...dragProps}>
+          {identity}
+        </MonitorDragHandle>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center gap-2">{identity}</span>
+      )}
+      {typeof count === 'number' && count > 0 ? (
+        <span className="shrink-0 text-xs tabular-nums text-(--ui-text-tertiary)">{count}</span>
+      ) : null}
+      {trailing ? <span className="ml-auto flex shrink-0 items-center gap-1">{trailing}</span> : null}
+    </div>
+  )
+}
+
+/**
  * 一行：Qoder 的行是真身 —— 28px 高、6px 间距、圆角、**零描边**、hover 才出底色。
  *
  * `dense`（固定列那种窄形态）：Qoder 在固定形态下只留图标 ＋ 值，label 收进 tooltip

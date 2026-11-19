@@ -1,11 +1,12 @@
 import { useStore } from '@nanostores/react'
 import { useQueryClient } from '@tanstack/react-query'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { beginEntering, endEntering, enterFailure } from '@/app/chat/agent-enter'
 import { $agentEnter, settleAgentEnter } from '@/app/chat/agent-enter-store'
-import { DossierPanel } from '@/app/dossier/dossier-panel'
+import { MindPendingPoller } from '@/app/mind-pending-overlay'
+import { MonitorRegion } from '@/app/shell/monitor-region'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -30,41 +31,36 @@ import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setAgentScope } from '../store/agent-scope'
 import type { ComposerAttachment } from '../store/composer'
 import {
+  $cardFocus,
+  $cardFocusAnimating,
   $chatCardNarrow,
-  $dossierFloatPosition,
-  $dossierPanelPinned,
-  $dossierPanelVisible,
-  $dossierPeekOpen,
   $fileBrowserOpen,
+  $monitorFloatPosition,
+  $monitorPeekOpen,
+  $monitorPinned,
+  $monitorSlotVisible,
   $panesFlipped,
   $shellCards,
   $shellSwapped,
   $sidebarOpen,
-  $cardFocus,
-  $cardFocusAnimating,
-  setCardFocus,
-  setChatCardWidth,
-  setDossierFloatPosition,
-  setShellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
+  setCardFocus,
+  setChatCardWidth,
   setFileBrowserOpen,
+  setMonitorFloatPosition,
+  setShellSwapped,
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   toggleShellSwapped
 } from '../store/layout'
-import { cardDragProps, useCardDrop } from './shell/card-drag'
-import { useContainerWidth } from './shell/container-width'
-import { useDraggableFloat } from './shell/floating-position'
-import { useSystemTools } from './shell/system-tools'
-import { resolveWorkbenchAsideClass } from './shell/workbench-aside-class'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { type PreviewTarget } from '../store/preview'
 import { $dirtyPreviewUrls } from '../store/preview-edit'
-import { $scopeAgent, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/scope'
 import { $reviewOpen, closeReview, openReview } from '../store/review'
+import { $profiles, $profileScope, $scopeAgent, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/scope'
 import {
   $activeSessionId,
   $agentCwd,
@@ -94,6 +90,7 @@ import { $workbenchFileOpenRequest } from '../store/workbench-tabs'
 import { fileUrl } from './agenda/detail'
 import { requestComposerFocus, requestComposerInsert } from './chat/composer/focus'
 import { useComposerActions } from './chat/hooks/use-composer-actions'
+import { AgentNotesList } from './chat/right-rail/notes-list'
 import { ChatSidebar } from './chat/sidebar'
 import { CommandPalette } from './command-palette'
 import { getAgentOverview } from './console/api'
@@ -120,6 +117,7 @@ import {
   writeL1MainSessionId
 } from './desktop-controller-utils'
 import { LegacySessionRedirect, SecretaryCenterPane } from './desktop-views'
+import { DiaryCaptureOverlay } from './diary/capture-overlay'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useScopeSync } from './gateway/hooks/use-scope-sync'
@@ -147,15 +145,6 @@ import {
   SETTINGS_ROUTE,
   shellLevelForPath
 } from './routes'
-import { BrowserTabPanel } from './workbench/browser-tab'
-import { LocalFilePreview } from './workbench/file-preview'
-import { fileKindForPath } from './workbench/file-kind'
-import { isModelPath } from './workbench/model-paths'
-import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
-import { requestGenOfficeClose } from './workbench/genoffice-sessions'
-import { DiaryCaptureOverlay } from './diary/capture-overlay'
-import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
-import { AgentNotesList } from './chat/right-rail/notes-list'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -175,15 +164,26 @@ import { useSessionStateCache } from './session/hooks/use-session-state-cache'
 import { useTranscriptRehydration } from './session/hooks/use-transcript-rehydration'
 import { useWorkspaceSessionStart } from './session/hooks/use-workspace-session-start'
 import { AppShell } from './shell/app-shell'
+import { cardDragProps, useCardDrop } from './shell/card-drag'
+import { useContainerWidth } from './shell/container-width'
+import { useDraggableFloat } from './shell/floating-position'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
 import { useStatusSnapshot } from './shell/hooks/use-status-snapshot'
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from './shell/model-menu-panel'
 import type { StatusbarItem } from './shell/statusbar-controls'
+import { useSystemTools } from './shell/system-tools'
 import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
-import { MindPendingOverlay } from '@/app/mind-pending-overlay'
+import { resolveWorkbenchAsideClass } from './shell/workbench-aside-class'
 import { UpdatesOverlay } from './updates-overlay'
+import { BrowserTabPanel } from './workbench/browser-tab'
+import { fileKindForPath } from './workbench/file-kind'
+import { LocalFilePreview } from './workbench/file-preview'
+import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
+import { requestGenOfficeClose } from './workbench/genoffice-sessions'
+import { isModelPath } from './workbench/model-paths'
+import { type RightRailTab, type RightRailTabDef, type RightRailTabId, RightRailWorkbench } from './workbench/right-rail'
 
 const AgendaView = lazy(async () => ({ default: (await import('./agenda')).AgendaView }))
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
@@ -193,18 +193,23 @@ const CronView = lazy(async () => ({ default: (await import('./cron')).CronView 
 const StarmapView = lazy(async () => ({ default: (await import('./starmap')).StarmapView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
+
 const OfficeFilePreview = lazy(async () => ({
   default: (await import('./workbench/office-preview')).OfficeFilePreview
 }))
+
 const MediaPreview = lazy(async () => ({
   default: (await import('./workbench/media-preview')).MediaPreview
 }))
+
 const ArchivePreview = lazy(async () => ({
   default: (await import('./workbench/archive-preview')).ArchivePreview
 }))
+
 const ThreePreview = lazy(async () => ({
   default: (await import('./workbench/three-preview')).ThreePreview
 }))
+
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
 const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryView }))
@@ -216,7 +221,7 @@ const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryVi
 // ⇒ 对话从不被它遮挡。浮层是用户主动切出来的另一种形态（Qoder 的 `"floating"`）。
 //
 // 抬头右上角那枚**图钉**在两者之间切；默认形态由 `store/layout.ts` 的
-// `$dossierPanelPinned` 决定（默认 `true`＝并排）。
+// `$monitorPinned` 决定（默认 `true`＝并排）。
 //
 // 浮层压在**抬头下面**（`--card-header-height` 之下）：抬头右边那几枚——档案图标本身、
 // 全屏、收起——都住在那一行，压上去就点不到了（11-09 现场：档案卡一露脸就把自己的
@@ -398,10 +403,10 @@ export function DesktopController() {
   const secretaryShellOpen = level !== null
   const activeAgentId = level && level !== 'l1' ? level.l2 : ''
 
-  // 档案卡（对话右上那张浮层）的显隐与它跟着谁走：跟着**对话作用域**的那个
+  // 那一张卡（对话右上角这一族）的显隐与它跟着谁走：跟着**对话作用域**的那个
   // Agent（L1 是总秘书，前端给的是作用域哨兵 `'l1'`，后端翻译成名册里那一行）。
-  const dossierVisible = useStore($dossierPanelVisible)
-  const dossierPinned = useStore($dossierPanelPinned)
+  const monitorVisible = useStore($monitorSlotVisible)
+  const monitorPinned = useStore($monitorPinned)
   const dossierAgentId = chatScope?.kind === 'agent' ? chatScope.id : 'l1'
 
   // ── 对话卡的**容器宽度**（这一刀唯一的宽度判据）─────────────────────────
@@ -412,15 +417,16 @@ export function DesktopController() {
   const [chatCardElement, setChatCardElement] = useState<HTMLDivElement | null>(null)
   const chatCardWidth = useContainerWidth(chatCardElement)
   const chatCardNarrow = useStore($chatCardNarrow)
-  const dossierPeekOpen = useStore($dossierPeekOpen)
+  const monitorPeekOpen = useStore($monitorPeekOpen)
 
   // 档案卡浮层：**可拖动并记住位置**（Qoder 的浮层头部 `cursor-grab`，11-18 10:0x）。
-  const dossierFloatPosition = useStore($dossierFloatPosition)
+  const monitorFloatPosition = useStore($monitorFloatPosition)
+
   const { handleProps: dossierFloatHandle } = useDraggableFloat({
     height: 560,
     margin: 16,
-    onChange: setDossierFloatPosition,
-    position: dossierFloatPosition,
+    onChange: setMonitorFloatPosition,
+    position: monitorFloatPosition,
     width: 304
   })
 
@@ -446,9 +452,11 @@ export function DesktopController() {
   const [l1Active, setL1Active] = useState<null | RightRailTabId>(null)
   const [l2Tabs, setL2Tabs] = useState<RightRailTabId[]>([])
   const [l2Active, setL2Active] = useState<null | RightRailTabId>(null)
+
   const [openFiles, setOpenFiles] = useState<
     Record<string, { def: RightRailTabDef; target: PreviewTarget }>
   >({})
+
   const [dirtyCloseTab, setDirtyCloseTab] = useState<null | RightRailTabId>(null)
   const closingFileTabs = useRef(new Set<RightRailTabId>())
 
@@ -490,7 +498,9 @@ export function DesktopController() {
       title: t.workbench.tabs.notes
     }
   }
+
   const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser, workbenchTabDefs.terminal]
+
   const l2TabDefs = [
     workbenchTabDefs.files,
     workbenchTabDefs.agenda,
@@ -499,6 +509,7 @@ export function DesktopController() {
     workbenchTabDefs.terminal,
     workbenchTabDefs.notes
   ]
+
   const isL1Workbench = level === 'l1'
 
   // 预览轨没了（用户 11-09：「界面上只有两张卡片……不要那个预览轨了。删掉它的实现逻辑。」）：
@@ -571,6 +582,7 @@ export function DesktopController() {
     },
     [openFileTab]
   )
+
   const handleWorkbenchTabChange = useCallback(
     (tab: RightRailTabId) => {
       if (isL1Workbench) {
@@ -623,11 +635,13 @@ export function DesktopController() {
 
       if (isL1Workbench) {
         setL1Tabs(remaining)
+
         if (active === tab) {
           setL1Active(next)
         }
       } else {
         setL2Tabs(remaining)
+
         if (active === tab) {
           setL2Active(next)
         }
@@ -699,6 +713,7 @@ export function DesktopController() {
   // state is re-queried every few seconds because it lives in the webview.
   const publishOpenFilesSnapshot = useCallback(async () => {
     const activeTab = isL1Workbench ? l1Active : l2Active
+
     const files: Array<{
       active: boolean
       dirty: boolean | null
@@ -717,6 +732,7 @@ export function DesktopController() {
       const officeEditable = /\.(xlsx|docx|pptx)$/iu.test(path)
       const previewOnly = /\.(xls|pdf)$/iu.test(path)
       const editor = officeEditable ? 'genoffice' : previewOnly ? 'preview' : 'text'
+
       const dirty =
         editor === 'text'
           ? Boolean(entry.target.url && dirtyPreviewUrls[entry.target.url])
@@ -789,6 +805,7 @@ export function DesktopController() {
       const index = l1Tabs.indexOf('terminal')
       const remaining = l1Tabs.filter(id => id !== 'terminal')
       setL1Tabs(remaining)
+
       if (l1Active === 'terminal') {
         setL1Active(remaining[Math.min(index, remaining.length - 1)] ?? null)
       }
@@ -798,6 +815,7 @@ export function DesktopController() {
       const index = l2Tabs.indexOf('terminal')
       const remaining = l2Tabs.filter(id => id !== 'terminal')
       setL2Tabs(remaining)
+
       if (l2Active === 'terminal') {
         setL2Active(remaining[Math.min(index, remaining.length - 1)] ?? null)
       }
@@ -901,6 +919,7 @@ export function DesktopController() {
       id === 'agenda' || id === 'browser' || id === 'terminal' ? workbenchTabDefs[id] : openFiles[id]?.def
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
+
   const l2OpenTabDefs = l2Tabs
     .map(id =>
       id === 'files' ||
@@ -913,6 +932,7 @@ export function DesktopController() {
         : openFiles[id]?.def
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
+
   const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
     Object.entries(openFiles).map(([id, { target }]) => {
       const media = mediaKind(target.path ?? '')
@@ -1823,6 +1843,7 @@ export function DesktopController() {
 
   // 左下那排状态图标搬进左栏（10-31）：展开时横排，收起时只剩「⋯」。
   const systemTools = useSystemTools(openSettings)
+
   const dockTools = systemTools.map(tool => ({
     disabled: tool.disabled,
     hidden: tool.hidden,
@@ -1835,12 +1856,13 @@ export function DesktopController() {
     to: tool.to,
     variant: 'action' as const
   }))
+
   const sidebarFooterItems = [...dockTools, ...leftStatusbarItems, ...statusbarItems]
 
   const sidebar = (
     <ChatSidebar
-      footerItems={sidebarFooterItems}
       currentView={currentView}
+      footerItems={sidebarFooterItems}
       level={level}
       onArchiveSession={sessionId => void archiveSession(sessionId)}
       onDeleteSession={sessionId => void removeSession(sessionId)}
@@ -1885,7 +1907,7 @@ export function DesktopController() {
       <SessionPickerOverlay onResume={resumeSession} />
       <ModelVisibilityOverlay gateway={gatewayRef.current || undefined} onOpenProviders={openProviderSettings} />
       <UpdatesOverlay />
-      <MindPendingOverlay />
+      <MindPendingPoller />
       <GatewayConnectingOverlay />
       <BootFailureOverlay />
       <CommandPalette />
@@ -2013,13 +2035,16 @@ export function DesktopController() {
       onToggleWorkspaceSidebar={() => setFileBrowserOpen(false)}
     />
   ) : null
+
   const workbenchReviewContent = <ReviewPane embedded key={agentCwd || 'no-cwd'} />
+
   // 点开的日程（用户 10-31）：右栏就地换成这条的详情，返回才回到时间轴。
   // 动作（勾清单、改字段）会把新行写回共享 store，所以渲染时优先取 store 那份；
   // 别的日子那根轴上的行不在 store 里，就退回点进来时那一份。
   const shownRailEvent = railEvent
     ? (agendaEvents.find(event => event.id === railEvent.id) ?? railEvent)
     : null
+
   const agendaTabContent = shownRailEvent ? (
     <RailEventDetail
       event={shownRailEvent}
@@ -2326,8 +2351,8 @@ export function DesktopController() {
             cancel={stableCancel}
             chatScope={chatScope}
             composer={composer}
-            modelMenuContent={modelMenuContent}
             edgeControls={chatIsEdge ? chatEdgeControls : undefined}
+            modelMenuContent={modelMenuContent}
             submit={stableSubmit}
           />
         }
@@ -2339,49 +2364,52 @@ export function DesktopController() {
   // 互换后：右栏内容进主区，对话进右侧窄卡。两张卡都带落点，拖另一张过来就换回。
   // 「只隐藏对话」（10-31）：工作面独占主区，对话不渲染，侧边栏照旧。
   //
-  // 档案卡＝**浮在对话右上角的那张卡**（用户 11-08 22:3x 给的 Qoder 实物截图：
-  // 「任务监控」默认是浮在对话上的一张圆角卡片，对话不被挤窄；抬头右上角那枚图钉
-  // 把它钉成对话右侧的一列）。显隐口径在 store 里：对话卡全屏展开时默认显示，
-  // 工作区在显示时默认收起，点对话抬头那枚图标才展开。
+  // **那一张卡**＝对话右上角这一族（档案／待放行／写脑待批）共用的一张卡
+  // （用户 11-19 17:0x「完全复用同样的组件」）：抬头右上角那三枚入口换的是
+  // **这张卡显示哪一面**，不是开出三样东西。
+  //
+  // 形态还是那两种（用户 11-08 22:3x 给的 Qoder 实物截图：「任务监控」是浮在对话上的
+  // 一张圆角卡片；抬头右上角那枚图钉把它钉成对话右侧的一列）。显隐口径在 store 里：
+  // 对话卡全屏展开时默认显示，工作区在显示时默认收起，点抬头那几枚图标才展开。
   const chatCard = (
     <div
       className={cn(
         'relative flex h-full min-h-0',
-        dossierVisible && dossierPinned && !chatCardNarrow ? 'flex-row' : 'flex-col'
+        monitorVisible && monitorPinned && !chatCardNarrow ? 'flex-row' : 'flex-col'
       )}
       data-shell-card-drop={chatDrop.over ? '' : undefined}
       ref={setChatCardElement}
       {...chatDrop.dropProps}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatRoutes}</div>
-      {dossierVisible && !chatCardNarrow ? (
-        dossierPinned ? (
-          <DossierPanel agentId={dossierAgentId} className={DOSSIER_PINNED} />
+      {monitorVisible && !chatCardNarrow ? (
+        monitorPinned ? (
+          <MonitorRegion agentId={dossierAgentId} className={DOSSIER_PINNED} />
         ) : (
-          <DossierPanel
+          <MonitorRegion
             agentId={dossierAgentId}
             className={cn(
               'absolute',
-              dossierFloatPosition ? '' : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]'
+              monitorFloatPosition ? '' : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]'
             )}
             headerDragProps={dossierFloatHandle}
-            style={dossierFloatPosition ? { left: dossierFloatPosition.x, top: dossierFloatPosition.y } : undefined}
+            style={monitorFloatPosition ? { left: monitorFloatPosition.x, top: monitorFloatPosition.y } : undefined}
           />
         )
       ) : null}
-      {/* 窄形态：档案卡在对话卡里**折叠**（不占位、不遮挡），点抬头右上角那枚图标
+      {/* 窄形态：这张卡在对话卡里**折叠**（不占位、不遮挡），点抬头右上角那几枚图标
           以**贴头浮层**展开（位置沿用 `DOSSIER_FLOATING`：压在抬头下面那一行之下，
           不盖住抬头右边那几枚）。窄了没有并排列可切 ⇒ 那枚图钉不出现。 */}
-      {chatCardNarrow && dossierPeekOpen ? (
-        <DossierPanel
+      {chatCardNarrow && monitorPeekOpen ? (
+        <MonitorRegion
           agentId={dossierAgentId}
           className={cn(
             'absolute',
-            dossierFloatPosition ? '' : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]'
+            monitorFloatPosition ? '' : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]'
           )}
           headerDragProps={dossierFloatHandle}
           showPin={false}
-          style={dossierFloatPosition ? { left: dossierFloatPosition.x, top: dossierFloatPosition.y } : undefined}
+          style={monitorFloatPosition ? { left: monitorFloatPosition.x, top: monitorFloatPosition.y } : undefined}
         />
       ) : null}
     </div>
@@ -2431,8 +2459,8 @@ export function DesktopController() {
       forceWidth={sidebarOpen ? undefined : `${SIDEBAR_COLLAPSED_WIDTH}px`}
       id="chat-sidebar"
       key="chat-sidebar"
-      minWidth={SIDEBAR_DEFAULT_WIDTH}
       maxWidth={SIDEBAR_MAX_WIDTH}
+      minWidth={SIDEBAR_DEFAULT_WIDTH}
       resizable={sidebarOpen}
       side={sidebarSide}
       width={`${SIDEBAR_DEFAULT_WIDTH}px`}
