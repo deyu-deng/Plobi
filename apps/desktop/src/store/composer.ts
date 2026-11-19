@@ -201,7 +201,8 @@ export function setComposerAttachmentUploadState(id: string, uploadState?: Compo
 
 const TERMINAL_REF_RE = /@terminal:(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/g
 
-function unquoteRefValue(raw: string) {
+/** 线上形态里的值（`@file:`path`` ⇒ `path`）：去掉那圈引号与尾标点。 */
+export function unquoteRefValue(raw: string) {
   const head = raw[0]
   const tail = raw[raw.length - 1]
   const quoted = (head === '`' && tail === '`') || (head === '"' && tail === '"') || (head === "'" && tail === "'")

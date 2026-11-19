@@ -5,7 +5,6 @@ import { triggerHaptic } from '@/lib/haptics'
 import { useSessionSlice } from '@/lib/use-session-slice'
 import { type ComposerAttachment } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
-import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
 import {
   $queuedPromptsByAgent,
   enqueueQueuedPrompt,
@@ -17,8 +16,10 @@ import {
   updateQueuedPrompt
 } from '@/store/composer-queue'
 import { notify } from '@/store/notifications'
+import { removeQuoteTargets } from '@/store/quote'
 
 import { useChatContext } from '../../context'
+import { messageBodyFromText, quoteIdsInText } from '../composer-chips'
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
 import type { ChatBarProps } from '../types'
 
@@ -168,13 +169,15 @@ export function useComposerQueue({
       return false
     }
 
-    const quote = $quoteTarget.get()
+    // 引用（正文里那几枚 chip）：锚点按正文顺序带走，正文剥掉 `@quote:` 的线上形态
+    // （队列面板上看得见的就是用户写的那句话，不是机器词）。
+    const replyTo = quoteIdsInText(text)
 
     if (
       !enqueueQueuedPrompt(activeQueueSessionKey, {
-        text,
+        text: messageBodyFromText(text),
         attachments,
-        ...(quote ? { replyTo: quote.id } : {}),
+        ...(replyTo.length ? { replyTo } : {}),
       })
     ) {
       return false
@@ -182,9 +185,7 @@ export function useComposerQueue({
 
     clearDraft()
     attachmentsAtom.set([])
-    if (quote) {
-      clearQuoteTarget()
-    }
+    removeQuoteTargets(replyTo)
     triggerHaptic('selection')
 
     return true
@@ -211,21 +212,19 @@ export function useComposerQueue({
         return false
       }
 
-      const quote = $quoteTarget.get()
+      const replyTo = quoteIdsInText(text)
 
       const entry = enqueueQueuedPrompt(key, {
-        text,
+        text: messageBodyFromText(text),
         attachments: queuedAttachments,
-        ...(quote ? { replyTo: quote.id } : {})
+        ...(replyTo.length ? { replyTo } : {})
       })
 
       if (!entry) {
         return false
       }
 
-      if (quote) {
-        clearQuoteTarget()
-      }
+      removeQuoteTargets(replyTo)
 
       triggerHaptic('selection')
 

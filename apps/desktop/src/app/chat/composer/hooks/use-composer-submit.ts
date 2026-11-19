@@ -6,9 +6,10 @@ import type { BusyInputMode } from '@/store/busy-input-mode'
 import { clearSessionDraft, type ComposerAttachment } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
 import { enqueueQueuedPrompt, type QueuedPromptEntry } from '@/store/composer-queue'
-import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
+import { removeQuoteTargets } from '@/store/quote'
 
 import { useChatContext } from '../../context'
+import { messageBodyFromText, quoteIdsInText } from '../composer-chips'
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
 import { onComposerSubmitRequest } from '../focus'
 import { composerPlainText } from '../rich-editor'
@@ -97,18 +98,24 @@ export function useComposerSubmit({
       stashAt(submittedScope, text, submittedAttachments)
     }
 
-    // 引用条（裁定 196 ④）：发出去时把 `reply_to` 一起带上；发成功才清掉引用，
-    // 被网关拒了（restore）就留着，用户改完再发还是引着那一条。
-    const quote = $quoteTarget.get()
+    // 引用（裁定 196 ④；11-19 起是正文里那几枚 chip）：发出去时把「在回哪几条」
+    // 一起带上（按正文顺序）；发成功才清掉那几枚的原文，被网关拒了（restore）
+    // 就留着，用户改完再发还是引着那几条。
+    //
+    // 正文里那几枚 `@quote:` 的线上形态**不发给 agent**（它不认识这个 kind，
+    // 留着就是一句机器词）⇒ 发出去的是剥掉它的正文。
+    const replyTo = quoteIdsInText(text)
+    const body = messageBodyFromText(text)
+
     const options = {
       ...(attachments ? { attachments } : {}),
-      ...(quote ? { replyTo: quote.id } : {}),
+      ...(replyTo.length ? { replyTo } : {}),
       // 发送锁的桶＝**Agent 的作用域键**（不是会话 id）：一个 Agent 一张嘴，
       // 两个 Agent 各自一把锁——以前新对话共用一把全局锁，互相顶掉。
       ...(submittedScope ? { scopeKey: submittedScope } : {}),
     }
 
-    void Promise.resolve(Object.keys(options).length ? onSubmit(text, options) : onSubmit(text))
+    void Promise.resolve(Object.keys(options).length ? onSubmit(body, options) : onSubmit(body))
       .then(outcome => {
         // 本地被拒（会话在跑／上一笔还占着锁／提交途中换了会话）：这句话**不丢**
         // ——排进**它所属的那一场**的队列（队列面板上看得见它，那一场一闲就发出去）。
@@ -133,9 +140,7 @@ export function useComposerSubmit({
         }
 
         clearSessionDraft(submittedScope)
-        if (quote) {
-          clearQuoteTarget()
-        }
+        removeQuoteTargets(replyTo)
       })
       .catch(restore)
   }
@@ -247,20 +252,22 @@ export function useComposerSubmit({
     }
 
     const text = draftRef.current.trim()
+    // 引用（正文里那几枚 chip）：转过去的那句话同样要剥掉 `@quote:` 的线上形态，
+    // 锚点单独带走（被网关拒了再排进队列时也是同一份）。
+    const replyTo = quoteIdsInText(text)
+    const body = messageBodyFromText(text)
 
     triggerHaptic('submit')
     clearDraft()
 
-    void Promise.resolve(onSteer(text)).then(accepted => {
+    void Promise.resolve(onSteer(body)).then(accepted => {
       if (!accepted && activeQueueSessionKey) {
         enqueueQueuedPrompt(activeQueueSessionKey, {
-          text,
+          text: body,
           attachments: [],
-          ...($quoteTarget.get() ? { replyTo: $quoteTarget.get()!.id } : {}),
+          ...(replyTo.length ? { replyTo } : {}),
         })
-        if ($quoteTarget.get()) {
-          clearQuoteTarget()
-        }
+        removeQuoteTargets(replyTo)
       }
     })
   }

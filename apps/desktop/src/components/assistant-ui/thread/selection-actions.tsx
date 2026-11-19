@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { type RefObject, useCallback, useMemo } from 'react'
 import { useInRouterContext, useNavigate } from 'react-router-dom'
 
+import { quoteIntoComposer } from '@/app/chat/composer/composer-chips'
 import { agentScope, chatScopeKey } from '@/app/console/chat/scope'
 import { $consoleAgents } from '@/app/console/store/agents'
 import type { Agent } from '@/app/console/types'
@@ -15,7 +16,6 @@ import { useI18n } from '@/i18n'
 import { Copy, MessageSquareText, Send } from '@/lib/icons'
 import { stageAgentHandoff } from '@/store/agent-handoff'
 import { notifyError } from '@/store/notifications'
-import { setQuoteTarget } from '@/store/quote'
 import { ensureGatewayProfile } from '@/store/scope'
 
 /**
@@ -119,7 +119,9 @@ function ChatSelectionActionsInner({ containerRef }: ChatSelectionActionsProps) 
           const id = messageIdForRange(range)
 
           if (id) {
-            setQuoteTarget({ id, text })
+            // 11-19：引用是正文里的一枚 chip（跟文字同一行），不是输入框上方那条
+            // 删不掉的灰条。
+            quoteIntoComposer(id, text)
           }
         }
       },

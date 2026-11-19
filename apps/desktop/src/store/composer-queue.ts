@@ -7,8 +7,8 @@ export interface QueuedPromptEntry {
   text: string
   attachments: ComposerAttachment[]
   queuedAt: number
-  /** 这条排队时引用的是哪一条（裁定 196 ④）；忙完再发也要带着。 */
-  replyTo?: string
+  /** 这条排队时引用的是哪几条（裁定 196 ④；11-19 起可多个）；忙完再发也要带着。 */
+  replyTo?: string[]
 }
 
 type QueueState = Record<string, QueuedPromptEntry[]>

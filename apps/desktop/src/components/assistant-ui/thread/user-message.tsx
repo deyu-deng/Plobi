@@ -43,6 +43,25 @@ const MESSAGE_SYSTEM_LINE = cn(
   'px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/60',
 )
 
+/**
+ * 引用（裁定 196 ④）的灰色缩进预览：**一条消息可以回多条**（11-19）⇒ 一条一条排。
+ *
+ * 只写「引的是哪一句」，不解释机制——屏上不写说明书。
+ */
+const QuoteStrips: FC<{ quotes: { id: string; text: string }[] }> = ({ quotes }) => (
+  <>
+    {quotes.map(quote => (
+      <div
+        className="mb-1 border-l-2 border-(--ui-stroke-tertiary) pl-2 text-[0.75rem] leading-5 text-(--ui-text-tertiary)"
+        data-slot="aui_message-quote"
+        key={quote.id}
+      >
+        <span className="line-clamp-2">{quote.text}</span>
+      </div>
+    ))}
+  </>
+)
+
 export function StickyHumanMessageContainer({
   attachments,
   children,
@@ -310,12 +329,14 @@ export const UserMessage: FC<{
   // 裁定 201：外面来的话（别的 Agent / cron 结果）不是「人」的气泡——左侧、带头像
   // 和名字；那段 `[来自 X · 时间]` 只在存储里留（模型靠它认出谁在说话），屏上不显。
   const externalSpeaker = externalSenderOf(customMeta.kind, customMeta.askedBy, messageText)
+  // 引用（裁定 196 ④；11-19 起可多个）：这一条在回哪几条 ⇒ 那几条的灰色缩进预览。
+  const quotes = (customMeta as { quotes?: { id: string; text: string }[] }).quotes ?? []
 
   if (externalSpeaker) {
     const split = splitSpeakerPrefix(messageText)
     const speaker = split.speaker || externalSpeaker.name
     const label = speaker || (externalSpeaker.kind === 'cron' ? '定时任务' : 'Agent')
-    const quoted = (customMeta as { quoted?: { text: string } | null }).quoted ?? null
+    const quoted = quotes[0] ?? null
 
     if (externalSpeaker.kind === 'system') {
       // 系统事件：居中灰字、无气泡无头像（裁定 196 ③）。
@@ -353,11 +374,7 @@ export const UserMessage: FC<{
             {label}
           </div>
           <div className={EXTERNAL_BUBBLE}>
-            {quoted ? (
-              <div className="mb-1 border-l-2 border-(--ui-stroke-tertiary) pl-2 text-[0.75rem] leading-5 text-(--ui-text-tertiary)">
-                <span className="line-clamp-2">{quoted.text}</span>
-              </div>
-            ) : null}
+            <QuoteStrips quotes={quotes} />
             {splitFilePointers(split.body).map((segment, index) =>
               segment.kind === 'file' ? (
                 <div
@@ -414,6 +431,8 @@ export const UserMessage: FC<{
       className={cn(clampActive && 'sticky-human-clamp')}
       data-clamped={clampActive && bodyClamped ? 'true' : undefined}
     >
+      {/* 引用（裁定 196 ④）：这一条在回哪几条 —— 灰色缩进，写在正文上面。 */}
+      <QuoteStrips quotes={quotes} />
       {/* Match the edit composer's collapsed line box (min-h-[1.25rem]) so
           clicking to edit can't grow the bubble by a sub-pixel and reflow the
           turn 1px. */}

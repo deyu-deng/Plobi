@@ -408,6 +408,11 @@ export interface SessionMessage {
   reasoning_content?: null | string
   reasoning_details?: unknown
   role: 'assistant' | 'system' | 'tool' | 'user'
+  /**
+   * 这条在回哪几条消息（裁定 196 ④）。列里是 **JSON 数组**（`["12","34"]`），
+   * 早于多锚点的旧行是**裸 id**（`"12"`）⇒ 两种都得认。
+   */
+  reply_to?: null | string | string[]
   text?: unknown
   timestamp?: number
   tool_call_id?: null | string

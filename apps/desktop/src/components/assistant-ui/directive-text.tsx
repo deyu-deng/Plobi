@@ -9,7 +9,18 @@ import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { extractEmbeddedImages } from '@/lib/embedded-images'
 import { gatewayMediaDataUrl, isRemoteGateway } from '@/lib/media'
 
-const PLOBI_REF_TYPES = ['file', 'folder', 'url', 'image', 'tool', 'line', 'terminal', 'session'] as const
+const PLOBI_REF_TYPES = [
+  'file',
+  'folder',
+  'url',
+  'image',
+  'tool',
+  'line',
+  'terminal',
+  'session',
+  'quote'
+] as const
+
 type PlobiRefType = (typeof PLOBI_REF_TYPES)[number]
 
 /** Single source of truth for chip icon glyphs (Tabler outline @ 24×24).
@@ -44,6 +55,13 @@ const ICON_PATHS: Record<PlobiRefType, string[]> = {
     'M8 9h8',
     'M8 13h6',
     'M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3z'
+  ],
+  // 引用（11-19 起，引用长成了正文里的 chip）：两枚引号。
+  quote: [
+    'M9 10h-3a1 1 0 0 0 -1 1v3a1 1 0 0 0 1 1h3a1 1 0 0 0 1 -1v-3a1 1 0 0 0 -1 -1z',
+    'M18 10h-3a1 1 0 0 0 -1 1v3a1 1 0 0 0 1 1h3a1 1 0 0 0 1 -1v-3a1 1 0 0 0 -1 -1z',
+    'M6 15a3 3 0 0 1 -3 3',
+    'M15 15a3 3 0 0 1 -3 3'
   ]
 }
 
@@ -159,7 +177,7 @@ export const DIRECTIVE_CHIP_CLASS =
 const CANONICAL_DIRECTIVE_RE = /:([\w-]{1,64})\[([^\]\n]{1,1024})\](?:\{name=([^}\n]{1,1024})\})?/g
 
 const PLOBI_DIRECTIVE_RE = new RegExp(
-  '@(file|folder|url|image|tool|line|terminal|session):(' +
+  '@(file|folder|url|image|tool|line|terminal|session|quote):(' +
     '`[^`\\n]+`' +
     '|"[^"\\n]+"' +
     "|'[^'\\n]+'" +
