@@ -160,12 +160,14 @@ describe('MemoryLedgers', () => {
     render(<MemoryLedgers />)
 
     // 四个名字由前端给（后端 label 只作兜底），读数带条数。
-    expect(await screen.findByText('共用纪律')).toBeTruthy()
-    expect(screen.getByText('你的画像')).toBeTruthy()
+    expect(await screen.findByText('全局记忆')).toBeTruthy()
+    expect(screen.getByText('用户画像')).toBeTruthy()
     // 属于某个 Agent 的那两份写的是那个 Agent 的名字，不是无主的「这个 Agent」
     // （用户 11-19 21:5x：「我发现『这个 Agent 的记忆』是只哪一个 Agent 的记忆呢？」）。
     expect(screen.getByText('l2-course-x 的记忆')).toBeTruthy()
-    expect(screen.getByText('这几份记忆属于 l2-course-x')).toBeTruthy()
+    // 解释句不上屏：名字已带归属，再来一句「这几份记忆属于 X」只是多读一行
+    // （用户 11-19 22:2x：「一些元注释也不需要上屏幕」「保持简洁优雅」）。
+    expect(screen.queryByText(/属于/)).toBeNull()
     expect(screen.getByText('6/2200 · 2 条')).toBeTruthy()
     expect(screen.getByText('0/1375 · 0 条')).toBeTruthy()
 
@@ -182,7 +184,7 @@ describe('MemoryLedgers', () => {
     expect(within(drawer).getByText('周三有实验')).toBeTruthy()
     // L0 那一个数必须自报口径，否则会被读成「记忆写入攒到几了」。它在抽屉抬头
     // （不在滚动区里），所以这里按整屏查。
-    expect(screen.getByText('连采 3/8（汇报）')).toBeTruthy()
+    expect(screen.getByText('汇报采纳 3/8')).toBeTruthy()
 
     // 同一份里的条目只在这一份的抽屉里；别份的条目不在。
     expect(within(drawer).queryByText('共用甲')).toBeNull()
@@ -194,10 +196,10 @@ describe('MemoryLedgers', () => {
     const drawer = await openScope('memory')
     const dialog = screen.getByRole('dialog')
 
-    // 抬头写的是「l2-course-x 的记忆」＋「只有 l2-course-x 会读这一份」，
-    // 不是「这个 Agent」——界面上没有「这个」的指代对象。
+    // 抬头写的是「l2-course-x 的记忆」，不是「这个 Agent」——界面上没有「这个」
+    // 的指代对象；也不再补一句「只有 X 会读这一份」式的说明。
     expect(within(dialog).getByText('l2-course-x 的记忆')).toBeTruthy()
-    expect(within(dialog).getByText('只有 l2-course-x 会读这一份')).toBeTruthy()
+    expect(within(dialog).queryByText(/会读/)).toBeNull()
 
     // 窗口顶栏那 34px 归系统的最小化/最大化/关闭（Windows 的 WCO 永远压在网页之上）：
     // 抽屉底色照旧铺满全高，内容与关闭按钮必须从它下面开始，否则两者正好重合。
@@ -209,27 +211,27 @@ describe('MemoryLedgers', () => {
     render(<MemoryLedgers />)
 
     const drawer = await openScope('global')
-    expect(within(screen.getByRole('dialog')).queryByText(/只有 .* 会读这一份/)).toBeNull()
+    expect(within(screen.getByRole('dialog')).queryByText(/会读/)).toBeNull()
     expect(within(drawer).getByText('共用甲')).toBeTruthy()
   })
 
-  it('空的那一份点开说的是「还没记住什么」，不留白', async () => {
+  it('空的那一份点开说的是「暂无条目」，不留白', async () => {
     render(<MemoryLedgers />)
 
     const drawer = await openScope('user')
-    expect(within(drawer).getByText('还没记住什么')).toBeTruthy()
+    expect(within(drawer).getByText('暂无条目')).toBeTruthy()
   })
 
-  it('忘掉要两下：第一下只上膛，第二下才真删并用新快照替换', async () => {
+  it('删除要两下：第一下只上膛，第二下才真删并用新快照替换', async () => {
     render(<MemoryLedgers />)
 
     const drawer = await openScope('memory')
     const api = (window as unknown as { plobiDesktop: { api: ReturnType<typeof vi.fn> } }).plobiDesktop.api
 
-    fireEvent.click(within(drawer).getByText('忘掉'))
+    fireEvent.click(within(drawer).getByText('删除'))
     expect(api).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/api/memory/forget' }))
 
-    fireEvent.click(within(drawer).getByText('确认忘掉'))
+    fireEvent.click(within(drawer).getByText('确认删除'))
 
     await waitFor(
       () => expect(api).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST', path: '/api/memory/forget' })),
@@ -246,7 +248,7 @@ describe('MemoryLedgers', () => {
     }
     render(<MemoryLedgers />)
 
-    expect(await screen.findByText('后端还是旧进程，重启 Plobi 后这一页就能读。')).toBeTruthy()
+    expect(await screen.findByText('后端版本低于此页面，重启 Plobi 后生效。')).toBeTruthy()
   })
 
   it('切到英文/日文时四个名字跟着走，后端那四句中文 label 一个字都不上屏', async () => {
@@ -260,8 +262,8 @@ describe('MemoryLedgers', () => {
     i18nState.locale = 'en'
     const view = render(<MemoryLedgers />)
 
-    expect(await screen.findByText('Shared rules')).toBeTruthy()
-    expect(screen.getByText('About you')).toBeTruthy()
+    expect(await screen.findByText('Global memory')).toBeTruthy()
+    expect(screen.getByText('User profile')).toBeTruthy()
     // l1 那两份挂在指挥名下：Conductor's memory / Conductor's state。
     expect(screen.getByText("Conductor's memory")).toBeTruthy()
 
@@ -275,7 +277,7 @@ describe('MemoryLedgers', () => {
 
     i18nState.locale = 'ja'
     const ja = render(<MemoryLedgers />)
-    expect(await screen.findByText('共通ルール')).toBeTruthy()
+    expect(await screen.findByText('グローバル記憶')).toBeTruthy()
     expect(ja.container.textContent).not.toContain('共用纪律')
   })
 })
@@ -285,9 +287,9 @@ describe('MemoryBoundary', () => {
     render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
-    expect(within(panel).getByText('连采 3/5（写入）')).toBeTruthy()
-    expect(within(panel).getByText('连采 2/5（写入）')).toBeTruthy()
-    expect(within(panel).getByText('驳回 1')).toBeTruthy()
+    expect(within(panel).getByText('连续 3/5')).toBeTruthy()
+    expect(within(panel).getByText('连续 2/5')).toBeTruthy()
+    expect(within(panel).getByText('驳回 1 次')).toBeTruthy()
     expect(within(panel).getByText('已授权')).toBeTruthy()
     expect(within(panel).getByText('未授权')).toBeTruthy()
   })
@@ -297,14 +299,14 @@ describe('MemoryBoundary', () => {
 
     const panel = await screen.findByTestId('memory-boundary')
     expect(within(panel).getByText('类别 wiki 的写入：你连着点头 5 次，以后这类我不再问。')).toBeTruthy()
-    expect(within(panel).getByText('删掉这一行，这一类就回到每次都问')).toBeTruthy()
+    expect(within(panel).getByText('删除此行后恢复为每次询问')).toBeTruthy()
   })
 
   it('最近一次静默能拼出「写进哪、哪一类、凭哪条政策」', async () => {
     render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
-    expect(within(panel).getByText('写进 Mind/wiki/daily/2026-11-17.md（wiki 类；凭 promote:wiki）')).toBeTruthy()
+    expect(within(panel).getByText('已写入 Mind/wiki/daily/2026-11-17.md（wiki · promote:wiki）')).toBeTruthy()
   })
 
   it('熔断时最上方出一条告警，写明几次、几天', async () => {
@@ -321,8 +323,8 @@ describe('MemoryBoundary', () => {
     render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
-    expect(within(panel).getByText('还没有值得学的——批准或驳回几次之后，这里的读数才会长出来')).toBeTruthy()
-    expect(within(panel).getByText('还没有静默过')).toBeTruthy()
+    expect(within(panel).getByText('暂无数据。批准或驳回若干次后显示统计。')).toBeTruthy()
+    expect(within(panel).getByText('暂无记录')).toBeTruthy()
   })
 
   it('老后端没有这个口时整块不渲染，也不冒红字', async () => {
@@ -333,6 +335,6 @@ describe('MemoryBoundary', () => {
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/memory/boundary' })))
     expect(screen.queryByTestId('memory-boundary')).toBeNull()
     expect(view.container.textContent).toBe('')
-    expect(screen.queryByText('现在读不到记忆')).toBeNull()
+    expect(screen.queryByText('无法读取记忆')).toBeNull()
   })
 })

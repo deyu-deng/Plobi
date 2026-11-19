@@ -9,10 +9,10 @@ import { openMonitorFace } from '@/store/layout'
 
 /**
  * 设置里「记忆」那一页的正文（用户 2026-10-30：入口放设置里、只做个人记忆、
- * 「忘掉」真删并记一笔）。
+ * 删除真删并记一笔）。
  *
- * 三段东西：共用纪律（GLOBAL）／你的画像（USER 精简版）／这个 Agent 自己的记忆。
- * 「忘掉」直接调 `POST /api/memory/forget`，后端删掉那一条并写一行回执；
+ * 三份东西：全局记忆（GLOBAL）／用户画像（USER 精简版）／这个 Agent 的记忆。
+ * 删除直接调 `POST /api/memory/forget`，后端删掉那一条并写一行回执；
  * 这一页不做脑里正典的浏览——那是知识库那一屏的事。
  *
  * **一份一行、条目进抽屉**（用户 11-19 21:2x：「这些记忆具体内容应该放到抽屉里面。
@@ -24,8 +24,14 @@ import { openMonitorFace } from '@/store/layout'
  * 那四句标签是写死的中文，切到英/日就只剩它们还是中文。这里按 `key` 译，
  * 认不出的 key 才回落后端那个 `label`。
  *
- * 四语文案放在这里而不是加进 `i18n/{types,en,zh,ja,zh-hant}.ts`：那五档此刻由别线在派持有
- * （认领门按整档路径挡），而"新屏要四语齐全"这条不能因此不做。等那五档空出来整体搬进中心表。
+ * **只用陈述句、不写解释**（用户 11-19 22:2x：「有些『这个 Agent 的记忆』叫法太口语化了」
+ * 「一些元注释也不需要上屏幕。保持简洁优雅」）：归属由名字承担（`X 的记忆`），
+ * 不再单起一行「这几份记忆属于 X」，也不在抽屉抬头补「只有 X 会读这一份」；
+ * 读数是读数，动作是动作，不夹带说明。
+ *
+ * 四语文案放在这里而不是加进 `i18n/{types,en,zh,ja,zh-hant}.ts`：那五档此刻由五条
+ * 在派线持有（认领门按整档路径挡），而"新屏要四语齐全"这条不能因此不做。
+ * 等那五档空出来整体搬进中心表。
  */
 
 export interface MemoryEntry {
@@ -51,7 +57,7 @@ interface LedgersPayload {
 
 /* ——— 写入边界（WP-MIND-SILENCE-VISIBLE）：GET /api/memory/boundary ———
  *
- * 两个 "连采" 是两件事，别读成一个进度：
+ * 两个连续采纳数是两件事，别读成一个进度：
  * - 上面那三份记忆的 `streak` 来自 `TrustLedger`（L0：我汇报给你，你信不信，门槛 8）；
  * - 这里每类的 `streak` 来自 `consent.db`（L1：这类写入能不能不问就写，门槛 5）。
  * 它们各自的 `threshold` 由后端给，前端不硬编码任何一个数。
@@ -96,38 +102,31 @@ export interface BoundaryPayload {
   db: string
 }
 
+/**
+ * 这一屏的四语文案。**只放屏上真出现的字**：名字、读数、动作、空态、错误。
+ * 不写解释句（「这几份记忆属于 X」「只有 X 会读这一份」那类），
+ * 名称本身已经说清归属；多一句只是给人多读一行。
+ */
 interface LedgerCopy {
-  agentLine: (agent: string) => string
-  openPending: string
-  empty: string
-  forget: string
-  forgetHint: string
-  failed: string
-  unavailable: string
-  unbound: string
-  streakLabel: (streak: number, threshold: number) => string
-  confirmForget: string
-  needsRestart: string
-  /**
-   * 两份跨 Agent 的记忆各自叫什么（共用纪律、你的画像）。**取代后端给的 `label`**
-   * （`memory_api.py` 里那四句是写死的中文）：换成英/日之后原来只有这四个名字还是
-   * 中文，那一屏就等于没翻。认不出的 key（后端将来多一份）才回落到它给的 `label`，
-   * 不让名字整格空着。
-   */
+  /** 跨 Agent 的两份。**取代后端给的 `label`**（`memory_api.py` 那四句是写死的中文）。 */
   scopeFixed: { global: string; user: string }
-  /**
-   * 两份**属于某一个 Agent** 的记忆：名字里带上那个 Agent 的名字。
-   * 用户 11-19 21:5x：「我发现『这个 Agent 的记忆』是只哪一个 Agent 的记忆呢？」
-   * ——「这个」在界面上没有指代对象，写上名字才答得出来。
-   */
+  /** 属于某一个 Agent 的两份：名字带那个 Agent 的名字。 */
   scopeOwned: { memory: (owner: string) => string; status: (owner: string) => string }
   /** 后端报 `l1`（没绑某个 Agent）时，那两份挂在指挥名下。 */
   conductor: string
-  /** 抽屉抬头第二行：这一份只属于谁（跨 Agent 的那两份不写这一行）。 */
-  scopeOwnerHint: (owner: string) => string
-  /** 折叠行右边那一段读数：已用/上限 ＋ 几条。 */
+  /** 行右读数：已用/上限 · 几条。 */
   scopeMeta: (chars: number, limit: number, count: number) => string
   openAria: (label: string) => string
+  openPending: string
+  empty: string
+  forget: string
+  confirmForget: string
+  forgetHint: string
+  failed: string
+  unavailable: string
+  needsRestart: string
+  /** 汇报采纳（L0）：我汇报了几次、你采纳了几次。 */
+  streakLabel: (streak: number, threshold: number) => string
   // ——— 写入边界（WP-MIND-SILENCE-VISIBLE）———
   boundaryTitle: string
   boundaryRule: (n: number, k: number, days: number) => string
@@ -148,165 +147,131 @@ interface LedgerCopy {
 
 const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   en: {
-    agentLine: agent => `These memories belong to ${agent}`,
-    streakLabel: (streak, threshold) => `${streak}/${threshold} nods (report)`,
-    confirmForget: 'Confirm forget',
-    needsRestart: 'Backend is older than this page — restart Plobi to load it.',
-    unbound: 'Conductor — no agent bound',
-    openPending: 'Review pending',
-    empty: 'Nothing remembered yet',
-    forget: 'Forget',
-    forgetHint: 'Delete this entry and leave a receipt',
-    failed: 'Not deleted',
-    unavailable: 'Memory is not readable right now',
-    scopeFixed: {
-      global: 'Shared rules',
-      user: 'About you'
-    },
-    scopeOwned: {
-      memory: owner => `${owner}'s memory`,
-      status: owner => `${owner}'s state`
-    },
+    scopeFixed: { global: 'Global memory', user: 'User profile' },
+    scopeOwned: { memory: owner => `${owner}'s memory`, status: owner => `${owner}'s status` },
     conductor: 'Conductor',
-    scopeOwnerHint: owner => `Only ${owner} reads this one`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} ${count === 1 ? 'entry' : 'entries'}`,
     openAria: label => `Open ${label}`,
-    boundaryTitle: 'Write boundary',
-    boundaryRule: (n, k, days) => `${n} in a row earns it · ${k} rejections in ${days} days stops everything`,
+    openPending: 'Pending',
+    empty: 'No entries yet',
+    forget: 'Delete',
+    confirmForget: 'Confirm delete',
+    forgetHint: 'Delete this entry and write a receipt',
+    failed: 'Delete failed',
+    unavailable: 'Memory is unavailable',
+    needsRestart: 'Backend is older than this page — restart Plobi to load it.',
+    streakLabel: (streak, threshold) => `Reports accepted ${streak}/${threshold}`,
+    boundaryTitle: 'Write permissions',
+    boundaryRule: (n, k, days) =>
+      `Silent writes after ${n} approvals in a row · everything pauses on ${k} rejections in ${days} days`,
     breakerAlert: (count, k, days) =>
-      `All paused: ${count}/${k} rejections in ${days} days — every class goes back to asking until you look`,
-    writeStreak: (streak, n) => `${streak}/${n} nods (write)`,
+      `All paused: ${count}/${k} rejections in ${days} days. Every class is back to asking.`,
+    writeStreak: (streak, n) => `${streak}/${n} in a row`,
     rejectedTimes: n => `${n} rejected`,
     granted: 'granted',
     notGranted: 'not granted',
-    policiesTitle: 'Standing permissions',
-    policyRevoke: 'Delete this line and it asks again',
-    tracesTitle: 'Times it did not ask',
-    tracesEmpty: 'Nothing has been silent yet',
-    traceSilent: (target, category, key) => `wrote ${target} (${category}; by ${key})`,
-    traceAsked: (target, category, why) => `${target} (${category}) still asked: ${why}`,
+    policiesTitle: 'Active permissions',
+    policyRevoke: 'Delete this line to ask again',
+    tracesTitle: 'Silent writes',
+    tracesEmpty: 'None yet',
+    traceSilent: (target, category, key) => `Wrote ${target} (${category} · ${key})`,
+    traceAsked: (target, category, why) => `${target} (${category}) asked: ${why}`,
     fiveRules: 'the five rules',
-    boundaryEmpty: 'Nothing to learn from yet — approve or reject a few times and the numbers appear here'
+    boundaryEmpty: 'No data yet. Approve or reject a few times and the numbers appear here.'
   },
   zh: {
-    agentLine: agent => `这几份记忆属于 ${agent}`,
-    streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}（汇报）`,
-    confirmForget: '确认忘掉',
-    needsRestart: '后端还是旧进程，重启 Plobi 后这一页就能读。',
-    unbound: '指挥（没有绑定到某个 Agent）',
-    openPending: '看等你点头的',
-    empty: '还没记住什么',
-    forget: '忘掉',
-    forgetHint: '删掉这一条，并留一行回执',
-    failed: '没删成',
-    unavailable: '现在读不到记忆',
-    scopeFixed: {
-      global: '共用纪律',
-      user: '你的画像'
-    },
-    scopeOwned: {
-      memory: owner => `${owner} 的记忆`,
-      status: owner => `${owner} 的状态`
-    },
+    scopeFixed: { global: '全局记忆', user: '用户画像' },
+    scopeOwned: { memory: owner => `${owner} 的记忆`, status: owner => `${owner} 的近况` },
     conductor: '指挥',
-    scopeOwnerHint: owner => `只有 ${owner} 会读这一份`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 条`,
-    openAria: label => `展开${label}`,
-    boundaryTitle: '写入边界',
-    boundaryRule: (n, k, days) => `连采 ${n} 次才够格 · ${days} 天内驳回 ${k} 次就全停`,
-    breakerAlert: (count, k, days) => `全部暂停：${days} 天内驳回 ${count}/${k} 次 ⇒ 全交回人，等你翻过一遍再说`,
-    writeStreak: (streak, n) => `连采 ${streak}/${n}（写入）`,
-    rejectedTimes: n => `驳回 ${n}`,
+    openAria: label => `展开 ${label}`,
+    openPending: '待批',
+    empty: '暂无条目',
+    forget: '删除',
+    confirmForget: '确认删除',
+    forgetHint: '删除该条目，并写入回执',
+    failed: '删除失败',
+    unavailable: '无法读取记忆',
+    needsRestart: '后端版本低于此页面，重启 Plobi 后生效。',
+    streakLabel: (streak, threshold) => `汇报采纳 ${streak}/${threshold}`,
+    boundaryTitle: '写入授权',
+    boundaryRule: (n, k, days) => `连续采纳 ${n} 次后自动写入 · ${days} 天内驳回 ${k} 次则全部暂停`,
+    breakerAlert: (count, k, days) => `已全部暂停：${days} 天内驳回 ${count}/${k} 次。各类别恢复为每次询问。`,
+    writeStreak: (streak, n) => `连续 ${streak}/${n}`,
+    rejectedTimes: n => `驳回 ${n} 次`,
     granted: '已授权',
     notGranted: '未授权',
-    policiesTitle: '已生效的授权',
-    policyRevoke: '删掉这一行，这一类就回到每次都问',
-    tracesTitle: '最近几次没问你',
-    tracesEmpty: '还没有静默过',
-    traceSilent: (target, category, key) => `写进 ${target}（${category} 类；凭 ${key}）`,
-    traceAsked: (target, category, why) => `${target}（${category} 类）还是问了你：${why}`,
+    policiesTitle: '生效中的授权',
+    policyRevoke: '删除此行后恢复为每次询问',
+    tracesTitle: '静默写入',
+    tracesEmpty: '暂无记录',
+    traceSilent: (target, category, key) => `已写入 ${target}（${category} · ${key}）`,
+    traceAsked: (target, category, why) => `${target}（${category}）已询问：${why}`,
     fiveRules: '五条判据',
-    boundaryEmpty: '还没有值得学的——批准或驳回几次之后，这里的读数才会长出来'
+    boundaryEmpty: '暂无数据。批准或驳回若干次后显示统计。'
   },
   ja: {
-    agentLine: agent => `この記憶は ${agent} のものです`,
-    streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}（報告）`,
-    confirmForget: '忘れる（確認）',
-    needsRestart: 'バックエンドが古いままです。Plobi を再起動してください。',
-    unbound: '指揮者（エージェント未割当）',
-    openPending: '承認待ちを見る',
-    empty: 'まだ何も覚えていません',
-    forget: '忘れる',
-    forgetHint: 'この項目を削除し、記録を残します',
-    failed: '削除できませんでした',
-    unavailable: '今は記憶を読めません',
-    scopeFixed: {
-      global: '共通ルール',
-      user: 'あなたのプロフィール'
-    },
-    scopeOwned: {
-      memory: owner => `${owner} の記憶`,
-      status: owner => `${owner} の状態`
-    },
+    scopeFixed: { global: 'グローバル記憶', user: 'ユーザープロフィール' },
+    scopeOwned: { memory: owner => `${owner} の記憶`, status: owner => `${owner} の近況` },
     conductor: '指揮者',
-    scopeOwnerHint: owner => `これを読むのは ${owner} だけです`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 件`,
     openAria: label => `${label} を開く`,
-    boundaryTitle: '書き込みの境界',
-    boundaryRule: (n, k, days) => `連続 ${n} 回で資格 · ${days} 日以内に ${k} 回却下で全部停止`,
-    breakerAlert: (count, k, days) => `全停止中：${days} 日以内に ${count}/${k} 回却下 ⇒ すべて確認に戻りました`,
-    writeStreak: (streak, n) => `連続 ${streak}/${n}（書き込み）`,
-    rejectedTimes: n => `却下 ${n}`,
+    openPending: '承認待ち',
+    empty: '項目はまだありません',
+    forget: '削除',
+    confirmForget: '削除の確認',
+    forgetHint: 'この項目を削除し、記録を残します',
+    failed: '削除できませんでした',
+    unavailable: '記憶を読み込めません',
+    needsRestart: 'バックエンドが古いため、Plobi を再起動してください。',
+    streakLabel: (streak, threshold) => `報告の承認 ${streak}/${threshold}`,
+    boundaryTitle: '書き込みの許可',
+    boundaryRule: (n, k, days) => `${n} 回連続で自動書き込み · ${days} 日以内に ${k} 回却下で全停止`,
+    breakerAlert: (count, k, days) =>
+      `全停止：${days} 日以内に ${count}/${k} 回却下。全カテゴリが毎回確認に戻りました。`,
+    writeStreak: (streak, n) => `連続 ${streak}/${n}`,
+    rejectedTimes: n => `却下 ${n} 回`,
     granted: '許可済み',
     notGranted: '未許可',
     policiesTitle: '有効な許可',
-    policyRevoke: 'この行を消すと毎回確認に戻ります',
-    tracesTitle: '確認しなかった回',
-    tracesEmpty: 'まだ静かに書いたことはありません',
-    traceSilent: (target, category, key) => `${target} に書き込み（${category}；${key} による）`,
-    traceAsked: (target, category, why) => `${target}（${category}）は確認しました：${why}`,
+    policyRevoke: 'この行を削除すると毎回確認に戻ります',
+    tracesTitle: '無確認の書き込み',
+    tracesEmpty: 'まだありません',
+    traceSilent: (target, category, key) => `${target} に書き込み（${category} · ${key}）`,
+    traceAsked: (target, category, why) => `${target}（${category}）は確認：${why}`,
     fiveRules: '五つの規則',
-    boundaryEmpty: 'まだ学ぶ材料がありません——数回承認・却下するとここに数字が出ます'
+    boundaryEmpty: 'データはまだありません。数回承認・却下すると統計が表示されます。'
   },
   'zh-hant': {
-    agentLine: agent => `這幾份記憶屬於 ${agent}`,
-    streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}（匯報）`,
-    confirmForget: '確認忘掉',
-    needsRestart: '後端還是舊進程，重啟 Plobi 後這一頁就能讀。',
-    unbound: '指揮（不屬於某個 Agent）',
-    openPending: '看等你點頭的',
-    empty: '還沒記住什麼',
-    forget: '忘掉',
-    forgetHint: '刪掉這一條，並留一行回執',
-    failed: '沒刪成',
-    unavailable: '現在讀不到記憶',
-    scopeFixed: {
-      global: '共用紀律',
-      user: '你的畫像'
-    },
-    scopeOwned: {
-      memory: owner => `${owner} 的記憶`,
-      status: owner => `${owner} 的狀態`
-    },
+    scopeFixed: { global: '全域記憶', user: '使用者畫像' },
+    scopeOwned: { memory: owner => `${owner} 的記憶`, status: owner => `${owner} 的近況` },
     conductor: '指揮',
-    scopeOwnerHint: owner => `只有 ${owner} 會讀這一份`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 條`,
-    openAria: label => `展開${label}`,
-    boundaryTitle: '寫入邊界',
-    boundaryRule: (n, k, days) => `連採 ${n} 次才夠格 · ${days} 天內駁回 ${k} 次就全停`,
-    breakerAlert: (count, k, days) => `全部暫停：${days} 天內駁回 ${count}/${k} 次 ⇒ 全交回人，等你翻過一遍再說`,
-    writeStreak: (streak, n) => `連採 ${streak}/${n}（寫入）`,
-    rejectedTimes: n => `駁回 ${n}`,
+    openAria: label => `展開 ${label}`,
+    openPending: '待批',
+    empty: '暫無條目',
+    forget: '刪除',
+    confirmForget: '確認刪除',
+    forgetHint: '刪除該條目，並寫入回執',
+    failed: '刪除失敗',
+    unavailable: '無法讀取記憶',
+    needsRestart: '後端版本低於此頁面，重啟 Plobi 後生效。',
+    streakLabel: (streak, threshold) => `匯報採納 ${streak}/${threshold}`,
+    boundaryTitle: '寫入授權',
+    boundaryRule: (n, k, days) => `連續採納 ${n} 次後自動寫入 · ${days} 天內駁回 ${k} 次則全部暫停`,
+    breakerAlert: (count, k, days) => `已全部暫停：${days} 天內駁回 ${count}/${k} 次。各類別恢復為每次詢問。`,
+    writeStreak: (streak, n) => `連續 ${streak}/${n}`,
+    rejectedTimes: n => `駁回 ${n} 次`,
     granted: '已授權',
     notGranted: '未授權',
-    policiesTitle: '已生效的授權',
-    policyRevoke: '刪掉這一行，這一類就回到每次都問',
-    tracesTitle: '最近幾次沒問你',
-    tracesEmpty: '還沒有靜默過',
-    traceSilent: (target, category, key) => `寫進 ${target}（${category} 類；憑 ${key}）`,
-    traceAsked: (target, category, why) => `${target}（${category} 類）還是問了你：${why}`,
+    policiesTitle: '生效中的授權',
+    policyRevoke: '刪除此行後恢復為每次詢問',
+    tracesTitle: '靜默寫入',
+    tracesEmpty: '暫無記錄',
+    traceSilent: (target, category, key) => `已寫入 ${target}（${category} · ${key}）`,
+    traceAsked: (target, category, why) => `${target}（${category}）已詢問：${why}`,
     fiveRules: '五條判據',
-    boundaryEmpty: '還沒有值得學的——批准或駁回幾次之後，這裡的讀數才會長出來'
+    boundaryEmpty: '暫無數據。批准或駁回若干次後顯示統計。'
   }
 }
 
@@ -337,7 +302,7 @@ export function MemoryLedgers() {
   // 抽屉里那一份（null = 关着）。条目不再铺在行上：三份加起来能有几十条，
   // 全摊开就把下面十四个开关一路顶到屏外，读起来也没有「这是同一份里的几条」这个层次。
   const [openScope, setOpenScope] = useState<string | null>(null)
-  // 两下才删：真删不可逆，误点一次不该丢一条。第一下只把这一颗变成「确认忘掉」。
+  // 两下才删：真删不可逆，误点一次不该丢一条。第一下只把这一颗变成「确认删除」。
   const [armed, setArmed] = useState<number | null>(null)
 
   const load = useCallback(async () => {
@@ -368,7 +333,7 @@ export function MemoryLedgers() {
 
       setData({ agent: payload.agent, scopes: payload.scopes })
       // 后端那几个失败串是中文（`memory_api.py` 的 `_forget`）——不往屏幕上搬，
-      // 否则一切到英/日就漏出中文。出了什么事以「没删成」为准，明细在回执里。
+      // 否则一切到英/日就漏出中文。出了什么事以「删除失败」为准，明细在回执里。
       setError(payload.ok === false ? m.failed : null)
     } catch {
       setError(m.failed)
@@ -404,10 +369,7 @@ export function MemoryLedgers() {
   return (
     <>
       <div className="mt-3 flex flex-col gap-1" data-testid="memory-ledgers">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-muted-foreground text-xs">
-            {data ? (data.agent && data.agent !== 'l1' ? m.agentLine(data.agent) : m.unbound) : null}
-          </div>
+        <div className="flex items-center justify-end">
           <Button onClick={() => openMonitorFace('mind-pending')} size="sm" variant="ghost">
             {m.openPending}
           </Button>
@@ -445,7 +407,7 @@ export function MemoryLedgers() {
         ))}
       </div>
 
-      {/* 抽屉：一份记忆的全部条目。忘掉仍是两下——第一下只上膛，第二下才真删。 */}
+      {/* 抽屉：一份记忆的全部条目。删除仍是两下——第一下只上膛，第二下才真删。 */}
       {/* `belowTitlebar`：抽屉底色铺满全高，但内容与关闭按钮从窗口顶栏下面开始，
             否则标题正好压在系统的最小化/最大化/关闭上（用户 11-19 21:5x 指出的那一处）。 */}
       <Sheet
@@ -466,13 +428,9 @@ export function MemoryLedgers() {
                   {active.key === 'user' ? null : (
                     <>
                       {' · '}
-                      <span title={m.forgetHint}>{m.streakLabel(active.streak ?? 0, active.threshold ?? 8)}</span>
+                      <span>{m.streakLabel(active.streak ?? 0, active.threshold ?? 8)}</span>
                     </>
                   )}
-                  {/* 跨 Agent 的那两份不写归属：共用纪律与画像本来就不属于某一个 Agent。 */}
-                  {active.key === 'memory' || active.key === 'status' ? (
-                    <span className="mt-1 block">{m.scopeOwnerHint(owner)}</span>
-                  ) : null}
                 </SheetDescription>
               </SheetHeader>
 
@@ -527,7 +485,7 @@ export function MemoryLedgers() {
  *
  * 四块，按「出事时最想知道哪个」排序：
  * ① 熔断（全部暂停，没熔断就不占地方）；
- * ② 每类一行（连采 X/5、窗口内驳回、授没授权）——答「这条为什么还在问我」；
+ * ② 每类一行（连续 X/5、窗口内驳回、授没授权）——答「这条为什么还在问我」；
  * ③ 已生效政策的**原文** ＋ 怎么收回（删掉那一行）——这是唯一能反悔的地方；
  * ④ 最近几次静默，每行拼成一句人读的话。
  *
