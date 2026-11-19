@@ -142,14 +142,28 @@ export function FirstRunFlow({
   }
 
   // 「挑一家模型」那一步单独占一列：**46rem 宽**（≥ `--container-2xl` 的 42rem ⇒
-  // 设置页那张卡靠右那颗控件才排得进同一行）＋ **撑满高度**（卡贴着下面两颗按钮）。
+  // 设置页那张卡靠右那颗控件才排得进同一行）＋ **固定高度**（主人 11-19 13:2x：「模型配置
+  // 那两个按钮也要放到原来的位置去呀。和其他界面的高度一致」）——别的屏是「居中的一整块」，
+  // 这一屏给一个**同样高度**的整块：三张卡那屏的内容居中、点开一栏的列表屏标题在上、
+  // 列表占满其余（内部滚动）⇒ 两处的按钮都落在与其他屏相同的高度上。
   const wideStep = step === 'cards'
 
   return (
     <div className="fixed inset-0 z-1300 flex items-center justify-center bg-[color-mix(in_srgb,var(--ui-chat-surface-background)_78%,transparent)] backdrop-blur-[1.125rem] backdrop-saturate-[1.08] p-6">
       <style>{FIRST_RUN_CSS}</style>
-      <div className={cn('flex w-full flex-col items-center', wideStep ? 'min-h-full max-w-[46rem]' : 'max-w-[30rem]')}>
-        <div className={cn('flex min-h-[22rem] w-full flex-col items-center', wideStep && 'flex-1')} key={step}>
+      <div
+        className={cn(
+          'flex w-full flex-col items-center',
+          wideStep ? 'h-[27rem] max-w-[46rem]' : 'max-w-[30rem]'
+        )}
+      >
+        <div
+          className={cn(
+            'flex w-full flex-col items-center',
+            wideStep ? 'min-h-0 flex-1' : 'min-h-[22rem]'
+          )}
+          key={step}
+        >
           {step === 'welcome' ? <WelcomeStep copy={copy} /> : null}
           {step === 'interface' ? <InterfaceStep copy={copy} /> : null}
           {step === 'language' ? <LanguageStep copy={copy} /> : null}
@@ -479,7 +493,7 @@ function CardsStep({
   // 符合主界面底部的玻璃渐变磨砂气质」）。
   if (!lane) {
     return (
-      <Screen className="fr-cards">
+      <Screen className="fr-fill fr-cards">
         <div className="fr-cards-head">
           <Title>{copy.cardsTitle}</Title>
         </div>
@@ -513,7 +527,7 @@ function CardsStep({
   const current = lanes.find(l => l.id === lane)
 
   return (
-    <Screen className="fr-lane-screen">
+    <Screen className="fr-fill fr-lane-screen">
       <Title>{current?.label}</Title>
       <div className="fr-list-scroll">
         {lane === 'accounts'
@@ -797,7 +811,8 @@ const FIRST_RUN_CSS = `
 .fr-theme { border-radius: 0.5rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 55%, transparent); background: color-mix(in srgb, var(--dt-card) 40%, transparent); padding: 0.375rem 0.625rem; font-size: 0.75rem; color: var(--ui-text-primary); }
 .fr-theme[aria-pressed='true'] { border-color: color-mix(in srgb, var(--ui-accent) 60%, transparent); background: color-mix(in srgb, var(--ui-accent) 12%, transparent); }
 /* 三张卡那一屏：标题在上、卡贴着下面那两颗按钮（主人 11-19 08:4x）。 */
-.fr-cards { flex: 1; justify-content: center; }
+.fr-fill { flex: 1; min-height: 0; }
+.fr-cards { justify-content: center; }
 .fr-cards-head { display: flex; width: 100%; flex: none; flex-direction: column; margin-bottom: 1.25rem; }
 .fr-lanes { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 /* 玻璃磨砂的大卡：半透底 ＋ 模糊 ＋ 主题色渐变 ＋ 左下角那团柔光。 */
