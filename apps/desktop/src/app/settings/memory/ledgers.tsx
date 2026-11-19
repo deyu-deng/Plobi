@@ -108,10 +108,14 @@ export interface BoundaryPayload {
  * 名称本身已经说清归属；多一句只是给人多读一行。
  */
 interface LedgerCopy {
-  /** 跨 Agent 的两份。**取代后端给的 `label`**（`memory_api.py` 那四句是写死的中文）。 */
-  scopeFixed: { global: string; user: string }
-  /** 属于某一个 Agent 的两份：名字带那个 Agent 的名字。 */
-  scopeOwned: { memory: (owner: string) => string; status: (owner: string) => string }
+  /**
+   * 不属于某一个 Agent 的三份。**取代后端给的 `label`**（`memory_api.py` 那几句是写死的中文）。
+   * `status` 是一份汇总：每家写自己那一小段，拼成「各首席近况摘要」，
+   * 只注入指挥（用户 11-19 22:39 定的名字与归属）。
+   */
+  scopeFixed: { global: string; user: string; status: string }
+  /** 属于某一个 Agent 的那一份：名字带那个 Agent 的名字。 */
+  scopeOwned: { memory: (owner: string) => string }
   /** 后端报 `l1`（没绑某个 Agent）时，那两份挂在指挥名下。 */
   conductor: string
   /** 行右读数：已用/上限 · 几条。 */
@@ -147,8 +151,8 @@ interface LedgerCopy {
 
 const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   en: {
-    scopeFixed: { global: 'Global memory', user: 'User profile' },
-    scopeOwned: { memory: owner => `${owner}'s memory`, status: owner => `${owner}'s status` },
+    scopeFixed: { global: 'Global memory', status: 'Principal status digest', user: 'User profile' },
+    scopeOwned: { memory: owner => `${owner}'s memory` },
     conductor: 'Conductor',
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} ${count === 1 ? 'entry' : 'entries'}`,
     openAria: label => `Open ${label}`,
@@ -180,8 +184,8 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     boundaryEmpty: 'No data yet. Approve or reject a few times and the numbers appear here.'
   },
   zh: {
-    scopeFixed: { global: '全局记忆', user: '用户画像' },
-    scopeOwned: { memory: owner => `${owner} 的记忆`, status: owner => `${owner} 的近况` },
+    scopeFixed: { global: '全局记忆', status: '各首席近况摘要', user: '用户画像' },
+    scopeOwned: { memory: owner => `${owner} 的记忆` },
     conductor: '指挥',
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 条`,
     openAria: label => `展开 ${label}`,
@@ -211,8 +215,8 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     boundaryEmpty: '暂无数据。批准或驳回若干次后显示统计。'
   },
   ja: {
-    scopeFixed: { global: 'グローバル記憶', user: 'ユーザープロフィール' },
-    scopeOwned: { memory: owner => `${owner} の記憶`, status: owner => `${owner} の近況` },
+    scopeFixed: { global: 'グローバル記憶', status: '首席の近況まとめ', user: 'ユーザープロフィール' },
+    scopeOwned: { memory: owner => `${owner} の記憶` },
     conductor: '指揮者',
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 件`,
     openAria: label => `${label} を開く`,
@@ -243,8 +247,8 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     boundaryEmpty: 'データはまだありません。数回承認・却下すると統計が表示されます。'
   },
   'zh-hant': {
-    scopeFixed: { global: '全域記憶', user: '使用者畫像' },
-    scopeOwned: { memory: owner => `${owner} 的記憶`, status: owner => `${owner} 的近況` },
+    scopeFixed: { global: '全域記憶', status: '各首席近況摘要', user: '使用者畫像' },
+    scopeOwned: { memory: owner => `${owner} 的記憶` },
     conductor: '指揮',
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 條`,
     openAria: label => `展開 ${label}`,
@@ -350,12 +354,12 @@ export function MemoryLedgers() {
   const owner = data?.agent && data.agent !== 'l1' ? data.agent : m.conductor
 
   const labelOf = (scope: MemoryScope) => {
-    if (scope.key === 'global' || scope.key === 'user') {
-      return m.scopeFixed[scope.key]
+    if (scope.key === 'memory') {
+      return m.scopeOwned.memory(owner)
     }
 
-    if (scope.key === 'memory' || scope.key === 'status') {
-      return m.scopeOwned[scope.key](owner)
+    if (scope.key === 'global' || scope.key === 'user' || scope.key === 'status') {
+      return m.scopeFixed[scope.key]
     }
 
     return scope.label
@@ -425,7 +429,7 @@ export function MemoryLedgers() {
                 <SheetTitle>{labelOf(active)}</SheetTitle>
                 <SheetDescription>
                   <span className="tabular-nums">{m.scopeMeta(active.chars, active.limit, active.entries.length)}</span>
-                  {active.key === 'user' ? null : (
+                  {active.key === 'user' || active.key === 'status' ? null : (
                     <>
                       {' · '}
                       <span>{m.streakLabel(active.streak ?? 0, active.threshold ?? 8)}</span>
@@ -445,30 +449,45 @@ export function MemoryLedgers() {
                   <p className="text-muted-foreground text-xs">{m.empty}</p>
                 ) : (
                   <ul className="flex flex-col gap-3">
-                    {active.entries.map(entry => (
-                      <li className="flex items-start justify-between gap-3 text-[0.8rem]" key={entry.index}>
-                        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{entry.text}</span>
-                        <Button
-                          aria-label={m.forget}
-                          disabled={busy === `${active.key}:${entry.index}`}
-                          onClick={() => {
-                            if (armed !== entry.index) {
-                              setArmed(entry.index)
+                    {active.entries.map(entry => {
+                      // 近况摘要是「一家一段」：第一行是那家的名字，下面是它自己写的几行。
+                      const readonly = active.key === 'status'
+                      const [head, ...rest] = readonly ? entry.text.split('\n') : [entry.text]
 
-                              return
-                            }
+                      return (
+                        <li className="flex items-start justify-between gap-3 text-[0.8rem]" key={entry.index}>
+                          {rest.length > 0 ? (
+                            <span className="min-w-0 flex-1">
+                              <span className="text-muted-foreground block text-xs">{head}</span>
+                              <span className="block whitespace-pre-wrap break-words">{rest.join('\n').trim()}</span>
+                            </span>
+                          ) : (
+                            <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{head}</span>
+                          )}
+                          {readonly ? null : (
+                            <Button
+                              aria-label={m.forget}
+                              disabled={busy === `${active.key}:${entry.index}`}
+                              onClick={() => {
+                                if (armed !== entry.index) {
+                                  setArmed(entry.index)
 
-                            setArmed(null)
-                            void forget(active.key, entry.index)
-                          }}
-                          size="sm"
-                          title={m.forgetHint}
-                          variant="ghost"
-                        >
-                          {armed === entry.index ? m.confirmForget : m.forget}
-                        </Button>
-                      </li>
-                    ))}
+                                  return
+                                }
+
+                                setArmed(null)
+                                void forget(active.key, entry.index)
+                              }}
+                              size="sm"
+                              title={m.forgetHint}
+                              variant="ghost"
+                            >
+                              {armed === entry.index ? m.confirmForget : m.forget}
+                            </Button>
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </div>

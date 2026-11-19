@@ -58,6 +58,15 @@ const snapshot = {
     },
     { chars: 0, entries: [], key: 'user', label: '你的画像', limit: 1375, present: false, streak: 0, threshold: 8 },
     {
+      chars: 19,
+      entries: [{ index: 0, text: 'agenda\n- 在跟课表的事' }],
+      key: 'status',
+      label: '各首席近况摘要',
+      limit: 1500,
+      present: true,
+      readonly: true
+    },
+    {
       chars: 8,
       entries: [{ index: 0, text: '周三有实验' }],
       key: 'memory',
@@ -162,6 +171,8 @@ describe('MemoryLedgers', () => {
     // 四个名字由前端给（后端 label 只作兜底），读数带条数。
     expect(await screen.findByText('全局记忆')).toBeTruthy()
     expect(screen.getByText('用户画像')).toBeTruthy()
+    // 近况是汇总，不随当前 Agent 换名字（用户 11-19 22:39：「要叫也要叫各首席近况摘要」）。
+    expect(screen.getByText('各首席近况摘要')).toBeTruthy()
     // 属于某个 Agent 的那两份写的是那个 Agent 的名字，不是无主的「这个 Agent」
     // （用户 11-19 21:5x：「我发现『这个 Agent 的记忆』是只哪一个 Agent 的记忆呢？」）。
     expect(screen.getByText('l2-course-x 的记忆')).toBeTruthy()
@@ -205,6 +216,16 @@ describe('MemoryLedgers', () => {
     // 抽屉底色照旧铺满全高，内容与关闭按钮必须从它下面开始，否则两者正好重合。
     const content = drawer.closest('[data-slot="sheet-content"]')
     expect(content?.className).toContain('var(--titlebar-height')
+  })
+
+  it('近况摘要一家一段，且不给删除（汇总不是谁的私产）', async () => {
+    render(<MemoryLedgers />)
+
+    const drawer = await openScope('status')
+    expect(within(drawer).getByText('agenda')).toBeTruthy()
+    expect(within(drawer).getByText('- 在跟课表的事')).toBeTruthy()
+    // 汇总里没有「每一条都能删」这回事：删一条等于替那一家改近况。
+    expect(within(drawer).queryByText('删除')).toBeNull()
   })
 
   it('跨 Agent 的那两份不写归属（共用纪律与画像本来就不属于某一个 Agent）', async () => {
