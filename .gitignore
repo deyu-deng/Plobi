@@ -198,6 +198,10 @@ DataDefault.doubaoagent_mode*
 # is build/runtime output, not source.
 /apps/desktop/desktop_dev.log
 
+# 首装调试用的独立 userData（npm run dev:fresh 生成的 .dev-firstrun）。
+# 整份是运行时状态，随时可删，不进仓。
+/apps/desktop/.dev-firstrun/
+
 # WP-ENV-REBASELINE: agent/pytest root dumps (never source)
 .md-*.log
 .mind-*.log
