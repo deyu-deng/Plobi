@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Installed via: python scripts/install_arch_hooks.py
+#
+# 这道钩子只干一件事：把本笔的 `[WP-XXX]` 从「正在写的」消息文件里读出来，交给认领范围核对
+# （裁定 80）。pre-commit 那时 git 连消息文件都还没写，只能读上一笔残留的 COMMIT_EDITMSG，
+# 拿它判越界就是误报红——所以归属判在判得出的这一步，pre-commit 只留「认不出前缀就只判硬冲突」的兜底。
+#
+# 退出码：核对判红 → 非零，提交当场被挡；消息里没有前缀 → 0（不常红，一扇常红的门等于坏门）。
+set -euo pipefail
+
+MSG_FILE="${1:-}"
+if [ -z "$MSG_FILE" ] || [ ! -f "$MSG_FILE" ]; then
+  echo "commit-msg: 没拿到消息文件，归属核对跳过（提交照旧）" >&2
+  exit 0
+fi
+
+# 只认提交标题/正文里的方括号写法 `[WP-XXX]`：裸写 WP-XXX 出现在正文里多半是在说别人。
+WP="$(sed -n 's/.*\[\(WP-[A-Z0-9-]*\)\].*/\1/p' "$MSG_FILE" | head -n 1)"
+if [ -z "$WP" ]; then
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+# 探一个"真能跑"的解释器：Windows 上 python3 常是 Microsoft Store 的假别名，
+# command -v 查得到、一跑就 exit 49（与 Docs 的 pre-commit.sh 同一取舍）。
+for PY in "$ROOT/.venv/Scripts/python.exe" "$ROOT/.venv/bin/python" python3 python py; do
+  if [ -f "$PY" ] || command -v "$PY" >/dev/null 2>&1; then
+    if "$PY" -c "pass" >/dev/null 2>&1; then
+      WP_COMMIT="$WP" exec "$PY" "$ROOT/scripts/check_claim_scope.py"
+    fi
+  fi
+done
+echo "commit-msg: 找不到能跑的 python —— 归属核对没执行，先修环境再提交（禁止 --no-verify）" >&2
+exit 1

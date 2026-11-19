@@ -5,7 +5,7 @@
 （`Docs/README.md` §0 第 6 条：同一条事实只登记一处），所以这脚本往**上**找那份登记册。
 
 判据分两档，与 Docs 版同一口径：
-  * 认得出本笔的 ``[WP-XXX]`` 前缀（``WP_COMMIT`` 优先，其次 10 秒内新鲜的 ``COMMIT_EDITMSG``）
+  * 认得出本笔的 ``[WP-XXX]`` 前缀（唯一来源是 ``WP_COMMIT``，由 ``commit-msg`` 钩子从消息文件注入）
     → 暂存文件落在**别人**的在派认领族内即红；
   * 认不出前缀（编辑器提交 / 外部工具直接调 git）→ 只报「同一文件被两条在派线同时认领」这一种硬冲突。
 
@@ -34,7 +34,8 @@ REGISTER_RELPATH = Path("Docs") / "reference" / "agent-register.md"
 STATUS_LIVE = "在派"
 # 只有 10 秒内刚写过的 COMMIT_EDITMSG 才可信：`git commit`（开编辑器）时这文件是上一笔的残留，
 # 拿它判越界会误报红——而一扇常红的门等于一扇坏了的门（本仓自己的口径）。
-FRESH_MSG_SECONDS = 10.0
+# 归属改由 `scripts/git-hooks/commit-msg` 从「正在写的」消息文件里读出前缀注入 `WP_COMMIT`：
+# pre-commit 那一刻 git 还没写消息文件，猜不出来的事不要猜，交给判得出来的那一步。
 # 往上找几层登记册。`Code` 与 `Docs` 是同级（见工作区根 AGENTS.md），一层就够；
 # 多探两层是给「仓被嵌得更深」留的余量，不是给「找不到也判越界」留的口子。
 LOOKUP_LEVELS = 3
@@ -123,20 +124,15 @@ def covered(path: str, families: list[str]) -> bool:
     return False
 
 
-def commit_prefix(repo_root: Path, env: dict[str, str]) -> str | None:
-    """本笔的 ``[WP-XXX]``：``WP_COMMIT`` 优先，其次 10 秒内新鲜的 COMMIT_EDITMSG。"""
+def commit_prefix(env: dict[str, str]) -> str | None:
+    """本笔的 ``[WP-XXX]``：只认 ``WP_COMMIT``（由 ``commit-msg`` 钩子从消息文件注入）。
+
+    不再读 ``COMMIT_EDITMSG``：pre-commit 跑的那一刻 git 还没写这份文件，读到的一律是上一笔的残留，
+    时间窗只是把误报的概率调小、没把误判消掉。``commit-msg`` 手上拿的就是本笔消息本身，
+    那一步判得出归属，就只在那一步判。
+    """
     m = WP_IN_TEXT.search(env.get("WP_COMMIT", ""))
-    if m:
-        return m.group(1)
-    msg = repo_root / ".git" / "COMMIT_EDITMSG"
-    try:
-        if msg.is_file() and time.time() - msg.stat().st_mtime < FRESH_MSG_SECONDS:
-            found = WP_IN_SUBJECT.search(msg.read_text(encoding="utf-8", errors="replace"))
-            if found:
-                return found.group(1)
-    except OSError:
-        return None
-    return None
+    return m.group(1) if m else None
 
 
 def staged_files(repo_root: Path) -> list[str] | None:
@@ -160,7 +156,7 @@ def check(repo_root: Path, register: Path | None, env: dict[str, str]) -> tuple[
         return [], "登记册不在场，认领核对跳过（独立 clone 时这扇门不拦人）"
 
     fams_by_wp = claim_families(register.read_text(encoding="utf-8", errors="replace"))
-    wp = commit_prefix(repo_root, env)
+    wp = commit_prefix(env)
     staged = staged_files(repo_root)
     if staged is None:
         return [], "认领范围核对跳过：拿不到暂存清单（git 不可用），判不了不判红"

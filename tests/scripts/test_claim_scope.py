@@ -21,13 +21,15 @@
 from __future__ import annotations
 
 import os
+import shutil
+import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check_claim_scope.py"
+HOOK_SRC = REPO_ROOT / "scripts" / "git-hooks" / "commit-msg"
 
 HEADER = (
     "| 刀 / WP | 谁在干 | 在哪 | 认领的文件族 | 状态 | 最后活动 | commit 前缀 |\n"
@@ -164,7 +166,7 @@ def test_directory_family_and_glob_families_are_covered(tmp_path: Path) -> None:
 
 
 def test_no_prefix_and_no_hard_conflict_is_green(tmp_path: Path) -> None:
-    """无 WP_COMMIT、无新鲜 COMMIT_EDITMSG、族不相交 → 必须零退出。这保证门不会常红。"""
+    """无 WP_COMMIT、族不相交 → 必须零退出。这保证门不会常红。"""
     repo = _repo(tmp_path, {"agent/insights.py": "y\n", "scripts/other.py": "z\n"})
     reg = _register(
         tmp_path,
@@ -180,8 +182,11 @@ def test_no_prefix_and_no_hard_conflict_is_green(tmp_path: Path) -> None:
     assert "认不出前缀，只判硬冲突" in proc.stdout, proc.stdout
 
 
-def test_stale_commit_editmsg_is_not_trusted(tmp_path: Path) -> None:
-    """编辑器提交时 COMMIT_EDITMSG 是上一笔残留：超过 10 秒就不许拿它判越界（否则误报红）。"""
+def test_commit_editmsg_alone_is_not_a_source(tmp_path: Path) -> None:
+    """`.git/COMMIT_EDITMSG` 不再参与归属判定：哪怕它刚写、写得明明白白，也不许拿来判越界。
+
+    这是「归属只由 commit-msg 注入」的回归牙——谁把那行读回去，这条就红。
+    """
     repo = _repo(tmp_path, {"agent/insights.py": "y\n"})
     reg = _register(
         tmp_path,
@@ -189,35 +194,80 @@ def test_stale_commit_editmsg_is_not_trusted(tmp_path: Path) -> None:
         + _row("WP-ALPHA", "`Code/scripts/other.py`")
         + _row("WP-BETA", "`Code/agent/insights.py`"),
     )
-    git_dir = repo / ".git"
-    msg = git_dir / "COMMIT_EDITMSG"
-    msg.write_text("[WP-ALPHA] 上一笔的残留\n", encoding="utf-8")
-    old = time.time() - 3600
-    os.utime(msg, (old, old))
+    (repo / ".git" / "COMMIT_EDITMSG").write_text("[WP-ALPHA] 刚写的新鲜消息\n", encoding="utf-8")
 
     _stage(repo, "agent/insights.py")
     proc = _run(repo, reg)
 
-    assert proc.returncode == 0, f"陈旧消息不该被当成本笔前缀：{proc.stdout}{proc.stderr}"
+    assert proc.returncode == 0, f"消息文件不该被当成本笔前缀：{proc.stdout}{proc.stderr}"
+    assert "认不出前缀，只判硬冲突" in proc.stdout, proc.stdout
 
 
-def test_fresh_commit_editmsg_supplies_the_prefix(tmp_path: Path) -> None:
-    """10 秒内的 COMMIT_EDITMSG 可信 —— `git commit -m` 走的就是这条路。"""
+def _hook_repo(tmp_path: Path) -> Path:
+    """临时仓 + 真 check_claim_scope.py + 真登记册 + 真 commit-msg 钩子（不碰真工作区）。"""
     repo = _repo(tmp_path, {"agent/insights.py": "y\n"})
-    reg = _register(
-        tmp_path,
+    (repo / "scripts").mkdir(exist_ok=True)
+    shutil.copy2(SCRIPT, repo / "scripts" / "check_claim_scope.py")
+    reg = repo / "Docs" / "reference" / "agent-register.md"
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    reg.write_text(
         HEADER
         + _row("WP-ALPHA", "`Code/scripts/other.py`")
         + _row("WP-BETA", "`Code/agent/insights.py`"),
+        encoding="utf-8",
     )
-    msg = repo / ".git" / "COMMIT_EDITMSG"
-    msg.write_text("[WP-ALPHA] 本笔消息\n", encoding="utf-8")
-
+    hooks = repo / ".git" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    dest = hooks / "commit-msg"
+    shutil.copy2(HOOK_SRC, dest)
+    dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     _stage(repo, "agent/insights.py")
-    proc = _run(repo, reg)
+    return repo
 
-    assert proc.returncode != 0, proc.stdout
+
+def _commit(repo: Path, message: str) -> subprocess.CompletedProcess:
+    """真提交，只为把钩子链跑起来。身份用 -c 传，绝不写用户全局配置。"""
+    return subprocess.run(
+        [
+            "git",
+            "-c", "user.name=claim-scope-test",
+            "-c", "user.email=claim-scope-test@example.invalid",
+            "-c", "commit.gpgsign=false",
+            "commit", "-m", message,
+        ],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        env=_child_env(),
+    )
+
+
+def test_commit_msg_hook_blocks_a_foreign_prefix(tmp_path: Path) -> None:
+    """真钩子链：`git commit -m "[WP-ALPHA] ..."` 签别人的文件 → 提交当场被挡，报错点名 WP-BETA。"""
+    repo = _hook_repo(tmp_path)
+
+    proc = _commit(repo, "[WP-ALPHA] 替别人签字")
+
+    assert proc.returncode != 0, f"钩子没拦住越界提交：{proc.stdout}{proc.stderr}"
     assert "WP-BETA" in proc.stderr, proc.stderr
+
+
+def test_commit_msg_hook_lets_own_prefix_through(tmp_path: Path) -> None:
+    """同一套钩子链，换成自己那格的前缀必须放行 —— 否则这扇门就是常红。"""
+    repo = _hook_repo(tmp_path)
+
+    proc = _commit(repo, "[WP-BETA] 我自己的文件")
+
+    assert proc.returncode == 0, f"自己签自己的文件被挡了：{proc.stdout}{proc.stderr}"
+
+
+def test_commit_msg_hook_stays_quiet_without_prefix(tmp_path: Path) -> None:
+    """没前缀的提交（治理动作、文档笔误）不许被挡：认不出就退 0，交回 pre-commit 兜底。"""
+    repo = _hook_repo(tmp_path)
+
+    proc = _commit(repo, "无前缀的一笔")
+
+    assert proc.returncode == 0, f"无前缀被挡 = 常红：{proc.stdout}{proc.stderr}"
 
 
 def test_wp_commit_env_var_wins_over_editmsg(tmp_path: Path) -> None:
