@@ -1,16 +1,15 @@
 import { useStore } from '@nanostores/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { MagpieImportRow } from '@/app/settings/magpie-import-row'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Input } from '@/components/ui/input'
-import { RowButton } from '@/components/ui/row-button'
-import { getGlobalModelOptions } from '@/plobi'
 import { useI18n } from '@/i18n'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, KeyRound, Loader2 } from '@/lib/icons'
+import { Check, ChevronDown, ChevronLeft, KeyRound, Loader2 } from '@/lib/icons'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { cn } from '@/lib/utils'
+import { getGlobalModelOptions } from '@/plobi'
 import { $desktopBoot, type DesktopBootState } from '@/store/boot'
 import {
   $desktopOnboarding,
@@ -295,19 +294,23 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
   // 图标 ＋ 一句标题 ＋ 至多一个主按钮；**三张卡就是模型配置那一屏**（主人 11-18 20:4x）。
   // 配模型的过程中（登录流程在跑）让位给既有的那一屏，配完再回来（profile）。
   const firstRunPhase = onboarding.firstRunPhase ?? 'intro'
+
   if (
     ready &&
     !onboarding.manual &&
+    firstRunPhase !== 'model' &&
     (firstRunPhase === 'profile' || flow.status === 'idle')
   ) {
     return (
       <FirstRunFlow
         ctx={ctx}
         onCompleted={finalizeOnboarding}
+        onConfigureKey={() => setFirstRunPhase('model')}
         startAt={firstRunPhase === 'profile' ? 'profile' : 'intro'}
       />
     )
   }
+
   return (
     <div
       className={cn(
@@ -441,10 +444,12 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   // Which key-form option to preselect when we flip to 'apikey' mode. The
   // OpenRouter row selects its key; the generic link lands on the first option.
   const [apiKeyInitialEnv, setApiKeyInitialEnv] = useState<string | undefined>(undefined)
+
   const openKeyForm = (envKey?: string) => {
     setApiKeyInitialEnv(envKey)
     setOnboardingMode('apikey')
   }
+
   const ordered = useMemo(() => (providers ? sortProviders(providers) : []), [providers])
   const hasOauth = ordered.length > 0
   const apiKeyOptions = useApiKeyCatalog()

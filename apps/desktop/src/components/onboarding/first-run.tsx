@@ -23,9 +23,12 @@
  * `plobi_cli/onboarding_profile.py`。
  */
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { ConfigCard } from '@/app/settings/config-card'
+import { QuotaAppIcon } from '@/app/settings/quota-app-icon'
+import { buildLoginCards, isConfigured, type LoginCard } from '@/app/settings/quota-login-cards'
+import { SubscriptionSetupDialog } from '@/app/settings/subscription-setup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -33,7 +36,11 @@ import { type Locale, LOCALE_META, useI18n } from '@/i18n'
 import { getGlobalModelOptions, listOAuthProviders, setOnboardingProfile } from '@/plobi'
 import { useTheme } from '@/themes/context'
 
-import { type OnboardingContext, startProviderOAuth } from '../../store/onboarding'
+import {
+  type OnboardingContext,
+  setOnboardingMode,
+  startProviderOAuth
+} from '../../store/onboarding'
 
 /** 那几步的步序（判据盯的就是这一串）。 */
 export const FIRST_RUN_STEPS = [
@@ -56,6 +63,8 @@ export interface FirstRunFlowProps {
   onCompleted?: () => void
   /** 从哪儿起：`intro` = 欢迎那几屏；`profile` = 配完模型之后回来（画像那几屏）。 */
   startAt?: 'intro' | 'profile'
+  /** 密钥那一栏的 `＋` ⇒ 交给既有的 key 表单那一屏（那边是真正的输入面板）。 */
+  onConfigureKey?: () => void
 }
 
 interface Answers {
@@ -76,7 +85,12 @@ const EMPTY_ANSWERS: Answers = {
 
 type Copy = ReturnType<typeof useI18n>['t']['onboarding']['firstRun']
 
-export function FirstRunFlow({ ctx, onCompleted, startAt = 'intro' }: FirstRunFlowProps) {
+export function FirstRunFlow({
+  ctx,
+  onCompleted,
+  onConfigureKey,
+  startAt = 'intro'
+}: FirstRunFlowProps) {
   const { t } = useI18n()
   const { mode, setMode, availableThemes, setTheme, themeName } = useTheme()
   const [step, setStep] = useState<FirstRunStep>(startAt === 'profile' ? 'profile' : 'welcome')
@@ -134,7 +148,7 @@ export function FirstRunFlow({ ctx, onCompleted, startAt = 'intro' }: FirstRunFl
               themes={availableThemes}
             />
           ) : null}
-          {step === 'cards' ? <CardsStep copy={copy} ctx={ctx} /> : null}
+          {step === 'cards' ? <CardsStep copy={copy} ctx={ctx} onConfigureKey={onConfigureKey} /> : null}
           {step === 'profile' ? (
             <ProfileStep answers={answers} copy={copy} onChange={patch => setAnswers(a => ({ ...a, ...patch }))} />
           ) : null}
@@ -343,7 +357,15 @@ function AppearanceStep({
  *   账号 ⇒ OAuth 目录；密钥 ⇒ 后端 model options 里的 api_key 那批；
  *   订阅额度 ⇒ hub 的名册。三份都与配没配过无关 ⇒ 一个都没配时照样列得出来。
  */
-function CardsStep({ copy, ctx }: { copy: Copy; ctx: OnboardingContext }) {
+function CardsStep({
+  copy,
+  ctx,
+  onConfigureKey
+}: {
+  copy: Copy
+  ctx: OnboardingContext
+  onConfigureKey?: () => void
+}) {
   const { t } = useI18n()
   const [lane, setLane] = useState<'accounts' | 'keys' | 'desktop' | null>(null)
 
@@ -365,7 +387,9 @@ function CardsStep({ copy, ctx }: { copy: Copy; ctx: OnboardingContext }) {
     staleTime: 5 * 60 * 1000
   })
 
-  const { data: roster } = useQuery({
+  const [setupCard, setSetupCard] = useState<LoginCard | null>(null)
+
+  const { data: roster, refetch: refetchRoster } = useQuery({
     queryKey: ['first-run-auth-catalog'],
     queryFn: async () => {
       const rows = await window.plobiDesktop?.authCatalog?.()
@@ -374,6 +398,8 @@ function CardsStep({ copy, ctx }: { copy: Copy; ctx: OnboardingContext }) {
     },
     staleTime: 5 * 60 * 1000
   })
+
+  const quotaCards = useMemo(() => buildLoginCards(roster ?? []), [roster])
 
   const lanes = [
     { count: (oauth ?? []).length, id: 'accounts' as const, label: t.settings.nav.providerAccounts },
@@ -427,23 +453,51 @@ function CardsStep({ copy, ctx }: { copy: Copy; ctx: OnboardingContext }) {
                 mode="configure"
                 monogram={p.name.trim().slice(0, 1).toUpperCase()}
                 name={p.name}
+                onConfigure={() => {
+                  setOnboardingMode('apikey')
+                  onConfigureKey?.()
+                }}
                 toggleLabel={copy.toggleLabel.replace('{name}', p.name)}
               />
             ))
           : null}
         {lane === 'desktop'
-          ? (roster ?? []).map(row => (
+          ? quotaCards.map(card => (
               <ConfigCard
-                configureLabel={copy.configureLabel.replace('{name}', row.id)}
-                key={row.id}
-                mode="configure"
-                monogram={row.id.trim().slice(0, 1).toUpperCase()}
-                name={row.id}
-                toggleLabel={copy.toggleLabel.replace('{name}', row.id)}
+                avatar={<QuotaAppIcon id={card.id} name={card.name} />}
+                configureLabel={copy.configureLabel.replace('{name}', card.name)}
+                key={card.id}
+                mode={isConfigured(card.state) ? 'toggle' : 'configure'}
+                monogram={card.name.trim().slice(0, 1).toUpperCase()}
+                name={card.name}
+                onConfigure={() => setSetupCard(card)}
+                toggleLabel={copy.toggleLabel.replace('{name}', card.name)}
               />
             ))
           : null}
       </div>
+      {/* hub 那条腿的登录抽屉：设置页那一个（同一个组件），`onLogin` 直调网关的 auth。 */}
+      {setupCard ? (
+        <SubscriptionSetupDialog
+          card={setupCard}
+          onChanged={() => {
+            void refetchRoster()
+          }}
+          onClose={() => setSetupCard(null)}
+          onLogin={async (appId: string) => {
+            const gw = window.plobiDesktop?.plobiGateway
+
+            if (!gw) {
+              return { ok: false }
+            }
+
+            const res = await gw.auth(appId)
+
+            return { ok: Boolean(res?.ok) }
+          }}
+          open
+        />
+      ) : null}
     </Screen>
   )
 }

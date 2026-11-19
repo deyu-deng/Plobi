@@ -75,7 +75,7 @@ export interface DesktopOnboardingState {
   /** 首装那十步走到哪儿了（WP-ONBOARDING-WELCOME-FLOW）：
    * `intro` = 欢迎／界面／语言／主题／三张卡（新的那屏）；
    * `profile` = 配完了 ⇒ 回到画像／命名／称呼那几屏。 */
-  firstRunPhase?: 'intro' | 'profile'
+  firstRunPhase?: 'intro' | 'model' | 'profile'
 }
 
 export interface OnboardingContext {
@@ -91,6 +91,7 @@ export const DEFAULT_ONBOARDING_REASON = 'No inference provider is configured.'
 export const DEFAULT_MANUAL_ONBOARDING_REASON = 'Add or switch inference provider.'
 
 function readCachedConfigured(): boolean | null {
+
   if (typeof window === 'undefined') {
     return null
   }
@@ -119,6 +120,7 @@ function writeCachedConfigured(value: boolean) {
 }
 
 function readCachedSkipped(): boolean {
+
   if (typeof window === 'undefined') {
     return false
   }
@@ -162,7 +164,7 @@ const INITIAL: DesktopOnboardingState = {
 export const $desktopOnboarding = atom<DesktopOnboardingState>(INITIAL)
 
 /** 首装那十步的阶段（intro → model → profile）。 */
-export function setFirstRunPhase(phase: 'intro' | 'profile'): void {
+export function setFirstRunPhase(phase: 'intro' | 'model' | 'profile'): void {
   $desktopOnboarding.set({ ...$desktopOnboarding.get(), firstRunPhase: phase })
 }
 
