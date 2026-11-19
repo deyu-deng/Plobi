@@ -2371,6 +2371,12 @@ export function DesktopController() {
   // 形态还是那两种（用户 11-08 22:3x 给的 Qoder 实物截图：「任务监控」是浮在对话上的
   // 一张圆角卡片；抬头右上角那枚图钉把它钉成对话右侧的一列）。显隐口径在 store 里：
   // 对话卡全屏展开时默认显示，工作区在显示时默认收起，点抬头那几枚图标才展开。
+  //
+  // **浮层那一支不再由这里定位**（11-19 22:0x）：浮层挂到 `document.body`
+  // （`monitor-region.tsx` 的 portal）⇒ 位置是**视口坐标** ⇒ 这里只给两样东西：
+  // **锚**（这张卡，浮层默认落在它的右上角）与**拖出来的位置**（`$monitorFloatPosition`）。
+  // 原来那种 `absolute` ＋ `right-4 top-…` 会被祖先的 `overflow-hidden` 裁掉
+  // ⇒ 拖到工作区卡上就看不见了（用户 11-19 22:0x 报的那件事）。
   const chatCard = (
     <div
       className={cn(
@@ -2388,28 +2394,23 @@ export function DesktopController() {
         ) : (
           <MonitorRegion
             agentId={dossierAgentId}
-            className={cn(
-              'absolute',
-              monitorFloatPosition ? '' : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]'
-            )}
+            anchorElement={chatCardElement}
+            floatPosition={monitorFloatPosition}
             headerDragProps={dossierFloatHandle}
-            style={monitorFloatPosition ? { left: monitorFloatPosition.x, top: monitorFloatPosition.y } : undefined}
           />
         )
       ) : null}
       {/* 窄形态：这张卡在对话卡里**折叠**（不占位、不遮挡），点抬头右上角那几枚图标
-          以**贴头浮层**展开（位置沿用 `DOSSIER_FLOATING`：压在抬头下面那一行之下，
-          不盖住抬头右边那几枚）。窄了没有并排列可切 ⇒ 那枚图钉不出现。 */}
+          以**贴头浮层**展开（压在抬头下面那一行之下，不盖住抬头右边那几枚）。
+          窄了没有并排列可切 ⇒ 那枚图钉不出现。
+          浮层挂到 `document.body`（portal）⇒ 拖到工作区卡上也不会被裁掉（11-19 22:0x）。 */}
       {chatCardNarrow && monitorPeekOpen ? (
         <MonitorRegion
           agentId={dossierAgentId}
-          className={cn(
-            'absolute',
-            monitorFloatPosition ? '' : 'right-4 top-[calc(var(--card-header-height)+0.5rem)]'
-          )}
+          anchorElement={chatCardElement}
+          floatPosition={monitorFloatPosition}
           headerDragProps={dossierFloatHandle}
           showPin={false}
-          style={monitorFloatPosition ? { left: monitorFloatPosition.x, top: monitorFloatPosition.y } : undefined}
         />
       ) : null}
     </div>

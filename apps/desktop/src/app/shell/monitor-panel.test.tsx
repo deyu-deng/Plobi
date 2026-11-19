@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MonitorEmpty, MonitorPanel, MonitorRow, MonitorSection } from './monitor-panel'
+import { MonitorEmpty, MonitorPanel, MonitorRow, MonitorSection, MonitorTopBarRow } from './monitor-panel'
 import { TopBarIconButton } from './top-bar-icon-button'
 
 /**
@@ -51,6 +51,48 @@ describe('统一容器 —— 两个形态', () => {
   })
 })
 
+describe('顶栏那一行（用户 11-19 22:0x：并排列不该占据顶栏）', () => {
+  it('是头**上面**那一行：高 ＝ 顶栏那一行，接的是同一条底线', () => {
+    const { container } = render(<MonitorTopBarRow />)
+    const row = container.querySelector('[data-monitor-topbar-row]') as HTMLElement
+
+    expect(row).toBeTruthy()
+    expect(row.className).toContain('h-(--card-header-height)')
+    expect(row.className).toContain('border-b')
+    // 与 `ChatTopBar` 那条线同色（`--ui-stroke-tertiary`）⇒ 顶栏看着横跨整卡
+    expect(row.className).toContain('border-(--ui-stroke-tertiary)')
+    expect(row.className).toContain('bg-(--ui-chat-surface-background)')
+  })
+
+  it('并排列：那一行排在**头上面**（头在顶栏下一行）', () => {
+    const { container } = render(
+      <MonitorPanel header={<span>档案</span>} mode="column" topRow={<MonitorTopBarRow />}>
+        内容
+      </MonitorPanel>
+    )
+
+    const panel = container.querySelector('[data-monitor-panel]') as HTMLElement
+
+    expect(panel.firstElementChild?.getAttribute('data-monitor-topbar-row')).toBe('')
+    expect(panel.children[1].getAttribute('data-monitor-header')).toBe('')
+  })
+})
+
+describe('卡头：头下没有那条线（Qoder 第二张那样：纯文字 ＋ 右上角图钉）', () => {
+  it('头那个 div 上没有描边', () => {
+    const { container } = render(
+      <MonitorPanel header={<span>档案</span>} mode="column">
+        内容
+      </MonitorPanel>
+    )
+
+    const header = container.querySelector('[data-monitor-header]') as HTMLElement
+
+    expect(header).toBeTruthy()
+    expect(header.className).not.toMatch(/(^|\s)border(-[trblxy])?(\s|$)/)
+  })
+})
+
 describe('分区（Qoder：13 个分区各能单独收起，标题就是一行 12px 字）', () => {
   it('折起时内容不渲染，标题还在', () => {
     const { rerender } = render(
@@ -58,6 +100,7 @@ describe('分区（Qoder：13 个分区各能单独收起，标题就是一行 1
         <span>内容</span>
       </MonitorSection>
     )
+
     expect(screen.getByText('内容')).toBeTruthy()
 
     rerender(
@@ -159,6 +202,7 @@ describe('一行（Qoder：28px 高、零描边、hover 才出底色）', () => 
 
   it('按下态与「动作在飞就别再点」都接得住（旧 rail 行的两条，不能丢）', () => {
     const onClick = vi.fn()
+
     const { rerender } = render(
       <MonitorRow ariaPressed label="写代码" onClick={onClick} />
     )

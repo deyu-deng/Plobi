@@ -101,8 +101,7 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     expect(controller).toMatch(/monitorVisible && monitorPinned[^?]*\? 'flex-row' : 'flex-col'/)
 
     // 浮层是**用户切出来**的另一种形态：抬起来的一层（圆角 ＋ 淡边框 ＋ 投影）。
-    // 11-19 16:0x 起这层皮归统一容器那个件（`MONITOR_FLOAT_SHAPE`），
-    // 控制器只给定位（`absolute` ＋ `right-4 top-…`），不再自己长一张皮。
+    // 11-19 16:0x 起这层皮归统一容器那个件（`MONITOR_FLOAT_SHAPE`）。
     const floatBlock = monitorPanel().slice(
       monitorPanel().indexOf('export const MONITOR_FLOAT_SHAPE'),
       monitorPanel().indexOf('export const MONITOR_COLUMN_SHAPE')
@@ -112,15 +111,25 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     expect(floatBlock).toContain('shadow-lg')
     expect(floatBlock).toContain('w-[280px]')
     expect(controller).not.toContain('DOSSIER_FLOATING_SHAPE')
+    // 11-19 22:0x：浮层**挂到 body**（portal ＋ `fixed` 壳）—— 原来挂在对话卡里
+    // （`absolute`），祖先的 `overflow-hidden` 会把它裁掉 ⇒ 拖到工作区卡上就看不见
+    // （用户原话：「拖到工作区卡片的时候，会藏到卡片底下导致看不到」）。
+    // 位置因此改成**视口坐标**：控制器只给「锚」与「拖出来的位置」，不再自己定位。
+    const region = read('shell/monitor-region.tsx')
+    expect(region).toContain('createPortal')
+    expect(region).toContain('data-monitor-float-layer')
+    expect(region).toContain('fixed inset-0 z-[1000]')
+    expect(controller).toContain('anchorElement={chatCardElement}')
+    expect(controller).toContain('floatPosition={monitorFloatPosition}')
     // 浮层压在**抬头下面**：抬头右边那几枚（档案图标本身、全屏、收起）都住在那一行，
     // 压上去就点不到了（11-09：档案卡一露脸就把自己的开关盖住了）。
-    // 减号两边不留空格的 calc 是**非法 CSS** ⇒ 浏览器整条丢掉（这一档就白写了）。
-    expect(controller).toContain('top-[calc(var(--card-header-height)+0.5rem)]')
+    // 11-19 22:0x 起这一条不写在类名里，写成**从顶栏那一行的下沿算**（同一个数）。
+    expect(region).toContain('[data-chat-topbar]')
     // 高度上限是**一个数**（Qoder `max-h-[560px]`）：不许再写「按百分比算」那种
     // 减号两边留空格的非法 calc。
     expect(floatBlock).toContain('max-h-[560px]')
     expect(floatBlock).not.toMatch(/calc\(100%-[0-9]/)
-    // 对话容器要 relative，浮层才贴得住它的右上角。
+    // 对话容器仍然是 relative（拖放落点在那儿）。
     expect(controller).toContain("'relative flex h-full min-h-0'")
   })
 

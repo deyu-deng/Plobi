@@ -88,7 +88,8 @@ export function MonitorPanel({
   headerDragProps,
   mode = 'column',
   style,
-  testId
+  testId,
+  topRow
 }: {
   bodyClassName?: string
   children?: ReactNode
@@ -99,6 +100,8 @@ export function MonitorPanel({
   style?: React.CSSProperties
   /** 根元素的 `data-testid`（拖动定位那类按名字找本体的用法要它）。 */
   testId?: string
+  /** 头**上面**那一行（对话卡的顶栏那一行）。并排列用它把顶栏那道线接过去。 */
+  topRow?: ReactNode
 }) {
   return (
     <div
@@ -108,8 +111,9 @@ export function MonitorPanel({
       data-testid={testId}
       style={style}
     >
+      {topRow}
       {header ? (
-        <div className={cn(HEADER, 'border-b border-(--ui-stroke-quaternary)')} data-monitor-header="">
+        <div className={HEADER} data-monitor-header="">
           {header}
         </div>
       ) : null}
@@ -117,6 +121,29 @@ export function MonitorPanel({
         {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * 顶栏那一行 —— **并排列不占它**（用户 11-19：「**这个组件的侧边栏形式，不应该占据顶栏。
+ * 对话卡片的顶栏应该还是不变的。**」）。
+ *
+ * 这一列是对话卡的**兄弟列**，跟对话区一样从卡片顶端开始 ⇒ 顶栏那一行会被它占掉。
+ * 口径是「顶栏不变」⇒ 这一列从顶栏**下一行**开始，并把顶栏那道线**接过去**
+ * （同一条 `border-b`、同一色）—— 于是顶栏看着横跨整卡。
+ *
+ * 底色用 `--ui-chat-surface-background`：那是顶栏背后那一层的颜色 ⇒ 接缝看不出来。
+ */
+export function MonitorTopBarRow({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'h-(--card-header-height) shrink-0 border-b border-(--ui-stroke-tertiary)',
+        'bg-(--ui-chat-surface-background)',
+        className
+      )}
+      data-monitor-topbar-row=""
+    />
   )
 }
 
@@ -221,6 +248,10 @@ export function MonitorIcon({ children, className }: { children: ReactNode; clas
  *
  * **拖把手只裹住「图标 ＋ 标题」** —— 尾部的按钮自己要点得动，不该启动拖动
  * （Qoder 的浮层头 `h-9 cursor-grab`，图钉那一枚是另一个按钮）。
+ *
+ * **卡头里那枚矢量图标不再给了**（用户 11-19 22:0x：「**卡片里就不要显示哪个对应的
+ * 矢量图标了，显示"档案"两个字就行了**」）⇒ `icon` 现在没人传；留着这个位是给
+ * 别的用法留的（行里的图标托走的是 `MonitorIcon`，不是它）。
  */
 export function MonitorCardHeader({
   count,
