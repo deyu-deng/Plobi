@@ -2092,7 +2092,26 @@ def _set_session_context(
     cwd: str | None = None,
     *,
     ui_session_id: str = "",
+    agent_id: str | None = None,
 ) -> list:
+    """把这条会话的身份绑进本线程/本任务的 ContextVar。
+
+    ``agent_id`` / ``session_id`` 是 11-18 补上的两个洞：``set_session_vars``
+    对每个变量都是**无条件** ``.set()``，没传就是显式置空——于是桌面那条正路
+    里 ``PLOBI_AGENT_ID`` 一直是 ``""``、``PLOBI_SESSION_ID`` 也一直是 ``""``。
+    后果不是"没身份"，而是**身份被说成 L1**：
+
+    * ``plobi.agents.registry._active_agent_profile_name`` 读回空 ⇒ 每个会话都
+      按 L1 算，per-agent 的模型/工具集/记忆分持整条链落空；
+    * ``agent/prompt_builder._soul_agent_id`` → ``tools.memory_tool.resolve_agent_slug``
+      拿到 ``l1`` ⇒ 读**顶层那份 L1 秘书 SOUL** ⇒ Principal 那屏问「你是谁」，
+      它答「我是你的 Plobi 总秘书」（10-31 现读；11-18 复核仍在）。
+
+    ``agent_id=None``（默认）表示"按会话认"：与写库那一格同一个判据
+    （``_agent_id_for_session``：显式名册名 → profile 家名 → 会话目录归属），
+    认不出仍是 ``""`` = L1，不猜。显式传值只给"这条会话不在 ``_sessions`` 里"
+    的调用方留口子。
+    """
     try:
         from gateway.session_context import set_session_vars
 
@@ -2102,13 +2121,22 @@ def _set_session_context(
         # it instead of falling back to the gateway launch dir.
         resolved = cwd if cwd is not None else _cwd_for_session_key(session_key)
         source = _resolve_session_platform()
+        owner = None
         with _sessions_lock:
             for sess in list(_sessions.values()):
                 if sess.get("session_key") == session_key:
                     source = _session_source(sess)
+                    owner = sess
                     break
+        # 身份解析放在锁外：它要读名册/判目录，别在 _sessions_lock 底下做 IO。
+        if agent_id is None:
+            agent_id = _agent_id_for_session(owner) if owner else ""
         return set_session_vars(
             session_key=session_key,
+            # 会话 id 与 session_key 同源（``_make_agent`` 也是 ``session_id or key``）；
+            # 有了它 ``memory_tool`` 那条"会话行反推身份"的兜底才走得通。
+            session_id=session_key,
+            agent_id=agent_id or "",
             source=source,
             cwd=resolved,
             ui_session_id=ui_session_id,
