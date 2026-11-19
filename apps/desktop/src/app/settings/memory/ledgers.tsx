@@ -109,11 +109,22 @@ interface LedgerCopy {
   confirmForget: string
   needsRestart: string
   /**
-   * 三份记忆各自叫什么。**这一格取代后端给的 `label`**（`memory_api.py` 里那四句
-   * 是写死的中文）：换成英/日之后原来只有这四个名字还是中文，那一屏就等于没翻。
-   * 认不出的 key（后端将来多一份）才回落到它给的 `label`，不让名字整格空着。
+   * 两份跨 Agent 的记忆各自叫什么（共用纪律、你的画像）。**取代后端给的 `label`**
+   * （`memory_api.py` 里那四句是写死的中文）：换成英/日之后原来只有这四个名字还是
+   * 中文，那一屏就等于没翻。认不出的 key（后端将来多一份）才回落到它给的 `label`，
+   * 不让名字整格空着。
    */
-  scopeLabels: Record<string, string>
+  scopeFixed: { global: string; user: string }
+  /**
+   * 两份**属于某一个 Agent** 的记忆：名字里带上那个 Agent 的名字。
+   * 用户 11-19 21:5x：「我发现『这个 Agent 的记忆』是只哪一个 Agent 的记忆呢？」
+   * ——「这个」在界面上没有指代对象，写上名字才答得出来。
+   */
+  scopeOwned: { memory: (owner: string) => string; status: (owner: string) => string }
+  /** 后端报 `l1`（没绑某个 Agent）时，那两份挂在指挥名下。 */
+  conductor: string
+  /** 抽屉抬头第二行：这一份只属于谁（跨 Agent 的那两份不写这一行）。 */
+  scopeOwnerHint: (owner: string) => string
   /** 折叠行右边那一段读数：已用/上限 ＋ 几条。 */
   scopeMeta: (chars: number, limit: number, count: number) => string
   openAria: (label: string) => string
@@ -137,7 +148,7 @@ interface LedgerCopy {
 
 const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   en: {
-    agentLine: agent => `Agent: ${agent}`,
+    agentLine: agent => `These memories belong to ${agent}`,
     streakLabel: (streak, threshold) => `${streak}/${threshold} nods (report)`,
     confirmForget: 'Confirm forget',
     needsRestart: 'Backend is older than this page — restart Plobi to load it.',
@@ -148,12 +159,16 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forgetHint: 'Delete this entry and leave a receipt',
     failed: 'Not deleted',
     unavailable: 'Memory is not readable right now',
-    scopeLabels: {
+    scopeFixed: {
       global: 'Shared rules',
-      user: 'About you',
-      memory: "This agent's memory",
-      status: "This agent's state"
+      user: 'About you'
     },
+    scopeOwned: {
+      memory: owner => `${owner}'s memory`,
+      status: owner => `${owner}'s state`
+    },
+    conductor: 'Conductor',
+    scopeOwnerHint: owner => `Only ${owner} reads this one`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} ${count === 1 ? 'entry' : 'entries'}`,
     openAria: label => `Open ${label}`,
     boundaryTitle: 'Write boundary',
@@ -174,7 +189,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     boundaryEmpty: 'Nothing to learn from yet — approve or reject a few times and the numbers appear here'
   },
   zh: {
-    agentLine: agent => `这份 Agent：${agent}`,
+    agentLine: agent => `这几份记忆属于 ${agent}`,
     streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}（汇报）`,
     confirmForget: '确认忘掉',
     needsRestart: '后端还是旧进程，重启 Plobi 后这一页就能读。',
@@ -185,12 +200,16 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forgetHint: '删掉这一条，并留一行回执',
     failed: '没删成',
     unavailable: '现在读不到记忆',
-    scopeLabels: {
+    scopeFixed: {
       global: '共用纪律',
-      user: '你的画像',
-      memory: '这个 Agent 的记忆',
-      status: '这个 Agent 的状态'
+      user: '你的画像'
     },
+    scopeOwned: {
+      memory: owner => `${owner} 的记忆`,
+      status: owner => `${owner} 的状态`
+    },
+    conductor: '指挥',
+    scopeOwnerHint: owner => `只有 ${owner} 会读这一份`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 条`,
     openAria: label => `展开${label}`,
     boundaryTitle: '写入边界',
@@ -210,7 +229,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     boundaryEmpty: '还没有值得学的——批准或驳回几次之后，这里的读数才会长出来'
   },
   ja: {
-    agentLine: agent => `この Agent：${agent}`,
+    agentLine: agent => `この記憶は ${agent} のものです`,
     streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}（報告）`,
     confirmForget: '忘れる（確認）',
     needsRestart: 'バックエンドが古いままです。Plobi を再起動してください。',
@@ -221,12 +240,16 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forgetHint: 'この項目を削除し、記録を残します',
     failed: '削除できませんでした',
     unavailable: '今は記憶を読めません',
-    scopeLabels: {
+    scopeFixed: {
       global: '共通ルール',
-      user: 'あなたのプロフィール',
-      memory: 'この Agent の記憶',
-      status: 'この Agent の状態'
+      user: 'あなたのプロフィール'
     },
+    scopeOwned: {
+      memory: owner => `${owner} の記憶`,
+      status: owner => `${owner} の状態`
+    },
+    conductor: '指揮者',
+    scopeOwnerHint: owner => `これを読むのは ${owner} だけです`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 件`,
     openAria: label => `${label} を開く`,
     boundaryTitle: '書き込みの境界',
@@ -246,7 +269,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     boundaryEmpty: 'まだ学ぶ材料がありません——数回承認・却下するとここに数字が出ます'
   },
   'zh-hant': {
-    agentLine: agent => `這份 Agent：${agent}`,
+    agentLine: agent => `這幾份記憶屬於 ${agent}`,
     streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}（匯報）`,
     confirmForget: '確認忘掉',
     needsRestart: '後端還是舊進程，重啟 Plobi 後這一頁就能讀。',
@@ -257,12 +280,16 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     forgetHint: '刪掉這一條，並留一行回執',
     failed: '沒刪成',
     unavailable: '現在讀不到記憶',
-    scopeLabels: {
+    scopeFixed: {
       global: '共用紀律',
-      user: '你的畫像',
-      memory: '這個 Agent 的記憶',
-      status: '這個 Agent 的狀態'
+      user: '你的畫像'
     },
+    scopeOwned: {
+      memory: owner => `${owner} 的記憶`,
+      status: owner => `${owner} 的狀態`
+    },
+    conductor: '指揮',
+    scopeOwnerHint: owner => `只有 ${owner} 會讀這一份`,
     scopeMeta: (chars, limit, count) => `${chars}/${limit} · ${count} 條`,
     openAria: label => `展開${label}`,
     boundaryTitle: '寫入邊界',
@@ -352,7 +379,22 @@ export function MemoryLedgers() {
 
   const scopes = data?.scopes ?? []
   const active = scopes.find(scope => scope.key === openScope) ?? null
-  const labelOf = (scope: MemoryScope) => m.scopeLabels[scope.key] ?? scope.label
+  // 这两份记忆属于哪一个 Agent：后端 `_snapshot()` 给的是它解析出来的那一个
+  // （`resolve_agent_slug()`）。`l1` 表示没绑到具体 Agent —— 那两份就挂在指挥名下，
+  // 而不是留着「这个 Agent」让人猜。
+  const owner = data?.agent && data.agent !== 'l1' ? data.agent : m.conductor
+
+  const labelOf = (scope: MemoryScope) => {
+    if (scope.key === 'global' || scope.key === 'user') {
+      return m.scopeFixed[scope.key]
+    }
+
+    if (scope.key === 'memory' || scope.key === 'status') {
+      return m.scopeOwned[scope.key](owner)
+    }
+
+    return scope.label
+  }
 
   const close = () => {
     setOpenScope(null)
@@ -404,6 +446,8 @@ export function MemoryLedgers() {
       </div>
 
       {/* 抽屉：一份记忆的全部条目。忘掉仍是两下——第一下只上膛，第二下才真删。 */}
+      {/* `belowTitlebar`：抽屉底色铺满全高，但内容与关闭按钮从窗口顶栏下面开始，
+            否则标题正好压在系统的最小化/最大化/关闭上（用户 11-19 21:5x 指出的那一处）。 */}
       <Sheet
         onOpenChange={next => {
           if (!next) {
@@ -412,7 +456,7 @@ export function MemoryLedgers() {
         }}
         open={Boolean(active)}
       >
-        <SheetContent className="sm:max-w-md" side="right">
+        <SheetContent belowTitlebar className="sm:max-w-md" side="right">
           {active ? (
             <>
               <SheetHeader>
@@ -425,6 +469,10 @@ export function MemoryLedgers() {
                       <span title={m.forgetHint}>{m.streakLabel(active.streak ?? 0, active.threshold ?? 8)}</span>
                     </>
                   )}
+                  {/* 跨 Agent 的那两份不写归属：共用纪律与画像本来就不属于某一个 Agent。 */}
+                  {active.key === 'memory' || active.key === 'status' ? (
+                    <span className="mt-1 block">{m.scopeOwnerHint(owner)}</span>
+                  ) : null}
                 </SheetDescription>
               </SheetHeader>
 

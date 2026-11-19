@@ -162,7 +162,10 @@ describe('MemoryLedgers', () => {
     // 四个名字由前端给（后端 label 只作兜底），读数带条数。
     expect(await screen.findByText('共用纪律')).toBeTruthy()
     expect(screen.getByText('你的画像')).toBeTruthy()
-    expect(screen.getByText('这个 Agent 的记忆')).toBeTruthy()
+    // 属于某个 Agent 的那两份写的是那个 Agent 的名字，不是无主的「这个 Agent」
+    // （用户 11-19 21:5x：「我发现『这个 Agent 的记忆』是只哪一个 Agent 的记忆呢？」）。
+    expect(screen.getByText('l2-course-x 的记忆')).toBeTruthy()
+    expect(screen.getByText('这几份记忆属于 l2-course-x')).toBeTruthy()
     expect(screen.getByText('6/2200 · 2 条')).toBeTruthy()
     expect(screen.getByText('0/1375 · 0 条')).toBeTruthy()
 
@@ -183,6 +186,31 @@ describe('MemoryLedgers', () => {
 
     // 同一份里的条目只在这一份的抽屉里；别份的条目不在。
     expect(within(drawer).queryByText('共用甲')).toBeNull()
+  })
+
+  it('抽屉抬头点名这一份属于谁，并且内容从窗口顶栏下面开始（不压系统关闭按钮）', async () => {
+    render(<MemoryLedgers />)
+
+    const drawer = await openScope('memory')
+    const dialog = screen.getByRole('dialog')
+
+    // 抬头写的是「l2-course-x 的记忆」＋「只有 l2-course-x 会读这一份」，
+    // 不是「这个 Agent」——界面上没有「这个」的指代对象。
+    expect(within(dialog).getByText('l2-course-x 的记忆')).toBeTruthy()
+    expect(within(dialog).getByText('只有 l2-course-x 会读这一份')).toBeTruthy()
+
+    // 窗口顶栏那 34px 归系统的最小化/最大化/关闭（Windows 的 WCO 永远压在网页之上）：
+    // 抽屉底色照旧铺满全高，内容与关闭按钮必须从它下面开始，否则两者正好重合。
+    const content = drawer.closest('[data-slot="sheet-content"]')
+    expect(content?.className).toContain('var(--titlebar-height')
+  })
+
+  it('跨 Agent 的那两份不写归属（共用纪律与画像本来就不属于某一个 Agent）', async () => {
+    render(<MemoryLedgers />)
+
+    const drawer = await openScope('global')
+    expect(within(screen.getByRole('dialog')).queryByText(/只有 .* 会读这一份/)).toBeNull()
+    expect(within(drawer).getByText('共用甲')).toBeTruthy()
   })
 
   it('空的那一份点开说的是「还没记住什么」，不留白', async () => {
@@ -234,7 +262,8 @@ describe('MemoryLedgers', () => {
 
     expect(await screen.findByText('Shared rules')).toBeTruthy()
     expect(screen.getByText('About you')).toBeTruthy()
-    expect(screen.getByText("This agent's memory")).toBeTruthy()
+    // l1 那两份挂在指挥名下：Conductor's memory / Conductor's state。
+    expect(screen.getByText("Conductor's memory")).toBeTruthy()
 
     // 后端 `memory_api.py` 写死的中文标签不许当兜底漏出来。
     for (const leaked of ['共用纪律', '你的画像', '这个 Agent 自己的记忆']) {
