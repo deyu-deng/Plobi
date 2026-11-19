@@ -50,9 +50,7 @@ import { providerTitle } from './providers'
 /** 那几步的步序（判据盯的就是这一串）。 */
 export const FIRST_RUN_STEPS = [
   'welcome',
-  'interface',
-  'language',
-  'appearance',
+  'setup',
   'cards',
   'profile',
   'agentName',
@@ -117,7 +115,7 @@ export function FirstRunFlow({
       return
     }
 
-    const timer = window.setTimeout(() => setStep('interface'), 1400)
+    const timer = window.setTimeout(() => setStep('setup'), 1400)
 
     return () => window.clearTimeout(timer)
   }, [step])
@@ -142,10 +140,11 @@ export function FirstRunFlow({
   }
 
   // 「挑一家模型」那一步单独占一列：**46rem 宽**（≥ `--container-2xl` 的 42rem ⇒
-  // 设置页那张卡靠右那颗控件才排得进同一行）＋ **固定高度**（主人 11-19 13:2x：「模型配置
-  // 那两个按钮也要放到原来的位置去呀。和其他界面的高度一致」）——别的屏是「居中的一整块」，
-  // 这一屏给一个**同样高度**的整块：三张卡那屏的内容居中、点开一栏的列表屏标题在上、
-  // 列表占满其余（内部滚动）⇒ 两处的按钮都落在与其他屏相同的高度上。
+  // 设置页那张卡靠右那颗控件才排得进同一行）。
+  //
+  // **每一屏都是同一个高度**（主人 11-19 13:2x／13:4x：「模型配置那两个按钮也要放到原来的
+  // 位置去呀。和其他界面的高度一致」）：列固定 `h-[27rem]`，内容区可滚、按钮钉在列底 ⇒
+  // 每一屏的两颗按钮都落在 673px，不再有「这一屏高、那一屏低」。
   const wideStep = step === 'cards'
 
   return (
@@ -153,22 +152,14 @@ export function FirstRunFlow({
       <style>{FIRST_RUN_CSS}</style>
       <div
         className={cn(
-          'flex w-full flex-col items-center',
-          wideStep ? 'h-[27rem] max-w-[46rem]' : 'max-w-[30rem]'
+          'flex h-[27rem] w-full flex-col items-center',
+          wideStep ? 'max-w-[46rem]' : 'max-w-[30rem]'
         )}
       >
-        <div
-          className={cn(
-            'flex w-full flex-col items-center',
-            wideStep ? 'min-h-0 flex-1' : 'min-h-[22rem]'
-          )}
-          key={step}
-        >
+        <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto" key={step}>
           {step === 'welcome' ? <WelcomeStep copy={copy} /> : null}
-          {step === 'interface' ? <InterfaceStep copy={copy} /> : null}
-          {step === 'language' ? <LanguageStep copy={copy} /> : null}
-          {step === 'appearance' ? (
-            <AppearanceStep
+          {step === 'setup' ? (
+            <SetupStep
               copy={copy}
               mode={mode}
               onMode={setMode}
@@ -303,52 +294,13 @@ function WelcomeStep({ copy }: { copy: Copy }) {
   )
 }
 
-function InterfaceStep({ copy }: { copy: Copy }) {
-  return (
-    <Screen>
-      <div className="fr-icon">
-        <svg aria-hidden="true" fill="none" height="36" stroke="currentColor" strokeWidth="1.4" viewBox="0 0 24 24">
-          <rect height="13" rx="2" width="19" x="2.5" y="4" />
-          <path d="M8.5 20.5h7" />
-        </svg>
-      </div>
-      <Title>{copy.interfaceTitle}</Title>
-      <Desc>{copy.interfaceDesc}</Desc>
-    </Screen>
-  )
-}
-
-function LanguageStep({ copy }: { copy: Copy }) {
-  const { locale, setLocale } = useI18n()
-  const locales = Object.entries(LOCALE_META) as Array<[Locale, (typeof LOCALE_META)[Locale]]>
-
-  return (
-    <Screen>
-      <Title>{copy.languageTitle}</Title>
-      <Desc>{copy.languageDesc}</Desc>
-      <Panel>
-        <div className="fr-list">
-          {locales.map(([code, meta]) => (
-            <button
-              aria-pressed={code === locale}
-              className="fr-item"
-              key={code}
-              onClick={() => {
-                void setLocale(code)
-              }}
-              type="button"
-            >
-              <span>{meta.name}</span>
-            </button>
-          ))}
-        </div>
-      </Panel>
-    </Screen>
-  )
-}
-
-/** 外观：主题 ＋ 明暗（设置页「外观」那一栏就是这两样）。 */
-function AppearanceStep({
+/**
+ * 外观与语言（**合并成一步**，主人 11-19 13:4x）。
+ *
+ * 语言也做成**芯片**（与画像那两题同一套语法）——这样合并后的内容仍放得进那一列的
+ * 固定高度（面板 ≈ 200px，内容区 334px），不用为多出来的一屏单独改高度。
+ */
+function SetupStep({
   copy,
   mode,
   onMode,
@@ -363,24 +315,45 @@ function AppearanceStep({
   themeName: string
   themes: { name: string; label: string }[]
 }) {
+  const { locale, setLocale } = useI18n()
+  const locales = Object.entries(LOCALE_META) as Array<[Locale, (typeof LOCALE_META)[Locale]]>
+
   return (
     <Screen>
-      <Title>{copy.appearanceTitle}</Title>
-      <Desc>{copy.appearanceDesc}</Desc>
+      <Title>{copy.setupTitle}</Title>
+      <Desc>{copy.setupDesc}</Desc>
       <Panel>
         <div className="fr-group">
-        <span className="fr-label">{copy.modeLabel}</span>
-        <SegmentedControl
-          onChange={onMode}
-          options={[
-            { id: 'light', label: copy.themeLight },
-            { id: 'dark', label: copy.themeDark },
-            { id: 'system', label: copy.themeSystem }
-          ]}
-          value={mode}
-        />
-      </div>
-      <div className="fr-group">
+          <span className="fr-label">{copy.languageGroup}</span>
+          <div className="fr-chips">
+            {locales.map(([code, meta]) => (
+              <button
+                aria-pressed={code === locale}
+                className="fr-chip"
+                key={code}
+                onClick={() => {
+                  void setLocale(code)
+                }}
+                type="button"
+              >
+                {meta.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="fr-group">
+          <span className="fr-label">{copy.modeLabel}</span>
+          <SegmentedControl
+            onChange={onMode}
+            options={[
+              { id: 'light', label: copy.themeLight },
+              { id: 'dark', label: copy.themeDark },
+              { id: 'system', label: copy.themeSystem }
+            ]}
+            value={mode}
+          />
+        </div>
+        <div className="fr-group">
           <span className="fr-label">{copy.themeLabel}</span>
           <div className="fr-themes">
             {themes.map(theme => (
@@ -401,13 +374,6 @@ function AppearanceStep({
   )
 }
 
-/**
- * 三张卡 ＝ **模型配置那一屏**（主人 11-18 20:4x：「模型配置界面放三张卡片」）。
- *
- * 每张卡里列的是**目录**（可配置的那些），不是「已经配好的」：
- *   账号 ⇒ OAuth 目录；密钥 ⇒ 后端 model options 里的 api_key 那批；
- *   订阅额度 ⇒ hub 的名册。三份都与配没配过无关 ⇒ 一个都没配时照样列得出来。
- */
 function CardsStep({
   copy,
   ctx,
@@ -757,6 +723,16 @@ function StepFooter({
 
   return (
     <div className="mt-7 flex w-full flex-col items-center gap-4">
+      {/* 「以后再说」那一行**恒定占位**（没有可跳过时留一个等高的空行）且放在按钮行
+          **上方** ⇒ footer 的高度每屏相同 ⇒ 那两颗按钮每屏都落在同一个高度，
+          切屏时不再上下跳（主人 11-19 13:2x）。 */}
+      <div className="h-[1.125rem]">
+        {skippable ? (
+          <button className="text-xs text-(--ui-text-tertiary) hover:text-foreground" onClick={onSkip} type="button">
+            {copy.skip}
+          </button>
+        ) : null}
+      </div>
       <div className="flex items-center gap-2">
         {index > 0 ? (
           <Button onClick={onBack} size="sm" variant="ghost">
@@ -767,11 +743,6 @@ function StepFooter({
           {last ? copy.finish : copy.next}
         </Button>
       </div>
-      {skippable ? (
-        <button className="text-xs text-(--ui-text-tertiary) hover:text-foreground" onClick={onSkip} type="button">
-          {copy.skip}
-        </button>
-      ) : null}
       <div className="fr-dots">
         {FIRST_RUN_STEPS.map((s, i) => (
           <i className={i === index ? 'on' : i < index ? 'done' : ''} key={s} />

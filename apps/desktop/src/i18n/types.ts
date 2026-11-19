@@ -2547,14 +2547,9 @@ export interface Translations {
       welcomeTitle: string
       welcomeDesc: string
       preparing: string
-      interfaceTitle: string
-      interfaceDesc: string
-      languageTitle: string
-      languageDesc: string
-      themeTitle: string
-      themeDesc: string
-      appearanceTitle: string
-      appearanceDesc: string
+      setupTitle: string
+      setupDesc: string
+      languageGroup: string
       themeLabel: string
       modeLabel: string
       themeLight: string

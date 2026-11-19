@@ -56,13 +56,11 @@ async function advanceTo(step: string) {
 }
 
 describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
-  it('步序就是主人 11-17 20:0x 说的那一串（模型配置并进三张卡那一屏）', () => {
-    // 变异自检：把「语言」挪到「外观」后面 ⇒ 这条当场红。
+  it('步序就是主人 11-19 13:4x 拍的那一串（界面自述删掉、语言与外观合并）', () => {
+    // 变异自检：把「setup」拆回语言／外观两屏，或把「interface」放回去 ⇒ 这条当场红。
     expect(FIRST_RUN_STEPS).toEqual([
       'welcome',
-      'interface',
-      'language',
-      'appearance',
+      'setup',
       'cards',
       'profile',
       'agentName',
@@ -71,16 +69,19 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
     ])
   })
 
-  it('外观那一步同时给主题与明暗（设置页「外观」那一栏就是这两样）', async () => {
-    await advanceTo('appearance')
+  it('外观与语言合成一步：主题 ＋ 明暗 ＋ 语言（语言也是芯片）', async () => {
+    await advanceTo('setup')
 
-    expect(screen.getAllByText(/Appearance|外观/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Appearance and language|外观与语言/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/^Theme$|主题/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/Light or dark|明暗/).length).toBeGreaterThan(0)
     // 明暗三档：浅色 / 深色 / 跟随系统。
     expect(screen.getByRole('button', { name: /^Light$|浅色/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /^Dark$|深色/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Follow system|跟随系统/ })).toBeTruthy()
+    // 语言也在同一块面板里，做成芯片（与画像那两题同一套语法）。
+    expect(screen.getAllByText(/^Language$|语言/).length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('.fr-panel .fr-chip').length).toBeGreaterThanOrEqual(4)
   })
 
   it('三张卡＝左中右三张大卡片；点一张变成一屏滚动列表，里面是设置页那一张卡', async () => {
@@ -142,13 +143,14 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
   })
 
   it('其余几屏的内容落进同一块玻璃面（与那三张卡同一套材质）', async () => {
-    await advanceTo('language')
+    await advanceTo('setup')
 
-    // 语言那屏：四行落在玻璃面里。
+    // 外观与语言那屏：内容落在玻璃面里。
     const panel = document.querySelector('.fr-panel')
 
     expect(panel).toBeTruthy()
-    expect(panel?.querySelector('.fr-list')).toBeTruthy()
+    expect(panel?.querySelector('.fr-chips')).toBeTruthy()
+    expect(panel?.querySelector('.fr-themes')).toBeTruthy()
   })
 
   it('那三张卡那屏不再有「和设置页分组一致」那句机制说明', async () => {
