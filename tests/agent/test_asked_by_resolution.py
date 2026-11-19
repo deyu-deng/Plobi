@@ -35,9 +35,13 @@ def test_kind_follows_the_same_precedence():
 
 
 def test_reply_to_follows_the_same_precedence():
-    """裁定 196 ④：这条在回哪一条，与 asked_by/kind 同一条优先级。"""
+    """裁定 196 ④：这条在回哪一条，与 asked_by/kind 同一条优先级。
+
+    一条消息可以回**多条** ⇒ 归一成**一串 id**（旧的单个 id 仍收）。
+    """
     from run_agent import resolve_reply_to
 
-    assert resolve_reply_to({"reply_to": "4091"}, env={"PLOBI_REPLY_TO": "9"}) == "4091"
-    assert resolve_reply_to({"role": "user"}, env={"PLOBI_REPLY_TO": "9"}) == "9"
+    assert resolve_reply_to({"reply_to": "4091"}, env={"PLOBI_REPLY_TO": "9"}) == ["4091"]
+    assert resolve_reply_to({"reply_to": ["12", "34"]}, env={"PLOBI_REPLY_TO": "9"}) == ["12", "34"]
+    assert resolve_reply_to({"role": "user"}, env={"PLOBI_REPLY_TO": "9"}) == ["9"]
     assert resolve_reply_to({"role": "user"}, env={}) is None

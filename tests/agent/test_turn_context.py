@@ -206,6 +206,26 @@ def test_persist_user_message_becomes_original():
     assert ctx.messages[-1]["content"] == "api-prefixed"
 
 
+def test_reply_to_travels_as_a_list_of_ids():
+    """一条消息可以回**多条**：user_msg 上的 `reply_to` 必须是**一串 id**。
+
+    ⚠️ 原来这里是 `user_msg["reply_to"] = str(reply_to)`：传 list 会变成
+    `"['12', '34']"` 字面量，**不报错**，落库后指向空气。
+    """
+    agent = _FakeAgent()
+    ctx = _build(agent, reply_to=["12", "34"])
+
+    assert ctx.messages[-1]["reply_to"] == ["12", "34"]
+
+
+def test_a_single_anchor_still_travels():
+    """旧客户端发单个 id：仍落到那一格（只是归一成了一串）。"""
+    agent = _FakeAgent()
+    ctx = _build(agent, reply_to="12")
+
+    assert ctx.messages[-1]["reply_to"] == ["12"]
+
+
 def test_memory_nudge_fires_at_interval():
     agent = _FakeAgent()
     agent._memory_nudge_interval = 1

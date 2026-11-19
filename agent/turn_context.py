@@ -26,9 +26,10 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from agent.conversation_compression import conversation_history_after_compression
+from agent.reply_targets import normalize_reply_to
 from agent.iteration_budget import IterationBudget
 from agent.model_metadata import (
     estimate_messages_tokens_rough,
@@ -133,7 +134,7 @@ def build_turn_context(
     set_session_context,
     set_current_write_origin,
     ra,
-    reply_to: Optional[str] = None,
+    reply_to: Optional[Union[str, Sequence[str]]] = None,
 ) -> TurnContext:
     """Run the once-per-turn setup and return the loop's input context.
 
@@ -318,7 +319,10 @@ def build_turn_context(
     user_msg = {"role": "user", "content": user_message}
     if reply_to:
         # 引用条（裁定 196 ④）：这一条在回哪一条，随这条 user 消息一起落库。
-        user_msg["reply_to"] = str(reply_to)
+        # 一条消息可以回**多条** ⇒ 落库前归一成**一串 id**。
+        # ⚠️ 原来这里是 `str(reply_to)`：传 list 会变成 `"['a', 'b']"` 字面量，
+        # **不报错**，落库后指向空气（探子定位的第一个静默坑）。
+        user_msg["reply_to"] = normalize_reply_to(reply_to)
     messages.append(user_msg)
     current_turn_user_idx = len(messages) - 1
     agent._persist_user_message_idx = current_turn_user_idx

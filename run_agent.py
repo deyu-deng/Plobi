@@ -45,7 +45,7 @@ import tempfile
 import time
 import threading
 import uuid
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Sequence, Union
 # NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
 # SDK pulls ~240 ms of imports. We expose `OpenAI` as a thin proxy object
 # that imports the SDK on first call/isinstance check. This preserves:
@@ -157,6 +157,7 @@ from tools.browser_tool import cleanup_browser
 
 # Agent internals extracted to agent/ package for modularity
 from agent.memory_manager import sanitize_context
+from agent.reply_targets import normalize_reply_to
 from agent.error_classifier import FailoverReason
 from agent.redact import redact_sensitive_text
 from agent.model_metadata import (
@@ -289,13 +290,18 @@ def resolve_asked_by(message: dict = None, env: dict = None) -> Optional[str]:
 REPLY_TO_ENV = "PLOBI_REPLY_TO"
 
 
-def resolve_reply_to(message: dict = None, env: dict = None) -> Optional[str]:
-    """这条 user 消息在回哪一条（裁定 196 ④）：消息自己带的 > 进程环境 > 没记。"""
-    own = ((message or {}).get("reply_to") or "").strip()
+def resolve_reply_to(message: dict = None, env: dict = None) -> Optional[List[str]]:
+    """这条 user 消息在回哪几条（裁定 196 ④）：消息自己带的 > 进程环境 > 没记。
+
+    一条消息可以回**多条** ⇒ 这里归一成**一串 id**。
+    ⚠️ 原来这里是 `.strip()`：值是 list 时抛 ``AttributeError``，又被外层的
+    ``except Exception`` 吞成 warning ⇒ **静默不落库**（探子定位的第三个坑）。
+    """
+    own = normalize_reply_to((message or {}).get("reply_to"))
     if own:
         return own
     value = ((env if env is not None else os.environ).get(REPLY_TO_ENV) or "").strip()
-    return value or None
+    return normalize_reply_to(value) or None
 
 
 def resolve_kind(message: dict = None, env: dict = None) -> Optional[str]:
@@ -5855,7 +5861,7 @@ class AIAgent:
         persist_user_message: Optional[str] = None,
         persist_user_timestamp: Optional[float] = None,
         moa_config: Optional[dict[str, Any]] = None,
-        reply_to: Optional[str] = None,
+        reply_to: Optional[Union[str, Sequence[str]]] = None,
     ) -> Dict[str, Any]:
         """Forwarder — see ``agent.conversation_loop.run_conversation``."""
         from agent.conversation_loop import run_conversation

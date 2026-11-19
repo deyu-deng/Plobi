@@ -67,3 +67,32 @@ def test_agent_forwarder_passes_reply_to_down(monkeypatch):
 
     assert result == {"ok": True}
     assert seen.get("reply_to") == "l2:agenda"
+
+
+def test_conversation_loop_forwards_a_list_of_anchors(monkeypatch):
+    """一条消息可以回**多条**：那串 id 必须原样走到 build_turn_context。
+
+    这条链路上原来有四处会**静默**把 list 弄坏（都不报错，引用就没了）：
+    RPC 入口丢成空串、`turn_context` 的 `str()` 变成字面量、`resolve_reply_to`
+    的 `.strip()` 抛异常被吞、往 TEXT 列直绑 list。
+    """
+    captured = {}
+
+    def fake_build_turn_context(*args, **kwargs):
+        captured.update(kwargs)
+        raise _StopAfterPrologue()
+
+    monkeypatch.setattr(conversation_loop, "build_turn_context", fake_build_turn_context)
+
+    with pytest.raises(_StopAfterPrologue):
+        conversation_loop.run_conversation(object(), "在回哪几条", reply_to=["12", "34"])
+
+    assert captured.get("reply_to") == ["12", "34"]
+
+
+def test_resolve_reply_to_normalizes_every_shape():
+    """落库前那一跳：单值、旧行、一串 id，都归一成**一串 id**。"""
+    assert run_agent.resolve_reply_to({"reply_to": "4091"}, env={"PLOBI_REPLY_TO": "9"}) == ["4091"]
+    assert run_agent.resolve_reply_to({"reply_to": ["12", "34"]}, env={}) == ["12", "34"]
+    assert run_agent.resolve_reply_to({"role": "user"}, env={"PLOBI_REPLY_TO": "9"}) == ["9"]
+    assert run_agent.resolve_reply_to({"role": "user"}, env={}) is None

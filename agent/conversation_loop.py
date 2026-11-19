@@ -25,7 +25,7 @@ import ssl
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from agent.codex_responses_adapter import _summarize_user_message_for_log
 from agent.conversation_compression import conversation_history_after_compression
@@ -653,7 +653,8 @@ def run_conversation(
     # 「这一轮在回哪一条」（引用条）。可选、只影响落库那一格，不影响怎么跑；
     # 不传就是"没有在回谁"。`build_turn_context` 负责把它挂到 user_msg 上，
     # 真正写库在 `run_agent.resolve_reply_to`。@WP-SAY-ACTS b0449dd2 漏了这一层。
-    reply_to: Optional[str] = None,
+    # 一条消息可以回**多条** ⇒ 这里收一串 id（旧的单个 id 仍收）。
+    reply_to: Optional[Union[str, Sequence[str]]] = None,
 ) -> Dict[str, Any]:
     """
     Run a complete conversation with tool calling until completion.

@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 from agent.memory_manager import sanitize_context
+from agent.reply_targets import encode_reply_to
 from plobi_constants import get_plobi_home, get_plobi_state_home
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
@@ -3777,7 +3778,7 @@ class SessionDB:
         observed: bool = False,
         asked_by: Optional[str] = None,
         kind: Optional[str] = None,
-        reply_to: Optional[str] = None,
+        reply_to: Optional[Any] = None,
         effect_disposition: Optional[str] = None,
         timestamp: Any = None,
     ) -> int:
@@ -3813,6 +3814,9 @@ class SessionDB:
         # Multimodal content (list of parts) must be JSON-encoded: sqlite3
         # cannot bind list/dict parameters directly.
         stored_content = self._encode_content(content)
+        # `reply_to` 一列装不下 list ⇒ 多锚点存 JSON 数组（旧的裸 id 行照读）。
+        # 形状的归一只有 `agent/reply_targets` 一处，别处别再自己 str() 一遍。
+        reply_to_encoded = encode_reply_to(reply_to)
 
         message_timestamp = time.time()
         if timestamp is not None:
@@ -3857,7 +3861,7 @@ class SessionDB:
                     1,
                     asked_by,
                     kind,
-                    reply_to,
+                    reply_to_encoded,
                 ),
             )
             msg_id = cursor.lastrowid
@@ -3953,7 +3957,7 @@ class SessionDB:
                     1,
                     msg.get("asked_by"),
                     msg.get("kind"),
-                    msg.get("reply_to"),
+                    encode_reply_to(msg.get("reply_to")),
                 ),
             )
             inserted += 1

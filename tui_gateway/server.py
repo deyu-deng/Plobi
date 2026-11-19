@@ -15,7 +15,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from plobi_constants import (
     config_path_for_home,
@@ -28,6 +28,7 @@ from plobi_cli.env_loader import load_plobi_dotenv
 from utils import is_truthy_value
 from tools.environments.local import plobi_subprocess_env
 from agent.replay_cleanup import sanitize_replay_history
+from agent.reply_targets import normalize_reply_to
 from tui_gateway import git_probe
 from tui_gateway.transport import (
     StdioTransport,
@@ -8790,13 +8791,25 @@ def _rewrite_prompt_submit_text(sid: str, text: Any) -> Any:
     return text
 
 
+def _reply_to_from_params(params: dict) -> List[str]:
+    """`prompt.submit` 带的「在回哪几条」——**一串 id**。
+
+    一条消息可以回**多条**（裁定 196 ④ 的引用条后来长成了多锚点）；旧客户端
+    仍发单个 id（向后兼容，单值与多值都在这一处归一）。
+
+    ⚠️ 原来这里是 ``str(raw).strip() if isinstance(raw, (str, int)) else ""``：
+    传 list 会被**静默丢成空串**，再被 ``if reply_to:`` 吃掉 ⇒ 整条引用无声消失
+    （不报错、不记日志）——协议改成多锚点时第一个要拆的坑。
+    """
+    return normalize_reply_to(params.get("reply_to"))
+
+
 @method("prompt.submit")
 def _(rid, params: dict) -> dict:
     sid, text = params.get("session_id", ""), params.get("text", "")
     truncate_user_ordinal = params.get("truncate_before_user_ordinal")
     # 引用条（裁定 196 ④）：桌面把「在回哪一条」带过来，原样落到这条 user 消息上。
-    raw_reply_to = params.get("reply_to")
-    reply_to = str(raw_reply_to).strip() if isinstance(raw_reply_to, (str, int)) else ""
+    reply_to = _reply_to_from_params(params)
     session, err = _sess_nowait(params, rid)
     if err:
         return err
@@ -9281,7 +9294,7 @@ def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     return stop
 
 
-def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Optional[str] = None) -> None:
+def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Optional[List[str]] = None) -> None:
     with session["history_lock"]:
         history = list(session["history"])
         history_version = int(session.get("history_version", 0))
