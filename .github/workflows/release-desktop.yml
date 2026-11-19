@@ -93,10 +93,39 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # 路由引擎四件套（mihomo.exe / GeoSite.dat / geoip.metadb / wintun.dll）：和 chatlog 同一个病。
+  # 裁定 134 规定它们不进 git，于是 CI checkout 之后候选链全空，before-pack 只能往包里塞一张
+  # MISSING.txt —— 0.3.2 就是这么发出去的，用户点开关得到 `engine binary " " is not on disk`。
+  # 这里补上供给那一段：一个 job 下齐四件，打包 job 取走，再由 before-pack 的硬闸拦缺件。
+  # 只有 chatlog 有过这套闭环，egress 一直没有；这次照抄它的形状，不发明新机制。
+  egress:
+    name: Fetch the routing engine
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: "20"
+      # 能钉的钉死：mihomo 与 wintun 按官方 zip 的 sha256 校验，解出来的 exe/dll 再钉一层
+      # （engine_files.py 钉的是解包后的文件）。钉不住的如实记录：GeoSite.dat / geoip.metadb
+      # 只有 meta-rules-dat 的滚动 latest，官方不保留历史 tag，钉某个 sha 只会让第二天的构建红，
+      # 所以脚本只做长度与 HTML 错误页检查，实际指纹写进 egress-manifest.json 随包带走。
+      - name: Fetch (pinned where pinnable, recorded always)
+        run: node apps/desktop/scripts/fetch-egress-assets.mjs --out .egress-src/ship
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: egress-assets
+          path: .egress-src/ship
+          if-no-files-found: error
+          retention-days: 7
+
 
   build:
     name: Build ${{ matrix.platform }}
-    needs: chatlog
+    needs: [chatlog, egress]
     strategy:
       fail-fast: false
       matrix:
@@ -137,6 +166,29 @@ jobs:
         with:
           name: ${{ matrix.chatlog_artifact }}
           path: apps/desktop/build/chatlog-bin
+
+      # 与 chatlog 同一套路：先取件，再自己验一遍。下游 before-pack 也有硬闸，但那一层要等
+      # electron-builder 跑到 beforePack 才触发 —— 在第一步就红，日志才短得能读。
+      - name: Download the routing engine
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: egress-assets
+          path: .egress-src/ship
+
+      - name: Verify the routing engine is whole
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=""
+          for want in bin/mihomo.exe bin/wintun.dll GeoSite.dat geoip.metadb egress-manifest.json; do
+            if [ ! -s ".egress-src/ship/$want" ]; then missing="$missing $want"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::the routing engine is incomplete:$missing"
+            ls -la .egress-src/ship .egress-src/ship/bin || true
+            exit 1
+          fi
+          ls -l .egress-src/ship .egress-src/ship/bin
 
       - name: Install the collector engine into the runtime tree
         shell: bash
@@ -297,6 +349,10 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # 路由引擎的源：上面 egress job 下到 .egress-src/ship，before-pack 从这儿投放。
+          # PLOBI_RELEASE_BUILD=1 打开缺件硬闸——开发构建不设它，本地没投料只警告。
+          PLOBI_EGRESS_SRC: ${{ github.workspace }}/.egress-src/ship
+          PLOBI_RELEASE_BUILD: "1"
         run: |
           if [ "${{ matrix.platform }}" = "win" ]; then
             if [ -n "${PLOBI_WIN_CSC_LINK:-}" ]; then export CSC_LINK="$PLOBI_WIN_CSC_LINK"; fi
