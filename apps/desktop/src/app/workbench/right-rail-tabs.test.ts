@@ -79,17 +79,20 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     const layout = readFileSync(join(SRC, 'store', 'layout.ts'), 'utf8')
     expect(layout).toMatch(/\$dossierPanelPinned\s*=\s*atom\(true\)/)
 
-    // 钉住那一套：对话右侧的一列（带左边线，不带圆角）；对话容器在钉住时是并排。
-    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*border-l/)
+    // 钉住那一套：对话右侧的一列（固定窄宽、不收缩）；对话容器在钉住时是并排。
+    // 11-18 按 Qoder 实况去掉了这条左边线，列靠背景分区 ⇒ 这里认「固定宽度的一列」，
+    // 不再认 border，否则测试会和实现对着干。
+    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*w-\[22rem\][^']*shrink-0'/)
     expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
 
-    // 浮层是**用户切出来**的另一种形态：绝对定位 ＋ 圆角 ＋ 投影。
-    expect(controller).toMatch(/DOSSIER_FLOATING\s*=\s*\n\s*'absolute[^']*rounded-xl/)
+    // 浮层是**用户切出来**的另一种形态：抬起来的一层（z-30 ＋ 圆角 ＋ 描边 ＋ 投影）。
+    // 11-18 按 Qoder 实物换成 `rounded-lg`，位置也从壳里挪走（浮层可拖 ⇒ 落在 JSX 里）。
+    expect(controller).toMatch(/DOSSIER_FLOATING_SHAPE\s*=\s*\n\s*'[^']*z-30[^']*rounded-lg[^']*shadow-lg/)
     // 浮层压在**抬头下面**：抬头右边那几枚（档案图标本身、全屏、收起）都住在那一行，
     // 压上去就点不到了（11-09：档案卡一露脸就把自己的开关盖住了）。
     // 减号两边不留空格的 calc 是**非法 CSS** ⇒ 浏览器整条丢掉（这一档就白写了）。
-    const floating = controller.match(/DOSSIER_FLOATING\s*=\s*\n\s*'([^']*)'/)?.[1] ?? ''
-    expect(floating).toContain('card-header-height')
+    expect(controller).toContain('top-[calc(var(--card-header-height)+0.5rem)]')
+    const floating = controller.match(/DOSSIER_FLOATING_SHAPE\s*=\s*\n\s*'([^']*)'/)?.[1] ?? ''
     expect(floating).not.toMatch(/calc\(100%-[0-9]/)
     // 对话容器要 relative，浮层才贴得住它的右上角。
     expect(controller).toContain("'relative flex h-full min-h-0'")
@@ -216,7 +219,7 @@ describe('只有两张卡：预览轨的实现删掉了，笔记落工作区卡�
     expect(layout).toMatch(/focus === 'chat'/)
     // 形态：默认并排（对话右侧占一列）⇒ 对话从不被它盖住。
     expect(layout).toMatch(/\$dossierPanelPinned\s*=\s*atom\(true\)/)
-    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*border-l/)
+    expect(controller).toMatch(/DOSSIER_PINNED\s*=\s*'[^']*w-\[22rem\][^']*shrink-0'/)
     // 对话容器在钉住时是并排（`flex-row`），浮层那档才用 absolute。
     expect(controller).toMatch(/dossierVisible && dossierPinned[^?]*\? 'flex-row' : 'flex-col'/)
   })
