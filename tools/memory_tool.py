@@ -75,6 +75,12 @@ logger = logging.getLogger(__name__)
 # profile home.  裁定 44 already proved that per-profile ledger copies were unread
 # residue — every profile resolved to the same file anyway.
 CONDUCTOR_SLUG = "l1"
+
+# 历史目录名：指挥的记忆从 2026-10 起一直写在 ``memory/agents/l1/``，而指挥在名册里的
+# name 早就不是 ``l1``（profile 退休后是 ``secretary``）。两者都要认——判据认错名字的
+# 代价是"指挥自己的 MEMORY 与各首席近况一起不注入"（2026-11-19 现核：以 ``secretary``
+# 加载 ``agent=0``／``status_digest=0``，以 ``l1`` 加载 ``agent=629``）。
+_LEGACY_CONDUCTOR_DIR = "l1"
 _SLUG_UNSAFE_RE = re.compile(r"[^a-z0-9\u4e00-\u9fff_-]+")
 
 # Scope -> (filename, is it per-agent).  The per-agent half is what 裁定 179/181
@@ -165,8 +171,41 @@ def _agent_slug_from_current_session() -> str:
         return ""
 
 
+def conductor_slug() -> str:
+    """指挥在名册里的 name（现为 ``secretary``）；名册读不到回历史目录名 ``l1``。
+
+    这一跳只是把"指挥叫什么"从写死的字符串换成名册事实：11-18 那刀把
+    ``is_l1_slug`` 改名成 ``is_conductor_slug``，却只换了标识符、没换比较的值，
+    于是指挥一改名（``l1`` → ``secretary``）判据就永远为假。
+
+    为什么不放进 ``plobi/mind/identity.py``（那里更合位置）：那一档现由在派的
+    ``WP-AGENT-NAME-UNIFY`` 认领，本笔是 ``WP-CONDUCTOR-PRINCIPAL-RENAME``——
+    同一个函数两边各写一份不难，难的是两边同时改同一档。等那一格空出来再合并。
+    """
+    try:
+        from plobi.agents.registry import load_registry
+
+        for entry in load_registry().entries():
+            if str(getattr(entry, "role", "")) == "conductor":
+                name = str(getattr(entry, "name", "") or "")
+                if name:
+                    return name
+    except Exception:  # noqa: BLE001 - 名册读不到不影响"谁是自己的记忆"这条腿
+        pass
+    return _LEGACY_CONDUCTOR_DIR
+
+
 def is_conductor_slug(slug: str) -> bool:
-    return slug == CONDUCTOR_SLUG
+    """这个 slug 是不是指挥——**名册 name 与历史目录名都算**。
+
+    只认一个名字会出两种事故，且方向相反：只认名册 name ⇒ 盘上 ``agents/l1``
+    那份旧记忆再也读不到；只认 ``l1`` ⇒ 改名之后指挥判据整个失效（现网就是这个，
+    近况摘要从未注入过）。
+    """
+    text = str(slug or "").strip().lower()
+    if not text:
+        return False
+    return text in {CONDUCTOR_SLUG, _LEGACY_CONDUCTOR_DIR, conductor_slug().lower()}
 
 
 def get_memory_dir() -> Path:
@@ -181,8 +220,20 @@ def get_memory_dir() -> Path:
 
 
 def agent_memory_dir(slug: Optional[str] = None) -> Path:
-    """``<共享根>/memory/agents/<slug>`` — one identity's own directory."""
-    return get_memory_dir() / "agents" / resolve_agent_slug(slug)
+    """``<共享根>/memory/agents/<slug>`` — one identity's own directory.
+
+    指挥那一格带一次**零迁移别名**：名册名（``secretary``）下的目录还没建、
+    而历史目录 ``agents/l1`` 有文件时，落回历史目录读。不搬家、不改写盘上布局，
+    只是让"指挥自己的记忆"先别丢；等有新写入自然建出新目录，这条别名就自己退场。
+    """
+    resolved = resolve_agent_slug(slug)
+    base = get_memory_dir() / "agents"
+    own = base / resolved
+    if is_conductor_slug(resolved) and not own.is_dir():
+        legacy = base / _LEGACY_CONDUCTOR_DIR
+        if legacy.is_dir():
+            return legacy
+    return own
 
 
 def memory_path(scope: str, *, slug: Optional[str] = None) -> Path:
