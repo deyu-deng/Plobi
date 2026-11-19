@@ -173,12 +173,14 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
       timeout: 4000
     })
 
-    fireEvent.change(screen.getByLabelText(/What do you mainly use Plobi for|你主要拿 Plobi 做什么/), {
-      target: { value: 'writing papers' }
-    })
-    fireEvent.change(screen.getByLabelText(/What is your field|你的工作领域/), {
-      target: { value: 'physics' }
-    })
+    // 画像那两题＝**选项卡**（Qoder 那一路：芯片单选），不再是让人自己想词的空框。
+    const purpose = screen.getByRole('button', { name: /^(Writing|写作|執筆)$/ })
+    const domain = screen.getByRole('button', { name: /^(Teaching|教学|教育)$/ })
+
+    expect(screen.queryByRole('textbox')).toBeNull()
+
+    fireEvent.click(purpose)
+    fireEvent.click(domain)
     fireEvent.click(screen.getByRole('button', { name: /Continue|继续/ }))
 
     await vi.waitFor(() => expect(screen.getAllByText(/Give it a name|给它取个名字/).length).toBeGreaterThan(0), {
@@ -201,8 +203,8 @@ describe('首装那几步（WP-ONBOARDING-WELCOME-FLOW）', () => {
 
     await vi.waitFor(() =>
       expect(setOnboardingProfile).toHaveBeenCalledWith({
-        purpose: 'writing papers',
-        domain: 'physics',
+        purpose: (purpose.textContent ?? '').trim(),
+        domain: (domain.textContent ?? '').trim(),
         user_title: 'Mr. Deng',
         agent_name: 'Xiaoman',
         agent_personality: ''

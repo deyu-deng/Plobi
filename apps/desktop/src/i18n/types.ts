@@ -2568,9 +2568,10 @@ export interface Translations {
       profileTitle: string
       profileDesc: string
       profilePurpose: string
-      profilePurposePlaceholder: string
+      /** 用途那一题的**选项**（Qoder 那一路：芯片单选，不是空框）。 */
+      profilePurposes: Array<{ id: string; label: string }>
       profileDomain: string
-      profileDomainPlaceholder: string
+      profileDomains: Array<{ id: string; label: string }>
       agentNameTitle: string
       agentNameDesc: string
       agentNamePlaceholder: string

@@ -604,24 +604,40 @@ function ProfileStep({
       <Title>{copy.profileTitle}</Title>
       <Desc>{copy.profileDesc}</Desc>
       <Panel>
-        <label className="fr-label" htmlFor="fr-purpose">
-          {copy.profilePurpose}
-        </label>
-        <Input
-          id="fr-purpose"
-          onChange={e => onChange({ purpose: e.target.value })}
-          placeholder={copy.profilePurposePlaceholder}
-          value={answers.purpose}
-        />
-        <label className="fr-label" htmlFor="fr-domain">
-          {copy.profileDomain}
-        </label>
-        <Input
-          id="fr-domain"
-          onChange={e => onChange({ domain: e.target.value })}
-          placeholder={copy.profileDomainPlaceholder}
-          value={answers.domain}
-        />
+        {/* 两题改成**选项卡**（Qoder 的首装那一路：「哪些角色最符合你的工作？」＝一排
+            可选的芯片，单选）——不用空框让人自己想词。 */}
+        <div className="fr-group">
+          <span className="fr-label">{copy.profilePurpose}</span>
+          <div className="fr-chips">
+            {copy.profilePurposes.map(option => (
+              <button
+                aria-pressed={answers.purpose === option.label}
+                className="fr-chip"
+                key={option.id}
+                onClick={() => onChange({ purpose: option.label })}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="fr-group">
+          <span className="fr-label">{copy.profileDomain}</span>
+          <div className="fr-chips">
+            {copy.profileDomains.map(option => (
+              <button
+                aria-pressed={answers.domain === option.label}
+                className="fr-chip"
+                key={option.id}
+                onClick={() => onChange({ domain: option.label })}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </Panel>
     </Screen>
   )
@@ -677,7 +693,7 @@ function UserTitleStep({
     <Screen>
       <Title>{copy.userTitleTitle}</Title>
       <Desc>{copy.userTitleDesc}</Desc>
-      <div className="w-full">
+      <Panel>
         <label className="fr-label" htmlFor="fr-user-title">
           {copy.userTitleTitle}
         </label>
@@ -687,7 +703,7 @@ function UserTitleStep({
           placeholder={copy.userTitlePlaceholder}
           value={answers.user_title}
         />
-      </div>
+      </Panel>
     </Screen>
   )
 }
@@ -774,10 +790,14 @@ const FIRST_RUN_CSS = `
 .fr-group { width: 100%; margin-bottom: 1rem; text-align: left; }
 .fr-panel .fr-group:last-child { margin-bottom: 0; }
 .fr-themes { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.fr-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.fr-chip { border-radius: 0.625rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 55%, transparent); background: color-mix(in srgb, var(--dt-card) 40%, transparent); backdrop-filter: blur(0.5rem) saturate(1.1); -webkit-backdrop-filter: blur(0.5rem) saturate(1.1); padding: 0.4375rem 0.75rem; font-size: 0.8125rem; color: var(--ui-text-primary); transition: background-color 0.15s ease, border-color 0.15s ease; }
+.fr-chip:hover { background: color-mix(in srgb, var(--dt-card) 58%, transparent); }
+.fr-chip[aria-pressed='true'] { border-color: color-mix(in srgb, var(--ui-accent) 60%, transparent); background: color-mix(in srgb, var(--ui-accent) 14%, transparent); }
 .fr-theme { border-radius: 0.5rem; border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 55%, transparent); background: color-mix(in srgb, var(--dt-card) 40%, transparent); padding: 0.375rem 0.625rem; font-size: 0.75rem; color: var(--ui-text-primary); }
 .fr-theme[aria-pressed='true'] { border-color: color-mix(in srgb, var(--ui-accent) 60%, transparent); background: color-mix(in srgb, var(--ui-accent) 12%, transparent); }
 /* 三张卡那一屏：标题在上、卡贴着下面那两颗按钮（主人 11-19 08:4x）。 */
-.fr-cards { flex: 1; justify-content: flex-end; }
+.fr-cards { flex: 1; justify-content: center; }
 .fr-cards-head { display: flex; width: 100%; flex: none; flex-direction: column; margin-bottom: 1.25rem; }
 .fr-lanes { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 /* 玻璃磨砂的大卡：半透底 ＋ 模糊 ＋ 主题色渐变 ＋ 左下角那团柔光。 */
