@@ -53,8 +53,36 @@ PROFILE_VERSION = 1
 
 # 这一层自己写的那几格。**不在这里面的键，写回时原样留着**（只增不改）。
 KNOWN_KEYS: frozenset[str] = frozenset(
-    {"version", "agent", "title", "category", "goal", "status", "stages", "registry", "updated", "log"}
+    {
+        "version",
+        "agent",
+        "title",
+        "category",
+        "goal",
+        "status",
+        "stages",
+        "registry",
+        "updated",
+        "log",
+        "cadence",
+    }
 )
+
+# 节点性质（用户 11-19 22:0x：「**一个节点对应一个粗节点**……什么节点要实现什么东西」）。
+#
+# 五种档案共用**一份**节点清单，差别只在这一格上：
+# * ``milestone`` —— 里程碑（projects：一件要做完的事，做到哪儿算一步）。
+# * ``stage`` —— 阶段（research／courses：过程里的那一段）。
+# * ``deadline`` —— 硬截止（events：报名、材料提交截止、比赛日）。
+# * ``recurring`` —— 重复（butler：每月／每周要做的那件事）。
+#
+# **闭集**：不在里面就是形状不对 ⇒ 落盘前就红（半份节点表比不改更糟）。
+STAGE_KINDS: tuple[str, ...] = ("milestone", "stage", "deadline", "recurring")
+
+# 节奏（butler 那一类专用）：这一档是**重复**的，重复到什么频率。
+#
+# 只有 butler 用得上；别的类别留空（空 = 不重复）。
+CADENCES: tuple[str, ...] = ("weekly", "monthly", "quarterly", "yearly")
 
 # 屏上一格简介的上限：一句话／一段，不是一篇。截断了要看得出来（尾上那点省略号）。
 GOAL_MAX_CHARS = 240
@@ -84,15 +112,31 @@ class ProfileError(RuntimeError):
 
 @dataclass
 class Stage:
-    """一个阶段（进度条上的一个节点）。"""
+    """一个阶段（进度条上的一个节点）。
+
+    它同时是那份「粗节点」清单上的一条（用户 11-19 22:0x：「一个节点对应一个粗节点」）：
+
+    * ``due`` —— **大概什么时候**（``2026-12-01``／``2026-12``／「大概 12 月」都行；
+      科研与课程常常只知道大概，不许逼它假装确定）。
+    * ``kind`` —— 节点性质（:data:`STAGE_KINDS` 那个闭集；空 = 没写）。
+    """
 
     id: str
     title: str
     detail: str = ""
     done: bool = False
+    due: str = ""
+    kind: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "title": self.title, "detail": self.detail, "done": self.done}
+        return {
+            "id": self.id,
+            "title": self.title,
+            "detail": self.detail,
+            "done": self.done,
+            "due": self.due,
+            "kind": self.kind,
+        }
 
 
 @dataclass
@@ -108,6 +152,8 @@ class DossierProfile:
     registry: dict[str, Any] = field(default_factory=dict)
     updated: str = ""
     log: str = ""
+    #: 节奏（只有 butler 那一类用得上；空 = 不重复）。见 :data:`CADENCES`。
+    cadence: str = ""
 
     @property
     def milestones_done(self) -> int:
@@ -129,6 +175,7 @@ class DossierProfile:
             "registry": dict(self.registry),
             "updated": self.updated,
             "log": self.log,
+            "cadence": self.cadence,
         }
 
 
@@ -230,6 +277,7 @@ def apply_profile_update(
     status: Any = None,
     stages: Any = None,
     log_append: Any = None,
+    cadence: Any = None,
     today: str = "",
 ) -> ProfileFile:
     """按**字段**改一份档案本体——只改点名的几格，其余原样留着。
@@ -243,7 +291,10 @@ def apply_profile_update(
 
     ``stages`` 是**整组替换**：传进来的就是全部阶段，没传进来的那几条等于被删了
     （要保留的阶段请照原样一起传回来）。
+
+    ``cadence`` 是那一档的**节奏**（只有 butler 那一类用得上；空串 = 不重复）。
     """
+
     current = read_profile(path)
     if not current.exists:
         raise ProfileError(f"{path.name} 还不存在：这份档案还没有建起来（{path}）")
@@ -264,6 +315,13 @@ def apply_profile_update(
         text = _require_text(log_append, "log_append")
         if text:
             profile.log = f"{profile.log}\n\n{text}" if profile.log else text
+    if cadence is not None:
+        text = _require_text(cadence, "cadence")
+        if text and text not in CADENCES:
+            raise ProfileError(
+                f"cadence 只能是 {'／'.join(CADENCES)} 之一（收到 {text!r}）"
+            )
+        profile.cadence = text
 
     # 日期由代码盖：模型不填，免得档案的时间停在上一轮。
     profile.updated = today or date.today().isoformat()
@@ -281,6 +339,11 @@ def _validated_stages(raw: Any) -> list[Stage]:
     """阶段列表的形状闸：每一条都要 ``id`` ＋ ``title``，``done`` 必须是布尔。
 
     有一条不合法 ⇒ 整组不合法（抛 :class:`ProfileError`）——半份阶段表比不改更糟。
+
+    ``due``（大概什么时候）与 ``kind``（节点性质）也在这道闸里：
+
+    * ``due`` 必须是字符串（空 = 没写；``2026-12-01``／``2026-12``／「大概 12 月」都行）。
+    * ``kind`` 必须是 :data:`STAGE_KINDS` 那个闭集里的一个（空 = 没写；不在里面 = 形状不对）。
     """
     if not isinstance(raw, list):
         raise ProfileError(f"stages 必须是数组（收到 {type(raw).__name__}）")
@@ -300,7 +363,24 @@ def _validated_stages(raw: Any) -> list[Stage]:
         detail = entry.get("detail", "")
         if not isinstance(detail, str):
             raise ProfileError(f"stages 第 {index} 条的 detail 必须是字符串")
-        stages.append(Stage(id=sid, title=title, detail=detail.strip(), done=done))
+        due = entry.get("due", "")
+        if not isinstance(due, str):
+            raise ProfileError(f"stages 第 {index} 条的 due 必须是字符串")
+        kind = str(entry.get("kind") or "").strip()
+        if kind and kind not in STAGE_KINDS:
+            raise ProfileError(
+                f"stages 第 {index} 条的 kind 只能是 {'／'.join(STAGE_KINDS)} 之一（收到 {kind!r}）"
+            )
+        stages.append(
+            Stage(
+                id=sid,
+                title=title,
+                detail=detail.strip(),
+                done=done,
+                due=due.strip(),
+                kind=kind,
+            )
+        )
     return stages
 
 
@@ -317,6 +397,7 @@ def _parse_profile(raw: dict[str, Any]) -> DossierProfile:
         registry=dict(registry) if isinstance(registry, dict) else {},
         updated=str(raw.get("updated") or "").strip(),
         log=str(raw.get("log") or "").strip(),
+        cadence=str(raw.get("cadence") or "").strip(),
     )
     if not profile.agent:
         profile.agent = profile.title
@@ -324,7 +405,11 @@ def _parse_profile(raw: dict[str, Any]) -> DossierProfile:
 
 
 def _parse_stages(raw: Any) -> list[Stage]:
-    """阶段列表。缺 ``title`` 的**跳过那一条**，不炸整份。"""
+    """阶段列表。缺 ``title`` 的**跳过那一条**，不炸整份。
+
+    旧档案**照旧读**：没有 ``due``／``kind`` 就是没有（不是坏）——那两格是 11-19
+    才加的，老档案不该因此读不出来。
+    """
     if not isinstance(raw, list):
         return []
     stages: list[Stage] = []
@@ -334,12 +419,15 @@ def _parse_stages(raw: Any) -> list[Stage]:
         title = str(entry.get("title") or "").strip()
         if not title:
             continue
+        kind = str(entry.get("kind") or "").strip()
         stages.append(
             Stage(
                 id=str(entry.get("id") or f"s{index}").strip(),
                 title=title,
                 detail=str(entry.get("detail") or "").strip(),
                 done=bool(entry.get("done")),
+                due=str(entry.get("due") or "").strip(),
+                kind=kind if kind in STAGE_KINDS else "",
             )
         )
     return stages

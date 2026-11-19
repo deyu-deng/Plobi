@@ -114,15 +114,17 @@ describe('rail-kit —— 对话卡右上角那一列共用的一套壳', () => 
 
 describe('右上角那一列是注册表驱动的', () => {
   it('注册表列出现有哪几项', () => {
-    const entries = chatTopBarRailEntries({ edgeControls: {} })
-
-    // 右栏那一列现在是四条记录：档案／待放行／**写脑待批**（11-16 21:4x 拍定从左栏
+    // 首席（L2）那屏：档案／待放行／**写脑待批**（11-16 21:4x 拍定从左栏
     // 底部角标搬进对话卡，`WP-MIND-CONSENT-EVENTS`）／贴边那几枚。
+    // 指挥（L1）那屏没有档案那一枚（用户 11-19 22:3x）⇒ 那一档在
+    // `chat-top-bar.test.tsx` 里。
+    const entries = chatTopBarRailEntries({ edgeControls: {}, scope: { id: 'Aura', kind: 'agent' } })
+
     expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
   })
 
   it('加一条记录就多一项 —— 不用改壳子', () => {
-    const entries = chatTopBarRailEntries({ edgeControls: {} })
+    const entries = chatTopBarRailEntries({ edgeControls: {}, scope: { id: 'Aura', kind: 'agent' } })
 
     const withExtra = [...entries, { id: 'future', render: () => <button type="button">未来</button> }]
 

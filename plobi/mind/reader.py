@@ -25,25 +25,43 @@ logger = logging.getLogger(__name__)
 PERSONA_RELATIVE = "persona/profile.md"
 PROJECTS_RELATIVE = "Dossiers/projects"
 RESEARCH_RELATIVE = "Dossiers/research"
+COURSES_RELATIVE = "Dossiers/courses"
+BUTLER_RELATIVE = "Dossiers/butler"
+EVENTS_RELATIVE = "Dossiers/events"
 
-# 上下文接哪几类档案（11-09）：**项目 ＋ 研究**。
+# 上下文接哪几类档案（11-09 起是「项目 ＋ 研究」，11-19 扩到**五类**）。
 #
-# 另外三类不进 L1 的上下文，理由是它们的**内容性质**（不是"以后再说"）：
-# * ``courses``——盘上那 11 门课**没有档案本体**（只有 ``requirements.md``／``syllabus.md``），
-#   读档案本体读出来是空的；接进来只会多几个空段。
-# * ``butler``——秘书自己（``mind_subtree`` 指着 ``Dossiers/butler`` 那一格），
-#   它是"谁在干活"，不是"在干什么"。
-# * ``events``——空目录。
-# 真有课程档案本体长出来那天，把那一类加进这张表即可（读侧只认这一张）。
+# 为什么扩：用户 11-19 22:0x 拍定「**五种档案是一套模型 ＋ 五个类别**」，
+# 首席的五种都是首席的事，总秘书该看得见。扩的是**读侧那张表**，不是权限
+# （写仍过 L1 那道闸，裁 199）。
+#
+# 11-09 那三条「不进上下文」的理由已经不成立：
+# * ``courses``——那时盘上只有 ``requirements.md``／``syllabus.md``，**没有档案本体**；
+#   现在课程也有档案本体了（同一套形状：目标／现状／节点）。
+# * ``events``——那时是空目录；现在事件那一类也有档案本体了。
+# * ``butler``——「秘书自己」那一格是 L1 自己的 ``mind_subtree``；读侧按**子目录**
+#   扫（``_category_briefs``），L1 自己那份躺在目录根上，扫不到 ⇒ 不会自读。
+#
+# **上下文不会因为多了三类就变长**：每类各自限量（:meth:`MindReader.dossiers`），
+# 且空档（没有目标也没有现状）根本进不来。
 DOSSIER_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("projects", PROJECTS_RELATIVE),
     ("research", RESEARCH_RELATIVE),
+    ("courses", COURSES_RELATIVE),
+    ("butler", BUTLER_RELATIVE),
+    ("events", EVENTS_RELATIVE),
 )
 # 类别 → 那一类的档案目录（逻辑路径）。
 CATEGORY_RELATIVES: dict[str, str] = dict(DOSSIER_CATEGORIES)
 
 # 类别在屏上／上下文里的说法（标题行那一格）。
-CATEGORY_LABELS: dict[str, str] = {"projects": "项目", "research": "研究"}
+CATEGORY_LABELS: dict[str, str] = {
+    "projects": "项目",
+    "research": "研究",
+    "courses": "课程",
+    "butler": "管家",
+    "events": "事件",
+}
 
 # Cap on what any single read may contribute to a prompt.
 MAX_EXCERPT_CHARS = 4000
@@ -245,16 +263,27 @@ class MindReader:
         *,
         project_limit: int = 5,
         research_limit: int = 2,
+        other_limit: int = 2,
         current: str = "",
     ) -> MindContext:
-        """Everything M1 is allowed to pull in one call."""
+        """Everything M1 is allowed to pull in one call.
+
+        ``other_limit`` 是 11-19 新加的那三类（课程／管家／事件）的**每类**限量——
+        五类都在上下文里，但每类都限量 ⇒ 上下文不会因为类别多就变长。
+        """
         if not self.available:
             return MindContext()
         return MindContext(
             persona=self.persona(),
             dossiers=self.dossiers(
                 current=current,
-                limits={"projects": project_limit, "research": research_limit},
+                limits={
+                    "projects": project_limit,
+                    "research": research_limit,
+                    "courses": other_limit,
+                    "butler": other_limit,
+                    "events": other_limit,
+                },
             ),
         )
 

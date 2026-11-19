@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import type { ChatScope } from '@/app/console/chat/scope'
 import {
   $monitorFace,
   $monitorPeekOpen,
@@ -22,8 +23,8 @@ import { chatTopBarRailEntries } from './chat-top-bar'
  * 这一档钉的是**行为**（点下去 store 变成什么样）与**形状**（三枚走同一件），
  * 不是源码文字。
  */
-function entries() {
-  return chatTopBarRailEntries({ edgeControls: {} })
+function entries(scope: ChatScope = { id: 'Aura', kind: 'agent' }) {
+  return chatTopBarRailEntries({ edgeControls: {}, scope })
 }
 
 function entry(id: string) {
@@ -50,6 +51,17 @@ afterEach(() => {
 describe('对话卡右上角那一列', () => {
   it('注册表还是那四条：档案 / 待放行 / 写脑待批 / 贴边那几枚', () => {
     expect(entries().map(item => item.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
+  })
+
+  it('指挥（L1）那屏**没有档案那一枚**（指挥没有档案，用户 11-19 22:3x）', () => {
+    const ids = entries({ kind: 'l1' }).map(item => item.id)
+
+    expect(ids).not.toContain('dossier')
+    expect(ids).toEqual(['pending', 'mind-pending', 'edge'])
+  })
+
+  it('首席（L2）那屏照旧有档案那一枚', () => {
+    expect(entries({ id: 'Aura', kind: 'agent' }).map(item => item.id)).toContain('dossier')
   })
 
   it('三枚入口走的是同一个组件：同一件形状、同一枚按下态', () => {

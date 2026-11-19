@@ -171,3 +171,98 @@ def test_home_for_agent_resolves_through_the_roster(tmp_path, monkeypatch):
     )
 
     assert dp.home_for_agent("Aura", roster) == surface / "dossiers" / "projects" / "Aura"
+
+
+# ── 粗节点（WP-FIVE-DOSSIERS）────────────────────────────────────────────
+# 用户 11-19 22:0x：「一个节点对应一个粗节点……比如某个材料提交截止的时间。
+# 什么节点要实现什么东西。」⇒ 节点带两格：**大概什么时候** ＋ **节点性质**；
+# 档案上再多一格 **节奏**（butler 那一类专用）。
+
+
+def test_stage_carries_due_and_kind(tmp_path):
+    path = tmp_path / "dossier.json"
+    dp.write_profile(
+        path,
+        dp.DossierProfile(
+            agent="Contest",
+            category="events",
+            stages=[
+                dp.Stage(
+                    id="n1",
+                    title="材料提交截止",
+                    due="2026-12-01",
+                    kind="deadline",
+                )
+            ],
+        ),
+    )
+
+    loaded = dp.read_profile(path)
+    stage = loaded.profile.stages[0]
+
+    assert stage.due == "2026-12-01"
+    assert stage.kind == "deadline"
+    # 落盘的那一份也带着这两格。
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["stages"][0]["due"] == "2026-12-01"
+    assert raw["stages"][0]["kind"] == "deadline"
+
+
+def test_old_profile_without_due_and_kind_still_reads(tmp_path):
+    """旧档案**照旧读**：没有那两格就是没有，不是坏。"""
+    path = tmp_path / "dossier.json"
+    path.write_text(
+        json.dumps(
+            {
+                "agent": "Aura",
+                "goal": "旧目标",
+                "stages": [{"id": "s1", "title": "第一阶段", "done": False}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = dp.read_profile(path)
+
+    assert loaded.error is None
+    assert loaded.profile.stages[0].due == ""
+    assert loaded.profile.stages[0].kind == ""
+
+
+def test_unknown_kind_is_refused_before_anything_is_written(tmp_path):
+    """形状不对 ⇒ **落盘前**就红：盘上那一份一个字节都不动。"""
+    path = tmp_path / "dossier.json"
+    dp.write_profile(path, dp.DossierProfile(agent="Aura", goal="旧目标"))
+
+    try:
+        dp.apply_profile_update(
+            path,
+            stages=[{"id": "n1", "title": "节点", "kind": "随时"}],
+        )
+    except dp.ProfileError as exc:
+        assert "kind" in str(exc)
+    else:  # pragma: no cover - 这一条要红
+        raise AssertionError("非法的 kind 没有被拦下来")
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["goal"] == "旧目标"
+    assert raw["stages"] == []
+
+
+def test_cadence_is_written_and_validated(tmp_path):
+    path = tmp_path / "dossier.json"
+    dp.write_profile(path, dp.DossierProfile(agent="Housekeeper", category="butler"))
+
+    dp.apply_profile_update(path, cadence="monthly")
+    assert dp.read_profile(path).profile.cadence == "monthly"
+
+    try:
+        dp.apply_profile_update(path, cadence="每旬")
+    except dp.ProfileError as exc:
+        assert "cadence" in str(exc)
+    else:  # pragma: no cover - 这一条要红
+        raise AssertionError("非法的 cadence 没有被拦下来")
+
+    # 非法的那次没有落盘 ⇒ 还是 monthly。
+    assert dp.read_profile(path).profile.cadence == "monthly"

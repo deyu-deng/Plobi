@@ -192,6 +192,8 @@ def test_the_tools_are_atomic(roots):
         elif name == "dossier_write":
             # 档案那把手是**字段级**的：改哪几格由参数说了算（``content`` 是同一目录
             # 里**另一个**文件那一路，例如当日清单 ``tasks.json``）。
+            # 11-19（WP-FIVE-DOSSIERS）多两格：``cadence``（节奏，butler 那一类用）
+            # ＋ 节点自己的 ``due``／``kind``（在 ``stages`` 的项里）。
             assert set(schema["parameters"]["properties"]) == {
                 "path",
                 "agent",
@@ -200,7 +202,16 @@ def test_the_tools_are_atomic(roots):
                 "stages",
                 "log_append",
                 "content",
+                "cadence",
             }
+            stage_props = schema["parameters"]["properties"]["stages"]["items"]["properties"]
+            assert {"due", "kind"} <= set(stage_props)
+            assert stage_props["kind"]["enum"] == [
+                "milestone",
+                "stage",
+                "deadline",
+                "recurring",
+            ]
         elif name == "agent_notes":
             assert set(schema["parameters"]["properties"]) == {"agent"}
         elif name == "note_list":
@@ -237,6 +248,8 @@ def test_the_tools_are_atomic(roots):
                 "done",
                 "title",
                 "detail",
+                "due",
+                "kind",
             }
         elif name == "note_rename":
             # 改名那把只收两个：哪一篇 ＋ 新名字（裁 185：一枚工具只干一件事）。

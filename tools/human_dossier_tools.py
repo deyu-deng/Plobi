@@ -72,8 +72,12 @@ DOSSIER_WRITE_SCHEMA = {
         "for), ``status`` (where it stands now, one paragraph), ``stages`` (the "
         "whole stage list — every stage needs ``id`` and ``title``, and ``done`` "
         "is true only for a stage that is actually finished; pass every stage, "
-        "including the ones you are not changing) and ``log_append`` (one "
-        "paragraph appended to the running history). Every other key in the file "
+        "including the ones you are not changing), ``log_append`` (one "
+        "paragraph appended to the running history) and ``cadence`` (how often "
+        "this dossier's work repeats — only the butler kind of dossier has "
+        "that). A stage may also carry ``due`` (roughly when it should happen — "
+        "a rough answer like \"2026-12\" is fine) and ``kind`` (``milestone``／"
+        "``stage``／``deadline``／``recurring``). Every other key in the file "
         "is kept exactly as it is, including keys you do not recognise, and "
         "``updated`` is set to today for you. The file has to exist and be valid "
         "JSON: a broken file is refused, never overwritten, and a stage list with "
@@ -118,7 +122,13 @@ DOSSIER_WRITE_SCHEMA = {
                 "description": (
                     "The whole stage list, replacing the current one. Each stage "
                     "needs ``id`` and ``title``; ``done`` is true only for a "
-                    "stage that is really finished."
+                    "stage that is really finished. ``due`` is roughly when it "
+                    "should happen (\"2026-12-01\", \"2026-12\", or \"sometime in "
+                    "December\" — a rough answer is fine) and ``kind`` says what "
+                    "kind of node it is: ``milestone`` (a step of a project), "
+                    "``stage`` (a phase of research or of a course), ``deadline`` "
+                    "(a hard date — signing up, handing in material, the day of "
+                    "the event) or ``recurring`` (something that repeats)."
                 ),
                 "items": {
                     "type": "object",
@@ -127,9 +137,22 @@ DOSSIER_WRITE_SCHEMA = {
                         "title": {"type": "string"},
                         "detail": {"type": "string"},
                         "done": {"type": "boolean"},
+                        "due": {"type": "string"},
+                        "kind": {
+                            "type": "string",
+                            "enum": ["milestone", "stage", "deadline", "recurring"],
+                        },
                     },
                     "required": ["id", "title"],
                 },
+            },
+            "cadence": {
+                "type": "string",
+                "enum": ["weekly", "monthly", "quarterly", "yearly"],
+                "description": (
+                    "How often this dossier's work repeats — only the butler "
+                    "kind of dossier has that. Omit to keep the current one."
+                ),
             },
             "log_append": {
                 "type": "string",
@@ -210,10 +233,10 @@ DOSSIER_STAGE_UPDATE_SCHEMA = {
     "name": DOSSIER_STAGE_UPDATE_TOOL,
     "description": (
         "Change **one** stage of an agent's dossier — mark it finished, "
-        "rename it, or adjust its detail — without sending the whole "
-        "stage list back. ``dossier_write`` replaces the stage list as a "
-        "group (a stage you leave out is deleted); this one touches a "
-        "single stage by id."
+        "rename it, adjust its detail, or set when it should happen — without "
+        "sending the whole stage list back. ``dossier_write`` replaces the "
+        "stage list as a group (a stage you leave out is deleted); this one "
+        "touches a single stage by id."
     ),
     "parameters": {
         "type": "object",
@@ -244,6 +267,21 @@ DOSSIER_STAGE_UPDATE_SCHEMA = {
             "detail": {
                 "type": "string",
                 "description": "A new detail line for that stage.",
+            },
+            "due": {
+                "type": "string",
+                "description": (
+                    "Roughly when that node should happen (\"2026-12-01\", "
+                    "\"2026-12\", or \"sometime in December\")."
+                ),
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["milestone", "stage", "deadline", "recurring"],
+                "description": (
+                    "What kind of node it is: ``milestone``／``stage``／"
+                    "``deadline``／``recurring``."
+                ),
             },
         },
         "required": ["stage_id"],
@@ -406,13 +444,13 @@ def dossier_stage_update(args: Dict[str, Any], **_kw: Any) -> str:
         return json_result({"success": False, "error": "stage_id 是必需的：改哪一条阶段"})
     changes = {
         key: payload[key]
-        for key in ("done", "title", "detail")
+        for key in ("done", "title", "detail", "due", "kind")
         if payload.get(key) is not None
     }
     if not changes:
         return json_result({
             "success": False,
-            "error": "至少给一格：done／title／detail。",
+            "error": "至少给一格：done／title／detail／due／kind。",
         })
     try:
         roots = resolve_roots_or_error()
@@ -573,13 +611,13 @@ def dossier_write(args: Dict[str, Any], **_kw: Any) -> str:
 
     changes = {
         key: payload[key]
-        for key in ("goal", "status", "stages", "log_append")
+        for key in ("goal", "status", "stages", "log_append", "cadence")
         if key in payload and payload[key] is not None
     }
     if not changes:
         return json_result({
             "success": False,
-            "error": "没有要改的格子：至少给 goal／status／stages／log_append 里的一个",
+            "error": "没有要改的格子：至少给 goal／status／stages／log_append／cadence 里的一个",
         })
 
     try:
@@ -625,7 +663,7 @@ registry.register(
     toolset="dossier",
     schema=DOSSIER_WRITE_SCHEMA,
     handler=dossier_write,
-    description="Field-level edit of a dossier record (goal / status / stages / log).",
+    description="Field-level edit of a dossier record (goal / status / stages / log / cadence).",
     emoji="🗂",
 )
 registry.register(
@@ -649,6 +687,6 @@ registry.register(
     toolset="dossier",
     schema=DOSSIER_STAGE_UPDATE_SCHEMA,
     handler=dossier_stage_update,
-    description="Change one stage of a dossier (done / title / detail).",
+    description="Change one stage of a dossier (done / title / detail / due / kind).",
     emoji="🗂",
 )

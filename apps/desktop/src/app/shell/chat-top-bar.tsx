@@ -43,12 +43,22 @@ export interface ChatTopBarRailEntry {
  *
  * 三枚入口点开的**都是那一张卡**（`app/shell/monitor-region.tsx`），换的是
  * **这张卡显示哪一面**：档案／待放行／写脑待批。
+ *
+ * **档案那一枚只在首席（L2）那屏出现**（用户 11-19 22:3x：「**指挥那一栏也不要出现
+ * 当个档案图标了**」）：指挥没有档案——五种档案只归首席（名册里 `role=conductor`
+ * 那一行是指挥，`role=principal` 那些是首席）。给指挥一枚档案入口，就是指着一份
+ * 不存在的档案。
  */
 export function chatTopBarRailEntries(deps: {
   edgeControls: CardEdgeControls
+  /** 当前这一屏是**谁**：L1 ＝ 指挥，L2 ＝ 某个首席。 */
+  scope: ChatScope
 }): ChatTopBarRailEntry[] {
+  const dossierEntry: ChatTopBarRailEntry[] =
+    deps.scope.kind === 'agent' ? [{ id: 'dossier', render: () => <DossierButton /> }] : []
+
   return [
-    { id: 'dossier', render: () => <DossierButton /> },
+    ...dossierEntry,
     { id: 'pending', render: () => <PendingTicketsButton /> },
     // 写脑待批那一条（`WP-MIND-CONSENT-EVENTS`）：原来只在左栏底部角标与设置页里，
     // 用户 11-16 21:4x 拍定搬到对话卡（规格 §8 第 2 条）。只加这一条记录，壳子不动。
@@ -70,7 +80,7 @@ export function ChatTopBar({
   const level = scope.kind === 'agent' ? { l2: scope.id } : 'l1'
   const name = secretaryShellLabel(level, t.console.chiefSecretary, agents)
 
-  const entries = chatTopBarRailEntries({ edgeControls: edgeControls ?? {} })
+  const entries = chatTopBarRailEntries({ edgeControls: edgeControls ?? {}, scope })
 
   return (
     <div className="flex h-(--card-header-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]">

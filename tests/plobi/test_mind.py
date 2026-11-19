@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import threading
@@ -674,6 +675,57 @@ def test_reader_covers_projects_and_research(surface, human_home):
     assert [b.name for b in context.research] == ["SRTP"]
     assert context.research[0].goal == "研究目标"
     assert context.research[0].status == "在写第三章"
+
+
+def test_reader_covers_all_five_categories(surface, human_home):
+    """上下文接**五类**档案（WP-FIVE-DOSSIERS，用户 11-19 22:0x 拍定）。
+
+    11-19 之前只接项目 ＋ 研究：课程／管家／事件三类在上下文里看不见。
+    """
+    research = human_home / "dossiers" / "research" / "SRTP"
+    research.mkdir(parents=True)
+    (research / "dossier.json").write_text(
+        '{"agent": "SRTP", "goal": "研究目标", "status": "在写第三章"}', encoding="utf-8"
+    )
+    for category, name, goal in (
+        ("courses", "CourseA", "课的目标"),
+        ("butler", "House", "管家的事"),
+        ("events", "Contest", "比赛的目标"),
+    ):
+        home = human_home / "dossiers" / category / name
+        home.mkdir(parents=True)
+        (home / "dossier.json").write_text(
+            json.dumps({"agent": name, "goal": goal, "status": "在做"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    context = MindReader(surface).context()
+    categories = {brief.category for brief in context.dossiers}
+
+    assert categories == {"projects", "research", "courses", "butler", "events"}
+    assert {brief.name for brief in context.dossiers} == {
+        "Plobi",
+        "SRTP",
+        "CourseA",
+        "House",
+        "Contest",
+    }
+
+
+def test_each_category_is_capped_so_the_context_does_not_grow(surface, human_home):
+    """多三类 ≠ 上下文变长：每类各自限量（``other_limit``）。"""
+    for index in range(5):
+        home = human_home / "dossiers" / "events" / f"E{index}"
+        home.mkdir(parents=True)
+        (home / "dossier.json").write_text(
+            json.dumps({"agent": f"E{index}", "goal": "目标", "status": "在做"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    context = MindReader(surface).context(other_limit=2)
+    events = [brief for brief in context.dossiers if brief.category == "events"]
+
+    assert len(events) == 2
 
 
 def _add_project(human_home, name: str) -> None:

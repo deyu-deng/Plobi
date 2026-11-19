@@ -88,6 +88,11 @@ export function DossierStageBar({
                   {stage.detail && (
                     <span className="mt-0.5 block text-(--ui-text-secondary)">{stage.detail}</span>
                   )}
+                  {/* 大概什么时候（WP-FIVE-DOSSIERS）：那是**数据**，不是文案 ⇒ 不新增
+                      i18n 键。节点没写时间就什么都不显示。 */}
+                  {stage.due && (
+                    <span className="mt-0.5 block text-(--ui-text-tertiary)">{stage.due}</span>
+                  )}
                 </>
               }
               placement="top-center"

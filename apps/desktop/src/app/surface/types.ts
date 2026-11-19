@@ -19,12 +19,19 @@ export interface SurfaceDocPage extends SurfaceDocMeta {
  *
  * 11-09 起档案从 md 退役为结构化记录（WP-DOSSIER-SHAPE）：目标／状况／阶段都在
  * 那一份里，屏上这张卡与喂给 L1 的现状摘要读的是**同一份数据**。
+ *
+ * 11-19 起它同时是那份「粗节点」清单上的一条（WP-FIVE-DOSSIERS）：`due` ＝
+ * 大概什么时候，`kind` ＝ 节点性质（里程碑／阶段／硬截止／重复）。
  */
 export interface SurfaceStage {
   id: string
   title: string
   detail: string
   done: boolean
+  /** 大概什么时候（`2026-12-01`／`2026-12`／「大概 12 月」都行；空 = 没写）。 */
+  due?: string
+  /** 节点性质：`milestone`／`stage`／`deadline`／`recurring`（空 = 没写）。 */
+  kind?: string
 }
 
 export interface SurfaceAgent {
