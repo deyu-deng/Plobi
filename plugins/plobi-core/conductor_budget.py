@@ -137,28 +137,27 @@ def is_conductor_default_profile(agent: Any) -> bool:
 
 
 def _disable_curators(agent: Any) -> None:
-    """把 L1 的 memory + skill curator nudge 间隔归零。
+    """关闭 L1 回合后的 **skill** curator，但保留记忆提醒。
 
-    对应 ``agent/turn_context.py:307-314`` 与 ``agent/turn_finalizer.py:
-    480-485`` 的两段 ``_should_review_*`` 计算：间隔 <= 0 时直接跳过
-    ``_spawn_background_review``。这条会话就不会在用户回合结束后再
-    fork 「Review the conversation above and update the skill library /
-    saving to memory」。
+    为什么分开（2026-11-19 用户核账）：这一函数原来把
+    ``_memory_nudge_interval`` 与 ``_skill_nudge_interval`` 一起归零。后果是指挥
+    （桌面主会话）**永远不会被提醒写记忆**：`memory.nudge_interval` 配成多少都没用，
+    310 条会话里 memory 工具真调用 0 次。记忆不更新不是模型懒，是提醒被这里关掉了。
+    ``agent/turn_context.py:308-316`` 用这一格决定要不要在本轮说一句「把学到的东西
+    收进记忆」；skill curator 那半（``turn_finalizer`` fork 一次 review）仍关着。
     """
-    for attr in ("_memory_nudge_interval", "_skill_nudge_interval"):
-        try:
-            if getattr(agent, attr, None) is not None:
-                setattr(agent, attr, 0)
-        except Exception as exc:  # pragma: no cover - 防御
-            logger.debug("conductor_budget: failed to zero %s: %s", attr, exc)
+    try:
+        if getattr(agent, "_skill_nudge_interval", None) is not None:
+            setattr(agent, "_skill_nudge_interval", 0)
+    except Exception as exc:  # pragma: no cover - 防御
+        logger.debug("conductor_budget: failed to zero _skill_nudge_interval: %s", exc)
 
-    # 顺手把已累计的计数也清零，避免 hook 跑在 turn 1 但计数器已经满了
+    # 顺手把 skill 的累计计数清零，避免 hook 跑在 turn 1 但计数器已经满了
     # （罕见，但 ``_iters_since_skill`` 不会自动清）。
-    for attr in ("_turns_since_memory", "_iters_since_skill"):
-        try:
-            setattr(agent, attr, 0)
-        except Exception:  # pragma: no cover - 防御
-            pass
+    try:
+        setattr(agent, "_iters_since_skill", 0)
+    except Exception:  # pragma: no cover - 防御
+        pass
 
 
 def _tighten_compressor(agent: Any) -> bool:

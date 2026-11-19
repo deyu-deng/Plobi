@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { openMonitorFace } from '@/store/layout'
@@ -15,10 +14,10 @@ import { openMonitorFace } from '@/store/layout'
  * 删除直接调 `POST /api/memory/forget`，后端删掉那一条并写一行回执；
  * 这一页不做脑里正典的浏览——那是知识库那一屏的事。
  *
- * **一份一行、条目进抽屉**（用户 11-19 21:2x：「这些记忆具体内容应该放到抽屉里面。
- * 这样展开太丑了」）：原来三份各自带边框、各自把条目全摊在行上，长的能占两屏，
- * 把下面十四个开关一路顶下去。现在行上只剩名字与读数（已用/上限 · 几条），
- * 点开右边抽屉才逐条读、逐条忘。
+ * **一份一行、点开在下面展开**（用户 11-19 21:2x：「这些记忆具体内容应该放到抽屉里面。
+ * 这样展开太丑了」；随后又明确：「点击卡片就会在下面展开里面的详细条目（而不是像你
+ * 现在一样放到侧边栏，太丑了）」）：行上只剩名字与读数（已用/上限 · 几条），点开这一行
+ * 才在**它下面**逐条读、逐条忘；再点一次收起。抽屉（Sheet）已经撤掉。
  *
  * **四个名字由前端给**（用户同一句里的「有些语言没有产品化」）：`memory_api.py`
  * 那四句标签是写死的中文，切到英/日就只剩它们还是中文。这里按 `key` 译，
@@ -347,7 +346,6 @@ export function MemoryLedgers() {
   }
 
   const scopes = data?.scopes ?? []
-  const active = scopes.find(scope => scope.key === openScope) ?? null
   // 这两份记忆属于哪一个 Agent：后端 `_snapshot()` 给的是它解析出来的那一个
   // （`resolve_agent_slug()`）。`l1` 表示没绑到具体 Agent —— 那两份就挂在指挥名下，
   // 而不是留着「这个 Agent」让人猜。
@@ -365,11 +363,6 @@ export function MemoryLedgers() {
     return scope.label
   }
 
-  const close = () => {
-    setOpenScope(null)
-    setArmed(null)
-  }
-
   return (
     <>
       <div className="mt-3 flex flex-col gap-1" data-testid="memory-ledgers">
@@ -385,116 +378,98 @@ export function MemoryLedgers() {
           </div>
         ) : null}
 
-        {/* 一份一行：名字 + 读数 + 一个尖角。条目本身在抽屉里（点开那一行才看）。 */}
-        {scopes.map((scope, index) => (
-          <div
-            className={cn('border-border/60', index > 0 && 'border-t')}
-            data-testid={`memory-scope-${scope.key}`}
-            key={scope.key}
-          >
-            <button
-              aria-label={m.openAria(labelOf(scope))}
-              className="row-hover flex w-full items-center gap-3 rounded-md px-1 py-2 text-left"
-              onClick={() => {
-                setArmed(null)
-                setOpenScope(scope.key)
-              }}
-              type="button"
+        {/* 一份一行；点开在这一行**下面**展开条目（用户 11-19：「点击卡片就会在下面
+            展开里面的详细条目（而不是像你现在一样放到侧边栏，太丑了）」）。
+            再点同一行收起。 */}
+        {scopes.map((scope, index) => {
+          const open = openScope === scope.key
+          const readonly = scope.key === 'status'
+
+          return (
+            <div
+              className={cn('border-border/60', index > 0 && 'border-t')}
+              data-testid={`memory-scope-${scope.key}`}
+              key={scope.key}
             >
-              <span className="min-w-0 flex-1 truncate text-[0.8rem] text-foreground">{labelOf(scope)}</span>
-              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                {m.scopeMeta(scope.chars, scope.limit, scope.entries.length)}
-              </span>
-              <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-right" size="0.8125rem" />
-            </button>
-          </div>
-        ))}
-      </div>
+              <button
+                aria-expanded={open}
+                aria-label={m.openAria(labelOf(scope))}
+                className="row-hover flex w-full items-center gap-3 rounded-md px-1 py-2 text-left"
+                onClick={() => {
+                  setArmed(null)
+                  setOpenScope(open ? null : scope.key)
+                }}
+                type="button"
+              >
+                <Codicon
+                  className="shrink-0 text-(--ui-text-tertiary)"
+                  name={open ? 'chevron-down' : 'chevron-right'}
+                  size="0.8125rem"
+                />
+                <span className="min-w-0 flex-1 truncate text-[0.8rem] text-foreground">{labelOf(scope)}</span>
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                  {m.scopeMeta(scope.chars, scope.limit, scope.entries.length)}
+                </span>
+              </button>
 
-      {/* 抽屉：一份记忆的全部条目。删除仍是两下——第一下只上膛，第二下才真删。 */}
-      {/* `belowTitlebar`：抽屉底色铺满全高，但内容与关闭按钮从窗口顶栏下面开始，
-            否则标题正好压在系统的最小化/最大化/关闭上（用户 11-19 21:5x 指出的那一处）。 */}
-      <Sheet
-        onOpenChange={next => {
-          if (!next) {
-            close()
-          }
-        }}
-        open={Boolean(active)}
-      >
-        <SheetContent belowTitlebar className="sm:max-w-md" side="right">
-          {active ? (
-            <>
-              <SheetHeader>
-                <SheetTitle>{labelOf(active)}</SheetTitle>
-                <SheetDescription>
-                  <span className="tabular-nums">{m.scopeMeta(active.chars, active.limit, active.entries.length)}</span>
-                  {active.key === 'user' || active.key === 'status' ? null : (
-                    <>
-                      {' · '}
-                      <span>{m.streakLabel(active.streak ?? 0, active.threshold ?? 8)}</span>
-                    </>
+              {open ? (
+                <div className="pb-3 pl-7 pr-1" data-testid="memory-entries">
+                  {scope.key !== 'user' && scope.key !== 'status' ? (
+                    <p className="text-muted-foreground mb-2 text-xs tabular-nums">
+                      {m.streakLabel(scope.streak ?? 0, scope.threshold ?? 8)}
+                    </p>
+                  ) : null}
+
+                  {scope.entries.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">{m.empty}</p>
+                  ) : (
+                    <ul className="flex flex-col gap-3">
+                      {scope.entries.map(entry => {
+                        // 近况摘要是「一家一节」：第一行是那家的名字，下面是它自己写的几行。
+                        const [head, ...rest] = readonly ? entry.text.split('\n') : [entry.text]
+
+                        return (
+                          <li className="flex items-start justify-between gap-3 text-[0.8rem]" key={entry.index}>
+                            {rest.length > 0 ? (
+                              <span className="min-w-0 flex-1">
+                                <span className="text-muted-foreground block text-xs">{head}</span>
+                                <span className="block whitespace-pre-wrap break-words">{rest.join('\n').trim()}</span>
+                              </span>
+                            ) : (
+                              <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{head}</span>
+                            )}
+                            {readonly ? null : (
+                              <Button
+                                aria-label={m.forget}
+                                disabled={busy === `${scope.key}:${entry.index}`}
+                                onClick={() => {
+                                  if (armed !== entry.index) {
+                                    setArmed(entry.index)
+
+                                    return
+                                  }
+
+                                  setArmed(null)
+                                  void forget(scope.key, entry.index)
+                                }}
+                                size="sm"
+                                title={m.forgetHint}
+                                variant="ghost"
+                              >
+                                {armed === entry.index ? m.confirmForget : m.forget}
+                              </Button>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
                   )}
-                </SheetDescription>
-              </SheetHeader>
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-3" data-testid="memory-drawer">
-                {error ? (
-                  <div className="text-destructive mb-2 text-xs" role="alert">
-                    {error}
-                  </div>
-                ) : null}
-
-                {active.entries.length === 0 ? (
-                  <p className="text-muted-foreground text-xs">{m.empty}</p>
-                ) : (
-                  <ul className="flex flex-col gap-3">
-                    {active.entries.map(entry => {
-                      // 近况摘要是「一家一段」：第一行是那家的名字，下面是它自己写的几行。
-                      const readonly = active.key === 'status'
-                      const [head, ...rest] = readonly ? entry.text.split('\n') : [entry.text]
-
-                      return (
-                        <li className="flex items-start justify-between gap-3 text-[0.8rem]" key={entry.index}>
-                          {rest.length > 0 ? (
-                            <span className="min-w-0 flex-1">
-                              <span className="text-muted-foreground block text-xs">{head}</span>
-                              <span className="block whitespace-pre-wrap break-words">{rest.join('\n').trim()}</span>
-                            </span>
-                          ) : (
-                            <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{head}</span>
-                          )}
-                          {readonly ? null : (
-                            <Button
-                              aria-label={m.forget}
-                              disabled={busy === `${active.key}:${entry.index}`}
-                              onClick={() => {
-                                if (armed !== entry.index) {
-                                  setArmed(entry.index)
-
-                                  return
-                                }
-
-                                setArmed(null)
-                                void forget(active.key, entry.index)
-                              }}
-                              size="sm"
-                              title={m.forgetHint}
-                              variant="ghost"
-                            >
-                              {armed === entry.index ? m.confirmForget : m.forget}
-                            </Button>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </div>
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
     </>
   )
 }

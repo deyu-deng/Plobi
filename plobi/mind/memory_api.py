@@ -32,10 +32,9 @@ _SCOPES = {
 }
 _SCOPE_ORDER = ("global", "user", "memory")
 
-# 「各首席近况摘要」不是谁的私产，是一家一段的汇总（用户 11-19 22:39 定义：
-# 「STATUS 是一个文件。所有 principal 都往里面写自己那一小部分。但是只注入指挥」）。
-# 盘上仍是每家一份 `agents/<slug>/STATUS.md`（写入权限必须隔离），注入侧
-# `MemoryStore._build_conductor_status_digest` 把它们拼成一份；这里给设置页同一份东西看。
+# 「各首席近况摘要」不是谁的私产：**一份 ``memory/STATUS.md``，一家一节**
+# （用户 11-19 22:39：「STATUS 是一个文件。所有 principal 都往里面写自己那一小部分。
+# 但是只注入指挥」）。设置页给人看的是整份摘要；写入侧按节替换，谁也不改别人那一节。
 _STATUS_LABEL = "各首席近况摘要"
 
 
@@ -82,24 +81,20 @@ def _target(scope: str, agent: Optional[str]) -> Path:
 
 
 def _status_digest() -> Dict[str, Any]:
-    """各首席的近况：每家 ``STATUS.md`` 的一小段，拼成一份只读摘要。
+    """各首席的近况：``memory/STATUS.md`` 里一节一位，拼成一份只读摘要。
 
     这里只读不算「注入」——注入仍只有指挥拿到（`_build_conductor_status_digest`），
-    L2 的 system prompt 里一个字都没有。设置页给人看，所以给全。
+    首席的 system prompt 里一个字都没有。设置页给人看，所以给全。
     """
-    from tools.memory_tool import get_memory_dir
+    from tools.memory_tool import parse_status_sections, status_path
 
     entries: List[Dict[str, Any]] = []
-    root = get_memory_dir() / "agents"
-    if root.is_dir():
-        for slug_dir in sorted(root.iterdir(), key=lambda p: p.name):
-            path = slug_dir / "STATUS.md"
-            if not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace").strip()
-            if not text:
-                continue
-            entries.append({"index": len(entries), "text": f"{slug_dir.name}\n{text}"})
+    try:
+        text = status_path().read_text(encoding="utf-8", errors="replace")
+    except (OSError, IOError):
+        text = ""
+    for name, body in parse_status_sections(text).items():
+        entries.append({"index": len(entries), "text": f"{name}\n{body}"})
     limits = _limits()
     return {
         "key": "status",

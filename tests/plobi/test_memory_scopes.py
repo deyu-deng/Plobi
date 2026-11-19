@@ -88,7 +88,8 @@ def test_layout_is_shared_root_not_the_active_home(mem_root):
     assert store._path_for("global") == memory_root / "GLOBAL.md"
     assert store._path_for("user") == memory_root / "USER.md"
     assert store._path_for("memory") == memory_root / "agents" / "aura" / "MEMORY.md"
-    assert store._path_for("status") == memory_root / "agents" / "aura" / "STATUS.md"
+    # STATUS 是一个文件：一家一节，不按 Agent 分家（用户 11-19 22:39）
+    assert store._path_for("status") == memory_root / "STATUS.md"
     # 另一家的路径跟着身份走，不跟着家走
     assert _store_for("nuclide")._path_for("memory") == (
         memory_root / "agents" / "nuclide" / "MEMORY.md")
@@ -145,13 +146,15 @@ def test_two_agents_do_not_see_each_other_but_share_global(mem_root):
     assert aura._path_for("user") == course._path_for("user")
 
 
-def test_status_and_memory_writes_are_separate_files(mem_root):
+def test_status_is_one_shared_file_while_own_memory_stays_per_agent(mem_root):
     store = _store_for("aura")
     store.add("status", "在做课表")
     store.add("memory", "课表这条规则的依据")
-    own = mem_root / "memory" / "agents" / "aura"
-    assert "在做课表" in (own / "STATUS.md").read_text(encoding="utf-8")
-    assert "在做课表" not in (own / "MEMORY.md").read_text(encoding="utf-8")
+    status = mem_root / "memory" / "STATUS.md"
+    own = mem_root / "memory" / "agents" / "aura" / "MEMORY.md"
+    assert "## aura" in status.read_text(encoding="utf-8")
+    assert "在做课表" in status.read_text(encoding="utf-8")
+    assert "在做课表" not in own.read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
@@ -307,9 +310,9 @@ def test_l1_reads_status_digests_never_other_agents_memory(mem_root):
         store.add("memory", f"{markers[slug]} 这一条只有它自己该看见")
         store.add("status", f"{slug} 现在在做那一块课表")
 
-    block = _store_for(mt.CONDUCTOR_SLUG).format_for_system_prompt("memory") or ""
+    block = _store_for(mt.conductor_slug()).format_for_system_prompt("memory") or ""
 
-    assert "AGENT STATUS DIGEST" in block
+    assert "各首席近况" in block
     assert "aura 现在在做那一块课表" in block
     assert "l2-course-ee 现在在做那一块课表" in block
     for marker in markers.values():
@@ -323,17 +326,17 @@ def test_l1_status_digest_is_capped_by_its_own_budget(mem_root):
         store = _store_for(f"agent-{i}")
         store.add("status", f"第 {i} 家的近况" + "×" * 80)
 
-    block = _store_for(mt.CONDUCTOR_SLUG, conductor_status_char_limit=200).format_for_system_prompt("memory") or ""
-    assert "其余 Agent 的近况这次没列" in block
+    block = _store_for(mt.conductor_slug(), conductor_status_char_limit=200).format_for_system_prompt("memory") or ""
+    assert "其余首席的近况这次没列" in block
     # 摘要按总上限截，不随 Agent 数量线性膨胀
-    assert len(block.split("AGENT STATUS DIGEST", 1)[1]) < 500
+    assert len(block.split("各首席近况", 1)[1]) < 500
 
 
 def test_l1_does_not_read_its_own_status_back_at_itself(mem_root):
-    store = _store_for(mt.CONDUCTOR_SLUG)
+    store = _store_for(mt.conductor_slug())
     store.add("status", "L1 自己的近况")
     store.add("memory", "L1 自己的记忆")
-    block = _store_for(mt.CONDUCTOR_SLUG).format_for_system_prompt("memory") or ""
+    block = _store_for(mt.conductor_slug()).format_for_system_prompt("memory") or ""
     assert "L1 自己的记忆" in block
     assert "L1 自己的近况" not in block
 
@@ -431,7 +434,7 @@ def test_slug_resolution_prefers_the_roster_identity(mem_root, monkeypatch):
     monkeypatch.setenv("PLOBI_AGENT_ID", "Aura")
     assert mt.resolve_agent_slug() == "aura"
     monkeypatch.setenv("PLOBI_AGENT_ID", "")
-    assert mt.resolve_agent_slug() == mt.CONDUCTOR_SLUG
+    assert mt.resolve_agent_slug() == mt.conductor_slug()
     # 名字里带路径分隔符也逃不出 agents/ 那一层
     monkeypatch.setenv("PLOBI_AGENT_ID", "../escape")
     assert mt.resolve_agent_slug() == "escape"
@@ -520,6 +523,40 @@ def test_global_write_is_the_same_verb_and_lands_in_the_pending_layer(mem_root):
     assert "run_tests.sh" in (mem_root / "memory" / "GLOBAL.md").read_text(encoding="utf-8")
 
 
+def test_status_sections_are_isolated_per_principal(mem_root):
+    """一份文件、一人一节：写自己那节不动别人，读也读不到别人的。"""
+    aura = _store_for("aura")
+    nuclide = _store_for("nuclide")
+    aura.add("status", "在核对实验数据")
+    nuclide.add("status", "在排下周课表")
+
+    text = (mem_root / "memory" / "STATUS.md").read_text(encoding="utf-8")
+    assert "## aura" in text and "## nuclide" in text
+    assert "在核对实验数据" in text and "在排下周课表" in text
+
+    # 首席只读自己那一节
+    assert "在排下周课表" not in (_store_for("aura").format_for_system_prompt("memory") or "")
+    # 指挥读整份摘要
+    digest = _store_for(mt.conductor_slug()).format_for_system_prompt("memory") or ""
+    assert "在核对实验数据" in digest and "在排下周课表" in digest
+
+
+def test_status_section_has_a_hard_char_gate(mem_root):
+    """字数门：一节超过上限就**拒绝这次写入**，不静默截断、不挤掉别人那一节。"""
+    store = _store_for("aura", status_char_limit=20)
+    first = store.add("status", "一" * 20)
+    assert first["success"] is True, first
+
+    over = store.add("status", "二" * 5)
+    assert over["success"] is False, over
+    assert "20" in over["error"]
+
+    other = _store_for("nuclide", status_char_limit=20)
+    assert other.add("status", "在排下周课表")["success"] is True
+    text = (mem_root / "memory" / "STATUS.md").read_text(encoding="utf-8")
+    assert "一" * 20 in text and "在排下周课表" in text
+
+
 def test_writing_global_with_nothing_to_change_says_so(mem_root):
     store = _store_for("aura")
     store.add("global", "已经在全局里的一条")
@@ -531,9 +568,9 @@ def test_status_scope_writes_the_digest_file_l1_reads(mem_root):
     store = _store_for("aura")
     out = json.loads(mt.memory_write(scope="status", parts=["在做配对令牌"], store=store))
     assert out["success"] is True
-    path = mem_root / "memory" / "agents" / "aura" / "STATUS.md"
+    path = mem_root / "memory" / "STATUS.md"
     assert "在做配对令牌" in path.read_text(encoding="utf-8")
-    l1 = _store_for(mt.CONDUCTOR_SLUG)
+    l1 = _store_for(mt.conductor_slug())
     assert "在做配对令牌" in (l1.format_for_system_prompt("memory") or "")
 
 

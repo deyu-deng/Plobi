@@ -28,7 +28,10 @@ agents:
     provider: bezel
     model: workbuddy/deepseek-v4.1-flash
     mind_subtree: Dossiers/projects/Plobi
-    skills: [plobi-principal-resident]
+    # 「常驻首席怎么干活」不挂技能：那三五句话在硬编码的身份块里
+    # （`plobi/agents/registry.py::build_principal_identity_soul_block`），
+    # 与名册、目录同源，改一行就全首席生效。技能是给"用户能装能删的能力"用的，
+    # 不是给系统自己的岗位说明书用的。
     domains: [schedule]
     # 描述写这一行「管的事」，别写某套流水线（原先那句「SQLite → 看板 → 消息推送」
     # 是某一家的实现，抄出去的人会以为这就是首席的出厂长相）。

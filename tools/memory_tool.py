@@ -9,8 +9,9 @@ inside a 分身 home — the key is the Agent's identity, not its directory):
   memory/GLOBAL.md               cross-agent facts; writing this scope goes through
                                  the approval layer (target="global" stages it)
   memory/agents/<slug>/MEMORY.md this agent's own notes — where writes land by default
-  memory/agents/<slug>/STATUS.md a few lines of "where I am with things", updated by
-                                 the agent itself; only L1 reads these
+  memory/STATUS.md              one file, one `## <name>` section per principal —
+                                each writes only its own section; only the Conductor
+                                reads the whole file (用户 11-19 22:39)
   memory/USER.md                 the user profile — still exactly one copy
 
 Injection = GLOBAL + this agent's own + USER.  L1 additionally gets the
@@ -74,21 +75,20 @@ logger = logging.getLogger(__name__)
 # 裁定 181: one shared root, split by **Agent identity** (a roster row), never by
 # profile home.  裁定 44 already proved that per-profile ledger copies were unread
 # residue — every profile resolved to the same file anyway.
-CONDUCTOR_SLUG = "l1"
-
-# 历史目录名：指挥的记忆从 2026-10 起一直写在 ``memory/agents/l1/``，而指挥在名册里的
-# name 早就不是 ``l1``（profile 退休后是 ``secretary``）。两者都要认——判据认错名字的
-# 代价是"指挥自己的 MEMORY 与各首席近况一起不注入"（2026-11-19 现核：以 ``secretary``
-# 加载 ``agent=0``／``status_digest=0``，以 ``l1`` 加载 ``agent=629``）。
-_LEGACY_CONDUCTOR_DIR = "l1"
+#: 指挥在名册里读不到时的落点。**不是第二个身份**：盘上的目录与名册 name 同名，
+#: 这一格只在名册文件坏掉时让"指挥自己的记忆"还有个地方可读。
+_DEFAULT_CONDUCTOR_SLUG = "secretary"
 _SLUG_UNSAFE_RE = re.compile(r"[^a-z0-9\u4e00-\u9fff_-]+")
 
 # Scope -> (filename, is it per-agent).  The per-agent half is what 裁定 179/181
 # asked for: one identity, one ledger — keyed by the roster row, never by a home.
+# ``status`` 不按 Agent 分家：**一份 ``memory/STATUS.md``，每个首席写自己那一节**
+# （用户 11-19 22:39：「STATUS 是一个文件。所有 principal 都往里面写自己那一小部分。
+# 但是只注入指挥」）。写入按节替换，谁也不改别人那一节。
 MEMORY_SCOPES: Dict[str, tuple[str, bool]] = {
     "global": ("GLOBAL.md", False),
     "memory": ("MEMORY.md", True),
-    "status": ("STATUS.md", True),
+    "status": ("STATUS.md", False),
     "user": ("USER.md", False),
 }
 
@@ -132,7 +132,8 @@ def resolve_agent_slug(slug: Optional[str] = None) -> str:
         # 这一步让"每个 Agent 有自己的记忆"在**不依赖前端改动**的前提下成立。
         raw = _agent_slug_from_current_session()
     name = _SLUG_UNSAFE_RE.sub("-", raw.lower()).strip("-")
-    return name or CONDUCTOR_SLUG
+    # 没有身份 = 指挥（裁定 180 的同一个约定）。名字从名册里现取，不写死。
+    return name or conductor_slug()
 
 
 def _agent_slug_from_current_session() -> str:
@@ -172,15 +173,11 @@ def _agent_slug_from_current_session() -> str:
 
 
 def conductor_slug() -> str:
-    """指挥在名册里的 name（现为 ``secretary``）；名册读不到回历史目录名 ``l1``。
+    """指挥在名册里的 name（现为 ``secretary``）；名册读不到回 ``secretary``。
 
     这一跳只是把"指挥叫什么"从写死的字符串换成名册事实：11-18 那刀把
     ``is_l1_slug`` 改名成 ``is_conductor_slug``，却只换了标识符、没换比较的值，
     于是指挥一改名（``l1`` → ``secretary``）判据就永远为假。
-
-    为什么不放进 ``plobi/mind/identity.py``（那里更合位置）：那一档现由在派的
-    ``WP-AGENT-NAME-UNIFY`` 认领，本笔是 ``WP-CONDUCTOR-PRINCIPAL-RENAME``——
-    同一个函数两边各写一份不难，难的是两边同时改同一档。等那一格空出来再合并。
     """
     try:
         from plobi.agents.registry import load_registry
@@ -192,20 +189,19 @@ def conductor_slug() -> str:
                     return name
     except Exception:  # noqa: BLE001 - 名册读不到不影响"谁是自己的记忆"这条腿
         pass
-    return _LEGACY_CONDUCTOR_DIR
+    return _DEFAULT_CONDUCTOR_SLUG
 
 
 def is_conductor_slug(slug: str) -> bool:
-    """这个 slug 是不是指挥——**名册 name 与历史目录名都算**。
+    """这个 slug 是不是指挥——只认同一个名字：名册里 ``role=conductor`` 那一行的 name。
 
-    只认一个名字会出两种事故，且方向相反：只认名册 name ⇒ 盘上 ``agents/l1``
-    那份旧记忆再也读不到；只认 ``l1`` ⇒ 改名之后指挥判据整个失效（现网就是这个，
-    近况摘要从未注入过）。
+    曾经的"名册名与历史目录名都算"是旧数据兼容层，已按用户 11-19 的裁定拆掉
+    （「不要做旧数据兼容层了」）：盘上的目录改成与名册同名，判据只剩一条。
     """
     text = str(slug or "").strip().lower()
     if not text:
         return False
-    return text in {CONDUCTOR_SLUG, _LEGACY_CONDUCTOR_DIR, conductor_slug().lower()}
+    return text == conductor_slug().lower()
 
 
 def get_memory_dir() -> Path:
@@ -222,18 +218,91 @@ def get_memory_dir() -> Path:
 def agent_memory_dir(slug: Optional[str] = None) -> Path:
     """``<共享根>/memory/agents/<slug>`` — one identity's own directory.
 
-    指挥那一格带一次**零迁移别名**：名册名（``secretary``）下的目录还没建、
-    而历史目录 ``agents/l1`` 有文件时，落回历史目录读。不搬家、不改写盘上布局，
-    只是让"指挥自己的记忆"先别丢；等有新写入自然建出新目录，这条别名就自己退场。
+    键就是名册 name（:func:`resolve_agent_slug` 已把各种写法翻回它），所以这里
+    **不做任何历史目录的别名**：别名是兼容层，会让「指挥的记忆在哪」长期有两个答案。
+    11-19 已把盘上 ``agents/l1`` 改名为 ``agents/secretary``（零内容变化）。
     """
-    resolved = resolve_agent_slug(slug)
-    base = get_memory_dir() / "agents"
-    own = base / resolved
-    if is_conductor_slug(resolved) and not own.is_dir():
-        legacy = base / _LEGACY_CONDUCTOR_DIR
-        if legacy.is_dir():
-            return legacy
-    return own
+    return get_memory_dir() / "agents" / resolve_agent_slug(slug)
+
+
+def status_path() -> Path:
+    """``<共享根>/memory/STATUS.md`` — 全机唯一的一份近况文件。
+
+    每个首席只写自己那一节（``## <名册 name>``），写入按节替换；指挥拿整份摘要。
+    """
+    return get_memory_dir() / MEMORY_SCOPES["status"][0]
+
+
+_STATUS_HEADING_RE = re.compile(r"^##[ \t]+(\S.*?)[ \t]*$")
+
+
+def parse_status_sections(text: str) -> Dict[str, str]:
+    """把 ``STATUS.md`` 拆成 ``{名册 name: 正文}``；空节不算一节。"""
+    sections: Dict[str, str] = {}
+    current: Optional[str] = None
+    buf: List[str] = []
+    for line in (text or "").splitlines():
+        match = _STATUS_HEADING_RE.match(line)
+        if match:
+            if current is not None:
+                body = "\n".join(buf).strip()
+                if body:
+                    sections[current] = body
+            current = match.group(1).strip()
+            buf = []
+            continue
+        if current is not None:
+            buf.append(line)
+    if current is not None:
+        body = "\n".join(buf).strip()
+        if body:
+            sections[current] = body
+    return sections
+
+
+def render_status_sections(sections: Dict[str, str]) -> str:
+    """``{名字: 正文}`` → 文件内容；顺序按传入顺序（新写的人排在后面）。"""
+    blocks = [
+        f"## {name}\n{body.strip()}"
+        for name, body in sections.items()
+        if str(body or "").strip()
+    ]
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def read_status_section(slug: str) -> str:
+    """只读 ``slug`` 那一节；文件不存在或没这一节都回空串。"""
+    path = status_path()
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, IOError):
+        return ""
+    return parse_status_sections(text).get(str(slug or ""), "")
+
+
+def write_status_section(slug: str, body: str) -> None:
+    """把 ``slug`` 那一节换成 ``body``（空正文 = 删掉这一节），别人一个字不动。
+
+    调用方必须已持有 :func:`status_path` 的 ``.lock``；这里只做读-改-写与原子替换。
+    """
+    name = str(slug or "").strip()
+    if not name:
+        raise ValueError("status section needs an agent name")
+    path = status_path()
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, IOError):
+        text = ""
+    sections = parse_status_sections(text)
+    clean = str(body or "").strip()
+    if clean:
+        sections[name] = clean
+    else:
+        sections.pop(name, None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(render_status_sections(sections), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def memory_path(scope: str, *, slug: Optional[str] = None) -> Path:
@@ -337,7 +406,8 @@ class MemoryStore:
     Three scopes plus one digest, keyed by Agent identity (裁定 181):
       global  -> ``memory/GLOBAL.md``        (approval-written only; never a direct tool target)
       memory  -> ``memory/agents/<slug>/MEMORY.md``   (this agent's own notes)
-      status  -> ``memory/agents/<slug>/STATUS.md``   (a few lines of recent state)
+      status  -> ``memory/STATUS.md`` 里 ``## <slug>`` 那一节 (a few lines of recent state;
+                 one file for every principal, one section each — 用户 11-19 22:39)
       user    -> ``memory/USER.md``          (the person's profile — one copy)
 
     Maintains two parallel states:
@@ -439,7 +509,7 @@ class MemoryStore:
         # Writers create what they write — see :meth:`save_to_disk`.
         self.global_entries = self._read_file(memory_path("global"))
         self.memory_entries = self._read_file(memory_path("memory", slug=self.slug))
-        self.status_entries = self._read_file(memory_path("status", slug=self.slug))
+        self.status_entries = self._read_status_entries()
         self.user_entries = self._read_file(memory_path("user"))
 
         # Deduplicate entries (preserves order, keeps first occurrence)
@@ -471,47 +541,61 @@ class MemoryStore:
             "status_digest": digest_block,
         }
 
-    def _build_conductor_status_digest(self) -> str:
-        """Render the STATUS digest L1 sees: a few lines per *other* agent.
+    def _read_status_entries(self) -> List[str]:
+        """自己那一节近况：一份文件里 ``## <slug>`` 下面那几行。
 
-        Only ``STATUS.md`` is read here — never another agent's ``MEMORY.md``.
-        Slug order is sorted so the block is byte-stable for the session, and the
-        aggregate is capped by ``memory.conductor_status_char_limit`` (2200 x N agents
-        would be paid on every turn and would shatter the cached prefix).
+        按节读而不是读整份文件——同一份 ``STATUS.md`` 里有别的首席写的东西，
+        那些不是"我的条目"，也不该出现在我的工具读数里。
         """
-        agents_root = get_memory_dir() / "agents"
-        if not agents_root.is_dir():
+        body = read_status_section(self.slug).strip()
+        return [body] if body else []
+
+    def _build_conductor_status_digest(self) -> str:
+        """Render the STATUS digest L1 sees: one section per *other* principal.
+
+        The file is ``memory/STATUS.md`` — one file, one ``## <name>`` section per
+        principal (用户 11-19 22:39). Only that file is read here, never another
+        agent's ``MEMORY.md``. Section order is the file's own order (byte-stable
+        for the session), each section is clipped to ``memory.status_char_limit``
+        and the aggregate to ``memory.conductor_status_char_limit`` — a
+        hand-edited 20k-char section cannot blow up the prompt.
+        """
+        path = status_path()
+        try:
+            sections = parse_status_sections(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, IOError):
             return ""
-        sections: List[str] = []
+        if not sections:
+            return ""
+        per_section = max(0, int(self.status_char_limit or 0))
+        chunks: List[str] = []
         used = 0
-        for slug_dir in sorted(agents_root.iterdir(), key=lambda p: p.name):
-            slug = slug_dir.name
-            if slug == self.slug:
-                continue  # L1 does not read its own status file back
-            path = slug_dir / "STATUS.md"
-            if not path.is_file():
-                continue
-            entries = list(dict.fromkeys(self._read_file(path)))
-            safe = self._sanitize_entries_for_snapshot(entries, f"agents/{slug}/STATUS.md")
-            body = "\n".join(f"- {line}" for entry in safe for line in entry.splitlines() if line)
-            if not body:
+        for name, body in sections.items():
+            if name == self.slug:
+                continue  # 指挥不把自己的近况念回给自己
+            text = body.strip()
+            if per_section and len(text) > per_section:
+                text = text[:per_section] + "…"
+            safe = self._sanitize_entries_for_snapshot([text], f"STATUS.md[{name}]")[0]
+            lines = "\n".join(f"- {line}" for line in safe.splitlines() if line.strip())
+            if not lines:
                 continue
             room = self.conductor_status_char_limit - used
             if room <= 0:
-                sections.append("…（其余 Agent 的近况这次没列，超出 L1 摘要上限）")
+                chunks.append("…（其余首席的近况这次没列，超出摘要上限）")
                 break
-            if len(body) > room:
-                body = body[:room] + "…"
-            sections.append(f"{slug}: {body}")
-            used += len(body)
-        if not sections:
+            if len(lines) > room:
+                lines = lines[:room] + "…"
+            chunks.append(f"{name}: {lines}")
+            used += len(lines)
+        if not chunks:
             return ""
         header = (
-            f"AGENT STATUS DIGEST ({len(sections)} 项，L1 只看摘要，不读各 Agent 全文) "
+            f"各首席近况（{len(chunks)} 位，只有指挥能读到；每人一节自写） "
             f"[{used:,}/{self.conductor_status_char_limit:,} chars]"
         )
         separator = "═" * 46
-        return f"{separator}\n{header}\n{separator}\n" + "\n".join(sections)
+        return f"{separator}\n{header}\n{separator}\n" + "\n".join(chunks)
 
     @staticmethod
     def _sanitize_entries_for_snapshot(entries: List[str], filename: str) -> List[str]:
@@ -612,6 +696,10 @@ class MemoryStore:
         rewriting, so existing content is never clobbered.
         """
         path = self._path_for(target)
+        if target == "status":
+            # 一份文件多人写：漂移判据（整文件 round-trip）在这里不成立，按节读。
+            self._set_entries(target, self._read_status_entries())
+            return None
         bak = None if skip_drift else self._detect_external_drift(target)
         fresh = self._read_file(path)
         fresh = list(dict.fromkeys(fresh))  # deduplicate
@@ -620,6 +708,10 @@ class MemoryStore:
 
     def save_to_disk(self, target: str):
         """Persist entries to the appropriate file. Called after every mutation."""
+        if target == "status":
+            # 只替换自己那一节——别的首席那几节一个字不动（用户 11-19 22:39）。
+            write_status_section(self.slug, "\n".join(self.status_entries).strip())
+            return
         path = self._path_for(target)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._write_file(path, self._entries_for(target))
@@ -653,10 +745,11 @@ class MemoryStore:
         """The per-scope budget — three configurable numbers, nothing hard-coded.
 
         ``memory.agent_char_limit`` / ``memory.global_char_limit`` /
-        ``memory.user_char_limit`` (plus ``memory.status_char_limit`` for the
-        per-agent STATUS file and ``memory.conductor_status_char_limit`` for the digest
-        L1 reads).  Defaults come from ``DEFAULT_CONFIG`` in
-        :mod:`plobi_cli.config`; this class only carries the numbers.
+        ``memory.user_char_limit`` (plus ``memory.status_char_limit`` for one
+        principal's own section in the shared ``STATUS.md``, and
+        ``memory.conductor_status_char_limit`` for the digest the Conductor reads).
+        Defaults come from ``DEFAULT_CONFIG`` in :mod:`plobi_cli.config`; this
+        class only carries the numbers.
         """
         if target == "user":
             return self.user_char_limit

@@ -147,8 +147,16 @@ class _FakeCompressor:
 # ─── P0-1: L1 curator disable ───────────────────────────────────────────────
 
 
-def test_north_star_hook_disables_memory_nudge_for_l1(conductor_budget):
-    """L1 default profile + north-star toolset → memory & skill nudges → 0."""
+def test_north_star_hook_keeps_the_memory_nudge_and_only_stops_the_skill_curator(
+    conductor_budget,
+):
+    """L1 default profile + north-star toolset → **只关 skill curator**。
+
+    2026-11-19 用户核账：这一函数原先把记忆提醒也归零，于是指挥（桌面主会话）
+    永远收不到「把这一轮学到的东西收进记忆」那一句，310 条会话里 memory 工具
+    真调用 0 次。记忆要更新，提醒就得留着；fork 一次 review 的 skill curator
+    仍然关。
+    """
     agent = _FakeAgent(
         profile="default",
         enabled_toolsets={"plobi_core", "memory", "skills"},
@@ -156,14 +164,14 @@ def test_north_star_hook_disables_memory_nudge_for_l1(conductor_budget):
         memory_nudge=10,
         skill_nudge=10,
     )
+    agent._turns_since_memory = 4
 
     applied = conductor_budget.apply_conductor_budget(agent)
 
     assert applied is True
-    assert agent._memory_nudge_interval == 0
+    assert agent._memory_nudge_interval == 10, "记忆提醒不能被这道钩子关掉"
     assert agent._skill_nudge_interval == 0
-    # turn 计数器顺手清零——避免 hook 跑在 turn 1 但计数器已满
-    assert agent._turns_since_memory == 0
+    assert agent._turns_since_memory == 4, "记忆的回合计数归它自己走"
     assert agent._iters_since_skill == 0
 
 
@@ -351,12 +359,11 @@ def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(con
 
 
 def test_l1_template_opens_l0_and_keeps_the_curator_off():
-    """``memory_enabled`` 必须显式 True（裁定 156），``nudge_interval`` 必须仍 0（§P0-1）。
+    """``memory_enabled`` 必须显式 True（裁定 156），``nudge_interval`` 必须是开的。
 
-    这一条原先判的是 False（WP-L1-EVERY-TURN §4 把内置 memory 跟着 curator 一起关了）。
-    裁 156 与 memory-adapter §13.5.1 把它拆开了：**关回合后那个自动 fork** 的理由仍然
-    成立，**整层关着**让 L0 那条流根本没启动 ⇒ 两个总开关开、nudge 照旧 0。
-    断"显式 True"而不是"不为 False"：缺省/字符串都算没开。
+    2026-11-19 改正：模板原先把 ``nudge_interval`` 写成 0，配合 ``_disable_curators``
+    一起把指挥的记忆提醒彻底关死——「记忆从来没更新过」的一半原因在这里。现在模板
+    与 ``DEFAULT_CONFIG`` 都说 10（每 10 个用户回合提醒一次）。
     """
     template_path = _template_path()
     config = yaml.safe_load(template_path.read_text(encoding="utf-8"))
@@ -370,9 +377,9 @@ def test_l1_template_opens_l0_and_keeps_the_curator_off():
         assert memory.get(key) is True, (
             f"L1 template {key} must be explicitly True, got {memory.get(key)!r}"
         )
-    # 附加：nudge_interval 仍为 0（既有 §P0-1 红线，不能因为开 L0 被无意放开）。
-    assert memory.get("nudge_interval") == 0, (
-        f"L1 template memory.nudge_interval must remain 0, got {memory.get('nudge_interval')!r}"
+    # 记忆提醒必须开着（0 = 永不提醒，正是之前"记忆不更新"的那一半病根）。
+    assert memory.get("nudge_interval") == 10, (
+        f"L1 template memory.nudge_interval must be 10, got {memory.get('nudge_interval')!r}"
     )
     # 两处答案不许不一致：出厂默认也是开的（真源是模板，但出厂说关就是第二套口径）
     from plobi_cli.config import DEFAULT_CONFIG
@@ -545,7 +552,7 @@ class TestApplyL1BudgetEveryTurn:
         assert result is True
         assert calls["n"] == 1
         # 触发后断言 4 项收紧
-        assert agent._memory_nudge_interval == 0
+        assert agent._memory_nudge_interval == 10
         assert agent._skill_nudge_interval == 0
         assert compressor.threshold_percent == pytest.approx(0.35)
         assert compressor.threshold_tokens == pytest.approx(70_000, abs=100)
@@ -576,7 +583,7 @@ class TestApplyL1BudgetEveryTurn:
         assert result is True
         assert calls["n"] == 1
         # 与 continuation 路径期望一致
-        assert agent._memory_nudge_interval == 0
+        assert agent._memory_nudge_interval == 10
         assert compressor.threshold_percent == pytest.approx(0.35)
 
     def test_skips_l2_profile(self, conductor_budget, monkeypatch):
@@ -620,13 +627,13 @@ class TestApplyL1BudgetEveryTurn:
         # 模拟过几个回合后重新挂钩
         agent._turns_since_memory = 7
         agent._iters_since_skill = 5
-        # 第二次：再次清零
+        # 第二次：skill 计数再清零；记忆的计数不被碰
         assert conductor_budget.apply_conductor_budget(agent) is True
-        assert agent._turns_since_memory == 0
+        assert agent._turns_since_memory == 7
         assert agent._iters_since_skill == 0
         # 第三次：仍正确
         assert conductor_budget.apply_conductor_budget(agent) is True
-        assert agent._memory_nudge_interval == 0
+        assert agent._memory_nudge_interval == 10
         assert agent._skill_nudge_interval == 0
         assert compressor.threshold_percent == pytest.approx(0.35)
         assert compressor.threshold_tokens == pytest.approx(70_000, abs=100)

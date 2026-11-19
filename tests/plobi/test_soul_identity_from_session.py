@@ -23,9 +23,9 @@ def test_soul_agent_id_prefers_env_then_session(monkeypatch):
     assert PB._soul_agent_id() == "Sindri"
 
     monkeypatch.setattr(
-        "tools.memory_tool.resolve_agent_slug", lambda *a, **k: "l1", raising=True
+        "tools.memory_tool.resolve_agent_slug", lambda *a, **k: "secretary", raising=True
     )
-    assert PB._soul_agent_id() == "", "L1 读顶层那份，这是对的"
+    assert PB._soul_agent_id() == "", "指挥读顶层那份，这是对的"
 
 
 def test_an_agent_without_its_own_soul_gets_its_own_identity_not_the_secretary(monkeypatch):

@@ -75,14 +75,21 @@ def test_read_side_prefers_the_shared_copy_when_agent_id_is_set(soul_home, monke
 
 
 def test_l1_path_is_untouched_without_agent_id(soul_home, monkeypatch):
-    """读侧：没有 `PLOBI_AGENT_ID`（L1）⇒ 仍读顶层那一份，逐字不变。"""
+    """读侧：没有 `PLOBI_AGENT_ID`（指挥）⇒ 仍读顶层那一份，SOUL 正文逐字不变。
+
+    唯一的前缀是硬编码契约（`plobi/mind/kernel.py`）：它对所有 Agent 都加在身份块
+    最前面，所以这里剥掉它再比正文——契约是**叠加**，不改用户写的那份 SOUL 一个字。
+    """
     ensure_principal_identity_soul(_entry())
     (soul_home / "SOUL.md").write_text("TOP-LEVEL-SOUL", encoding="utf-8")
     monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
 
     from agent.prompt_builder import load_soul_md
+    from plobi.mind.kernel import KERNEL_PROMPT
 
-    assert (load_soul_md() or "").strip() == "TOP-LEVEL-SOUL"
+    got = (load_soul_md() or "").strip()
+    assert got.startswith("## 系统契约")
+    assert got.split(KERNEL_PROMPT, 1)[1].strip() == "TOP-LEVEL-SOUL"
 
 
 def test_identity_survives_a_home_that_is_not_there(soul_home, monkeypatch):

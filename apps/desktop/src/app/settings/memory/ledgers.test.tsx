@@ -1,11 +1,11 @@
 /**
- * 设置里那一页「记忆」：一份一行、条目进抽屉、忘掉两下才真删且带走回执。
+ * 设置里那一页「记忆」：一份一行、点开在行下展开、忘掉两下才真删且带走回执。
  * 另有一块「写入边界」（`WP-MIND-SILENCE-VISIBLE`），**不再嵌在这一页里**——
  * 它挂在 `memory.mind_write_auto_approve` 那一行下面，位置由 `mount.test.tsx`
  * 钉住；本档只测它自己画得对不对，不测它被塞在哪。
  *
  * 现核那两条链：
- * - `GET /api/memory/ledgers` → 三行读数（不铺条目）→ 点开那一行进抽屉 → 逐条渲染 →
+ * - `GET /api/memory/ledgers` → 四行读数（不铺条目）→ 点开那一行**在下面展开** → 逐条渲染 →
  *   第一下只上膛 → 第二下 `POST /api/memory/forget`，页面必须换成服务器回来的新快照
  *   （不是本地先删）。
  * - `GET /api/memory/boundary` → 熔断／每类连采／已生效政策／最近 trace。
@@ -156,12 +156,12 @@ beforeEach(() => {
   installApi()
 })
 
-/** 点开某一份的抽屉（抽屉挂在 body 的 portal 上，用 `screen` 查）。 */
+/** 点开某一份：条目在**它自己那一行下面**展开，不是侧边栏。 */
 async function openScope(key: string) {
   const row = await screen.findByTestId(`memory-scope-${key}`)
   fireEvent.click(within(row).getByRole('button'))
 
-  return screen.findByTestId('memory-drawer')
+  return within(row).getByTestId('memory-entries')
 }
 
 describe('MemoryLedgers', () => {
@@ -185,74 +185,72 @@ describe('MemoryLedgers', () => {
     // 用户 11-19 的原话是「这样展开太丑了」：没点开之前，条目一个字都不在屏上。
     expect(screen.queryByText('共用甲')).toBeNull()
     expect(screen.queryByText('周三有实验')).toBeNull()
-    expect(screen.queryByTestId('memory-drawer')).toBeNull()
+    expect(screen.queryByTestId('memory-entries')).toBeNull()
   })
 
-  it('点开那一行才进抽屉：逐条列，L0 那个数在抽屉抬头自报口径', async () => {
+  it('点开那一行才展开条目：逐条列，L0 那个数在展开区自报口径', async () => {
     render(<MemoryLedgers />)
 
-    const drawer = await openScope('memory')
-    expect(within(drawer).getByText('周三有实验')).toBeTruthy()
-    // L0 那一个数必须自报口径，否则会被读成「记忆写入攒到几了」。它在抽屉抬头
-    // （不在滚动区里），所以这里按整屏查。
-    expect(screen.getByText('汇报采纳 3/8')).toBeTruthy()
-
-    // 同一份里的条目只在这一份的抽屉里；别份的条目不在。
-    expect(within(drawer).queryByText('共用甲')).toBeNull()
+    const panel = await openScope('memory')
+    expect(within(panel).getByText('周三有实验')).toBeTruthy()
+    // L0 那一个数必须自报口径，否则会被读成「记忆写入攒到几了」。
+    expect(within(panel).getByText('汇报采纳 3/8')).toBeTruthy()
+    // 同一份里的条目只在那一行下面；别份的不在。
+    expect(within(panel).queryByText('共用甲')).toBeNull()
   })
 
-  it('抽屉抬头点名这一份属于谁，并且内容从窗口顶栏下面开始（不压系统关闭按钮）', async () => {
+  it('展开在点的那一行下面，再点一次收起，别份不受影响', async () => {
     render(<MemoryLedgers />)
 
-    const drawer = await openScope('memory')
-    const dialog = screen.getByRole('dialog')
+    const row = await screen.findByTestId('memory-scope-memory')
+    const toggle = within(row).getByRole('button')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
 
-    // 抬头写的是「l2-course-x 的记忆」，不是「这个 Agent」——界面上没有「这个」
-    // 的指代对象；也不再补一句「只有 X 会读这一份」式的说明。
-    expect(within(dialog).getByText('l2-course-x 的记忆')).toBeTruthy()
-    expect(within(dialog).queryByText(/会读/)).toBeNull()
+    await openScope('memory')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    // 近况那一行没被带着展开
+    expect(within(screen.getByTestId('memory-scope-status')).queryByTestId('memory-entries')).toBeNull()
 
-    // 窗口顶栏那 34px 归系统的最小化/最大化/关闭（Windows 的 WCO 永远压在网页之上）：
-    // 抽屉底色照旧铺满全高，内容与关闭按钮必须从它下面开始，否则两者正好重合。
-    const content = drawer.closest('[data-slot="sheet-content"]')
-    expect(content?.className).toContain('var(--titlebar-height')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByTestId('memory-entries')).toBeNull()
   })
 
-  it('近况摘要一家一段，且不给删除（汇总不是谁的私产）', async () => {
+  it('近况摘要一家一节，且不给删除（汇总不是谁的私产）', async () => {
     render(<MemoryLedgers />)
 
-    const drawer = await openScope('status')
-    expect(within(drawer).getByText('agenda')).toBeTruthy()
-    expect(within(drawer).getByText('- 在跟课表的事')).toBeTruthy()
+    const panel = await openScope('status')
+    expect(within(panel).getByText('agenda')).toBeTruthy()
+    expect(within(panel).getByText('- 在跟课表的事')).toBeTruthy()
     // 汇总里没有「每一条都能删」这回事：删一条等于替那一家改近况。
-    expect(within(drawer).queryByText('删除')).toBeNull()
+    expect(within(panel).queryByText('删除')).toBeNull()
   })
 
   it('跨 Agent 的那两份不写归属（共用纪律与画像本来就不属于某一个 Agent）', async () => {
     render(<MemoryLedgers />)
 
-    const drawer = await openScope('global')
-    expect(within(screen.getByRole('dialog')).queryByText(/会读/)).toBeNull()
-    expect(within(drawer).getByText('共用甲')).toBeTruthy()
+    const panel = await openScope('global')
+    expect(within(panel).getByText('共用甲')).toBeTruthy()
+    expect(screen.queryByText(/属于/)).toBeNull()
   })
 
   it('空的那一份点开说的是「暂无条目」，不留白', async () => {
     render(<MemoryLedgers />)
 
-    const drawer = await openScope('user')
-    expect(within(drawer).getByText('暂无条目')).toBeTruthy()
+    const panel = await openScope('user')
+    expect(within(panel).getByText('暂无条目')).toBeTruthy()
   })
 
   it('删除要两下：第一下只上膛，第二下才真删并用新快照替换', async () => {
     render(<MemoryLedgers />)
 
-    const drawer = await openScope('memory')
+    const panel = await openScope('memory')
     const api = (window as unknown as { plobiDesktop: { api: ReturnType<typeof vi.fn> } }).plobiDesktop.api
 
-    fireEvent.click(within(drawer).getByText('删除'))
+    fireEvent.click(within(panel).getByText('删除'))
     expect(api).not.toHaveBeenCalledWith(expect.objectContaining({ path: '/api/memory/forget' }))
 
-    fireEvent.click(within(drawer).getByText('确认删除'))
+    fireEvent.click(within(panel).getByText('确认删除'))
 
     await waitFor(
       () => expect(api).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST', path: '/api/memory/forget' })),
@@ -285,7 +283,7 @@ describe('MemoryLedgers', () => {
 
     expect(await screen.findByText('Global memory')).toBeTruthy()
     expect(screen.getByText('User profile')).toBeTruthy()
-    // l1 那两份挂在指挥名下：Conductor's memory / Conductor's state。
+    // l1 那两份挂在指挥名下。
     expect(screen.getByText("Conductor's memory")).toBeTruthy()
 
     // 后端 `memory_api.py` 写死的中文标签不许当兜底漏出来。

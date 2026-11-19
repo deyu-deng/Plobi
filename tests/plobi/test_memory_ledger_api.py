@@ -45,24 +45,29 @@ def test_it_lists_the_three_ledgers_entry_by_entry(client):
 
 
 def test_status_is_one_digest_of_every_principal(client):
-    """近况不是谁的私产：一家一段拼成一份，且只读（用户 11-19 22:39 定义）。"""
+    """近况是**一个文件**：每个首席写自己那一节，设置页看到的是整份摘要。
+
+    用户 11-19 22:39：「STATUS 是一个文件。所有 principal 都往里面写自己那一小部分。
+    但是只注入指挥。」读口与 `_build_conductor_status_digest` 读同一份东西。
+    """
     http, home = client
-    (home / "memory" / "agents" / "agenda").mkdir()
-    (home / "memory" / "agents" / "agenda" / "STATUS.md").write_text("- 在跟课表\n", encoding="utf-8")
-    (home / "memory" / "agents" / "l2-course-x" / "STATUS.md").write_text("- 周三有实验\n", encoding="utf-8")
+    (home / "memory" / "STATUS.md").write_text(
+        "## agenda\n- 在跟课表\n\n## l2-course-x\n- 周三有实验\n", encoding="utf-8"
+    )
 
     got = http.get("/api/memory/ledgers").json()
     status = next(s for s in got["scopes"] if s["key"] == "status")
 
     assert status["label"] == "各首席近况摘要"
     assert status["readonly"] is True
-    # 按 Agent 名排序、一家一段；不是「当前这个 Agent 的近况」
+    # 一节一位、按文件里的次序；不是「当前这个 Agent 的近况」
     assert [e["text"] for e in status["entries"]] == ["agenda\n- 在跟课表", "l2-course-x\n- 周三有实验"]
     assert status["limit"] > 0
 
+    before = (home / "memory" / "STATUS.md").read_text(encoding="utf-8")
     out = http.post("/api/memory/forget", json={"scope": "status", "index": 0}).json()
     assert out["ok"] is False, "汇总不能逐条删"
-    assert (home / "memory" / "agents" / "agenda" / "STATUS.md").read_text(encoding="utf-8") == "- 在跟课表\n"
+    assert (home / "memory" / "STATUS.md").read_text(encoding="utf-8") == before
 
 
 def test_forget_deletes_exactly_one_entry_and_leaves_a_receipt(client):

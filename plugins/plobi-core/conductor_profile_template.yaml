@@ -31,22 +31,19 @@ compression:
   # 不写 protect_last_n：它等于代码默认 20，写进来只是多盖一层用户自己的调参。
   protect_first_n: 1
 
-# 回合后 skill / memory curator——L1 关闭。
-# ``conductor_budget._disable_curators`` 把 ``agent._memory_nudge_interval`` 与
-# ``agent._skill_nudge_interval`` 置 0，对应 ``agent/turn_context.py:307-314``
-# 与 ``agent/turn_finalizer.py:480-485`` 的两段 ``_should_review_*`` 判定：
-# 间隔 ≤ 0 时直接跳过 ``_spawn_background_review``，不会再 fork
-# 「Review the conversation above and update the skill library / saving to memory」。
+# 回合后 curator——L1 只关 **skill** 那一半。
+# ``conductor_budget._disable_curators`` 把 ``agent._skill_nudge_interval`` 置 0，
+# 对应 ``agent/turn_finalizer.py:480-485`` 的 ``_should_review_skill``：不再 fork
+# 「Review the conversation above and update the skill library」。
 #
-# ⚠️ 关的是**回合后那个自动 fork**，不是 L0 记忆层本身。裁定 156（2026-10-16）
-# 拍的是「L0 记忆层开，用出厂默认上限 2,200 / 1,375」，§13.5.1（用户 10-15 原话
-# 「要和短期记忆联动」）把这一格从 WP-L1-EVERY-TURN 33.1/33.4 的"一并关掉"里摘出来：
-# 那两个键当时跟着 curator 一起写了 false，于是这台整层关着、L0 那条流根本没启动。
-# ⇒ 两个总开关开；nudge 仍 0（自动 fork 照旧不开，那条理由没被推翻）。
+# ⚠️ **记忆提醒不关**（2026-11-19 改正）：同一函数原先把 ``_memory_nudge_interval``
+# 也归零，于是指挥——桌面主会话——永远收不到「把这一轮学到的东西收进记忆」那一句，
+# 310 条会话里 memory 工具真调用 0 次。记忆不更新不是模型懒，是提醒被关掉了。
+# 现在这一格跟 ``memory.nudge_interval`` 走（出厂 10 轮）。
 memory:
   memory_enabled: true        # L0 内置 memory 总开关开（裁 156；上限走出厂 2200/1375）
   user_profile_enabled: true  # 画像注入同步开（画像仍一份）
-  nudge_interval: 0           # 仍关：回合后自动 review fork（WP-L1-EVERY-TURN 那条理由有效）
+  nudge_interval: 10          # 每 10 个用户回合提醒一次写记忆（0 才是关）
 
 skills:
-  creation_nudge_interval: 0  # 关 L1 回合后 skill nudge
+  creation_nudge_interval: 0  # 关 L1 回合后的 skill curator fork

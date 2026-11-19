@@ -1997,8 +1997,10 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
                 # 于是共享层找不到、下面这支就会把秘书写成 L2。
                 _is_conductor_row = entry is not None and getattr(entry, "role", "") == "conductor"
                 if entry is not None and not _is_conductor_row:
+                    from plobi.mind.kernel import with_kernel
+
                     return _truncate_content(
-                        build_principal_identity_soul_block(entry),
+                        with_kernel(build_principal_identity_soul_block(entry)),
                         "SOUL.md",
                         context_length=context_length,
                         read_path=str(_shared) if _shared is not None else "SOUL.md",
@@ -2026,7 +2028,11 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
             content, "SOUL.md", context_length=context_length,
             read_path=str(soul_path),
         )
-        return content
+        # 硬编码契约永远排在身份块最前面（见 ``plobi/mind/kernel.py``）：用户把
+        # SOUL 改成什么样，都不能让 Agent 换主人、换事实或把破坏性动作当常规。
+        from plobi.mind.kernel import with_kernel
+
+        return with_kernel(content)
     except Exception as e:
         logger.debug("Could not read SOUL.md from %s: %s", soul_path, e)
         return None

@@ -2479,6 +2479,12 @@ DEFAULT_CONFIG = {
         #                     /memory reject <id>.
         # To disable memory entirely, use memory_enabled: false instead.
         "write_approval": False,
+        # 记忆提醒：每 N 个用户回合提醒一次「该把这一轮学到的东西收进记忆了」
+        # （``agent/turn_context.py`` 读它；0 = 关）。设置页「记忆与上下文 →
+        # 长时记忆」那一行读的就是这一格——11-19 用户问「这个我是在哪里设置呢？
+        # 我没看到呀」：键一直写在 ``constants.ts`` 里，但 ``DEFAULT_CONFIG`` 没有它，
+        # 于是那一行渲染不出来。0 是"永不提醒"，不是"默认"。
+        "nudge_interval": 10,
         # 写脑（L2）那道闸，和上面那颗分开：上面管 L0 那几份记忆文件（add/replace/remove），
         # 这颗管「往 Mind 落盘并提交」那条腿。裁定 156／198：初期**每次写都先给计划 + 每档 sha256
         # + 你点头**；被驳回一次，那一类内容立刻退回必问（``proposal.record_rejection`` 记的那笔）。
@@ -2495,8 +2501,9 @@ DEFAULT_CONFIG = {
         "global_char_limit": 2200,    # memory/GLOBAL.md — 跨 Agent 都成立的事实
         "agent_char_limit": 2200,     # memory/agents/<slug>/MEMORY.md — 本 Agent 自己那份
         "user_char_limit": 1375,      # memory/USER.md — 画像仍一份
-        # STATUS.md 是给 L1 看的「几行近况」：每家的上限，与 L1 拼摘要的总上限。
-        # L1 只读摘要，绝不读各 Agent 的 MEMORY.md 全文（2200×24 那条路判死）。
+        # STATUS 是**一个文件**（``memory/STATUS.md``），每个首席写自己那一节：
+        # 第一格 = 每节的字数门（超了这次写入直接拒绝，不静默截断），
+        # 第二格 = 指挥读到的整份摘要上限（2200×N 那条路判死：多数首席时每轮都付）。
         "status_char_limit": 200,
         "conductor_status_char_limit": 1500,
         # 下沉压线（裁定 156「定死下沉条件」那一句）：某一格填到上限的这个比例时，
