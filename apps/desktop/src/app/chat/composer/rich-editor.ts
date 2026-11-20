@@ -16,7 +16,7 @@ import {
   slashIconElement
 } from '@/components/assistant-ui/directive-text'
 
-import { chipLabelFor } from './chip-labels'
+import { chipAttachmentFor, chipLabelFor } from './chip-labels'
 
 export const RICH_INPUT_SLOT = 'composer-rich-input'
 
@@ -83,7 +83,38 @@ export function refChipElement(kind: string, rawValue: string, displayLabel?: st
   label.textContent = displayLabel || chipLabelFor(kind, id) || refLabel(id)
   chip.append(directiveIconElement(kind), label)
 
+  // 附件那一档的上传状态（上传中／失败）——状态是异步的，chip 建好之后还会变。
+  const uploadState = chipAttachmentFor(kind, id)?.uploadState
+
+  if (uploadState) {
+    chip.dataset.uploadState = uploadState
+  }
+
   return chip
+}
+
+/**
+ * 把附件的上传状态标到正文里已经建好的 chip 上。
+ *
+ * 上传是异步的：chip 建好之后状态还会变（上传中 → 好了／失败）⇒ 得回头标一次。
+ * chip 是 DOM（不是 React 节点），所以这里直接改属性。
+ */
+export function syncChipUploadStates(editor: HTMLElement | null): void {
+  if (!editor) {
+    return
+  }
+
+  for (const chip of Array.from(editor.querySelectorAll<HTMLElement>('[data-ref-kind][data-ref-id]'))) {
+    const kind = chip.dataset.refKind || ''
+    const value = chip.dataset.refId || ''
+    const uploadState = kind ? chipAttachmentFor(kind, value)?.uploadState : undefined
+
+    if (uploadState) {
+      chip.dataset.uploadState = uploadState
+    } else {
+      delete chip.dataset.uploadState
+    }
+  }
 }
 
 /** A non-editable pill for a picked slash command (`/skin nous`, `/tropes`).

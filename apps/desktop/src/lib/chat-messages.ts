@@ -207,6 +207,49 @@ export function quotedPreview(row: unknown): QuotedPreview | null {
   return { id, text: body.slice(0, 80) }
 }
 
+/**
+ * `messages.reply_to` 那一列的值 ⇒ **一串 id**。
+ *
+ * 列里是 **JSON 数组**（`["12","34"]`，多锚点那阵之后写的）；早于多锚点的旧行是
+ * **裸 id**（`"12"`）⇒ 两种都得认。读出来是数组的按数组读，是别的按单值读。
+ */
+export function replyToIds(value: unknown): string[] {
+  if (value === null || value === undefined) {
+    return []
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => String(item).trim()).filter(Boolean)
+  }
+
+  const text = String(value).trim()
+
+  if (!text) {
+    return []
+  }
+
+  if (text.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(text)
+
+      if (Array.isArray(parsed)) {
+        return parsed.map(item => String(item).trim()).filter(Boolean)
+      }
+    } catch {
+      // 不是 JSON ⇒ 当裸 id 读（老行）
+    }
+  }
+
+  return [text]
+}
+
+/** 这一条在回哪几条 ⇒ 那几条的预览（按锚点顺序；指空的老数据不显示）。 */
+export function quotedPreviews(value: unknown, rawById: Map<string, SessionMessage>): QuotedPreview[] {
+  return replyToIds(value)
+    .map(id => quotedPreview(rawById.get(id)))
+    .filter((preview): preview is QuotedPreview => preview !== null)
+}
+
 export type GatewayEventPayload = {
   text?: string
   rendered?: string
@@ -1062,8 +1105,8 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
 
     // `kind` 是 10-24 才加的列（裁定 196/201）；老后端/老行没有它，读的时候按可选。
     const messageKind = (message as { kind?: unknown }).kind
-    const replyTo = (message as { reply_to?: unknown }).reply_to
-    const quoted = replyTo ? quotedPreview(rawById.get(String(replyTo))) : null
+    // 引用（裁定 196 ④）：这一条在回哪几条 ⇒ 那几条的预览（11-19 起可多个）。
+    const quotes = quotedPreviews((message as { reply_to?: unknown }).reply_to, rawById)
 
     result.push({
       id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
@@ -1077,8 +1120,8 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
         : {}),
       // 只有 user 行带发起方；`null` 也要带（那是"这条没记"，不是"没有这一格"）。
       ...(message.role === 'user' &&
-      (message.asked_by !== undefined || messageKind !== undefined || quoted)
-        ? { metadata: { custom: { askedBy: message.asked_by, kind: messageKind, quoted } } }
+      (message.asked_by !== undefined || messageKind !== undefined || quotes.length > 0)
+        ? { metadata: { custom: { askedBy: message.asked_by, kind: messageKind, quotes } } }
         : {})
     })
 

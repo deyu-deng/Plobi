@@ -94,7 +94,6 @@ function Composer({
 
   const queue = useComposerQueue({
     activeQueueSessionKey,
-    attachments: [],
     busy,
     clearDraft,
     draftRef,
@@ -109,7 +108,6 @@ function Composer({
   const submit = useComposerSubmit({
     activeQueueSessionKey,
     activeQueueSessionKeyRef,
-    attachments: [],
     busy,
     busyInputMode,
     canSteer,

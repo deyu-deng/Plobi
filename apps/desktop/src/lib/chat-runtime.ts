@@ -167,7 +167,7 @@ export function pathLabel(path: string): string {
 
 export function attachmentDisplayText(attachment: ComposerAttachment): string | null {
   // Session switches / draft restores can leave undefined holes in the
-  // composer attachments array (see AttachmentList's filter(Boolean) + #49624).
+  // composer attachments array (see the chip-side guard in store/composer.ts + #49624).
   // Every consumer funnels through here, so guard the chokepoint too.
   if (!attachment) {
     return null

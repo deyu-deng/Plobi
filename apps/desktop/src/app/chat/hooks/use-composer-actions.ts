@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 
+import { attachmentIntoComposer } from '@/app/chat/composer/composer-chips'
 import { requestComposerFocus, requestComposerInsert, requestComposerInsertRefs } from '@/app/chat/composer/focus'
 import { droppedFileInlineRef } from '@/app/chat/composer/inline-refs'
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
@@ -11,7 +12,8 @@ import {
   addComposerAttachment,
   type ComposerAttachment,
   removeComposerAttachment,
-  setComposerTerminalSelection
+  setComposerTerminalSelection,
+  withChipValue
 } from '@/store/composer'
 import { notify, notifyError } from '@/store/notifications'
 
@@ -261,9 +263,18 @@ interface ComposerActionsOptions {
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
 
-/** Add to the main composer and focus it. All sidebar/picker/drop attach paths funnel through here. */
+/**
+ * 加到主输入面并聚焦。All sidebar/picker/drop attach paths funnel through here.
+ *
+ * 11-19 起附件也是**正文里的一枚 chip**（跟引用 chip 一样：跟文字同一行、按加入
+ * 顺序排、删得掉）⇒ 这里除了记下附件（上传、路径、状态），还要往正文里插那枚 chip。
+ * 待发清单只有正文一份，别处不再维护第二份。
+ */
 const attachToMain = (attachment: ComposerAttachment) => {
-  addComposerAttachment(attachment)
+  const withChip = withChipValue(attachment)
+
+  addComposerAttachment(withChip)
+  attachmentIntoComposer(withChip)
   requestComposerFocus('main')
 }
 
@@ -394,7 +405,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         const previewUrl = await attachmentPreviewDataUrl(filePath)
 
         if (previewUrl) {
-          addComposerAttachment({ ...baseAttachment, previewUrl })
+          addComposerAttachment(withChipValue({ ...baseAttachment, previewUrl }))
         }
 
         return true

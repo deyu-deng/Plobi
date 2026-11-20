@@ -19,13 +19,12 @@ import { notify } from '@/store/notifications'
 import { removeQuoteTargets } from '@/store/quote'
 
 import { useChatContext } from '../../context'
-import { messageBodyFromText, quoteIdsInText } from '../composer-chips'
+import { attachmentsForChips, messageBodyFromText, quoteIdsInText, textWithAttachmentChips } from '../composer-chips'
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
 import type { ChatBarProps } from '../types'
 
 interface UseComposerQueueArgs {
   activeQueueSessionKey: string | null
-  attachments: ComposerAttachment[]
   busy: boolean
   clearDraft: () => void
   draftRef: RefObject<string>
@@ -48,7 +47,6 @@ interface UseComposerQueueArgs {
  */
 export function useComposerQueue({
   activeQueueSessionKey,
-  attachments,
   busy,
   clearDraft,
   draftRef,
@@ -90,12 +88,14 @@ export function useComposerQueue({
     }
 
     setQueueEditSnapshot({
-      attachments: cloneAttachments(attachments),
+      attachments: cloneAttachments(attachmentsForChips(draftRef.current)),
       draft: draftRef.current,
       entryId: entry.id,
       sessionKey: activeQueueSessionKey
     })
-    loadIntoComposer(entry.text, entry.attachments)
+    // 队列里存的是**剥掉 chip 的正文**（发出去不带机器词）⇒ 拉回来编辑时把附件的
+    // chip 补回正文，否则「待发清单就是正文」在编辑队列时不成立（附件会悄悄丢掉）。
+    loadIntoComposer(textWithAttachmentChips(entry.text, entry.attachments), entry.attachments)
     triggerHaptic('selection')
     focusInput()
   }
@@ -116,7 +116,7 @@ export function useComposerQueue({
     }
 
     const saved = updateQueuedPrompt(queueEdit.sessionKey, queueEdit.entryId, {
-      attachments: cloneAttachments(attachments),
+      attachments: cloneAttachments(attachmentsForChips(draftRef.current)),
       text: draftRef.current
     })
 
@@ -124,7 +124,7 @@ export function useComposerQueue({
 
     if (next) {
       setQueueEditSnapshot({ ...queueEdit, entryId: next.id })
-      loadIntoComposer(next.text, next.attachments)
+      loadIntoComposer(textWithAttachmentChips(next.text, next.attachments), next.attachments)
     } else {
       setQueueEditSnapshot(null)
       loadIntoComposer(queueEdit.draft, queueEdit.attachments)
@@ -143,7 +143,7 @@ export function useComposerQueue({
 
     if (action === 'save') {
       const text = draftRef.current
-      const next = cloneAttachments(attachments)
+      const next = cloneAttachments(attachmentsForChips(text))
 
       if (!text.trim() && next.length === 0) {
         return false
@@ -164,8 +164,11 @@ export function useComposerQueue({
 
   const queueCurrentDraft = useCallback(() => {
     const text = draftRef.current
+    // 待发清单就是正文（11-19 起附件也是正文里的 chip）⇒ 排队的那一份附件也是**从
+    // 正文里的 chip 反推**的，不是附件表里全部。
+    const pendingAttachments = attachmentsForChips(text)
 
-    if (!activeQueueSessionKey || (!text.trim() && attachments.length === 0)) {
+    if (!activeQueueSessionKey || (!text.trim() && pendingAttachments.length === 0)) {
       return false
     }
 
@@ -176,7 +179,7 @@ export function useComposerQueue({
     if (
       !enqueueQueuedPrompt(activeQueueSessionKey, {
         text: messageBodyFromText(text),
-        attachments,
+        attachments: pendingAttachments,
         ...(replyTo.length ? { replyTo } : {}),
       })
     ) {
@@ -189,7 +192,7 @@ export function useComposerQueue({
     triggerHaptic('selection')
 
     return true
-  }, [activeQueueSessionKey, attachments, attachmentsAtom, clearDraft, draftRef])
+  }, [activeQueueSessionKey, attachmentsAtom, clearDraft, draftRef])
 
   /**
    * Enqueue a message the send path refused LOCALLY (the busy gate / the

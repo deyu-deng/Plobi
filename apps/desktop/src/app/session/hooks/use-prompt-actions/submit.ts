@@ -82,7 +82,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       const usingComposerAttachments = !options?.attachments
 
       // Drop undefined/null holes a session switch or draft restore can leave in
-      // the attachments array (same bug class as AttachmentList #49624). Without
+      // the attachments array (same bug class as the composer chip lookup #49624). Without
       // this, the sibling iterations below (a.kind / a.label / a.refText, and the
       // sync step) throw "Cannot read properties of undefined (reading 'refText')"
       // and break the chat surface.

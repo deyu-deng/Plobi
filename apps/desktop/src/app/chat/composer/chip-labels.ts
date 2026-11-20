@@ -1,4 +1,4 @@
-import { $composerAttachments, unquoteRefValue } from '@/store/composer'
+import { attachmentForChipValue, type ComposerAttachment } from '@/store/composer'
 import { quoteTextFor } from '@/store/quote'
 
 /**
@@ -15,27 +15,24 @@ import { quoteTextFor } from '@/store/quote'
  * 也不许那枚 chip 空着。
  */
 
-/** 附件那一行：线上形态的值（`@file:`path`` ⇒ `path`）对得上吗？ */
-function attachmentMatches(attachment: { path?: string; refText?: string }, value: string): boolean {
-  if (attachment.path && attachment.path === value) {
-    return true
-  }
-
-  if (!attachment.refText) {
-    return false
-  }
-
-  const [, , rawValue] = /^@([^:]+):(.+)$/.exec(attachment.refText) ?? []
-
-  return Boolean(rawValue && unquoteRefValue(rawValue) === value)
-}
-
 export function chipLabelFor(kind: string, value: string): string | undefined {
   if (kind === 'quote') {
     return quoteTextFor(value)
   }
 
-  const attachment = $composerAttachments.get().find(item => attachmentMatches(item, value))
+  return chipAttachmentFor(kind, value)?.label
+}
 
-  return attachment?.label
+/**
+ * 那枚 chip 对得上的附件（名字、路径、缩略图都从这儿取）。
+ *
+ * 认附件的规矩在 `store/composer.ts::attachmentForChipValue`（标签、预览卡、发送
+ * 三边都从那儿认，别处别再写第二份）。
+ */
+export function chipAttachmentFor(kind: string, value: string): ComposerAttachment | undefined {
+  if (kind === 'quote') {
+    return undefined
+  }
+
+  return attachmentForChipValue(kind, value)
 }

@@ -9,7 +9,7 @@ import { enqueueQueuedPrompt, type QueuedPromptEntry } from '@/store/composer-qu
 import { removeQuoteTargets } from '@/store/quote'
 
 import { useChatContext } from '../../context'
-import { messageBodyFromText, quoteIdsInText } from '../composer-chips'
+import { attachmentsForChips, messageBodyFromText, quoteIdsInText } from '../composer-chips'
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
 import { onComposerSubmitRequest } from '../focus'
 import { composerPlainText } from '../rich-editor'
@@ -18,7 +18,6 @@ import type { ChatBarProps } from '../types'
 interface UseComposerSubmitArgs {
   activeQueueSessionKey: string | null
   activeQueueSessionKeyRef: RefObject<string | null>
-  attachments: ComposerAttachment[]
   busy: boolean
   /** 忙时怎么办＝**底座那一个键**（`display.busy_input_mode`）。 */
   busyInputMode: BusyInputMode
@@ -57,7 +56,6 @@ interface UseComposerSubmitArgs {
 export function useComposerSubmit({
   activeQueueSessionKey,
   activeQueueSessionKeyRef,
-  attachments,
   busy,
   busyInputMode,
   canSteer,
@@ -87,7 +85,9 @@ export function useComposerSubmit({
   // === false) or throws, re-load + re-stash the draft so the words survive.
   const dispatchSubmit = (text: string, attachments?: ComposerAttachment[]) => {
     const submittedScope = activeQueueSessionKeyRef.current
-    const submittedAttachments = attachments ?? []
+    // 待发清单就是正文（11-19 起附件也是正文里的 chip）⇒ 发出去的附件**从正文里
+    // 的 chip 反推**：用户删掉一枚 chip，那份附件自然不发。
+    const submittedAttachments = attachments ?? attachmentsForChips(text)
 
     const restore = () => {
       loadIntoComposer(text, submittedAttachments)
@@ -186,7 +186,10 @@ export function useComposerSubmit({
     }
 
     const text = draftRef.current
-    const payloadPresent = text.trim().length > 0 || attachments.length > 0
+    // 正文里那几枚 chip 认出来的附件（按正文顺序）——**不是**附件表里全部：
+    // 用户删掉一枚 chip，那份附件就没了。
+    const pendingAttachments = attachmentsForChips(text)
+    const payloadPresent = text.trim().length > 0 || pendingAttachments.length > 0
 
     if (queueEdit) {
       exitQueuedEdit('save')
@@ -198,7 +201,7 @@ export function useComposerSubmit({
       // busy guard for commands that genuinely need an idle session (skill
       // /send directives).  Queuing them would make every slash command wait
       // for the current turn to finish, which is how the TUI never behaves.
-      if (!attachments.length && SLASH_COMMAND_RE.test(text.trim())) {
+      if (!pendingAttachments.length && SLASH_COMMAND_RE.test(text.trim())) {
         triggerHaptic('submit')
         clearDraft()
         dispatchSubmit(text)
@@ -215,7 +218,7 @@ export function useComposerSubmit({
         } else if (busyInputMode === 'steer') {
           queueCurrentDraft()
         } else {
-          const submittedAttachments = cloneAttachments(attachments)
+          const submittedAttachments = cloneAttachments(pendingAttachments)
 
           triggerHaptic('submit')
           resetBrowseState(sessionId)
@@ -232,7 +235,7 @@ export function useComposerSubmit({
     } else if (!payloadPresent && queuedPrompts.length > 0) {
       void drainNextQueued()
     } else if (payloadPresent) {
-      const submittedAttachments = cloneAttachments(attachments)
+      const submittedAttachments = cloneAttachments(pendingAttachments)
       triggerHaptic('submit')
       resetBrowseState(sessionId)
       clearDraft()

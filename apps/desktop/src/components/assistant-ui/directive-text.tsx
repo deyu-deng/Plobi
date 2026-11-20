@@ -160,9 +160,13 @@ const DirectiveIcon: FC<{ type: string }> = ({ type }) => (
 
 /** Shared chip styling — used by both the rendered <DirectiveChip> and the
  * raw HTML composer chips in `rich-editor.ts`. Neutral subtle wash + plain
- * muted-foreground text so chips read as quiet tags on any bubble color. */
+ * muted-foreground text so chips read as quiet tags on any bubble color.
+ *
+ * `data-upload-state` is the ATTACHMENT chip's state (uploading / failed):
+ * once attachments became chips in the text there is no card left to carry
+ * that state, so the chip carries it itself (no new copy on screen). */
 export const DIRECTIVE_CHIP_CLASS =
-  'mx-0.5 inline-flex max-w-56 items-center gap-1 rounded px-1.5 py-0.5 align-middle text-[0.86em] font-normal leading-none bg-[color-mix(in_srgb,currentColor_8%,transparent)] text-muted-foreground'
+  'mx-0.5 inline-flex max-w-56 items-center gap-1 rounded px-1.5 py-0.5 align-middle text-[0.86em] font-normal leading-none bg-[color-mix(in_srgb,currentColor_8%,transparent)] text-muted-foreground data-[upload-state=uploading]:opacity-70 data-[upload-state=error]:ring-1 data-[upload-state=error]:ring-destructive/60'
 
 /**
  * Parses our composer's `@type:value` references into directive segments

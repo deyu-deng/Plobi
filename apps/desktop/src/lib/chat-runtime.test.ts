@@ -64,7 +64,7 @@ describe('optimisticAttachmentRef', () => {
   })
 
   // Session switches / draft restores can leave undefined|null holes in the
-  // composer attachments array. AttachmentList already filters them (#49624),
+  // composer attachments array. The chip-side lookup already skips them (#49624),
   // but the submit path maps the same array through these helpers — an unguarded
   // hole threw "Cannot read properties of undefined (reading 'refText')",
   // crashing the chat surface (blank pane). The helpers must no-op on holes.

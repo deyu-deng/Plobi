@@ -23,7 +23,7 @@ import { useTheme } from '@/themes'
 
 import { useChatContext } from '../context'
 
-import { AttachmentList } from './attachments'
+import { useChipPreview } from './composer-chip-preview'
 import { COMPOSER_FADE_BACKGROUND, type QueueEditState, slashArgStage } from './composer-utils'
 import { ContextMenu } from './context-menu'
 import { ComposerContextFooter } from './context-footer'
@@ -56,7 +56,8 @@ import {
   deleteSelectionInEditor,
   insertPlainTextAtCaret,
   normalizeComposerEditorDom,
-  RICH_INPUT_SLOT
+  RICH_INPUT_SLOT,
+  syncChipUploadStates
 } from './rich-editor'
 import { ComposerStatusStack } from './status-stack'
 import { CodingStatusRow } from './status-stack/coding-row'
@@ -89,7 +90,6 @@ export function ChatBar() {
     onPickFiles,
     onPickFolders,
     onPickImages,
-    onRemoveAttachment,
     onSteer,
     onSubmit,
     onTranscribeAudio,
@@ -193,7 +193,6 @@ export function ChatBar() {
     stepQueuedEdit
   } = useComposerQueue({
     activeQueueSessionKey,
-    attachments,
     busy,
     clearDraft,
     draftRef,
@@ -208,7 +207,10 @@ export function ChatBar() {
   const statusStackVisible = queuedPrompts.length > 0 || statusPresent
 
   const { stacked } = useComposerMetrics({ composerRef, composerSurfaceRef, editorRef, poppedOut })
-  const hasComposerPayload = hasText || attachments.length > 0
+  // 有没有东西可发＝**正文里有没有东西**（11-19 起待发清单就是正文：附件也是正文里
+  // 的 chip，它的线上形态本身就在正文里）。附件表里可能还留着几行用户已经删掉的 chip
+  // 的记录——那些不算「有东西可发」。
+  const hasComposerPayload = hasText
   const canSubmit = busy || hasComposerPayload
   // 忙时那枚按钮＝底座那一个键决定的：`queue` ⇒ 排队（面板上看得见）；`interrupt`
   // ⇒ 打断当前这一轮并把这句话送出去；`steer` ⇒ 转向当前这一轮。空着的时候是停止。
@@ -228,7 +230,6 @@ export function ChatBar() {
   const { dispatchSubmit, steerDraft, submitDraft } = useComposerSubmit({
     activeQueueSessionKey,
     activeQueueSessionKeyRef,
-    attachments,
     busy,
     busyInputMode,
     canSteer,
@@ -334,6 +335,12 @@ export function ChatBar() {
     },
     []
   )
+
+  // 附件那一档的上传状态是**异步**的（上传中 → 好了／失败）：chip 是正文里的 DOM，
+  // 建好之后状态才变 ⇒ 回头把状态标到已经建好的 chip 上。
+  useEffect(() => {
+    syncChipUploadStates(editorRef.current)
+  }, [attachments, editorRef])
 
   const handleEditorInput = (event: FormEvent<HTMLDivElement>) => {
     // During IME composition the DOM contains uncommitted preedit text
@@ -741,6 +748,10 @@ export function ChatBar() {
     />
   )
 
+  // chip 的**悬浮预览卡**（用户 11-19：「用鼠标悬浮可以查看引用附件的预览」）。
+  // 鼠标停在正文里那枚 chip 上 ⇒ 出一张小卡：引用出那段原文、图出那张图。
+  const chipPreview = useChipPreview()
+
   const input = (
     <div className={cn('relative', stacked ? 'w-full' : 'min-w-(--composer-input-inline-min-width) flex-1')}>
       <div
@@ -780,6 +791,8 @@ export function ChatBar() {
         onInput={handleEditorInput}
         onKeyDown={handleEditorKeyDown}
         onKeyUp={handleEditorKeyUp}
+        onMouseOut={chipPreview.onMouseOut}
+        onMouseOver={chipPreview.onMouseOver}
         onMouseUp={refreshTrigger}
         onPaste={handlePaste}
         ref={editorRef}
@@ -813,6 +826,7 @@ export function ChatBar() {
           tabIndex={-1}
         />
       </ComposerPrimitive.Input>
+      {chipPreview.card}
     </div>
   )
 
@@ -998,7 +1012,8 @@ export function ChatBar() {
                     </div>
                   </div>
                 )}
-                {attachments.length > 0 && <AttachmentList attachments={attachments} onRemove={onRemoveAttachment} />}
+                {/* 附件不再单独占一行（11-19 起附件也是正文里的一枚 chip，跟文字同一行、
+                    按加入顺序排、悬浮出预览、删得掉）——待发清单只有正文一份。 */}
                 <div
                   className={cn(
                     'grid w-full',
