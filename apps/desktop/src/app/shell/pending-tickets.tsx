@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useState } from 'react'
 
 import type { DispatchTicket } from '@/app/chat/sidebar/ticket-badge'
+import { LongTip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import {
   ArchiveOff, Bell, Check, CheckCircle2, Clock, GitBranch, iconSize, Mail,
@@ -206,7 +207,11 @@ function PendingRow({
           )
         }
         icon={<Icon aria-hidden />}
-        label={<span title={ticket.words || summary}>{summary}</span>}
+        label={
+          <LongTip label={ticket.words || summary}>
+            <span>{summary}</span>
+          </LongTip>
+        }
       />
     )
   }
@@ -268,7 +273,11 @@ function PendingRow({
           </>
         }
         icon={<Source aria-hidden />}
-        label={<span title={ticket.refs?.prompt || ticket.goal}>{summary}</span>}
+        label={
+          <LongTip label={ticket.refs?.prompt || ticket.goal}>
+            <span>{summary}</span>
+          </LongTip>
+        }
       />
       {commentOpen ? (
         <div className="flex items-center gap-1 px-1">

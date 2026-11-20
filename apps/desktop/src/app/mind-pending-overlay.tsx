@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { MonitorEmpty, MonitorRow, MonitorSection } from '@/app/shell/monitor-panel'
 import { Button } from '@/components/ui/button'
+import { LongTip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { Check, FileText, MessageSquareText, X } from '@/lib/icons'
 import {
@@ -193,11 +194,13 @@ export function MindPendingFace() {
                 icon={<FileText className="size-3" />}
                 label={
                   item.paths.length > 0 ? (
-                    <span title={item.paths.join('\n')}>
-                      {item.paths[0]}
-                      {item.paths.length > 1 ? ` +${item.paths.length - 1}` : ''}
-                      {item.agent ? ` · ${item.agent}` : ''}
-                    </span>
+                    <LongTip label={item.paths.join('\n')}>
+                      <span>
+                        {item.paths[0]}
+                        {item.paths.length > 1 ? ` +${item.paths.length - 1}` : ''}
+                        {item.agent ? ` · ${item.agent}` : ''}
+                      </span>
+                    </LongTip>
                   ) : (
                     item.summary || item.id
                   )
@@ -228,9 +231,11 @@ export function MindPendingFace() {
                   ))}
                 </details>
               ) : item.summary ? (
-                <div className="truncate px-1 text-xs text-(--ui-text-tertiary)" title={item.summary}>
-                  {item.summary}
-                </div>
+                /* 一行放不下时截断，但悬浮要能看到全文：原生 title 在 Electron
+                   里几百字就截了，所以走 LongTip（宽 560、可滚、可选中）。 */
+                <LongTip label={item.summary}>
+                  <div className="truncate px-1 text-xs text-(--ui-text-tertiary)">{item.summary}</div>
+                </LongTip>
               ) : null}
             </div>
           ))}

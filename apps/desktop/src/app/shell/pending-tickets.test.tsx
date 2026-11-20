@@ -87,6 +87,14 @@ describe('待放行那一族', () => {
     }))
   })
 
+  it('一行放不下时仍截断，但全文不走原生 title（Electron 里会被截掉）', async () => {
+    mockBothLists()
+    render(<PendingTicketsFace />)
+
+    const row = await screen.findByText('顺手把测试补一下')
+    expect(row.closest('[title]')).toBeNull()
+  })
+
   it('接纳 / 拒绝各走一条三态 POST，之后重读清单', async () => {
     mockBothLists()
     render(<PendingTicketsFace />)

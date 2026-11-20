@@ -96,4 +96,17 @@ describe('写脑待批那一面', () => {
     expect((approve as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(en.mindPending.expired)).toBeTruthy()
   })
+
+  it('keeps a long summary truncated on the row, with the whole text behind hover instead of a native title', async () => {
+    const long = '这一段要写入的内容很长，一行肯定放不下。'.repeat(40)
+    api.mockImplementation(async () => listing({ items: [{ ...ITEM, changes: [], summary: long }] }))
+
+    render(<MindPendingFace />)
+
+    const row = await screen.findByText(long)
+    // 行上仍旧一行截断（不把面板撑高）……
+    expect(row.className).toContain('truncate')
+    // ……但全文不许再靠原生 title：Electron 里它会截断，这正是「悬浮看不全」的来源。
+    expect(row.closest('[title]')).toBeNull()
+  })
 })
