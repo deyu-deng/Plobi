@@ -160,6 +160,26 @@ def test_only_first_of_many(FR, monkeypatch, _isolate):
     assert "这一轮先只说这一件" in text
 
 
+# ── 5. 常驻 A/B 对偶：判据空 ⇒ 不注入（不再靠临时改源码）────────────────────
+
+
+def test_switch_off_via_injected_lines(FR):
+    """把判据结果喂空（等价旧 A/B 的 `lines = []`），注入必须消失。
+
+    这是「关掉注入」的常驻对偶：不碰源码、不 monkeypatch 模块、不读盘，直接经
+    注入口证明注入串完全由判据驱动——判据空就一个字都不进上下文。配合
+    `test_conductor_gets_forced_context`（判据非空⇒注入），两面都钉住。
+    """
+    assert FR.build_forced_context("sess-x", lines=[]) == ""
+
+
+def test_injected_lines_are_rendered_verbatim(FR):
+    """注入口喂进来的结论逐字进上下文——证明输出不是硬编码、真的来自判据。"""
+    text = FR.build_forced_context("sess-y", lines=["「独一无二的那件事」卡住了。要我继续，还是你来定？"])
+    assert "独一无二的那件事" in text
+    assert "say to=用户" in text
+
+
 # ── 5. 真实身份闸：名册不是指挥 ⇒ 空（A/B 的落点）─────────────────────────
 
 

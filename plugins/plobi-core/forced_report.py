@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +79,14 @@ def pending_report_lines(session_id: str = "", *, limit: int = 3) -> list[str]:
         return []
 
 
-def build_forced_context(session_id: str = "") -> str:
-    """给 ``pre_llm_call`` 的注入串；没有待汇报件就是空串（不占上下文）。"""
-    lines = pending_report_lines(session_id)
+def build_forced_context(session_id: str = "", *, lines: Optional[list[str]] = None) -> str:
+    """给 ``pre_llm_call`` 的注入串；没有待汇报件就是空串（不占上下文）。
+
+    ``lines`` 是判据结果的注入口（默认 None ⇒ 自己读账算）。它让「关掉注入」
+    成为可常驻测试的对偶：喂空列表就必须不注入，喂若干条就逐字进上下文。
+    """
+    if lines is None:
+        lines = pending_report_lines(session_id)
     if not lines:
         return ""
     one = lines[0]
