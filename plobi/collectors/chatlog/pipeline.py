@@ -76,6 +76,12 @@ class IngestReport:
     media_bytes_staged: int = 0
     # 带件但这一轮没全取回的消息数——它们是"下一轮还要重试"的那一批（没记进 seen）。
     media_pending_messages: int = 0
+    # 这一轮**抓取失败了几次**（侧车断了／微信掉线 ⇒ 每一个会话一次）。
+    # 2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：从前这些失败只进一条 warning 就没了，
+    # 于是「这一轮什么也没抓到」与「这一轮本来就没新消息」读起来一模一样——
+    # 看门狗的健康判据（那一轮采到没有）就没有依据，只能回去看「进程在不在」
+    # （按需起之后那个判据也废了：它采完就被收掉了）。这一格把两件事分开。
+    fetch_failed: int = 0
     created: list[str] = field(default_factory=list)
     updated: list[str] = field(default_factory=list)
 
@@ -103,6 +109,7 @@ class IngestReport:
             "media_dropped": self.media_dropped,
             "media_bytes_staged": self.media_bytes_staged,
             "media_pending_messages": self.media_pending_messages,
+            "fetch_failed": self.fetch_failed,
             "created": list(self.created),
             "updated": list(self.updated),
         }
@@ -122,6 +129,7 @@ def _topic_tokens(text: str) -> set[str]:
 
 from . import roster
 from . import sidecar
+from . import process
 
 
 class ChatlogPipeline:
@@ -227,13 +235,37 @@ class ChatlogPipeline:
                 raise ChatlogDead(detail, state="disabled", detail=detail)
             report = self._ingest_records(records)
         else:
+            # 扫那一路：**这一轮自带起停**——腿自己把采集进程拉起来、采完收掉
+            # （`process` 那一格）。从前这里是「探活 → 探不到就拉一把 → 采」，
+            # 而**那一把拉起来的东西没人收** ⇒ 常驻；家长因此落在桌面上 ⇒
+            # 桌面关着，cron／巡检（独立进程）那几轮整条腿采不到（11-20 现核）。
+            #
+            # 「消息在手」那一路（上面那一支）**不走到这里**：消息已经在手，
+            # 不探活、不起进程——那正是它「不探活」那条口径的由来。
             health = self.health()
-            if not health["ok"]:
-                health, note = self._heal_and_reprobe(health)
-            if not health["ok"]:
-                detail = health["detail"] + (note or "")
-                raise ChatlogDead(detail, state=health["state"], detail=detail)
-            report = self.run_once(lookback_days=int(lookback_days)) if lookback_days else self.run_once()
+            state = health.get("state")
+            if state == "disabled":
+                # 开关关着：不采集，也不报故障（逐字用 `health()` 那一格的话）。
+                raise ChatlogDead(health["detail"], state="disabled", detail=health["detail"])
+            if health["ok"]:
+                # 已经有人在应答 ⇒ **借它**：不重复起，也不收它（不是我们起的）。
+                report = self._sweep_once(lookback_days)
+            elif state == sidecar.STATE_NOT_LISTENING:
+                # 前置三步都齐了（产物在、密钥在），只是它没在跑 ⇒ **这一轮自己起它**，
+                # 采完收掉（只收自己起的那一个——裁定 105）。
+                handle, note = process.ensure_process(self.client)
+                if handle is None:
+                    detail = health["detail"] + (note or "")
+                    raise ChatlogDead(detail, state=str(state), detail=detail)
+                try:
+                    report = self._sweep_once(lookback_days)
+                finally:
+                    # **只收自己起的那一个**（借来的那个一动不动——裁定 105）。
+                    process.release_process(handle)
+            else:
+                # 缺产物／缺构建工具／缺密钥 ⇒ **起它也没用**（引擎拿不到密钥会自己退），
+                # 白等一轮不如把那一句真话报出去。
+                raise ChatlogDead(health["detail"], state=str(state), detail=health["detail"])
         return {
             "state": "ready",
             "rows_seen": report.scanned,
@@ -256,6 +288,16 @@ class ChatlogPipeline:
             "media_pending_messages": report.media_pending_messages,
         }
 
+    def _sweep_once(self, lookback_days: Any) -> IngestReport:
+        """跑一轮扫描。回看几天由触发方给（不给就按默认窗口）。
+
+        抽这一格是因为「扫那一路」现在有两条分支（借来的 / 自己起的那一个），两处都要调它——
+        两处各写一遍 `run_once(lookback_days=…)` 就会有一处漏掉那个参数。
+        """
+        if lookback_days:
+            return self.run_once(lookback_days=int(lookback_days))
+        return self.run_once()
+
     def _ingest_records(self, records: list[Any]) -> IngestReport:
         """侧车推来的那批消息：逐条过一遍——**落点仍是公共那一个**。
 
@@ -275,26 +317,6 @@ class ChatlogPipeline:
             except Exception:
                 logger.exception("chatlog: 处理一条推送来的消息失败")
         return report
-
-    def _heal_and_reprobe(self, health: dict) -> tuple[dict, str]:
-        """探到没人听就当场拉一把，再问一次；限速位与状态都归 ``Watchdog``。
-
-        这条是"常驻"的实际落点：日采那一轮就是驱动器，**不另写调度器**。巡检轨道
-        ``tick()`` 要等三次失败（默认 30 分钟）才自愈，按需采集等不了那 30 分钟，
-        所以这里走 ``attempt_heal_once()``——两者共用同一个限速位，
-        一个断连周期最多起一次，不会变成 spawn 循环。
-        """
-        try:
-            from .watchdog import Watchdog
-
-            outcome = Watchdog(pipeline=self).attempt_heal_once()
-        except Exception as exc:                              # noqa: BLE001 - 拉不起来就说拉不起来
-            logger.warning("chatlog collect: 自愈没跑成：%s: %s", type(exc).__name__, exc)
-            return health, "（试过一次拉起，没成功）"
-
-        if outcome.get("healthy") or outcome.get("healed"):
-            return self.health(), ""
-        return health, "（这个断连周期里已经试过一回了）"
 
     def _default_confirmer(self) -> Confirmer:
         """Heuristic first, L2 model for the remainder.
@@ -690,6 +712,8 @@ class ChatlogPipeline:
                     logger.warning(
                         "chatlog fetch failed for %s (%s): %s", talker, sweep_day, exc
                     )
+                    # 但**要记下来**：这一次失败是这个读数的一部分（看门狗判健康靠它）。
+                    report.fetch_failed += 1
                     continue
 
                 # ±1 neighbours within the same talker+day batch: "约一下" or

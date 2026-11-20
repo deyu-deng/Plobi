@@ -311,30 +311,51 @@ class TestTheSwitchCutsTheProcess:
     def test_apply_follows_the_declaration_not_the_name(self) -> None:
         from types import SimpleNamespace
 
-        probe = SimpleNamespace(sidecar_port=5099, sidecar_start="scripts/nope.ps1")
+        started: list[str] = []
+
+        def _start() -> tuple[bool, str]:
+            started.append("called")
+            return True, "服务起来了"
+
+        probe = SimpleNamespace(sidecar_port=5099, sidecar_start=_start)
 
         # 没声明端口的（微信以外那三条都这样）⇒ 这个模块一个字都不做。
-        assert sidecar.apply(SimpleNamespace(sidecar_port=None, sidecar_start=""), enabled=True) is None
+        assert sidecar.apply(SimpleNamespace(sidecar_port=None, sidecar_start=None), enabled=True) is None
 
         killed: list[int] = []
         off = sidecar.apply(probe, enabled=False, listening=lambda _port: True,
-                            finder=lambda _port: [4242], killer=killed.append, spawn=lambda _s: None)
+                            finder=lambda _port: [4242], killer=killed.append)
         assert killed == [4242], "关掉必须真的收到那个端口上的进程，而不是只写一个布尔"
         assert off["port"] == 5099
 
-        started: list[str] = []
         on = sidecar.apply(probe, enabled=True, listening=lambda _port: False,
-                           finder=lambda _port: [], killer=lambda _pid: False,
-                           spawn=started.append, wait_seconds=0.0)
-        assert started == ["scripts/nope.ps1"], "打开要按**声明的那条命令**去拉，不按信源名字"
-        assert on["action"] == "started_not_listening", "拉起了但端口没应答，就说没应答（不许报成开了）"
+                           finder=lambda _port: [], killer=lambda _pid: False)
+        assert started == ["called"], "打开要照**声明的那只手**去喊，不按信源名字"
+        assert on["action"] == "started_not_listening", "起了但端口没应答，就说没应答（不许报成开了）"
 
-        # 已经在跑的不许再拉一遍：一次点击不该起两个服务。
+        # 已经在跑的不许再喊一遍：一次点击不该起两个服务。
         calls: list[str] = []
-        again = sidecar.apply(probe, enabled=True, listening=lambda _port: True,
-                              finder=lambda _port: [], killer=lambda _pid: False,
-                              spawn=calls.append)
+        again = sidecar.apply(
+            SimpleNamespace(sidecar_port=5099,
+                            sidecar_start=lambda: (calls.append("called"), (True, ""))[1]),
+            enabled=True, listening=lambda _port: True,
+            finder=lambda _port: [], killer=lambda _pid: False)
         assert calls == [] and again["action"] == "already_running"
+
+    def test_the_public_layer_no_longer_starts_any_process(self) -> None:
+        """公共层**不再有 spawn 代码**（2026-11-20 `WP-WECHAT-LEG-OWNS-PROCESS`）。
+
+        那个进程归采集腿所有：采集那一轮自己起它、采完收掉。公共层若还自己 spawn，
+        就成了**第二个家长**——怎么起、起哪个、收不收，两处各写一份 ⇒ 两处真源。
+        现在它只照声明喊那一族自己的手。
+        """
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parents[2] / "plobi" / "collectors" / "sidecar.py").read_text(
+            encoding="utf-8")
+
+        assert "subprocess" not in source, "公共层不许再自己拉进程"
+        assert "Popen" not in source, "公共层不许再自己拉进程"
 
     def test_a_process_we_cannot_wait_on_is_reported_not_raised(self, monkeypatch) -> None:
         """`terminate()` 收令了，但**等它退出**还要再开一次进程句柄——这台真撞上过 `AccessDenied`。

@@ -42,17 +42,15 @@ def _make(tmp_path, fail: bool, notifier: RecordingNotifier):
         confirmer=HeuristicConfirmer(),
     )
     agenda_dispatch._DEFAULT = PendingDispatcher(service=service, notifier=notifier)
-    heal_calls: list[int] = []
     watchdog = Watchdog(
         pipeline=pipeline,
         notifier=notifier,
         state_path=tmp_path / "watchdog_state.json",
-        heal_command=lambda: heal_calls.append(1),
         failure_threshold=3,
         # WP-DT-DIGEST 的早报补发会给 notifier 多加一条消息，把这里的告警计数搅乱；
         # 它自己有专测（tests/plobi/test_day_digest.py），本文件只测健康巡检。
     )
-    return watchdog, client, heal_calls
+    return watchdog, client
 
 
 @pytest.fixture(autouse=True)
@@ -116,7 +114,7 @@ def test_the_daily_sweep_uses_the_configured_window(tmp_path, monkeypatch) -> No
 
 def test_healthy_tick_sweeps_and_keeps_counter_at_zero(tmp_path):
     notifier = RecordingNotifier()
-    watchdog, client, heal_calls = _make(tmp_path, fail=False, notifier=notifier)
+    watchdog, client = _make(tmp_path, fail=False, notifier=notifier)
 
     result = watchdog.tick()
 
@@ -124,13 +122,17 @@ def test_healthy_tick_sweeps_and_keeps_counter_at_zero(tmp_path):
     assert result["consecutive_failures"] == 0
     # 一跑了就算：跑几趟由配置里那个时间窗决定（原来这里钉 ==1，等于把"只看当天"当契约）
     assert client.fetch_calls >= 1
-    assert heal_calls == []
     assert watchdog.state_path.read_text().count("consecutive_failures") == 1
 
 
-def test_three_failures_trigger_one_heal_and_one_alert(tmp_path):
+def test_three_failures_trigger_one_alert(tmp_path):
+    """连续失败三次 ⇒ 告警一条；第四轮仍坏 ⇒ 不再重复告警（限频）。
+
+    2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：**没有「自愈」了**——那一轮自带
+    起停（腿自己把采集进程拉起来、采完收掉），没有「让它常驻」这回事。
+    """
     notifier = RecordingNotifier()
-    watchdog, _, heal_calls = _make(tmp_path, fail=True, notifier=notifier)
+    watchdog, _ = _make(tmp_path, fail=True, notifier=notifier)
 
     for _ in range(3):
         result = watchdog.tick()
@@ -139,17 +141,16 @@ def test_three_failures_trigger_one_heal_and_one_alert(tmp_path):
     assert result["alerted"] is True
     assert len(notifier.sent) == 1
     assert "chatlog" in notifier.sent[0]
-    assert len(heal_calls) == 1, "每个断连周期只自愈一次"
 
-    # 4th tick: still down — no new alert (rate limited), no second heal
+    # 4th tick: still down — no new alert (rate limited)
     result = watchdog.tick()
     assert result["alerted"] is False
-    assert len(heal_calls) == 1
 
 
 def test_recovery_resets_counter_and_allows_next_episode(tmp_path):
+    """恢复了就把计数清零；再断一次，重新计数（不是接着上一次数）。"""
     notifier = RecordingNotifier()
-    watchdog, client, heal_calls = _make(tmp_path, fail=True, notifier=notifier)
+    watchdog, client = _make(tmp_path, fail=True, notifier=notifier)
 
     for _ in range(3):
         watchdog.tick()
@@ -160,7 +161,7 @@ def test_recovery_resets_counter_and_allows_next_episode(tmp_path):
     client.fail = True
     for _ in range(3):
         watchdog.tick()
-    assert len(heal_calls) == 2, "新断连周期允许再次自愈"
+    assert watchdog.state["consecutive_failures"] == 3, "新的断连周期重新计数"
 
 
 def test_sweep_results_are_notified_through_dispatcher(tmp_path, _pool):
@@ -192,7 +193,6 @@ def test_sweep_results_are_notified_through_dispatcher(tmp_path, _pool):
     watchdog = Watchdog(
         pipeline=pipeline,
         state_path=tmp_path / "watchdog_state.json",
-        heal_command=lambda: None,
         # 见 _make()：早报补发另有专测，这里不该多出一条消息。
     )
 
@@ -242,42 +242,8 @@ def _pooled(pool, **filters):
     return pool.query(**filters)
 
 
-def _stamp_state(tmp_path, heal_attempted_at) -> None:
-    """把自愈闸写成给定的那一枚时间戳（`attempt_heal_once` 一进来就从盘上重读，注入 `.state` 没用）。"""
-    import json
-
-    (tmp_path / "watchdog_state.json").write_text(json.dumps({
-        "consecutive_failures": 0, "last_alert_at": None,
-        "heal_attempted_at": heal_attempted_at,
-    }), encoding="utf-8")
-
-
-def test_a_failed_heal_is_retried_once_the_window_expires(tmp_path) -> None:
-    """拉一把没成 ≠ 从此不再拉：**过了重试窗口还要再试**。
-
-    旧形状那枚闩只在"探到健康"那一路被清，而那一路只有自愈被调用时才走到——一次失败就是永久锁死。
-    这台 11-03 的现场：`watchdog_state.json` 的 `heal_attempted_at` 停在 10-17 15:17，
-    之后 16 天里按需自愈一次都没真跑过；微信 19:00 掉线后连着的三轮 `not_listening` 全都被这把闩挡着。
-    """
-    from datetime import datetime, timedelta
-
-    watchdog, _client, heal_calls = _make(tmp_path, fail=True, notifier=RecordingNotifier())
-    _stamp_state(tmp_path, (datetime.now() - timedelta(hours=2)).replace(microsecond=0).isoformat())
-
-    outcome = watchdog.attempt_heal_once()
-
-    assert outcome["already_attempted"] is False
-    assert len(heal_calls) == 1, "闸过期了就该再拉一次"
-
-
-def test_the_heal_window_still_holds_to_one_attempt_per_window(tmp_path) -> None:
-    """但**一个窗口里仍然只试一次**——这把闸要收的是 spawn 循环，不是把自愈锁死。"""
-    from datetime import datetime
-
-    watchdog, _client, heal_calls = _make(tmp_path, fail=True, notifier=RecordingNotifier())
-    _stamp_state(tmp_path, datetime.now().replace(microsecond=0).isoformat())
-
-    outcome = watchdog.attempt_heal_once()
-
-    assert outcome["already_attempted"] is True
-    assert heal_calls == [], "窗口之内一次都不该再拉"
+# 2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：**自愈那一族退役了**——那一轮自带
+# 起停（腿自己把采集进程拉起来、采完收掉），没有「让它常驻」这回事，也就没有
+# 「自愈」可做。从前那两档测的是「拉一把没成之后还拉不拉」（限速闩），
+# 现在那个问题**不存在了**：采集那一轮每轮都自己起一次，起不来就把原因报出去。
+# ⇒ 那两档随这一族一起删（不是「留着但是不用」）。

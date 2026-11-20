@@ -1,15 +1,23 @@
-"""chatlog 服务健康看门狗：巡检 + 连续失败告警 + 一次自愈尝试。
+"""chatlog 这条腿的巡检：跑一轮采集 + 连续失败告警。
 
-切片 A2（Docs/ROADMAP.md）。巡检轨道（pipeline.run_once）最常见的
-失败原因是 chatlog 服务断了——微信退出登录、进程没起来。本模块把「发现断连」
-从静默 warning 变成主动行为：
+切片 A2（Docs/ROADMAP.md）。巡检轨道（公共触发面那一轮）最常见的
+失败原因是采集进程起不来——微信退出登录、密钥不在、进程没起来。本模块把
+「发现断连」从静默 warning 变成主动行为：
 
-    健康检查连续失败 N 次（默认 3 次 = 30 分钟）
-      → 先尝试自愈（拉起 scripts/chatlog_server.ps1，每个断连周期至多一次）
-      → 仍未恢复 → 推钉钉告警（限频：默认 1 小时最多一条）
+    那一轮采集连续失败 N 次（默认 3 次 = 30 分钟）
+      → 推钉钉告警（限频：默认 1 小时最多一条）
 
 无模型调用（ADR-0011 成本纪律）；失败计数与告警限频状态落
 ``PLOBI_HOME/plobi/watchdog_state.json``。恢复健康即重置计数。
+
+**2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）两处形状变了**：
+
+1. **健康判据＝那一轮采到没有**，不是「那个采集进程在不在」。按需起之后它
+   采完就被收掉了，进程在不在不再说明任何事（从前它是常驻的，所以能当判据）。
+2. **「自愈」那一格退役**：从前的自愈是「拉一把，让它常驻」——而**拉起来的
+   那个没人收**，那正是常驻的根源；家长因此落在桌面上，桌面关着 cron／巡检
+   那几轮就整条腿采不到。现在那一轮**自带起停**（`plobi/collectors/chatlog/process.py`），
+   腿自己拉起来、采完收掉 ⇒ 没有「让它常驻」这回事，也就没有自愈可做。
 
 微信 ToS 红线：本模块不改变采集节奏，tick 由 10 分钟 cron 驱动（≥30s）。
 """
@@ -18,11 +26,9 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from .client import ChatlogClient
 from .config import CollectorConfig
@@ -32,16 +38,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FAILURE_THRESHOLD = 3
 DEFAULT_ALERT_INTERVAL_SECONDS = 3600
-#: 「拉一把」的重试窗口。旧形状那枚闩**永不松开**：试着拉起没成，就再也不试第二次；
-#: 而它只在"探到健康"那一路被清，那一路又只在被调用时才走到——于是自愈失败一次 = 永久锁死。
-#: 这台实测：`watchdog_state.json` 的 `heal_attempted_at` 停在 10-17 15:17，之后 16 天里
-#: 按需自愈一次都没真的拉过（11-03 那三轮 `not_listening` 就死在这）。
-DEFAULT_HEAL_RETRY_AFTER_SECONDS = 30 * 60
-
-
-def _repo_root() -> Path:
-    """plobi/collectors/chatlog/watchdog.py → 仓库根。无盘符硬编码。"""
-    return Path(__file__).resolve().parents[3]
 
 
 def _default_state_path() -> Path:
@@ -61,15 +57,13 @@ def _load_state(path: Path) -> dict:
             return data
     except (OSError, json.JSONDecodeError):
         pass
-    return {"consecutive_failures": 0, "last_alert_at": None, "heal_attempted_at": None}
+    return {"consecutive_failures": 0, "last_alert_at": None}
 
 
 class Watchdog:
-    """One ``tick()`` = sweep + health check + (maybe) heal/alert.
+    """One ``tick()`` = 一轮采集 + 判那一轮的结果 + (maybe) 告警。
 
-    ``heal_command`` is injectable for tests; the default launches the
-    vendored chatlog server script detached. Pass ``pipeline=None`` to
-    monitor health only (no collection), e.g. before the whitelist exists.
+    ``pipeline=None`` ⇒ 只探活不采集（给「名单都还没有」的那段用）。
     """
 
     def __init__(
@@ -80,88 +74,16 @@ class Watchdog:
         config: Optional[CollectorConfig] = None,
         notifier: Optional[object] = None,
         state_path: Path | str | None = None,
-        heal_command: Optional[Callable[[], object]] = None,
         failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
         alert_interval_seconds: int = DEFAULT_ALERT_INTERVAL_SECONDS,
-        heal_retry_after_seconds: int = DEFAULT_HEAL_RETRY_AFTER_SECONDS,
     ):
         self.pipeline = pipeline if pipeline is not None else ChatlogPipeline()
         self.client = client or (pipeline.client if pipeline else self.pipeline.client)
         self.config = config or (pipeline.config if pipeline else self.pipeline.config)
         self._notifier = notifier
         self.state_path = Path(state_path) if state_path else _default_state_path()
-        self.heal_command = heal_command or self._default_heal_command
         self.failure_threshold = max(1, int(failure_threshold))
         self.alert_interval_seconds = int(alert_interval_seconds)
-        self.heal_retry_after_seconds = max(0, int(heal_retry_after_seconds))
-
-    # --- self-heal ----------------------------------------------------------
-
-    def _default_heal_command(self):
-        script = _repo_root() / "scripts" / "chatlog_server.ps1"
-        if not script.exists():
-            logger.warning("watchdog: heal script missing: %s", script)
-            return None
-        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        return subprocess.Popen(
-            [
-                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                "-File", str(script),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=flags,
-        )
-
-    # --- on-demand heal (no sweep, no alert) --------------------------------
-
-    def _heal_gate_open(self, now: datetime) -> bool:
-        """这一轮能不能再拉一把：没试过，或者上一次已经过了重试窗口。
-
-        读不懂那一格就**当没试过**——宁可多拉一次，也不要再来一次 16 天的静默。
-        两边都按本机 naive 时间比（`_now()` 写进去的就是这个形状）。
-        """
-        stamp = str(self.state.get("heal_attempted_at") or "").strip()
-        if not stamp:
-            return True
-        try:
-            age = (now - datetime.fromisoformat(stamp)).total_seconds()
-        except (TypeError, ValueError):
-            return True
-        return age >= self.heal_retry_after_seconds
-
-    def attempt_heal_once(self) -> dict:
-        """确认没在听 → 拉一把 → 记限速位。**不跑采集、不告警**。
-
-        ``tick()`` 的那把闸要等连续三次失败（默认 10 分钟一次 = 30 分钟）才自愈，
-        那是"巡检轨道"的口径。按需采集等不了 30 分钟：``collect()`` 一进来就探到
-        没人听，当场就该拉一次。两者共用**同一个** ``heal_attempted_at`` 限速位，
-        所以一个断连周期里最多起一次，恢复健康即重置。
-        """
-        self.state = _load_state(self.state_path)
-        try:
-            healthy = bool(self.client.healthy())
-        except Exception as exc:
-            logger.warning("watchdog: on-demand health check raised: %s", exc)
-            healthy = False
-
-        if healthy:
-            self.state["consecutive_failures"] = 0
-            self.state["heal_attempted_at"] = None
-            self._save()
-            return {"healthy": True, "healed": False, "already_attempted": False}
-
-        if not self._heal_gate_open(datetime.now()):
-            return {"healthy": False, "healed": False, "already_attempted": True}
-
-        healed = False
-        try:
-            healed = self.heal_command() is not None
-        except Exception as exc:
-            logger.warning("watchdog: on-demand heal attempt failed: %s", exc)
-        self.state["heal_attempted_at"] = self._now()
-        self._save()
-        return {"healthy": False, "healed": healed, "already_attempted": False}
 
     # --- alerting -----------------------------------------------------------
 
@@ -176,8 +98,8 @@ class Watchdog:
             logger.warning("watchdog: chatlog DOWN but no notifier configured: %s", detail)
             return False
         outcome = notifier.send(
-            f"[Plobi] chatlog 服务异常\n连续 {self.state['consecutive_failures']} 次健康检查失败。\n"
-            f"详情：{detail}\n已尝试自动拉起；若持续失败请检查微信登录态。"
+            f"[Plobi] 微信采集没采到\n连续 {self.state['consecutive_failures']} 轮没能采到。\n"
+            f"详情：{detail}\n采集那一轮没能采到；若持续失败请检查微信登录态。"
         )
         return outcome.ok
 
@@ -207,7 +129,7 @@ class Watchdog:
     # --- main tick ----------------------------------------------------------
 
     def tick(self) -> dict:
-        """One tick = sweep + health + (maybe) heal/alert."""
+        """One tick = 那一轮采集 + 判那一轮的结果 + (maybe) 告警。"""
         return self._sweep_and_check()
 
     def _sweep_and_check(self) -> dict:
@@ -215,15 +137,20 @@ class Watchdog:
         result: dict = {
             "chatlog_healthy": False,
             "consecutive_failures": 0,
-            "healed": False,
             "alerted": False,
             "sweep": None,
+            "detail": "",
         }
 
-        # 1) collection sweep (may legitimately no-op when collector disabled)
+        # 1) 那一轮采集（may legitimately no-op when collector disabled）
         #    2026-11-17（`WP-COLLECT-UNIFY`）：这一趟**走公共触发面**
         #    （`sweep.run_source`），不再自己调 `pipeline.run_once` —— 那是一条**私有**
         #    触发路径，而触发面必须只有一处（落点同理，只有 `base.land_occurrences`）。
+        #
+        #    2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：**这一轮自带起停**——腿自己
+        #    把采集进程拉起来、采完收掉 ⇒ 巡检不再需要「让它常驻」这件事。
+        healthy = False
+        detail = ""
         if self.pipeline is not None:
             try:
                 from .webhook import trigger_round
@@ -236,15 +163,29 @@ class Watchdog:
                 raw = outcome.get("report") or {}
                 result["sweep"] = dict(raw.get("report") or {})
                 self._notify_pending(raw.get("pending_ids") or [])
-            except Exception:
+                # **健康判据＝那一轮采到没有**（不是「那个进程在不在」：按需起之后
+                # 它采完就被收掉了，进程在不在不再说明任何事）。
+                #
+                # 两件事都要看：那一轮**整体**成不成功（进程起不来 ⇒ 整轮失败），
+                # 以及那一轮**抓的时候**有没有报错（进程起来了但微信掉线 ⇒ 抓取失败
+                # 了几次；从前那些失败只进一条 warning 就没了 ⇒ 「什么也没抓到」与
+                # 「本来就没新消息」读起来一模一样）。
+                healthy = bool(outcome.get("ok"))
+                if healthy and int(result["sweep"].get("fetch_failed") or 0) > 0:
+                    healthy = False
+                detail = str(outcome.get("detail") or "")
+            except Exception as exc:
                 logger.exception("watchdog: sweep failed")
+                detail = f"{type(exc).__name__}: {exc}"
+        else:
+            # 没有腿可采（名单都还没有）⇒ 只探活。
+            try:
+                healthy = bool(self.client.healthy())
+            except Exception as exc:
+                logger.warning("watchdog: health check raised: %s", exc)
+                healthy = False
 
-        # 2) health verdict
-        try:
-            healthy = bool(self.client.healthy())
-        except Exception as exc:
-            logger.warning("watchdog: health check raised: %s", exc)
-            healthy = False
+        result["detail"] = detail
 
         if healthy:
             result["chatlog_healthy"] = True
@@ -252,26 +193,18 @@ class Watchdog:
             self.state = {
                 "consecutive_failures": 0,
                 "last_alert_at": self.state.get("last_alert_at"),
-                "heal_attempted_at": None,
             }
             self._save()
             return result
 
-        # 3) failure bookkeeping
+        # 2) failure bookkeeping
         self.state["consecutive_failures"] = int(self.state.get("consecutive_failures") or 0) + 1
         result["consecutive_failures"] = self.state["consecutive_failures"]
 
-        # 4) self-heal: 一个断连窗口里一次，**窗口会过期**（不过期的话一次失败就永久锁死）
-        if (self.state["consecutive_failures"] >= self.failure_threshold
-                and self._heal_gate_open(datetime.now())):
-            try:
-                outcome = self.heal_command()
-                result["healed"] = outcome is not None
-            except Exception as exc:
-                logger.warning("watchdog: heal attempt failed: %s", exc)
-            self.state["heal_attempted_at"] = self._now()
-
-        # 5) alert: rate-limited
+        # 3) alert: rate-limited。
+        #    **不再有「自动拉起」那一格**（`WP-WECHAT-LEG-OWNS-PROCESS`）：那一轮
+        #    自己会拉，拉起来的东西自己会收 ⇒ 没有「让它常驻」这回事，也就没有
+        #    自愈可做；告警这句话也得跟着说实话。
         last_alert = self.state.get("last_alert_at")
         due = True
         if last_alert:
@@ -281,7 +214,7 @@ class Watchdog:
             except ValueError:
                 due = True
         if due and self.state["consecutive_failures"] >= self.failure_threshold:
-            result["alerted"] = self._alert("chatlog /api/v1/health 连续失败")
+            result["alerted"] = self._alert(detail or "微信采集那一轮没采到")
             if result["alerted"]:
                 self.state["last_alert_at"] = self._now()
 

@@ -186,7 +186,9 @@ class TestRealRegistry:
     def test_collect_names_the_diagnosed_state_instead_of_one_generic_sentence(self, monkeypatch):
         """判据「说人话」：不健康时抛出去的东西必须带状态名，不能是 `raised`。
 
-        自愈那一跳显式接管：单测不许去探真 5030、更不许真 spawn 进程。
+        2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：那一轮自己把采集进程拉起来，
+        起不来就把**诊断出来的那个状态**报出去（单测里 `spawn_process` 被钉成
+        「起不来」——单测不许真起那个进程）。
         """
         from plobi.collectors.chatlog import pipeline as chatlog_pipeline
         from plobi.collectors.chatlog.sidecar import STATE_KEY_MISSING
@@ -197,9 +199,6 @@ class TestRealRegistry:
         )
         bad = {"ok": False, "detail": "少一把数据密钥", "state": STATE_KEY_MISSING, "binary": ""}
         monkeypatch.setattr(pipe.__class__, "health", lambda self: bad)
-        monkeypatch.setattr(
-            pipe, "_heal_and_reprobe", lambda health: (health, "（这个断连周期里已经试过一回了）")
-        )
 
         with pytest.raises(chatlog_pipeline.ChatlogDead) as caught:
             pipe.collect()
@@ -207,73 +206,47 @@ class TestRealRegistry:
         assert caught.value.state == STATE_KEY_MISSING
         assert "密钥" in caught.value.detail
 
-    def test_collect_tries_exactly_one_heal_before_giving_up(self, monkeypatch):
-        """常驻的驱动器就是日采这一轮：探到没人听先拉一把，而不是等 30 分钟巡检。"""
+    def test_the_round_tries_to_start_the_process_itself_once(self, monkeypatch):
+        """那一轮**自己**把采集进程拉起来——不是等 30 分钟巡检去自愈。
+
+        起不来就把原因报出去，**不重复试**（重复试就是 spawn 循环）。
+        """
         from plobi.collectors.chatlog import pipeline as chatlog_pipeline
+        from plobi.collectors.chatlog import process as chatlog_process
 
         pipe = registry.spec("wechat").builder()
         bad = {"ok": False, "detail": "5030 上没有 chatlog 服务", "state": "not_listening", "binary": ""}
         attempts: list = []
         monkeypatch.setattr(pipe.__class__, "health", lambda self: bad)
         monkeypatch.setattr(
-            pipe, "_heal_and_reprobe",
-            lambda health: (attempts.append(1) or (health, "（试过一次拉起，没成功）")),
+            chatlog_process,
+            "ensure_process",
+            lambda client, **kw: (attempts.append(1), (None, "采集进程起不来"))[1],
         )
 
         with pytest.raises(chatlog_pipeline.ChatlogDead):
             pipe.collect()
 
-        assert len(attempts) == 1
-
-    def test_heal_gate_spawns_once_per_down_episode(self, tmp_path):
-        """`attempt_heal_once` 与 `tick()` 共用同一个限速位：一个断连周期最多一次 spawn。
-
-        传一个假 pipeline 是有意的：``Watchdog(pipeline=None)`` 会去构造真
-        ``ChatlogPipeline``，那会在单测里读真家目录、建真客户端。
-        """
-        from plobi.collectors.chatlog.watchdog import Watchdog
-
-        class _Client:
-            def __init__(self) -> None:
-                self.up = False
-
-            def healthy(self) -> bool:
-                return self.up
-
-        class _NoPipeline:
-            client = None
-            config = None
-
-        client = _Client()
-        spawns: list = []
-        dog = Watchdog(
-            pipeline=_NoPipeline(), client=client,
-            state_path=tmp_path / "watchdog_state.json",
-            heal_command=lambda: spawns.append(1) or object(),
-        )
-
-        assert dog.attempt_heal_once()["healed"] is True
-        second = dog.attempt_heal_once()
-        assert second["healed"] is False and second["already_attempted"] is True
-        assert len(spawns) == 1, "第二次还拉 ⇒ 那就成了 spawn 循环"
-
-        client.up = True                                  # 恢复了健康
-        assert dog.attempt_heal_once()["healthy"] is True
-        client.up = False                                 # 再断一次
-        assert dog.attempt_heal_once()["healed"] is True
-        assert len(spawns) == 2, "限速位没随健康重置 ⇒ 以后真断了永远拉不起来"
+        assert len(attempts) == 1, "那一轮只该起一次；起不来就把原因报出去"
 
     def test_sweep_row_for_wechat_carries_the_reason_not_no_builder(self, monkeypatch):
-        """整条链的钉子：那一轮给面上的读数，必须是真原因，不再是"没人构造它"。"""
+        """整条链的钉子：那一轮给面上的读数，必须是真原因，不再是"没人构造它"。
+
+        2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：那一轮**自己**把采集进程拉起来——
+        这里把腿的「起它」那一手钉成「起不来」，于是它把诊断出来的那个状态报出去。
+        （不钉的话：这一档会**借**那台机器上真的在跑的那个进程 ⇒ 变成一次真采集，
+        而且读数随机器状态变——单测不许这样。）
+        """
         from plobi.collectors.chatlog import pipeline as chatlog_pipeline
+        from plobi.collectors.chatlog import process as chatlog_process
         from plobi.collectors.chatlog.sidecar import STATE_NOT_LISTENING
 
         bad = {"ok": False, "detail": "5030 上没有 chatlog 服务",
                "state": STATE_NOT_LISTENING, "binary": ""}
         monkeypatch.setattr(chatlog_pipeline.ChatlogPipeline, "health", lambda self: bad)
         monkeypatch.setattr(
-            chatlog_pipeline.ChatlogPipeline, "_heal_and_reprobe",
-            lambda self, health: (health, ""),
+            chatlog_process, "ensure_process",
+            lambda client, **kw: (None, "采集进程起不来"),
         )
 
         row = next(r for r in sweep.run_sweep(sources=("wechat",))["sources"]

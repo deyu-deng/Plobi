@@ -103,6 +103,32 @@ def _prepare() -> tuple[bool, str]:
     return False, note or upstream_note
 
 
+def _activate() -> tuple[bool, str]:
+    """把这一条自己的服务**起起来**（用户刚打开它时那一手）。
+
+    **腿自己起**（2026-11-20 `WP-WECHAT-LEG-OWNS-PROCESS`）：公共层不再有 spawn 代码——
+    它只照声明喊这一腿的手，怎么起、起哪个、收不收，全在这一腿自己家里。
+
+    与采集那一轮那一手（起 → 采 → 收）的差别只有**归属**：那一轮结束就把自己起的那一个
+    收掉；这一手起完**留在那儿**，活到用户关掉这一条为止——用户 10-23 说过「我打开还是关闭
+    都是显示未连接」，开关若只改一个布尔却把进程留在那儿，它就是个假动作。
+    """
+    import os
+
+    from . import process
+    from .client import ChatlogClient
+    from .config import CollectorConfig
+    from . import sidecar as local
+
+    if not local.data_key_present(os.environ):
+        # 没有那把密钥 ⇒ 引擎起来自己就退（上游 `manager.go:349`：`dataKey is required`）。
+        # 与其白等它应答（那一轮要等 45 秒），不如把那一句真话报出去。
+        return False, "数据密钥还没拿到，起不来"
+
+    client = ChatlogClient(CollectorConfig.load().base_url)
+    return process.activate(client)
+
+
 def _probe() -> dict:
     """微信这一条在本机**缺哪一步**——构建工具、可执行产物、数据密钥、服务应答，四步分别说。
 
@@ -155,10 +181,12 @@ SPEC = SourceSpec(
     site="https://weixin.qq.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
     summary="本机微信的会话与群聊",
 
-    # 开关的另一半：这一条背后有一个常驻进程（chatlog），关掉它就该真的收掉（用户 10-23）。
-    # 端口与启动脚本都是**声明**，公共层照它们办事、仍然不出现任何信源名字（判据 4）。
+    # 开关的另一半：这一条背后有一个本机进程（chatlog），关掉它就该真的收掉（用户 10-23）。
+    # 端口是**声明**，公共层照它办事、仍然不出现任何信源名字（判据 4）。
+    # 「怎么起它」也是声明——**那一族自己给的那只手**（`_activate`）：公共层不再有 spawn 代码，
+    # 起它的是这一条自己的腿（2026-11-20 `WP-WECHAT-LEG-OWNS-PROCESS`）。
     sidecar_port=5030,
-    sidecar_start="scripts/chatlog_server.ps1",
+    sidecar_start=_activate,
     # 一条信源里面有很多个会话 ⇒ 采集情况要能按群聊/私聊逐个定。
     # 10-24 起这两只手就是那"怎么定"的正身：名单从侧车枚举、决定写回它自己那张 `TalkerStore`，
     # 设置页那块面板（`sources/conversation-list.tsx`）与钉钉看到的是**同一个组件、同一条路由**。

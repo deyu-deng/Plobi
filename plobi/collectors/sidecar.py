@@ -8,6 +8,13 @@
 这个模块只管后一半，而且是**照声明办事**（`SourceSpec.sidecar_port` / `sidecar_start`）：
 公共层仍然不出现任何信源名字（判据 4），加一条带本机服务的信源只是多声明两格。
 
+**2026-11-20（`WP-WECHAT-LEG-OWNS-PROCESS`）：这个模块不再有 spawn 代码。**
+
+那个进程**归采集腿所有**了——采集那一轮自己起它、采完收掉（用户 11-20 拍「侧车的家长换成
+各自的采集腿」「不用叫 sidecar 了，只是一个采集腿代码逻辑而已」）。公共层若还自己 spawn，
+就成了**第二个家长**：起它、起哪个、收不收，公共层与那一族各写一份 ⇒ 两处真源。
+现在「怎么起它」也是**声明**（`sidecar_start` 是那一族自己给的那只手），公共层只照它喊一声。
+
 三条口径写在前面，免得后来的人把它读成"顺便关掉了一个进程"：
 
 1. **只动那个端口上的那个进程**（不是按进程名杀）。端口由声明给，杀之前再核一次它真的在听；
@@ -22,16 +29,11 @@ from __future__ import annotations
 
 import logging
 import socket
-import subprocess
-import sys
 import time
-from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-#: 拉起之后最多等多久再看它有没有在听（秒）。等太久会把一次点击变成一次挂起。
-START_WAIT_SECONDS = 6.0
 #: 收掉之后最多等多久看端口有没有松手（秒）。
 STOP_WAIT_SECONDS = 3.0
 
@@ -100,41 +102,20 @@ def _terminate(pid: int) -> bool:
     return True
 
 
-def _repo_root() -> Path:
-    """`plobi/collectors/sidecar.py` → 仓库根。无盘符硬编码。"""
-    return Path(__file__).resolve().parents[2]
-
-
-def _spawn(script: str) -> Optional[int]:
-    """把声明的那支脚本在后台拉起来，回 pid（起不来就是 None）。"""
-    path = _repo_root() / script
-    if not path.exists():
-        logger.warning("sidecar: 启动脚本不存在：%s", path)
-        return None
-    if path.suffix.lower() == ".ps1" and sys.platform == "win32":
-        argv = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(path)]
-    else:
-        argv = [sys.executable if path.suffix.lower() == ".py" else "bash", str(path)]
-
-    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    try:
-        child = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 creationflags=flags)
-    except OSError as exc:
-        logger.warning("sidecar: 拉不起来 %s：%s", script, exc)
-        return None
-    return int(child.pid)
-
-
 def apply(spec, *, enabled: bool,
           listening: Callable[[int], bool] = port_listening,
           finder: Callable[[int], Iterable[int]] = owning_pids,
-          killer: Callable[[int], bool] = _terminate,
-          spawn: Callable[[str], Optional[int]] = _spawn,
-          wait_seconds: float = START_WAIT_SECONDS) -> Optional[dict]:
-    """按声明把这一条的常驻服务**拉起来或收掉**。没有声明端口就什么都不做（回 ``None``）。
+          killer: Callable[[int], bool] = _terminate) -> Optional[dict]:
+    """按声明把这一条的本机服务**准备起来或收掉**。没有声明端口就什么都不做（回 ``None``）。
 
-    `enabled=True`：已经在听就不动它；没在听就按声明的脚本拉起，并**等一下**再看它活没活。
+    `enabled=True`：**准备 + 照声明喊那一族自己的手**（`sidecar_start`）——
+    公共层**不再有 spawn 代码**（2026-11-20 `WP-WECHAT-LEG-OWNS-PROCESS`）：那个进程归采集腿所有，
+    怎么起、起哪个、收不收全是那一族自己家的事；公共层只照声明喊它一声，
+    起停的知识不在两处。
+
+    准备那一手是**声明**（如"先替他取一次本机密钥"）：公共层不认识它是谁的、做什么——
+    它抛了也不许把这次点击变成 500——最坏就是没做成，那句原因照实并进读数。
+
     `enabled=False`：在听就收掉（只收听在那个端口上的进程），然后核端口松没松手。
 
     返回的形状照"读数"写：``{"port", "action", "listening", "detail"}``。
@@ -150,14 +131,9 @@ def apply(spec, *, enabled: bool,
         if was_listening:
             return {"action": "already_running", "detail": "服务本来就在跑，没有动它",
                     "listening": True, "port": port}
-        script = str(getattr(spec, "sidecar_start", "") or "")
-        if not script:
-            return {"action": "cannot_start", "detail": "这一条没声明怎么拉起自己的服务",
-                    "listening": False, "port": port}
-        # 准备那一手是**声明**（如"先替他取一次本机密钥"），公共层不认识它是谁的、做什么：
-        # 它抛了也不许把这次点击变成 500——最坏就是没做成，那句原因照实并进读数。
-        prepare = getattr(spec, "sidecar_prepare", None)
+
         prepared = ""
+        prepare = getattr(spec, "sidecar_prepare", None)
         if prepare is not None:
             try:
                 ok, note = prepare()
@@ -167,20 +143,28 @@ def apply(spec, *, enabled: bool,
             except Exception as exc:  # noqa: BLE001 - 一次点击不该被准备步骤炸掉
                 prepared = f"准备那一步没做成：{type(exc).__name__}。"
                 logger.warning("sidecar prepare failed: %s", exc)
-        pid = spawn(script)
-        deadline = time.monotonic() + max(0.0, float(wait_seconds))
-        now_listening = False
-        while True:
-            if listening(port):
-                now_listening = True
-                break
-            if time.monotonic() >= deadline:
-                break
-            time.sleep(0.25)
+
+        start = getattr(spec, "sidecar_start", None)
+        if start is None:
+            return {"action": "cannot_start", "detail": "这一条没声明怎么拉起自己的服务",
+                    "listening": False, "port": port, "prepare": prepared}
+
+        try:
+            ok, note = start()
+        except Exception as exc:  # noqa: BLE001 - 一次点击不该被"起服务"炸掉
+            logger.warning("sidecar start failed: %s", exc)
+            return {"action": "start_failed", "detail": f"起不来：{type(exc).__name__}。",
+                    "listening": False, "port": port, "prepare": prepared}
+        if not ok:
+            return {"action": "start_failed", "detail": str(note or "起不来"),
+                    "listening": False, "port": port, "prepare": prepared}
+
+        now_listening = bool(listening(port))
         return {"action": "started" if now_listening else "started_not_listening",
                 "prepare": prepared,
-                "detail": (f"已拉起（pid {pid}），{port} 在应答" if now_listening
-                           else f"已拉起（pid {pid}），但 {port} 还没开始应答"),
+                "detail": (str(note or "") if note else
+                           (f"已拉起，{port} 在应答" if now_listening
+                            else f"已拉起，但 {port} 还没开始应答")),
                 "listening": now_listening, "port": port}
 
     if not was_listening:

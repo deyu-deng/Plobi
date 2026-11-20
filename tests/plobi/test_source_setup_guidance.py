@@ -320,8 +320,12 @@ class TestTheKeyHand:
 
 class TestThePrepareStepIsInvisibleToTheClick:
     @staticmethod
-    def _spec(prepare):
-        return SimpleNamespace(sidecar_port=5099, sidecar_start="scripts/whatever.ps1",
+    def _spec(prepare, start=None):
+        """那一族的声明：**怎么起它**是它自己给的那只手（2026-11-20 `WP-WECHAT-LEG-OWNS-PROCESS`）。
+
+        公共层不再有 spawn 代码——它只照声明喊那一声；起不起得起得成，由那一族自己知道。
+        """
+        return SimpleNamespace(sidecar_port=5099, sidecar_start=start or (lambda: (True, "起来了")),
                                sidecar_prepare=prepare)
 
     def test_a_failing_preparation_still_returns_a_reading(self) -> None:
@@ -329,8 +333,7 @@ class TestThePrepareStepIsInvisibleToTheClick:
 
         result = common.apply(self._spec(lambda: (False, "没取到密钥，因为微信没在跑")),
                               enabled=True, listening=lambda _p: False,
-                              finder=lambda _p: [], killer=lambda _p: True,
-                              spawn=lambda _s: 4242, wait_seconds=0.0)
+                              finder=lambda _p: [], killer=lambda _p: True)
 
         assert result["action"] == "started_not_listening"
         assert "没取到密钥" in result["prepare"]
@@ -342,8 +345,25 @@ class TestThePrepareStepIsInvisibleToTheClick:
             raise RuntimeError("里面的东西坏了")
 
         result = common.apply(self._spec(explode), enabled=True, listening=lambda _p: False,
-                              finder=lambda _p: [], killer=lambda _p: True,
-                              spawn=lambda _s: 4242, wait_seconds=0.0)
+                              finder=lambda _p: [], killer=lambda _p: True)
 
         assert result["action"] in ("started", "started_not_listening")
         assert "准备那一步没做成" in result["prepare"], "抛异常要收成一句读数，不是 500"
+
+    def test_the_public_layer_asks_the_family_instead_of_starting_itself(self) -> None:
+        """公共层只照声明**喊那一声**；起不起得起得成，由那一族自己知道（2026-11-20）。
+
+        这一族说"起不来"时，公共层照实报——不许自己再拉一遍（那才是第二个家长）。
+        """
+        from plobi.collectors import sidecar as common
+
+        def refuse() -> tuple[bool, str]:
+            return False, "数据密钥还没拿到，起不来"
+
+        result = common.apply(self._spec(lambda: (True, "密钥到手了"), start=refuse),
+                              enabled=True, listening=lambda _p: False,
+                              finder=lambda _p: [], killer=lambda _p: True)
+
+        assert result["action"] == "start_failed"
+        assert result["listening"] is False
+        assert "密钥还没拿到" in result["detail"]
