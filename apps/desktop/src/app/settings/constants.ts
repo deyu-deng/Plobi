@@ -442,7 +442,7 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     agentCharLimit: 'Per-Agent Memory Budget (chars)',
     userCharLimit: 'About-You Budget',
     statusCharLimit: "One Principal's Status Section (chars)",
-    l1StatusCharLimit: 'Status Digest Cap (chars)',
+    conductorStatusCharLimit: 'All-Principals Status Digest Cap (chars)',
     squeezePressure: 'Sinking Threshold (0-1)',
     nudgeInterval: 'Memory Nudge (turns)',
     provider: 'Memory service'
@@ -510,7 +510,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     globalCharLimit: 'GLOBAL.md — facts that hold for every agent.',
     agentCharLimit: "Each agent's own MEMORY.md. Replaces the old single 'Memory Budget' key.",
     statusCharLimit: 'Each principal writes its own section in the shared STATUS.md; this is that section\'s limit. Over it the write is refused, not silently cut.',
-    l1StatusCharLimit: 'Total budget for the digest the secretary reads — it never reads full per-agent memory.',
+    conductorStatusCharLimit: 'Total budget for the shared memory/STATUS.md digest the conductor reads — one section per principal, each capped separately above.',
     squeezePressure: 'When a scope is this full, content squeezed out of short-term memory rises to the pending layer for approval. Below it, a removal is just an edit and must not flood the gate.',
     nudgeInterval: 'How often the agent is reminded to consolidate memory. 0 turns it off.'
   },

@@ -909,8 +909,8 @@ export const zhHant = defineLocale({
         mindWriteAutoApprove: '攢夠信任後 Mind 自己寫',
         globalCharLimit: '共用記憶上限（字元）',
         agentCharLimit: '本 Agent 記憶上限（字元）',
-        statusCharLimit: '近況上限（字元）',
-        l1StatusCharLimit: '近況摘要上限（字元）',
+        statusCharLimit: '單個首席的近況上限（字元）',
+        conductorStatusCharLimit: '各首席近況摘要上限（字元）',
         squeezePressure: '下沉壓線（0-1）',
         nudgeInterval: '記憶提醒間隔（輪）',
         provider: '記憶服務'

@@ -928,8 +928,8 @@ export const ja = defineLocale({
         mindWriteAutoApprove: '信頼が貯まったら Mind が自分で書く',
         globalCharLimit: '共有メモリの上限（文字）',
         agentCharLimit: 'エージェント別メモリの上限（文字）',
-        statusCharLimit: 'ステータスの上限（文字）',
-        l1StatusCharLimit: 'ステータス要約の上限（文字）',
+        statusCharLimit: '首席 1 人分のステータス上限（文字）',
+        conductorStatusCharLimit: '首席全員のステータス要約の上限（文字）',
         squeezePressure: '退避しきい値（0〜1）',
         nudgeInterval: 'メモリ整理の間隔（ターン）',
         provider: 'メモリサービス'

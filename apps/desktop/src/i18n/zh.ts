@@ -977,8 +977,8 @@ export const zh: Translations = {
         mindWriteAutoApprove: '攒够信任后 Mind 自己写',
         globalCharLimit: '共用记忆上限（字符）',
         agentCharLimit: '本 Agent 记忆上限（字符）',
-        statusCharLimit: '近况上限（字符）',
-        l1StatusCharLimit: '近况摘要上限（字符）',
+        statusCharLimit: '单个首席的近况上限（字符）',
+        conductorStatusCharLimit: '各首席近况摘要上限（字符）',
         squeezePressure: '下沉压线（0-1）',
         nudgeInterval: '记忆提醒间隔（轮）',
         provider: '记忆服务'
