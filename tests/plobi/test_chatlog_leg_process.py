@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,9 @@ import pytest
 from plobi.collectors.chatlog import process, pipeline
 
 CHATLOG_DIR = Path(__file__).resolve().parents[2] / "plobi" / "collectors" / "chatlog"
+
+#: 归属登记落点的**真身**（conftest 会把 `owner_path` 钉进临时区；这一份在钉之前就抓下来）。
+_REAL_OWNER_PATH = process.owner_path
 
 
 class _FakeClient:
@@ -271,3 +275,188 @@ def test_the_watchdog_judges_the_round_not_the_process():
     source = (CHATLOG_DIR / "watchdog.py").read_text(encoding="utf-8")
 
     assert 'outcome.get("ok")' in source, "判据要是那一轮的结果"
+
+
+# --------------------------------------------------------------------------- #
+# ⑧ 跨会话的归属：上一轮留下的那个不许变成永久常驻
+# --------------------------------------------------------------------------- #
+#
+# 漏在哪（2026-11-20 实测）：腿起的那一份是**后端的子进程**；后端一死（桌面退出），
+# Windows 上子进程不会跟着走 ⇒ `:5030` 上留下一个孤儿。下一个会话的腿探到「有人在应答」
+# ⇒ 按裁定 105 当成**别人的**⇒ 借它、一辈子不收 ⇒ 「用完即收」静默地不成立了。
+#
+# 收法：**归属登记**（谁起的这棵、主人是谁）⇒ 主人没了就**认领** ⇒ 这一轮收掉。
+
+
+def _write_record(tree_pid: int, owner_pid: int) -> None:
+    """造一份归属登记（走产品自己的写入口，不手搓 JSON）。"""
+    process._write_owner(tree_pid, owner_pid)
+
+
+def _patch_probes(monkeypatch, *, tree_alive: bool, owner_alive: bool, is_ours: bool) -> None:
+    """把三个探针钉成假件：pid 活不活、主人活不活、命令行是不是我们那一棵。"""
+    monkeypatch.setattr(
+        process, "_pid_alive",
+        lambda pid: tree_alive if pid == 4242 else owner_alive,
+    )
+    monkeypatch.setattr(process, "_is_our_tree", lambda pid, created=None: is_ours)
+
+
+def test_the_owner_record_is_written_when_we_start_it(monkeypatch):
+    """起它 ⇒ 记下「这棵树的 pid ＋ 起它的那个 pid」——下一个会话认得出它。"""
+    client = _FakeClient(healthy=False)
+    monkeypatch.setattr(process, "spawn_process", lambda: 4242)
+    monkeypatch.setattr(process, "_wait_ready", lambda c, timeout: True)
+
+    process.ensure_process(client)
+
+    record = process._read_owner()
+    assert record is not None, "起完不登记 ⇒ 下一个会话认不出来"
+    assert record.tree_pid == 4242
+    assert record.owner_pid == os.getpid(), "主人是**起它的这个进程**"
+
+
+def test_an_orphan_from_a_dead_session_is_adopted(lock_home, monkeypatch):
+    """主人没了、它还活着、而且确实是 chatlog 那一棵 ⇒ **认领它**（这一轮收掉）。"""
+    _write_record(tree_pid=4242, owner_pid=999999)
+    _patch_probes(monkeypatch, tree_alive=True, owner_alive=False, is_ours=True)
+    killed: list[int] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: killed.append(pid))
+
+    handle, _note = process.ensure_process(_FakeClient(healthy=True))
+
+    assert handle is not None
+    assert handle.started_by_us is True, "那是我们上一轮留下的 ⇒ 该认领"
+    assert handle.pid == 4242
+
+    process.release_process(handle)
+    assert killed == [4242], "认领来的那个，这一轮用完收掉"
+
+
+def test_a_live_owner_is_never_adopted(lock_home, monkeypatch):
+    """主人还活着 ⇒ 那是**别人正在用的**⇒ 借，一动不动（裁定 105）。"""
+    _write_record(tree_pid=4242, owner_pid=999999)
+    _patch_probes(monkeypatch, tree_alive=True, owner_alive=True, is_ours=True)
+    killed: list[int] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: killed.append(pid))
+
+    handle, _note = process.ensure_process(_FakeClient(healthy=True))
+
+    assert handle is not None
+    assert handle.started_by_us is False, "主人还活着，不许认领"
+    process.release_process(handle)
+    assert killed == [], "借来的那个不许动"
+
+
+def test_a_recycled_pid_is_never_adopted(lock_home, monkeypatch):
+    """登记里那个 pid 被**别的进程**占用了 ⇒ 不认领（pid 复用的护栏）。
+
+    认错人 ⇒ 会去杀一个与我们无关的进程。命令行对不上 ⇒ 当作不是我们的。
+    """
+    _write_record(tree_pid=4242, owner_pid=999999)
+    _patch_probes(monkeypatch, tree_alive=True, owner_alive=False, is_ours=False)
+    killed: list[int] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: killed.append(pid))
+
+    handle, _note = process.ensure_process(_FakeClient(healthy=True))
+
+    assert handle is not None
+    assert handle.started_by_us is False, "命令行不是 chatlog ⇒ 不许认领"
+    process.release_process(handle)
+    assert killed == []
+
+
+def test_an_unreadable_probe_means_no_adoption(lock_home, monkeypatch):
+    """探针读不到（psutil 不在、权限不够）⇒ **不认领**——宁可让它多活一会儿。"""
+    _write_record(tree_pid=4242, owner_pid=999999)
+    monkeypatch.setattr(process, "_pid_alive", lambda pid: None)
+    monkeypatch.setattr(process, "_is_our_tree", lambda pid: None)
+    killed: list[int] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: killed.append(pid))
+
+    handle, _note = process.ensure_process(_FakeClient(healthy=True))
+
+    assert handle is not None
+    assert handle.started_by_us is False, "读不到就不许认领"
+    process.release_process(handle)
+    assert killed == []
+
+
+def test_releasing_clears_the_owner_record(monkeypatch):
+    """收掉自己那个 ⇒ 那份登记也清掉（别留一条指向死 pid 的账）。"""
+    _write_record(tree_pid=4242, owner_pid=os.getpid())
+    monkeypatch.setattr(process, "kill_tree", lambda pid: None)
+
+    process.release_process(process.ProcessHandle(True, 4242, "自己起的"))
+
+    assert process._read_owner() is None, "收掉了就得把登记也带走"
+
+
+def test_a_stale_orphan_is_reaped_before_a_new_one_starts(lock_home, monkeypatch):
+    """没人应答、登记里还留着一个我们上一轮留下的 ⇒ 先收掉它，再起我们自己的。"""
+    _write_record(tree_pid=4242, owner_pid=999999)
+    _patch_probes(monkeypatch, tree_alive=True, owner_alive=False, is_ours=True)
+    order: list[str] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: order.append(f"kill:{pid}"))
+    monkeypatch.setattr(process, "spawn_process", lambda: order.append("spawn") or 5151)
+    monkeypatch.setattr(process, "_wait_ready", lambda c, timeout: True)
+
+    handle, _note = process.ensure_process(_FakeClient(healthy=False))
+
+    assert handle is not None and handle.pid == 5151
+    assert order == ["kill:4242", "spawn"], "先收掉上一轮留下的，再起新的"
+
+
+def test_the_owner_record_lives_in_the_data_home(monkeypatch):
+    """归属登记落在**数据家**底下——不落 C 盘（`D:\\_POLICY`）。"""
+    from plobi_constants import get_plobi_home
+
+    # 把 conftest 钉的那一份换回**产品真身**再问它落点（钉住的是临时区，形状看不出来）。
+    monkeypatch.setattr(process, "owner_path", _REAL_OWNER_PATH)
+
+    path = process.owner_path()
+
+    assert path == get_plobi_home() / "chatlog" / "collect.owner.json"
+    assert path.name == "collect.owner.json"
+
+
+# --------------------------------------------------------------------------- #
+# ⑨ 退出时把自己起的那几棵带走
+# --------------------------------------------------------------------------- #
+#
+# 归属登记管的是「**崩了**留下的」；正常退出这一格由 atexit 管。
+# 两条合起来，「用完即收」才在**所有**退出路径上成立——只做前者，桌面退出那一瞬间还漏着。
+#
+# 与浏览器那一族（`tools/browser_tool.py` 的 owner_pid ＋ orphan reaper）**同一个形状**。
+
+
+def test_exit_takes_our_own_trees_with_it(monkeypatch):
+    """本进程退出 ⇒ 自己起的那几棵**跟着走**（Windows 上子进程不会自己死）。"""
+    killed: list[int] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: killed.append(pid))
+    monkeypatch.setattr(process, "_is_our_tree", lambda pid, created=None: True)
+    monkeypatch.setattr(process, "_OWNED_TREES", {4242: None, 5151: None})
+
+    process._reap_our_own_on_exit()
+
+    assert sorted(killed) == [4242, 5151]
+
+
+def test_exit_does_not_touch_a_pid_that_is_not_ours(monkeypatch):
+    """pid 会被复用 ⇒ 身份对不上就**不动它**（别在退出路上杀掉一个无关进程）。"""
+    killed: list[int] = []
+    monkeypatch.setattr(process, "kill_tree", lambda pid: killed.append(pid))
+    monkeypatch.setattr(process, "_is_our_tree", lambda pid, created=None: False)
+    monkeypatch.setattr(process, "_OWNED_TREES", {4242: None})
+
+    process._reap_our_own_on_exit()
+
+    assert killed == [], "身份对不上就不许动"
+
+
+def test_the_exit_hook_is_registered():
+    """atexit 那一格得真的挂着——不然「正常退出带走」只是纸上的话。"""
+    source = inspect.getsource(process)
+
+    assert "atexit.register(_reap_our_own_on_exit)" in source, "退出前那一手没挂上"
+    assert "import atexit" in source

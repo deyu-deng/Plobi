@@ -18,6 +18,20 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _collect_process_state_stays_in_tmp(tmp_path, monkeypatch):
+    """起停锁与**归属登记**都落到临时区——单测不许往真家写。
+
+    归属登记（`$PLOBI_HOME/chatlog/collect.owner.json`）是**数据家**里的文件；
+    单测若写它，就是往真家塞一份「有进程归我」的假账 ⇒ 下一轮真跑会据此认领
+    ⇒ 去杀一个不该杀的进程。⇒ 这里把两个落点一起钉进临时区。
+    """
+    from plobi.collectors.chatlog import process
+
+    monkeypatch.setattr(process, "lock_path", lambda: tmp_path / "collect.lock")
+    monkeypatch.setattr(process, "owner_path", lambda: tmp_path / "collect.owner.json")
+
+
+@pytest.fixture(autouse=True)
 def _never_spawn_the_collect_process(monkeypatch):
     """单测里那个采集进程**永远起不来**（起停那一格另有专测）。"""
     from plobi.collectors.chatlog import process
