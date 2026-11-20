@@ -760,7 +760,7 @@ export const en: Translations = {
       memory: {
         working: 'Working memory',
         longTerm: 'Long-term memory',
-        mind: 'Mind',
+        mind: 'Exocortex',
         external: 'External memory providers'
       }
     },

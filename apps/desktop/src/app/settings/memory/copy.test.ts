@@ -37,8 +37,13 @@ const GROUP_KEYS = ['working', 'longTerm', 'mind', 'external'] as const
 const englishMemoryKeys = Object.keys(FIELD_LABELS).filter(key => key.startsWith('memory.'))
 
 describe('记忆与上下文的文案', () => {
-  it('四个组名四语都有，且 Mind 在三种译文里就叫 Mind', () => {
+  it('四个组名四语都有，且那一格按各语言叫自己的名字（外脑／外腦／外脳／Exocortex）', () => {
     expect(Object.keys(en.settings.groups.memory).sort()).toEqual([...GROUP_KEYS].sort())
+    expect(en.settings.groups.memory.mind).toBe('Exocortex')
+
+    // 用户 11-20 定名：对内标识符仍叫 `Mind`／`MIND_ROOT`，产品名是 Exocortex／外脑。
+    // 这一格必须译过去 —— 留着英文 'Mind' 就是没跟上新名。
+    const OWN_NAME = { zh: '外脑', ja: '外脳', 'zh-hant': '外腦' } as const
 
     for (const [lang, copy] of TRANSLATED) {
       const groups = copy.settings.groups.memory
@@ -47,7 +52,7 @@ describe('记忆与上下文的文案', () => {
         expect(groups[key], `${lang} 缺 groups.memory.${key}`).toBeTruthy()
       }
 
-      expect(groups.mind, `${lang} 把 Mind 译走了`).toBe('Mind')
+      expect(groups.mind, `${lang} 那一格还叫 Mind`).toBe(OWN_NAME[lang])
     }
   })
 

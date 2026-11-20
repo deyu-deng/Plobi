@@ -303,7 +303,7 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
  */
 export const MEMORY_PROVIDER_LABELS: Record<string, string> = {
   '': 'Off - built-in memory only',
-  mind: 'Mind - the official brain',
+  mind: 'Exocortex - the official brain',
 }
 
 export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
@@ -436,8 +436,8 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     userProfileEnabled: 'About You',
     writeApproval: 'Ask Before Writing',
     mindEnabled: 'Always On',
-    mindWriteApproval: 'Ask Before Writing Into Mind',
-    mindWriteAutoApprove: 'Let Mind Write on Its Own Once Trusted',
+    mindWriteApproval: 'Ask Before Writing Into the Exocortex',
+    mindWriteAutoApprove: 'Let the Exocortex Write on Its Own Once Trusted',
     globalCharLimit: 'Shared Memory Budget (chars)',
     agentCharLimit: 'Per-Agent Memory Budget (chars)',
     userCharLimit: 'About-You Budget',

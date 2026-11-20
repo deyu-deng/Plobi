@@ -739,7 +739,7 @@ export const zh: Translations = {
       memory: {
         working: '工作记忆',
         longTerm: '长时记忆',
-        mind: 'Mind',
+        mind: '外脑',
         external: '外部记忆提供商'
       }
     },
@@ -973,8 +973,8 @@ export const zh: Translations = {
         userCharLimit: '画像预算',
         writeApproval: '写入前先问',
         mindEnabled: '常驻',
-        mindWriteApproval: '写入 Mind 前先问',
-        mindWriteAutoApprove: '攒够信任后 Mind 自己写',
+        mindWriteApproval: '写入外脑前先问',
+        mindWriteAutoApprove: '攒够信任后外脑自己写',
         globalCharLimit: '共用记忆上限（字符）',
         agentCharLimit: '本 Agent 记忆上限（字符）',
         statusCharLimit: '单个首席的近况上限（字符）',

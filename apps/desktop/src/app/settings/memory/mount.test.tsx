@@ -16,7 +16,7 @@ afterEach(() => cleanup())
 
 /**
  * 这一屏的全部字段，顺序就是设计上的分层顺序（`constants.ts` 的 `MEMORY_GROUPS`）：
- * 工作记忆 → 长时记忆 → Mind → 外部记忆提供商。
+ * 工作记忆 → 长时记忆 → 外脑（Exocortex） → 外部记忆提供商。
  *
  * 用 `vi.hoisted` 是因为下面的 `vi.mock` 工厂会被提升到文件顶部，普通 const 那时还没赋值。
  */
@@ -132,9 +132,9 @@ describe('ConfigSettings · memory 段', () => {
     const ids = Array.from(document.querySelectorAll('[id^="setting-field-"]')).map(node => node.id)
     expect(ids).toEqual(memoryFields.map(key => `setting-field-${key}`))
 
-    // 组名顺序：工作记忆 → 长时记忆 → Mind → 外部提供商（取自 en 目录；
+    // 组名顺序：工作记忆 → 长时记忆 → 外脑 → 外部提供商（取自 en 目录；
     // 取不到就不给抬头，所以这条同时守着「四语键真的存在」）。
-    const titles = ['Working memory', 'Long-term memory', 'Mind', 'External memory providers']
+    const titles = ['Working memory', 'Long-term memory', 'Exocortex', 'External memory providers']
     const rendered = Array.from(document.querySelectorAll('h2'))
       .map(node => node.textContent)
       .filter(text => titles.includes(text ?? ''))

@@ -687,7 +687,7 @@ export const ja = defineLocale({
       memory: {
         working: 'ワーキングメモリ',
         longTerm: '長期記憶',
-        mind: 'Mind',
+        mind: '外脳',
         external: '外部メモリプロバイダー'
       }
     },
@@ -924,8 +924,8 @@ export const ja = defineLocale({
         userCharLimit: 'ユーザー像の予算',
         writeApproval: '書き込み前に確認',
         mindEnabled: '常時オン',
-        mindWriteApproval: 'Mind への書き込み前に確認',
-        mindWriteAutoApprove: '信頼が貯まったら Mind が自分で書く',
+        mindWriteApproval: '外脳への書き込み前に確認',
+        mindWriteAutoApprove: '信頼が貯まったら外脳が自分で書く',
         globalCharLimit: '共有メモリの上限（文字）',
         agentCharLimit: 'エージェント別メモリの上限（文字）',
         statusCharLimit: '首席 1 人分のステータス上限（文字）',

@@ -671,7 +671,7 @@ export const zhHant = defineLocale({
       memory: {
         working: '工作記憶',
         longTerm: '長時記憶',
-        mind: 'Mind',
+        mind: '外腦',
         external: '外部記憶供應商'
       }
     },
@@ -905,8 +905,8 @@ export const zhHant = defineLocale({
         userCharLimit: '畫像預算',
         writeApproval: '寫入前先問',
         mindEnabled: '常駐',
-        mindWriteApproval: '寫入 Mind 前先問',
-        mindWriteAutoApprove: '攢夠信任後 Mind 自己寫',
+        mindWriteApproval: '寫入外腦前先問',
+        mindWriteAutoApprove: '攢夠信任後外腦自己寫',
         globalCharLimit: '共用記憶上限（字元）',
         agentCharLimit: '本 Agent 記憶上限（字元）',
         statusCharLimit: '單個首席的近況上限（字元）',
