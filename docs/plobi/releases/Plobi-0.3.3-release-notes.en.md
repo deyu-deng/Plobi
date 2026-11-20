@@ -13,6 +13,7 @@ Installers are attached below.
 - **Quotes and attachments become a chip in the text** — no longer a grey bar that cannot be removed; hover shows a preview.
 - **Read long text in full** — the hover card on long passages is no longer truncated; it scrolls and can be selected.
 - **Edit memory entry by entry** — memory can now be changed for specific entries only, leaving the other bytes untouched.
+- **Document preview remembers where you were** — close a document and open it again and the view returns to the same place. Word, spreadsheets, slides and PDF each keep their own position per file, and the position still holds after the window is resized (previously every document started again at page one).
 
 ### Improved
 
