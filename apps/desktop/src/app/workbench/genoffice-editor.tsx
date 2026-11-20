@@ -10,11 +10,13 @@ import {
   registerGenOfficeDirtyProvider
 } from './genoffice-dirty'
 import type { OfficePreviewLabels } from './office-preview'
+import { applyOfficeViewState } from './office-view-state'
 import { useFileRevision } from './use-file-revision'
 
 export type GenOfficeKind = 'slides' | 'sheets' | 'word'
 
 interface GenOfficeWebview extends HTMLElement {
+  executeJavaScript?: (code: string) => Promise<unknown>
   getWebContentsId?: () => number
   reload?: () => void
 }
@@ -179,7 +181,11 @@ export function GenOfficeFileEditor({
           setLoading(true)
           setFailed(false)
         }
-        const onStop = () => setLoading(false)
+        const onStop = () => {
+          setLoading(false)
+          // 页面自己的 load 事件比文档解析早，脚本内部会等正文渲染出来再还原位置。
+          applyOfficeViewState(webview, kind, path)
+        }
         const onFail = (event: Event) => {
           const detail = event as Event & { errorCode?: number; isMainFrame?: boolean }
 

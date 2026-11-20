@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
@@ -15,6 +15,7 @@ import { GenOfficeFileEditor } from './genoffice-editor'
 import { useFileBytes } from './file-bytes'
 import { useFileRevision } from './use-file-revision'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
+import { useOfficeScrollMemory } from './use-office-scroll-memory'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -128,6 +129,8 @@ function SheetPreview({
   const model = useMemo(() => (bytes ? readSheetModel(bytes, sheetName || undefined) : null), [bytes, sheetName])
   const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
   const legacy = /\.xls$/iu.test(path)
+  // 表格按 [文件, 工作表] 记位置：同一个 xls 里不同 sheet 的阅读位置互不干扰。
+  const sheetScrollRef = useOfficeScrollMemory({ kind: `sheet:${selected}`, path })
 
   const convertToXlsx = async () => {
     if (!bytes || converting) {
@@ -193,7 +196,7 @@ function SheetPreview({
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-white">
+      <div className="min-h-0 flex-1 overflow-auto bg-white" ref={sheetScrollRef}>
         <table className="border-collapse text-[0.68rem]">
           <thead>
             <tr>
@@ -284,6 +287,16 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
+  const pdfScrollRef = useOfficeScrollMemory({ kind: 'pdf', path })
+  // 身份必须稳定：内联箭头每次渲染都换新身份，React 会先传 null 再传节点，
+  // 位置恢复就会在每次 setState 后被重新触发。
+  const mergedPdfRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      hostRef.current = node
+      pdfScrollRef(node)
+    },
+    [pdfScrollRef]
+  )
 
   useEffect(() => {
     const host = hostRef.current
@@ -753,7 +766,10 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
         {saveError ? <span className="truncate text-[0.6rem] text-destructive">{saveError}</span> : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-2" ref={hostRef} />
+      <div
+        className="min-h-0 flex-1 overflow-auto p-2"
+        ref={mergedPdfRef}
+      />
       <PreviewStatus error={error || renderError} labels={labels} loading={loading || rendering} />
       {noteDraft ? (
         <div
