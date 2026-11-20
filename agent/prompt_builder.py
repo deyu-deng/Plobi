@@ -150,9 +150,13 @@ PLOBI_AGENT_HELP_GUIDANCE = (
 
 MEMORY_GUIDANCE = (
     "You have persistent memory across sessions, held in four locations, and the interface "
-    "is the pair `memory_read` then `memory_write`: read the location, send back the edited "
-    "list. Save durable facts: user preferences, environment details, tool quirks, and stable "
-    "conventions. "
+    "is the pair `memory_read` then `memory_write`. Read the location first; then change "
+    "what actually changed — `memory_write(edits=…)` names the row by a phrase of its own "
+    "text and leaves every other entry byte-identical, while `parts` replaces the whole "
+    "list (use that only when you are re-organising). Prefer sharpening or merging an "
+    "existing entry over appending a near-duplicate: memory is injected into every turn, "
+    "so a list that grows every session costs attention and stops being read. Save durable "
+    "facts: user preferences, environment details, tool quirks, and stable conventions. "
     "Memory is injected into every turn, so keep it compact and focused on facts that "
     "will still matter later.\n"
     "Prioritize what reduces future user steering — the most valuable memory is one "

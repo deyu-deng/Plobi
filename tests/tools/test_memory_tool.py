@@ -7,6 +7,7 @@ from pathlib import Path
 from tools.memory_tool import (
     MemoryStore,
     memory_tool,
+    resolve_agent_slug,
     _scan_memory_content,
     MEMORY_SCHEMA,
 )
@@ -16,9 +17,11 @@ def _own_memory_file(root):
     """The per-identity ledger path for the default (no PLOBI_AGENT_ID) identity.
 
     裁定 181: 自己那份住在 ``<共享根>/memory/agents/<slug>/MEMORY.md``。测试里
-    ``get_memory_dir`` 被 patch 成 tmp_path，没设身份 ⇒ slug 走缺省的 l1。
+    ``get_memory_dir`` 被 patch 成 tmp_path ⇒ 起点的家是它；**slug 不写死**
+    （``l1`` 是退役的指挥别名，11-19 起缺省身份是名册里那个 conductor，现读
+    ``secretary``）——问代码自己的解析，别在测试里抄一份会过期的名字。
     """
-    return root / "agents" / "l1" / "MEMORY.md"
+    return root / "agents" / resolve_agent_slug() / "MEMORY.md"
 
 
 # =========================================================================
@@ -990,7 +993,7 @@ class TestMemoryDirIsSharedRoot:
         store.load_from_disk()
         assert store.add("memory", "Fact written under a profile install")["success"] is True
 
-        own = get_memory_dir() / "agents" / "l1" / "MEMORY.md"
+        own = get_memory_dir() / "agents" / resolve_agent_slug() / "MEMORY.md"
         assert "Fact written under a profile install" in own.read_text(encoding="utf-8")
         assert not (profile_home / "memories").exists()
         assert not (profile_home / "memory").exists()

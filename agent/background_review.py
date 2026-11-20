@@ -168,14 +168,20 @@ def _digest_history(messages_snapshot: List[Dict], tail: int = 24) -> List[Dict]
 # them as class attributes (``_MEMORY_REVIEW_PROMPT`` etc.) for back-compat;
 # the actual text lives here so future edits are one-place.
 _MEMORY_REVIEW_PROMPT = (
-    "Review the conversation above and consider saving to memory if appropriate.\n\n"
+    "Review the conversation above and consider updating memory if appropriate.\n\n"
     "Focus on:\n"
     "1. Has the user revealed things about themselves — their persona, desires, "
     "preferences, or personal details worth remembering?\n"
     "2. Has the user expressed expectations about how you should behave, their work "
-    "style, or ways they want you to operate?\n\n"
-    "If something stands out, save it using the memory tool. "
-    "If nothing is worth saving, just say 'Nothing to save.' and stop."
+    "style, or ways they want you to operate?\n"
+    "3. Has anything ALREADY in memory gone stale, been refined, or turned out wrong in "
+    "this conversation?\n\n"
+    "How to write: call memory_read first, then change what needs changing instead of "
+    "appending next to it. Use memory_write with `edits` — one op per row, addressed by a "
+    "phrase from that row's own text — and prefer replacing or merging an existing entry "
+    "over adding a near-duplicate. Append only when the fact is genuinely new. A list that "
+    "grows every session stops being read; a list that gets sharper is the goal.\n\n"
+    "If nothing needs to change, just say 'Nothing to save.' and stop."
 )
 
 _SKILL_REVIEW_PROMPT = (
@@ -287,8 +293,10 @@ _COMBINED_REVIEW_PROMPT = (
     "Review the conversation above and update two things:\n\n"
     "**Memory**: who the user is. Did the user reveal persona, "
     "desires, preferences, personal details, or expectations about "
-    "how you should behave? Save facts about the user and durable "
-    "preferences with the memory tool.\n\n"
+    "how you should behave? Read the location first, then change what "
+    "needs changing: use memory_write with `edits` to refine or merge an "
+    "existing entry, and append only when the fact is genuinely new — a "
+    "list that grows every session stops being read.\n\n"
     "**Skills**: how to do this class of task. Be ACTIVE — most "
     "sessions produce at least one skill update. A pass that does "
     "nothing is a missed learning opportunity, not a neutral outcome.\n\n"

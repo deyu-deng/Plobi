@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from tools import memory_tool as mt
+from plobi_cli.config import DEFAULT_CONFIG
 
 # 出厂上限（裁 156 点名的两个数）。这两个常量在这里只用于**造压力**，
 # 真值一律从 DEFAULT_CONFIG / 被测代码的解析函数取（不许拿字面数字当判据）。
@@ -74,8 +75,13 @@ def test_l1_template_is_the_source_and_it_opens_l0():
     assert section.get("memory_enabled") is True, (
         f"真源仍写着 {section.get('memory_enabled')!r}，L0 那层根本没开")
     assert section.get("user_profile_enabled") is True
-    # 开的是总开关；回合后那个自动 review fork 仍关着（那条理由没被推翻）
-    assert section.get("nudge_interval") == 0
+    # 11-19 改判（用户：「AI 从不更新记忆」）：这份模板以前把 nudge_interval 写成 0，
+    # 理由是"回合后那个 review fork 关着"。现核那条理由只对**技能**那一半成立——
+    # 记忆提醒留着，指挥的预算钩子也只清 skill 计数（plugins/plobi-core/conductor_budget.py）。
+    # 再写 0 就是让"提醒"这唯一一条主动路径不存在。
+    assert section.get("nudge_interval") == 10
+    assert section.get("nudge_interval") == DEFAULT_CONFIG["memory"]["nudge_interval"], (
+        "模板与出厂必须是同一个数——两处各一套就等于没有真源")
 
 
 def test_default_config_and_the_template_give_one_answer():

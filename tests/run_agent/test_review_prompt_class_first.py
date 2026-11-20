@@ -130,7 +130,9 @@ def test_combined_review_prompt_has_memory_section():
     """Memory half must still cover user facts and preferences."""
     prompt = AIAgent._COMBINED_REVIEW_PROMPT
     assert "**Memory**" in prompt
-    assert "memory tool" in prompt
+    # 11-20：指的仍是记忆这道面，且现在明确要求「先读再改、别追加近重复」
+    assert "memory_write" in prompt
+    assert "edits" in prompt
 
 
 def test_combined_review_prompt_skills_biased_toward_active_updates():
@@ -227,9 +229,14 @@ def test_combined_review_prompt_has_anti_pattern_guidance():
 # ---------------------------------------------------------------------------
 
 def test_memory_review_prompt_still_focused_on_user_facts():
-    """Memory-only review prompt stays focused on user facts — not touched by this change."""
+    """Memory-only review prompt stays focused on user facts — not skill territory.
+
+    11-20 改的是**写法**（先读再改、用 `edits` 改那一条，别追加近重复），
+    不是范围：它仍然只谈记忆这一面，不越界去改技能库。
+    """
     prompt = AIAgent._MEMORY_REVIEW_PROMPT
-    # The memory-only prompt should NOT drift into skill territory
     assert "skills_list" not in prompt
     assert "SURVEY" not in prompt
-    assert "memory tool" in prompt
+    assert "memory_write" in prompt and "edits" in prompt
+    # 「追加近重复」这条退路被点名堵住，否则模型回到"每轮加一条"
+    assert "near-duplicate" in prompt

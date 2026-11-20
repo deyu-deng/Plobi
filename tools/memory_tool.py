@@ -399,6 +399,68 @@ def _drift_error(path: "Path", bak_path: str) -> Dict[str, Any]:
     }
 
 
+def _apply_ops(working: List[str],
+               operations: List[Dict[str, Any]]) -> "tuple[List[str], Optional[str]]":
+    """Apply add/replace/remove ops to a copy of ``working``; no disk, no store state.
+
+    Split out of :meth:`MemoryStore.apply_batch` so the surgical path
+    (``memory_write(edits=…)``) and the batch path validate byte-for-byte the
+    same way: one implementation of "what does this op list turn the file into".
+
+    Returns ``(entries, error)``. On error the caller must write **nothing** —
+    the whole op list is all-or-nothing, and the error names the first failure
+    in words the model can act on ("no entry matched '…'", "be more specific").
+
+    Why a substring match and not an id: entries are addressed by their own
+    text. Memory is a short curated list, so "the entry containing this phrase"
+    is unambiguous in practice — and when it isn't, we refuse and ask for a
+    longer phrase instead of guessing which of two rows to rewrite.
+    """
+    out = list(working)
+    for i, op in enumerate(operations):
+        op = op or {}
+        act = op.get("action")
+        content = (op.get("content") or "").strip()
+        old_text = (op.get("old_text") or "").strip()
+        pos = f"Operation {i + 1} ({act or 'unknown'})"
+
+        if act == "add":
+            if not content:
+                return out, f"{pos}: content is required."
+            if content in out:
+                continue  # idempotent -- skip duplicate, don't fail the batch
+            out.append(content)
+
+        elif act == "replace":
+            if not old_text:
+                return out, f"{pos}: old_text is required."
+            if not content:
+                return out, f"{pos}: content is required (use action='remove' to delete)."
+            matches = [j for j, e in enumerate(out) if old_text in e]
+            if not matches:
+                return out, f"{pos}: no entry matched '{old_text}'."
+            if len({out[j] for j in matches}) > 1:
+                return out, (f"{pos}: '{old_text}' matched multiple distinct entries "
+                             "-- be more specific.")
+            out[matches[0]] = content
+
+        elif act == "remove":
+            if not old_text:
+                return out, f"{pos}: old_text is required."
+            matches = [j for j, e in enumerate(out) if old_text in e]
+            if not matches:
+                return out, f"{pos}: no entry matched '{old_text}'."
+            if len({out[j] for j in matches}) > 1:
+                return out, (f"{pos}: '{old_text}' matched multiple distinct entries "
+                             "-- be more specific.")
+            out.pop(matches[0])
+
+        else:
+            return out, f"{pos}: unknown action. Use add, replace, or remove."
+
+    return out, None
+
+
 class MemoryStore:
     """
     Bounded curated memory with file persistence. One instance per AIAgent.
@@ -1084,56 +1146,9 @@ class MemoryStore:
             squeeze = self._at_capacity(target)
             limit = self._char_limit(target)
 
-            for i, op in enumerate(operations):
-                op = op or {}
-                act = op.get("action")
-                content = (op.get("content") or "").strip()
-                old_text = (op.get("old_text") or "").strip()
-                pos = f"Operation {i + 1} ({act or 'unknown'})"
-
-                if act == "add":
-                    if not content:
-                        return self._batch_error(target, f"{pos}: content is required.")
-                    if content in working:
-                        continue  # idempotent -- skip duplicate, don't fail the batch
-                    working.append(content)
-
-                elif act == "replace":
-                    if not old_text:
-                        return self._batch_error(target, f"{pos}: old_text is required.")
-                    if not content:
-                        return self._batch_error(
-                            target,
-                            f"{pos}: content is required (use action='remove' to delete).",
-                        )
-                    matches = [j for j, e in enumerate(working) if old_text in e]
-                    if not matches:
-                        return self._batch_error(target, f"{pos}: no entry matched '{old_text}'.")
-                    if len({working[j] for j in matches}) > 1:
-                        return self._batch_error(
-                            target,
-                            f"{pos}: '{old_text}' matched multiple distinct entries -- be more specific.",
-                        )
-                    working[matches[0]] = content
-
-                elif act == "remove":
-                    if not old_text:
-                        return self._batch_error(target, f"{pos}: old_text is required.")
-                    matches = [j for j, e in enumerate(working) if old_text in e]
-                    if not matches:
-                        return self._batch_error(target, f"{pos}: no entry matched '{old_text}'.")
-                    if len({working[j] for j in matches}) > 1:
-                        return self._batch_error(
-                            target,
-                            f"{pos}: '{old_text}' matched multiple distinct entries -- be more specific.",
-                        )
-                    working.pop(matches[0])
-
-                else:
-                    return self._batch_error(
-                        target,
-                        f"{pos}: unknown action. Use add, replace, or remove.",
-                    )
+            working, op_error = _apply_ops(working, operations)
+            if op_error:
+                return self._batch_error(target, op_error)
 
             # Budget check against the FINAL state only.
             new_total = len(ENTRY_DELIMITER.join(working)) if working else 0
@@ -1878,6 +1893,7 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
 #
 #   memory_read(scope)                      -> what that location holds right now
 #   memory_write(scope, parts, source)      -> that location now holds exactly these
+#   memory_write(scope, edits, source)      -> only the named entries changed
 #
 # `scope` is a data location (self / global / user / status), which 裁定 185 allows;
 # there is no action/intent/mode selector, because every extra enum value is one more
@@ -1934,29 +1950,125 @@ def memory_read(scope: str = "self", store: Optional[MemoryStore] = None) -> str
     )
 
 
+_EDIT_VERBS = ("add", "replace", "remove")
+
+
+def _normalize_edits(edits: List[Dict[str, Any]],
+                     source: Optional[str]) -> "tuple[List[Dict[str, Any]], Optional[str]]":
+    """Turn the model-facing ``edits`` list into store operations (or one error).
+
+    Accepts ``op`` or ``action`` as the verb — two spellings of the same field is
+    cheaper than one 400 from a model that guessed the other word. ``source`` is
+    attached to every add/replace body exactly like the whole-location path does,
+    so an entry written by either route points at the same human page.
+    """
+    out: List[Dict[str, Any]] = []
+    for i, raw in enumerate(edits or []):
+        item = raw or {}
+        verb = str(item.get("op") or item.get("action") or "").strip().lower()
+        if verb not in _EDIT_VERBS:
+            return [], (f"Edit {i + 1}: unknown op {verb!r} — use 'add', 'replace' "
+                        "or 'remove'.")
+        content = item.get("content")
+        body = "" if content is None else entry_with_source(str(content).strip(), source)
+        out.append({
+            "action": verb,
+            "content": body,
+            "old_text": str(item.get("old_text") or ""),
+        })
+    return out, None
+
+
 def memory_write(scope: str = "self", parts: Optional[List[str]] = None,
-                 source: str = None, store: Optional[MemoryStore] = None) -> str:
-    """Make one memory location hold exactly ``parts``.
+                 source: str = None, edits: Optional[List[Dict[str, Any]]] = None,
+                 store: Optional[MemoryStore] = None) -> str:
+    """Write one memory location: whole list (``parts``) or surgical edits (``edits``).
 
-    Whole-location write on purpose: one verb, no selector to get wrong. Send back
-    what you read, edited — including every entry you mean to keep. The char cap is
-    checked against the FINAL content only, so trimming and adding are one call.
-    ``source`` (a relative kind-rooted path — ``notes/…`` / ``dossiers/…`` — or ``mind/…``, plus its date) is appended to
-    each entry that has no pointer yet; the direction is memory -> the page a human
-    reads, never the page -> memory to save space (裁定 182).
+    **``edits`` is the normal way.** Memory is a curated list where most writes
+    change ONE row — a preference sharpened, a stale fact dropped. Sending the
+    other two thousand characters back to say that is both expensive and how
+    entries get lost in transcription; an edit names the row by a phrase of its
+    own text and leaves every other byte untouched::
 
-    ``global`` is the same verb, but that location's own rule is plan + hash + a human
-    nod, so it stages into the pending layer and writes nothing until approved.
+        memory_write(edits=[{"op": "replace", "old_text": "prefers tabs",
+                             "content": "prefers 4 spaces"}])
+
+    Ops are all-or-nothing and validated against the final size, so "drop two
+    stale rows and add the new one" is one call. A phrase matching two distinct
+    rows is refused rather than guessed — use a longer phrase.
+
+    **``parts`` rewrites the whole location** (裁定 185): send everything you
+    mean to keep. Use it when the list is being re-organised, not when one entry
+    changed. Exactly one of the two must be sent.
+
+    ``source`` (a relative kind-rooted path — ``notes/…`` / ``dossiers/…`` — or
+    ``mind/…``, plus its date) is appended to each entry that has no pointer yet;
+    the direction is memory -> the page a human reads, never the page -> memory
+    to save space (裁定 182).
+
+    ``global`` is the same verb under a different rule: that location always
+    stages into the pending layer and writes nothing until a human nods.
     """
     try:
         target = _resolve_atomic_scope(scope)
     except ValueError as exc:
         return tool_error(str(exc), success=False)
 
+    if edits is not None and parts is not None:
+        return tool_error(
+            "Send either `edits` (change specific entries) or `parts` (whole list), "
+            "not both — a call that does both has no single meaning.",
+            success=False,
+        )
+    if edits is None and parts is None:
+        return tool_error(
+            "Nothing to write: send `edits` to change entries, or `parts` to make the "
+            "location hold exactly that list.",
+            success=False,
+        )
+
+    live = store or load_on_disk_store()
+
+    if edits is not None:
+        operations, edit_error = _normalize_edits(edits, source)
+        if edit_error:
+            return tool_error(edit_error, success=False)
+        if not operations:
+            return json.dumps(
+                {"success": True, "unchanged": True, "scope": target,
+                 "message": "No edits to apply."},
+                ensure_ascii=False,
+            )
+        # GLOBAL always goes through the pending layer; stage the ops themselves so
+        # the review card reads "replace X with Y", not "the whole file changes".
+        if target == "global":
+            return _stage_global_write("batch", None, None, operations, live)
+
+        before = list(live._entries_for(target))
+        final, op_error = _apply_ops(before, operations)
+        if op_error:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"{op_error} Nothing was written — edits are all-or-nothing.",
+                    "current_entries": before,
+                    "usage": f"{live._char_count(target):,}/{live._char_limit(target):,} chars",
+                },
+                ensure_ascii=False,
+            )
+        if _write_approval_on() and not _l0_trust_allows(
+            target, before, final, getattr(live, "slug", "")
+        ):
+            return _stage_scoped_write(target, final, live)
+
+        result = live.rewrite(target, final)
+        result["scope"] = target
+        result["edited"] = len(operations)
+        return json.dumps(result, ensure_ascii=False)
+
     entries = [entry_with_source(str(part).strip(), source)
                for part in (parts or []) if str(part).strip()]
     entries = list(dict.fromkeys(entries))
-    live = store or load_on_disk_store()
 
     if target == "global":
         current = list(live._entries_for("global"))
@@ -1991,8 +2103,8 @@ MEMORY_READ_SCHEMA = {
         "lives in. Four locations: 'self' = this agent's own notes; 'global' = the layer "
         "every agent reads; 'user' = who the person is (one copy); 'status' = your few "
         "lines of current state, which only the L1 secretary reads. Call this before "
-        "memory_write — the write replaces the location's whole content, so anything you "
-        "want to keep has to be sent back."
+        "editing an entry whose exact wording you don't already know — `edits` matches "
+        "on a phrase of the entry's own text, and `parts` replaces the whole list."
     ),
     "parameters": {
         "type": "object",
@@ -2009,12 +2121,27 @@ MEMORY_READ_SCHEMA = {
 MEMORY_WRITE_SCHEMA = {
     "name": "memory_write",
     "description": (
-        "Write a memory location: after this call it holds exactly `parts`, in order. This "
-        "is a whole-location write, not an append — read it first, then send the edited "
-        "list, so one call can merge stale entries, drop what's wrong, and add the new fact "
-        "together. Each location has its own char cap and the limit is checked on the FINAL "
-        "content; an over-budget write is refused with the current entries shown, and "
-        "nothing is dropped silently. APPROVAL: with the user's approval switch on (memory.write_approval), every location's write is staged — nothing lands until they nod on the card in the chat, and a staged result is terminal (do not repeat the call).\n\n"
+        "Write a memory location. Two shapes, and exactly one per call:\n\n"
+        "• `edits` — change specific entries. THE NORMAL WAY: memory is a curated list "
+        "where most writes touch one row (a preference sharpened, a stale fact dropped). "
+        "Name the row by a phrase of its own text and every other byte stays untouched: "
+        "{\"op\": \"replace\", \"old_text\": \"prefers tabs\", \"content\": \"prefers 4 spaces\"}. "
+        "Ops: add / replace / remove; all-or-nothing, so 'drop two stale rows and add the "
+        "new one' is one call. A phrase that matches two distinct entries is refused, not "
+        "guessed — use a longer phrase.\n\n"
+        "• `parts` — the location holds exactly this list, in order. Use it when the list "
+        "is being re-organised, not when one entry changed; anything you leave out is gone "
+        "(that is the point of the shape). [] deliberately clears a location, except "
+        "'user', where it is refused — deleting a fact about the person is an explicit "
+        "act, not a side effect of a rewrite.\n\n"
+        "Each location has its own char cap, checked on the FINAL content; an over-budget "
+        "write is refused with the current entries shown, and nothing is dropped silently. "
+        "Prefer `edits` over `parts` whenever you are changing something rather than "
+        "rebuilding the list — and prefer changing an existing entry over appending a "
+        "near-duplicate of it.\n\n"
+        "APPROVAL: with the user's approval switch on (memory.write_approval), every "
+        "location's write is staged — nothing lands until they nod on the card in the "
+        "chat, and a staged result is terminal (do not repeat the call).\n\n"
         "'source' is how memory stays small: the relative path of the page a person can "
         "read plus its date, e.g. 'dossiers/projects/Plobi/dossier.json 2026-10-19'. "
         "The first segment is the kind root as it sits in the data directory "
@@ -2034,14 +2161,40 @@ MEMORY_WRITE_SCHEMA = {
                 "enum": ["self", "global", "user", "status"],
                 "description": "Which memory location to write. Default 'self'.",
             },
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {
+                            "type": "string",
+                            "enum": ["add", "replace", "remove"],
+                            "description": "add = new entry; replace = swap the matched "
+                                           "entry's text; remove = drop it.",
+                        },
+                        "old_text": {
+                            "type": "string",
+                            "description": "A phrase copied from the target entry's own "
+                                           "text. Required for replace and remove; a "
+                                           "phrase matching two entries is refused.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The new entry text. Required for add and "
+                                           "replace; omit for remove.",
+                        },
+                    },
+                },
+                "description": "Surgical changes, applied in order, all-or-nothing. Use "
+                               "this instead of resending the whole list.",
+            },
             "parts": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
                     "The complete set of entries this location should hold, in order. "
-                    "Required by shape, so send [] deliberately: an empty list clears the "
-                    "location, except 'user', where it is refused — deleting a fact about "
-                    "the person is an explicit act, not a side effect of a rewrite."
+                    "Anything omitted is deleted. An empty list clears the location, "
+                    "except 'user', where it is refused."
                 ),
             },
             "source": {
@@ -2054,7 +2207,6 @@ MEMORY_WRITE_SCHEMA = {
                 ),
             },
         },
-        "required": ["parts"],
     },
 }
 
@@ -2158,11 +2310,12 @@ registry.register(
     schema=MEMORY_WRITE_SCHEMA,
     handler=lambda args, **kw: memory_write(
         scope=args.get("scope", "self"),
-        parts=args.get("parts") or [],
+        parts=args.get("parts"),
         source=args.get("source"),
+        edits=args.get("edits"),
         store=kw.get("store")),
     check_fn=check_memory_requirements,
-    description="写一个记忆位置：整份替换＋出处指针；global 那一格走已有的待确认层",
+    description="写一个记忆位置：`edits` 改指定的几条（推荐）/ `parts` 整份替换＋出处指针；global 那一格走已有的待确认层",
     emoji="🧠",
 )
 

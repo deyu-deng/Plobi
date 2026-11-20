@@ -56,3 +56,25 @@ def test_memory_schema_is_well_formed():
 
 def test_memory_schema_is_json_serializable():
     json.dumps(MEMORY_SCHEMA)
+
+
+def test_memory_write_exposes_surgical_edits_and_does_not_require_parts():
+    """`edits` 与 `parts` 是同一格的两条路，所以 schema 不能把 `parts` 写成必填。
+
+    写成 `required: ["parts"]` 的后果很具体：只带 `edits` 的那一笔在严格后端上
+    直接 400 —— 而那正是「改一条、别的字节不动」唯一的路。
+    """
+    from tools.memory_tool import MEMORY_WRITE_SCHEMA
+
+    params = MEMORY_WRITE_SCHEMA["parameters"]
+    for key in _FORBIDDEN_TOP_LEVEL_KEYS:
+        assert key not in params, f"top-level {key!r} breaks strict backends"
+
+    props = params["properties"]
+    assert {"scope", "edits", "parts", "source"} == set(props)
+    assert "required" not in params, "edits-only 调用会被 required 挡在门外"
+    assert props["edits"]["type"] == "array"
+    item = props["edits"]["items"]
+    assert item["type"] == "object"
+    assert item["properties"]["op"]["enum"] == ["add", "replace", "remove"]
+    assert {"old_text", "content"} <= set(item["properties"])

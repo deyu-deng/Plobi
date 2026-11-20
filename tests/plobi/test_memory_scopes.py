@@ -457,7 +457,7 @@ def test_tool_surface_has_no_branch_selector():
         assert schema is not None, f"{name} 没注册进工具表"
         props = schema["parameters"]["properties"]
         assert not ({"action", "intent", "mode"} & set(props)), f"{name} 带了选分支的参数"
-        assert set(props) <= {"scope", "parts", "source"}, name
+        assert set(props) <= {"scope", "edits", "parts", "source"}, name
     assert "memory_read" in TOOLSETS_EXPOSED and "memory_write" in TOOLSETS_EXPOSED
 
 
@@ -479,6 +479,121 @@ def test_read_then_write_is_the_whole_round_trip(mem_root):
     written = json.loads(mt.memory_write(scope="self", parts=[read["entries"][0]], store=store))
     assert written["success"] is True and written["entry_count"] == 1
     assert written["dropped"] and "作业按 evidence.course_id" in written["dropped"][0]
+
+
+# --------------------------------------------------------------------------- #
+# 外科手术式改写（memory_write 的 `edits`）：改一条，别的字节一个都不动
+# --------------------------------------------------------------------------- #
+
+_THREE = ["课表按 calendar_name 全等", "作业按 evidence.course_id", "日程块只认 events 里的行"]
+
+
+def test_an_edit_changes_one_entry_and_leaves_the_others_byte_identical(mem_root):
+    """判据的正面：改一条，另外两条**逐字相同**（不是"差不多"，是不变）。"""
+    store = _store_for("aura")
+    assert json.loads(mt.memory_write(scope="self", parts=_THREE, store=store))["success"]
+
+    result = json.loads(mt.memory_write(
+        scope="self",
+        edits=[{"op": "replace", "old_text": "evidence.course_id",
+                "content": "作业按 evidence.course_id＋提交时间"}],
+        store=store))
+    assert result["success"] is True and result["edited"] == 1
+
+    entries = mt.memory_read(scope="self", store=_store_for("aura"))
+    entries = json.loads(entries)["entries"]
+    assert entries == [_THREE[0], "作业按 evidence.course_id＋提交时间", _THREE[2]]
+
+
+def test_an_edit_that_cannot_apply_writes_nothing_at_all(mem_root):
+    """全有或全无：一条改得动、一条匹配不到 ⇒ 整批不落盘，盘上逐字还是原来的。"""
+    store = _store_for("aura")
+    mt.memory_write(scope="self", parts=_THREE, store=store)
+    path = store._path_for("memory")
+    before = path.read_text(encoding="utf-8")
+
+    result = json.loads(mt.memory_write(
+        scope="self",
+        edits=[
+            {"op": "replace", "old_text": "calendar_name", "content": "课表按 uid 全等"},
+            {"op": "remove", "old_text": "这句在记忆里不存在"},
+        ],
+        store=store))
+    assert result["success"] is False
+    assert "no entry matched" in result["error"]
+    assert result["current_entries"] == _THREE
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_an_ambiguous_phrase_is_refused_rather_than_guessed(mem_root):
+    """两行都含这半句 ⇒ 拒，不猜「大概改第一行」。"""
+    store = _store_for("aura")
+    mt.memory_write(scope="self", parts=["Plobi 用 pytest", "Plobi 用 electron"],
+                    store=store)
+    result = json.loads(mt.memory_write(
+        scope="self", edits=[{"op": "remove", "old_text": "Plobi"}], store=store))
+    assert result["success"] is False
+    assert "be more specific" in result["error"]
+    assert len(store._entries_for("memory")) == 2
+
+
+def test_one_call_can_free_space_and_add_the_new_fact(mem_root):
+    """腾位与新增同一笔：上一版的整份写能做，外科手术式也得能做。"""
+    store = _store_for("aura", memory_char_limit=120)
+    store.add("memory", "老事实甲 " + "×" * 20)
+    store.add("memory", "老事实乙 " + "×" * 20)
+
+    result = json.loads(mt.memory_write(
+        scope="self",
+        edits=[{"op": "remove", "old_text": "老事实甲"},
+               {"op": "add", "content": "新事实 " + "×" * 20}],
+        store=store))
+    assert result["success"] is True
+    kept = store._entries_for("memory")
+    assert len(kept) == 2 and "老事实乙" in kept[0] and kept[1].startswith("新事实")
+
+
+def test_edits_and_parts_in_one_call_are_refused(mem_root):
+    """两种形状各有一个意思，混着发就没有一个意思 —— 拒，并说清怎么改。"""
+    store = _store_for("aura")
+    result = json.loads(mt.memory_write(
+        scope="self", parts=["x"], edits=[{"op": "add", "content": "y"}], store=store))
+    assert result["success"] is False and "not both" in result["error"]
+
+
+def test_a_write_with_neither_shape_is_refused(mem_root):
+    """一个都没给时，不许被读成「清空」——那是这版改动之前最容易发生的静默丢失。"""
+    store = _store_for("aura")
+    store.add("memory", "别把我清掉")
+    result = json.loads(mt.memory_write(scope="self", store=store))
+    assert result["success"] is False and "Nothing to write" in result["error"]
+    assert store._entries_for("memory") == ["别把我清掉"]
+
+
+def test_global_edits_stage_the_ops_not_a_whole_file_rewrite(mem_root):
+    """global 照旧要人批，但批的那张卡上写的是「把哪条换成什么」，不是「整份变了」。"""
+    from tools import write_approval as wa
+
+    store = _store_for("aura")
+    first = json.loads(mt.memory_write(
+        scope="global", parts=["这台机测试唯一入口是 scripts/run_tests.sh"], store=store))
+    assert first["staged"] is True
+    assert mt.apply_memory_pending(wa.get_pending(wa.MEMORY, first["pending_id"])["payload"],
+                                  store)["success"] is True
+
+    staged = json.loads(mt.memory_write(
+        scope="global",
+        edits=[{"op": "replace", "old_text": "run_tests.sh",
+                "content": "这台机测试唯一入口是 scripts/run_tests.sh（禁直调 pytest）"}],
+        store=store))
+    assert staged["staged"] is True
+    payload = wa.get_pending(wa.MEMORY, staged["pending_id"])["payload"]
+    assert payload["action"] == "batch"
+    assert payload["operations"] == [{
+        "action": "replace",
+        "content": "这台机测试唯一入口是 scripts/run_tests.sh（禁直调 pytest）",
+        "old_text": "run_tests.sh",
+    }]
 
 
 def test_write_is_refused_over_cap_without_dropping_anything(mem_root):
