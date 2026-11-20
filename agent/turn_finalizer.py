@@ -492,6 +492,21 @@ def finalize_turn(
         messages=messages,
     )
 
+    # WP-DOSSIER-AUTO-MAINTAIN: 档案维护 review。与 memory/skill review 并列，
+    # 独立计数、独立 spawn，互不触发。只对拿到 dossier 工具的那一位（L2 首席）
+    # 生效——L1 指挥没有 dossier 身份，不进这条路径。
+    _dossier_interval = getattr(agent, "_dossier_nudge_interval", 0)
+    if final_response and not interrupted and _dossier_interval > 0:
+        agent._turns_since_dossier = getattr(agent, "_turns_since_dossier", 0) + 1
+        if (agent._turns_since_dossier >= _dossier_interval
+                and "dossier_read" in getattr(agent, "valid_tool_names", ())):
+            agent._turns_since_dossier = 0
+            try:
+                from agent.dossier_review import spawn_dossier_review
+                spawn_dossier_review(agent, list(messages))
+            except Exception:
+                pass  # best-effort，绝不影响主对话
+
     # Background memory/skill review — runs AFTER the response is delivered
     # so it never competes with the user's task for model attention.
     if final_response and not interrupted and (_should_review_memory or _should_review_skills):

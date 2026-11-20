@@ -1364,6 +1364,11 @@ def init_agent(
     agent._memory_nudge_interval = 10
     agent._turns_since_memory = 0
     agent._iters_since_skill = 0
+    # WP-DOSSIER-AUTO-MAINTAIN：档案维护 review 的独立计数与间隔。默认 10 轮
+    # （与 memory nudge 一致）；0 关闭。只对拿到 dossier 工具的 L2 生效，
+    # 触发逻辑在 agent/turn_finalizer.py，fork 在 agent/dossier_review.py。
+    agent._dossier_nudge_interval = 10
+    agent._turns_since_dossier = 0
     if not skip_memory:
         try:
             mem_config = _agent_cfg.get("memory", {})
@@ -1378,8 +1383,14 @@ def init_agent(
                 agent._memory_store.load_from_disk()
         except Exception:
             pass  # Memory is optional -- don't break agent init
-    
 
+    # WP-DOSSIER-AUTO-MAINTAIN：间隔读 agent.dossier_review.nudge_interval，
+    # 与 memory 那块正交（memory 关了也不影响档案维护的开关）。0 = 关闭。
+    try:
+        _dcfg = _agent_cfg.get("dossier_review", {})
+        agent._dossier_nudge_interval = int(_dcfg.get("nudge_interval", 10))
+    except Exception:
+        pass  # 配置缺失/类型错 -> 保持默认 10
 
     # 官方记忆脑（内核 plobi/mind）＋ 至多一家第三方记忆服务，**可以同时挂**。
     # 两个键管两件正交的事：memory.mind_enabled 管 Mind 在不在，memory.provider
