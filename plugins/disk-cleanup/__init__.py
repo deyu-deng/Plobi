@@ -42,7 +42,12 @@ _lock = threading.Lock()
 
 # Tool-call result shapes we can parse
 _WRITE_FILE_PATH_KEY = "path"
-_TERMINAL_PATH_REGEX = re.compile(r"(?:^|\s)(/[^\s'\"`]+|\~/[^\s'\"`]+)")
+# POSIX absolute paths (`/tmp/x`, `~/x`) plus Windows drive-absolute paths
+# (`C:\x`, `C:/x`) so terminal scanning works on every supported platform.
+_TERMINAL_PATH_REGEX = re.compile(
+    r"(?:^|\s)(/[^\s'\"`]+|\~/[^\s'\"`]+|[A-Za-z]:[\\/][^\s'\"`]*)"
+)
+_WINDOWS_ABS_PATH_REGEX = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +115,7 @@ def _extract_paths_from_terminal(args: Dict[str, Any], result: str) -> Set[str]:
         # Tokenise the command — catches `touch /tmp/plobi-x/test_foo.py`
         try:
             for tok in shlex.split(cmd, posix=True):
-                if tok.startswith(("/", "~")):
+                if tok.startswith(("/", "~")) or _WINDOWS_ABS_PATH_REGEX.match(tok):
                     paths.add(tok)
         except ValueError:
             pass
