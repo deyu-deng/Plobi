@@ -921,7 +921,8 @@ def run_conversation(
 
             # Inject ephemeral context into the current turn's user message.
             # Sources: memory manager prefetch + plugin pre_llm_call hooks
-            # with target="user_message" (the default).  Both are
+            # with target="user_message" (the default) + the workbench's
+            # open-files snapshot (WP-WORKSPACE-CONTEXT).  All are
             # API-call-time only — the original message in `messages` is
             # never mutated, so nothing leaks into session persistence.
             if idx == current_turn_user_idx and msg.get("role") == "user":
@@ -932,6 +933,20 @@ def run_conversation(
                         _injections.append(_fenced)
                 if _plugin_user_context:
                     _injections.append(_plugin_user_context)
+                # Workbench open-files: re-read every API call so a tab switch
+                # mid-conversation is reflected.  Silent on any failure — this
+                # is a convenience, never a reason to block a turn.
+                try:
+                    from agent.workspace_context import (
+                        format_workspace_context as _fmt_workspace,
+                        load_open_files_snapshot as _load_workspace,
+                    )
+
+                    _ws_block = _fmt_workspace(_load_workspace())
+                    if _ws_block:
+                        _injections.append(_ws_block)
+                except Exception:
+                    pass
                 if _injections:
                     _base = api_msg.get("content", "")
                     if isinstance(_base, str):
