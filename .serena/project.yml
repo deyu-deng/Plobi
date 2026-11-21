@@ -36,7 +36,10 @@ project_name: "Code"
 # The first language server is the default language and the respective language server will be used as a fallback.
 # Note that when using the JetBrains backend, language servers are not used and this list is correspondingly ignored.
 language_servers:
+# 2026-11-21: 补上 typescript。此前只有 python，导致在 Code 项目下对 .tsx
+# 调 serena 符号工具直接报 "Cannot extract symbols ... Active language servers: ['python']"。
 - python
+- typescript
 
 # the encoding used by text files in the project
 # For a list of possible encodings, see https://docs.python.org/3.11/library/codecs.html#standard-encodings
@@ -86,7 +89,13 @@ ls_specific_settings: {}
 #     - "./subproject1"
 #     - "./subproject2"
 ls_workspace_folders:
-- "."
+# 2026-11-21: 从 ["."] 收窄到实际源码四目录。整根 Code 会让 pyright 把
+# node_modules / build / release / dist 里的 .py 副本一起枚举（启动 8.6s 起，
+# 且随产物增多恶化）；只留源码目录后扫描范围与产物无关。
+- "bezel"
+- "apps/desktop/src"
+- "apps/desktop/electron"
+- "apps/desktop/scripts"
 
 # list of additional workspace folder paths for cross-package reference support.
 # Paths can be absolute or relative to the project root.
