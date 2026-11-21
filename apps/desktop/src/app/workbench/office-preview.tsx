@@ -266,6 +266,7 @@ const PDF_SCALE = 1.2
 interface PdfRenderJob {
   canvas: HTMLCanvasElement
   page: pdfjsLib.PDFPageProxy
+  pageNumber: number
   textLayer: HTMLDivElement
   // 页顶在滚动容器内容坐标系里的位置，骨架铺完量一次即可（页高由 PDF 尺寸定死，不随窗口变）。
   top: number
@@ -279,6 +280,8 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   const pageRefs = useRef(new Map<number, HTMLElement>())
   const sourceBytesRef = useRef<Uint8Array | null>(null)
   const textLayersRef = useRef<HTMLDivElement[]>([])
+  // 虚拟化后视口外的页不会自动生成文本层，搜索与全文复制需要全文时由这个钩子把文字补齐。
+  const ensureAllTextRef = useRef<null | (() => Promise<void>)>(null)
   const textNodesRef = useRef<PdfTextNode[]>([])
   const matchRangesRef = useRef<Range[]>([])
   const [query, setQuery] = useState('')
@@ -297,6 +300,7 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
   const pdfScrollRef = useOfficeScrollMemory({ kind: 'pdf', path })
+
   // 身份必须稳定：内联箭头每次渲染都换新身份，React 会先传 null 再传节点，
   // 位置恢复就会在每次 setState 后被重新触发。
   const mergedPdfRef = useCallback(
@@ -316,6 +320,7 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
 
     let cancelled = false
     let pdf: pdfjsLib.PDFDocumentProxy | null = null
+    let detachViewport: (() => void) | null = null
     host.replaceChildren()
     pageRefs.current.clear()
     textLayersRef.current = []
@@ -333,7 +338,6 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
       // copy for the bake step.
       sourceBytesRef.current = bytes.slice()
     }
-
     void (async () => {
       try {
         pdf = await pdfjsLib.getDocument({ data: bytes }).promise
@@ -361,8 +365,8 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
 
           const canvas = document.createElement('canvas')
           canvas.className = 'h-full w-full'
-          canvas.width = viewport.width
-          canvas.height = viewport.height
+          // 骨架期不分配位图：整页 canvas 位图一页就是几 MB，全量分配等于先把内存吃满。
+          // 进入视口时再由 paint 按页设宽高，滚出去就归零。
           wrapper.append(canvas)
 
           const textLayer = document.createElement('div')
@@ -376,14 +380,14 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
           )
           host.append(wrapper)
           pageRefs.current.set(pageNumber, wrapper)
-          sheets.push({ canvas, page, textLayer, top: 0, viewport })
+          sheets.push({ canvas, page, pageNumber, textLayer, top: 0, viewport })
         }
 
         if (cancelled) {
           return
         }
 
-        // 一次布局把每页的纵向位置量下来，后面的可视优先排序全靠这张表，避免每页再摸 DOM。
+        // 一次布局把每页的纵向位置量下来，可视判定全靠这张表，避免逐页再摸 DOM。
         const hostRect = host.getBoundingClientRect()
         const scrollTop = host.scrollTop
 
@@ -392,62 +396,226 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
           sheet.top = rect.top - hostRect.top + scrollTop
         }
 
-        // 骨架齐了就撤加载态：用户先看到页面轮廓，后可滚动可跳页，余下的绘制在背后继续。
+        // 骨架齐了就撤加载态：用户先看到页面轮廓，后可滚动可跳页，绘制按视口来。
         setRendering(false)
 
-        // 可视优先队列：不再按 1→N 顺序死磕，每次取离当前视口中线最近的那一页，
-        // 打开即看到正在看的那一页，滚动时后续绘制也自然跟着视线走。
-        const pending = sheets.slice()
+        const canvasReady = new Set<number>()
+        const textReady = new Set<number>()
+        // 文本层按页收进 Map 再按页序导出：绘制顺序跟着视口走，直接 push 会让全文复制乱序。
+        const textLayersByPage = new Map<number, HTMLDivElement>()
+        const inflight = new Map<number, ReturnType<pdfjsLib.PDFPageProxy['render']>>()
+        let targetPages = new Set<number>()
+        let draining = false
+        let textDirty = false
+        let queued: PdfRenderJob[] = []
 
-        while (pending.length > 0) {
-          if (cancelled) {
-            break
+        // 文本层只要画一次就永久留着：搜索高亮、批注定位都靠它遍历文字，
+        // 而它只有文字节点，不像 canvas 那样占位图内存。
+        const paintTextLayer = async (job: PdfRenderJob) => {
+          if (textReady.has(job.pageNumber)) {
+            return
           }
 
-          const centerY = host.scrollTop + host.clientHeight / 2
-          let pickIndex = 0
-          let pickDistance = Number.POSITIVE_INFINITY
-
-          for (let index = 0; index < pending.length; index += 1) {
-            const middle = pending[index].top + pending[index].viewport.height / 2
-            const distance = Math.abs(middle - centerY)
-
-            if (distance < pickDistance) {
-              pickDistance = distance
-              pickIndex = index
-            }
-          }
-
-          const sheet = pending.splice(pickIndex, 1)[0]
-
-          await sheet.page.render({
-            canvasContext: sheet.canvas.getContext('2d')!,
-            viewport: sheet.viewport
-          }).promise
-
-          if (cancelled) {
-            break
-          }
+          textReady.add(job.pageNumber)
 
           try {
             const layer = new pdfjsLib.TextLayer({
-              container: sheet.textLayer,
-              textContentSource: sheet.page.streamTextContent(),
-              viewport: sheet.viewport
+              container: job.textLayer,
+              textContentSource: job.page.streamTextContent(),
+              viewport: job.viewport
             })
+
             await layer.render()
 
             if (!cancelled) {
-              textLayersRef.current.push(sheet.textLayer)
+              textLayersByPage.set(job.pageNumber, job.textLayer)
+              textLayersRef.current = [...textLayersByPage.entries()]
+                .sort((left, right) => left[0] - right[0])
+                .map(([, layerNode]) => layerNode)
+              textDirty = true
             }
           } catch {
             // Scanned pages have no text layer; the canvas still previews.
           }
         }
 
-        if (!cancelled) {
-          setTextVersion(value => value + 1)
+        const paint = async (job: PdfRenderJob) => {
+          job.canvas.width = Math.floor(job.viewport.width)
+          job.canvas.height = Math.floor(job.viewport.height)
+
+          const task = job.page.render({
+            canvasContext: job.canvas.getContext('2d')!,
+            viewport: job.viewport
+          })
+
+          inflight.set(job.pageNumber, task)
+
+          try {
+            await task.promise
+          } catch {
+            inflight.delete(job.pageNumber)
+
+            return
+          }
+
+          inflight.delete(job.pageNumber)
+
+          if (cancelled || !targetPages.has(job.pageNumber)) {
+            return
+          }
+
+          canvasReady.add(job.pageNumber)
+          await paintTextLayer(job)
         }
+
+        const release = (job: PdfRenderJob) => {
+          const task = inflight.get(job.pageNumber)
+
+          if (task) {
+            task.cancel()
+            inflight.delete(job.pageNumber)
+          }
+
+          canvasReady.delete(job.pageNumber)
+
+          // 位图归零才算真释放：只清像素内存不还，画一半被取消的页也一样挂着整页位图。
+          if (job.canvas.width !== 0 || job.canvas.height !== 0) {
+            job.canvas.width = 0
+            job.canvas.height = 0
+          }
+        }
+
+        const drain = async () => {
+          if (draining) {
+            return
+          }
+
+          draining = true
+
+          try {
+            while (queued.length > 0 && !cancelled) {
+              const job = queued.shift()!
+
+              if (!targetPages.has(job.pageNumber) || canvasReady.has(job.pageNumber)) {
+                continue
+              }
+
+              await paint(job)
+            }
+          } finally {
+            draining = false
+          }
+
+          if (textDirty && !cancelled) {
+            textDirty = false
+            setTextVersion(value => value + 1)
+          }
+        }
+
+        const syncViewport = () => {
+          if (cancelled) {
+            return
+          }
+
+          const viewTop = host.scrollTop
+          const viewBottom = viewTop + host.clientHeight
+          const center = viewTop + host.clientHeight / 2
+          const next = new Set<number>()
+          const wanted: PdfRenderJob[] = []
+
+          for (const job of sheets) {
+            const jobTop = job.top
+            const jobBottom = job.top + job.viewport.height
+
+            // 上下各多留一页做缓冲，滚动时不至于刚露头就是白的。
+            if (jobBottom >= viewTop - job.viewport.height && jobTop <= viewBottom + job.viewport.height) {
+              next.add(job.pageNumber)
+              wanted.push(job)
+            }
+          }
+
+          targetPages = next
+
+          // 容器高度还没量出来时视口范围是空的，先兜底画第一页，别让窗口开头一片白。
+          if (next.size === 0) {
+            const first = sheets[0]
+
+            if (first) {
+              next.add(first.pageNumber)
+              wanted.push(first)
+            }
+          }
+
+          for (const job of sheets) {
+            if (!next.has(job.pageNumber)) {
+              release(job)
+            }
+          }
+
+          // 先画最靠近视线中心的那页，视觉上最快落定。
+          wanted.sort(
+            (left, right) =>
+              Math.abs(left.top + left.viewport.height / 2 - center) -
+              Math.abs(right.top + right.viewport.height / 2 - center)
+          )
+          queued = wanted.filter(job => !canvasReady.has(job.pageNumber))
+          void drain()
+        }
+
+        // 搜索、全文复制要摸全文，视口外的页文本层也得补齐，否则拿不到没滚到的页。
+        ensureAllTextRef.current = async () => {
+          for (const job of sheets) {
+            if (cancelled) {
+              return
+            }
+
+            await paintTextLayer(job)
+          }
+
+          if (textDirty && !cancelled) {
+            textDirty = false
+            setTextVersion(value => value + 1)
+          }
+        }
+
+        let frame = 0
+
+        const scheduleSync = () => {
+          if (frame) {
+            return
+          }
+
+          frame = window.requestAnimationFrame(() => {
+            frame = 0
+            syncViewport()
+          })
+        }
+
+        host.addEventListener('scroll', scheduleSync, { passive: true })
+        window.addEventListener('resize', scheduleSync)
+        // 视口高度变化（窗口缩放、面板拖拽）不会触发 scroll，得单独盯容器尺寸。
+        const observer = new globalThis.ResizeObserver(scheduleSync)
+        observer.observe(host)
+
+        detachViewport = () => {
+          host.removeEventListener('scroll', scheduleSync)
+          window.removeEventListener('resize', scheduleSync)
+          observer.disconnect()
+          ensureAllTextRef.current = null
+
+          if (frame) {
+            window.cancelAnimationFrame(frame)
+            frame = 0
+          }
+
+          for (const task of inflight.values()) {
+            task.cancel()
+          }
+
+          inflight.clear()
+        }
+
+        syncViewport()
       } catch {
         if (!cancelled) {
           setRenderError(true)
@@ -461,6 +629,7 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
 
     return () => {
       cancelled = true
+      detachViewport?.()
       host.replaceChildren()
       void pdf?.destroy()
     }
@@ -479,6 +648,9 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
     if (!needle) {
       return
     }
+
+    // 视口外的页文本层还没生成时先补齐，补齐会推进 textVersion 让搜索重算一次。
+    void ensureAllTextRef.current?.()
 
     const nodes: PdfTextNode[] = []
     let text = ''
@@ -701,6 +873,9 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   }
 
   const copyAll = async () => {
+    // 虚拟化下只有视口附近的页画过文本层，复制全文前先把剩下的补齐。
+    await ensureAllTextRef.current?.()
+
     const text = textLayersRef.current
       .map(layer => layer.innerText)
       .join('\n\n')
