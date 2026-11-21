@@ -216,3 +216,7 @@ apps/desktop/build/egress/
 # 运行时产物：看板库落在进程 cwd 时会滚到仓里（0 字节那份已搬到 D:\Temp\plobi-strays-20261017）
 # 规则不带行尾注释——git 只认行首 #
 apps/desktop/kanban.db
+# 本地调试草稿（一次性扫描输出、预览片段），不进仓
+temp_scan.txt
+temp/tms.txt
+temp/__head_office_preview.tsx
