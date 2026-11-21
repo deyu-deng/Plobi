@@ -2324,8 +2324,11 @@ def get_model_context_length(
     # fallback — a guess, on a model whose real window the vendor had already told us.
     # 11-18 第三处：网关那 22 家软件各自就是 provider，`bezel` 只是传输名。
     # 只认机器标识会让 `workbuddy/...` 这种软件名漏掉厂商自己给的窗口值。
-    from plobi_cli.models import is_hub_software as _is_hub_software
-    if _is_hub_software(effective_provider):
+    from providers.hub_software import hub_group
+
+    # 方案 C 之后不再有 `is_hub_software`：问组，别问名字表。
+    # `owns` = 成员或组 owner 自己，正是旧 `is_hub_software` 的语义。
+    if hub_group().owns(effective_provider):
         try:
             from plobi.agents.registry import bezel_api_key, bezel_base_url
             from plobi.quota.gateway import catalog_tuning
