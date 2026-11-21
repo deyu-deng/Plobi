@@ -37,7 +37,7 @@ vi.mock('@/i18n', () => ({
   useI18n: () => ({ locale: i18nState.locale, t: { common: { close: 'Close' } } })
 }))
 
-// 抽屉里那颗「看等你点头的」按钮会跳去写脑待批那一面，这档不验它。
+// 抽屉里那颗「看待批准的条目」按钮会跳去写脑待批那一面，这档不验它。
 vi.mock('@/store/layout', () => ({ openMonitorFace: () => undefined }))
 
 const snapshot = {
@@ -111,7 +111,7 @@ const boundary = {
       evidence: ['cev_1'],
       key: 'promote:wiki',
       state: 'active',
-      text: '类别 wiki 的写入：你连着点头 5 次，以后这类我不再问。'
+      text: '类别 wiki 的写入：你连续批准 5 次，以后这类我不再问。'
     }
   ],
   thresholds: { k_reject: 3, n_adopt: 5, window_days: 7 },
@@ -317,7 +317,7 @@ describe('MemoryBoundary', () => {
     render(<MemoryBoundary />)
 
     const panel = await screen.findByTestId('memory-boundary')
-    expect(within(panel).getByText('类别 wiki 的写入：你连着点头 5 次，以后这类我不再问。')).toBeTruthy()
+    expect(within(panel).getByText('类别 wiki 的写入：你连续批准 5 次，以后这类我不再问。')).toBeTruthy()
     expect(within(panel).getByText('删除此行后恢复为每次询问')).toBeTruthy()
   })
 

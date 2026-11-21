@@ -44,7 +44,7 @@ WINDOW_DAYS = 7
 
 DAY = 86400.0
 
-_POLICY_INTRO = """> 每一条都从你的批准史与驳回史里长出来——**你点头之后才生效**。生效的条目意思是
+_POLICY_INTRO = """> 每一条都从你的批准史与驳回史里长出来——**你批准之后才生效**。生效的条目意思是
 > 「这一类写入不用再问你」；删掉一条＝立刻恢复必问。下面那行 `<!-- pol:… -->` 是它的证据。
 
 """
@@ -335,7 +335,7 @@ def evaluate(
     # 光有一句人读文本对不回去。
     trace["policy_keys"] = [str(p.get("key") or "") for p in active]
     if not active:
-        return ask("policy", f"类别 {trace['category']} 还没有你点头过的政策（攒够了也要先授权）")
+        return ask("policy", f"类别 {trace['category']} 还没有你批准过的政策（攒够了也要先授权）")
     trace["rules"].append({"rule": "policy", "ok": True,
                            "detail": f"{len(active)} 条已生效政策"})
     for policy in active:
@@ -443,7 +443,7 @@ def policy_candidates(book, *, now: Optional[float] = None, existing: Optional[s
             adopted = [e for e in events if e.action == "adopted"][-N_ADOPT:]
             out.append(PolicyCandidate(
                 kind="promote", category=category,
-                text=(f"类别 `{category}` 的写入：你连着点头 {streak} 次、一次驳回都没有 "
+                text=(f"类别 `{category}` 的写入：你连续批准 {streak} 次、一次驳回都没有 "
                       f"⇒ 以后这类我不再问，直接写；驳回一次就恢复必问。"),
                 evidence=tuple(e.id for e in adopted),
                 confidence=f"{streak} 次一致采纳 / 0 次驳回",

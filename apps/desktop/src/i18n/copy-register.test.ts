@@ -45,8 +45,8 @@ const ZH_RULES: Rule[] = [
   {
     id: 'C4',
     label: '口语词',
-    pattern: /搞定|弄好|点一下|點一下|点开(?!关)|點開(?!關)|东西|東西|稍微|挺/,
-    advice: '换成书面动词：完成、打开、内容、略',
+    pattern: /搞定|弄好|点一下|點一下|点开(?!关)|點開(?!關)|东西|東西|稍微|挺|点头|點頭/,
+    advice: '换成书面动词：完成、打开、内容、略、批准',
   },
   {
     id: 'C5',
@@ -186,6 +186,7 @@ describe('判据自检', () => {
     '丝滑的写作体验',
     '一键搞定部署',
     '我们要构建什么？',
+    '等你点头',   // 用户 11-21 13:3x：「这个『等你点头』有点口语化了」——那一族已改成「待批准」
   ]
   const NEGATIVE_EN = ['Awesome result', "We couldn't reach the server", 'No worries, try again']
   const NEGATIVE_JA = ['これは大事だよ', '私たちが処理します']

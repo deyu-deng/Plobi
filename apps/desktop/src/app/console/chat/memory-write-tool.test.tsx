@@ -1,5 +1,5 @@
 /**
- * 对话里那张记忆小卡片：只有进了待确认层才出；点头/驳回打到同一个口。
+ * 对话里那张记忆小卡片：只有进了待确认层才出；批准/驳回打到同一个口。
  * 文案复用已有键（不新增字符串），所以这里只需证明"显示什么、点了发生什么"。
  */
 import { fireEvent, render, waitFor, within } from '@testing-library/react'
@@ -9,7 +9,7 @@ import { MemoryWriteTool, stagedMemoryPendingId } from './memory-write-tool'
 
 const copy = {
   console: { chat: { cardConfirmed: '已记下', cardDismissed: '不用了', cardFailed: '没成功', cardInvalid: '这条读不出来' } },
-  mindPending: { approve: '点头', reject: '驳回' }
+  mindPending: { approve: '批准', reject: '驳回' }
 }
 
 vi.mock('@/i18n', () => ({
@@ -29,14 +29,14 @@ describe('MemoryWriteTool', () => {
     expect(stagedMemoryPendingId('direct write ok')).toBe('')
   })
 
-  it('显示它想记的那句话，点「点头」打到 approve 口，并换成已记下的结果', async () => {
+  it('显示它想记的那句话，点「批准」打到 approve 口，并换成已记下的结果', async () => {
     const view = render(
       <MemoryWriteTool args={{ content: '理论力学周三有实验' }} result={{ staged: true, pending_id: 'p1' }} />
     )
     const box = within(view.container)
 
     expect(box.getByText('理论力学周三有实验')).toBeTruthy()
-    fireEvent.click(box.getByText('点头'))
+    fireEvent.click(box.getByText('批准'))
 
     const api = (window as unknown as { plobiDesktop: { api: ReturnType<typeof vi.fn> } }).plobiDesktop.api
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -52,7 +52,7 @@ describe('MemoryWriteTool', () => {
     const view = render(<MemoryWriteTool args={{ content: 'x' }} result={{ staged: true, pending_id: 'p1' }} />)
     const box = within(view.container)
 
-    fireEvent.click(box.getByText('点头'))
+    fireEvent.click(box.getByText('批准'))
 
     await waitFor(() => expect(box.getByText('没成功')).toBeTruthy(), { timeout: 3000 })
   })
