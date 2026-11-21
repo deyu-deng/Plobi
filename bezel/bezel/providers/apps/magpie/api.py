@@ -867,8 +867,9 @@ class MagpieProviderLeg(MagpieProvider):
         # 「装没装」不能只听构建那一刻的结论：插件随时会被 `magpie plugin rm` 卸掉，
         # 而它们的名册特意留着条目（账号保留），于是 present 永远答「在」。这里每次
         # 问一遍插件清单（umbrella 那份带 TTL 的缓存兜着开销），卡上才有真话：
-        # 卸载后卡片留着（用户 11-21：「就按 A，插件没了点配置自动装回来」），
-        # 但控件变成「装回来」，点一下就跑 install_command。
+        # 卸载后卡片留着、控件仍是那个加号（用户 11-21：「就按 A，插件没了点配置
+        # 自动装回来」）：加号打开的就是本卡面板，面板头一件事替用户跑
+        # install_command 把插件装回来，装完接着落登录 —— 没有额外的「装回来」按钮。
         plugin = str(self.spec.get("plugin") or "").strip() or None
         installed = self.spec.get("installed")
         if plugin is not None:
