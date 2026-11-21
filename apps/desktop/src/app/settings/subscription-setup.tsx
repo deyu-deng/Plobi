@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -100,6 +100,8 @@ export function SubscriptionSetupDialog({
   // waiting: the browser half happens outside our window, so "press again" is noise.
   const [started, setStarted] = useState(false)
   const [phase, setPhase] = useState<SetupPhase>(() => setupPhase(card))
+  //: Cards whose automatic install has already been attempted in this mounting.
+  const autoTried = useRef<null | string>(null)
 
   // A fresh card starts a fresh flow; without this, reopening a card would resume the
   // previous one's step (and its busy flag).
@@ -171,6 +173,24 @@ export function SubscriptionSetupDialog({
       setBusy(null)
     }
   }, [card.id, card.name, onChanged, onLogin, s])
+
+  // 打开一张缺插件的卡，第一步本来就是把它装回来 —— 不必让用户再按一次「安装」。
+  // 每次打开只自动跑一趟（`autoTried` 记住已试过的卡），失败后按钮和命令照旧留在
+  // 面板上，交回用户判断；成功则照常落到登录那一步。
+  useEffect(() => {
+    if (!open) {
+      autoTried.current = null
+
+      return
+    }
+
+    if (phase !== 'install' || !card.installCommand || autoTried.current === card.id) {
+      return
+    }
+
+    autoTried.current = card.id
+    void runInstall()
+  }, [card.id, card.installCommand, open, phase, runInstall])
 
   const runRecheck = useCallback(() => {
     setBusy('recheck')

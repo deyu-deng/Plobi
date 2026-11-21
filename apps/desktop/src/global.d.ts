@@ -51,6 +51,10 @@ declare global {
         port: null | number
         reason: null | string
       }>
+      // What the running apply is doing right now. `apply` can hold the IPC for
+      // minutes on a slow link, so progress is pushed instead of awaited; the
+      // returned unsubscribe mirrors `updates.onProgress`.
+      onMagpieUpdateProgress: (callback: (progress: MagpieUpdateProgress) => void) => () => void
       // Open (or focus) a standalone OS window for a single chat session so
       // the user can work with multiple chats side by side. Returns ok:false
       // with an error code when the sessionId is empty/invalid. `watch` opens
@@ -544,6 +548,21 @@ export interface DesktopUpdateProgress {
   percent: number | null
   error: string | null
   at: number
+}
+
+/**
+ * One tick of `plobi:magpie:update:progress`.
+ *
+ * `apply` can hold its IPC open for minutes on a 96MB download, so the main
+ * process pushes progress instead of the renderer waiting on the promise. The
+ * download percent is measured from the `.part` file on disk — curl reports
+ * nothing mid-transfer — and the other phases are the honest signposts between
+ * "bytes are here" and "a build is answering on a port".
+ */
+export interface MagpieUpdateProgress {
+  phase: 'applying' | 'download' | 'failed' | 'probe' | 'restart' | 'verify'
+  percent: number | null
+  message: string | null
 }
 
 export interface PlobiConnection {

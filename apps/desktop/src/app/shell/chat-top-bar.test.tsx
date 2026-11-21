@@ -37,6 +37,15 @@ function entry(id: string) {
   return found
 }
 
+/**
+ * 两枚入口的账都念在 aria-label 上：「收件箱」来自 `t.pendingTickets`，「待批准」来自
+ * `mindPending.title`。以前那条 `/收件箱|待放行|Inbox|Pending/` 把两枚一起罩住了 ——
+ * 单卡在屏上时看不出毛病，两张卡同时挂出来就撞成 "Found multiple elements"。
+ * 一个选择器只认一枚，别再靠"屏上恰好只有它"兜着。
+ */
+const PENDING = /收件箱|Inbox/
+const MIND_PENDING = /待批准|Pending approval/
+
 beforeEach(() => {
   setChatCardWidth(CHAT_CARD_NARROW_WIDTH + 200)
   $monitorSlotMode.set('closed')
@@ -87,7 +96,7 @@ describe('对话卡右上角那一列', () => {
   it('点哪一枚 ⇒ 那一张卡换到那一面', () => {
     render(<>{entry('pending').render()}</>)
 
-    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: PENDING }))
 
     expect($monitorFace.get()).toBe('pending')
     expect($monitorSlotVisible.get()).toBe(true)
@@ -96,8 +105,8 @@ describe('对话卡右上角那一列', () => {
   it('再点同一枚 ⇒ 关掉那一张卡', () => {
     render(<>{entry('pending').render()}</>)
 
-    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
-    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: PENDING }))
+    fireEvent.click(screen.getByRole('button', { name: PENDING }))
 
     expect($monitorSlotVisible.get()).toBe(false)
   })
@@ -110,8 +119,8 @@ describe('对话卡右上角那一列', () => {
       </>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
-    fireEvent.click(screen.getByRole('button', { name: /写脑|Mind|node|nod/i }))
+    fireEvent.click(screen.getByRole('button', { name: PENDING }))
+    fireEvent.click(screen.getByRole('button', { name: MIND_PENDING }))
 
     expect($monitorFace.get()).toBe('mind-pending')
     expect($monitorSlotVisible.get()).toBe(true)
@@ -125,9 +134,9 @@ describe('对话卡右上角那一列', () => {
       </>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: PENDING }))
 
-    expect(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: PENDING }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('button', { name: /档案|Dossier/ }).getAttribute('aria-pressed')).toBe('false')
   })
 

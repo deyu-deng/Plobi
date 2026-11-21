@@ -31,10 +31,10 @@ import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
 import { ConfigCard } from './config-card'
 import { ConnectionControl } from './connection-control'
-import { gatewayRequester, MagpieImportRow } from './magpie-import-row'
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
+import { gatewayRequester, MagpieImportRow } from './magpie-import-row'
 import { ListRow, LoadingState, SettingsContent, SettingsGroup } from './primitives'
 import { QuotaAppIcon } from './quota-app-icon'
 import {
@@ -180,11 +180,14 @@ function OAuthPicker({
   const p = t.settings.providers
   const [query, setQuery] = useState('')
   const ordered = useMemo(() => sortProviders(providers), [providers])
+
   const matching = useMemo(() => {
     const q = query.trim().toLowerCase()
+
     if (!q) {
       return ordered
     }
+
     return ordered.filter(provider => providerTitle(provider).toLowerCase().includes(q))
   }, [ordered, query])
 
@@ -195,9 +198,7 @@ function OAuthPicker({
   const select = (p: OAuthProvider) => startManualProviderOAuth(p.id)
 
   const featured = matching.find(p => p.id === FEATURED_ID && !p.status?.logged_in) ?? null
-  // Dedupe (2026-11-04): OpenCode Zen renders once, as the disabled static key
-  // entry on the Keys tab — drop the same-named OAuth row here.
-  const rest = (featured ? matching.filter(p => p.id !== FEATURED_ID) : matching).filter(p => p.id !== 'opencode_api')
+  const rest = featured ? matching.filter(p => p.id !== FEATURED_ID) : matching
   // Flat list: connected rows first (they are what the page leads with), then
   // the unconnected rows in `sortProviders` order (curated priority, then name).
   const connected = rest.filter(p => p.status?.logged_in)
@@ -285,6 +286,7 @@ function ConnectedProviderRow({
             if (next) {
               return
             }
+
             if (canDisconnect) {
               onDisconnect(provider)
             } else if (terminalDisconnect) {
@@ -399,6 +401,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
   // (2026-11-07), so the one piece of information that turns "nothing here" into
   // "this file is missing" has to be on screen, in the shell's own words.
   const [configPath, setConfigPath] = useState<null | string>(null)
+
   const readConfigPath = useCallback(() => {
     void window.plobiDesktop?.plobiGateway?.configPath?.().then(res => {
       setConfigPath(res?.configPath ?? null)
@@ -471,6 +474,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
     if (!window.plobiDesktop?.plobiGateway?.auth) {
       return { ok: false }
     }
+
     setConn((prev) => ({ ...prev, [appId]: 'connecting' }))
     setErrInfo((prev) => { const n = { ...prev }; delete n[appId];
 
@@ -570,18 +574,12 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
   // says "connected" or "expired" out loud. Why a leg cannot serve a turn right now
   // rides on that control as its tooltip: it is the reason the switch is still there,
   // not a status line the screen should be shouting.
-  // OpenCode Zen shows up once, as the disabled static key entry on the Keys tab
-  // (constants.ts OPENCODE_ZEN_, per the 2026-11-04 dedupe ruling); this leg must
-  // not render a second card of the same name.
   // The one line under the name. The hub sends an `intro_key`, the four locales own the
   // sentence — a catalog row with no translation still gets a truthful fallback rather
   // than an empty line (renamed semantics 2026-11-07).
   const introOf = (card: LoginCard) => subs.cardIntros[card.introKey] ?? subs.cardIntroFallback(card.name)
 
-  const desktopCards = useMemo(
-    () => (authCatalog ?? []).filter(card => card.id !== 'opencode_api'),
-    [authCatalog]
-  )
+  const desktopCards = useMemo(() => authCatalog ?? [], [authCatalog])
 
   const rows = useMemo(
     () =>
@@ -656,6 +654,7 @@ function SubscriptionsView({ onOpenNetwork }: { onOpenNetwork?: () => void }) {
         // 一句屏幕文案；腿自己的凭据在别的应用里（local_session）时不假装能点。
         const canRepair = broken && card.canLogin && setupPhase(card) === 'login'
         const reasonText = [reason, stateReason].filter(Boolean).join(' · ')
+
         const mode: 'configure' | 'toggle' | 'pending' | 'none' =
           click === 'connecting' || control === 'loader'
             ? 'pending'

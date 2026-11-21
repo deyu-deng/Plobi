@@ -47,6 +47,7 @@ import {
   compareMagpieVersion,
   fetchLatestRelease,
   installBuild,
+  magpiePartPath,
   packagedFloorVersion,
   readCurrent,
   resolveUpdatedBuild
@@ -11488,16 +11489,95 @@ ipcMain.handle('plobi:magpie:update:check', async () => {
 // 同一时刻只允许一个下载任务：按钮点两下不该变成两个 74MB 的并发下载。
 let magpieUpdateInFlight: Promise<{ ok: boolean; version: string | null; started: boolean; port: number | null; reason: string | null }> | null = null
 
+/**
+ * 把进度推给界面，而不是等 apply 这个 IPC 自己返回。
+ *
+ * 96MB 在后台拉、界面只有一句「正在更新…」时，用户无法分辨是在走还是卡死；
+ * 2026-11-20 那次更新失败，界面上就是这个样子。
+ */
+function sendMagpieUpdateProgress(progress: {
+  phase: 'applying' | 'download' | 'failed' | 'probe' | 'restart' | 'verify'
+  percent: null | number
+  message: null | string
+}) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      win.webContents.send('plobi:magpie:update:progress', progress)
+    } catch {
+      // a window that is closing is not a reason to lose the update
+    }
+  }
+}
+
+/** 下载期间按 `.part` 的真实大小报进度：curl 不给回调，磁盘会。 */
+function watchMagpieDownload(version: string, total: number): () => void {
+  if (total <= 0) {return () => {}
+}
+
+  const part = magpiePartPath(PLOBI_HOME, version)
+  let last = -1
+
+  const timer = setInterval(() => {
+    let percent: number
+
+    try {
+      percent = Math.min(99, Math.round((fs.statSync(part).size / total) * 100))
+    } catch {
+      return // not created yet, or already renamed into place
+    }
+
+    if (percent === last) {return}
+    last = percent
+    sendMagpieUpdateProgress({ phase: 'download', percent, message: null })
+  }, 600)
+
+  return () => clearInterval(timer)
+}
+
+/**
+ * curl / sha256 / rename 的原文不是给用户看的。
+ *
+ * 之前失败时界面显示的是 `curl exited 28: ...`，用户唯一能做的就是再点一次。
+ * 这里只翻译已经认识的几种，其余保留原文并指向日志——编一句听起来合理的
+ * 假原因比原文更糟。
+ */
+function describeMagpieUpdateFailure(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err)
+
+  if (/sha256 mismatch/i.test(text)) {return '下载的字节与上游 SHA256SUMS 不一致，这次下载已丢弃'
+}
+  if (/curl exited 6|Could not resolve host/i.test(text)) {return '连不上上游发布地址（DNS 解析失败），请检查网络或代理'
+}
+  if (/curl exited 7|Failed to connect/i.test(text)) {return '连不上上游发布地址，请检查网络或代理'
+}
+  if (/curl exited 28|timed out|timeout/i.test(text)) {return '下载超时：网络太慢，或代理没有放行大文件'
+}
+  if (/curl exited 35/i.test(text)) {return '与上游的 TLS 握手失败，通常是代理拦截'
+}
+  if (/no digest|SHA256SUMS/i.test(text)) {return '上游这一版没提供校验和，为了不装来路不明的二进制已放弃'
+}
+  if (/EPERM|EBUSY|rename|being used/i.test(text)) {return '二进制被占用，换不上去（侧车可能没退干净，重启应用后再试）'
+}
+
+  return text.length > 200 ? `${text.slice(0, 200)}…（详见 logs/desktop.log）` : text
+}
+
 ipcMain.handle('plobi:magpie:update:apply', async () => {
   if (magpieUpdateInFlight) {
     return magpieUpdateInFlight
   }
 
   magpieUpdateInFlight = (async () => {
+    let stopWatching = () => {}
+
     try {
+      sendMagpieUpdateProgress({ phase: 'applying', percent: null, message: null })
+
       const latest = await fetchLatestRelease()
 
       if (!latest) {
+        sendMagpieUpdateProgress({ phase: 'failed', percent: null, message: '上游没有可用的发布' })
+
         return { ok: false, version: null, started: false, port: null, reason: '上游没有可用的发布' }
       }
 
@@ -11516,29 +11596,50 @@ ipcMain.handle('plobi:magpie:update:apply', async () => {
         }
       }
 
+      // 从这一刻起进度按磁盘说话：part 文件长到 total，就是下载走完了。
+      sendMagpieUpdateProgress({ phase: 'download', percent: 0, message: null })
+      stopWatching = watchMagpieDownload(latest.version, latest.size)
+
       // 校验不过会在这里抛出去，指针保持不动，旧版本继续跑。
       await installBuild(PLOBI_HOME, latest, process.platform, { floor })
+      stopWatching()
+      sendMagpieUpdateProgress({ phase: 'verify', percent: 100, message: null })
 
       // 换完二进制必须重启侧车：它只在启动时加载 plugins/登录态，也不存在热替换这回事。
-      // 新版本起不来的话 ensureMagpieSidecar 会标坏它并退回包内版本，所以这里拿到的
-      // started 就是最终结论，不需要我们再判断一次。
+      // 新版本起不来的话 ensureMagpieSidecar 会标坏它并回退（先是上一个可用下载版，
+      // 没有才退回包内），所以这里拿到的 started 就是最终结论。
+      sendMagpieUpdateProgress({ phase: 'restart', percent: null, message: null })
       const sidecar = await restartMagpieSidecar(PLOBI_HOME)
+
+      // 报「实际在跑的那一版」，不是「刚写进指针的那一版」：指针说的是意图，
+      // /api/hello 说的是事实，2026-11-20 那次静默失败正是两者不一致。
+      const version = sidecar.version ?? resolveUpdatedBuild(PLOBI_HOME)?.version ?? null
+
+      if (sidecar.started) {
+        sendMagpieUpdateProgress({ phase: 'probe', percent: 100, message: null })
+        rememberLog(`[magpie] serving ${version ?? 'version unknown'} on port ${sidecar.port ?? '?'}`)
+      } else {
+        sendMagpieUpdateProgress({ phase: 'failed', percent: null, message: sidecar.reason ?? '新版本没有应答' })
+      }
 
       return {
         ok: sidecar.started,
-        version: resolveUpdatedBuild(PLOBI_HOME)?.version ?? null,
+        version,
         started: sidecar.started,
         port: sidecar.port,
-        reason: sidecar.reason ?? (sidecar.started ? null : '新版本已下载，但没能起起来，已退回包内版本')
+        reason: sidecar.reason ?? (sidecar.started ? null : '新版本已下载，但没能起起来，已退回上一版')
       }
     } catch (err) {
       // The reason used to die here: it went back to the renderer once and nowhere
       // else, which is why a failed 74 MB self-update on 2026-11-11 left two `.part`
       // files and zero log lines. Desktop.log is where red rows point people.
+      const reason = describeMagpieUpdateFailure(err)
       rememberLog(`[magpie] update failed: ${err instanceof Error ? err.message : String(err)}`)
+      sendMagpieUpdateProgress({ phase: 'failed', percent: null, message: reason })
 
-      return { ok: false, version: null, started: false, port: null, reason: String(err) }
+      return { ok: false, version: null, started: false, port: null, reason }
     } finally {
+      stopWatching()
       magpieUpdateInFlight = null
     }
   })()

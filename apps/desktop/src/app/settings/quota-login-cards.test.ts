@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { type AuthCatalogRow, buildLoginCards, cardControl, cardDetail, type LoginCard, QUOTA_CARD_INTROS } from './quota-login-cards'
+import { en } from '../../i18n/en'
+import { ja } from '../../i18n/ja'
+import { zh } from '../../i18n/zh'
+import { zhHant } from '../../i18n/zh-hant'
+
+import { type AuthCatalogRow, buildLoginCards, cardControl, cardDetail, type LoginCard } from './quota-login-cards'
 
 function row(over: Partial<AuthCatalogRow> = {}): AuthCatalogRow {
   return {
@@ -38,12 +43,18 @@ describe('buildLoginCards', () => {
     expect(card.loginUrl).toBeUndefined()
   })
 
-  it('gives every card a one-line product intro, never a paragraph', () => {
+  it('hands the card a wording key instead of a sentence of its own', () => {
+    // 卡片不再自己抄一份中文：一句话说明在四语 i18n 里，卡片只拿一个键。
     const [card] = buildLoginCards([row()])
 
-    expect(card.intro).toBe('Cline 账号池额度')
-    expect(card.intro.length).toBeLessThan(24)
-    expect(card.intro).not.toMatch(/浏览器|命令|Plobi 不代/)
+    expect(card.introKey).toBe('cline_cli')
+  })
+
+  it('takes the wording key the hub named, when it named one', () => {
+    // 后端那张覆盖表为 opencode-zen-free 指定了复用语键 opencode_cli。
+    const [card] = buildLoginCards([row({ id: 'opencode-zen-free', intro_key: 'opencode_cli' })])
+
+    expect(card.introKey).toBe('opencode_cli')
   })
 
   it('offers the plus where a click signs it in', () => {
@@ -97,7 +108,7 @@ describe('buildLoginCards', () => {
     ])
 
     expect(card.connectable).toBe(false)
-    expect(card.intro).toBe('WorkBuddy 订阅额度')
+    expect(card.introKey).toBe('workbuddy')
   })
 
   it('keeps "we did not wire it" off the body and on the control', () => {
@@ -108,7 +119,7 @@ describe('buildLoginCards', () => {
     expect(card.connectable).toBe(false)
     expect(card.detail).toContain('还没核出来')
     // The credential verdict ("ok") is a machine token; it must not become body copy.
-    expect(card.intro).not.toBe('ok')
+    expect(card.introKey).not.toBe('ok')
   })
 
   it('a pending sign-in stops offering another click', () => {
@@ -192,8 +203,19 @@ describe('cardControl', () => {
   })
 
   it('every one-liner on this screen is a line, not a paragraph', () => {
-    for (const [id, intro] of Object.entries(QUOTA_CARD_INTROS)) {
-      expect(intro.length, id).toBeLessThanOrEqual(20)
+    // 文案搬到四语 i18n 之后，这条守的是文案本身：副标题只能是一行，且四种语言都得有。
+    const dicts = { zh, en, ja, 'zh-hant': zhHant }
+
+    for (const [locale, dict] of Object.entries(dicts)) {
+      const intros = dict.settings.providers.subscriptions.cardIntros
+      expect(Object.keys(intros).length, locale).toBeGreaterThan(0)
+
+      for (const [key, intro] of Object.entries(intros)) {
+        // 一行就是一行，但四种语言的「一行」不是同一个字数：假名比汉字占位更宽，
+        // 英文按字符算本来就更长。
+        const budget = locale === 'en' ? 44 : locale === 'ja' ? 30 : 24
+        expect(intro.length, `${locale}/${key}`).toBeLessThanOrEqual(budget)
+      }
     }
   })
 })

@@ -182,6 +182,10 @@ const BEZEL_SKIP_DIRS = new Set([
   '.pytest_cache',
   '.ruff_cache',
   '.tox',
+  // 11-20：退役的九条自研腿连同其专属测试一起进了 `_archive/` / `_archive_legsource/`。
+  // 归档是为了留着翻实现细节，**不是**要随包发 —— 打进包里只是白送的体积。
+  '_archive',
+  '_archive_legsource',
 ])
 
 /** Files the gateway needs at runtime, or the interpreter probe reads. */

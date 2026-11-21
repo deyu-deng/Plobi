@@ -67,9 +67,10 @@ export interface LoginCard {
   /** Why there is no click / why the switch is off — tooltip only, never body copy. */
   detail: string
   id: string
-  /** One short line: what quota this is. Product copy, not an explanation. */
-  intro: string
-  /** Where the line above comes from, so the shell can translate it. */
+  /**
+   * The hub's key for the one-line subtitle. The view translates it, and an
+   * unknown key falls back to a translated sentence built from `name`.
+   */
   introKey: string
   name: string
   /** A sign-in is waiting on the user in the browser. */
@@ -96,65 +97,19 @@ export interface LoginCard {
 }
 
 /**
- * Card subtitle table — **keys, not sentences** (renamed semantics 2026-11-07).
+ * The subtitle key is **the hub's**, not a table of ours (2026-11-20).
  *
- * It used to hold Chinese copy, which meant the four locales shared one language.
- * Now it maps an app id to the key inside `settings.providers.subscriptions.cardIntros`,
- * and the view resolves it. Keep this table's keys identical to the hub's
- * `ADAPTED_APPS[*].intro_key` so the row's own `intro_key` always wins.
- */
-export const QUOTA_CARD_INTROS: Record<string, string> = {
-  antigravity: 'antigravity',
-  antigravity_cli: 'antigravity_cli',
-  claude_code_cli: 'claude_code_cli',
-  cline_cli: 'cline_cli',
-  codex_cli: 'codex_cli',
-  cursor: 'cursor',
-  gemini_api: 'gemini_api',
-  kiro_cli: 'kiro_cli',
-  marvis_cli: 'marvis_cli',
-  marvis_gui: 'marvis_gui',
-  opencode_api: 'opencode_api',
-  opencode_cli: 'opencode_cli',
-  qoder: 'qoder',
-  'qwen-cli': 'qwen_cli',
-  workbuddy: 'workbuddy',
-  workbuddy_api: 'workbuddy',
-  workbuddy_cli: 'workbuddy_cli'
-}
-
-/**
- * The one-line subtitle, as Chinese text — a fallback, not the i18n source.
+ * Two tables used to sit here: a Chinese sentence per app, and a key map that
+ * mirrored the hub's `intro_key` id by id. Both were a second source of truth for
+ * a list the hub already owns — an app it added had no entry here, so its card
+ * showed the bare product name, and the Chinese sentences meant the four locales
+ * shared one language.
  *
- * A card carries both fields on purpose: `introKey` is what the view translates
- * (four locales), while `intro` is what the card says when it is read without the
- * view around it — the unit tests, and any hub row naming an app the shell has no
- * copy for. The 2026-11-07 key rename emptied this table by accident and every
- * subtitle collapsed into the bare product name; restored so `intro` keeps meaning
- * "what quota this is" — one short line, never a paragraph.
+ * The card now passes the hub's `intro_key` straight through, and the view
+ * resolves it (`subs.cardIntros[key]`), falling back to
+ * `subs.cardIntroFallback(name)` — a sentence in the reader's own language, for
+ * every locale, including apps nobody has written copy for yet.
  */
-export const QUOTA_CARD_INTRO_FALLBACKS: Record<string, string> = {
-  antigravity: 'Antigravity 订阅额度',
-  antigravity_cli: 'Antigravity 命令行额度',
-  claude_code_cli: 'Claude Code 订阅额度',
-  cline_cli: 'Cline 账号池额度',
-  codex_cli: 'Codex 订阅额度',
-  cursor: 'Cursor 订阅额度',
-  gemini_api: 'Gemini CLI 免费额度',
-  kiro_cli: 'Kiro 订阅额度',
-  marvis_cli: 'Marvis 命令行额度',
-  marvis_gui: 'Marvis 订阅额度',
-  opencode_api: 'OpenCode Zen 免费额度',
-  opencode_cli: 'OpenCode 免费额度',
-  qoder: 'Qoder 订阅额度',
-  qwen_cli: 'Qwen Code 免费额度',
-  // 11-11：这三条写的是 CodeBuddy，而腿背后那个产品叫 WorkBuddy（magpie 的 provider
-  // 名、`providers.yaml` 的 `name`、四语 `cardIntros.workbuddy` 都是 WorkBuddy）——
-  // 同一条腿两个名字，用户认不出自己配的是哪一家。产品名以 WorkBuddy 为准。
-  workbuddy: 'WorkBuddy 订阅额度',
-  workbuddy_api: 'WorkBuddy 订阅额度',
-  workbuddy_cli: 'WorkBuddy 命令行额度'
-}
 
 /**
  * Whether Plobi routes this software today. `unknown` is not a fifth state the user
@@ -268,10 +223,12 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
       // VPN node going away used to turn the card back into a `+` and tell him he had not
       // logged in. The state machine now separates the two explicitly.
       const signedIn = row.signed_in ?? row.live
+
       const state: SubscriptionState =
         row.state ??
         (signedIn && row.live ? 'ready' : !installed ? 'not_installed' : signedIn ? 'unavailable' : 'signed_out')
-      const introKey = row.intro_key || QUOTA_CARD_INTROS[row.id] || row.id
+
+      const introKey = row.intro_key || row.id
 
       return {
         aggregate: row.aggregate,
@@ -290,7 +247,6 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
           .filter(Boolean)
           .join(' · '),
         id: row.id,
-        intro: QUOTA_CARD_INTRO_FALLBACKS[introKey] ?? `${row.name} 订阅额度`,
         introKey,
         loginUrl: row.login?.url || undefined,
         name: row.name,

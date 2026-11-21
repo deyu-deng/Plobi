@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { Loader2, RefreshCw } from '@/lib/icons'
@@ -23,9 +23,12 @@ interface MagpieApplyResult {
   reason: null | string
 }
 
+/** The phases a running apply reports on `plobi:magpie:update:progress`. */
+type Step = 'applying' | 'download' | 'probe' | 'restart' | 'verify'
+
 type Phase =
   | { kind: 'applied'; version: null | string }
-  | { kind: 'applying' }
+  | { kind: 'applying'; percent: null | number; step: Step }
   | { kind: 'checked'; latest: null | string; running: null | string; updateAvailable: boolean }
   | { kind: 'checking' }
   | { kind: 'failed'; reason: string }
@@ -33,6 +36,40 @@ type Phase =
 
 const BUTTON =
   'rounded-md border border-border/60 px-2 py-0.5 text-[0.66rem] transition-colors hover:bg-accent/60 disabled:opacity-50'
+
+/*
+ * The gateway menu unmounts this block every time it closes, so component state
+ * would forget a two-minute update the moment the user looked away — and that is
+ * exactly when people look away. The phase lives at module scope instead: one
+ * value for the window, replayed on every mount, so a finished (or failed)
+ * update is still on screen when the menu comes back.
+ */
+let remembered: Phase = { kind: 'idle' }
+const watchers = new Set<(phase: Phase) => void>()
+
+function rememberPhase(phase: Phase): void {
+  remembered = phase
+
+  for (const watcher of watchers) {
+    watcher(phase)
+  }
+}
+
+function useRememberedPhase(): [Phase, (phase: Phase) => void] {
+  const [phase, setPhase] = useState<Phase>(remembered)
+
+  useEffect(() => {
+    // Pick up anything that finished while this block was not mounted.
+    setPhase(remembered)
+    watchers.add(setPhase)
+
+    return () => {
+      watchers.delete(setPhase)
+    }
+  }, [])
+
+  return [phase, rememberPhase]
+}
 
 /**
  * 侧车健康条旁边的那一格：跑的是哪一版 magpie 适配层，要不要换。
@@ -47,7 +84,24 @@ const BUTTON =
 export function MagpieUpdateBlock() {
   const { t } = useI18n()
   const copy = t.shell.statusbar.magpieUpdate
-  const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
+  const [phase, setPhase] = useRememberedPhase()
+
+  // Progress is pushed while `apply` holds its promise open. Without it this
+  // block can only say "updating…" for the whole 96MB download, which looks the
+  // same as an app that has hung.
+  useEffect(() => {
+    const off = window.plobiDesktop?.onMagpieUpdateProgress?.(progress => {
+      if (progress.phase === 'failed') {
+        setPhase({ kind: 'failed', reason: progress.message || copy.unknown })
+
+        return
+      }
+
+      setPhase({ kind: 'applying', percent: progress.percent, step: progress.phase })
+    })
+
+    return () => off?.()
+  }, [copy.unknown, setPhase])
 
   // No bridge means this window cannot do it at all (an older main process, or
   // a plain-browser dev shell). Better to show nothing than a dead button.
@@ -74,10 +128,10 @@ export function MagpieUpdateBlock() {
     } catch (err) {
       setPhase({ kind: 'failed', reason: String(err) })
     }
-  }, [copy.unknown])
+  }, [copy.unknown, setPhase])
 
   const apply = useCallback(async () => {
-    setPhase({ kind: 'applying' })
+    setPhase({ kind: 'applying', percent: null, step: 'applying' })
 
     try {
       const result = (await window.plobiDesktop?.applyMagpieUpdate?.()) as MagpieApplyResult | undefined
@@ -96,7 +150,7 @@ export function MagpieUpdateBlock() {
     } catch (err) {
       setPhase({ kind: 'failed', reason: String(err) })
     }
-  }, [copy.unknown])
+  }, [copy.unknown, setPhase])
 
   if (!bridged) {
     return null
@@ -108,11 +162,25 @@ export function MagpieUpdateBlock() {
     phase.kind === 'checked' ? phase.running : phase.kind === 'applied' ? phase.version : null
 
   let note: null | string = null
+  let percent: null | number = null
 
   if (phase.kind === 'checking') {
     note = copy.checking
   } else if (phase.kind === 'applying') {
-    note = copy.applying
+    percent = phase.percent
+
+    // One line per real phase: "updating…" for two minutes tells the user
+    // nothing about whether the bytes are moving.
+    note =
+      phase.step === 'download'
+        ? copy.downloading(phase.percent ?? 0)
+        : phase.step === 'verify'
+          ? copy.verifying
+          : phase.step === 'restart'
+            ? copy.restarting
+            : phase.step === 'probe'
+              ? copy.probing
+              : copy.applying
   } else if (phase.kind === 'checked') {
     note = phase.updateAvailable
       ? copy.available(phase.latest ?? copy.unknown)
@@ -135,6 +203,18 @@ export function MagpieUpdateBlock() {
       </div>
 
       {note && <p className="mt-1 text-[0.66rem] leading-snug text-muted-foreground">{note}</p>}
+
+      {percent !== null && (
+        <div
+          className="mt-1 h-1 w-full overflow-hidden rounded-full bg-border/60"
+          data-testid="magpie-update-progress"
+        >
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-300"
+            style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+          />
+        </div>
+      )}
 
       <div className="mt-1.5 flex items-center gap-1.5">
         <button

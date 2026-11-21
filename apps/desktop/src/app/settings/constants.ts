@@ -140,20 +140,6 @@ export const PROVIDER_GROUPS: ProviderPrefix[] = [
     priority: 12
   },
   {
-    prefix: 'OPENCODE_ZEN_',
-    name: 'OpenCode Zen',
-    description: 'Pay-as-you-go access to curated coding models',
-    docsUrl: 'https://opencode.ai/auth',
-    priority: 13,
-    // The `opencode_api` hub leg has no CLI on this machine, so the gateway marks
-    // it unselectable; the manual-key entry is kept only so existing OPENCODE_ZEN_
-    // env vars still group and render. New keys are not offered here anymore —
-    // see desktop-quotas.ts DESKTOP_QUOTA_NAMES + the hub's selectable verdict.
-    disabled: true,
-    disabledReason:
-      'opencode_api leg is not selectable (no CLI); kept for existing env vars only'
-  },
-  {
     prefix: 'OPENCODE_GO_',
     name: 'OpenCode Go',
     description: '$10/month subscription for open coding models',

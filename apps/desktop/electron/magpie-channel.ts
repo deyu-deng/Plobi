@@ -842,3 +842,117 @@ export async function installBuild(
  * quietly stops being true. Check and apply are the two doors; this is neither.
  */
 
+/**
+ * `v0.1.4572`, `0.1.4572` and `V0.1.4572` are one build.
+ *
+ * Two notations reach us and they had never been compared: the pointer and the
+ * release tag carry the `v`, while `GET /api/hello` answers
+ * `{"name":"magpie","version":"0.1.4572"}` (measured 2026-11-20). Normalised
+ * here, once, so "is the port served by the build we just installed" is a
+ * string comparison and not a guess.
+ *
+ * Returns the `v`-prefixed form — the shape everything else in this file uses —
+ * or null when the string is not a version at all.
+ */
+export function normalizeMagpieVersion(value: null | string | undefined): null | string {
+  if (typeof value !== 'string') {return null}
+
+  const stripped = value.trim().replace(/^v/i, '')
+
+  return /^\d+\.\d+\.\d+$/.test(stripped) ? `v${stripped}` : null
+}
+
+/**
+ * Downloaded builds still on disk that we could run, newest first.
+ *
+ * This is the rollback list. When a freshly installed build refuses to serve,
+ * the honest step back is the newest *other* build that already ran on this
+ * machine — not the copy in the installer, which is v0.1.3403 while the user
+ * may have been on v0.1.4371 for days.
+ *
+ * Left out on purpose: builds marked bad (they lost their right to run) and
+ * builds at or below the packaged floor (that is a downgrade, not a rollback).
+ */
+export function listInstalledBuilds(plobiHome: string, platform: NodeJS.Platform = process.platform): MagpieBuild[] {
+  const root = magpieBinRoot(plobiHome)
+  const exe = magpieExeName(platform)
+  const floor = packagedFloorVersion(platform)
+
+  let entries: fs.Dirent[]
+
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  const builds: MagpieBuild[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !VERSION_RE.test(entry.name)) {continue}
+
+    const version = entry.name
+    if (floor && compareMagpieVersion(version, floor) <= 0) {continue}
+    if (fs.existsSync(badMarker(plobiHome, version))) {continue}
+
+    const binary = path.join(root, version, exe)
+
+    try {
+      if (!fs.statSync(binary).isFile()) {continue}
+    } catch {
+      continue // a directory left behind by a failed install is not a build
+    }
+
+    builds.push({ version, binary, sha256: '' })
+  }
+
+  // Newest first: the first entry is the one worth going back to.
+  return builds.sort((a, b) => compareMagpieVersion(b.version, a.version))
+}
+
+/**
+ * Point `current.json` back at a build that is already on disk (a rollback).
+ *
+ * Refuses anything at or below the packaged floor for the same reason
+ * `installBuild` does: "roll back" must never quietly become "downgrade below
+ * what the installer shipped". Returns null when it refused, so the caller can
+ * try the next candidate instead of starting a build it was not allowed to run.
+ *
+ * The digest is read from disk rather than remembered: a pointer that names a
+ * hash nobody verified is how `readCurrent` starts rejecting its own pointer.
+ */
+export async function pointCurrentAt(
+  plobiHome: string,
+  build: { binary: string; sha256?: string; version: string },
+  platform: NodeJS.Platform = process.platform
+): Promise<MagpieCurrent | null> {
+  if (!VERSION_RE.test(build.version)) {return null}
+
+  const floor = packagedFloorVersion(platform)
+  if (floor && compareMagpieVersion(build.version, floor) <= 0) {return null}
+
+  let size: number
+
+  try {
+    size = fs.statSync(build.binary).size
+  } catch {
+    return null
+  }
+
+  const sha256 = build.sha256 && SHA256_RE.test(build.sha256) ? build.sha256 : await sha256File(build.binary)
+
+  const current: MagpieCurrent = {
+    version: build.version,
+    binary: build.binary,
+    sha256,
+    size,
+    installedAt: new Date().toISOString()
+  }
+
+  writeJsonAtomic(currentPointer(plobiHome), current)
+  // A build we chose to run again has not lost its right to run.
+  fs.rmSync(badMarker(plobiHome, build.version), { force: true })
+
+  return current
+}
+

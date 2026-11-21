@@ -62,6 +62,12 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   // check 只问版本不下载；apply 会拉 74MB、校验 sha256、然后重启侧车。
   checkMagpieUpdate: () => ipcRenderer.invoke('plobi:magpie:update:check'),
   applyMagpieUpdate: () => ipcRenderer.invoke('plobi:magpie:update:apply'),
+  onMagpieUpdateProgress: callback => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('plobi:magpie:update:progress', listener)
+
+    return () => ipcRenderer.removeListener('plobi:magpie:update:progress', listener)
+  },
   api: request => ipcRenderer.invoke('plobi:api', request),
   notify: payload => ipcRenderer.invoke('plobi:notify', payload),
   requestMicrophoneAccess: () => ipcRenderer.invoke('plobi:requestMicrophoneAccess'),

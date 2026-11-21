@@ -2802,6 +2802,11 @@ export interface Translations {
         upToDate: string
         apply: string
         applying: string
+        /** The download is measured from the `.part` file, so this is real. */
+        downloading: (percent: number) => string
+        verifying: string
+        restarting: string
+        probing: string
         applied: (version: string) => string
         failed: (reason: string) => string
       }
