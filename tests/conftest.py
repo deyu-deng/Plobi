@@ -29,6 +29,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -1134,6 +1135,65 @@ def _mind_writer_never_commits(monkeypatch):
         "_commit",
         lambda self, root, paths: (True, "commit disabled in tests"),
     )
+
+
+# ---------------------------------------------------------------------------
+# plobi_constants 替身（裁定 80 测试卫生条款）
+#
+# 一批 tui_gateway 用例为了隔离，把整个 ``plobi_constants`` 换成 ``MagicMock()``，
+# 只给 ``get_plobi_home`` 配了返回值。其余路径函数（``config_path_for_home`` /
+# ``shared_root_for`` / ``get_config_path``）仍是裸 Mock，``Path(Mock)`` 因
+# ``__fspath__`` 静默成相对路径，于是仓根长出 ``MagicMock/mock.config_path_for_home()/<id>``。
+# 生产侧 ``_reject_mock_home`` 拦不到这一档——模块整个被替换了，守卫根本没被调用。
+# 这里给出一个把这些函数都指向真实临时目录的替身，用例改用它即可。
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def plobi_constants_stub():
+    """工厂：造一个路径函数落到真实临时目录的 ``plobi_constants`` 替身。
+
+    用法::
+
+        with patch.dict("sys.modules", {"plobi_constants": plobi_constants_stub()}):
+            ...
+
+    传入的名字只作为临时目录末级名（``"/tmp/plobi_test"`` → ``<temp>/plobi_test``），
+    避免 Windows 上 ``/tmp`` 被解释成盘根而写进 ``C:\\tmp``。
+    """
+
+    def _make(home: object = None):
+        from pathlib import Path as _Path
+
+        name = _Path(str(home)).name if home else "plobi_test"
+        # 每个替身一份独立目录：多个用例文件原先共用 ``/tmp/plobi_test`` 这种同名目录，
+        # 前一个文件写下的 config.yaml 会被后一个文件读到，造成跨文件串味（顺序依赖）。
+        root = _Path(tempfile.mkdtemp(prefix=f"plobi_stub_{name}_"))
+
+        def _shared_root_for(home: object):
+            p = _Path(str(home))
+            return p.parent.parent if p.parent.name == "profiles" else p
+
+        def _config_path_for_home(home: object):
+            p = _Path(str(home)) / "config.yaml"
+            shared = _shared_root_for(p)
+            if shared == p:
+                return p
+            candidate = shared / "config.yaml"
+            return candidate if candidate.exists() else p
+
+        stub = MagicMock()
+        stub.get_plobi_home = lambda: root
+        stub.get_plobi_dir = lambda: root
+        stub.get_subprocess_home = lambda: root
+        stub.get_config_path = lambda: _config_path_for_home(root)
+        stub.config_path_for_home = _config_path_for_home
+        stub.shared_root_for = _shared_root_for
+        stub.display_plobi_home = lambda: str(root)
+        stub.is_container = lambda: False
+        return stub
+
+    return _make
 
 
 # ---------------------------------------------------------------------------

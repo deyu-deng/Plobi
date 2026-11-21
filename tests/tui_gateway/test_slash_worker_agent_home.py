@@ -8,10 +8,10 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 
-def test_slash_worker_accepts_profile_home():
+def test_slash_worker_accepts_profile_home(plobi_constants_stub):
     """_SlashWorker.__init__ accepts profile_home parameter."""
     with patch.dict("sys.modules", {
-        "plobi_constants": MagicMock(get_plobi_home=MagicMock(return_value="/tmp/plobi_test")),
+"plobi_constants": plobi_constants_stub("plobi_test"),
     }):
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.stdout = MagicMock()
@@ -35,10 +35,10 @@ def test_slash_worker_accepts_profile_home():
             assert call_kwargs["env"]["PLOBI_HOME"] == "/home/luke/.plobi/profiles/work"
 
 
-def test_slash_worker_without_profile_home():
+def test_slash_worker_without_profile_home(plobi_constants_stub):
     """_SlashWorker works without profile_home parameter (backward compatible)."""
     with patch.dict("sys.modules", {
-        "plobi_constants": MagicMock(get_plobi_home=MagicMock(return_value="/tmp/plobi_test")),
+"plobi_constants": plobi_constants_stub("plobi_test"),
     }):
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.stdout = MagicMock()
@@ -65,10 +65,10 @@ def test_slash_worker_without_profile_home():
             assert "PATH" in env
 
 
-def test_slash_worker_with_none_profile_home():
+def test_slash_worker_with_none_profile_home(plobi_constants_stub):
     """_SlashWorker with explicit profile_home=None works."""
     with patch.dict("sys.modules", {
-        "plobi_constants": MagicMock(get_plobi_home=MagicMock(return_value="/tmp/plobi_test")),
+"plobi_constants": plobi_constants_stub("plobi_test"),
     }):
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.stdout = MagicMock()
@@ -95,10 +95,10 @@ def test_slash_worker_with_none_profile_home():
                 pass
 
 
-def test_slash_worker_inherits_argv_correctly():
+def test_slash_worker_inherits_argv_correctly(plobi_constants_stub):
     """_SlashWorker passes correct argv to Popen."""
     with patch.dict("sys.modules", {
-        "plobi_constants": MagicMock(get_plobi_home=MagicMock(return_value="/tmp/plobi_test")),
+"plobi_constants": plobi_constants_stub("plobi_test"),
     }):
         with patch("subprocess.Popen") as mock_popen:
             mock_popen.return_value.stdout = MagicMock()

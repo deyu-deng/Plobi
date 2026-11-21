@@ -15,13 +15,11 @@ import pytest
 
 
 @pytest.fixture()
-def server():
+def server(plobi_constants_stub):
     with patch.dict(
         "sys.modules",
         {
-            "plobi_constants": MagicMock(
-                get_plobi_home=MagicMock(return_value="/tmp/plobi_test_moa_emit")
-            ),
+"plobi_constants": plobi_constants_stub("plobi_test_moa_emit"),
             "plobi_cli.env_loader": MagicMock(),
             "plobi_cli.banner": MagicMock(),
             "plobi_state": MagicMock(),
