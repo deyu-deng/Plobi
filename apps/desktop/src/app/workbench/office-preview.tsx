@@ -2,11 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
+import { requestComposerFocus, requestComposerInsertRefs } from '@/app/chat/composer/focus'
+import { documentLocationRef } from '@/app/chat/composer/inline-refs'
+import { SelectionToolbar, type SelectionToolbarAction } from '@/components/selection-toolbar/selection-toolbar'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { Codicon } from '@/components/ui/codicon'
 import { convertDesktopLegacyOffice, writeDesktopFileBufferAtomic } from '@/lib/desktop-fs'
 import { Copy, Search } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { legacyOfficeFormat, type LegacyOfficeFormat } from '@/lib/legacy-office'
+import { useI18n } from '@/i18n'
+import { $currentCwd } from '@/store/session'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
@@ -299,6 +305,7 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
+  const { t } = useI18n()
   const pdfScrollRef = useOfficeScrollMemory({ kind: 'pdf', path })
 
   // 身份必须稳定：内联箭头每次渲染都换新身份，React 会先传 null 再传节点，
@@ -754,7 +761,7 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
     setActiveMatch(value => (value + direction + matchCount) % matchCount)
   }
 
-  const addHighlight = () => {
+  const addHighlight = useCallback(() => {
     const selection = window.getSelection()
 
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
@@ -803,7 +810,59 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
       }))
     ])
     selection.removeAllRanges()
-  }
+  }, [])
+
+  // 选区浮窗（WP-OFFICE-SELECTION-TOOLBAR）：PDF 的文字层画在主进程 DOM 里，
+  // window.getSelection() 够得到 ⇒ 直接复用那份共享浮窗，只是动作换成 PDF 这三枚。
+  const pdfSelectionActions = useMemo<SelectionToolbarAction[]>(
+    () => [
+      {
+        id: 'copy',
+        icon: <Copy className="size-3.5" />,
+        label: t.selectionToolbar.copy,
+        onSelect: ({ text }) => {
+          void writeClipboardText(text)
+        }
+      },
+      {
+        id: 'add-to-chat',
+        icon: <Codicon name="comment" size="0.85rem" />,
+        label: t.selectionToolbar.addToChat,
+        onSelect: ({ range }) => {
+          // 从选区起点往上找到它所在的那一页（wrapper 带 data-pdf-page）。
+          let node: Node | null = range.startContainer
+          let page: string | null = null
+
+          while (node) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const found = (node as HTMLElement).dataset?.pdfPage
+
+              if (found) {
+                page = found
+                break
+              }
+            }
+            node = node.parentNode
+          }
+
+          const ref = documentLocationRef('page', path, $currentCwd.get(), page ?? '?')
+          requestComposerInsertRefs([ref])
+          requestComposerFocus('main')
+        }
+      },
+      {
+        id: 'highlight',
+        icon: <Codicon name="paintcan" size="0.85rem" />,
+        label: labels.highlight,
+        onSelect: () => {
+          // addHighlight 自己读 window.getSelection()；浮窗的 mousedown 已经
+          // preventDefault 保住了选区，这里照原样高亮即可。
+          addHighlight()
+        }
+      }
+    ],
+    [addHighlight, labels.highlight, path, t]
+  )
 
   const startNote = (pageIndex: number, event: React.MouseEvent) => {
     if (!noteMode) {
@@ -1003,6 +1062,11 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
       <div
         className="min-h-0 flex-1 overflow-auto p-2"
         ref={mergedPdfRef}
+      />
+      <SelectionToolbar
+        actions={pdfSelectionActions}
+        containerRef={hostRef}
+        testId="pdf-selection-toolbar"
       />
       <PreviewStatus error={error || renderError} labels={labels} loading={loading || rendering} />
       {noteDraft ? (

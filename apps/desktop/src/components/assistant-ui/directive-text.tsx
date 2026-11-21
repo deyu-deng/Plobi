@@ -16,6 +16,8 @@ const PLOBI_REF_TYPES = [
   'image',
   'tool',
   'line',
+  'page',
+  'section',
   'terminal',
   'session',
   'quote'
@@ -50,6 +52,10 @@ const ICON_PATHS: Record<PlobiRefType, string[]> = {
   ],
   tool: ['M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5'],
   line: ['M5 9l14 0', 'M5 15l14 0', 'M11 4l-4 16', 'M17 4l-4 16'],
+  // 页码（PDF）：一张折角的纸。
+  page: ['M14 3v4a1 1 0 0 0 1 1h4', 'M19 21h-14a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9l5 5v9a2 2 0 0 1 -2 2', 'M9 13h6', 'M9 17h4'],
+  // 章节（Word/PPT）：带层级的三行。
+  section: ['M4 6h16', 'M7 12h13', 'M7 18h13', 'M4 12l0 0', 'M4 18l0 0'],
   terminal: ['M5 7l5 5l-5 5', 'M12 19l7 0'],
   session: [
     'M8 9h8',
@@ -181,7 +187,7 @@ export const DIRECTIVE_CHIP_CLASS =
 const CANONICAL_DIRECTIVE_RE = /:([\w-]{1,64})\[([^\]\n]{1,1024})\](?:\{name=([^}\n]{1,1024})\})?/g
 
 const PLOBI_DIRECTIVE_RE = new RegExp(
-  '@(file|folder|url|image|tool|line|terminal|session|quote):(' +
+  '@(file|folder|url|image|tool|line|page|section|terminal|session|quote):(' +
     '`[^`\\n]+`' +
     '|"[^"\\n]+"' +
     "|'[^'\\n]+'" +

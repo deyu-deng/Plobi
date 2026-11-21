@@ -36,4 +36,13 @@ describe('plobiDirectiveFormatter.parse', () => {
       { kind: 'text', text: ' the entry point' }
     ])
   })
+
+  it('parses document-location refs (WP-OFFICE-SELECTION-TOOLBAR)', () => {
+    expect(plobiDirectiveFormatter.parse('@page:notes/book.pdf:12')).toEqual([
+      { kind: 'mention', type: 'page', label: 'book.pdf:12', id: 'notes/book.pdf:12' }
+    ])
+    expect(plobiDirectiveFormatter.parse('@section:docs/report.docx:3.2')).toEqual([
+      { kind: 'mention', type: 'section', label: 'report.docx:3.2', id: 'docs/report.docx:3.2' }
+    ])
+  })
 })

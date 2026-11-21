@@ -23,7 +23,7 @@ export const RICH_INPUT_SLOT = 'composer-rich-input'
 // chip 的 kind 清单。`quote` 是引用（11-19 起，引用长成了正文里的 chip）。
 // ⚠️ 这张表与 `components/assistant-ui/directive-text.tsx` 的 `PLOBI_REF_TYPES`
 // 必须是**同一份**：那边认得才能把发出去的消息里的 chip 画出来。
-export const REF_RE = /@(file|folder|url|image|tool|line|terminal|session|quote):(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/g
+export const REF_RE = /@(file|folder|url|image|tool|line|page|section|terminal|session|quote):(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/g
 
 const ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }
 

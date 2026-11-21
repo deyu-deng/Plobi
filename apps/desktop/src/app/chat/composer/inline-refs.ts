@@ -83,6 +83,17 @@ export function droppedFileInlineRef(candidate: DroppedFile, cwd: string | null 
   return `@${kind}:${formatRefValue(rel)}`
 }
 
+/**
+ * 文档定位引用（WP-OFFICE-SELECTION-TOOLBAR）：`@page:`（PDF 页码）／`@section:`
+ * （Word/PPT 章节或块号）。与 `@line:` 一样是纯文本 chip，交给模型自己理解，
+ * 后端不解析（见 `agent/context_references.py` 的 `REFERENCE_PATTERN` 只认 file 族）。
+ */
+export function documentLocationRef(kind: 'page' | 'section', path: string, cwd: string | null | undefined, location: string | number) {
+  const rel = contextPath(path, cwd || '')
+
+  return `@${kind}:${formatRefValue(`${rel}:${location}`)}`
+}
+
 /** Resolve a batch of drops to their inline `@file:`/`@line:`/`@folder:` refs,
  * dropping any that carry no path. */
 export function droppedFileInlineRefs(candidates: DroppedFile[], cwd: string | null | undefined): string[] {
