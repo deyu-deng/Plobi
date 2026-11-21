@@ -5,6 +5,7 @@ import { build } from 'esbuild'
 import { createOpenDeskOfficeViteAliases } from '@bitclub.ai/opendesk-office/vite'
 
 import { patchDocxParser, patchDocsMain } from './docx-prefix-tolerance.mjs'
+import { genofficeSelectionBridgePlugin } from './genoffice-selection-bridge.mjs'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, promises as fsPromises } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -178,7 +179,7 @@ for (const [kind, source] of [
     format: 'cjs',
     target: 'node20',
     external: ['electron'],
-    plugins: [aliasPlugin, assetPlugin],
+    plugins: [aliasPlugin, assetPlugin, genofficeSelectionBridgePlugin],
     loader: { '.css': 'empty', '.ttf': 'empty', '.wasm': 'empty', '.png': 'empty' },
     define: { 'process.env.NODE_ENV': '"production"' },
     logLevel: 'info'

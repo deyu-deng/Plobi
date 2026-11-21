@@ -1,7 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { requestComposerFocus, requestComposerInsertRefs } from '@/app/chat/composer/focus'
+import { documentLocationRef } from '@/app/chat/composer/inline-refs'
+import {
+  SelectionToolbar,
+  type ExternalSelection,
+  type SelectionToolbarAction
+} from '@/components/selection-toolbar/selection-toolbar'
 import { PageLoader } from '@/components/page-loader'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { Codicon } from '@/components/ui/codicon'
+import { Copy } from '@/lib/icons'
+import { useI18n } from '@/i18n'
+import { $currentCwd } from '@/store/session'
 
 import { registerGenOfficeCloseHandler } from './genoffice-sessions'
 import {
@@ -28,6 +39,9 @@ const EDITOR_PAGE: Record<GenOfficeKind, string> = {
 }
 
 const DEV_EDITOR_BASE = 'http://127.0.0.1:5175'
+
+/** 与 scripts/genoffice-selection-bridge.mjs 里的 SELECTION_CHANNEL 对齐。 */
+const SELECTION_CHANNEL = 'plobi:selection'
 
 function editorUrl(kind: GenOfficeKind): string {
   const page = EDITOR_PAGE[kind]
@@ -70,7 +84,39 @@ export function GenOfficeFileEditor({
   const [failed, setFailed] = useState(false)
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [diskChanged, setDiskChanged] = useState(false)
+  const [selection, setSelection] = useState<null | ExternalSelection>(null)
+  const { t } = useI18n()
   const { change: diskChange } = useFileRevision(path)
+
+  // webview 里选区的 rect 是相对 webview 视口的；浮窗是主页面 fixed 定位，
+  // 得加上 webview 元素在主页面的偏移。宿主收一次消息算一次，滚动时 rect 会重发。
+  const onSelectionMessage = useCallback((value: unknown) => {
+    if (!value || typeof value !== 'object') {
+      setSelection(null)
+      return
+    }
+    const { text, rect } = value as {
+      rect?: { bottom: number; left: number; right: number; top: number }
+      text?: string
+    }
+    const webview = webviewRef.current
+
+    if (!text || !text.trim() || !rect || !webview) {
+      setSelection(null)
+      return
+    }
+    const host = webview.getBoundingClientRect()
+
+    setSelection({
+      rect: {
+        bottom: host.top + rect.bottom,
+        left: host.left + rect.left,
+        right: host.left + rect.right,
+        top: host.top + rect.top
+      },
+      text: text.trim()
+    })
+  }, [])
 
   useEffect(
     () =>
@@ -215,6 +261,13 @@ export function GenOfficeFileEditor({
         const onDomReady = () => {
           webContentsIdRef.current = webview.getWebContentsId?.() ?? null
         }
+        const onIpcMessage = (event: Event) => {
+          const detail = event as Event & { channel?: string; args?: unknown[] }
+
+          if (detail.channel === SELECTION_CHANNEL) {
+            onSelectionMessage(detail.args?.[0])
+          }
+        }
 
         webview.addEventListener('did-start-loading', onStart)
         webview.addEventListener('did-stop-loading', onStop)
@@ -222,6 +275,7 @@ export function GenOfficeFileEditor({
         webview.addEventListener('focus', onFocus)
         webview.addEventListener('blur', onBlur)
         webview.addEventListener('dom-ready', onDomReady)
+        webview.addEventListener('ipc-message', onIpcMessage)
       })
       .catch(() => {
         if (active) {
@@ -237,7 +291,7 @@ export function GenOfficeFileEditor({
       webviewRef.current = null
       host.replaceChildren()
     }
-  }, [kind, path, reloadKey])
+  }, [kind, onSelectionMessage, path, reloadKey])
 
   const retry = () => {
     pendingDiskChangeRef.current = false
@@ -246,6 +300,36 @@ export function GenOfficeFileEditor({
     setLoading(true)
     setReloadKey(value => value + 1)
   }
+
+  const dismissSelection = useCallback(() => setSelection(null), [])
+
+  // 选区浮窗（WP-OFFICE-SELECTION-TOOLBAR 阶段二）：与聊天/源码视图/PDF 是同一份组件，
+  // 只是选区从 webview 上报而来。@section 用选中文字的前若干字作锚点——渲染进程内部
+  // 的块索引没有对外入口，这是拿得到的、诚实的定位方式（见任务书）。
+  const selectionActions = useMemo<SelectionToolbarAction[]>(
+    () => [
+      {
+        id: 'copy',
+        icon: <Copy className="size-3.5" />,
+        label: t.selectionToolbar.copy,
+        onSelect: ({ text }) => {
+          void writeClipboardText(text)
+        }
+      },
+      {
+        id: 'add-to-chat',
+        icon: <Codicon name="comment" size="0.85rem" />,
+        label: t.selectionToolbar.addToChat,
+        onSelect: ({ text }) => {
+          const anchor = text.replace(/\s+/gu, ' ').slice(0, 16)
+          const ref = documentLocationRef('section', path, $currentCwd.get(), anchor)
+          requestComposerInsertRefs([ref])
+          requestComposerFocus('main')
+        }
+      }
+    ],
+    [path, t]
+  )
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col bg-white text-[#111]">
@@ -272,6 +356,13 @@ export function GenOfficeFileEditor({
         </div>
       ) : null}
       <div className="min-h-0 flex-1" data-testid="genoffice-file-host" ref={hostRef} />
+      <SelectionToolbar
+        actions={selectionActions}
+        containerRef={hostRef}
+        external={selection}
+        onExternalDismiss={dismissSelection}
+        testId="genoffice-selection-toolbar"
+      />
 
       {failed || bridgeMissing ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white px-6 text-center">

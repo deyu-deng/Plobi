@@ -135,39 +135,67 @@ export function textBeforeRange(container: Node, range: Range): string {
   return holder.textContent ?? ''
 }
 
+/**
+ * 外部喂进来的选区（webview 那一档用）：文字 + 已换算成主页面视口坐标的矩形。
+ * GenOffice 的选区活在 webview 的独立渲染进程里，`window.getSelection()` 够不到，
+ * 由宿主读出来再喂进来。给了它就不再自己监听鼠标/键盘事件。
+ */
+export interface ExternalSelection {
+  rect: SelectionRect
+  text: string
+}
+
 export interface SelectionToolbarProps {
   actions: SelectionToolbarAction[]
   /** 选区必须在这个容器里，浮窗才出现（别把别的面板也认领了）。 */
   containerRef: RefObject<HTMLElement | null>
+  /** 外部选区来源；给了就不走 window.getSelection()。默认无。 */
+  external?: null | ExternalSelection
+  /** 动作执行后通知外部把 external 清掉，免得下次重渲染又弹回来。 */
+  onExternalDismiss?: () => void
   testId?: string
 }
 
-export function SelectionToolbar({ actions, containerRef, testId = 'selection-toolbar' }: SelectionToolbarProps) {
+export function SelectionToolbar({
+  actions,
+  containerRef,
+  external = null,
+  onExternalDismiss,
+  testId = 'selection-toolbar'
+}: SelectionToolbarProps) {
   const [text, setText] = useState<null | string>(null)
   const [anchor, setAnchor] = useState<null | { left: number; top: number }>(null)
   const [openMenu, setOpenMenu] = useState<null | string>(null)
   const rangeRef = useRef<null | Range>(null)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const externalRef = useRef<null | ExternalSelection>(external)
+
+  externalRef.current = external
 
   const hide = useCallback(() => {
     rangeRef.current = null
     setText(null)
     setAnchor(null)
     setOpenMenu(null)
-  }, [])
+    if (externalRef.current) {
+      onExternalDismiss?.()
+    }
+  }, [onExternalDismiss])
 
   const reposition = useCallback(() => {
     const host = containerRef.current
     const bar = toolbarRef.current
+    const externalNow = externalRef.current
     const range = rangeRef.current
 
-    if (!host || !bar || !range) {
+    if (!host || !bar || (!externalNow && !range)) {
       setAnchor(null)
 
       return
     }
 
-    const rect = rangeRect(range)
+    // 外部选区的 rect 已经是主页面视口坐标，直接用；自采的从 Range 量。
+    const rect = externalNow ? externalNow.rect : rangeRect(range!)
 
     setAnchor(
       anchorForSelection(host.getBoundingClientRect(), rect, {
@@ -177,7 +205,25 @@ export function SelectionToolbar({ actions, containerRef, testId = 'selection-to
     )
   }, [containerRef])
 
+  // external 从无到有/换了位置，重新摆一次（自采路径靠下面的 mouseup/keyup）。
+  // 不依赖 text：自采模式下 external 恒为 null，这个 effect 只在挂载时跑一次，
+  // 那次 hide() 是 no-op，绝不干扰原来的 window.getSelection 那条路。
+  useEffect(() => {
+    if (external) {
+      setText(external.text.trim())
+      setOpenMenu(null)
+      reposition()
+    } else {
+      hide()
+    }
+  }, [external, hide, reposition])
+
   const sync = useCallback(() => {
+    // 外部喂来源时不碰 window selection——那是 webview 里的另一棵树。
+    if (externalRef.current) {
+      return
+    }
+
     const host = containerRef.current
     const selection = window.getSelection()
 
@@ -258,6 +304,14 @@ export function SelectionToolbar({ actions, containerRef, testId = 'selection-to
   }, [openMenu])
 
   const payload = (): null | SelectionPayload => {
+    const externalNow = externalRef.current
+
+    if (externalNow) {
+      // 外部来源没有主文档里的 Range；webview 那些动作只用 text。
+      // 仍给一枚空 Range 占位，保住 SelectionPayload 的形状。
+      return { range: document.createRange(), text: externalNow.text }
+    }
+
     const range = rangeRef.current
 
     return range && text ? { range, text } : null

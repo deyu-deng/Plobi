@@ -2,7 +2,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { anchorForSelection, SelectionToolbar, type SelectionToolbarAction } from './selection-toolbar'
+import {
+  anchorForSelection,
+  SelectionToolbar,
+  type SelectionToolbarAction
+} from './selection-toolbar'
 
 /**
  * 选区浮窗（WP-SELECTION-TOOLBAR）。
@@ -149,5 +153,84 @@ describe('SelectionToolbar', () => {
     fireEvent.click(screen.getByTestId('selection-toolbar-copy'))
 
     expect(screen.queryByTestId('selection-toolbar')).toBeNull()
+  })
+})
+
+/** webview 那一档：选区由宿主读出来从外部喂进来（WP-OFFICE-SELECTION-TOOLBAR）。 */
+describe('SelectionToolbar external', () => {
+  afterEach(cleanup)
+
+  const RECT = { bottom: 120, left: 40, right: 200, top: 100 }
+
+  function ExternalHarness({
+    onCopy,
+    onDismiss,
+    external
+  }: {
+    external: null | { rect: typeof RECT; text: string }
+    onCopy: (text: string) => void
+    onDismiss: () => void
+  }) {
+    const ref = useRef<HTMLDivElement | null>(null)
+    const actions: SelectionToolbarAction[] = [
+      { id: 'copy', label: '复制', onSelect: ({ text }) => onCopy(text) }
+    ]
+
+    return (
+      <div ref={ref}>
+        <SelectionToolbar
+          actions={actions}
+          containerRef={ref}
+          external={external}
+          onExternalDismiss={onDismiss}
+          testId="external-toolbar"
+        />
+      </div>
+    )
+  }
+
+  it('external 有值时浮窗出现，不靠 window selection', () => {
+    render(
+      <ExternalHarness
+        external={{ rect: RECT, text: 'webview 里选的字' }}
+        onCopy={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('external-toolbar')).toBeTruthy()
+  })
+
+  it('动作拿到 external 的文字，并通知外部清源', () => {
+    const onCopy = vi.fn()
+    const onDismiss = vi.fn()
+
+    render(
+      <ExternalHarness
+        external={{ rect: RECT, text: 'webview 里选的字' }}
+        onCopy={onCopy}
+        onDismiss={onDismiss}
+      />
+    )
+    fireEvent.click(screen.getByTestId('external-toolbar-copy'))
+
+    expect(onCopy).toHaveBeenCalledWith('webview 里选的字')
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  it('external 变 null 时浮窗收起', () => {
+    const { rerender } = render(
+      <ExternalHarness
+        external={{ rect: RECT, text: 'webview 里选的字' }}
+        onCopy={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    )
+
+    expect(screen.getByTestId('external-toolbar')).toBeTruthy()
+
+    rerender(<ExternalHarness external={null} onCopy={vi.fn()} onDismiss={vi.fn()} />)
+
+    expect(screen.queryByTestId('external-toolbar')).toBeNull()
   })
 })
