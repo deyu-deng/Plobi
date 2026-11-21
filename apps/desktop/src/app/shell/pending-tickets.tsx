@@ -6,7 +6,7 @@ import { LongTip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import {
   ArchiveOff, Bell, Check, CheckCircle2, Clock, GitBranch, iconSize, Mail,
-  MessageSquareText, Pencil, Server, X
+  MessageSquareText, Pencil, Send, Server, X
 } from '@/lib/icons'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
@@ -306,13 +306,13 @@ function PendingRow({
           />
           <button
             aria-label={t.console.inboxCommentSubmit}
-            className="shrink-0 rounded px-1.5 py-0.5 text-xs hover:bg-(--ui-control-hover-background)"
+            className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
             disabled={busy || !commentText.trim()}
             onClick={submitComment}
             title={t.console.inboxCommentSubmit}
             type="button"
           >
-            发送
+            <Send className={iconSize.xs} />
           </button>
         </div>
       ) : null}
