@@ -169,6 +169,7 @@ function PendingRow({
   onDecide: (id: string, kind: DecisionKind, comment?: string) => void
   ticket: InboxItem
 }) {
+  const { t } = useI18n()
   const [commentOpen, setCommentOpen] = useState(false)
   const [commentText, setCommentText] = useState('')
 
@@ -183,21 +184,21 @@ function PendingRow({
           draft ? (
             <>
               <button
-                aria-label="批准授权"
+                aria-label={t.console.inboxLessonApprove}
                 className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
                 disabled={busy}
                 onClick={() => onDecide(ticket.id, 'lesson:approve')}
-                title="批准授权"
+                title={t.console.inboxLessonApprove}
                 type="button"
               >
                 <Check className={iconSize.xs} />
               </button>
               <button
-                aria-label="驳回授权"
+                aria-label={t.console.inboxLessonReject}
                 className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
                 disabled={busy}
                 onClick={() => onDecide(ticket.id, 'lesson:reject')}
-                title="驳回授权"
+                title={t.console.inboxLessonReject}
                 type="button"
               >
                 <X className={iconSize.xs} />
@@ -205,11 +206,11 @@ function PendingRow({
             </>
           ) : (
             <button
-              aria-label="撤回授权"
+              aria-label={t.console.inboxLessonRevoke}
               className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
               disabled={busy}
               onClick={() => onDecide(ticket.id, 'lesson:revoke')}
-              title="撤回授权"
+              title={t.console.inboxLessonRevoke}
               type="button"
             >
               <ArchiveOff className={iconSize.xs} />
@@ -248,34 +249,34 @@ function PendingRow({
         actions={
           <>
             <button
-              aria-label="接纳"
+              aria-label={t.console.inboxAccept}
               className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
               disabled={busy}
               onClick={() => onDecide(ticket.id, 'ticket:accept')}
-              title="接纳"
+              title={t.console.inboxAccept}
               type="button"
             >
               <Check className={iconSize.xs} />
             </button>
             <button
-              aria-label="拒绝"
+              aria-label={t.console.inboxReject}
               className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)"
               disabled={busy}
               onClick={() => onDecide(ticket.id, 'ticket:reject')}
-              title="拒绝"
+              title={t.console.inboxReject}
               type="button"
             >
               <X className={iconSize.xs} />
             </button>
             <button
-              aria-label="评论"
+              aria-label={t.console.inboxComment}
               className={cn(
                 'grid size-5 shrink-0 place-items-center rounded hover:bg-(--ui-control-hover-background)',
                 commentOpen && 'bg-(--ui-control-hover-background)'
               )}
               disabled={busy}
               onClick={() => setCommentOpen(!commentOpen)}
-              title="评论"
+              title={t.console.inboxComment}
               type="button"
             >
               <MessageSquareText className={iconSize.xs} />
@@ -299,16 +300,16 @@ function PendingRow({
                 submitComment()
               }
             }}
-            placeholder="说清楚为什么，让 Agent 理解后再记下来"
+            placeholder={t.console.inboxCommentHint}
             type="text"
             value={commentText}
           />
           <button
-            aria-label="提交评论"
+            aria-label={t.console.inboxCommentSubmit}
             className="shrink-0 rounded px-1.5 py-0.5 text-xs hover:bg-(--ui-control-hover-background)"
             disabled={busy || !commentText.trim()}
             onClick={submitComment}
-            title="提交评论"
+            title={t.console.inboxCommentSubmit}
             type="button"
           >
             发送

@@ -1880,6 +1880,14 @@ export interface Translations {
     offloadsEmpty: string
     offloadsReply: string
     ticketApprove: string
+    inboxAccept: string
+    inboxReject: string
+    inboxComment: string
+    inboxCommentSubmit: string
+    inboxCommentHint: string
+    inboxLessonApprove: string
+    inboxLessonReject: string
+    inboxLessonRevoke: string
     ticketIgnore: string
     ticketRevoke: string
     ticketScope: string

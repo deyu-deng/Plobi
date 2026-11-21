@@ -125,14 +125,14 @@ describe('待放行那一族', () => {
 
     expect(await screen.findByText('顺手把测试补一下')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '接纳' }))
+    fireEvent.click(screen.getByRole('button', { name: /接纳|Accept/ }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
       body: { comment: '', kind: 'accept' },
       path: `/api/tickets/${TICKET.id}/decision`
     })))
 
-    fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
+    fireEvent.click(screen.getByRole('button', { name: /拒绝|Reject/ }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
       body: { comment: '', kind: 'reject' },
@@ -145,10 +145,10 @@ describe('待放行那一族', () => {
     render(<PendingTicketsFace />)
     expect(await screen.findByText('顺手把测试补一下')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '评论' }))
-    const box = screen.getByPlaceholderText('说清楚为什么，让 Agent 理解后再记下来')
+    fireEvent.click(screen.getByRole('button', { name: /评论|Comment/ }))
+    const box = screen.getByPlaceholderText(/说清楚为什么|Explain why/)
     fireEvent.change(box, { target: { value: '以后配色这类你定' } })
-    fireEvent.click(screen.getByRole('button', { name: '提交评论' }))
+    fireEvent.click(screen.getByRole('button', { name: /提交评论|Send comment/ }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
       body: { comment: '以后配色这类你定', kind: 'comment' },
@@ -161,13 +161,13 @@ describe('待放行那一族', () => {
     render(<PendingTicketsFace />)
     expect(await screen.findByText('配色这类你自己定')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '批准授权' }))
+    fireEvent.click(screen.getByRole('button', { name: /批准授权|Approve grant/ }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
       path: `/api/lessons/${DRAFT.id}/approve`
     })))
 
-    fireEvent.click(screen.getByRole('button', { name: '驳回授权' }))
+    fireEvent.click(screen.getByRole('button', { name: /驳回授权|Reject grant/ }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
       path: `/api/lessons/${DRAFT.id}/reject`
@@ -184,9 +184,9 @@ describe('待放行那一族', () => {
     mockBothLists([], [LIVE], [])
     render(<PendingTicketsFace />)
     expect(await screen.findByText('配色这类你自己定')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '批准授权' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /批准授权|Approve grant/ })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '撤回授权' }))
+    fireEvent.click(screen.getByRole('button', { name: /撤回授权|Revoke grant/ }))
     await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
       path: `/api/lessons/${LIVE.id}/revoke`
