@@ -48,7 +48,7 @@ from plobi_cli.providers import (
     resolve_provider_full,
 )
 
-#: 网关那 22 家软件里的一家 —— 它**自己**就是 provider（11-18 第三处），`bezel`
+#: 网关名册里那几家软件里的一家 —— 它**自己**就是 provider（11-18 第三处），`bezel`
 #: 只是这些软件共用的传输名，不再是 provider 宇宙里的一个成员。
 HUB_SOFTWARE = "workbuddy"
 
@@ -94,7 +94,7 @@ def test_each_hub_software_resolves_through_the_plugin_registry():
 
 
 def test_every_hub_software_is_its_own_provider():
-    """22 家各是一个 provider，谁也不靠 `bezel` 代替自己。"""
+    """每家各是一个 provider，谁也不靠 `bezel` 代替自己。"""
     from providers.hub_software import HUB_SOFTWARE_IDS
 
     for software in HUB_SOFTWARE_IDS:

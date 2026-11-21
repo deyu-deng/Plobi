@@ -21,15 +21,14 @@ import os
 
 import pytest
 
-from plobi_cli.auth import hub_software_for_model, migrate_legacy_hub_provider, resolve_provider
+from plobi_cli.auth import migrate_legacy_hub_provider, resolve_provider
 from plobi_cli.models import (
     CANONICAL_PROVIDERS,
     HUB_SOFTWARE,
     HUB_SOFTWARE_IDS,
-    HUB_TRANSPORT,
     config_provider_name,
-    transport_for_software,
 )
+from providers.hub_software import hub_group
 
 
 def _write_config(home, provider, default="workbuddy/hy4free"):
@@ -67,7 +66,7 @@ def test_软件名解析成它自己(home):
     """
     _write_config(home, "workbuddy")
     assert resolve_provider("auto") == "workbuddy"
-    assert transport_for_software("workbuddy") == "bezel"
+    assert hub_group().transport_for("workbuddy") == hub_group().group_id
 
 
 def test_运行时那条路也认软件名(home):
@@ -87,10 +86,10 @@ def test_运行时那条路也认软件名(home):
 
 
 def test_模型_id的前缀就是那家软件():
-    assert hub_software_for_model("workbuddy/hy4free") == "workbuddy"
-    assert hub_software_for_model("qoder/sonus") == "qoder"
+    assert hub_group().member_for_model("workbuddy/hy4free") == "workbuddy"
+    assert hub_group().member_for_model("qoder/sonus") == "qoder"
     # 不是软件的前缀 ⇒ 认不出来（那是别家的模型 id，比如 `anthropic/claude-…`）
-    assert hub_software_for_model("anthropic/claude-sonnet-4.5") is None
+    assert hub_group().member_for_model("anthropic/claude-sonnet-4.5") is None
 
 
 def test_存量配置里的机器标识被一次性迁成软件名(home):
@@ -128,8 +127,8 @@ def test_配置里那个名字是软件名_机器标识只在映射里():
     # 别家 provider 写自己的 slug。
     assert config_provider_name("openrouter", "anthropic/claude-sonnet-4.5") == "openrouter"
     # 传输映射：软件名 ⇒ 网关；别家原样。
-    assert transport_for_software("workbuddy") == "bezel"
-    assert transport_for_software("openrouter") == "openrouter"
+    assert hub_group().transport_for("workbuddy") == hub_group().group_id
+    assert hub_group().transport_for("openrouter") == "openrouter"
 
 
 def test_软件名是provider宇宙的成员_bezel不是():
@@ -150,7 +149,7 @@ def test_软件名是provider宇宙的成员_bezel不是():
     assert "bezel" not in slugs
     for software in HUB_SOFTWARE:
         assert software in slugs, f"{software} 没进规范表 ⇒ picker 里选不到这家软件"
-        assert HUB_TRANSPORT[software] == "bezel"
+        assert hub_group().owns_member(software), f"{software} 不在组节点成员里"
 
 
 def test_写入口原样落软件名():
@@ -166,9 +165,12 @@ def test_写入口原样落软件名():
     assert provider == "openrouter"
 
 
-def test_软件名那张表和传输映射对得上():
-    assert set(HUB_TRANSPORT) == set(HUB_SOFTWARE_IDS)
-    assert set(HUB_TRANSPORT.values()) == {"bezel"}
+def test_软件名那张表和组的成员对得上():
+    """名册、注册表成员、组节点成员是同一份：三处不一致就是两套语义。"""
+    assert set(HUB_SOFTWARE) == set(HUB_SOFTWARE_IDS) == set(hub_group().members)
+    # 成员都走组那条腿（组级凭据挂在 owner 上）。
+    for software in HUB_SOFTWARE_IDS:
+        assert hub_group().transport_for(software) == hub_group().group_id
 
 
 # ─── 第一处：迁移必须做在「显式 provider 抛错」之前 ────────────────────────

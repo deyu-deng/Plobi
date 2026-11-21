@@ -1,9 +1,11 @@
-"""Which magpie providers are waiting to be claimed (read-only, no network write).
+"""Which magpie providers still have no wording of ours (read-only, no network write).
 
-The card list is **our** table (``providers.yaml``): magpie adding a provider
-must not put it on the user's screen before somebody claims it. This prints
-what is waiting — for the release-watch bot's PR body, and for a human who
-wants to add one line.
+The card list is **magpie's**: it reports a provider and a card appears, it
+drops one and the card goes with it. This script answers **a copywriting
+question only** — which of the providers it reports today still have no row in
+``providers.yaml``, i.e. would show up under magpie's own name with the generic
+fallback line. This prints that, for the release-watch bot's PR body, and for a
+human who wants to add one line.
 
     python scripts/plobi/check_magpie_providers.py            # human-readable
     python scripts/plobi/check_magpie_providers.py --json     # for a bot
@@ -85,15 +87,21 @@ def find_binary() -> str | None:
     binary = str(os.environ.get("PLOBI_MAGPIE_BINARY") or "").strip()
     if binary and Path(binary).is_file():
         return binary
-    for name in ("magpie-cli", "magpie"):
+    # `magpie.com` is not a typo: on Windows the published binary really is
+    # named that, so a bare `magpie` / `magpie-cli` lookup finds nothing and this
+    # script then reports "cannot read their roster" on a machine that has it.
+    for name in ("magpie-cli", "magpie", "magpie.com", "magpie-cli.exe", "magpie.exe"):
         found = shutil.which(name)
         if found:
             return found
-    home = os.environ.get("PLOBI_HOME") or ""
-    if home:
+    for home in (os.environ.get("PLOBI_HOME") or "", str(Path.home())):
+        if not home:
+            continue
         for candidate in (
             Path(home) / "magpie" / "magpie-cli.exe",
             Path(home) / "magpie" / "magpie-cli",
+            Path(home) / "magpie" / "magpie.com",
+            Path(home) / "magpie" / "magpie.exe",
         ):
             if candidate.is_file():
                 return str(candidate)
@@ -143,15 +151,19 @@ def main() -> int:
         print(json.dumps({"unclaimed": waiting, "no_longer_there": gone}, ensure_ascii=False))
         return 0
 
-    print(f"我们认领的 provider：{len(ours)}")
+    print(f"我们写过措辞的 provider：{len(ours)}")
     if waiting:
-        print("等我们认领（不出卡）：")
+        print("还没措辞覆盖（照样出卡，标题用它的自报名）：")
         for pid in waiting:
             print(f"  - {pid}")
     else:
-        print("等我们认领（不出卡）：无")
+        print("还没措辞覆盖（照样出卡，标题用它的自报名）：无")
     if gone:
-        print("magpie 那边已经没有了（我们表里还留着，确认一下）：")
+        # Not a bug and not a blocker: a row for a provider that is not installed
+        # today costs nothing (it is wording, not admission) and is the thing that
+        # keeps the name stable if it comes back or changes id. Printed only so
+        # the list does not grow unnoticed.
+        print("今天没装在我们这边（表里留着当措辞备用，不影响出卡）：")
         for pid in gone:
             print(f"  - {pid}")
     return 0

@@ -27,9 +27,9 @@ import pytest
 from plobi_cli.models import (
     format_unknown_provider,
     provider_name_for_message,
-    software_name_for_model,
     unknown_provider_label,
 )
+from providers.hub_software import hub_group
 
 MACHINE_IDS = ("bezel",)
 
@@ -62,12 +62,12 @@ def config_without_usable_default(monkeypatch):
 
 
 def test_software_prefix_is_read_off_the_model_id():
-    assert software_name_for_model("workbuddy/hy4free") == "workbuddy"
-    assert software_name_for_model("opencode-zen-free/mimo-v2.6-flash-free") == (
+    assert hub_group().member_for_model("workbuddy/hy4free") == "workbuddy"
+    assert hub_group().member_for_model("opencode-zen-free/mimo-v2.6-flash-free") == (
         "opencode-zen-free"
     )
-    assert software_name_for_model("hy4free") == ""
-    assert software_name_for_model("") == ""
+    assert hub_group().member_for_model("hy4free") is None
+    assert hub_group().member_for_model("") is None
 
 
 @pytest.mark.parametrize("machine", MACHINE_IDS)

@@ -38,7 +38,7 @@ def _load_by_path(relpath: str, module_name: str):
 # module object, so a second copy under another name could not prove it.
 from plobi.agents import registry
 
-# 11-18 第三处：`bezel` 不再是 provider（插件已删），22 家软件各自是 provider，
+# 11-18 第三处：`bezel` 不再是 provider（插件已删），名册里那几家软件各自是 provider，
 # 共用网关那一份凭据。这些断言原本挂在插件上，现在挂在 `providers.hub_software`。
 from providers import hub_software
 
@@ -196,7 +196,7 @@ def test_profile_no_longer_fills_the_key_at_the_call_site():
 
 
 def test_every_software_answers_with_the_gateway_credential():
-    """22 家软件各自是 provider，凭据却只有网关那一份 —— 每一家都得答得出。"""
+    """名册里那几家软件各自是 provider，凭据却只有网关那一份 —— 每一家都得答得出。"""
     from plobi_cli.auth import resolve_api_key_provider_credentials
 
     for sid in hub_software.HUB_SOFTWARE:
@@ -205,14 +205,15 @@ def test_every_software_answers_with_the_gateway_credential():
         assert creds["source"].startswith("profile_fallback:")
 
 
-def test_the_transport_name_is_not_a_provider_but_keeps_the_credential():
-    """`bezel` 只剩传输这一个身份：不进注册表、不上屏，但内部路径仍拿得到凭据。
+def test_the_group_owner_is_not_a_provider_but_keeps_the_credential():
+    """`bezel` 只剩「组 owner」这一个身份：不进注册表、不上屏，但内部路径仍拿得到凭据。
 
-    这几条腿共用一份钥匙，传输名的 profile 兜底就是它们共用的那个答案。
+    这一组的成员共用一份钥匙，owner 的 profile 兜底就是它们共用的那个答案。
     """
     import providers
 
-    assert hub_software.TRANSPORT_NAME == "bezel"
+    assert hub_software.GROUP_ID == "bezel"
+    assert hub_software.GROUP_OWNER is providers.get_provider_profile("bezel")
     assert "bezel" not in {p.name for p in providers.list_providers()}
     assert providers.get_provider_profile("bezel").fallback_api_key() == registry.bezel_api_key()
 

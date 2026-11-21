@@ -1133,78 +1133,47 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [
 #:
 #: 11-18 那次把手抄的表挪进了 providers 层：软件名从「映射到 bezel 的东西」升格成
 #: **provider 本身**，所以名册跟着 profile 一起住在 `providers/hub_software.py`。
-from providers.hub_software import HUB_SOFTWARE, HUB_SOFTWARE_IDS  # noqa: E402
+from providers.hub_software import (  # noqa: E402
+    HUB_SOFTWARE,
+    HUB_SOFTWARE_IDS,
+    hub_group,
+)
 
-#: 网关那几条腿的**传输**：软件名 → 网关自己的机器标识。
+#: 「订阅额度」那组的入口是 `providers.hub_software.hub_group()`。这里**不再**有
+#: `HUB_TRANSPORT` / `HUB_TRANSPORTS` / `is_hub_software` / `transport_for_software` /
+#: `software_name_for_model` / `hub_models_for_software` 那一套：它们本来是同一件事的
+#: 六个别名（「这个 provider 名归不归网关那组管」），却散在 auth / inventory /
+#: model_metadata / web_server 十几处调用点上，一处漏改就是两套语义。
 #:
-#: 网关的机器标识（``bezel``）是**内部名** —— 它不进用户的配置、不上屏，只留在这张
-#: 映射与日志／doctor 行 id 里。配置里写的是**软件名**（``workbuddy``），解析时经这张
-#: 表换到传输（``bezel``）那一腿。
+#: 11-2x 方案 C 把这件事收进组节点（`providers.base.ProviderGroup`）：`bezel` 是组
+#: 的 **owner**（组级凭据、端点、请求字段都在它身上），名册里那几家软件是 **members**。
+#: 要判断就问组：
 #:
-#: **为什么软件名不进 `CANONICAL_PROVIDERS`、也不进全局别名表**：那两张表是
-#: 11-18 第三处把这件事彻底摆正：**软件名就是 provider**（`providers/hub_software.py`
-#: 给 22 家各注册了一个 profile，凭据与端点共用网关那一份），`bezel` 只剩**传输**这一个
-#: 身份 —— 它不在 `PROVIDER_REGISTRY`、不进 picker、不上屏。这张表因此只剩一个用途：
-#: 由软件名反查「它走哪条传输」（`transport_for_software`），供凭据兜底与请求字段复用。
+#:   * `hub_group().owns(name)`             —— 成员**或**组自己（旧的 is_hub_software）
+#:   * `hub_group().owns_member(name)`      —— 只有名册里那几家软件
+#:   * `hub_group().owns_owner(name)`       —— 只有组自己（旧的 `name in HUB_TRANSPORTS`）
+#:   * `hub_group().transport_for(name)`    —— 成员 ⇒ 组 id（旧的 transport_for_software）
+#:   * `hub_group().member_for_model(mid)`  —— 前缀 ⇒ 软件名（旧的 software_name_for_model）
+#:   * `hub_group().models_for_member(sw, models)` —— 总表 ⇒ 某家的那几条
+#:
 #: 屏上仍是「订阅额度」一组、一行一家软件：它们共用一份 key，不是 22 张独立凭据卡，
 #: 所以在 `tests/plobi_cli/test_provider_parity.py` 里按 `HUB_SOFTWARE_IDS` 整体豁免。
-HUB_TRANSPORT: dict[str, str] = {slug: "bezel" for slug in HUB_SOFTWARE}
-
-#: 传输那一侧用到的机器标识集合（配置里那个 provider 名换到传输时认它）。
-HUB_TRANSPORTS = frozenset(HUB_TRANSPORT.values())
-
-
-def is_hub_software(name: str) -> bool:
-    """这家 provider 是不是网关那几家**软件**之一（机器标识本身也算）。
-
-    11-18 第三处之后，网关那 22 家软件各自就是 provider，`bezel` 只是它们共用的
-    传输名。凡是「这家实际上由网关在服务」的判断都走这里，别再散着写
-    `== "bezel"` —— 那种写法只认机器标识，软件名一进来就漏。
-    """
-    key = (name or "").strip().lower()
-    return key in HUB_SOFTWARE_IDS or key in HUB_TRANSPORTS
-
-
-def hub_models_for_software(software: str, models: list[str]) -> list[str]:
-    """网关那条腿的模型清单 ⇒ 这家软件**自己**的那几条（``qoder/xxx``）。
-
-    机器标识直接调用时给全量：那是内部路径（例如额度总览）要的就是一张总表；
-    软件名调用时只留自己前缀下的，否则切到 ``workbuddy`` 会看见别家的模型。
-    """
-    key = (software or "").strip().lower()
-    if key not in HUB_SOFTWARE_IDS:
-        return models
-    return [m for m in models if (m or "").split("/", 1)[0].strip().lower() == key]
-
-
-def transport_for_software(name: str) -> str:
-    """配置里那个 provider 名 ⇒ 传输用的机器标识。
-
-    软件名（``workbuddy``）⇒ 网关（``bezel``）；别的名字原样返回。
-    """
-    key = (name or "").strip().lower()
-    return HUB_TRANSPORT.get(key, key)
-
-
-def software_name_for_model(model_id: str) -> str:
-    """模型 id 的前缀 ⇒ 服务它的那家软件（``workbuddy/hy4free`` ⇒ ``workbuddy``）。"""
-    prefix = (model_id or "").strip().split("/", 1)[0].strip().lower()
-    return prefix if prefix in HUB_SOFTWARE_IDS else ""
 
 
 def provider_name_for_message(provider_name: str) -> str:
     """报错／屏上该念的那个 provider 名。
 
-    机器标识（``bezel`` 等内部传输名）不是 provider，**不进任何用户可见
-    文案**：能按 ``model.default`` 的前缀换成软件名就换，换不出来返回 ``""`` ——
-    宁可不念名字，也不把内部标识端到用户面前。别的名字原样返回。
+    组 owner（``bezel`` 这类内部名）不是 provider，**不进任何用户可见文案**：
+    能按 ``model.default`` 的前缀换成软件名就换，换不出来返回 ``""`` ——
+    宁可不念名字，也不把内部标识端到用户面前。成员与别家名字原样返回。
     """
     name = (provider_name or "").strip().lower()
     if not name:
         return ""
-    if name in HUB_SOFTWARE_IDS:
+    group = hub_group()
+    if group.owns_member(name):
         return name
-    if name not in HUB_TRANSPORTS:
+    if not group.owns_owner(name):
         return name
 
     candidates: list[str] = []
@@ -1220,14 +1189,14 @@ def provider_name_for_message(provider_name: str) -> str:
         pass
     candidates.append(str(os.getenv("PLOBI_MODEL") or ""))
     for candidate in candidates:
-        software = software_name_for_model(candidate)
+        software = group.member_for_model(candidate)
         if software:
             return software
     return ""
 
 
 def unknown_provider_label(provider_name: str) -> str:
-    """短文案里那个名字：机器标识换软件名，实在换不出来给占位符。"""
+    """短文案里那个名字：组 owner 换软件名，实在换不出来给占位符。"""
     return provider_name_for_message(provider_name) or "<internal id>"
 
 
@@ -1241,7 +1210,7 @@ UNKNOWN_PROVIDER_HINT = (
 def format_unknown_provider(
     provider_name: str, tail: str = UNKNOWN_PROVIDER_HINT
 ) -> str:
-    """``Unknown provider 'X'.`` + 指引；X 永远是**软件名**，绝不会是机器标识。"""
+    """``Unknown provider 'X'.`` + 指引；X 永远是**软件名**，绝不会是内部标识。"""
     shown = provider_name_for_message(provider_name)
     if shown:
         return f"Unknown provider '{shown}'.{tail}"
@@ -1254,19 +1223,20 @@ def format_unknown_provider(
 def config_provider_name(provider_id: str, model_id: str = "") -> str:
     """配置里那个 provider 叫什么。
 
-    网关那几行：写**软件名**（``workbuddy``）——机器标识是内部名，不许进用户的配置
-    （主人 11-17 18:5x）。软件名从**模型 id 的前缀**取（``workbuddy/hy4free`` ⇒
-    ``workbuddy``）：「哪一家软件在服务这个模型」数据里本来就有。
+    网关那几行：写**软件名**（``workbuddy``）——组 owner 的名字是内部名，不许进用户
+    的配置（主人 11-17 18:5x）。软件名从**模型 id 的前缀**取（``workbuddy/hy4free``
+    ⇒ ``workbuddy``）：「哪一家软件在服务这个模型」数据里本来就有。
 
     别家 provider：写自己的 slug。
     """
     pid = (provider_id or "").strip().lower()
     prefix = (model_id or "").strip().split("/", 1)[0].strip().lower()
+    group = hub_group()
     # 软件名自己就是 provider（11-18 第三处）⇒ 原样落盘，不再往后找前缀。
-    if pid in HUB_SOFTWARE_IDS:
+    if group.owns_member(pid):
         return pid
-    # 还残着机器标识（`bezel`）⇒ 按模型 id 前缀换成软件名。
-    if pid in HUB_TRANSPORTS and prefix in HUB_SOFTWARE_IDS:
+    # 还残着组 owner 的名字（`bezel`）⇒ 按模型 id 前缀换成软件名。
+    if group.owns_owner(pid) and group.owns_member(prefix):
         return prefix
     return pid
 
@@ -2610,7 +2580,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     normalized = normalize_provider(provider)
     if normalized == "openrouter":
         return model_ids(force_refresh=force_refresh)
-    if is_hub_software(normalized):
+    if hub_group().owns_member(normalized):
         # The quota hub answers for itself which legs can serve a turn.
         api_key, base_url = "", ""
         try:
@@ -2642,7 +2612,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
         # (see `inventory._apply_capabilities`).
         hub_models = hub_selectable_model_ids(api_key, base_url)
         if hub_models is not None:
-            return hub_models_for_software(normalized, hub_models)
+            return hub_group().models_for_member(normalized, hub_models)
         # The hub did not answer. A cached hub catalog is exactly how a model that
         # cannot be called stays on screen: measured 2026-10-27, port 8000 was held
         # by an unrelated `http.server` (404 on /v1/models) while
@@ -3089,7 +3059,7 @@ def cached_provider_model_ids(
     # read straight out of `$PLOBI_HOME/provider_models_cache.json` — 17 of which
     # were already dead (expired credential, text-only transport) even while the hub
     # WAS up. A cached hub list is a promise the hub did not just make.
-    if is_hub_software(normalized):
+    if hub_group().owns(normalized):
         return provider_model_ids(normalized)
 
     cache = _load_provider_models_cache()

@@ -44,6 +44,11 @@ class ProviderProfile:
     api_mode: str = "chat_completions"
     aliases: tuple = ()
 
+    # 组归属：本条 profile 属于某个 ``ProviderGroup`` 时写组 id（见文件末尾）。
+    # 空串 = 不属于任何组。组级凭据/端点/请求字段归组的 ``owner``；成员只在
+    # 「名字」这件事上是独立的。
+    group: str = ""
+
     # ── Human-readable metadata ───────────────────────────────
     display_name: str = ""       # e.g. "GMI Cloud" — shown in picker/labels
     description: str = ""        # e.g. "GMI Cloud (multi-model direct API)" — picker subtitle
@@ -217,3 +222,102 @@ class ProviderProfile:
         except Exception as exc:
             logger.debug("fetch_models(%s): %s", self.name, exc)
             return None
+
+
+@dataclass(frozen=True)
+class ProviderGroup:
+    """一个 provider **组节点**：组级行为归 ``owner``，成员各是一个 provider。
+
+    为什么要有这一层：有些腿的关系不是「第 N 个 provider」，而是「一个控制面 + N 个
+    可选的软件名」。它们共用一份凭据、一个端点、一套请求字段，却在 picker 里必须
+    是 N 行。扁平注册表里这 N 个名字和别家 provider 同层，「控制面」这件事就没有
+    对象可指 —— 判断只能散成一堆 ``is_hub_software(...)``。组节点把「谁承载组级
+    行为、谁是成员」写成结构，散落判断收敛成 ``owns()`` 一处。
+
+    约定：
+
+    * ``owner`` 承载组级行为（凭据兜底、``base_url``、请求字段）。它**不必**是
+      ``_REGISTRY`` 的成员 —— 通常是 ``get_provider_profile()`` 查不到时的兜底身份，
+      这样它不会平白多出一行可选 provider。
+    * ``members`` 是组里**各自可选**的 provider 名字，顺序即 UI 顺序；成员在
+      ``_REGISTRY`` 里各有一条 profile，``profile.group`` 指回 ``group_id``。
+    * 组节点本身**不进** ``list_providers()``：组是结构，不是一行可选 provider。
+    """
+
+    group_id: str
+    display_name: str
+    description: str
+    owner: ProviderProfile | None = None
+    members: tuple[str, ...] = ()
+    member_labels: dict[str, str] = field(default_factory=dict)
+    show_owner_in_picker: bool = False
+
+    # ── Name resolution ──────────────────────────────────────
+
+    @staticmethod
+    def _key(name: Any) -> str:
+        return str(name or "").strip().lower()
+
+    def owns_member(self, name: Any) -> bool:
+        """这个名字是不是本组的**成员**（可单独选的那几家）。"""
+        return self._key(name) in self.members
+
+    def owns_owner(self, name: Any) -> bool:
+        """这个名字是不是**组自己**（组 id 或 owner 名）。"""
+        key = self._key(name)
+        if not key:
+            return False
+        return key == self._key(self.group_id) or (
+            self.owner is not None and key == self._key(self.owner.name)
+        )
+
+    def owns(self, name: Any) -> bool:
+        """这个名字归本组管吗（成员或组自己）。
+
+        「这家实际上由本组在服务」只需要问这一句 —— 别再散着比名字。
+        """
+        return self.owns_member(name) or self.owns_owner(name)
+
+    @property
+    def member_ids(self) -> frozenset[str]:
+        return frozenset(self.members)
+
+    def member_label(self, name: Any) -> str:
+        """成员在屏上念的名字；不认识的成员退回它自己的 id。"""
+        key = self._key(name)
+        return self.member_labels.get(key) or key
+
+    def member_for_model(self, model_id: Any) -> str | None:
+        """模型 id 的前缀 ⇒ 组里服务它的那家成员；认不出来返回 ``None``。
+
+        组的模型 id 约定是 ``<member>/<model>``，所以「哪一家在服务这个模型」，
+        数据里本来就有。
+        """
+        prefix = str(model_id or "").strip().split("/", 1)[0].strip().lower()
+        return prefix if prefix in self.members else None
+
+    def models_for_member(self, member: Any, models: list[str]) -> list[str]:
+        """组的总清单 ⇒ 这家成员自己那几条。
+
+        组 id 直接调用时给全量（内部路径要的就是一张总表）；成员名调用时只留
+        自己前缀下的，否则切到某一家会看见别家的模型。
+        """
+        key = self._key(member)
+        if not self.owns_member(key):
+            return list(models)
+        return [
+            m for m in models
+            if str(m or "").strip().split("/", 1)[0].strip().lower() == key
+        ]
+
+    def transport_for(self, name: Any) -> str:
+        """配置里那个名字 ⇒ **走哪条腿**。
+
+        组级凭据、端点、请求字段都挂在 ``owner`` 身上，所以成员（软件名）要落到
+        ``group_id`` 那条腿；组自己与别的名字原样返回。这是旧的
+        ``transport_for_software`` 唯一还想表达的意思：不问「叫什么」，只问「谁在跑」。
+        """
+        key = self._key(name)
+        if self.owns_member(key):
+            return self._key(self.group_id)
+        return key

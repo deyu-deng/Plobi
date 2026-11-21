@@ -448,7 +448,7 @@ def normalize_provider(name: str) -> str:
     corresponds to a known provider.
     """
     key = name.strip().lower()
-    # 网关那 22 家软件的名字就是它自己，不许被厂商别名改写（裁定 47）：
+    # 网关名册里那几家软件的名字就是它自己，不许被厂商别名改写（裁定 47）：
     # `grok` 既是某家软件，也是 xAI 的近义词，这里的答案是那家软件——
     # 它的模型 id 前缀就叫 `grok`，答成 `xai` 会让切换落到别家。
     from providers.hub_software import HUB_SOFTWARE

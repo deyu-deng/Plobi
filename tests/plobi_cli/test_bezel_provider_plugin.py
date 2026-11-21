@@ -1,4 +1,4 @@
-"""`bezel` 是**传输**，不是 provider —— 那 22 家软件各自才是 provider。
+"""`bezel` 是**传输**，不是 provider —— 名册里那几家软件各自才是 provider。
 
 （本档原名守裁定 45 ①「`bezel` 必须是一个能解析的 runtime provider」，11-18
 第三处已把这个裁定反过来：主人 11-17 18:5x「bezel 是内部名称，provider 下面
@@ -28,7 +28,7 @@ _OTHER_PROVIDERS = (
 
 _ALIAS_TARGETS = (
     ("glm", "zai"), ("zhipu", "zai"), ("moonshot", "kimi-coding"),
-    ("kimi", "kimi-coding"), ("google", "gemini"), ("x-ai", "xai"),
+    ("kimi", "kimi-coding"), ("x-ai", "xai"),
     ("claude", "anthropic"), ("github", "copilot"), ("ollama", "custom"),
     ("vllm", "custom"), ("llamacpp", "custom"), ("minimax_cn", "minimax-cn"),
     ("aws", "bedrock"), ("hf", "huggingface"), ("kilo", "kilocode"),
@@ -63,6 +63,16 @@ def test_provider_aliases_unchanged(requested, expected):
     assert resolve_provider(requested) == expected
 
 
+def test_软件名抢在别名表前面():
+    """名册里出现了 `google` 这家软件 ⇒ 它先被当成**软件名**，不再是 `gemini` 的别名。
+
+    同 `grok` 的裁定 47：网关名册说了算的那一格，别名表让路。想直连 Gemini 就写
+    `gemini`；写 `google` 意思是「Google 那条腿（走网关）」。
+    """
+    assert resolve_provider("google") == "google"
+    assert resolve_provider("gemini") == "gemini"
+
+
 def test_auto_path_is_untouched():
     """`auto` must not short-circuit into the new profile."""
     try:
@@ -81,7 +91,7 @@ def test_unknown_provider_still_rejected():
 
 
 # ---------------------------------------------------------------------------
-# 11-18 第三处：`bezel` **不是 provider**，它是那 22 家软件共用的传输。
+# 11-18 第三处：`bezel` **不是 provider**，它是名册里那几家软件共用的传输。
 #
 # 主人 11-17 18:5x：「bezel 是内部名称。provider 下面适配的是一个一个软件名，
 # 而不是 bezel。」所以下面这几条把原来的「bezel 是 provider」全部反过来钉死：
@@ -101,14 +111,16 @@ def test_bezel_is_no_longer_in_the_picker():
     assert "bezel" not in canonical
 
 
-def test_bezel_is_only_the_transport_name():
+def test_bezel_is_only_the_group_owner():
     from plobi.agents.registry import bezel_base_url
-    from providers.hub_software import TRANSPORT_NAME, TRANSPORT_PROFILE
+    from providers.hub_software import GROUP_ID, GROUP_OWNER
 
-    assert TRANSPORT_NAME == "bezel"
-    # 内部路径还能按这个名字要凭据兜底与请求字段，但它没有注册。
+    assert GROUP_ID == "bezel"
+    # 组 owner 不是一行可选 provider：不进 picker、不在注册表；但内部路径还能按这个
+    # 名字拿到**组级**凭据兜底与请求字段（名册里那几家软件共用这一份）。
+    assert GROUP_OWNER not in list_providers()
     profile = get_provider_profile("bezel")
-    assert profile is TRANSPORT_PROFILE
+    assert profile is GROUP_OWNER
     assert profile.base_url == bezel_base_url()
     assert profile.fallback_api_key()
 
@@ -131,7 +143,7 @@ def test_software_profiles_share_the_gateway_endpoint_and_credentials():
 
 
 def test_shared_loopback_endpoint_names_no_single_software():
-    """22 家共用 `127.0.0.1:8000`：反查猜不出是哪一家，就不许猜。"""
+    """所有成员共用 `127.0.0.1:8000`：反查猜不出是哪一家，就不许猜。"""
     from agent.model_metadata import _URL_TO_PROVIDER, _infer_provider_from_url
 
     assert _infer_provider_from_url("http://127.0.0.1:8000/v1") is None

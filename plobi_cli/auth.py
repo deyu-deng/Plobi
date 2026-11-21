@@ -1733,32 +1733,32 @@ def hub_provider_identity(provider_name: str) -> str:
     """把 provider 名归一到「注册表里查得到的那一个」。
 
     网关那一坨的命名规矩（主人 11-17 18:5x / 11-18）：**provider 是软件名**
-    （``workbuddy``、``opencode-zen-free``…），网关自己的机器标识（``bezel``）只是
-    **传输**。所以这里要收两道：
+    （``workbuddy``、``opencode-zen-free``…），网关自己的名字（``bezel``）只是那组的
+    **owner**（组级凭据/端点，见 ``providers.base.ProviderGroup``）。所以这里要收两道：
 
-    ① 存量配置里若还是网关**现役传输名**（``bezel``）⇒ 按 ``model.default`` 的前缀
+    ① 存量配置里若还是组 owner 的名字（``bezel``）⇒ 按 ``model.default`` 的前缀
        一次性迁成软件名，并写回磁盘（``migrate_legacy_hub_provider``）。迁完的配置
        下一台机器也不会再撞——不留永久兼容表。**已退役的旧机器标识不走这里**：
        主人 11-19 定「彻底剔除、不做兼容」，它们就是「不认识的 provider」，不修正。
-    ② 软件名 ⇒ 换到网关传输那一腿（``bezel``）。软件名不进注册表（那是「可配置的
-       provider」宇宙），拿它直接查注册表只会得到「不认识的 provider」。
+    ② 软件名 ⇒ 原样返回（它自己已经是注册过的 provider）。
 
     别的名字原样返回——那不是这几个函数该管的问题。
     """
-    from plobi_cli.models import HUB_SOFTWARE_IDS, HUB_TRANSPORTS
+    from providers.hub_software import hub_group
 
     name = (provider_name or "").strip().lower()
     if not name:
         return name
 
-    # 软件名**自己就是 provider**（11-18 第三处：bezel 降级成纯传输后，软件名在
-    # providers 层注册成独立 profile，端点与凭据仍是网关那一份）。所以这里原样
+    group = hub_group()
+    # 软件名**自己就是 provider**（11-18 第三处：bezel 降级成组 owner 后，软件名在
+    # providers 层注册成独立 profile，端点与凭据仍是组那一份）。所以这里原样
     # 返回，不再换成 `bezel` —— 换过去注册表里已经没有那个名字了。
-    if name in HUB_SOFTWARE_IDS:
+    if group.owns_member(name):
         return name
-    # 只认**现役传输名**。已退役的旧机器标识（11-19 彻底剔除）与别家名字一样，
-    # 原样返回，交给下游按「不认识的 provider」如实报错——不做任何猜测或迁移。
-    if name not in HUB_TRANSPORTS:
+    # 只认**组自己**（现役的那个内部名）。已退役的旧机器标识（11-19 彻底剔除）与
+    # 别家名字一样，原样返回，交给下游按「不认识的 provider」如实报错。
+    if not group.owns_owner(name):
         return name
 
     # 机器标识：想尽办法换成软件名。换不出来就原样交回去——让下游按「不认识的
@@ -1853,9 +1853,9 @@ def resolve_provider(
     # 也必须在这个别名表**之前**：`grok` 既是网关那家软件、也是 xAI 的近义词，
     # 这里的答案是那家软件（裁定 47）—— 答成 `xai` 会让切换落到别家。
     normalized = hub_provider_identity(normalized)
-    from plobi_cli.models import is_hub_software as _is_hub_software
+    from providers.hub_software import hub_group
 
-    if not _is_hub_software(normalized):
+    if not hub_group().owns(normalized):
         normalized = _PROVIDER_ALIASES.get(normalized, normalized)
 
     if normalized == "openrouter":
@@ -1901,11 +1901,11 @@ def resolve_provider(
             _cfg_provider = _model_cfg.get("provider")
             if isinstance(_cfg_provider, str):
                 # 配置里写的就是**软件名**（`workbuddy`／`qoder`…），它本身已经是
-                # provider（11-18 第三处：`bezel` 降级成纯传输），所以直接认它；
-                # 只有还残留机器标识时才在内存里就地归一（磁盘那份上面已迁过）。
+                # provider（11-18 第三处：`bezel` 降级成组 owner），所以直接认它；
+                # 只有还残留组 owner 的名字时才在内存里就地归一（磁盘那份上面已迁过）。
                 _cfg_identity = hub_provider_identity(_cfg_provider)
                 # 软件名不过别名表：`grok` 是那家软件，答成 `xai` 就落到别家了。
-                if not _is_hub_software(_cfg_identity):
+                if not hub_group().owns(_cfg_identity):
                     _cfg_identity = _PROVIDER_ALIASES.get(_cfg_identity, _cfg_identity)
                 if _cfg_identity in PROVIDER_REGISTRY:
                     return _cfg_identity
@@ -6890,28 +6890,17 @@ def _get_config_provider() -> Optional[str]:
     return provider or None
 
 
-def hub_software_for_model(model_default: str) -> Optional[str]:
-    """模型 id 的前缀就是服务它的那家软件（`workbuddy/hy4free` ⇒ `workbuddy`）。
-
-    「哪一家软件在服务这个模型」这件事数据里本来就有 —— 模型 id 自带那个前缀。
-    """
-    from plobi_cli.models import HUB_SOFTWARE_IDS
-
-    prefix = (model_default or "").strip().split("/", 1)[0].strip().lower()
-    return prefix if prefix in HUB_SOFTWARE_IDS else None
-
-
 def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
-    """把配置里**网关的机器标识**换成**软件名**，并**写回磁盘**（一次性迁移）。
+    """把配置里**组 owner 的名字**换成**软件名**，并**写回磁盘**（一次性迁移）。
 
     2026-11-15 那刀按「内测版没有用户，不用管老配置文件，不接受为兼容付代价」把读侧
-    兜底删了 —— 可**内测版的用户就是这一台**，它的 `model.provider` 还是改名前的机器
-    标识（`bezel`）⇒ 换模型就只剩一句「Unknown provider 'bezel'」。
+    兜底删了 —— 可**内测版的用户就是这一台**，它的 `model.provider` 还是改名前的名字
+    （`bezel`）⇒ 换模型就只剩一句「Unknown provider 'bezel'」。
 
-    2026-11-19 再收一刀：**只迁现役传输名**。更早那两代机器标识已经彻底剔除，
+    2026-11-19 再收一刀：**只迁现役那个内部名**。更早那两代名字已经彻底剔除，
     配置里碰上它们一律当「不认识的 provider」如实报错——不迁、不猜、不写盘。
 
-    主人 11-17 18:5x 拍板：网关的机器标识是**内部名**，**屏上与用户的配置里都不该出现**；
+    主人 11-17 18:5x 拍板：组 owner 的名字是**内部名**，**屏上与用户的配置里都不该出现**；
     `model.provider` 本该是**软件名**（`workbuddy`、`qoder`…）。软件名从 `model.default`
     的前缀取得到（模型 id 自带前缀 ⇒ 哪一家软件在服务它，数据里本来就有）。
 
@@ -6919,7 +6908,7 @@ def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
     这与 11-15 那次撕掉的**永久**读侧兜底不是一回事：那三张表里有一张是**假模型 id**，
     而这里只迁 `model.provider` 一个字段、迁完即落新值。
     """
-    from plobi_cli.models import HUB_SOFTWARE_IDS, HUB_TRANSPORTS
+    from providers.hub_software import hub_group
 
     if not isinstance(config, dict):
         return None
@@ -6930,13 +6919,14 @@ def migrate_legacy_hub_provider(config: Any) -> Optional[str]:
     if not isinstance(current, str):
         return None
     current = current.strip().lower()
+    group = hub_group()
     # 已经是软件名 ⇒ 没什么要迁的。
-    if current in HUB_SOFTWARE_IDS:
+    if group.owns_member(current):
         return None
-    # 只认**现役传输名**；已退役的旧机器标识与别家名字一样不碰（11-19 彻底剔除）。
-    if current not in HUB_TRANSPORTS:
+    # 只认**组自己**；已退役的旧名字与别家名字一样不碰（11-19 彻底剔除）。
+    if not group.owns_owner(current):
         return None
-    software = hub_software_for_model(str(model_cfg.get("default") or ""))
+    software = group.member_for_model(str(model_cfg.get("default") or ""))
     if not software:
         # 认不出是哪一家软件（模型 id 没有前缀）⇒ 迁不了，照实记一笔。
         logger.warning(

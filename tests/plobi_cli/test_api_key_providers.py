@@ -230,8 +230,14 @@ class TestResolveProvider:
         assert resolve_provider("Z-AI") == "zai"
         assert resolve_provider("Kimi") == "kimi-coding"
 
-    def test_alias_github_copilot(self):
-        assert resolve_provider("github-copilot") == "copilot"
+    def test_软件名抢在别名前面_github_copilot(self):
+        """`github-copilot` 是网关名册里的**一家软件** ⇒ 先按软件名解析（裁定 47）。
+
+        想直连 Copilot 那条路就写 `github`（或 `copilot`）—— 别名只管没被名册占用的词。
+        """
+        assert resolve_provider("github-copilot") == "github-copilot"
+        assert resolve_provider("github") == "copilot"
+        assert resolve_provider("copilot") == "copilot"
 
     def test_alias_github_models(self):
         assert resolve_provider("github-models") == "copilot"

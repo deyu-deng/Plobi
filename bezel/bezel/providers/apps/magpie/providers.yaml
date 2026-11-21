@@ -1,24 +1,33 @@
-# 我们认识的 magpie provider —— 一份**我们自己说了算**的表。
+# 我们给 magpie 的 provider 配的**化妆品** —— 不是清单。
 #
-# 为什么有这张表（2026-11-09）：magpie 一天发好几版、单人主维护、外部 PR 关闭，
-# 它的 `plugin list --json` 是**内部形状**，随时会改。我们曾经直接拿它当卡片清单：
-# 卡叫什么、我们怎么登、**我们发布的模型 id**，全都由它决定 —— 它把 `workbuddy-ai`
-# 改名一次，我们存过的模型 id 就失配，那一行会从用户的模型框里直接消失。
+# 这张表的语义在 2026-11-20 掉了个头（用户：「magpie 是腿源，不是一条腿」）：
 #
-# 所以规矩是：
-#   * 左边是**我们的 id**（屏上、存档、预设都用它）。定下就不改。
-#   * 右边是它在 magpie 那边今天叫什么。他们改名 ⇒ 只改右边这一格。
-#   * 名字、登录方式、要不要出卡，都由我们说了算。
-#   * magpie 加了一家我们还不认识的 provider ⇒ **不出卡**（`check_magpie_providers.py`
-#     会把它列出来等人认领）。宁可晚一天上屏，也不要让他们的目录变成我们的产品清单。
+#   * **集合由 magpie 决定。** 它报出哪一家，屏上就出现哪一张卡；它撤哪一家，
+#     卡跟着消失。这里没有写到的 provider 不是「不上屏」，只是「名字用它的原话」。
+#   * 本表只管**化妆品**：屏上读的名字、字幕指向哪个 i18n 键、我们怎么登它。
+#   * 一家我们从没见过的新 provider 进来 ⇒ 照样出卡，标题用它的自报名，字幕走
+#     通用兜底（`${name} 的订阅额度`，四语各有）。想让它读起来像我们的产品，
+#     就在这里加一行 —— 加的是**措辞**，不是**准入**。
 #
-# 一行一家：`upstream` 是发给他们时用的 id，`name` 是屏上读的名字，`card` 说要不要在
-# 「订阅额度」里出这张卡，`login` 说我们怎么登它（走 magpie 的 `plugin login`）。
+# 为什么曾经反过来（2026-11-09）：magpie 一天发好几版、单人主维护、外部 PR 关闭，
+# 它的 `plugin list --json` 是内部形状，随时会改。所以那时我们说「名字、登录方式、
+# 要不要出卡，都由我们说了算」，用一张全集表把它挡在外面。代价是它的目录一变，
+# 我们的屏就落后一版 —— 它加一家 provider，用户看不到；它改了 id，两张卡互相遮。
 #
-# 下面这张清单 = 2026-11-10 实测 magpie 自己报出来的 provider 全集（22 家，读自它
-# 自己的 `plugin-providers.json`）：装了插件的都在这儿，我们逐个认领，于是卡片跟着
-# 它的列表走（用户 11-09 20:3x：「你的卡片列表可以按它的列表来维护了」）。
-# 新增一家 ⇒ 在这里加一行；它改名 ⇒ 只改 `upstream` 那一格。
+# 现在分工更清楚：**它是腿源**（谁在、能不能用，它说），**我们是网关与门面**
+# （模型怎么发、卡怎么长、字怎么翻，我们说）。id 一旦在用户机器上存过，就不许再变，
+# 所以 `upstream` 那一格专门留给「它今天叫这个名字」。
+#
+# 一行一家：
+#   `upstream`   发给他们时用的 id（= 左边我们的键；要改名时只改这一格）
+#   `name`       屏上读的标题（产品名，四语不翻）
+#   `intro_key`  字幕指向的四语键（缺省就是本行的键）
+#   `login`      我们走哪条登录通道（oauth = 浏览器，api = 我们要一把 key）
+#
+# 下面这些是 2026-11-10 实测 magpie 自报过的 22 家。**这份清单不再是准入条件**：
+# 它撤掉的 provider 不会因为留在这里而复活（`present` 由它说了算），它新加进来的
+# 也不会因为不在这里而被藏起来。`check_magpie_providers.py` 列出的是「还没被措辞
+# 覆盖的 provider」，那是一件文案活儿，不再是「没认领所以不给卡」。
 
 providers:
   workbuddy:
@@ -38,7 +47,9 @@ providers:
   # 免费池：他们那边免个人 key（键填 public），所以它没有登录这一步。
   opencode-zen-free:
     upstream: opencode-zen-free
-    name: OpenCode Free
+    name: OpenCode Zen Free
+    # 字幕沿用现成的四语键：这是「免费额度」，不是 `opencode_api` 那张「API 额度」。
+    intro_key: opencode_cli
     card: true
     login: api
 
@@ -63,7 +74,10 @@ providers:
 
   qwenwork-enterprise:
     upstream: qwenwork-enterprise
-    name: QwenWork 企业版
+    # 他们自报的是「QwenWork 企业版」——那是中文。这一格**四语不翻**，原名直接把汉字
+    # 送上日文与英文界面（用户 11-20 的红线：屏上不许有漏翻的中文）。产品名保持拉丁
+    # 字母，中文那一层交给下面的 `intro_key`（它走 i18n，按界面语言给句子）。
+    name: QwenWork Enterprise
     card: true
     login: oauth
 
@@ -71,12 +85,14 @@ providers:
   kiro:
     upstream: kiro
     name: Kiro
+    intro_key: kiro_cli
     card: true
     login: oauth
 
   cline:
     upstream: cline
     name: Cline
+    intro_key: cline_cli
     card: true
     login: oauth
 
@@ -92,9 +108,29 @@ providers:
     card: true
     login: oauth
 
+  # 它自报的就是 `antigravity`（2026-11-20 实测 `magpie plugin list --json`：8 家之一）。
+  # 下面那条 `agy-cli` 是同一个产品的另一套叫法，留着兼容它换 id 的那天 —— 两条都指
+  # 向同一句四语文案，所以无论它报哪个，屏上都是「Antigravity 的订阅额度」。
+  antigravity:
+    upstream: antigravity
+    name: Antigravity
+    intro_key: antigravity
+    card: true
+    login: oauth
+
   agy-cli:
     upstream: agy-cli
     name: Antigravity CLI
+    intro_key: antigravity_cli
+    card: true
+    login: oauth
+
+  # 2026-11-21 实测新冒出来的一家：`opencode-gemini-auth` 那次加载没挺过去时屏上没有它，
+  # 插件起来之后它自己出现（37 个模型），我们一行代码没动 —— 这就是「集合归 magpie」。
+  # 这里补一行措辞，否则标题会是它的自报名（能看，但读起来不像我们的产品）。
+  google:
+    upstream: google
+    name: Google
     card: true
     login: oauth
 

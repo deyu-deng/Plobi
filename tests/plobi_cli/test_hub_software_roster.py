@@ -20,8 +20,9 @@ import os
 
 import pytest
 
-from plobi_cli.auth import hub_software_for_model, resolve_provider
-from plobi_cli.models import HUB_SOFTWARE, HUB_SOFTWARE_IDS, transport_for_software
+from plobi_cli.auth import resolve_provider
+from plobi_cli.models import HUB_SOFTWARE, HUB_SOFTWARE_IDS
+from providers.hub_software import hub_group
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ROSTER = os.path.join(REPO_ROOT, "bezel", "bezel", "providers", "apps", "magpie", "providers.yaml")
@@ -62,7 +63,7 @@ requires_roster = pytest.mark.skipif(
 
 @requires_roster
 def test_名册与网关真源逐条一致():
-    """表里那 22 行必须与 `providers.yaml` 一模一样，顺序也照抄。"""
+    """表里那几行必须与 `providers.yaml` 一模一样，顺序也照抄。"""
     from scripts.gen_hub_software import load_roster
 
     expected = dict(load_roster())
@@ -79,12 +80,12 @@ def test_生成块没漂():
 
 def test_本机那条腿的前缀认得出():
     """本机 dev 家就是这一行：`opencode-zen-free/mimo-v2.6-flash-free`。"""
-    assert hub_software_for_model("opencode-zen-free/mimo-v2.6-flash-free") == "opencode-zen-free"
-    assert transport_for_software("opencode-zen-free") == "bezel"
+    assert hub_group().member_for_model("opencode-zen-free/mimo-v2.6-flash-free") == "opencode-zen-free"
+    assert hub_group().transport_for("opencode-zen-free") == hub_group().group_id
 
 
 def test_名册不是九家小圈子():
-    """手抄时代只有 9 家且半数名字是错的；真源是 22 家。"""
+    """手抄时代只有 9 家且半数名字是错的；真源是网关名册（今天 24 家，数量会变，别写死）。"""
     assert len(HUB_SOFTWARE_IDS) >= 22
     for software in ("agy-cli", "opencode-zen-free", "qoder-cn", "workbuddy-ai", "kiro", "cline"):
         assert software in HUB_SOFTWARE_IDS
@@ -137,10 +138,10 @@ def test_软件名自己就是provider(home):
     """11-18 第三处之后：软件名不再换成 `bezel`，它本身就是 provider。"""
     _write_config(home, "qoder")
     assert resolve_provider("qoder") == "qoder"
-    assert transport_for_software("qoder") == "bezel"
+    assert hub_group().transport_for("qoder") == hub_group().group_id
 
 
 def test_别家provider不被名册抢走(home):
     """名册只收网关那几行；OpenRouter 这类照旧走自己的路。"""
     assert resolve_provider("openrouter") == "openrouter"
-    assert transport_for_software("openrouter") == "openrouter"
+    assert hub_group().transport_for("openrouter") == "openrouter"

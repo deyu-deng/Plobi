@@ -37,10 +37,10 @@ from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 
-#: 网关那几家软件的通吃判断：它们各自是 provider，`bezel` 只是共用的传输名
-#: （11-18 第三处）。任何「这家其实是网关在服务」的判断都走这里，别再散着写
-#: ``== "bezel"`` —— 那种写法只认机器标识，软件名一进来就漏。
-from plobi_cli.models import is_hub_software as _is_hub_software  # noqa: E402
+#: 「订阅额度」那组只有一个入口：`providers.hub_software.hub_group()`。任何
+#: 「这家是不是那组的」判断都问它，别再散着写 ``== "bezel"`` 或本地别名 ——
+#: 那种写法只认组 owner 的名字，成员（软件名）一进来就漏。
+from providers.hub_software import hub_group  # noqa: E402
 
 
 # ─── Public types ───────────────────────────────────────────────────────
@@ -256,7 +256,7 @@ def build_models_payload(
     # 挑的判据是**网关自己的可选清单**，不是目录里那一行带了多少个模型：目录里
     # 那一行可能是完整清单（连不可选的那些也在），而「可选」才是能真跑起来的那批。
     effective_model = ctx.current_model
-    if not effective_model and _is_hub_software(ctx.current_provider):
+    if not effective_model and hub_group().owns(ctx.current_provider):
         selectable = hub_selectable or _hub_selectable_ids()
         if selectable:
             effective_model = selectable[0]
@@ -438,7 +438,7 @@ def _apply_capabilities(rows: list[dict]) -> None:
         # (user, 2026-11-08 21:3x). A leg the user can fix does not: its models are
         # not offered at all (「我配置不了就不应该出现在这个模型框里面呀」).
         hub_waiting: dict[str, dict] = {}
-        if _is_hub_software(slug):
+        if hub_group().owns_member(slug):
             try:
                 from plobi.agents.registry import bezel_api_key, bezel_base_url
                 from plobi.quota.gateway import catalog_tuning
