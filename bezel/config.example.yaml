@@ -51,38 +51,15 @@ scheduler:
 #   model:   optional concrete model override
 aliases:
   gpt-4o: cursor/gpt-4o
-  gemini: antigravity/gemini-3-pro
+  gemini: antigravity_cli/gemini-3-pro
 
 routing:
-  rules:
-    # "fast" fails over between Antigravity and Cursor for the same target model.
-    # Both providers must serve antigravity/gemini-3-flash for this to be useful.
-    - match: "fast"
-      providers: [antigravity, cursor]
-      model: antigravity/gemini-3-flash
+  rules: []    # 11-20：原来那条 fast→[antigravity, cursor] 的示例随 antigravity 腿退场；
+               # 要跨 app 兜底时再写，规则里的 provider 必须是 providers 段里在役的名字。
 
 providers:
 
-  antigravity:
-    enabled: false                    # research: reverse Cloud Code; prefer antigravity_cli
-    use_local_session: true           # auto-read ~/.antigravity/db.sqlite
-    client_id: ${ANTIGRAVITY_CLIENT_ID}     # capture via mitm_discover.py (Google OAuth client)
-    client_secret: ${ANTIGRAVITY_CLIENT_SECRET:-}
-    # VERIFY these from a captured request before expecting 200s:
-    host: https://daily-cloudcode-pa.sandbox.googleapis.com
-    api_version: v1internal
-    thinking: false                   # emit thinkingConfig when true
-    cloudcode:
-      envelope: false                 # wrap gemini body in Cloud Code envelope
-      project: ${ANTIGRAVITY_CC_PROJECT:-}   # VERIFY: cloudcode project id
-      request_field: request          # VERIFY: field name carrying the gemini body
-      signature: ${ANTIGRAVITY_CC_SIG:-}     # VERIFY: thinking signature to replay
-    extra_headers: {}                 # mirror captured client-metadata headers
-    accounts:                          # optional extra exported tokens for pooling
-      - id: ag-2
-        label: second google account
-        refresh_token: ${AG2_REFRESH_TOKEN:-}
-
+  # 11-20：九条自研腿整体退场（腿源交给 magpie，实现码在 apps/_archive/），曾在此处的段一并清掉。
   cursor:
     enabled: false                    # research: protobuf chat still incomplete
     use_local_session: true           # auto-read Cursor state.vscdb
@@ -106,107 +83,6 @@ providers:
     #   history: "{messages}"
     accounts: []
 
-  # --- Workbuddy: HYBRID (recommended) ---------------------------------
-  # Prefers the Workbuddy CLI; only falls back to GUI automation when no CLI is
-  # present. See bezel/providers/workbuddy_hybrid.py. If `cli:` is omitted the
-  # whole block is treated as CLI config; if `gui:` is omitted GUI is skipped.
-  workbuddy:
-    enabled: true                     # hybrid: CLI first (compliant), GUI optional
-    prefer: cli                       # cli | gui  (which route to try first)
-    models:
-      - workbuddy/default
-    cli:
-      binary: workbuddy              # override if your CLI is named differently
-      # interpreter: python          # set only if `binary` is a script
-      prompt_flag: "-p"
-      model_flag: "--model"
-      timeout: 180
-      model_map:
-        workbuddy/default: default
-      accounts:
-        - { id: wb-cli-1 }
-    gui:
-      window_title: "WorkBuddy"       # substring/regex of the main window title
-      send_key: "{Enter}"
-      response_timeout: 120
-      stable_poll: 1.0
-      stable_threshold: 3
-      models:
-        - workbuddy/default
-      # TODO: run `bezel workbuddy-dump` and replace with the real controls.
-      input:
-        control: EditControl
-        regex_name: ".*"
-      output:
-        control: TextControl
-        regex_name: ".*"
-      accounts:
-        - { id: wb-gui-1 }
-
-  # --- Workbuddy: CLI only (spawn-based, compliant) --------------------
-  # Standalone spawn-CLI route. Auto-disables (0 accounts) if `binary` not found.
-  workbuddy_cli:
-    enabled: false                    # set true if you want it as a separate provider
-    binary: workbuddy
-    prompt_flag: "-p"
-    model_flag: "--model"
-    timeout: 180
-    models:
-      - workbuddy/default
-    model_map:
-      workbuddy/default: default
-    accounts:
-      - { id: wb-cli-1 }
-
-  # --- Workbuddy: GUI only (Windows UI Automation, compliant) ----------
-  # Standalone GUI route. Auto-disables if uiautomation / the window is absent.
-  workbuddy_gui:
-    enabled: false                    # set true if you want it as a separate provider
-    window_title: "WorkBuddy"
-    send_key: "{Enter}"
-    response_timeout: 120
-    stable_poll: 1.0
-    stable_threshold: 3
-    models:
-      - workbuddy/default
-    input:
-      control: EditControl
-      regex_name: ".*"
-    output:
-      control: TextControl
-      regex_name: ".*"
-    accounts:
-      - { id: wb-gui-1 }
-
-  # --- Workbuddy: LEGACY HTTP passthrough (NON-compliant fallback) -----
-  # Only for builds that expose a clean HTTP API you can call with YOUR OWN key.
-  # Prefer workbuddy_cli / workbuddy_gui / workbuddy above.
-  workbuddy_api:
-    enabled: false
-    base_url: ${WORKBUDDY_BASE_URL:-https://REPLACE_ME}
-    dialect: openai                    # openai | anthropic
-    chat_path: /v1/chat/completions
-    chat_path_template: null          # e.g. "/v1/messages" (may contain {model_upstream})
-    models: ["workbuddy/default"]
-    model_map: { "workbuddy/default": "default" }
-    auth:
-      type: bearer                     # bearer | header
-      header: x-api-key
-    # header_templates: any required header, with {token}/{account_id}/{model}/...
-    header_templates:
-      - { name: "x-app-version", value: "9.2.1" }
-      - { name: "x-device-id",  value: "{account_id}" }
-    extra_headers: {}                  # static fallback headers (lowest priority)
-    accounts:
-      - id: wb-1
-        token: ${WORKBUDDY_TOKEN:-}
-
-  # --- Antigravity via the official `agy` CLI (spawn-based, compliant) -----
-  # Drives the user's own `agy` binary (non-interactive: `agy -p "<prompt>"
-  # [--model ...]`). The CLI consumes the user's own Google quota and owns its
-  # auth — no token capture, minimal ToS risk. Install:
-  #   curl -fsSL https://antigravity.google/cli/install.sh | bash
-  # The provider is auto-disabled (0 accounts) if `agy` is not on PATH.
   antigravity_cli:
     enabled: true
     binary: agy                    # command resolved on PATH
@@ -225,7 +101,7 @@ providers:
     accounts:
       - { id: agy-default }        # one seat per locally-installed `agy`
 
-  # --- Codex / Claude Code / OpenCode / Kiro / Cline (spawn-based) ------
+  # --- Codex / Claude Code / OpenCode (spawn-based) ---------------------
   # Each leg drives the user's own already-signed-in CLI. Auto-disables (0
   # accounts) when the binary is absent. The prompt is positional for these
   # CLIs, so `args_template` says where it goes; {model_flag} expands to
@@ -259,88 +135,10 @@ providers:
     # Quota: ~/.claude/.credentials.json -> api.anthropic.com/api/oauth/usage
     accounts: [{ id: claude-default }]
 
-  # OpenCode Free (11-09): the client's **own** local http service (`opencode service`),
-  # not a CLI spawn and not ACP. The free pool is closed on bare http (the vendor says
-  # "Free-tier chat models require OpenCode"), so the client's own service is the only
-  # lane that answers. The model list is the upstream's own (`/api/model`, priced at
-  # zero); no list is written here on purpose.
-  opencode_free:
-    enabled: true
-    timeout: 240
-
-  # Magpie (11-09): the local multi-model gateway (MIT, github.com/yetone/magpie).
-  # The vendor adapters are its community plugins' maintenance now; this leg only
-  # reads its live catalogue (`GET /v1/models`, every row with that model's own
-  # window and thinking levels) and sends the turn to its OpenAI-compatible
-  # endpoint under our own key name (`magpie-plobi`). The port comes from magpie's
-  # own settings file; without magpie on this machine there is simply no such leg.
   magpie:
     enabled: true
     timeout: 300
 
-  kiro_cli:
-    enabled: false
-    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
-    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
-    binary: kiro-cli
-    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
-    model_flag: "--model"
-    timeout: 300
-    models: [kiro/default]           # refreshed from `chat --list-models --format json`
-    model_map: { kiro/default: "" }
-    # Quota: Kiro 1.x exposes /usage only in an interactive V3 session; no
-    # headless quota read, so this leg deliberately leaves quota empty.
-    accounts: [{ id: kiro-default }]
-
-  # Cline answers over its own ACP stdio port (`cline --acp`): the CLI's `session/new`
-  # reply is both the sign-in verdict and the model list, and our tools go in through
-  # its `mcpServers`. No `models:` key on purpose — a name list here would be a second
-  # copy of a fact Cline already reports, and it rots on its next upgrade.
-  cline_cli:
-    enabled: false
-    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
-    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
-    binary: cline
-    timeout: 300
-    # Quota: Cline fronts the user's own provider key; no unified local endpoint.
-    accounts: [{ id: cline-default }]
-
-  # Any CLI that speaks ACP over stdio can be a leg: `transport: acp` makes the registry
-  # build it from this block alone (no entry in `PROVIDER_CLASSES`). The hub asks it three
-  # things — signed in? which models? can you switch models? — and serves only what the
-  # CLI itself reports. `probe_timeout` must cover the CLI's own boot time (some need ~20 s
-  # before they read stdin; the client resends `initialize` in the meantime).
-  #
-  # Nothing ships on this route today. It used to carry Qwen Code, removed 2026-10-31: the
-  # vendor closed its free OAuth itself, and what is left of Qwen is already an
-  # OpenAI-compatible API (Alibaba DashScope / Coding Plan) — a normal model provider
-  # (`plugins/model-providers/alibaba-coding-plan`), not a subscription turned into an API.
-  # The shape, if you have such a CLI:
-  #
-  #   some-acp-cli:
-  #     enabled: true
-  #     transport: acp
-  #     binary: <the cli>
-  #     display_name: <what the card says>
-  #     model_prefix: <namespace for its model ids>
-  #     timeout: 300
-  #     probe_timeout: 30        # must cover its boot time
-  #     login_args: ["<its own sign-in argv>"]
-  #     login_tty: true          # if it refuses to log in through a pipe
-
-  # --- Marvis via a CLI (spawn-based, compliant) ------------------------
-  # Generic adapter for ANY CLI-based Marvis build (openmarvis / marvisx-cli /
-  # lobe's `marvis` / a future Tencent Marvis CLI). Spawns the binary as a
-  # subprocess and translates its stdout into an OpenAI ChatCompletion. All CLI
-  # specifics come from config. The provider is auto-disabled (0 accounts) if the
-  # binary is not on PATH.
-  #
-  # NOTE: Tencent consumer Marvis (marvis.qq.com) is a native GUI app with NO CLI
-  # and NO inbound API — it cannot use this provider. Use a GUI-automation adapter.
-  #
-  # 2026-11-10：这两条 Marvis 的腿**默认关着，也没有卡**（用户 11-10：「Marvis 没有
-  # CLI。你都没有跑通。你怎么就上屏了呢？」）。适配器留着，但「没跑通的东西不上屏」
-  # —— 等它真有 CLI、我们真跑通了，再连卡一起开。
   marvis_cli:
     enabled: false
     binary: openmarvis              # e.g. openmarvis | marvis | agy-style binary

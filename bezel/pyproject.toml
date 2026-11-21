@@ -80,5 +80,7 @@ ignore_errors = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
+# 11-20：九条自研腿退场，它们的测试整份搬进 tests/_archive_legsource/，不参与收集。
+norecursedirs = ["_archive_legsource", "_archive", ".*", "node_modules", "__pycache__"]
 addopts = "-q --strict-markers"
 asyncio_mode = "auto"

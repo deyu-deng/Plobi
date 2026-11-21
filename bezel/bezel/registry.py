@@ -28,24 +28,13 @@ import httpx
 
 from . import model_health
 from .providers.acp import AcpProvider
-from .providers.apps.antigravity import AntigravityCliProvider, AntigravityProvider
+from .providers.apps.antigravity import AntigravityCliProvider
 from .providers.apps.claude_code import ClaudeCodeCliProvider
-from .providers.apps.cline import ClineCliProvider
 from .providers.apps.codex import CodexCliProvider
 from .providers.apps.cursor import CursorProvider
-from .providers.apps.kiro import KiroCliProvider
 from .providers.apps.magpie import MagpieProvider, MagpieProviderLeg
 from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
 from .providers.apps.opencode import OpenCodeCliProvider
-from .providers.apps.opencode.api import OpencodeApiProvider
-from .providers.apps.opencode.free import OpenCodeFreeProvider
-from .providers.apps.gemini.api import GeminiApiProvider
-from .providers.apps.qoder.api import QoderProvider
-from .providers.apps.workbuddy import (
-    WorkbuddyApiProvider,
-    WorkbuddyCliProvider,
-    WorkbuddyGuiProvider,
-)
 from .providers.base import Provider
 from .providers.mock import MockProvider
 
@@ -98,41 +87,19 @@ _MODELS_MAX_PASSES = 6
 #   workbuddy         -> HYBRID: prefer CLI, fall back to GUI (compliant, recommended)
 #   mock              -> local, ToS-safe echo/static/fail/dead (dev, demo, e2e tests)
 PROVIDER_CLASSES: dict[str, type[Provider]] = {
+    # 11-20：九条自研腿退场，码整份搬进 `providers/apps/_archive/`（不随包发）。
+    # 退场的是 antigravity、gemini_api、opencode_api、opencode_free、kiro_cli、
+    # cline_cli、qoder、qoder_intl、workbuddy —— 它们的活全在 magpie 的 provider
+    # 列表里，留着两条车道跑同一家产品，只会让同一件事有两个真假。
+    # `antigravity_cli` 与 `opencode_cli` 留着：它们和退场的那条同住一个目录，
+    # 但是**另一个**通道（agy / opencode 自己的 CLI），而且在用。
     "cursor": CursorProvider,
-    "antigravity": AntigravityProvider,
     "antigravity_cli": AntigravityCliProvider,
     "codex_cli": CodexCliProvider,
     "claude_code_cli": ClaudeCodeCliProvider,
     "opencode_cli": OpenCodeCliProvider,
-    # 裁定 204：本机 OAuth → 它自己的 OpenAI 兼容口（带工具），模型名取上游自报。
-    "opencode_api": OpencodeApiProvider,
-    # 11-09：Free 走**客户端自带的本地 http 服务**（`opencode service`），不是 CLI
-    # spawn、也不是 ACP。免费层在裸 http 上是关着的（官方：Free-tier chat models
-    # require OpenCode）——能吃到额度的通道只有客户端自己，而客户端自己就带着一个
-    # http 面。见 providers/apps/opencode/free.py。
-    "opencode_free": OpenCodeFreeProvider,
-    # 裁定 204：本机 OAuth → Gemini 的 generateContent（原生 functionCall → tool_calls）。
-    "gemini_api": GeminiApiProvider,
-    "kiro_cli": KiroCliProvider,
-    "cline_cli": ClineCliProvider,
-    # 用户 10-31 令「能变成 API 的都做完」：Qoder 自己那扇签名的门
-    # （`gateway.qoder.com.cn/algo/...`，设备码 PKCE 自登录 + COSY 签名 SSE）。
-    # 回退到 ACP 只要把 `transport: acp` 加回 config —— 上面那行分支优先于这张表。
-    "qoder": QoderProvider,
-    # 用户 11-08：CN 与国际是两套账号 ⇒ 两张卡。同一个类，region 决定主机与凭据文件。
-    "qoder_intl": QoderProvider,
     "marvis_cli": MarvisCliProvider,
     "marvis_gui": MarvisGuiProvider,
-    "workbuddy_api": WorkbuddyApiProvider,
-    "workbuddy_cli": WorkbuddyCliProvider,
-    "workbuddy_gui": WorkbuddyGuiProvider,
-    # 2026-10-14: CLI 腿（--tools "" 纯文本）已退役，workbuddy 键现在绑定
-    # CodeBuddy HTTP 通道（原 workbuddy_api 改名）。Hybrid 类保留在代码库供回滚。
-    "workbuddy": WorkbuddyApiProvider,
-    # 11-09：Magpie（MIT 开源的本机模型网关）当一条腿。厂商适配那一层交给它与它的
-    # 社区插件维护（qoder／workbuddy／zen-free／kiro／cline／copilot／cursor／
-    # devin／grok 都已经是插件了），我们只读它那份现读的清单——每行的窗口与思考档
-    # 都是它写的，不是我们猜的。我们这边仍留着的腿是兜底。
     "magpie": MagpieProvider,
     "mock": MockProvider,
 }
@@ -158,20 +125,16 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 # `install.command` 只在包名确定时填写：写不准的命令比没有命令更坏，没有就退到
 # 「打开官方页面」，绝不猜一个装不上的包名。
 ADAPTED_APPS: dict[str, dict] = {
-    # 11-09：订阅那一半的卡片**跟着 Magpie 的 provider 列表走**（它加一个插件我们这边多一张卡，它撤一个我们这边少一张）——这张表只留我们自己还维护的：Zen 付费 key 那条（用户自己的 key，归 Keys/Account）。已退场的腿（antigravity／qoder／workbuddy／kiro／cline／codex／claude code／cursor／gemini）在这里也不再留卡片：留着的卡只会说「未在网关启用」，那是用户看得见的一句废话。
+    # 11-09：订阅那一半的卡片**跟着 Magpie 的 provider 列表走**（它加一个插件我们这边多一张卡，它撤一个我们这边少一张）。已退场的腿（antigravity／qoder／workbuddy／kiro／cline／codex／claude code／cursor／gemini）在这里也不再留卡片：留着的卡只会说「未在网关启用」，那是用户看得见的一句废话。
     # 11-10：**Marvis 的两张卡也下去了**（用户 11-10：「Marvis 没有 CLI。你都没有跑通。你怎么就上屏了呢？」）：这台机器上**它没有 CLI**，`marvis_cli` 那条腿根本起不来；`marvis_gui` 是「没有 CLI 也没有 API、只靠 Windows UI 自动化」的脆弱腿，我们从没跑通。**没跑通的东西不上屏**——适配器与配置段留着（`config.example.yaml`／`profiles/safe.yaml` 里已默认关掉），等它真有 CLI、我们真跑通了，再连卡一起开。
     # 11-09：Free 那张卡换了实现 —— 现在是 **http 腿**（走 OpenCode 客户端自带的本地
     # 服务，见 providers/apps/opencode/free.py），不再是 11-02 移出额度栏的 CLI spawn
     # 形态。腿 id 是 opencode_free；副标题沿用现成的 i18n 键 opencode_cli（那四语
     # 有在派认领，不动），桌面那张卡的图标键也同样指向这条腿。
-    "opencode_api": {
-        "name": "OpenCode Zen",
-        "kind": "api",
-        "login": "apikey",
-        "probe": {"probe": "credential"},
-        "download": "https://opencode.ai/auth",
-        "intro_key": "opencode_api",
-    },
+    # 11-20：订阅那一屏不再由这张表决定（它只反映 magpie 的 provider 全集），但这
+    # 一条留着：`opencode_api` 是**用户自己的 Zen 付费 key**，归 Key / Account 屏，
+    # 与订阅屏无关。它和 magpie 的 `opencode-zen-free` 是两个东西——一个是填了自
+    # 己 key 的付费车道，一个是免登录的免费池；早先混作一谈，才显得总有一张卡是死的。
 }
 
 #: 桌面应用的安装根：用户目录优先，其次机器级目录；macOS 的 /Applications 一并算上。
@@ -319,9 +282,9 @@ class Registry:
             for m in leg.served_models:
                 self.model_to_provider[m] = leg.name
 
-        # Providers magpie added that we have not claimed: they get **no card**
-        # (our table decides the card list), but they are reported so a human can
-        # claim one in a single line.
+        # Providers magpie added that our cosmetics table does not name yet: they
+        # still get a card, under the name their vendor reported, and they are
+        # listed here so a human can give one a four-locale label in one line.
         try:
             unclaimed = umbrella.unclaimed_providers()
         except Exception:
@@ -330,7 +293,7 @@ class Registry:
             import logging
 
             logging.getLogger("bezel").info(
-                "magpie: %d provider(s) we have not claimed (no card): %s",
+                "magpie: %d provider(s) have no label of ours (shown under their own name): %s",
                 len(unclaimed),
                 ", ".join(str(u.get("id")) for u in unclaimed),
             )

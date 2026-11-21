@@ -240,7 +240,7 @@ async def test_the_turn_goes_out_under_our_own_key_name():
 # "does this provider still exist".
 
 
-def test_the_login_command_gets_a_real_terminal():
+def test_the_login_command_gets_a_real_terminal(tmp_path, monkeypatch):
     """（这一条已被「点名方法」取代：magpie 的菜单不该出现，也就不需要终端窗口。）
 
     留着的理由是**记下那条走错的路**：2026-11-10 先试的是「给它一个真终端」
@@ -248,6 +248,9 @@ def test_the_login_command_gets_a_real_terminal():
     卡片照样一直转圈。真正的解是下面那条：自己点名方法，菜单压根不出现。
     """
     prov = _provider(_http({}))
+    # 隔离配置目录：这台机器真的装着 magpie，它的表会把这条件测成另一件事。
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(MagpieProvider, "_binary", lambda self: None)
     leg = MagpieProviderLeg(
         {"base_url": "http://127.0.0.1:3425"},
         prov.http,
@@ -323,26 +326,42 @@ def test_a_provider_with_only_a_key_sign_in_keeps_the_terminal(tmp_path, monkeyp
     assert plan.get("tty") is True, "键要人敲 ⇒ 得有终端"
 
 
-def test_the_card_list_is_our_table_not_their_json():
+def test_every_provider_magpie_reports_gets_a_card():
+    """The set is theirs; the wording is ours.
+
+    A provider we have never named still shows — under the name its vendor
+    reported. That is precisely the case a fixed table used to swallow, and it
+    is why this file no longer decides who exists.
+    """
     prov = _provider(_http({}))
-    prov._their_provider_ids = lambda: {"workbuddy", "opencode-zen-free", "brand-new-one"}
+    prov._their_providers = lambda serving=None: {
+        "workbuddy": {"id": "workbuddy", "name": "WorkBuddy"},
+        "opencode-zen-free": {"id": "opencode-zen-free", "name": "OpenCode Zen Free"},
+        "brand-new-one": {"id": "brand-new-one", "name": "Brand New One"},
+    }
     specs = asyncio.run(prov.provider_specs())
 
     ids = [s["id"] for s in specs]
     assert "workbuddy" in ids and "opencode-zen-free" in ids, ids
-    assert "brand-new-one" not in ids, "a provider we have not claimed gets no card"
+    assert "brand-new-one" in ids, "它报出来的就该出卡，哪怕我们还没给它起名字"
 
     names = {s["id"]: s["name"] for s in specs}
-    assert names["workbuddy"] == "WorkBuddy"
-    assert names["workbuddy-ai"] == "WorkBuddy AI", "国际版与国内版是两张卡"
+    assert names["workbuddy"] == "WorkBuddy", "命名过 ⇒ 读我们的名字"
+    assert names["brand-new-one"] == "Brand New One", "没命名过 ⇒ 读它自报的名字"
 
+    intros = {s["id"]: s["intro_key"] for s in specs}
+    assert intros["workbuddy"] == "workbuddy"
+    assert intros["opencode-zen-free"] == "opencode_cli", "免费池复用现成的四语键"
 
-def test_a_provider_we_have_not_claimed_is_reported_but_not_offered():
+def test_an_unnamed_provider_is_a_naming_todo_not_a_missing_card():
+    """未命名不挡卡 —— 这份清单现在只是提醒我们补措辞。"""
     prov = _provider(_http({}))
-    prov._their_provider_ids = lambda: {"workbuddy", "brand-new-one"}
+    prov._their_providers = lambda serving=None: {
+        "workbuddy": {"id": "workbuddy", "name": "WorkBuddy"},
+        "brand-new-one": {"id": "brand-new-one", "name": "Brand New One"},
+    }
     unclaimed = prov.unclaimed_providers()
     assert [u["id"] for u in unclaimed] == ["brand-new-one"], unclaimed
-
 
 def test_our_model_ids_survive_their_rename():
     """Their provider id is a wire detail; ours is what the user's presets hold."""
@@ -419,9 +438,9 @@ def test_their_printed_table_is_the_fallback(tmp_path, monkeypatch):
 
     def fake_cli(binary, env=None, timeout=120.0):
         seen["binary"] = binary
-        return {"workbuddy-ai", "grok"}
+        return {"workbuddy-ai": {"id": "workbuddy-ai"}, "grok": {"id": "grok"}}
 
-    monkeypatch.setattr(their_list, "cli_provider_ids", fake_cli)
+    monkeypatch.setattr(their_list, "cli_providers", fake_cli)
     monkeypatch.setattr(MagpieProvider, "_binary", lambda self: "magpie-cli.exe")
     prov = _provider(_http({}))
     assert prov._their_provider_ids() == {"workbuddy-ai", "grok"}
@@ -447,19 +466,21 @@ def test_their_printed_table_is_read_by_shape():
 
 
 def test_a_vendor_magpie_no_longer_has_loses_its_card():
-    """Their roster decides whether a card is still worth showing.
+    """Their roster is the card list; what it drops, the screen drops.
 
-    Not the other way round: a provider they added gets no card until somebody
-    claims it (see the test above), and a provider they dropped takes its card
-    with it.
+    Both directions follow one rule now: a provider it reports gets a card even
+    if we never named it, and a provider it stopped reporting takes its card
+    with it — even though our cosmetics table still has a row for it.
     """
     prov = _provider(_http({}))
-    prov._their_provider_ids = lambda: {"workbuddy", "opencode-zen-free"}
+    prov._their_providers = lambda serving=None: {
+        "workbuddy": {"id": "workbuddy", "name": "WorkBuddy"},
+        "opencode-zen-free": {"id": "opencode-zen-free", "name": "OpenCode Zen Free"},
+    }
     specs = asyncio.run(prov.provider_specs())
     present = {s["id"]: s["present"] for s in specs}
     assert present["workbuddy"] is True
-    assert present["qoder"] is False, "magpie has no qoder on this machine"
-
+    assert "qoder" not in present, "magpie 没有 qoder ⇒ 这张卡不该出现，哪怕表里还留着它的措辞"
 
 def test_our_table_claims_every_vendor_it_names():
     """Every row of our table is a card, and every row is well formed."""
@@ -579,3 +600,116 @@ async def test_their_own_answer_is_still_their_answer():
 
     assert caught.value.status == 404, "a model we cannot route is not a restart"
     assert caught.value.retryable is False
+
+def test_a_loaded_plugin_is_installed_and_needs_no_command():
+    """插件在机上：卡照旧，不给安装动作。"""
+    prov = _provider(_http({}))
+    prov._their_providers = lambda serving=None: {
+        "qoder": {
+            "id": "qoder",
+            "name": "Qoder",
+            "spec": "@magpie-community/opencode-qoder-auth@latest",
+        },
+    }
+    prov._installed_plugins = lambda: {"@magpie-community/opencode-qoder-auth"}
+
+    (spec,) = asyncio.run(prov.provider_specs())
+    assert spec["installed"] is True
+    assert spec["install_command"] is None
+
+
+def test_a_removed_plugin_is_installed_false_and_can_be_added_back():
+    """卸载插件后 provider 还留在他们的名册里（账号是特意留的），但这不等于「在」。
+
+    没有这个标志，卡会一直显示「去登录」，而登录永远等不到那个插件回来。
+    """
+    prov = _provider(_http({}))
+    prov._their_providers = lambda serving=None: {
+        "qoder": {
+            "id": "qoder",
+            "name": "Qoder",
+            "spec": "@magpie-community/opencode-qoder-auth@latest",
+        },
+    }
+    prov._installed_plugins = lambda: set()
+
+    (spec,) = asyncio.run(prov.provider_specs())
+    assert spec["installed"] is False
+    assert spec["install_command"] == "magpie plugin add @magpie-community/opencode-qoder-auth@latest"
+
+
+def test_the_install_list_is_read_from_their_own_plugins_file(tmp_path, monkeypatch):
+    """`plugins.json` 是「装了什么」，`plugin-providers.json` 是「记得什么」，两码事。"""
+    data = tmp_path / "magpie"
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "plugins.json").write_text(
+        json.dumps({"plugins": [{"spec": "@magpie-community/opencode-qoder-auth@latest"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    found = their_list.read_installed_plugins(tmp_path)
+    assert found == {"@magpie-community/opencode-qoder-auth"}, "版本标签不进比对"
+
+
+def test_no_plugins_file_is_not_an_empty_install_list(tmp_path):
+    """文件读不到 ⇒ None（交回 CLI 去问），不是「什么都没装」。"""
+    (tmp_path / "magpie").mkdir(parents=True, exist_ok=True)
+    assert their_list.read_installed_plugins(tmp_path) is None
+
+
+def test_an_unaskable_plugin_list_leaves_the_card_alone():
+    """问不到就不猜：`installed` 保持 None，卡按老样子显示。"""
+    prov = _provider(_http({}))
+    prov._their_providers = lambda serving=None: {"qoder": {"id": "qoder", "name": "Qoder"}}
+    prov._installed_plugins = lambda: None
+
+    (spec,) = asyncio.run(prov.provider_specs())
+    assert spec["installed"] is None
+    assert spec["install_command"] is None
+
+
+def test_a_card_carries_the_way_to_put_its_plugin_back():
+    """卡片自己带着「装回来」的那句话（用户 11-21：「点击配置，插件没下载会自动下载」）。
+
+    设置页的首次配置面板只认三样东西：`state == not_installed`、`installCommand` 有值，
+    然后它自己按下安装键。缺了这一行，卡片会一直停在「去登录」，而登录永远等不到插件。
+    """
+    prov = _provider(_http({}))
+    prov._installed_plugins = lambda: set()
+    leg = MagpieProviderLeg(
+        {"leg": "qoder"},
+        prov.http,
+        {
+            "id": "qoder",
+            "name": "Qoder",
+            "plugin": "@magpie-community/opencode-qoder-auth@latest",
+            "installed": True,  # 构建那一刻还在：卡上必须问现在，不是问当时
+        },
+        prov,
+    )
+
+    spec = leg.card_spec()
+    assert spec["installed"] is False
+    assert spec["install_command"] == "magpie plugin add @magpie-community/opencode-qoder-auth@latest"
+    assert spec["install"] == {
+        "kind": "plugin",
+        "command": "magpie plugin add @magpie-community/opencode-qoder-auth@latest",
+    }
+
+
+def test_a_loaded_plugin_offers_no_install_command():
+    """插件在机上：卡上不许出现安装动作，否则每次打开都问一遍「要不要重装」。"""
+    prov = _provider(_http({}))
+    prov._installed_plugins = lambda: {"@magpie-community/opencode-qoder-auth"}
+    leg = MagpieProviderLeg(
+        {"leg": "qoder"},
+        prov.http,
+        {"id": "qoder", "name": "Qoder", "plugin": "@magpie-community/opencode-qoder-auth@latest"},
+        prov,
+    )
+
+    spec = leg.card_spec()
+    assert spec["installed"] is True
+    assert spec["install_command"] is None
+    assert spec["install"] is None

@@ -27,9 +27,6 @@ from bezel.providers.apps.antigravity import AntigravityCliProvider
 from bezel.providers.base import UpstreamError
 from bezel.providers.apps.marvis import MarvisCliProvider
 from bezel.providers.apps.marvis import MarvisGuiProvider
-from bezel.providers.apps.workbuddy import WorkbuddyCliProvider
-from bezel.providers.apps.workbuddy import WorkbuddyGuiProvider
-from bezel.providers.apps.workbuddy import WorkbuddyHybridProvider
 from bezel.registry import Registry
 from bezel.scheduler import Scheduler
 
@@ -175,85 +172,25 @@ def test_marvis_gui_graceful_disable():
     print("  ok: marvis_gui disables gracefully (no uiautomation / no window)")
 
 
-def test_workbuddy_cli_via_fake():
-    # The generic WorkbuddyCliProvider must work for any CLI-shaped Workbuddy.
-    prov = WorkbuddyCliProvider(
-        _cli_cfg(["workbuddy/default"], {"workbuddy/default": "default"}), None
-    )
-    asyncio.run(prov.discover_accounts())
-    assert len(prov.accounts) == 1, "one account expected when CLI present"
-    req = {
-        "model": "workbuddy/default",
-        "messages": [{"role": "user", "content": "workbuddy prompt"}],
-    }
-    out = asyncio.run(prov.chat(prov.accounts[0], req))
-    assert out["object"] == "chat.completion"
-    assert "workbuddy prompt" in out["choices"][0]["message"]["content"]
-    print("  ok: WorkbuddyCliProvider works through fake CLI")
-
-
-def test_workbuddy_gui_graceful_disable():
-    # Same headless guard as marvis_gui.
-    prov = WorkbuddyGuiProvider(
-        {"models": ["workbuddy_gui/default"], "accounts": [{"id": "g2"}]}, None
-    )
-    accs = asyncio.run(prov.discover_accounts())
-    assert accs == [], "Workbuddy GUI provider must disable gracefully when UI/lib absent"
-    print("  ok: workbuddy_gui disables gracefully (no uiautomation / no window)")
-
-
-def test_workbuddy_hybrid_prefers_cli():
-    # Hybrid with a working CLI (fake) and NO gui block -> 1 CLI account, chat works.
-    cfg = {
-        "prefer": "cli",
-        "models": ["workbuddy/default"],
-        "cli": _cli_cfg(["workbuddy/default"], {"workbuddy/default": "default"}),
-    }
-    prov = WorkbuddyHybridProvider(cfg, None)
-    accs = asyncio.run(prov.discover_accounts())
-    assert len(accs) == 1, "expected exactly one CLI account (gui absent)"
-    assert accs[0].id.endswith("-cli"), f"account id must be CLI-namespaced: {accs[0].id}"
-    req = {"model": "workbuddy/default", "messages": [{"role": "user", "content": "hybrid cli"}]}
-    out = asyncio.run(prov.chat(accs[0], req))
-    assert "hybrid cli" in out["choices"][0]["message"]["content"]
-    print("  ok: WorkbuddyHybrid prefers CLI and serves chat")
-
-
-def test_workbuddy_hybrid_disables_without_cli_or_gui():
-    # CLI binary missing AND no gui block -> 0 accounts (clean disable).
-    cfg = {
-        "prefer": "cli",
-        "models": ["workbuddy/default"],
-        "cli": {
-            "binary": "definitely-not-a-real-binary-xyz",
-            "models": ["workbuddy/default"],
-            "accounts": [{"id": "c"}],
-        },
-    }
-    prov = WorkbuddyHybridProvider(cfg, None)
-    accs = asyncio.run(prov.discover_accounts())
-    assert accs == [], "no CLI (bad binary) + no gui => 0 accounts"
-    print("  ok: WorkbuddyHybrid disables cleanly with no CLI and no GUI")
-
-
 # ── a broken CLI run is a failure, never an answer ───────────────────────────
 # Measured on the real CodeBuddy Code CLI: signed out it exits **0** and puts the
 # hint on stderr; the WorkBuddy-embedded build puts the same hint on stdout. A
 # returncode check alone lets both through, and the gateway would serve an empty
 # (or hint-text) completion that upstream code cannot tell from a real answer.
 
-_SENTINEL_MODELS = ["workbuddy_cli/m"]
-_SENTINEL_MAP = {"workbuddy_cli/m": "m"}
+# 11-20：原来的替身是 workbuddy_cli（随腿退场），换成本机在役的 agy 通道做同一件事。
+_SENTINEL_MODELS = ["antigravity_cli/m"]
+_SENTINEL_MAP = {"antigravity_cli/m": "m"}
 
 
 def _fake_prov(**extra):
-    prov = WorkbuddyCliProvider(_cli_cfg(_SENTINEL_MODELS, _SENTINEL_MAP, **extra), None)
+    prov = AntigravityCliProvider(_cli_cfg(_SENTINEL_MODELS, _SENTINEL_MAP, **extra), None)
     asyncio.run(prov.discover_accounts())
     return prov
 
 
 def _req(prompt: str) -> dict:
-    return {"model": "workbuddy_cli/m", "messages": [{"role": "user", "content": prompt}]}
+    return {"model": "antigravity_cli/m", "messages": [{"role": "user", "content": prompt}]}
 
 
 def test_signed_out_cli_is_a_failure_not_an_answer():
@@ -338,40 +275,13 @@ def test_refresh_models_reads_the_clis_own_list():
     short = asyncio.run(prov.refresh_models(prov.accounts[0]))
     assert short == ["alpha-1", "beta-2", "gamma-3"], short
     assert prov.served_models == (
-        "workbuddy_cli/alpha-1",
-        "workbuddy_cli/beta-2",
-        "workbuddy_cli/gamma-3",
+        "antigravity_cli/alpha-1",
+        "antigravity_cli/beta-2",
+        "antigravity_cli/gamma-3",
     ), prov.served_models
-    assert prov.model_map["workbuddy_cli/beta-2"] == "beta-2"
+    assert prov.model_map["antigravity_cli/beta-2"] == "beta-2"
     assert prov.models_refreshed is True
     print("  ok: refresh_models() takes the CLI's advertised list and replaces the seed")
-
-
-def test_hybrid_keeps_the_public_id_prefix_when_discovering():
-    """The inner CLI's registry key must not leak into ids clients see."""
-    cfg = {
-        "prefer": "cli",
-        "models": ["workbuddy/seed"],
-        "cli": {
-            "binary": FAKE,
-            "interpreter": PY,
-            "prompt_flag": "-p",
-            "model_flag": "--model",
-            "models": ["workbuddy/seed"],
-            "accounts": [{"id": "c"}],
-        },
-    }
-    prov = WorkbuddyHybridProvider(cfg, None)
-    asyncio.run(prov.discover_accounts())
-    short = asyncio.run(prov.refresh_models(prov.accounts[0]))
-    assert short == ["alpha-1", "beta-2", "gamma-3"], short
-    assert prov.served_models == (
-        "workbuddy/alpha-1",
-        "workbuddy/beta-2",
-        "workbuddy/gamma-3",
-    ), prov.served_models
-    assert prov._cli.served_models[0] == "workbuddy/alpha-1", prov._cli.served_models
-    print("  ok: hybrid lifts the discovered catalog under its own public prefix")
 
 
 def test_refresh_models_keeps_the_seed_when_nothing_is_advertised():
@@ -394,14 +304,9 @@ def main_run():
     test_stream_raises_on_nonzero_exit()
     test_stream_drains_stderr_and_still_answers()
     test_refresh_models_reads_the_clis_own_list()
-    test_hybrid_keeps_the_public_id_prefix_when_discovering()
     test_refresh_models_keeps_the_seed_when_nothing_is_advertised()
     test_marvis_cli_via_fake()
     test_marvis_gui_graceful_disable()
-    test_workbuddy_cli_via_fake()
-    test_workbuddy_gui_graceful_disable()
-    test_workbuddy_hybrid_prefers_cli()
-    test_workbuddy_hybrid_disables_without_cli_or_gui()
     print("\nALL CHECKS PASSED")
 
 

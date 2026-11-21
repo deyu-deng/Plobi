@@ -99,14 +99,6 @@ def test_a_declared_cli_leg_produces_an_executable_plan():
     assert plan["name"] == "Cline"
 
 
-def test_cline_and_kiro_declare_their_login_from_their_own_help_text():
-    from bezel.providers.apps.cline.cli import ClineCliProvider
-    from bezel.providers.apps.kiro.cli import KiroCliProvider
-
-    assert ClineCliProvider.login_args == ("auth",)
-    assert KiroCliProvider.login_args == ("login",)
-
-
 def test_scraps_the_url_opens_the_browser_and_reports_success(tmp_path, monkeypatch):
     opened: list[str] = []
     monkeypatch.setattr(authflow.webbrowser, "open", lambda url: opened.append(url) or True)
@@ -579,8 +571,9 @@ def test_the_card_list_is_what_we_still_run_and_magpies_own(monkeypatch):
     2026-11-10: **Marvis 的两张卡也下去了** —— 这台机器上**它没有 CLI**（CLI 那条腿
     根本起不来），GUI 那条是「没有 CLI 也没有 API、只靠 Windows UI 自动化」的脆弱腿，
     我们从没跑通（用户 11-10：「Marvis 没有 CLI。你都没有跑通。你怎么就上屏了呢？」）。
-    没跑通的东西不上屏。剩下的是 Zen 付费 key 那条（用户自己的 key，归 Keys/Account）
-    —— 加上 magpie 的 provider 列表长出来的那些。
+    2026-11-20（用户裁定）：Zen 付费 key 那条也下线了 —— 九条自研腿**整份**退场，
+    包括它，所以 Key 屏那张卡的腿实现一起进了 `_archive/`。这张表回到空，屏幕上的
+    卡片只剩 magpie 的 provider 列表长出来的那些。
     """
     from bezel.providers.apps.marvis.cli import MarvisCliProvider
 
@@ -592,13 +585,18 @@ def test_the_card_list_is_what_we_still_run_and_magpies_own(monkeypatch):
 
     monkeypatch.setattr(MarvisCliProvider, "_binary_present", lambda self: False)
     rows = {row["id"]: row for row in authflow.auth_catalog(_Reg())}
-    assert "opencode_api" in rows, "the Zen key lane keeps its card"
+    assert "opencode_api" not in rows, "the Zen key lane retired with the leg behind it"
     for retired in (
-        "codex_cli",
-        "qoder",
-        "workbuddy",
-        "kiro_cli",
+        "antigravity",
+        "gemini_api",
+        "opencode_api",
         "opencode_free",
+        "kiro_cli",
+        "cline_cli",
+        "qoder",
+        "qoder_intl",
+        "workbuddy",
+        "codex_cli",
         "marvis_cli",
         "marvis_gui",
     ):
@@ -695,3 +693,60 @@ def test_a_login_window_that_outlives_the_timeout_is_still_watched(monkeypatch):
 
     assert session.state == "ok"
     assert hits == ["refreshed"]
+
+
+
+class _Registry:
+    """`_catalog_row` 会问注册表这条腿现在能不能用；这里只回答「不能」。"""
+
+    def credential_health(self, prov):
+        return (False, "")
+
+
+def test_a_leg_that_says_it_is_not_installed_outranks_its_presence_probe():
+    """订阅类腿的 provider 会活过插件卸载（账号是特意留着的），所以 present() 对
+    一个卸掉的插件照样答「在」。腿自己给的 installed 更权威，否则卡会一直劝你去
+    登录一个永远等不回来的插件。"""
+
+    class _Leg:
+        display_name = "Qoder"
+
+        def present(self):
+            return True
+
+        def signed_in(self):
+            return (False, "")
+
+        def login_plan(self):
+            return {"kind": "oauth", "name": "Qoder"}
+
+    spec = {
+        "id": "qoder",
+        "name": "Qoder",
+        "login": "oauth",
+        "installed": False,
+        "install_command": "magpie plugin add @magpie-community/opencode-qoder-auth@latest",
+    }
+    row = authflow._catalog_row("qoder", spec, _Leg(), _Registry())
+
+    assert row["installed"] is False
+    assert row["state"] == "not_installed"
+    assert row["install_command"] == "magpie plugin add @magpie-community/opencode-qoder-auth@latest"
+
+
+def test_an_install_command_in_the_legs_own_spec_does_not_get_lost():
+    """静态清单没有这条命令也得把腿报的那条带下去 —— 否则卡上有加号，点了没事发生。"""
+
+    class _Leg:
+        def present(self):
+            return True
+
+        def signed_in(self):
+            return (False, "")
+
+        def login_plan(self):
+            return {"kind": "oauth", "name": "QwenWork"}
+
+    spec = {"id": "qwenwork", "login": "oauth", "install_command": "magpie plugin add x@latest"}
+    row = authflow._catalog_row("qwenwork", spec, _Leg(), _Registry())
+    assert row["install_command"] == "magpie plugin add x@latest"

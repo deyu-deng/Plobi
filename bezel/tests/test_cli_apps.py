@@ -1,4 +1,6 @@
-"""New CLI legs: Codex / Claude Code / OpenCode / Kiro / Cline.
+"""New CLI legs: Codex / Claude Code / OpenCode.
+
+11-20：Kiro / Cline 两条随九条自研腿退场，它们的 argv 形状断言一起走了。
 
 These pin the *contract with each CLI*, not the CLI itself:
   * argv shape (positional prompt, optional model pair)
@@ -18,13 +20,11 @@ from pathlib import Path
 
 from bezel.providers.apps.claude_code import ClaudeCodeCliProvider
 from bezel.providers.apps.claude_code.cli import _parse_claude_result, _parse_claude_usage
-from bezel.providers.apps.cline import ClineCliProvider
 from bezel.providers.apps.codex import CodexCliProvider
 from bezel.providers.apps.codex.cli import (
     _parse_codex_events,
     _parse_codex_usage,
 )
-from bezel.providers.apps.kiro import KiroCliProvider
 from bezel.providers.apps.opencode import OpenCodeCliProvider
 from bezel.providers.apps.opencode.cli import _parse_opencode_usage
 from bezel.providers.base import Account, Credential, UpstreamError
@@ -34,21 +34,13 @@ def _account(provider: str, token: str = "x") -> Account:
     return Account(id="a", provider=provider, cred=Credential(access_token=token))
 
 
-def test_all_five_disable_cleanly_without_their_binary(monkeypatch, tmp_path):
-    # Cline is a pure-HTTP leg now: no token means no seat, so the test must not
-    # read this machine's real Cline credential.
-    for var in ("CLINE_API_KEY", "CLINEPASS_API_KEY"):
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("CLINE_PROVIDERS_JSON", "/nonexistent/cline-providers.json")
-    # Kiro is a pure-HTTP leg too: point it at a missing database so the test
-    # never sees this machine's real kiro-cli credential.
-    monkeypatch.setenv("KIRO_DATA_SQLITE", str(tmp_path / "missing-kiro.sqlite3"))
+def test_all_three_disable_cleanly_without_their_binary(monkeypatch, tmp_path):
+    # 11-20：cline_cli 与 kiro_cli 随九条自研腿退场（活交给 magpie 的 provider），
+    # 这两条原先的「没二进制就干净退场」也一并走了 —— 这里只留还在的三条。
     classes = (
         (CodexCliProvider, "codex_cli"),
         (ClaudeCodeCliProvider, "claude_code_cli"),
         (OpenCodeCliProvider, "opencode_cli"),
-        (KiroCliProvider, "kiro_cli"),
-        (ClineCliProvider, "cline_cli"),
     )
     for cls, name in classes:
         prov = cls({"binary": "definitely-not-a-real-binary-xyz", "accounts": [{}]}, None)
@@ -84,18 +76,6 @@ def test_claude_invocation_puts_model_before_print_mode():
         "--output-format",
         "json",
     ]
-
-
-def test_kiro_invocation_is_gone_because_http_replaced_it():
-    assert not hasattr(KiroCliProvider, "build_invocation"), (
-        "Kiro answers over its own streaming API now; a `--json` argv shape would be a second, unused door"
-    )
-
-
-def test_cline_invocation_is_gone_because_acp_replaced_it():
-    assert not hasattr(ClineCliProvider, "build_invocation"), (
-        "Cline answers over ACP now; a `--json` argv shape would be a second, unused door"
-    )
 
 
 def test_codex_jsonl_takes_only_the_agent_message_and_usage():

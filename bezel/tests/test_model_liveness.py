@@ -18,7 +18,6 @@ import pytest
 
 import bezel.main as main
 from bezel.providers.base import Account, Capabilities
-from bezel.providers.apps.workbuddy import WorkbuddyApiProvider
 from bezel.registry import Registry, _MODELS_MAX_PASSES
 from bezel.tokens import desktop_stores as ds
 
@@ -259,39 +258,6 @@ def test_a_malformed_body_answers_400_and_not_our_own_failure(monkeypatch):
     r = asyncio.run(_go())
     assert r.status_code == 400, (r.status_code, r.text[:80])
     assert "not valid JSON" in r.json()["detail"]
-
-
-def test_workbuddy_api_counts_a_renewable_token_as_live(monkeypatch):
-    prov = WorkbuddyApiProvider(
-        {"base_url": "https://www.workbuddy.cn", "dialect": "openai"}, None
-    )
-    monkeypatch.setattr(
-        ds,
-        "codebuddy_token_status",
-        lambda: {"present": True, "expires_in_seconds": -60, "can_refresh": True},
-    )
-    assert prov.credential_health() == (True, "renewable")
-
-    monkeypatch.setattr(
-        ds,
-        "codebuddy_token_status",
-        lambda: {"present": True, "expires_in_seconds": -60, "can_refresh": False},
-    )
-    assert prov.credential_health() == (False, "credential_expired")
-
-    monkeypatch.setattr(
-        ds,
-        "codebuddy_token_status",
-        lambda: {"present": False, "expires_in_seconds": None, "can_refresh": False},
-    )
-    assert prov.credential_health() == (False, "no_desktop_credential")
-
-    monkeypatch.setattr(
-        ds,
-        "codebuddy_token_status",
-        lambda: {"present": True, "expires_in_seconds": 3600, "can_refresh": True},
-    )
-    assert prov.credential_health() == (True, "ok")
 
 
 def test_one_slow_leg_does_not_delay_the_others():

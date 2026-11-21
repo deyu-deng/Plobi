@@ -272,14 +272,15 @@ class MagpieProvider(Provider):
         return None
 
     # --- the provider list -------------------------------------------------
-    #: Their HTTP surface has **no** endpoint for the provider list — it serves
-    #: models and turns, and nothing else about the roster. The roster lives in
-    #: the plugin host, and it reaches us two ways: the host's own table on disk
-    #: (`plugin-providers.json`, see `their_list`) and the CLI that prints it.
-    #: The file is cheap and read first; the CLI boots their plugin host, so it
-    #: is the fallback and it is trusted for much longer.
-    THEIR_IDS_TTL_SECONDS = 60.0
-    THEIR_IDS_CLI_TTL_SECONDS = 600.0
+    #: Their HTTP surface has no endpoint for the *roster* — it serves models and
+    #: turns. Which providers exist therefore has to be assembled from three
+    #: places (see `their_list`): the live catalogue's model prefixes, the CLI's
+    #: printed table, and magpie's own on-disk roster (the only one that knows the
+    #: built-in providers). The catalogue is cheap and re-read in a minute; the
+    #: CLI boots their plugin host, so its answer is trusted for ten.
+    SERVING_TTL_SECONDS = 60.0
+    ROSTER_TTL_SECONDS = 60.0
+    ROSTER_CLI_TTL_SECONDS = 600.0
 
     def _binary(self) -> str | None:
         """Where magpie's own CLI is, if we can find it.
@@ -302,38 +303,73 @@ class MagpieProvider(Provider):
         return None
 
     async def provider_specs(self) -> list[dict]:
-        """The providers we know about — **our** table, checked against theirs.
+        """One card per provider magpie actually has — **their** roster decides.
 
-        Our table (``providers.yaml``) is the truth about what a card is called,
-        how we sign in, and which id we publish. Their CLI only answers two
-        questions: *is this provider still there* and *what is it called today*.
-        A provider they added that we have not claimed gets **no card** — it is
-        reported (``unclaimed_providers``) so a human can claim it in one line.
+        The set is theirs; the cosmetics are ours:
 
-        When their CLI cannot be read at all (magpie is not running here), the
-        cards still appear: our table does not depend on them. They then say
-        「Magpie 没起来」 instead of pretending the vendor is not set up.
+        * ``GET /v1/models`` prefixes — which providers can serve right now;
+        * ``magpie plugin list`` — the vendor's own name and sign-in methods;
+        * ``providers-state.json`` — the built-in providers no plugin lists
+          (WorkBuddy: 18 models, ``ready``, and no plugin row anywhere).
+
+        A provider our cosmetics table names gets our four-locale label and our
+        sign-in kind. One we have never seen keeps the name its vendor reported
+        and defaults to a browser round trip — which is what their plugins do.
+        Nothing is hidden for being unrecognised: that is precisely the case a
+        fixed table used to swallow, so a provider added upstream never reached
+        the screen.
+
+        When none of the three answers (magpie is not on this machine), the
+        cosmetics table is all we have and every card in it still shows, saying
+        「Magpie 没起来」 instead of pretending the vendor was never set up.
         """
+        serving = await self._serving_prefixes()
+        theirs = self._their_providers(serving)
         table = self._our_table()
-        theirs = self._their_provider_ids()
-        specs: list[dict] = []
-        for ours, row in table.items():
-            upstream = str(row.get("upstream") or ours)
-            specs.append(
-                {
-                    "id": ours,
-                    "upstream": upstream,
-                    "name": str(row.get("name") or ours),
-                    "card": bool(row.get("card", True)),
-                    "login": str(row.get("login") or "oauth"),
-                    # They have it? (None = we could not ask — say so, do not guess.)
-                    "present": None if theirs is None else upstream in theirs,
-                }
+
+        if not theirs:
+            return [self._card_spec(pid, row, present=None) for pid, row in table.items()]
+
+        claimed = {str(row.get("upstream") or pid): pid for pid, row in table.items()}
+        order = {pid: index for index, pid in enumerate(table)}
+
+        named: list[tuple[int, dict]] = []
+        unnamed: list[tuple[str, dict]] = []
+        # Which plugins are loaded right now. Their roster outlives an uninstall
+        # (accounts are kept), so this is the only way to tell a provider that is
+        # merely listed from one whose plugin is actually here.
+        loaded = self._installed_plugins()
+        for upstream_id, row in theirs.items():
+            ours = claimed.get(upstream_id)
+            plugin = str(row.get("spec") or row.get("plugin") or "").strip() or None
+            installed = None
+            if plugin is not None and loaded is not None:
+                installed = their_list.bare_spec(plugin) in loaded
+            spec = self._card_spec(
+                ours or upstream_id,
+                table.get(ours, {}) if ours else {},
+                present=True,
+                upstream_id=upstream_id,
+                reported=row,
+                installed=installed,
+                plugin=plugin,
             )
-        return specs
+            if ours:
+                named.append((order.get(ours, len(order)), spec))
+            else:
+                unnamed.append((upstream_id, spec))
+        named.sort(key=lambda pair: pair[0])
+        unnamed.sort(key=lambda pair: pair[0])
+        return [spec for _, spec in named] + [spec for _, spec in unnamed]
 
     def _our_table(self) -> dict[str, dict]:
-        """Our provider table, read once per process."""
+        """Our cosmetics table, read once per process.
+
+        It is **not** the roster: which providers exist is magpie's answer, not
+        this file's. An empty table is survivable — every provider then shows
+        under the name its vendor reported — so a broken YAML costs wording,
+        never the screen.
+        """
         cached = getattr(self, "_table_cache", None)
         if cached is not None:
             return cached
@@ -346,84 +382,213 @@ class MagpieProvider(Provider):
                 if isinstance(row, dict):
                     table[str(key)] = row
         except Exception:
-            # No table, no providers: we never invent one out of their JSON.
+            # No table, no wording of ours: cards still appear, named as magpie
+            # named them. Never invent a roster out of this failure.
             table = {}
         self._table_cache = table
         return table
 
-    def _their_provider_ids(self) -> set[str] | None:
-        """The provider ids magpie has today, or None when we cannot ask.
+    def _card_spec(
+        self,
+        provider_id: str,
+        cosmetics: dict,
+        *,
+        present: bool | None,
+        upstream_id: str | None = None,
+        reported: dict | None = None,
+        installed: bool | None = None,
+        plugin: str | None = None,
+    ) -> dict:
+        """One row of ``provider_specs``: their identity, our label.
 
-        Their own table first: the plugin host writes ``plugin-providers.json``
-        next to the rest of its data, and we already know that directory (the
-        desktop pins ``XDG_CONFIG_HOME`` to our own volume). Their CLI is the
-        fallback — it boots their plugin host, which is slow, and a plugin that
-        cannot load can stop it from printing the table at all.
-
-        ``None`` means "we could not ask" and it is a real answer: the cards
-        then stay, because our table decides the card list and their roster
-        only says whether a vendor is still theirs.
+        ``cosmetics`` is our table's row for this vendor when we have one. The
+        four-locale wording lives in the front end keyed by ``intro_key``, so
+        this side only has to say *which* key — never the sentence itself.
         """
-        cached = getattr(self, "_their_ids_cache", None)
+        reported = reported or {}
+        name = str(cosmetics.get("name") or reported.get("name") or provider_id)
+        return {
+            "id": provider_id,
+            "upstream": str(cosmetics.get("upstream") or upstream_id or provider_id),
+            "name": name,
+            "card": bool(cosmetics.get("card", True)),
+            "login": str(cosmetics.get("login") or self._login_kind(reported) or "oauth"),
+            # Whether magpie has it today. None = nobody could tell us.
+            "present": present,
+            # The key the view looks up for its one-line subtitle. Our table wins,
+            # so renaming our own key does not re-translate a vendor we already named.
+            "intro_key": str(cosmetics.get("intro_key") or provider_id),
+            # Signed in as far as their roster can say. The card still asks the
+            # gateway for the live answer; this only spares a round trip.
+            "signed_in": reported.get("signedIn"),
+            # Whether the plugin behind this provider is loaded *right now*. Their
+            # roster keeps a removed plugin's providers — the accounts are kept on
+            # purpose across an uninstall — so `present` alone would keep offering a
+            # sign-in that can never finish. None = nobody could tell us: leave as is.
+            "installed": installed,
+            # The plugin spec, so the card can offer to put it back.
+            "plugin": plugin,
+            "install_command": (
+                f"magpie plugin add {plugin}" if plugin and installed is False else None
+            ),
+        }
+
+    @staticmethod
+    def _login_kind(reported: dict) -> str:
+        """How this provider is signed in, read off their ``methods`` list.
+
+        ``api`` only when *every* method is a key the user pastes — a plugin
+        that also offers a browser round trip is ``oauth``, and their plugins
+        all offer one.
+        """
+        methods = [m for m in (reported.get("methods") or []) if isinstance(m, dict)]
+        if not methods:
+            return ""
+        kinds = {str(m.get("type") or "").strip().lower() for m in methods}
+        return "api" if kinds == {"api"} else "oauth"
+
+    async def _serving_prefixes(self) -> dict[str, dict] | None:
+        """The provider prefixes in the live catalogue — None when it is down.
+
+        ``GET /v1/models`` is the only source that is both online and a contract,
+        so it seeds the roster. It says nothing about names or sign-in, and an
+        empty answer means "not answering", never "they have no providers".
+        """
+        cached = getattr(self, "_serving_cache", None)
         now = time.time()
-        if cached is not None and now - cached[1] < self.THEIR_IDS_TTL_SECONDS:
+        if cached is not None and now - cached[1] < self.SERVING_TTL_SECONDS:
             return cached[0]
-        ids = self._their_ids_from_their_table()
-        if ids is None:
-            ids = self._their_ids_via_cli()
-        self._their_ids_cache = (ids, now)
-        return ids
+        rows = await self.read_catalogue()
+        prefixes = their_list.providers_from_model_ids(list(rows)) if rows else None
+        result = prefixes or None
+        self._serving_cache = (result, now)
+        return result
 
-    def _their_ids_from_their_table(self) -> set[str] | None:
-        """The ids in the plugin host's own table, or None when there is none."""
-        table = their_list.read_provider_table(self._config_root())
-        if table is None:
-            return None
-        ids = their_list.ids_from_table(table)
-        # An empty table is "we read it and it says nothing" — not "they have
-        # no providers". A machine whose plugin host has not loaded yet must
-        # not lose every card.
-        return ids or None
+    def _their_providers(self, serving: dict[str, dict] | None = None) -> dict[str, dict] | None:
+        """Every provider magpie has today, merged from all three sources.
 
-    def _their_ids_via_cli(self) -> set[str] | None:
-        """Run their CLI once and read the provider ids out of its table.
+        ``None`` means no source could be read at all ("we could not ask"). An
+        empty dict is never returned: a plugin host that has not finished loading
+        must not empty the user's screen.
 
-        Their CLI prints one line per provider — ``workbuddy-ai (WorkBuddy AI,
-        16 models)  not signed in`` — and their host's logs share the stream,
-        so only the lines with that shape are read. (``plugin list --json``
-        answers ``providers: null`` unless the host is up, which is exactly
-        when we need it.)
+        Precedence, and why it is this way round: the live catalogue decides
+        *membership* (it is the only live answer), the CLI contributes the names
+        and methods nothing else carries, and the on-disk roster contributes the
+        built-in providers that no plugin row ever mentions.
         """
-        cached = getattr(self, "_their_cli_ids_cache", None)
+        cached = getattr(self, "_their_providers_cache", None)
         now = time.time()
-        if cached is not None and now - cached[1] < self.THEIR_IDS_CLI_TTL_SECONDS:
+        if serving is None and cached is not None and now - cached[1] < self.ROSTER_TTL_SECONDS:
+            return cached[0]
+
+        merged: dict[str, dict] = {}
+        answered = False
+
+        # The built-ins: WorkBuddy never appears in `plugin list`.
+        state = their_list.read_provider_table(self._config_root())
+        # A file that parses to nothing is not an answer: it is a file magpie has
+        # not finished writing yet. Only rows count.
+        if state:
+            answered = True
+            for pid, row in state.items():
+                ready = row.get("ready")
+                merged[pid] = {
+                    "id": pid,
+                    "name": str(row.get("name") or "").strip() or None,
+                    "signedIn": ready if isinstance(ready, bool) else None,
+                    "source": "state",
+                    # The plugin this provider came from. Kept so a card can tell a
+                    # remembered provider from a loaded plugin, and offer to add it back.
+                    "spec": str(row.get("spec") or "").strip() or None,
+                }
+                # The file also carries the sign-in methods when the built-in wrote
+                # them; dropping them here sends the login back to their terminal menu.
+                if row.get("methods"):
+                    merged[pid]["methods"] = row["methods"]
+
+        # The plugins: the only source carrying the vendor's own name and methods.
+        cli = self._their_rows_via_cli()
+        if cli:
+            answered = True
+            for pid, row in cli.items():
+                target = merged.setdefault(pid, {"id": pid})
+                for key in ("name", "methods", "signedIn", "plugin", "models", "model_count"):
+                    if row.get(key) not in (None, "", [], {}):
+                        target.setdefault(key, row[key])
+
+        # The live catalogue: membership, plus any provider a stale file missed.
+        if serving:
+            answered = True
+            for pid in serving:
+                merged.setdefault(pid, {"id": pid, "source": "catalogue"})
+
+        if not answered:
+            return None
+        self._their_providers_cache = (merged, now)
+        return merged
+
+    def _installed_plugins(self) -> set[str] | None:
+        """The plugin specs loaded right now, or None when the CLI would not answer.
+
+        ``plugin list`` is the only source that distinguishes "magpie remembers this
+        provider" from "this provider's plugin is here": removing a plugin keeps its
+        providers on the roster, so the roster answers yes for both. Cached like the
+        roster — a plugin install is not a per-request event.
+        """
+        cached = getattr(self, "_installed_plugins_cache", None)
+        now = time.time()
+        if cached is not None and now - cached[1] < self.ROSTER_CLI_TTL_SECONDS:
+            return cached[0]
+        # Their own install list first: no process, no timeout, no 20s stall on a
+        # cold CLI. The CLI is only for a release that keeps it somewhere else.
+        found = their_list.read_installed_plugins(self._config_root())
+        if found is None:
+            binary = self._binary()
+            found = their_list.cli_installed_plugins(binary) if binary else None
+        self._installed_plugins_cache = (found, now)
+        return found
+
+    def _their_provider_ids(self) -> set[str] | None:
+        """Just the ids of the merged roster, or None when nothing answered."""
+        rows = self._their_providers()
+        return None if rows is None else set(rows)
+
+    def _their_rows_via_cli(self) -> dict[str, dict] | None:
+        """Run their CLI once and read the provider rows out of its table.
+
+        Their CLI boots the plugin host — slow, and one plugin that cannot load
+        can stop it printing anything — so its answer outlives the file reads.
+        """
+        cached = getattr(self, "_their_cli_rows_cache", None)
+        now = time.time()
+        if cached is not None and now - cached[1] < self.ROSTER_CLI_TTL_SECONDS:
             return cached[0]
         binary = self._binary()
-        ids = None
+        rows = None
         if binary:
-            ids = their_list.cli_provider_ids(
+            rows = their_list.cli_providers(
                 binary,
                 env={**os.environ, "DO_NOT_TRACK": "1"},
                 timeout=120.0,
             )
-        self._their_cli_ids_cache = (ids, now)
-        return ids
+        self._their_cli_rows_cache = (rows, now)
+        return rows
 
     def unclaimed_providers(self) -> list[dict]:
-        """Providers magpie has that our table does not claim — nobody's business yet.
+        """Providers magpie has that our table has no cosmetics for.
 
-        They are reported (log line + ``check_magpie_providers.py``) and they get
-        **no card**: a provider we have not named must not show up on the user's
-        screen just because somebody upstream added it.
+        They still get a card — under the name their vendor reported — so this is
+        a to-do list for a human (``check_magpie_providers.py`` prints it), not a
+        filter. Naming one in ``providers.yaml`` only improves the label.
         """
-        theirs = self._their_provider_ids()
-        if not theirs:
+        rows = self._their_providers()
+        if not rows:
             return []
-        ours = set(self._our_table())
-        unknown: list[dict] = []
-        for pid in sorted(theirs - ours):
-            unknown.append({"id": pid})
-        return unknown
+        ours = {str(row.get("upstream") or pid) for pid, row in self._our_table().items()}
+        return [
+            {"id": pid, "name": str(rows[pid].get("name") or "")}
+            for pid in sorted(set(rows) - ours)
+        ]
 
     async def read_catalogue(self) -> dict[str, dict]:
         """magpie's own rows, keyed by their id — one read for every leg."""
@@ -699,13 +864,34 @@ class MagpieProviderLeg(MagpieProvider):
         method magpie did not offer.
         """
         login = str(self.spec.get("login") or "oauth")
+        # 「装没装」不能只听构建那一刻的结论：插件随时会被 `magpie plugin rm` 卸掉，
+        # 而它们的名册特意留着条目（账号保留），于是 present 永远答「在」。这里每次
+        # 问一遍插件清单（umbrella 那份带 TTL 的缓存兜着开销），卡上才有真话：
+        # 卸载后卡片留着（用户 11-21：「就按 A，插件没了点配置自动装回来」），
+        # 但控件变成「装回来」，点一下就跑 install_command。
+        plugin = str(self.spec.get("plugin") or "").strip() or None
+        installed = self.spec.get("installed")
+        if plugin is not None:
+            source = self.umbrella if self.umbrella is not None else self
+            with contextlib.suppress(Exception):
+                loaded = source._installed_plugins()
+                if loaded is not None:
+                    installed = their_list.bare_spec(plugin) in loaded
+        command = f"magpie plugin add {plugin}" if plugin and installed is False else None
         return {
             "name": self.display_name,
             "kind": "app",
             "login": login,
             "probe": {"probe": "none"},
             "download": None,
-            "intro_key": self.provider_id,
+            # From the spec, not from our own id: a vendor we named keeps its
+            # four-locale label even if our id and theirs ever drift apart.
+            "intro_key": str(self.spec.get("intro_key") or self.provider_id),
+            # What the card needs to put the plugin back by itself.
+            "installed": installed,
+            "plugin": plugin,
+            "install_command": command,
+            "install": {"kind": "plugin", "command": command} if command else None,
         }
 
     def _login_method(self) -> str:
@@ -718,12 +904,12 @@ class MagpieProviderLeg(MagpieProvider):
         menu's tail as its detail, 「3. WorkBuddy API key；>」).
 
         Their command takes the method as its 1-based number, its label or its
-        type (`oauth`/`api`) ⇒ we name the browser one ourselves, from their
-        own provider table (`plugin-providers.json`, the same file their
-        roster comes from).
+        type (`oauth`/`api`) ⇒ we name the browser one ourselves, out of the
+        merged roster — the method labels only ever arrive on the CLI's stream,
+        magpie's on-disk roster does not carry them.
         """
-        table = their_list.read_provider_table(self._config_root()) or {}
-        row = table.get(self.upstream_id) or {}
+        source = self.umbrella if self.umbrella is not None else self
+        row = (source._their_providers() or {}).get(self.upstream_id) or {}
         methods = [m for m in (row.get("methods") or []) if isinstance(m, dict)]
         oauth = [m for m in methods if str(m.get("type") or "") == "oauth"]
         for method in oauth:

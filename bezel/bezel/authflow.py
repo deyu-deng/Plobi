@@ -593,7 +593,11 @@ def _catalog_row(app_id: str, spec: dict, prov, registry) -> dict:
         # 「装了」也包括「凭据已经在机器上」：桌面类应用的判据是本地会话，
         # 会话在就说明它装过并登过，即使安装目录不在我们列的几个根下。
         present_probe = getattr(prov, "present", None)
-        if callable(present_probe):
+        if isinstance(spec.get("installed"), bool):
+            # 该腿自己给了答案。订阅类腿的 provider 会活过插件卸载（账号是特意留的），
+            # 所以 present() 对已卸载的插件仍答 yes —— 显式标志优先，没给才探测。
+            installed = spec["installed"]
+        elif callable(present_probe):
             try:
                 installed = installed or bool(present_probe())
             except Exception:  # noqa: BLE001 - 探测炸了不代表没装
@@ -641,7 +645,9 @@ def _catalog_row(app_id: str, spec: dict, prov, registry) -> dict:
         "login_method": login_method,
         "download": spec.get("download"),
         "install_kind": install.get("kind"),
-        "install_command": install.get("command"),
+        # 订阅类腿的安装命令是运行时由那条腿自己报的（插件 spec 不在静态清单里），
+        # 静态清单那一份优先，没有就问腿。
+        "install_command": install.get("command") or spec.get("install_command"),
         "intro_key": spec.get("intro_key") or app_id,
     }
 

@@ -102,67 +102,11 @@ providers:
     model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
     accounts: [{ id: claude-default }]
 
-  # OpenCode Free（11-09）：走**客户端自带的本地 http 服务**（`opencode service`）——
-  # 不是 CLI spawn、也不是 ACP。免费层在裸 http 上是关着的（官方：Free-tier chat models
-  # require OpenCode）⇒ 能吃到额度的通道只有客户端自己，而客户端自己就带着一个 http 面。
-  # 名单按上游自报（`/api/model` 里价为零的那批 = 免费池），不抄名单。
-  opencode_free:
-    enabled: true
-    timeout: 240
-
-  # Magpie（11-09）：本机那个多模型网关（MIT 开源）。厂商适配交给它与它的社区插件
-  # 维护，我们只当它是一条腿：端口现读它自己的 settings.json，名单现读它的
-  # /v1/models。没装 magpie 的机器上这条腿没有模型。
+  # 11-20：九条自研腿整体退场（腿源交给 magpie，实现码在 apps/_archive/），曾在此处的段一并清掉。
   magpie:
     enabled: true
     timeout: 300
 
-  kiro_cli:
-    enabled: false
-    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
-    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
-    binary: kiro-cli
-    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
-    model_flag: "--model"
-    timeout: 300
-    models: [kiro/default]
-    model_map: { kiro/default: "" }
-    accounts: [{ id: kiro-default }]
-
-  cline_cli:
-    enabled: false
-    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
-    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
-    binary: cline
-    args_template: ["--json", "{model_flag}", "{prompt}"]
-    model_flag: "-m"
-    timeout: 300
-    models: [cline/default]
-    model_map: { cline/default: "" }
-    accounts: [{ id: cline-default }]
-
-  workbuddy:
-    enabled: false
-    # 11-09：这条腿交给 Magpie 了（它的 provider 列表当我们的腿与卡片清单，
-    # 见 `providers/apps/magpie/api.py::MagpieProviderLeg`）⇒ 这条腿退场，码留着。
-    prefer: cli
-    models:
-      - workbuddy/default
-    cli:
-      binary: workbuddy
-      prompt_flag: "-p"
-      model_flag: "--model"
-      timeout: 180
-      model_map:
-        workbuddy/default: default
-      accounts:
-        - { id: wb-cli-1 }
-    # GUI left empty on purpose in safe profile (opt-in via config.example).
-    gui: {}
-
-  # 2026-11-10：Marvis 的腿**默认关着，也没有卡**（用户 11-10：「Marvis 没有 CLI。
-  # 你都没有跑通。你怎么就上屏了呢？」）——「没跑通的东西不上屏」。等它真有 CLI、
-  # 我们真跑通了，再连卡一起开。
   marvis_cli:
     enabled: false
     binary: openmarvis
@@ -176,16 +120,7 @@ providers:
     accounts:
       - { id: marvis-default }
 
-  # --- explicitly OFF in safe profile ------------------------------------
-  antigravity:
-    enabled: false
   cursor:
-    enabled: false
-  workbuddy_api:
-    enabled: false
-  workbuddy_cli:
-    enabled: false
-  workbuddy_gui:
     enabled: false
   marvis_gui:
     enabled: false

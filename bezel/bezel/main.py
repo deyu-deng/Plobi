@@ -576,6 +576,15 @@ async def plobi_install(app_id: str, authorization: str = Header(None)):
     command = install.get("command")
 
     if not command:
+        # 订阅类腿的安装命令是运行时才知道的：插件 spec 由那条腿自己报出来，静态
+        # 清单里没有。仍然只信我们后端拼出来的 catalog —— 调用方还是不能自带命令。
+        row = next(
+            (r for r in authflow.auth_catalog(STATE.get("reg")) if r.get("id") == app_id),
+            None,
+        )
+        command = (row or {}).get("install_command") or None
+
+    if not command:
         return {
             "ok": False,
             "code": "NO_COMMAND",
@@ -601,10 +610,23 @@ async def plobi_install(app_id: str, authorization: str = Header(None)):
     installed = registry_mod.detect_installed(spec)
 
     reg = STATE.get("reg")
+    if reg is not None:
+        # 刚装上的插件不能还被上一轮缓存挡着。订阅类腿的「装没装」是插件在不在，
+        # 静态判据答不了这一问，所以先失效缓存，装完再问一遍 catalog。
+        for leg in list(reg.providers.values()):
+            if hasattr(leg, "_installed_plugins_cache"):
+                with contextlib.suppress(Exception):
+                    leg._installed_plugins_cache = None
+        if not installed:
+            row = next(
+                (r for r in authflow.auth_catalog(reg) if r.get("id") == app_id),
+                None,
+            )
+            installed = bool((row or {}).get("installed"))
     if installed and reg is not None:
-        prov = await reg.enable_leg(app_id)
-        if prov is not None:
-            with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):
+            prov = await reg.enable_leg(app_id)
+            if prov is not None:
                 await prov.discover_accounts()
 
     return {
