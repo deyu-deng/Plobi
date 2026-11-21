@@ -1338,7 +1338,7 @@ export interface Translations {
     noAgentSelected: string
     /** 档案入口（对话界面右上角那一枚图标）的名字。 */
     agentDossier: string
-    /** 档案旁边那一枚「待放行」图标的名字。 */
+    /** 档案旁边那一枚「收件箱」图标的名字。 */
     pendingTickets: string
     pendingTicketsEmpty: string
     pendingTicketsFailed: string

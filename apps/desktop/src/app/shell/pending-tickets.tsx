@@ -63,7 +63,7 @@ type LessonRow = {
 }
 
 async function fetchPending(): Promise<InboxItem[]> {
-  const [observed, reports, drafts, live] = await Promise.all([
+  const [observed, reports, drafts, live, decisions] = await Promise.all([
     window.plobiDesktop.api<{
       data?: { tickets?: DispatchTicket[] }, error?: string, ok: boolean
     }>({ path: '/api/tickets?status=observed&leg=trigger&limit=50' }),
@@ -76,8 +76,20 @@ async function fetchPending(): Promise<InboxItem[]> {
     }>({ path: '/api/lessons?status=proposed&limit=50' }),
     window.plobiDesktop.api<{
       data?: { lessons?: LessonRow[] }, error?: string, ok: boolean
-    }>({ path: '/api/lessons?limit=50' })
+    }>({ path: '/api/lessons?limit=50' }),
+    window.plobiDesktop.api<{
+      data?: { decisions?: Array<{ ticket_id: string, kind: string }> }, error?: string, ok: boolean
+    }>({ path: '/api/decisions?limit=500' })
   ])
+
+  // 反馈闭环（裁定 234）：人表态过的票不再列为待办。点一次就消失，不再
+  // 因为「只写账、不改票状态」而看起来像没生效（曾有人连点 13 次）。
+  // 只按人决定账过滤，不改票、不越权；读不到决定账就当空（宁可多列一次）。
+  const decided = new Set<string>(
+    decisions?.ok
+      ? (decisions.data?.decisions ?? []).map(d => d.ticket_id).filter(Boolean)
+      : []
+  )
 
   if (!observed?.ok) {
     throw new Error(observed?.error || 'load failed')
@@ -111,13 +123,11 @@ async function fetchPending(): Promise<InboxItem[]> {
     }
   }
 
-  return [
-    ...lessonItems,
-    ...escalated,
-    ...(observed.data?.tickets ?? []).map(
-      ticket => ({ kind: 'ticket' as const, ...ticket } as InboxItem)
-    )
-  ]
+  const ticketItems: InboxItem[] = [...escalated, ...(observed.data?.tickets ?? []).map(
+    ticket => ({ kind: 'ticket' as const, ...ticket } as InboxItem)
+  )].filter(item => !decided.has(item.id)) as InboxItem[]
+
+  return [...lessonItems, ...ticketItems]
 }
 
 /** 人点按钮的 lesson 动作：点击本身就是授权证据，不填 user_words（那是 Agent 那侧要的）。 */

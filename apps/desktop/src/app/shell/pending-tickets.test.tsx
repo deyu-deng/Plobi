@@ -74,6 +74,30 @@ const DRAFT = {
 const LIVE = { ...DRAFT, id: 'les_live1', status: 'approved' }
 
 describe('待放行那一族', () => {
+  it('人已表态过的票不再列为待办（点了就消失，不再连点 13 次）', async () => {
+    api.mockImplementation((req: { path?: string, method?: string }) => {
+      if (req.path?.includes('/api/decisions')) {
+        return Promise.resolve({
+          ok: true,
+          data: { decisions: [{ ticket_id: TICKET.id, kind: 'accept' }] }
+        })
+      }
+      if (req.path?.includes('/api/tickets/escalations')) {
+        return Promise.resolve({ ok: true, data: { tickets: [] } })
+      }
+      if (req.path?.includes('/api/lessons')) {
+        return Promise.resolve({ ok: true, data: { lessons: [] } })
+      }
+      return Promise.resolve({ ok: true, data: { tickets: [TICKET] } })
+    })
+    render(<PendingTicketsFace />)
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      path: expect.stringContaining('/api/decisions')
+    })))
+    await waitFor(() => expect(screen.queryByText('顺手把测试补一下')).toBeNull())
+  })
+
   it('外部事件票与需人汇报都进收件箱，数量摆在图标角标上', async () => {
     mockBothLists([{ id: 'tkt_r1', goal: '改配色', leg: 'router', state: 'blocked', status: 'active', one_line: '「改配色」卡住了：缺一张图。要我继续，还是你来定？' }])
     render(<PendingTicketsButton />)
@@ -150,7 +174,7 @@ describe('待放行那一族', () => {
     })))
 
     const ticketPosts = api.mock.calls.filter(
-      call => String(call[0]?.path ?? '').includes('/decision')
+      call => /\/tickets\/[^/]+\/decision$/.test(String(call[0]?.path ?? ''))
     )
 
     expect(ticketPosts).toHaveLength(0), '授权动作不许走票的三态端点'
@@ -178,6 +202,6 @@ describe('待放行那一族', () => {
       return Promise.resolve({ ok: false, error: 'db locked' })
     })
     render(<PendingTicketsFace />)
-    expect(await screen.findByText(/读不到待放行清单|Could not load/)).toBeTruthy()
+    expect(await screen.findByText(/读不到收件箱|读不到待放行清单|Could not load/)).toBeTruthy()
   })
 })

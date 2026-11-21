@@ -87,7 +87,7 @@ describe('对话卡右上角那一列', () => {
   it('点哪一枚 ⇒ 那一张卡换到那一面', () => {
     render(<>{entry('pending').render()}</>)
 
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
 
     expect($monitorFace.get()).toBe('pending')
     expect($monitorSlotVisible.get()).toBe(true)
@@ -96,8 +96,8 @@ describe('对话卡右上角那一列', () => {
   it('再点同一枚 ⇒ 关掉那一张卡', () => {
     render(<>{entry('pending').render()}</>)
 
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
 
     expect($monitorSlotVisible.get()).toBe(false)
   })
@@ -110,7 +110,7 @@ describe('对话卡右上角那一列', () => {
       </>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
     fireEvent.click(screen.getByRole('button', { name: /写脑|Mind|node|nod/i }))
 
     expect($monitorFace.get()).toBe('mind-pending')
@@ -125,9 +125,9 @@ describe('对话卡右上角那一列', () => {
       </>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /待放行|Pending/ }))
+    fireEvent.click(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }))
 
-    expect(screen.getByRole('button', { name: /待放行|Pending/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /收件箱|待放行|Inbox|Pending/ }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('button', { name: /档案|Dossier/ }).getAttribute('aria-pressed')).toBe('false')
   })
 
