@@ -1777,6 +1777,11 @@ async def dispatch_escalations_route(limit: int = 50):
 
     给人看的那一屏是本机主人面前，不按 Agent 的可见性过滤；但**只回结构化
     回执**，不把 Agent 之间的私聊正文搬过来。
+
+    **回的是零件，不是句子**（裁定 236）：屏上那条要分两行 —— 主行是「它说了
+    什么」（`note`），副行是「谁 · 什么状态 · 多久前」（`who`／`state`／`at_ms`），
+    状态词由前端按四语渲染。`one_line` 仍给出来，只作旧调用方与模型上下文的
+    兜底，屏上不再用它拼整句（11-21 主人：「这句话对我来说有什么意思呢？」）。
     """
     from plobi.delegation.report_gate import NEEDS_HUMAN_STATES, render_one
     from plobi.delegation.tickets import TicketLedger
@@ -1794,12 +1799,19 @@ async def dispatch_escalations_route(limit: int = 50):
             "domain": dict(ticket.refs or {}).get("domain", ""),
             "last_report": last,
         }
+        created_at = (last or {}).get("created_at")
+        try:
+            at_ms = int(float(created_at) * 1000) if created_at else 0
+        except (TypeError, ValueError):
+            at_ms = 0
         out.append({
             "id": ticket.id,
             "goal": ticket.goal,
             "leg": ticket.leg,
             "state": state,
             "note": str((last or {}).get("note") or ""),
+            "who": str((last or {}).get("reporter") or ""),
+            "at_ms": at_ms,
             "one_line": render_one(view),
             "status": ticket.status,
         })

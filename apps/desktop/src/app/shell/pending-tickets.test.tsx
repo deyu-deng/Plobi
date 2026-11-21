@@ -119,6 +119,31 @@ describe('待放行那一族', () => {
     expect(row.closest('[title]')).toBeNull()
   })
 
+  it('需人汇报票是主副两行：主行＝它说了什么，副行＝哪件事·谁·状态·多久前（裁定 236）', async () => {
+    mockBothLists([{
+      at_ms: Date.now() - 60_000,
+      goal: '先回我一句现状',
+      id: 'tkt_r2',
+      leg: 'router',
+      note: '装机版还是 v0.3.2',
+      one_line: '「先回我一句现状」等你验收：装机版还是 v0.3.2。要我做下一步吗？',
+      state: 'ready',
+      status: 'active',
+      who: 'nsep'
+    }])
+    render(<PendingTicketsFace />)
+
+    // 主行是回执正文（它真正那句话），不是派活原话，也不是后端拼好的整句。
+    expect(await screen.findByText('装机版还是 v0.3.2')).toBeTruthy()
+    expect(screen.queryByText(/等你验收：装机版/)).toBeNull()
+
+    // 副行四件：哪件事 · 谁 · 状态词 · 多久前。
+    const sub = screen.getByText(/nsep/)
+    expect(sub.textContent).toContain('先回我一句现状')
+    expect(sub.textContent).toMatch(/等你验收|ready for review/)
+    expect(sub.textContent).toMatch(/分钟|minute/)
+  })
+
   it('接纳 / 拒绝各走一条三态 POST，之后重读清单', async () => {
     mockBothLists()
     render(<PendingTicketsFace />)

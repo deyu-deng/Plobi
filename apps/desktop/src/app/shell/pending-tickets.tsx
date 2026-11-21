@@ -9,6 +9,7 @@ import {
   MessageSquareText, Pencil, Send, Server, X
 } from '@/lib/icons'
 import type { IconComponent } from '@/lib/icons'
+import { relativeTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import {
   $pendingInbox,
@@ -62,13 +63,54 @@ type LessonRow = {
   evidence: string
 }
 
+type ConsoleCopy = ReturnType<typeof useI18n>['t']['console']
+
+/**
+ * 需人六态在屏上的说法（裁定 236）。
+ *
+ * 后端只回码（`ready` / `blocked` …），字由四语来给 —— 11-21 之前是后端拼一句
+ * 中文整句发过来，屏上就那一种语言，且句子里的「做完了」是 Agent 那侧的说法。
+ */
+function stateWord(copy: ConsoleCopy, state: string): string {
+  switch (state) {
+    case 'waiting': {
+      return copy.inboxStateWaiting
+    }
+
+    case 'ready': {
+      return copy.inboxStateReady
+    }
+
+    case 'blocked': {
+      return copy.inboxStateBlocked
+    }
+
+    case 'failed': {
+      return copy.inboxStateFailed
+    }
+
+    case 'dropped': {
+      return copy.inboxStateDropped
+    }
+
+    default: {
+      return ''
+    }
+  }
+}
+
 async function fetchPending(): Promise<InboxItem[]> {
   const [observed, reports, drafts, live, decisions] = await Promise.all([
     window.plobiDesktop.api<{
       data?: { tickets?: DispatchTicket[] }, error?: string, ok: boolean
     }>({ path: '/api/tickets?status=observed&leg=trigger&limit=50' }),
     window.plobiDesktop.api<{
-      data?: { tickets?: Array<{ id: string, goal: string, leg: string, state: string, one_line: string, status: string }> },
+      data?: {
+        tickets?: Array<{
+          id: string, goal: string, leg: string, state: string, one_line: string,
+          status: string, note?: string, who?: string, at_ms?: number
+        }>
+      },
       error?: string, ok: boolean
     }>({ path: '/api/tickets/escalations?limit=50' }),
     window.plobiDesktop.api<{
@@ -99,7 +141,9 @@ async function fetchPending(): Promise<InboxItem[]> {
     ? (reports.data?.tickets ?? []).map(row => ({
       kind: 'ticket' as const,
       id: row.id, goal: row.goal, leg: row.leg, status: row.status,
-      one_line: row.one_line, refs: {}, triggered_by: 'report'
+      one_line: row.one_line, state: row.state, note: row.note ?? '',
+      who: row.who ?? '', at_ms: row.at_ms ?? 0,
+      refs: {}, triggered_by: 'report'
     }) as unknown as InboxItem)
     : []
 
@@ -228,7 +272,25 @@ function PendingRow({
   }
 
   const Source = sourceIcon(ticket)
-  const summary = ticket.one_line || ticket.refs?.prompt_excerpt || ticket.goal
+  /**
+   * 主副两行（裁定 236：主人 11-21「这句话对我来说有什么意思呢？」）。
+   *
+   * **主行＝它说了什么**：需人回执票用 `note`（它真正那句话），外部事件票没有回执，
+   * 退回事件原文前 120 字。
+   * **副行＝谁 · 什么状态 · 多久前**：状态词在四语里说（后端只给码），时间走
+   * `relativeTime`（Intl，天然多语）。
+   * **不再把「派活原话」当标题引用**——那是发给 Agent 的命令，不是这件事的名字。
+   */
+  const headline = ticket.note || ticket.one_line || ticket.refs?.prompt_excerpt || ticket.goal
+  const who = stateWord(t.console, ticket.state || '')
+  const when = ticket.at_ms
+    ? relativeTime(ticket.at_ms)
+    : (ticket.created_at ? relativeTime(ticket.created_at * 1000) : '')
+  /* 副行 = 哪件事 · 谁 · 什么状态 · 多久前：主行只说「它说了什么」，没有这行就认不出是哪摊。 */
+  const matter = String(ticket.goal || '').replace('/', ' · ').slice(0, 24)
+  const sub = [matter, ticket.who, who, when].filter(Boolean).join(' · ')
+  /* 悬浮看全文：派活原话（哪件事）＋ 回执正文（它说的整段），不再只给一半。 */
+  const full = [ticket.goal, ticket.note || ticket.refs?.prompt].filter(Boolean).join('\n\n')
 
   const submitComment = () => {
     const text = commentText.trim()
@@ -285,8 +347,11 @@ function PendingRow({
         }
         icon={<Source aria-hidden />}
         label={
-          <LongTip label={ticket.refs?.prompt || ticket.goal}>
-            <span>{summary}</span>
+          <LongTip label={full}>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="block min-w-0 truncate">{headline}</span>
+              <span className="block min-w-0 truncate text-[11px] leading-3 text-(--ui-text-quaternary)">{sub}</span>
+            </span>
           </LongTip>
         }
       />

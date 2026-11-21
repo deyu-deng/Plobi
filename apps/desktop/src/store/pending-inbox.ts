@@ -15,7 +15,19 @@ import type { DispatchTicket } from '@/app/chat/sidebar/ticket-badge'
 
 /** 收件箱里的一件：票（派活/汇报）或授权 lesson（草稿/已生效）。 */
 export type PendingInboxItem =
-  | (DispatchTicket & { kind: 'ticket'; one_line?: string })
+  | (DispatchTicket & {
+    kind: 'ticket'
+    /** 旧口径的整句（后端拼好的一句话）：屏上只用它兜底，见裁定 236。 */
+    one_line?: string
+    /** 需人六态的码（`ready` / `blocked` …）；外部事件票没有这一格。 */
+    state?: string
+    /** 回报的那一位（`ticket_reports.reporter`）。 */
+    who?: string
+    /** 回执时刻（毫秒）；0／缺省表示没有时间可印。 */
+    at_ms?: number
+    /** 回执正文（它真正说了什么）——主行优先用它。 */
+    note?: string
+  })
   | {
     kind: 'lesson'
     id: string

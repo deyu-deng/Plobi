@@ -1888,6 +1888,11 @@ export interface Translations {
     inboxLessonApprove: string
     inboxLessonReject: string
     inboxLessonRevoke: string
+    inboxStateWaiting: string
+    inboxStateReady: string
+    inboxStateBlocked: string
+    inboxStateFailed: string
+    inboxStateDropped: string
     ticketIgnore: string
     ticketRevoke: string
     ticketScope: string

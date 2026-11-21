@@ -920,7 +920,7 @@ def _escalation_payload(views: list[dict]) -> dict:
                 "ticket_id": str(view.get("ticket_id") or ""),
                 "state": state,
                 "category": "",
-                "one_line": f"「{goal}」有情况，判据读不出来，先按要人处理。要我继续，还是你来定？",
+                "one_line": f"「{goal}」有情况（判据读不出来，先按要人处理）。要我接着做吗？",
             })
     return {
         "escalations": found,

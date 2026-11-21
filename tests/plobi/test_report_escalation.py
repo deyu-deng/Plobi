@@ -144,6 +144,40 @@ def test_one_line_is_short_has_one_question_and_no_ticket_id(gate):
     assert "改配色" in line
 
 
+def test_ready_no_longer_asks_to_continue(gate):
+    """裁定 236：都「等你验收」了，还问「要我继续」就是自相矛盾。"""
+    line = gate.render_one(_view(state="ready"))
+    assert "等你验收" in line
+    assert "继续" not in line
+    assert line.count("？") == 1
+
+
+def test_escalations_returns_the_parts_the_two_lines_need(ledger):
+    """裁定 236：屏上主副两行要的零件（谁／状态／时刻／正文），后端一次给全。
+
+    11-21 之前只回一句拼好的中文整句 —— 屏上那行就成了「引号里放命令」的怪话，
+    主人原话「这句话对我来说有什么意思呢？」。
+    """
+    import asyncio
+
+    from plobi.console.router import dispatch_escalations_route
+
+    ticket_id = _ticket(ledger, goal="先回我一句现状").id
+    assert ledger.report_state(ticket_id, "ready", note="装机版还是 v0.3.2", reporter="nsep")
+
+    payload = asyncio.run(dispatch_escalations_route(limit=10))
+    rows = payload["data"]["tickets"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["state"] == "ready"
+    assert row["who"] == "nsep", "谁在说"
+    assert row["note"] == "装机版还是 v0.3.2", "它真正那句话（主行）"
+    assert row["at_ms"] > 0, "多久前（副行）"
+    assert row["goal"] == "先回我一句现状", "哪件事（副行）"
+    # 整句仍给出来，只喂模型与旧调用方；屏上不用它
+    assert "等你验收" in row["one_line"]
+
+
 def test_never_auto_ignores_an_approved_lesson(gate, _isolate):
     """裁定 226：外部事件票与日记/画像那一族，有点头的 lesson 也不许自决。"""
     from plobi.delegation.lesson_ledger import LessonLedger

@@ -55,10 +55,21 @@ LEDGER_FILENAME = "report-trust.json"
 
 _STATE_WORD = {
     "waiting": "在等你",
-    "ready": "做完了",
+    # 「做完了」是**它那侧**的说法，对人是「这东西到你手上了，等你验收」（裁定 236）。
+    "ready": "等你验收",
     "blocked": "卡住了",
     "failed": "没做成",
     "dropped": "停下了",
+}
+
+#: 每个状态配**一个**具体问题（``REPORTING_RULES`` 第 2 条：一次只问一个）。
+#: 旧版不分状态一律「要我继续，还是你来定？」⇒ `ready` 那句自相矛盾（裁定 236）。
+_ASK = {
+    "waiting": "你要不要给它一句话？",
+    "ready": "要我做下一步吗？",
+    "blocked": "要我换个法子，还是你来定？",
+    "failed": "要我重试吗？",
+    "dropped": "要我接着做吗？",
 }
 
 
@@ -158,21 +169,39 @@ def can_propose(category: str, *, ledger: Optional[TrustLedger] = None) -> bool:
     return book.entry(category, TRUST_SOURCE).streak >= AUTO_THRESHOLD
 
 
+def _one_sentence(text: Any, limit: int) -> str:
+    """取第一句（到 。！？：或换行为止），再按字数封顶。
+
+    为什么要「按句」而不是「按字数硬截」：11-21 屏上那条 `做完了：v0.3.2 · 8e7ff6f0 …`
+    就是从回执中间切出来的半句话，主人原话「这句话对我来说有什么意思呢？」。
+    """
+    flat = " ".join(str(text or "").split())
+    for mark in ("。", "！", "？", "："):
+        idx = flat.find(mark)
+        if 0 <= idx < limit:
+            return flat[:idx]
+    return flat[:limit]
+
+
 def render_one(view: dict[str, Any]) -> str:
     """按 ``REPORTING_RULES`` 出一句人话：只讲结论＋要人做的那一个动作。
 
     不列工具、不报内部编号（票号只在 ``escalations`` 的结构字段里给程序用），
     一次只问一个问题，纯进度由 ``should_escalate`` 挡在门外。
+
+    **屏上不再用这一句**（裁定 236：主副两行、状态词交给四语）。它只喂模型上下文
+    与旧调用方，所以也照裁定 236 的读法写：谁 ＋ 哪件事 ＋ 什么状态 ＋ 它的原话，
+    问句按状态各配一个（`ready` 不再问「要我继续」——都做完了还继续什么）。
     """
     last = view.get("last_report") or {}
     state = str(last.get("state") or "").strip().lower()
     word = _STATE_WORD.get(state, "有情况")
-    goal = " ".join(str(view.get("goal") or "那件事").split())[:28]
-    note = " ".join(str(last.get("note") or "").split())[:40]
-    text = f"「{goal}」{word}"
-    if note:
-        text = f"{text}：{note}"
-    return f"{text}。要我继续，还是你来定？"[:MAX_ONE_LINE]
+    who = " ".join(str(last.get("reporter") or "").split())[:24]
+    goal = _one_sentence(view.get("goal") or "那件事", 20).rstrip("：:，,")
+    note = _one_sentence(last.get("note"), 44)
+    head = f"{who}「{goal}」{word}" if who else f"「{goal}」{word}"
+    text = f"{head}：{note}" if note else head
+    return f"{text}。{_ASK.get(state, '要我接着做吗？')}"[:MAX_ONE_LINE]
 
 
 def due_escalations(
