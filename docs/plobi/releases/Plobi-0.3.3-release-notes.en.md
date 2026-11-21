@@ -14,6 +14,7 @@ Installers are attached below.
 - **Read long text in full** — the hover card on long passages is no longer truncated; it scrolls and can be selected.
 - **Edit memory entry by entry** — memory can now be changed for specific entries only, leaving the other bytes untouched.
 - **Document preview remembers where you were** — close a document and open it again and the view returns to the same place. Word, spreadsheets, slides and PDF each keep their own position per file, and the position still holds after the window is resized (previously every document started again at page one).
+- **Selections work in Office and PDF too** — open a Word file, spreadsheet, slide or PDF in the workspace and select a passage: the same row of buttons appears right there. PDF and Office each compute their own offsets inside their own rendering process and land in the same place in the main window (previously selected text in these files could not be handed over).
 
 ### Improved
 
@@ -26,6 +27,8 @@ Installers are attached below.
 - **Identity for WeChat and DingTalk** — who said it, real names, whether it was sent by the account owner, group chat and sender labels, non-text messages and real file bytes are now carried through.
 - **One write point, one trigger point** — collection has a single entry for storage and a single entry for triggering, so a new leg no longer has to guess which existing one to copy.
 - **A hard gate on publishing** — one source of truth for the version number, both language versions of the notes, and all three platforms' assets; nothing ships if one is missing. A separate reviewer covers what the release page says and who it is written for.
+- **The permission tier follows the agent** — each agent remembers the tier it was last on; only the tier you pick yourself is written to memory, while the tier the gateway reports back is display-only (previously every agent came back to the default and the tiers looked identical).
+- **Auto-approve actually asks less** — with auto-approve chosen, the plugin privilege escalation gate goes through the same decision path.
 
 ### Fixed
 
