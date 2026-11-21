@@ -20,7 +20,7 @@ dev = [
     "mypy>=1.11",                    # static type checker
     "pytest>=8.2",                   # test runner
     "pytest-asyncio>=0.23",          # async test support
-    "types-PyYAML>=6.0",             # type stubs for deps
+    "types-PyYAML>=6.0.12.20261113",             # type stubs for deps
     "types-requests>=2.32",
 ]
 
