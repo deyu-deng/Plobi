@@ -263,6 +263,15 @@ function pdfTextNodeAt(nodes: PdfTextNode[], offset: number) {
 
 const PDF_SCALE = 1.2
 
+interface PdfRenderJob {
+  canvas: HTMLCanvasElement
+  page: pdfjsLib.PDFPageProxy
+  textLayer: HTMLDivElement
+  // 页顶在滚动容器内容坐标系里的位置，骨架铺完量一次即可（页高由 PDF 尺寸定死，不随窗口变）。
+  top: number
+  viewport: ReturnType<pdfjsLib.PDFPageProxy['getViewport']>
+}
+
 function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
   const { change } = useFileRevision(path)
   const { bytes, error, loading } = useFileBytes(path, change)
@@ -333,6 +342,10 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
           return
         }
 
+        // 第一段只问尺寸不画内容：页高一开始就定得下来，把每页的空白骨架一次铺满，
+        // 滚动条总高度、跳页锚点、阅读位置坐标立刻作数，不必等任何一页画完。
+        const sheets: PdfRenderJob[] = []
+
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
           if (cancelled) {
             break
@@ -363,8 +376,54 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
           )
           host.append(wrapper)
           pageRefs.current.set(pageNumber, wrapper)
+          sheets.push({ canvas, page, textLayer, top: 0, viewport })
+        }
 
-          await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+        if (cancelled) {
+          return
+        }
+
+        // 一次布局把每页的纵向位置量下来，后面的可视优先排序全靠这张表，避免每页再摸 DOM。
+        const hostRect = host.getBoundingClientRect()
+        const scrollTop = host.scrollTop
+
+        for (const sheet of sheets) {
+          const rect = sheet.textLayer.parentElement!.getBoundingClientRect()
+          sheet.top = rect.top - hostRect.top + scrollTop
+        }
+
+        // 骨架齐了就撤加载态：用户先看到页面轮廓，后可滚动可跳页，余下的绘制在背后继续。
+        setRendering(false)
+
+        // 可视优先队列：不再按 1→N 顺序死磕，每次取离当前视口中线最近的那一页，
+        // 打开即看到正在看的那一页，滚动时后续绘制也自然跟着视线走。
+        const pending = sheets.slice()
+
+        while (pending.length > 0) {
+          if (cancelled) {
+            break
+          }
+
+          const centerY = host.scrollTop + host.clientHeight / 2
+          let pickIndex = 0
+          let pickDistance = Number.POSITIVE_INFINITY
+
+          for (let index = 0; index < pending.length; index += 1) {
+            const middle = pending[index].top + pending[index].viewport.height / 2
+            const distance = Math.abs(middle - centerY)
+
+            if (distance < pickDistance) {
+              pickDistance = distance
+              pickIndex = index
+            }
+          }
+
+          const sheet = pending.splice(pickIndex, 1)[0]
+
+          await sheet.page.render({
+            canvasContext: sheet.canvas.getContext('2d')!,
+            viewport: sheet.viewport
+          }).promise
 
           if (cancelled) {
             break
@@ -372,14 +431,14 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
 
           try {
             const layer = new pdfjsLib.TextLayer({
-              container: textLayer,
-              textContentSource: page.streamTextContent(),
-              viewport
+              container: sheet.textLayer,
+              textContentSource: sheet.page.streamTextContent(),
+              viewport: sheet.viewport
             })
             await layer.render()
 
             if (!cancelled) {
-              textLayersRef.current.push(textLayer)
+              textLayersRef.current.push(sheet.textLayer)
             }
           } catch {
             // Scanned pages have no text layer; the canvas still previews.
