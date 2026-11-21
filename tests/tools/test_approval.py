@@ -2447,3 +2447,104 @@ class TestSessionApprovalMode:
         with mock_patch.object(approval_module.logger, "warning"):
             assert set_session_approval_mode(self.key, "auto") == "manual"
         assert get_session_approval_mode(self.key) == "manual"
+
+
+class TestSmartApprovalCoversToolEscalations:
+    """「自动审批」这一档必须也管**插件提权**那条闸（用户 11-21 报障）。
+
+    用户原话：「不管跳到那个状态都好像没有区别」——他后来选的是「自动审批」与
+    「每次询问」**问得一样多**（`off` 那一档是好的）。
+
+    根因：smart 判定原来只接在**终端命令**那条闸上（`check_all_command_guards`
+    的 Phase 2.5），而插件提权那条路（写工作区外的文件、访问网络、插件自带的
+    `approve` 升级）走 `_run_approval_gate` ⇒ 那一路**永远问用户** ⇒ 桌面日常
+    多半走这一路 ⇒ 两档问得一样多。
+
+    这一族钉的是：smart 档下问用户**之前**先判一次风险——判安全就放行（并按会话
+    记住这一条）、判危险就拦、判不了才问。
+    """
+
+    KEY = "test-session-smart-tool-gate"
+
+    def setup_method(self):
+        from tools.approval import (
+            clear_session,
+            set_current_session_key,
+            set_session_approval_mode,
+        )
+
+        clear_session(self.KEY)
+        set_session_approval_mode(self.KEY, "smart")
+        self.token = set_current_session_key(self.KEY)
+
+    def teardown_method(self):
+        from tools.approval import clear_session, reset_current_session_key
+
+        clear_session(self.KEY)
+        reset_current_session_key(self.token)
+
+    def _gate(self, **overrides):
+        from tools.approval import _run_approval_gate
+
+        kwargs = {
+            "pattern_key": "plugin:write-outside-workspace",
+            "description": "writes a file outside the workspace",
+            "display_target": "D:\\outside\\notes.txt",
+            "cron_deny_message": "denied by cron policy",
+            "autoapprove_log_prefix": "tool approval",
+        }
+        kwargs.update(overrides)
+
+        with mock_patch.object(approval_module, "env_var_enabled", return_value=False):
+            return _run_approval_gate(**kwargs)
+
+    def test_smart_auto_approves_without_asking_the_user(self):
+        with mock_patch.object(approval_module, "_is_interactive_cli", return_value=True), \
+             mock_patch.object(approval_module, "_smart_approve", return_value="approve"), \
+             mock_patch.object(approval_module, "prompt_dangerous_approval") as prompt:
+            result = self._gate()
+
+        assert result["approved"] is True
+        assert result.get("smart_approved") is True
+        prompt.assert_not_called()
+
+    def test_smart_asks_the_aux_model_about_the_action(self):
+        with mock_patch.object(approval_module, "_is_interactive_cli", return_value=True), \
+             mock_patch.object(approval_module, "_smart_approve", return_value="approve") as smart:
+            self._gate()
+
+        smart.assert_called_once()
+        assert smart.call_args.kwargs.get("kind") == "action"
+
+    def test_smart_denies_a_genuinely_dangerous_action(self):
+        with mock_patch.object(approval_module, "_is_interactive_cli", return_value=True), \
+             mock_patch.object(approval_module, "_smart_approve", return_value="deny"), \
+             mock_patch.object(approval_module, "prompt_dangerous_approval") as prompt:
+            result = self._gate()
+
+        assert result["approved"] is False
+        assert result.get("smart_denied") is True
+        prompt.assert_not_called()
+
+    def test_smart_falls_back_to_asking_when_the_verdict_is_unclear(self):
+        with mock_patch.object(approval_module, "_is_interactive_cli", return_value=True), \
+             mock_patch.object(approval_module, "_smart_approve", return_value="escalate"), \
+             mock_patch.object(approval_module, "prompt_dangerous_approval", return_value="deny") as prompt:
+            result = self._gate()
+
+        prompt.assert_called_once()
+        assert result["approved"] is False
+
+    def test_manual_still_asks_the_user(self):
+        """manual 那一档不许被 smart 分支截走。"""
+        from tools.approval import set_session_approval_mode
+
+        set_session_approval_mode(self.KEY, "manual")
+
+        with mock_patch.object(approval_module, "_is_interactive_cli", return_value=True), \
+             mock_patch.object(approval_module, "_smart_approve", return_value="approve") as smart, \
+             mock_patch.object(approval_module, "prompt_dangerous_approval", return_value="deny") as prompt:
+            self._gate()
+
+        smart.assert_not_called()
+        prompt.assert_called_once()

@@ -264,11 +264,33 @@ export const $yoloActive = atom(false)
 // 存的这份只当"新对话草稿的默认档"，否则每次重启都弹回「每次询问」。
 export type ApprovalMode = 'manual' | 'smart' | 'off'
 const APPROVAL_MODE_KEY = 'plobi.desktop.composer.approval-mode'
+const APPROVAL_MODE_AGENT_KEY = 'plobi.desktop.composer.approval-mode.agent'
 
 function storedApprovalMode(): ApprovalMode {
   const raw = storedString(APPROVAL_MODE_KEY)
 
   return raw === 'smart' || raw === 'off' || raw === 'manual' ? raw : 'manual'
+}
+
+function approvalModeAgentKey(agentKey: string): string {
+  return `${APPROVAL_MODE_AGENT_KEY}.${encodeURIComponent(agentKey)}`
+}
+
+/**
+ * 某个 Agent 记住的那一档（用户 11-21：「每个 Agent 各记各的」）。
+ */
+export function rememberedApprovalMode(agentKey: string): ApprovalMode | undefined {
+  const raw = storedString(approvalModeAgentKey(agentKey))
+
+  return raw === 'smart' || raw === 'off' || raw === 'manual' ? raw : undefined
+}
+
+/**
+ * 这个 Agent 该落在哪一档：它自己记住的那一档 ⇒ 没有就落在「上次那档」
+ * （用户 11-21：「新建的 Agent 先用你上次那档」）。
+ */
+export function approvalModeForAgent(agentKey: string): ApprovalMode {
+  return rememberedApprovalMode(agentKey) ?? storedApprovalMode()
 }
 
 export const $approvalMode = atom<ApprovalMode>(storedApprovalMode())
@@ -315,10 +337,26 @@ export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($await
 
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
 
+/**
+ * 屏上那枚药丸显示什么（**镜像**）。
+ *
+ * **只有用户的动作写记忆**：网关报回来的「生效档」只是**显示**，它不许写记忆——
+ * 网关报的是「会话自己的档 ‖ 全局兜底」，而全局兜底是「每次询问」⇒ 拿它写记忆
+ * 就把你上次选的那一档擦了（用户 11-21：「每次打开一个 Agent，都不会记住我上次的选择」）。
+ */
 export const setApprovalMode = (next: Updater<ApprovalMode>) => {
   updateAtom($approvalMode, next)
-  // 存的是"上一次生效的档"，只给新对话草稿当默认；网关报回来的那一份永远优先。
-  persistString(APPROVAL_MODE_KEY, $approvalMode.get())
+}
+
+/**
+ * 用户**自己**选了那一档 ⇒ 记下来（这个 Agent 记一份 ＋ 「上次那档」记一份）。
+ */
+export const rememberApprovalMode = (agentKey: string, next: Updater<ApprovalMode>) => {
+  updateAtom($approvalMode, next)
+  const mode = $approvalMode.get()
+
+  persistString(approvalModeAgentKey(agentKey), mode)
+  persistString(APPROVAL_MODE_KEY, mode)
 }
 
 export const setApprovalModePending = (next: Updater<boolean>) => updateAtom($approvalModePending, next)
