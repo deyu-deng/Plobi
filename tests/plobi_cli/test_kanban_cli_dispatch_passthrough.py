@@ -25,7 +25,7 @@ def isolated_kanban_home(monkeypatch):
     monkeypatch.setenv("PLOBI_HOME", test_home)
     for mod in list(sys.modules.keys()):
         if mod.startswith("plobi_cli") or mod.startswith("plobi_state") or mod == "plobi_constants":
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
     yield test_home
 
 

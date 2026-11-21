@@ -50,7 +50,7 @@ def scenario(name):
             os.environ["HOME"] = home
             for m in list(sys.modules.keys()):
                 if m.startswith(("plobi_cli", "plugins", "gateway")):
-                    del sys.modules[m]
+                    sys.modules.pop(m, None)
             sys.path.insert(0, str(WT))
             from plobi_cli import kanban_db as kb  # noqa: F401
             print(f"\n═══ {name} ═══")

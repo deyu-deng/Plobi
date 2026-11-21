@@ -28,7 +28,7 @@ def _clear_provider_caches():
             mod.startswith("plugins.model_providers")
             or mod.startswith("_plobi_user_provider")
         ):
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
 
 
 def test_bundled_plugins_discovered():

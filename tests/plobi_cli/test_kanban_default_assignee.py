@@ -22,7 +22,7 @@ def isolated_kanban_home(monkeypatch):
     # Force-reimport so the fresh PLOBI_HOME is picked up.
     for mod in list(sys.modules.keys()):
         if mod.startswith("plobi_cli") or mod.startswith("plobi_state") or mod == "plobi_constants":
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
     from plobi_cli import kanban_db
     yield kanban_db, test_home
     # Cleanup is best-effort; tempfile dir survives but pytest isolation

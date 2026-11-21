@@ -66,7 +66,7 @@ def _fresh_modules():
         if mod.startswith(("agent.auxiliary_client", "agent.image_routing",
                            "tools.vision_tools", "tools.browser_tool",
                            "plobi_cli.config")):
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
 
 
 # ---------------------------------------------------------------------------

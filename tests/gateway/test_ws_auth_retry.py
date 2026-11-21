@@ -147,7 +147,7 @@ class TestMatrixSyncAuthRetry:
             try:
                 await adapter._sync_loop()
             finally:
-                del sys.modules["nio"]
+                sys.modules.pop("nio", None)
 
         asyncio.run(run())
         assert sync_count == 1
@@ -182,7 +182,7 @@ class TestMatrixSyncAuthRetry:
             try:
                 await adapter._sync_loop()
             finally:
-                del sys.modules["nio"]
+                sys.modules.pop("nio", None)
 
         asyncio.run(run())
         assert call_count == 1
@@ -221,7 +221,7 @@ class TestMatrixSyncAuthRetry:
                 with patch("asyncio.sleep", new_callable=AsyncMock):
                     await adapter._sync_loop()
             finally:
-                del sys.modules["nio"]
+                sys.modules.pop("nio", None)
 
         asyncio.run(run())
         assert call_count >= 2

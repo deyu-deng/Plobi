@@ -351,7 +351,7 @@ def reset_module_state():
             if k.startswith(("tools.", "model_tools", "toolsets",
                              "plobi_cli", "agent.", "run_agent"))]
     for k in keys:
-        del sys.modules[k]
+        sys.modules.pop(k, None)
 
 
 def run_one_scenario(scenario: Dict[str, Any], enabled: bool, out_dir: Path) -> Dict[str, Any]:

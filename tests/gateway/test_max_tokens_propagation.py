@@ -44,7 +44,7 @@ def isolated_home(tmp_path, monkeypatch):
     def fresh_gateway():
         for mod in list(sys.modules.keys()):
             if mod.startswith(("plobi_cli", "gateway")):
-                del sys.modules[mod]
+                sys.modules.pop(mod, None)
         return importlib.import_module("gateway.run")
 
     try:
@@ -54,7 +54,7 @@ def isolated_home(tmp_path, monkeypatch):
         # the next test file sees the module objects it was loaded with.
         for k in list(sys.modules.keys()):
             if k.startswith(("plobi_cli", "gateway")):
-                del sys.modules[k]
+                sys.modules.pop(k, None)
         sys.modules.update(_saved)
 
 
@@ -161,7 +161,7 @@ def test_lift_helper_accepts_alias_and_rejects_garbage(isolated_home):
     write_cfg("model:\n  provider: openrouter\n")
     for mod in list(sys.modules.keys()):
         if mod.startswith("plobi_cli"):
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
     rp = importlib.import_module("plobi_cli.runtime_provider")
 
     out: dict = {}

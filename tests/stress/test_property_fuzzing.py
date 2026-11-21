@@ -241,7 +241,7 @@ def main():
         # Fresh module state per sequence to avoid cached init paths.
         for m in list(sys.modules.keys()):
             if m.startswith("plobi_cli"):
-                del sys.modules[m]
+                sys.modules.pop(m, None)
         from plobi_cli import kanban_db as kb
 
         kb.init_db()

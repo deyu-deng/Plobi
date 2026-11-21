@@ -23,7 +23,7 @@ def isolated_kanban_home_with_profiles(monkeypatch):
     monkeypatch.setenv("PLOBI_HOME", test_home)
     for mod in list(sys.modules.keys()):
         if mod.startswith("plobi_cli") or mod.startswith("plobi_state") or mod == "plobi_constants":
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
     from plobi_cli import kanban_db
     yield kanban_db
 

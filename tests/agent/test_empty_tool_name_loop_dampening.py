@@ -122,7 +122,7 @@ def agent_env():
     # module was imported earlier in the same worker.
     for mod in list(sys.modules):
         if mod == "run_agent" or mod.startswith("agent.") or mod.startswith("tools.") or mod.startswith("plobi_"):
-            del sys.modules[mod]
+            sys.modules.pop(mod, None)
     from run_agent import AIAgent
 
     agent = AIAgent(

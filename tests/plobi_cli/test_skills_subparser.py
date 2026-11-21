@@ -21,7 +21,7 @@ def test_no_duplicate_skills_subparser():
 
     # Remove cached module if present
     if 'plobi_cli.main' in sys.modules:
-        del sys.modules['plobi_cli.main']
+        sys.modules.pop('plobi_cli.main', None)
 
     try:
         import plobi_cli.main  # noqa: F401
