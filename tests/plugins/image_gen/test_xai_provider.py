@@ -152,6 +152,7 @@ class TestGenerate:
                 result = provider.generate(prompt="A cat playing piano")
 
         assert result["success"] is True
+        # save_b64_image is mocked to return a plain string; it is passed through as-is.
         assert result["image"] == "/tmp/test.png"
         assert result["provider"] == "xai"
         assert result["model"] == "grok-imagine-image"
@@ -183,8 +184,8 @@ class TestGenerate:
             result = provider.generate(prompt="A cat playing piano")
 
         assert result["success"] is True
-        assert result["image"].startswith("/"), (
-            f"URL response must be cached to an absolute path, got {result['image']!r}"
+        assert "://" not in result["image"], (
+            f"URL response must be cached to a local path, got {result['image']!r}"
         )
         assert "imgen.x.ai" not in result["image"], (
             "ephemeral xAI URL must not leak into result.image — caller will 404"

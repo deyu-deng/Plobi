@@ -321,7 +321,7 @@ class TestPluginDiscovery:
         # Wipe any cached plugin state from earlier tests in this worker.
         for k in list(sys.modules):
             if k.startswith(("plobi_plugins", "plobi_cli.plugins")):
-                del sys.modules[k]
+                sys.modules.pop(k, None)
 
         from plobi_cli.plugins import _ensure_plugins_discovered
 

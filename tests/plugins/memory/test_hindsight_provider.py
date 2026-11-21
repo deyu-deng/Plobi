@@ -7,6 +7,7 @@ turn counting, tags), and schema completeness.
 
 import json
 import os
+import pathlib
 import re
 import stat
 import sys
@@ -33,6 +34,24 @@ from plugins.memory.hindsight import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _home_follows_home_env(monkeypatch):
+    """Keep ``Path.home()`` in step with the monkeypatched ``$HOME`` on Windows.
+
+    POSIX ``os.path.expanduser`` honours ``$HOME``, but Windows resolves the home
+    directory from ``USERPROFILE`` and ignores ``$HOME``. Tests here isolate
+    filesystem state by patching ``$HOME`` alone, so on Windows setup would
+    otherwise write into the real user profile (``~/.hindsight/profiles/*.env``).
+    """
+    if os.name != "nt":
+        return
+
+    def _fake_home(cls=None):
+        return pathlib.Path(os.environ.get("HOME") or os.environ["USERPROFILE"])
+
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(_fake_home))
 
 
 @pytest.fixture(autouse=True)

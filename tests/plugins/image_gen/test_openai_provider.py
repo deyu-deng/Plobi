@@ -310,7 +310,8 @@ class TestGenerate:
             result = provider.generate("a cat")
 
         assert result["success"] is True
-        assert result["image"].startswith("/")
+        # Cached locally means a filesystem path, never the remote URL (separator varies by OS).
+        assert "://" not in result["image"]
         assert "example.com" not in result["image"]
         mock_save_url.assert_called_once()
 

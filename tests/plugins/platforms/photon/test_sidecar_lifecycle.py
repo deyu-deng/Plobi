@@ -9,6 +9,7 @@ spawning Node or binding ports.
 from __future__ import annotations
 
 import subprocess
+import sys
 from typing import Any, Dict, List, Tuple
 
 import pytest
@@ -74,6 +75,10 @@ async def test_reap_noop_when_port_free(monkeypatch: pytest.MonkeyPatch) -> None
     assert kills == []
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="orphan reaping is POSIX-only; _reap_stale_sidecar returns early on Windows",
+)
 @pytest.mark.asyncio
 async def test_reap_kills_verified_orphan(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = _make_adapter(monkeypatch)
@@ -89,6 +94,10 @@ async def test_reap_kills_verified_orphan(monkeypatch: pytest.MonkeyPatch) -> No
     assert kills == [(4242, photon_adapter.signal.SIGTERM)]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="orphan reaping is POSIX-only; _reap_stale_sidecar returns early on Windows",
+)
 @pytest.mark.asyncio
 async def test_reap_escalates_to_sigkill(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = _make_adapter(monkeypatch)
@@ -106,6 +115,10 @@ async def test_reap_escalates_to_sigkill(monkeypatch: pytest.MonkeyPatch) -> Non
     assert (4242, photon_adapter.signal.SIGKILL) in kills
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="orphan reaping is POSIX-only; _reap_stale_sidecar returns early on Windows",
+)
 @pytest.mark.asyncio
 async def test_reap_raises_for_foreign_listener(
     monkeypatch: pytest.MonkeyPatch,

@@ -50,6 +50,10 @@ class TestConfigureWindowsStdio:
         yield
         sys.modules.pop("plobi_cli.stdio", None)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX-only assertion: on Windows is_windows() is genuinely True, so the no-op path cannot be observed without mocking (which the sibling test does)",
+    )
     def test_no_op_on_posix(self):
         from plobi_cli import stdio
 
@@ -285,6 +289,10 @@ class TestSigkillFallback:
         result = getattr(fake_signal, "SIGKILL", fake_signal.SIGTERM)
         assert result == 15
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="signal.SIGKILL only exists on POSIX; the Windows branch is covered by the mocked sibling test",
+    )
     def test_getattr_fallback_prefers_sigkill_when_present(self):
         """On POSIX the fallback is a no-op: real SIGKILL wins."""
         result = getattr(signal, "SIGKILL", signal.SIGTERM)
@@ -656,7 +664,7 @@ class TestTuiGatewayEntrySignalGuards:
         # Drop any cached import so the module re-initialises
         for mod in list(sys.modules):
             if mod.startswith("tui_gateway"):
-                del sys.modules[mod]
+                sys.modules.pop(mod, None)
         import tui_gateway.entry  # noqa: F401  # must not raise
 
 
