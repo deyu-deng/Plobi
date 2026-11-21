@@ -1134,3 +1134,27 @@ def _mind_writer_never_commits(monkeypatch):
         "_commit",
         lambda self, root, paths: (True, "commit disabled in tests"),
     )
+
+
+# ---------------------------------------------------------------------------
+# 残留目录守卫（裁定 80 测试卫生条款的兜底）
+#
+# 2026-11-21 17:22 一次全量跑完，仓根多出 MagicMock/mock/<id>/config.yaml：
+# 某个用例把 MagicMock() 当家目录了。Mock 实现了 __fspath__，于是
+# Path(MagicMock()) 不报错、静默变成相对路径 MagicMock/mock/<id>，写盘就落在
+# pytest 的 CWD 里。plobi_constants.config_path_for_home / shared_root_for 已加
+# 类型守卫拦住主链，这里再兜一层：任何用例只要在 CWD 下造出 MagicMock/，整轮判红。
+# ---------------------------------------------------------------------------
+
+
+def pytest_sessionfinish(session, exitstatus):
+    from pathlib import Path as _Path
+
+    stray = _Path.cwd() / "MagicMock"
+    if stray.exists():
+        session.exitstatus = 1
+        print(
+            f"\n[残留目录守卫] CWD 下出现 {stray} —— 有用例把 Mock 当家目录写盘了。"
+            " Mock 实现了 __fspath__，Path(MagicMock()) 会静默变成相对路径"
+            " MagicMock/mock/<id>；请在该用例里改用 tmp_path 或真 PLOBI_HOME。"
+        )

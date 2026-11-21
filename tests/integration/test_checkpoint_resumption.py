@@ -24,6 +24,7 @@ pytestmark = pytest.mark.integration
 import json
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Dict, Any
@@ -34,10 +35,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 def create_test_dataset(num_prompts: int = 20) -> Path:
-    """Create a small test dataset for checkpoint testing."""
-    test_data_dir = Path("tests/test_data")
+    """Create a small test dataset for checkpoint testing.
+
+    落在系统临时目录，不落仓：早先这里是 ``Path("tests/test_data")``，是个相对
+    CWD 的路径，从仓根跑测试就会在工作树里留一个未跟踪的 ``tests/test_data/``。
+    和 2026-11-21 仓根那份 ``MagicMock/`` 是同一类病灶——测试产物落在 CWD。
+    """
+    test_data_dir = Path(tempfile.mkdtemp(prefix="plobi-checkpoint-dataset-"))
     test_data_dir.mkdir(parents=True, exist_ok=True)
-    
+
     dataset_file = test_data_dir / "checkpoint_test_dataset.jsonl"
     
     with open(dataset_file, 'w', encoding='utf-8') as f:

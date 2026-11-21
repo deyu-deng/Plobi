@@ -43,6 +43,9 @@ temp_vision_images/
 examples/
 tests/quick_test_dataset.jsonl
 tests/sample_dataset.jsonl
+# 测试产物落点兜底：checkpoint 测试曾在 CWD 下写 tests/test_data/（见 2026-11-21
+# 「测试把产物写进工作树」清理）；生成侧已改到系统临时目录，这里只防旧残留被误提交。
+/tests/test_data/
 run_datagen_kimik2-thinking.sh
 run_datagen_megascience_glm4-6.sh
 run_datagen_sonnet.sh

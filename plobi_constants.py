@@ -316,8 +316,43 @@ def get_shared_plobi_root() -> Path:
     return shared_root_for(get_plobi_home())
 
 
+def _reject_mock_home(home: object, where: str) -> None:
+    """把「Mock 被当成家目录」当场打回去（裁定 80 的测试卫生条款）。
+
+    病理：``unittest.mock.MagicMock`` 实现了 ``__fspath__``，所以
+    ``Path(MagicMock())`` 不报错，静默变成相对路径 ``MagicMock/mock/<id>``。
+    测试里 ``patch("plobi_constants.get_plobi_home", return_value=MagicMock())``
+    又接着写盘，就会在 pytest 的 CWD（仓根）下造出 ``MagicMock/mock/<id>/config.yaml``
+    这种垃圾目录——2026-11-21 17:22 仓根那份 ``MagicMock/`` 就是这么来的。
+
+    这里只拦 Mock（含 ``MagicMock`` / ``AsyncMock`` / ``NonCallableMock`` 子类，
+    它们同属 ``unittest.mock`` 模块），正常的 ``str`` / ``Path`` / ``os.PathLike``
+    一律放行，不改变生产调用方的行为。
+
+    Args:
+        home: 待检查的家目录值。
+        where: 调用点函数名，用于报错定位。
+
+    Raises:
+        TypeError: 传入的是 Mock 对象时。
+    """
+    module = getattr(type(home), "__module__", "") or ""
+    is_mock = module == "unittest.mock" or module.startswith("unittest.mock.")
+    if not is_mock:
+        # 自定义 Mock 子类会把 __module__ 改成自己的模块，补一道鸭子类型判据：
+        # 同时带 mock_calls 与 __fspath__、又不是 os.PathLike 的正经实现。
+        is_mock = hasattr(home, "mock_calls") and hasattr(home, "__fspath__")
+    if is_mock:
+        raise TypeError(
+            f"{where}() 收到 Mock 当家目录（{type(home).__name__}）；"
+            "Mock 实现了 __fspath__，会被静默当成相对路径 "
+            "'MagicMock/mock/<id>' 并在 CWD 下写盘。测试请改用 tmp_path。"
+        )
+
+
 def shared_root_for(home: Path | str) -> Path:
     """``home`` 那个家所属的**共享根**：``<root>/profiles/<name>`` → ``<root>``，其余 = 自己。"""
+    _reject_mock_home(home, "shared_root_for")
     h = Path(home)
     if h.parent.name == "profiles":
         return h.parent.parent
@@ -333,6 +368,7 @@ def config_path_for_home(home: Path | str) -> Path:
     手里已经有一个具体目录的调用方（``gateway`` 那一带的测试夹具、桌面按 profile
     解析路径的几处）走这一格——同一条规则只写一处，不给人留第二个答案。
     """
+    _reject_mock_home(home, "config_path_for_home")
     h = Path(home)
     path = h / "config.yaml"
     root = shared_root_for(h)
