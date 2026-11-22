@@ -13,9 +13,17 @@ import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
+import { displayModelName, modelDisplayParts, qualifyModelId } from '@/lib/model-status-label'
 import { writeCache } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { getGlobalModelOptions } from '@/plobi'
@@ -349,12 +357,16 @@ function RoleModelPicker({
     }
   }
 
-  const label = model ? model.split('/').pop() || model : c.expertModelFollow
-  const title = model ? `${c.expertModelHint} · ${model}` : c.expertModelHint
+  // `model` is stored qualified (`workbuddy/auto`), so the pill must not print the raw
+  // id — `displayModelName` strips the provider prefix and prettifies the rest, which
+  // is what the composer already does. Before this, `workbuddy/auto` leaked onto the
+  // pill as-is and read as a machine path.
+  const label = model ? displayModelName(model) : c.expertModelFollow
+  const title = model ? `${c.expertModelHint} · ${displayModelName(model)}` : c.expertModelHint
 
   if (rows.length === 0) {
     return (
-      <Button className={PILL} disabled type="button" variant="ghost">
+      <Button className={PILL} disabled title={c.expertModelEmpty} type="button" variant="ghost">
         <span className="truncate">{label}</span>
       </Button>
     )
@@ -373,18 +385,39 @@ function RoleModelPicker({
           <span className="flex-1 truncate">{c.expertModelFollow}</span>
           {model ? null : <Codicon name="check" size="0.75rem" />}
         </DropdownMenuItem>
-        {rows.map(provider =>
-          (provider.models ?? []).map(name => {
-            const qualified = `${provider.slug}/${name}`
+        {rows.map(provider => {
+          // `provider.name` is the human row title, `slug` is what the backend speaks.
+          // The composer already groups this way; the 名手 picker used to flatten every
+          // provider into one undifferentiated list of bare names.
+          const selected = model ? qualifyModelId(provider.slug, model) : ''
 
-            return (
-              <DropdownMenuItem className="text-xs" key={qualified} onSelect={() => void pick(qualified)}>
-                <span className="flex-1 truncate">{name}</span>
-                {model === qualified ? <Codicon name="check" size="0.75rem" /> : null}
-              </DropdownMenuItem>
-            )
-          })
-        )}
+          return (
+            <DropdownMenuGroup key={provider.ui_key || provider.slug || provider.name}>
+              <DropdownMenuLabel className="text-[0.6875rem] font-normal text-(--ui-text-tertiary)">
+                {provider.name || provider.slug}
+              </DropdownMenuLabel>
+              {(provider.models ?? []).map(raw => {
+                // Catalogs differ: hub software ships `workbuddy/auto`, plain providers
+                // ship `auto`. `qualifyModelId` is idempotent, so the item value is
+                // always exactly one prefix deep and `pick` writes a resolvable id
+                // (this line used to concatenate blindly and persisted
+                // `workbuddy/workbuddy/auto` into the role config).
+                const qualified = qualifyModelId(provider.slug, raw)
+                const parts = modelDisplayParts(qualified)
+
+                return (
+                  <DropdownMenuItem className="text-xs" key={qualified} onSelect={() => void pick(qualified)}>
+                    <span className="flex-1 truncate">{parts.name}</span>
+                    {parts.tag ? (
+                      <span className="shrink-0 text-[0.625rem] text-(--ui-text-tertiary)">{parts.tag}</span>
+                    ) : null}
+                    {selected === qualified ? <Codicon name="check" size="0.75rem" /> : null}
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuGroup>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

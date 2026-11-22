@@ -12,7 +12,9 @@ import {
   groupOutsourced,
   jumpTargetFor,
   outsourcedItems,
-  roundFacts
+  roundFacts,
+  roundOutcome,
+  waitingKind
 } from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarDrawerRow } from './chrome'
@@ -205,6 +207,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                                 sendable: item.session.sendable,
                                 sessionId: item.session.id,
                                 title: item.session.title || item.session.id.slice(0, 8),
+                                titleWritable: item.session.title_writable,
                                 updatedAt: item.session.updated_at,
                                 vendor: item.session.vendor
                               })}
@@ -278,6 +281,7 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
                           sendable: session.sendable,
                           sessionId: session.id,
                           title: session.title || session.id.slice(0, 8),
+                          titleWritable: session.title_writable,
                           updatedAt: session.updated_at,
                           vendor: session.vendor
                         })}
@@ -317,6 +321,16 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
     money,
   ].filter(Boolean)
 
+  // 三态（11-22）：`waiting` 不是失败，红字在别处一律等于"出事了"，
+  // 而这一格下一步只是回它一句。所以等人拍板单独一支、单独配色。
+  const outcome = roundOutcome(round)
+  const waiting = waitingKind(round)
+  const waitingText = waiting === 'permission'
+    ? c.offloadsWaitingPermission
+    : waiting === 'turn'
+      ? c.offloadsWaitingTurn
+      : c.offloadsWaitingAnswer
+
   const reason = plan.reason ? c.offloadsNoArtifact : ''
   const handle = externalHandleOf(round)
   const action = plan.kind === 'resume' ? c.offloadsJump : plan.kind === 'reveal' ? c.offloadsReveal : reason
@@ -325,7 +339,7 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
   const title = [
     round.cwd,
     action,
-    failureText(round) || round.failure,
+    outcome === 'waiting' ? waitingText : failureText(round) || round.failure,
     facts.costStatus
   ]
     .filter(Boolean)
@@ -367,9 +381,11 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
           {round.reply}
         </span>
       )}
-      {failureText(round) && (
+      {outcome === 'waiting' ? (
+        <span className="truncate text-[0.68rem] text-(--ui-yellow)">{waitingText}</span>
+      ) : failureText(round) ? (
         <span className="truncate text-[0.68rem] text-(--ui-red)">{failureText(round)}</span>
-      )}
+      ) : null}
       {handle && (
         <span className="truncate text-[0.65rem] text-(--ui-text-quaternary)" title={round.external_session_source || undefined}>
           {c.offloadsSessionId}

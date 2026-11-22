@@ -297,8 +297,22 @@ def _rule_line(kind: str, value: str, target: str) -> str:
         return f"DOMAIN,{value},{target}"
     if kind == "suffix":
         return f"DOMAIN-SUFFIX,{value},{target}"
+    # ``Rule.value`` is already the bare name: ``rules._matcher_value`` strips the
+    # kind's prefix when it compiles the entry, so nothing here slices a string.
     if kind == "geosite":
-        return f"GEOSITE,{value[len('geosite:') :]},{target}"
+        return f"GEOSITE,{value},{target}"
+    if kind == "geoip":
+        return f"GEOIP,{value},{target}"
+    if kind == "keyword":
+        return f"DOMAIN-KEYWORD,{value},{target}"
+    if kind == "regex":
+        return f"DOMAIN-REGEX,{value},{target}"
+    if kind == "process":
+        return f"PROCESS-NAME,{value},{target}"
+    if kind == "src-cidr":
+        # No ``no-resolve`` here: this matcher reads the connection's *source*
+        # address, which the OS already resolved before the packet existed.
+        return f"SRC-IP-CIDR,{value},{target}"
     if kind == "cidr":
         version = "IP-CIDR6" if ":" in value else "IP-CIDR"
         try:

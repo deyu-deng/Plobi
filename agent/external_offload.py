@@ -33,7 +33,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 #: 厂商事实的**真源表**在 ``agent/vendor_registry.py``（加一家只改那一处）。
 #: 这里只做一件事：把那边的公共形状**原样 re-export** 出去——
@@ -155,6 +155,59 @@ ACP_SESSION_TIMEOUT = 60.0
 FORBIDDEN_CWD_NAMES = ("Plobi-Desktop", "Plobi-Harmony-App", "Code", "Docs")
 
 
+#: 一趟外包的**结局三态**。借的是两处的共识：T3 Code 的退出码（0 干完／2 等输入／1 崩）
+#: 与 A2A 的 Task 中断态（``INPUT_REQUIRED``／``AUTH_REQUIRED`` 都算"先停一下"）。
+#: 分开的理由很实在：**下一步动作不同** —— ``waiting`` 等着人回一句（或放宽权限），
+#: ``failed`` 才是重试或换人。把前者读成失败，那台客席就永远在"办砸了"的名册上。
+OUTCOME_DONE = "done"
+OUTCOME_WAITING = "waiting"
+OUTCOME_FAILED = "failed"
+
+#: 命令行腿卡在等输入时，它自己打在屏幕上的问句形状（小写比对）。
+#: 只收那些**一定会出现**的：y/n、yes/no、按回车、要不要继续。
+WAITING_PROMPTS = (
+    "(y/n)", "[y/n]", "[y/n/", "(yes/no)", "yes/no]", "[y/n/always]",
+    "proceed?", "continue?", "press enter", "press any key",
+    "would you like", "do you want to", "approve?", "confirm?",
+)
+
+
+def waiting_hint(text: str) -> str:
+    """它停在等人的那句话（空串 = 不是等人）。
+
+    只看**最后两行非空输出**：中途打过一句「Do you want to…」随后自己答完跑通的，
+    那一句早就被后面的日志顶下去了，不算等人。窗口开大（比如末尾四百字）就会
+    把"问过"读成"停在问句上"，一条真失败的路因此被当成等授权挂在那儿没人管。
+    """
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    tail = " ".join(lines[-2:]).lower()[-300:]
+    for cue in WAITING_PROMPTS:
+        if cue in tail:
+            return cue
+    return ""
+
+
+def resolve_outcome(*, ok: bool, error: str = "", text: str = "",
+                    permission_requests: int = 0, refused: bool = False) -> tuple[str, str]:
+    """读成 ``(结局, 在等什么)``。
+
+    - 做成了 ⇒ ``done``：哪怕它中途问过几次授权，都不改变"活儿干完了"这件事；
+    - 它自己拒了 ⇒ ``failed``：那是它的态度，不是它在等人，回一句也不会变；
+    - 没做成，但卡在等人拍板 ⇒ ``waiting``：问过授权（``permission``），
+      或最后停在一句问句上（``answer``）；
+    - 其余 ⇒ ``failed``。
+    """
+    if ok:
+        return OUTCOME_DONE, ""
+    if refused:
+        return OUTCOME_FAILED, ""
+    if permission_requests > 0:
+        return OUTCOME_WAITING, "permission"
+    if waiting_hint(text) or waiting_hint(error):
+        return OUTCOME_WAITING, "answer"
+    return OUTCOME_FAILED, ""
+
+
 @dataclasses.dataclass(frozen=True)
 class OffloadResult:
     """The four required answers, plus the evidence behind them."""
@@ -203,6 +256,24 @@ class OffloadResult:
     #: 这一趟**它问了几次授权**（= 我们答了几次；11-16）。
     #: 不回它，它就卡在那儿等 ⇒ 这一格是「那条分支有没有被走到」的读数。
     permission_requests: int = 0
+    #: **这条会话归哪些人**（`WP-EXTERNAL-THREAD-OWNER` §2.3）：派活时点名的名单；
+    #: 空＝按「派它的那个 agent」算。一条会话可以多归属（用户 11-22）。
+    #: 它只进台账与返回，**不改通道怎么跑**。
+    owners: list[str] = dataclasses.field(default_factory=list)
+    #: 老读侧认得的那一格：名单用「、」串起来的一个字符串（真正的形状看 ``owners``）。
+    owner: str = ""
+    #: Principal 给这条会话起的名字（**软约束**，不是受控词表）。
+    title: str = ""
+    #: Principal 给的语义标签（自由文本，不是闭集）。
+    purpose: str = ""
+    #: **这一趟真的是续上原来那条会话了吗**：只有 ACP 腿的 ``session/load`` 成功才为真。
+    #: 带了 ``session_id`` 却是 False ⇒ 这一趟是新开的，必须照实说（不许静默新建）。
+    resumed: bool = False
+    #: **这一趟的结局三态**（``done``／``waiting``／``failed``，见 :func:`resolve_outcome`）。
+    #: 老读侧只认 ``ok``：空串 = 没算过，按 ``ok`` 兜底，不许把空串读成成功。
+    outcome: str = ""
+    #: 等的是哪一类拍板（``permission``／``answer``）；空串 = 它没在等人。
+    waiting_on: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -1496,8 +1567,13 @@ def run_acp_task(
     elif not (text or produced):
         error = "它没回话也没落盘。"
     ok = not error
+    outcome, waiting_on = resolve_outcome(
+        ok=ok, error=error, text=text, permission_requests=questions,
+        refused=stop_reason == "refusal",
+    )
 
     return OffloadResult(
+        outcome=outcome, waiting_on=waiting_on,
         agent=agent, cwd=str(prep.workdir), permission_flags=flags, sandboxed=sandboxed,
         exit_code=None, duration_s=round(duration, 2), argv=argv,
         usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,
@@ -1507,7 +1583,28 @@ def run_acp_task(
         external_session_source=("acp.load" if resumed else "acp.sessionId") if active_session else "",
         job=prep.job, reply=reply, reply_status=reply_status, reply_to=reply_to,
         account=prep.account, leg="acp", permission_requests=questions,
+        # **照实**：只有 `session/load` 走通才算续上（`WP-EXTERNAL-THREAD-OWNER` §2.3）。
+        resumed=bool(resumed),
     )
+
+
+def _owners_param(owners: Sequence[str] | str) -> list[str]:
+    """把 ``owners`` 参数读成名单：数组原样（去空、去重、保序）；字符串当**一个人**；空 ⇒ ``[]``。
+
+    与 ``plobi.delegation.external_sessions.normalize_owners`` 同一个口径；这里不 import
+    那一层——agent 层不该为了一格字符串把 delegation 的账本实现拖进来。
+    """
+    if isinstance(owners, str):
+        owners = [owners]
+    if not isinstance(owners, (list, tuple, set)):
+        return []
+    out: list[str] = []
+    for item in owners:
+        name = str(item or "").strip()
+        if name and name not in out:
+            out.append(name)
+
+    return out
 
 
 def run_task(
@@ -1520,6 +1617,9 @@ def run_task(
     reply_to: str = "",
     leg: str = "",
     session_id: str = "",
+    owners: Sequence[str] | str = (),
+    title: str = "",
+    purpose: str = "",
 ) -> OffloadResult:
     """Hand one real task to a local external agent and report the four answers.
 
@@ -1528,9 +1628,45 @@ def run_task(
 
     ``session_id`` 是**要续接的那条会话号**（ACP 腿专用；空＝新建会话）。
 
+    ``owners`` / ``title`` / ``purpose`` 是**归属与命名**（`WP-EXTERNAL-THREAD-OWNER`）：
+    它们只贴在结果上（台账与返回用），**一个字都不改这条活怎么跑**。
+    ``owners`` 是**名单**（一条会话可以多归属），传单个名字的字符串也认（内部包成数组）。
+    所以这一层只是把老实现（:func:`_run_task_legs`）的结果补几格——
+    所有早退的分支（腿不存在、目录不许、命令缺失…）也一并带上，不必逐个 return 去改。
+
     ``leg`` 点名走哪一条腿（``cli``／``acp``）；**不点名 ⇒ 走默认腿**
     （真源表声明的「实测跑通过的那条」⇒ 行为一个字不变）。
     """
+    #: 要续接就必须走 **ACP 腿**（只有它会 ``session/load``）；默认腿是 CLI 的那家，
+    #: 不点名腿时**替它翻到 acp**——否则用户拍了「接着说」我们却悄悄开新的，
+    #: 那正是任务书里点名不许的事（§2.3 照实规矩）。这一格只影响「给了会话号」这一趟。
+    wanted_leg = (leg or "").strip().lower()
+    if str(session_id or "").strip() and not wanted_leg and "acp" in dispatch_legs(agent):
+        wanted_leg = "acp"
+    result = _run_task_legs(
+        task, cwd=cwd, agent=agent, permission_mode=permission_mode,
+        timeout=timeout, reply_to=reply_to, leg=wanted_leg, session_id=session_id,
+    )
+
+    wanted_owners = _owners_param(owners)
+
+    return dataclasses.replace(result, owners=wanted_owners,
+                               owner="、".join(wanted_owners),
+                               title=title, purpose=purpose)
+
+
+def _run_task_legs(
+    task: str,
+    *,
+    cwd: Optional[Path | str] = None,
+    agent: str = AGENT_CODEBUDDY,
+    permission_mode: Optional[str] = None,
+    timeout: float = 900.0,
+    reply_to: str = "",
+    leg: str = "",
+    session_id: str = "",
+) -> OffloadResult:
+    """老实现（11-16 那套两腿分派），**一个字不改**——归属那三格由 :func:`run_task` 补。"""
     # **腿可以有多条**（11-16 19:0x 主人拍板：「并存，Agent 自己判断什么好用就用哪个」）。
     # 点名 ⇒ 走那一条；不点名 ⇒ 走**默认腿**（真源表声明的「实测跑通过的那条」
     # ⇒ **不点名时每一家的行为一个字不变**）。**真源表那一行说了算**（不按厂商分叉）。
@@ -1546,10 +1682,15 @@ def run_task(
                    f"（它有：{'、'.join(legs) or '（一条都没有）'}）"),
         )
     if wanted == "acp":
-        return run_acp_task(
-            task, cwd=cwd, agent=agent, permission_mode=permission_mode,
-            timeout=timeout, reply_to=reply_to, session_id=session_id,
-        )
+        # 续接同一条会话时先占闸：与"往这条会话说一句"排同一个队，谁先到谁先发。
+        # 没给会话号（新建一条）不存在撞车，闸自己放行。
+        from agent import session_gate
+
+        with session_gate.session_turn(agent, str(session_id or "")):
+            return run_acp_task(
+                task, cwd=cwd, agent=agent, permission_mode=permission_mode,
+                timeout=timeout, reply_to=reply_to, session_id=session_id,
+            )
 
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     allowed, why = cwd_is_allowed(workdir)
@@ -1680,7 +1821,10 @@ def run_task(
         error = hint
         ok = False
 
+    outcome, waiting_on = resolve_outcome(ok=ok, error=error, text=text)
+
     return OffloadResult(
+        outcome=outcome, waiting_on=waiting_on,
         agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
         exit_code=completed.returncode, duration_s=round(duration, 2), argv=argv,
         usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,

@@ -4435,6 +4435,37 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
 
+    # ── Name translation (agent / session / project naming) ──
+    # Both are optional: naming falls back to Google → MyMemory → the helper
+    # model when they are empty. category="tool" puts them under
+    # Tools & Keys → Tools and (via _build_provider_env_blocklist) keeps them
+    # out of terminal / execute_code subprocesses, which never translate names.
+    "PLOBI_TRANSLATE_DEEPL_KEY": {
+        "description": (
+            "DeepL API key used when translating your Chinese agent / session / "
+            "project names into English — the most idiomatic machine engine, tried "
+            "before Google. Free tier: 500,000 characters per month. Both free "
+            "(`...:fx`) and Pro keys are accepted. Leave empty to skip DeepL."
+        ),
+        "prompt": "DeepL API key (free tier: 500k characters/month)",
+        "url": "https://www.deepl.com/pro-api",
+        "password": True,
+        "category": "tool",
+    },
+    "PLOBI_TRANSLATE_LOCAL_URL": {
+        "description": (
+            "Self-hosted translation endpoint used as the local engine when the "
+            "online ones fail, e.g. http://127.0.0.1:5000/translate for a local "
+            "LibreTranslate. Called as a GET with the text in `q` (both the "
+            "`sl`/`tl` and the `source`/`target` parameter spellings are sent). "
+            "Plain text and JSON responses are both understood. Leave empty to skip."
+        ),
+        "prompt": "Local translate URL (e.g. http://127.0.0.1:5000/translate)",
+        "url": None,
+        "password": False,
+        "category": "tool",
+    },
+
     # ── Messaging platforms ──
     "TELEGRAM_BOT_TOKEN": {
         "description": "Telegram bot token from @BotFather",

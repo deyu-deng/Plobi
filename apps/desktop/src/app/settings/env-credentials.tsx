@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
-import { deleteEnvVar, getEnvVars, revealEnvVar, setEnvVar } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { type IconComponent } from '@/lib/icons'
+import { deleteEnvVar, getEnvVars, probeEnvVar, revealEnvVar, setEnvVar } from '@/plobi'
 import { notify, notifyError } from '@/store/notifications'
-import type { EnvVarInfo } from '@/types/plobi'
+import type { EnvProbeResult, EnvVarInfo } from '@/types/plobi'
 
 import { asText, includesQuery, redactedValue, withoutKey } from './helpers'
 import { Pill } from './primitives'
@@ -50,6 +50,10 @@ export function useEnvCredentials(options: { enabled?: boolean } = {}): UseEnvCr
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<string | null>(null)
+  // Which row is mid-probe, and the verdicts already returned. Kept next to
+  // saving/edits because a verdict is only meaningful for a specific value.
+  const [testing, setTesting] = useState<string | null>(null)
+  const [probeResults, setProbeResults] = useState<Record<string, EnvProbeResult>>({})
 
   // Best-effort cleanup of a retired localStorage flag (global "Show
   // advanced" toggle) — everything in these views is configuration-level.
@@ -96,6 +100,36 @@ export function useEnvCredentials(options: { enabled?: boolean } = {}): UseEnvCr
   function clearLocalState(key: string) {
     setEdits(c => withoutKey(c, key))
     setRevealed(c => withoutKey(c, key))
+    // A verdict belongs to the value that produced it. Once that value is saved
+    // or removed, an old "Connected" badge would be vouching for a credential
+    // nobody tested — drop it and let the user press Test again.
+    setProbeResults(c => withoutKey(c, key))
+  }
+
+  // Live check for a credential that is not a model provider (translation
+  // engines). A typed-but-unsaved draft is what gets tested when there is one,
+  // so a wrong key is caught before it ever lands in .env.
+  async function handleProbe(key: string) {
+    const draft = (edits[key] ?? '').trim()
+    setTesting(key)
+
+    try {
+      const result = await probeEnvVar(key, draft || undefined)
+      // supported:false means the backend has no probe for this key; saying
+      // nothing beats inventing a verdict.
+      setProbeResults(c => (result.supported === false ? withoutKey(c, key) : { ...c, [key]: result }))
+    } catch (err) {
+      setProbeResults(c => ({
+        ...c,
+        [key]: {
+          message: err instanceof Error ? err.message : '',
+          ok: false,
+          reachable: false
+        }
+      }))
+    } finally {
+      setTesting(null)
+    }
   }
 
   async function handleSave(key: string) {
@@ -188,10 +222,13 @@ export function useEnvCredentials(options: { enabled?: boolean } = {}): UseEnvCr
       edits,
       revealed,
       saving,
+      testing,
+      probeResults,
       setEdits,
       onSave: handleSave,
       onClear: handleClear,
-      onReveal: handleReveal
+      onReveal: handleReveal,
+      onProbe: handleProbe
     }
   }
 }

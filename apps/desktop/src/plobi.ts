@@ -20,6 +20,7 @@ import type {
   CuratorStatusResponse,
   DebugShareResponse,
   ElevenLabsVoicesResponse,
+  EnvProbeResponse,
   EnvVarInfo,
   LogsResponse,
   McpCatalogResponse,
@@ -114,6 +115,7 @@ export type {
   DebugShareResponse,
   ElevenLabsVoice,
   ElevenLabsVoicesResponse,
+  EnvProbeResponse,
   EnvVarInfo,
   GatewayReadyPayload,
   LogsResponse,
@@ -605,17 +607,25 @@ export function setEnvVar(key: string, value: string): Promise<{ ok: boolean }> 
   })
 }
 
-export function validateProviderCredential(
+/**
+ * Live check for a provider credential. A named alias of probeEnvVar so the
+ * provider wizard keeps its own vocabulary while both settings surfaces share
+ * one request shape — and the model list a custom endpoint serves survives.
+ */
+export async function validateProviderCredential(
   key: string,
   value: string,
   apiKey?: string
 ): Promise<{ ok: boolean; reachable: boolean; message: string; models?: string[] }> {
-  return window.plobiDesktop.api<{ ok: boolean; reachable: boolean; message: string; models?: string[] }>({
-    ...profileScoped(),
-    path: '/api/providers/validate',
-    method: 'POST',
-    body: { key, value, api_key: apiKey ?? '' }
-  })
+  // One implementation: the shared probe, then the wizard's own reading of it.
+  const probe = await probeEnvVar(key, value, apiKey)
+
+  return {
+    ok: probe.ok,
+    reachable: probe.reachable,
+    message: probe.message,
+    models: probe.models ?? undefined
+  }
 }
 
 export function deleteEnvVar(key: string): Promise<{ ok: boolean }> {
@@ -633,6 +643,28 @@ export function revealEnvVar(key: string): Promise<{ key: string; value: string 
     path: '/api/env/reveal',
     method: 'POST',
     body: { key }
+  })
+}
+
+/**
+ * Live check for any credential the settings pages can test — a provider key, a
+ * translation engine, a self-hosted endpoint. The backend keeps one probe
+ * registry (plobi_cli/env_probe.py), so this is the only call both pages make.
+ *
+ * Pass `value` to test a draft the user has typed but not saved; omit it to test
+ * whatever is already stored. `apiKey` is only read by probes that need a second
+ * secret to reach the service (a custom OPENAI_BASE_URL behind auth).
+ *
+ * Three states: `ok` accepted, `ok:false` + `reachable:true` means the
+ * credential is wrong, `reachable:false` means the probe could not run at all
+ * (offline, nothing listening).
+ */
+export function probeEnvVar(key: string, value?: string, apiKey?: string): Promise<EnvProbeResponse> {
+  return window.plobiDesktop.api<EnvProbeResponse>({
+    ...profileScoped(),
+    path: '/api/env/probe',
+    method: 'POST',
+    body: { key, value: value ?? '', api_key: apiKey ?? '' }
   })
 }
 

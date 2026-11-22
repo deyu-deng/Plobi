@@ -1,4 +1,4 @@
-import { defineFieldCopy } from '@/app/settings/field-copy'
+﻿import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
 
@@ -615,7 +615,39 @@ export const zhHant = defineLocale({
       refreshSub: '更新',
       refreshSubHint: '按存過的訂閱連結重新拉一次：成員更新，我自己配的組保留',
       tabNodes: '節點',
+      tabRules: '規則',
       tabSwitch: '控制',
+      rulePlaceholder: 'example.com / *.example.com / geoip:cn',
+      ruleVia: '去向',
+      rulesHint: '一行一條：網域、*.子網域、1.2.3.0/24、geosite:分類、geoip:地區、keyword:詞、regex:正規表示式、process:行程名、src:來源網段。',
+      rulesEmpty: '表裡還沒有規則。',
+      ruleCatchAllBadge: '預設去向',
+      ruleCatchAllNote: '最後一條：所有沒對上的流量都走這裡，刪不掉、也挪不到前面。',
+      catchAllFix: '補上預設去向',
+      ruleMoveUp: '往上',
+      ruleMoveDown: '往下',
+      ruleProblem: (problem: string) =>
+        (
+          {
+            badPrefix: '冒號前那段前綴不認識：只有 geosite/geoip/keyword/regex/process/src 能用。',
+            empty: '這一行是空的。',
+            emptyPayload: '冒號後面沒有內容。',
+            space: '這一行裡不能有空格。',
+            wildcard: '星號只有兩種寫法：開頭的 *.（子網域），或者單獨一條 *（預設去向）。'
+          } as Record<string, string>
+        )[problem] ?? problem,
+      ruleKinds: {
+        catchAll: '預設',
+        cidr: '網段',
+        domain: '網域',
+        geoip: '地區庫',
+        geosite: '分類庫',
+        keyword: '關鍵詞',
+        process: '行程',
+        regex: '正規',
+        src: '來源',
+        suffix: '後綴'
+      },
       transportOff: '未接管',
       transportSystem: '系統代理',
       transportTun: 'TUN',
@@ -1041,9 +1073,15 @@ export const zhHant = defineLocale({
       optional: '選填',
       enterValueFirst: '請先輸入一個值。',
       couldNotSave: '無法儲存憑證。',
-        remove: '移除',
+      remove: '移除',
       getKey: '取得金鑰',
-      saving: '儲存中'
+      saving: '儲存中',
+      test: '測試',
+      testing: '測試中…',
+      testOk: '金鑰可用',
+      testRejected: '金鑰遭拒',
+      testUnreachable: '無法連線服務',
+      testSample: sample => `回應：${sample}`
     },
     envActions: {
       actionsFor: label => `${label} 的動作`,
@@ -2061,6 +2099,8 @@ export const zhHant = defineLocale({
     expertsRunning: '正在做',
     expertsEmpty: '還沒有派過專家',
     expertsIdleHint: '這一類專家還沒被派過活。指揮派工時指定這個角色，它幹完的日誌就會出現在這裡。',
+  expertsIdleTitle: '這一類專家還沒派過活',
+  expertModelEmpty: '模型清單還沒到',
     expertModelHint: '派它時用的模型',
     expertModelFollow: '跟隨首席',
     expertsLoading: '正在讀專家…',
@@ -2073,6 +2113,10 @@ export const zhHant = defineLocale({
     externalSessionsRename: '改名',
     externalSessionsSave: '儲存',
     externalSessionsCancel: '取消',
+    externalSessionsRenameSync: '改名會同步到它自己那邊',
+    externalSessionsRenameLocalOnly: '這家只改 Plobi 這邊，它自己那邊不變',
+    externalSessionsRenameFailed: '沒改成，再試一次',
+    externalSessionsTitleLocalOnly: '僅本地',
     externalSessionsArchive: '歸檔',
     externalSessionsUnarchive: '取消歸檔',
     externalSessionsDelete: '刪除',
@@ -2085,6 +2129,9 @@ export const zhHant = defineLocale({
     offloadsNoArtifact: '本次任務沒有可開啟的產物（可能未執行成功）。',
     offloadsOpenFailed: '無法開啟該路徑對應的檔案。',
     offloadsReveal: '開啟它產生的檔案',
+    offloadsWaitingPermission: '它停在等一句授權 —— 不是辦砸了，回它一句就繼續。',
+    offloadsWaitingAnswer: '它停在等一句答覆 —— 不是辦砸了，回它一句就繼續。',
+    offloadsWaitingTurn: '這條會話前面那句還沒發完 —— 排隊等著，別重發。',
     offloadsCostUnknown: '花費未知',
     offloadsJump: '在那臺軟體裡打開這條會話',
     offloadsJumpFailed: '跳不進那臺軟體：',
@@ -2094,7 +2141,8 @@ export const zhHant = defineLocale({
     newAgentDesc: '智慧代理是你團隊的一員：有自己專管的事，能長期記住你的偏好。建好就能在左邊點名找它。',
     // 2026-11-16（i18n 定名刀）：中文名只當顯示名，門牌從英文名來。
     newAgentEnglishLabel: '英文名',
-    newAgentEnglishHelp: '它會轉成 Agent 的機器鍵（小寫、連字號）；左欄顯示的還是中文名。',
+    retranslateLabel: '重新翻譯',
+    newAgentEnglishHelp: '小寫字母、數字、連字號。',
     newAgentCategoryLabel: '分類',
     newAgentCategoryHelp: {
       projects: '專案：有自己的工作資料夾，推進一件具體的事。',
@@ -2111,7 +2159,6 @@ export const zhHant = defineLocale({
     newAgentFolderRemove: '移除',
     newAgentFolderPrimary: '主',
     newAgentFolderPrimaryHint: '第一個是主資料夾：智慧代理的命令列預設落在這裡。',
-    createEventAgentHint: '事件類代理請透過日程建立（後續支援）。',
     newAgentAppearanceLabel: '圖示與顏色',
     newAgentAppearanceHint: '可不選——預設依名字自動配色。',
     newAgentIconLabel: '圖示',
@@ -2752,10 +2799,11 @@ export const zhHant = defineLocale({
     copy: '複製',
     copied: '已複製',
     done: '完成',
-    applyingBody:
-      'Plobi 更新程式會在自己的視窗中接管，並在完成後自動重新開啟 Plobi。更新期間請勿自行重新開啟 Plobi。',
+    applyingBody: '更新器接管中，完成後會自動重新開啟 Plobi。期間請勿手動開啟。',
     applyingBodyBackend: '遠端後端正在套用更新並將重新啟動。恢復後 Plobi 會自動重新連線。',
     applyingClose: '此視窗會在更新期間關閉，隨後 Plobi 會自動重新開啟。',
+    applyingStale: '後端暫未回傳進度，仍在處理中…',
+    applyingDetail: '詳情',
     errorTitle: '更新未完成',
     errorBody: '沒有資料遺失。您可以現在重試。',
     notNow: '暫不',

@@ -49,6 +49,50 @@ _PYPI_MIRROR_REFUSAL = (
 
 _PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
 _GEOSITE_RE = re.compile(r"^geosite:[A-Za-z0-9_&.-]+$")
+#: The rest of what mihomo can act on without a rule-provider file: a country /
+#: continent / ``private`` range out of ``geoip.metadb``, a substring, a regular
+#: expression, a process name, and a *source* range.  Each spelling below was
+#: run through ``mihomo -t -f`` on this box (v1.19.32, 2026-11-22) before being
+#: accepted here; ``rule-set:`` was **refused** on purpose — it validated as
+#: ``rule set [private] not found`` because a provider has to be declared
+#: alongside it, and this table has nowhere to put one.  A spelling that merely
+#: looks right is a rule that silently never matches.
+_GEOIP_RE = re.compile(r"^geoip:[A-Za-z0-9_&.-]+$")
+_KEYWORD_RE = re.compile(r"^keyword:[^\s,]{1,64}$")
+_REGEX_RE = re.compile(r"^regex:.{1,256}$")
+_PROCESS_RE = re.compile(r"^process:[A-Za-z0-9_.\-]{1,120}$")
+_SRC_RE = re.compile(r"^src:(.+)$")
+
+#: Matcher kinds only the engine can evaluate.  :func:`decide` answers for a
+#: spawned child: it has no ``GeoSite.dat`` / ``geoip.metadb`` to look anything
+#: up in, cannot know another process's name, and never sees a packet's source
+#: address.  Rules of these kinds are named by :attr:`Table.engine_only_rules`
+#: rather than guessed at — the same treatment ``geosite:`` already had.
+ENGINE_ONLY_KINDS = ("geosite", "geoip", "keyword", "regex", "process", "src-cidr")
+
+#: What to say when a prefix is recognised but its payload is not: without this
+#: the rule falls through to ``exact`` and matches a literal host — a rule that
+#: looks installed and never fires.
+_PREFIX_REQUIREMENTS = {
+    "geosite": "needs a category name, e.g. 'geosite:cn'",
+    "geoip": "needs a country/continent code or 'private', e.g. 'geoip:cn'",
+    "keyword": "needs a substring, e.g. 'keyword:doubleclick'",
+    "regex": "needs a pattern, e.g. 'regex:^ad\\..*$'",
+    "process": "needs an executable name, e.g. 'process:chrome.exe'",
+    "src": "needs a CIDR, e.g. 'src:192.168.0.0/16'",
+}
+
+#: How each prefixed kind is spelled.  Stripping is length-based so the value
+#: keeps its original case — a ``regex:`` that got lowercased would quietly stop
+#: matching ``[A-Z]`` classes.
+_KIND_PREFIX = {
+    "geosite": "geosite:",
+    "geoip": "geoip:",
+    "keyword": "keyword:",
+    "regex": "regex:",
+    "process": "process:",
+    "src-cidr": "src:",
+}
 
 #: The only address ranges a spawned child can be told about at all.
 #:
@@ -83,7 +127,10 @@ class EgressConfigError(ValueError):
 class Rule:
     match: str
     via: str
-    kind: str  # exact | suffix | cidr | all | geosite
+    #: exact | suffix | cidr | src-cidr | all | geosite | geoip | keyword |
+    #: regex | process — see :data:`ENGINE_ONLY_KINDS` for which of them the
+    #: in-process answer can evaluate at all.
+    kind: str
     value: str
 
 
@@ -222,7 +269,7 @@ class Table:
         return self.front_door
 
     def _rule_is_engine_only(self, rule: "Rule") -> bool:
-        return rule.kind == "geosite" or (
+        return rule.kind in ENGINE_ONLY_KINDS or (
             rule.via.startswith("proxy:") and rule.via[len("proxy:") :] in self.engine_names
         )
 
@@ -257,14 +304,16 @@ class Table:
                 r
                 for r in self.rules
                 if self._rule_is_engine_only(r)
-                and r.kind != "geosite"
+                and r.kind not in ENGINE_ONLY_KINDS
                 and not self.client_front_door
             )
         else:
             base = tuple(
                 r
                 for r in self.rules
-                if r.via.startswith("proxy:") and r.kind != "geosite" and r.kind != "all"
+                if r.via.startswith("proxy:")
+                and r.kind not in ENGINE_ONLY_KINDS
+                and r.kind != "all"
             )
         ranges = tuple(
             r
@@ -305,7 +354,12 @@ def _compile_rule(entry: Any, index: int) -> Rule:
     where = f"network.egress.rules[{index}]"
     if not isinstance(entry, dict):
         raise EgressConfigError(f"{where} must be a mapping, got {type(entry).__name__}")
-    match = str(entry.get("match", "")).strip().lower()
+    raw_match = str(entry.get("match", "")).strip()
+    # Lowercase decides *which kind* this is — the spellings are
+    # case-insensitive — but the value keeps its own case where that matters:
+    # a ``regex:`` lowered here would stop matching the very ``[A-Z]`` classes
+    # it was written for, and the failure is silent (no rule ever fires).
+    match = raw_match.lower()
     via_raw = str(entry.get("via", "")).strip()
     via = via_raw.lower()
     if not match:
@@ -314,7 +368,12 @@ def _compile_rule(entry: Any, index: int) -> Rule:
         raise EgressConfigError(f"{where}.via is required ('direct' or 'proxy:<name>')")
     if via == DIRECT:
         kind = _matcher_kind(match, where)
-        return Rule(match=match, via=via, kind=kind, value=_matcher_value(match, kind))
+        return Rule(
+            match=match,
+            via=via,
+            kind=kind,
+            value=_matcher_value(raw_match if kind == "regex" else match, kind),
+        )
     if via.startswith("proxy:"):
         # Only the *keyword* is case-insensitive.  An exit name is a name — the
         # engine's own groups are conventionally uppercase (``POOL``), and
@@ -324,16 +383,41 @@ def _compile_rule(entry: Any, index: int) -> Rule:
             raise EgressConfigError(f"{where}.via '{via_raw}' names no proxy")
         kind = _matcher_kind(match, where)
         return Rule(
-            match=match, via=f"proxy:{name}", kind=kind, value=_matcher_value(match, kind)
+            match=match,
+            via=f"proxy:{name}",
+            kind=kind,
+            value=_matcher_value(raw_match if kind == "regex" else match, kind),
         )
     raise EgressConfigError(
         f"{where}.via must be 'direct' or 'proxy:<name>', got '{via_raw}'"
     )
 
 
+def _check_cidr(value: str, where: str, spelling: str) -> None:
+    try:
+        ipaddress.ip_network(value, strict=True)
+    except ValueError as exc:
+        raise EgressConfigError(f"{where}.match '{spelling}' is not a CIDR: {exc}") from exc
+
+
 def _matcher_kind(match: str, where: str) -> str:
+    # The prefixed spellings come first: ``keyword:ad*`` carries a '*' that the
+    # wildcard branch below would otherwise refuse, and ``src:10.0.0.0/8``
+    # carries a '/' that the CIDR branch would otherwise read as a plain one.
     if _GEOSITE_RE.match(match):
         return "geosite"
+    if _GEOIP_RE.match(match):
+        return "geoip"
+    if _KEYWORD_RE.match(match):
+        return "keyword"
+    if _REGEX_RE.match(match):
+        return "regex"
+    if _PROCESS_RE.match(match):
+        return "process"
+    src = _SRC_RE.match(match)
+    if src:
+        _check_cidr(src.group(1).strip(), where, match)
+        return "src-cidr"
     if match == "*":
         return "all"
     if match.startswith("*.") or match.startswith("."):
@@ -342,24 +426,34 @@ def _matcher_kind(match: str, where: str) -> str:
             raise EgressConfigError(f"{where}.match '{match}' needs a domain, not a TLD")
         return "suffix"
     if "/" in match:
-        try:
-            ipaddress.ip_network(match, strict=True)
-        except ValueError as exc:
-            raise EgressConfigError(f"{where}.match '{match}' is not a CIDR: {exc}") from exc
+        _check_cidr(match, where, match)
         return "cidr"
+    head = match.split(":", 1)[0] if ":" in match else ""
+    if head in _PREFIX_REQUIREMENTS:
+        # A recognised prefix with a bad payload must not quietly become an
+        # ``exact`` host: 'keyword:' would then be a rule that matches the
+        # literal host "keyword:" and never fires.
+        raise EgressConfigError(f"{where}.match '{match}' — {_PREFIX_REQUIREMENTS[head]}")
     if "*" in match:
         raise EgressConfigError(
-            f"{where}.match '{match}' — only '*.example.com' (subdomain) and '*' "
-            f"(catch-all) are supported; interior wildcards are not"
+            f"{where}.match '{match}' — interior wildcards in a host are not supported.  "
+            f"Write a subdomain as '*.example.com', a substring as 'keyword:ad', a pattern as "
+            f"'regex:^ad\\..*$', or use geoip:/geosite:/src: for whole ranges"
         )
     if "." not in match and ":" not in match:
-        raise EgressConfigError(f"{where}.match '{match}' is not a host, suffix, CIDR or '*'")
+        raise EgressConfigError(
+            f"{where}.match '{match}' is not a host, suffix, CIDR, geoip:/geosite:/"
+            f"keyword:/regex:/process:/src: matcher, or '*'"
+        )
     return "exact"
 
 
 def _matcher_value(match: str, kind: str) -> str:
     if kind == "suffix":
         return match.lstrip("*.")
+    prefix = _KIND_PREFIX.get(kind, "")
+    if prefix and match.lower().startswith(prefix):
+        return match[len(prefix) :].strip()
     return match
 
 

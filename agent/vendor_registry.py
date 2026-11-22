@@ -395,6 +395,17 @@ class SessionSpec:
     title_fallback_column: str = ""
     #: 标题列怎么归一：``raw``（原样）／``first-line``（只留第一行）。
     title_norm: str = "raw"
+    #: **改名能不能真写回这件软件**（空 = 不能，只在 Plobi 侧生效）。三条路，与读法同源：
+    #:
+    #: * ``jsonl-record`` —— 改 jsonl 里**厂商自起名那条记录**的标题格
+    #:   （CodeBuddy 的 ``ai-title``／``aiTitle``）；它自己没起过名就无处可写，不硬塞。
+    #: * ``sidecar-json`` —— 改会话旁挂元数据的标题格（Kiro 的 ``<会话号>.json``／``title``）。
+    #: * ``sqlite-column`` —— ``UPDATE <主表> SET <标题列>`` （Marvis／agy／OpenCode／Kilo／Copilot）。
+    #:
+    #: B 档（Gemini／Cline／Cursor／Qoder 那一族）标题就是**第一句人话**，写回等于改聊天内容；
+    #: C 档（Qoder 桌面 App）索引在它自己进程里，本地写了不认 ⇒ 这两档一律留空，
+    #: 写回层如实说「这个名字只在 Plobi 里生效」，不假装写成功。
+    title_write: str = ""
     #: 第一句用户话那一跳（``title_source == "first-user"`` 时用）。
     first_user: Optional[FirstUserSpec] = None
     #: **厂商自起名的那条记录**（jsonl 那一族）：记录 ``type`` 要是它，
@@ -625,6 +636,16 @@ class VendorRow:
     #: （Marvis、Cursor 就是这一档：它们有自己的会话，但没接成外包目标）。
     offloadable: bool = True
 
+    #: 这一家**是什么**（一句人话，给名册用）。空 = 还没写，别装成有。
+    #:
+    #: 两种来源，别混：**本机实测过**的那几家写在
+    #: ``plobi/delegation/external_capabilities.py`` 的 ``VENDORS[..].blurb``
+    #: （写的是「会话长什么样 + 能拿它干什么」）；**没实测过**的写在这里，
+    #: 只照**官方公开信息**（ACP 官方注册表的 ``agent.json``、npm／PyPI 包元数据）
+    #: 说明「它是谁家的什么东西」，**不含任何本机实测结论**——
+    #: 本机能不能派活看 :attr:`offloadable`，能不能接着说话看 :attr:`resume_argv`。
+    blurb: str = ""
+
     # ── 装 ─────────────────────────────────────────────────────────────
     #: 这一家**怎么装**（新用户的第一扇门：点「+」时屏上给的就是它）。
     install: InstallSpec = dataclasses.field(default_factory=InstallSpec)
@@ -788,6 +809,9 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             title_record_type="ai-title",
             title_record_field="aiTitle",
             title_strip_wrapper="user_query",
+            # 11-22：改名真写回。厂商自己在 jsonl 里留了 ``ai-title`` 记录 ⇒ 改它的
+            # ``aiTitle`` 那一格，它在自己界面上就是拿这条起的名字。
+            title_write="jsonl-record",
             project_mode="jsonl-field",
             project_field="cwd",
             updated_mode="mtime",
@@ -849,6 +873,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             title_column="title",
             title_fallback_column="preview",
             title_norm="raw",
+            title_write="sqlite-column",
             project_mode="json-uri-list",
             project_column="workspace_uris",
             updated_mode="column-local",
@@ -890,6 +915,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             title_source="first-user",
             title_column="title",
             title_norm="raw",
+            # 11-22：它自己的会话名就在 ``conversations.title`` ⇒ 改名 UPDATE 那一格。
+            title_write="sqlite-column",
             first_user=FirstUserSpec(
                 table="messages",
                 id_column="conversation_id",
@@ -1139,6 +1166,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             title_source="first-user",
             title_column="title",
             title_norm="first-line",
+            # 11-22：它自己也有 ``session_v2.title`` 那一格（界面上显示的就是它）⇒ 写回走它。
+            title_write="sqlite-column",
             first_user=FirstUserSpec(
                 table="session_message",
                 id_column="session_id",
@@ -1174,6 +1203,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_CODEX,
+        blurb="OpenAI 的终端编码 agent（Codex），这一行是它的 ACP 适配器",
         install=InstallSpec(command="npm i -g @openai/codex", package="@openai/codex", homepage="https://github.com/openai/codex", binary="codex", verified=True),
         binary_name="codex",
         command_env=CODEX_COMMAND_ENV,
@@ -1194,6 +1224,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_CLAUDE,
+        blurb="Anthropic 的 Claude 编码 agent，这一行是它的 ACP 包装",
         install=InstallSpec(command="npm i -g @anthropic-ai/claude-code", package="@anthropic-ai/claude-code", homepage="https://github.com/anthropics/claude-code", binary="claude", verified=True),
         binary_name="claude",
         command_env=CLAUDE_COMMAND_ENV,
@@ -1335,6 +1366,9 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             root_resolver="kiro_root",
             sidecar_glob="{session_id}.json",
             sidecar_title_field="title",
+            # 11-22：它的会话名只存在这个旁挂文件里（jsonl 里那句人话是占位 ``[user]``）⇒
+            # 改名就改 ``<会话号>.json`` 的 ``title`` 那一格。
+            title_write="sidecar-json",
             sidecar_project_field="cwd",
             sidecar_updated_field="updated_at",
             # 它自己没起出名字时占位写 ``[user]``／``None`` ⇒ 不算标题，退到 jsonl 那句人话。
@@ -1357,6 +1391,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id=AGENT_QWEN,
+        blurb="阿里 Qwen 的终端编码 agent（Qwen Code）",
         install=InstallSpec(command="npm i -g @qwen-code/qwen-code", package="@qwen-code/qwen-code", homepage="https://github.com/QwenLM/qwen-code", binary="qwen", verified=True),
         binary_name="qwen",
         command_env=QWEN_COMMAND_ENV,
@@ -1423,6 +1458,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             title_source="column",
             title_column="summary",
             title_norm="first-line",
+            # 11-22：Copilot CLI 会话的标题就是 ``sessions.summary`` 那一列 ⇒ 直接改它。
+            title_write="sqlite-column",
             project_mode="column",
             project_column="cwd",
             updated_mode="column-local",
@@ -1483,6 +1520,8 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
             title_source="column",
             title_column="title",
             title_norm="first-line",
+            # 11-22：Kilo（与 OpenCode 同源）的会话名在 ``session.title`` ⇒ 写回那一列。
+            title_write="sqlite-column",
             project_mode="column",
             project_column="directory",
             updated_mode="column-epoch-ms",
@@ -1520,6 +1559,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="amp",
+        blurb="Sourcegraph 的终端编码 agent（Amp；npm 包已迁到 @ampcode/cli）",
         binary_name="amp",
         command_env="PLOBI_OFFLOAD_AMP_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AMP_EXTRA_ARGS",
@@ -1535,6 +1575,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id="iflow",
+        blurb="心流（iFlow）的终端编码 CLI：读仓库、做编码活、串工作流自动化",
         binary_name="iflow",
         command_env="PLOBI_OFFLOAD_IFLOW_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_IFLOW_EXTRA_ARGS",
@@ -1550,6 +1591,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id="aider",
+        blurb="Aider：终端里的 AI 结对编程，改动直接落进代码仓库",
         binary_name="aider",
         command_env="PLOBI_OFFLOAD_AIDER_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AIDER_EXTRA_ARGS",
@@ -1565,6 +1607,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id="goose",
+        blurb="本地可扩展的开源工程 agent（goose），在机器上自己跑活",
         binary_name="goose",
         command_env="PLOBI_OFFLOAD_GOOSE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GOOSE_EXTRA_ARGS",
@@ -1585,6 +1628,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id="crush",
+        blurb="Charm 的终端编码 agent（Crush），agentic coding 主打好看好用",
         binary_name="crush",
         command_env="PLOBI_OFFLOAD_CRUSH_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CRUSH_EXTRA_ARGS",
@@ -1600,6 +1644,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
     ),
     VendorRow(
         id="droid",
+        blurb="Factory 的 AI 编码 agent（Factory Droid）",
         binary_name="droid",
         command_env="PLOBI_OFFLOAD_DROID_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DROID_EXTRA_ARGS",
@@ -1621,6 +1666,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="agoragentic",
+        blurb="agent 能力市场（Agoragentic）：174+ 个 AI 能力可浏览、可调用，按 USDC 结算",
         binary_name="agoragentic-mcp",
         command_env="PLOBI_OFFLOAD_AGORAGENTIC_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AGORAGENTIC_EXTRA_ARGS",
@@ -1642,6 +1688,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="auggie",
+        blurb="Augment Code 的软件 agent（Auggie CLI），靠它自家的代码上下文引擎",
         binary_name="auggie",
         command_env="PLOBI_OFFLOAD_AUGGIE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AUGGIE_EXTRA_ARGS",
@@ -1664,6 +1711,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="autohand",
+        blurb="Autohand Code CLI，原生支持 ACP 那一腿",
         binary_name="autohand",
         command_env="PLOBI_OFFLOAD_AUTOHAND_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_AUTOHAND_EXTRA_ARGS",
@@ -1685,6 +1733,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="bob",
+        blurb="IBM 的 AI 开发助手（Bob）",
         binary_name="bob",
         command_env="PLOBI_OFFLOAD_BOB_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_BOB_EXTRA_ARGS",
@@ -1706,6 +1755,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="cortex-code",
+        blurb="Snowflake 的编码 agent（Cortex Code）",
         binary_name="cortex",
         command_env="PLOBI_OFFLOAD_CORTEX_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CORTEX_CODE_EXTRA_ARGS",
@@ -1727,6 +1777,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="corust",
+        blurb="Rust 方向的编码 agent（Corust），官方自称「老练的 Rust 搭档一起写」",
         binary_name="corust-agent-acp",
         command_env="PLOBI_OFFLOAD_CORUST_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CORUST_EXTRA_ARGS",
@@ -1749,6 +1800,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="crow-cli",
+        blurb="极简的 ACP 原生编码 agent（crow-cli）",
         binary_name="crow-cli",
         command_env="PLOBI_OFFLOAD_CROW_CLI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_CROW_CLI_EXTRA_ARGS",
@@ -1770,6 +1822,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="deepagents",
+        blurb="LangChain 出品的通用／编码 agent（DeepAgents），自带电池",
         binary_name="deepagents-acp",
         command_env="PLOBI_OFFLOAD_DEEPAGENTS_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEEPAGENTS_EXTRA_ARGS",
@@ -1792,6 +1845,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="devin",
+        blurb="Cognition 的编码 agent（Devin CLI）",
         binary_name="devin",
         command_env="PLOBI_OFFLOAD_DEVIN_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEVIN_EXTRA_ARGS",
@@ -1815,6 +1869,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="dimcode",
+        blurb="DimCode：把前沿模型接到手边来干编码活的 agent",
         binary_name="dimcode",
         command_env="PLOBI_OFFLOAD_DIMCODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DIMCODE_EXTRA_ARGS",
@@ -1836,6 +1891,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="dirac",
+        blurb="Dirac：靠 hash 锚定的并行编辑与 AST 索引压 API 成本、提速（官方称省一半以上）",
         binary_name="dirac",
         command_env="PLOBI_OFFLOAD_DIRAC_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DIRAC_EXTRA_ARGS",
@@ -1857,6 +1913,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="fast-agent",
+        blurb="MCP 优先的 agent 框架（fast-agent），这一行是它的 ACP 入口",
         binary_name="fast-agent-acp",
         command_env="PLOBI_OFFLOAD_FAST_AGENT_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_FAST_AGENT_EXTRA_ARGS",
@@ -1873,6 +1930,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="glm",
+        blurb="智谱 GLM 编码套餐驱动的 ACP agent（GLM Agent）",
         binary_name="glm-acp-agent",
         command_env="PLOBI_OFFLOAD_GLM_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GLM_EXTRA_ARGS",
@@ -1903,6 +1961,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="grok",
+        blurb="xAI 的编码 agent 与命令行（Grok Build）",
         binary_name="grok",
         command_env="PLOBI_OFFLOAD_GROK_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_GROK_EXTRA_ARGS",
@@ -1925,6 +1984,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="harn",
+        blurb="把 .harn 写的 agent 流水线当原生 ACP 编码 agent 跑（Harn）",
         binary_name="harn",
         command_env="PLOBI_OFFLOAD_HARN_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_HARN_EXTRA_ARGS",
@@ -1946,6 +2006,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="junie",
+        blurb="JetBrains 的 AI 编码 agent（Junie）",
         binary_name="junie",
         command_env="PLOBI_OFFLOAD_JUNIE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_JUNIE_EXTRA_ARGS",
@@ -1968,6 +2029,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="kimchi",
+        blurb="多模型编排的编码 agent（Kimchi）",
         binary_name="kimchi",
         command_env="PLOBI_OFFLOAD_KIMCHI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMCHI_EXTRA_ARGS",
@@ -1989,6 +2051,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="kimi",
+        blurb="月之暗面的 Kimi CLI：官方已归档，指到 Kimi Code 去了",
         binary_name="kimi",
         command_env="PLOBI_OFFLOAD_KIMI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMI_EXTRA_ARGS",
@@ -2010,6 +2073,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="kimi-code",
+        blurb="月之暗面新一代编码 agent（Kimi Code）",
         binary_name="kimi",
         command_env="PLOBI_OFFLOAD_KIMI_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_KIMI_CODE_EXTRA_ARGS",
@@ -2032,6 +2096,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="minion-code",
+        blurb="minion 那几个包里的 ACP 入口（PyPI 包 minion-code）；官方没给产品定位",
         binary_name="minion-code",
         command_env="PLOBI_OFFLOAD_MINION_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_MINION_CODE_EXTRA_ARGS",
@@ -2048,6 +2113,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="vibe",
+        blurb="Mistral 的开源编码助手（Mistral Vibe）",
         binary_name="vibe-acp",
         command_env="PLOBI_OFFLOAD_VIBE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_VIBE_EXTRA_ARGS",
@@ -2070,6 +2136,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="muse-code",
+        blurb="Meta 的编码 agent（Muse Code），为 Muse Spark 而做",
         binary_name="muse",
         command_env="PLOBI_OFFLOAD_MUSE_CODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_MUSE_CODE_EXTRA_ARGS",
@@ -2092,6 +2159,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="nova",
+        blurb="Compass AI 的软件工程师 agent（Nova）",
         binary_name="nova",
         command_env="PLOBI_OFFLOAD_NOVA_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_NOVA_EXTRA_ARGS",
@@ -2114,6 +2182,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="pi",
+        blurb="pi 编码 agent 的 ACP 适配器（pi ACP）",
         binary_name="pi-acp",
         command_env="PLOBI_OFFLOAD_PI_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_PI_EXTRA_ARGS",
@@ -2136,6 +2205,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="poolside",
+        blurb="Poolside 的编码 agent",
         binary_name="pool-windows-amd64",
         command_env="PLOBI_OFFLOAD_POOLSIDE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_POOLSIDE_EXTRA_ARGS",
@@ -2157,6 +2227,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="sigit",
+        blurb="本地优先的编码 agent（siGit Code）：全在本机跑，可选 on-device 推理",
         binary_name="sigit",
         command_env="PLOBI_OFFLOAD_SIGIT_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_SIGIT_EXTRA_ARGS",
@@ -2179,6 +2250,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="stakpak",
+        blurb="Rust 写的开源 DevOps agent（Stakpak），主打企业级安全",
         binary_name="stakpak",
         command_env="PLOBI_OFFLOAD_STAKPAK_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_STAKPAK_EXTRA_ARGS",
@@ -2200,6 +2272,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="vtcode",
+        blurb="开源的编码 agent（VT Code）：LLM 原生的代码理解 + shell 安全护栏",
         binary_name="vtcode",
         command_env="PLOBI_OFFLOAD_VTCODE_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_VTCODE_EXTRA_ARGS",
@@ -2222,6 +2295,7 @@ VENDOR_ROWS: tuple[VendorRow, ...] = (
 
     VendorRow(
         id="deveco",
+        blurb="华为面向 HarmonyOS 开发场景的 AI Agent（DevEco Code）",
         binary_name="deveco",
         command_env="PLOBI_OFFLOAD_DEVECO_COMMAND",
         extra_args_env="PLOBI_OFFLOAD_DEVECO_EXTRA_ARGS",

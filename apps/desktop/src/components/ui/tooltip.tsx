@@ -33,6 +33,7 @@ function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimiti
 function TooltipContent({
   className,
   sideOffset = 6,
+  collisionPadding = 8,
   children,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
@@ -46,6 +47,7 @@ function TooltipContent({
         // pointer-events-none: the tip must never steal hover/clicks from the
         // chrome underneath (titlebar tools, adjacent tabs, etc.).
         className={cn('pointer-events-none z-[200] w-fit max-w-64 select-none', className)}
+        collisionPadding={collisionPadding}
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         {...props}

@@ -13,6 +13,7 @@ from typing import Any, Dict, Tuple
 import pytest
 
 from plobi.delegation.offload import (
+    ExternalAgent,
     FAIL_BLOCKED_BY_GATE,
     FAIL_NO_CHANNEL,
     FAIL_NOT_LOGGED_IN,
@@ -152,7 +153,7 @@ class TestASuccessfulOffloadReportsEverything:
         import agent.external_offload as channel
 
         def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
-                          reply_to=""):
+                          reply_to="", session_id="", owners=(), title="", purpose=""):
             captured.update({"task": task, "cwd": str(cwd), "agent": agent,
                              "permission_mode": permission_mode, "reply_to": reply_to})
             return result or FakeChannelResult()
@@ -511,7 +512,7 @@ class TestTheDefaultGuestIsTheOneThatActuallyWorks:
         captured: Dict[str, Any] = {}
 
         def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
-                          reply_to=""):
+                          reply_to="", session_id="", owners=(), title="", purpose=""):
             captured["agent"] = agent
             return FakeChannelResult(agent=agent or "")
 
@@ -552,7 +553,7 @@ class TestTheDefaultGuestIsTheOneThatActuallyWorks:
         captured: Dict[str, Any] = {}
 
         def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
-                          reply_to=""):
+                          reply_to="", session_id="", owners=(), title="", purpose=""):
             captured["agent"] = agent
             return FakeChannelResult(agent=agent or "")
 
@@ -594,7 +595,7 @@ class TestTheChannelDoesNotGuessAGuest:
                 return {"ok": True, "agent": captured.get("agent", "")}
 
         def fake_run_task(task, *, cwd=None, agent="", permission_mode=None, timeout=900.0,
-                          reply_to=""):
+                          reply_to="", session_id="", owners=(), title="", purpose=""):
             captured["agent"] = agent
             return _Result(agent=agent or "")
 
@@ -616,3 +617,187 @@ class TestTheChannelDoesNotGuessAGuest:
 
         assert code == 2
         assert "没有装" in capsys.readouterr().out
+
+
+class TestTheRosterIsDecidable:
+    """名册要能让 Principal **自己挑**：每家一行、格子齐、值可空但键必须在。
+
+    以前 status 只回 `name / can_use / why_not / capabilities` —— 一串 id 摆在那儿，
+    挑软件只能按名字眼熟程度猜，还猜不出"派完能不能接着说话"。下面几条钉住这件事。
+    """
+
+    #: 挑一家之前必须看到的格子。
+    REQUIRED = ("label", "blurb", "blurb_source", "offloadable", "legs", "resumable", "session_source")
+
+    def test_every_row_carries_the_same_keys(self, monkeypatch):
+        agent = ExternalAgent(
+            name="codebuddy", installed=True, logged_in=True, channel_ready=True,
+            permission_flag="-y", capabilities={}, allowed=True,
+        )
+        monkeypatch.setattr(ot, "agent_roster", lambda: [agent])
+
+        row = json.loads(ot._handle_status({}))["agents"][0]
+
+        for key in self.REQUIRED:
+            assert key in row, f"status 少了 {key}：Principal 没法判断这一家能干什么"
+        # 写过的描述必须真递出去，不能只在表里躺着
+        assert row["label"] == "CodeBuddy"
+        assert row["blurb"]
+        assert "cli" in row["legs"]
+
+    def test_every_vendor_with_a_session_reader_says_what_it_is(self):
+        """**能读会话的那几家，必须写过一句人话**——新接一家会话腿忘了写描述，这条红。"""
+        facts = ot._vendor_facts()
+        silent = [k for k, v in facts.items() if v["session_source"] and not v["blurb"]]
+
+        assert silent == []
+
+    def test_the_facts_cover_the_whole_source_table(self):
+        """能力位从真源反射 ⇒ 真源几家就该有几家，一个都不许漏（漏了就是手抄名单）。"""
+        from agent.vendor_registry import VENDOR_ROWS
+
+        facts = ot._vendor_facts()
+
+        assert set(facts) == {row.id for row in VENDOR_ROWS}
+        for vendor, piece in facts.items():
+            assert piece["label"], vendor
+            assert isinstance(piece["legs"], list) and piece["legs"], vendor
+            assert isinstance(piece["offloadable"], bool), vendor
+            assert isinstance(piece["resumable"], bool), vendor
+
+    def test_every_vendor_in_the_roster_says_what_it_is(self):
+        """**一家都不许没描述**——名册要平行平等、Principal 自己挑，就不能让它按名字眼熟去猜。
+
+        新加一家 provider 忘了写一句：这里红（不是让它在屏上悄悄空着）。
+        """
+        facts = ot._vendor_facts()
+        silent = [vendor for vendor, piece in facts.items() if not piece["blurb"]]
+
+        assert silent == [], silent
+
+    def test_the_reader_can_tell_which_blurb_was_measured_here(self):
+        """**实测的**与**照官方公开信息写的**必须分得开，且各自不许跑出真源那一格。
+
+        实测那几家的词在 `external_capabilities.VENDORS[..].blurb`；
+        其余照官方注册表／包元数据写的那几句在真源表 `VendorRow.blurb`。
+        工具层夹带私货（自己另编一句、或把公开的冒充实测）⇒ 这条红。
+        """
+        from agent.vendor_registry import VENDOR_ROWS
+        from plobi.delegation.external_capabilities import capabilities
+
+        facts = ot._vendor_facts()
+        rows = {row.id: row for row in VENDOR_ROWS}
+
+        for vendor, piece in facts.items():
+            assert piece["blurb_source"] in ("measured", "public"), vendor
+            if piece["blurb_source"] == "measured":
+                spec = capabilities(vendor)
+                assert spec is not None and piece["blurb"] == spec.blurb, vendor
+            else:
+                assert piece["blurb"] == rows[vendor].blurb, vendor
+
+
+class TestTheAcpLedgerGetsTheDispatch:
+    """派进纯 ACP 客席的那趟，号得回到我们自己账上（不然会话面看不见它）。"""
+
+    SID = "7f3c1a2e-9b44-4d0e-8a51-2c6f1d5e9a30"
+
+    def _dispatch(self, monkeypatch, tmp_path, *, source="acp.sessionId", agent="goose",
+                  session=None):
+        import agent.external_offload as channel
+        from plobi.delegation import acp_ledger
+        from plobi.delegation.offload import ExternalAgent
+
+        monkeypatch.setenv(acp_ledger.ENV_LEDGER, str(tmp_path / "acp_sessions.json"))
+
+        def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
+                          reply_to="", session_id="", owners=(), title="", purpose=""):
+            result = FakeChannelResult(agent=agent or "", text="算完了",
+                                       external_session=self.SID if session is None else session,
+                                       external_session_source=source)
+            result.reply = "算完了"
+            result.resumed = False
+            return result
+
+        class FakeLedger:
+            def append(self, row, *, brief):
+                pass
+
+        roster = [ExternalAgent(name=agent, installed=True, logged_in=True, channel_ready=True)]
+        monkeypatch.setattr(channel, "run_task", fake_run_task)
+        monkeypatch.setattr(channel, "default_workdir", lambda: tmp_path / "offload")
+        monkeypatch.setattr(ot, "RoundLedger", FakeLedger)
+        monkeypatch.setattr(ot, "agent_roster", lambda: roster)
+
+        return acp_ledger, ot._handle_run({"task": "算一下这批", "agent": agent,
+                                           "cwd": "D:/Projects/Demo"})
+
+    def test_a_pure_acp_dispatch_leaves_a_line_we_can_show_and_reopen(self, monkeypatch, tmp_path):
+        acp_ledger, _body = self._dispatch(monkeypatch, tmp_path)
+
+        rows = acp_ledger.as_sessions()
+
+        assert [(row["vendor"], row["id"]) for row in rows] == [("goose", self.SID)]
+        assert rows[0]["project"] == "D:/Projects/Demo"
+        assert rows[0]["turns"] == 1, "回来的那句话要落进这一行，不然下次接不上话头"
+        assert rows[0]["resume_state"] == acp_ledger.RESUME_UNKNOWN, "还没试过续，不许先说能续"
+
+    def test_a_vendor_whose_library_we_can_read_gets_no_ghost_line(self, monkeypatch, tmp_path):
+        """codebuddy 的会话本来就落在人家库里，扫得到——**别在这儿再记一条重影**。"""
+        acp_ledger, _body = self._dispatch(monkeypatch, tmp_path, source="", agent="codebuddy")
+
+        assert acp_ledger.as_sessions() == []
+
+    def test_a_cli_leg_that_hands_back_a_number_is_still_ours_to_keep(self, monkeypatch, tmp_path):
+        """11-22 实测 qwen：走 CLI 腿、号从 `result.session_id` 回来——照样得进账。"""
+        acp_ledger, _body = self._dispatch(monkeypatch, tmp_path,
+                                          source="result.session_id", agent="goose")
+
+        rows = acp_ledger.as_sessions()
+
+        assert [(row["vendor"], row["id"]) for row in rows] == [("goose", self.SID)]
+
+    def test_no_number_means_nothing_to_keep(self, monkeypatch, tmp_path):
+        """它没交回会话号（空串是读数，不是失败）⇒ 账上没这一行，别编一个。"""
+        acp_ledger, _body = self._dispatch(monkeypatch, tmp_path, source="", agent="goose",
+                                          session="")
+
+        assert acp_ledger.as_sessions() == []
+
+
+class TestSpeakingToALedgerSession:
+    """台账上有号 ⇒ 说话这条路放行；没号 ⇒ 照旧照实说这家不能发。"""
+
+    SID = "7f3c1a2e-9b44-4d0e-8a51-2c6f1d5e9a30"
+
+    def _prep(self, monkeypatch, tmp_path):
+        from plobi.delegation import acp_ledger, external_sessions
+
+        monkeypatch.setenv(acp_ledger.ENV_LEDGER, str(tmp_path / "acp_sessions.json"))
+        monkeypatch.setattr(ot, "_agent_identity", lambda: "agent-a")
+        monkeypatch.setattr(external_sessions, "send_for_agent",
+                            lambda *a, **k: {"ok": True, "data": {"reply": "好"}})
+
+        return acp_ledger
+
+    def test_the_table_alone_would_have_blocked_it(self):
+        """前提摆在这儿：能力表里 goose 本来没有 `send` 这一条腿。"""
+        assert ot.supports("goose", "send") is False
+
+    def test_a_ledger_session_can_be_spoken_to(self, monkeypatch, tmp_path):
+        acp_ledger = self._prep(monkeypatch, tmp_path)
+        acp_ledger.record("goose", self.SID, project="D:/Projects/Demo", title="算一下这批")
+
+        body = json.loads(ot._handle_send({"vendor": "goose", "id": self.SID,
+                                           "text": "接着说"}))
+
+        assert body["ok"] is True
+
+    def test_without_a_line_it_still_says_this_one_cannot_be_spoken_to(self, monkeypatch, tmp_path):
+        self._prep(monkeypatch, tmp_path)
+
+        body = json.loads(ot._handle_send({"vendor": "goose", "id": self.SID,
+                                           "text": "接着说"}))
+
+        assert body["ok"] is False
+        assert "还没从 Plobi 派过活" in body["error"], "说清怎么才有的接，别糊一句不认识"

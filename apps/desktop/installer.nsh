@@ -74,6 +74,48 @@ Function plobiDataBrowse
   ${EndIf}
 FunctionEnd
 
+; ── 提权侧车（方案 B，2026-11-22 定）────────────────────────────────────────────
+;
+; TUN 要建网卡就必须有一个管理员进程，这是 Windows 的硬约束。三条路里：
+;   A 整包提权（electron-builder 的 perMachine）—— 连安装都要管理员，且主进程全程握着令牌；
+;   C exe 设 requireAdministrator —— 每次开 Plobi 弹一次 UAC，用户当场否掉；
+;   B 侧车 —— 主进程保持普通权限，另有一个只干「起引擎、建网卡、写系统代理」的提权进程。
+; 选 B。它靠的就是这个计划任务：ONLOGON 触发 + /RL HIGHEST，登录时静默拿到最高权限，
+; 全程不弹 UAC —— 这是 Windows 允许「以管理员身份跑、还不打扰用户」的唯一通道。
+;
+; 任务动作是 .ps1 而不是 python.exe，理由写在那个脚本开头（装完时 venv 还不存在；数据目录
+; 是用户选的，安装器算不出来）。这里只负责注册与摘除。
+;
+; 注册失败**不许**打断安装：非管理员账户装 Plobi 是合法的，只是没有 TUN —— 安装器不该
+; 因为一只可选的提权手而回滚整次安装。失败码记在注册表里，诊断时能查到那一次到底怎么了。
+
+!define PLOBI_HELPER_TASK "Plobi Egress Helper"
+
+!macro PlobiEgressHelperRegister
+  ; 注册逻辑放在 register-helper-task.ps1 里，因为 NSIS 里两条路都实测不通：
+  ;   ① `schtasks /Create ... /TR "powershell.exe -File \"C:\Program Files\...\x.ps1\""` ——
+  ;      /TR 不接受内嵌引号，实测报 Invalid argument/option - 'Files\Plobi\...'；
+  ;      而 Program Files 这种安装路径**必须**带引号。
+  ;   ② 改 /XML —— schtasks 只认 UTF-16 的 XML，NSIS 的 FileWrite 只会写单字节，
+  ;      实测报 The task XML is malformed。
+  ; ExecWait 走 CreateProcess，命令行里的引号是字面量、不经 schtasks 那层参数解析，所以
+  ; 这里把带引号的路径交给 PowerShell 是安全的。
+  ExecWait 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $\"$INSTDIR\resources\egress\register-helper-task.ps1$\" -InstallDir $\"$INSTDIR$\"'
+  ; 失败不打断安装：脚本自己会把失败码写进 EgressHelperTaskError。非管理员账户装 Plobi
+  ; 是合法的，只是没有 TUN —— 安装器不该因为一只可选的提权手回滚整次安装。
+!macroend
+
+!macro PlobiEgressHelperRemove
+  ${If} ${FileExists} "$INSTDIR\resources\egress\unregister-helper-task.ps1"
+    ; 脚本还在：让它一并收掉残留的提权进程（按命令行匹配，不按进程名杀 python）。
+    ExecWait 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $\"$INSTDIR\resources\egress\unregister-helper-task.ps1$\"'
+  ${Else}
+    ; 脚本已被删（正常顺序下不会）：至少把任务摘掉，不留一条随时能提权的入口。
+    ExecWait 'schtasks.exe /Delete /TN "${PLOBI_HELPER_TASK}" /F'
+  ${EndIf}
+  DeleteRegValue HKCU "Software\Plobi" "EgressHelperTaskError"
+!macroend
+
 ; 装的时候把那一格写进注册表（主进程 electron/main.ts 的 readInstallerRecordedDataDir 读它）。
 !macro customInstall
   ${If} $PlobiDataDirValue == ""
@@ -96,6 +138,10 @@ FunctionEnd
   ; ⇒ 系统只能靠开始菜单快捷方式去猜，点通知可能唤起别的东西）。
   ; 与 package.json 的 build.appId 一致。
   WriteRegStr HKCU "Software\Classes\AppUserModelId\com.plobi.desktop" "" "Plobi"
+
+  ; 提权侧车跟着装。静默更新（/S）也会走到这里——那条路上 $INSTDIR 由 electron-builder
+  ; 给，不经过自定义页，所以这条路也是同一个宏、同一份路径。
+  !insertmacro PlobiEgressHelperRegister
 !macroend
 
 !macro customUnInstall
@@ -104,4 +150,8 @@ FunctionEnd
   ; 子键：DataDir 是值不是子键，于是那一行照样会把路径记忆删掉，卸载后重装默认回到
   ; %LOCALAPPDATA%\Plobi，D 盘那份库看着就像丢了。别删这个键。
   DeleteRegKey HKCU "Software\Classes\AppUserModelId\com.plobi.desktop"
+
+  ; 摘掉那只提权手。程序都卸了还留一个能以管理员身份被唤醒的计划任务，是比残留文件严重
+  ; 得多的东西——它是一条随时能提权的入口。
+  !insertmacro PlobiEgressHelperRemove
 !macroend

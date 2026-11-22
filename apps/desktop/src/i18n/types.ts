@@ -580,7 +580,19 @@ export interface Translations {
       refreshSub: string
       refreshSubHint: string
       tabNodes: string
+      tabRules: string
       tabSwitch: string
+      rulePlaceholder: string
+      ruleVia: string
+      rulesHint: string
+      rulesEmpty: string
+      ruleCatchAllBadge: string
+      ruleCatchAllNote: string
+      catchAllFix: string
+      ruleMoveUp: string
+      ruleMoveDown: string
+      ruleProblem: (problem: string) => string
+      ruleKinds: Record<string, string>
       transportOff: string
       transportSystem: string
       transportTun: string
@@ -755,6 +767,13 @@ export interface Translations {
       remove: string
       getKey: string
       saving: string
+      // Live credential check (POST /api/env/probe)
+      test: string
+      testing: string
+      testOk: string
+      testRejected: string
+      testUnreachable: string
+      testSample: (sample: string) => string
     }
     envActions: {
       actionsFor: (label: string) => string
@@ -1916,8 +1935,12 @@ export interface Translations {
     expertsEmpty: string
     /** 名册上点了但这一类角色还没被派过活（卡片里那句说明）。 */
     expertsIdleHint: string
+    /** 同一处空态的标题行；说明仍用 `expertsIdleHint`。 */
+    expertsIdleTitle: string
     /** 专家卡片底部那条：这个专家派出去时用哪个模型。 */
     expertModelHint: string
+    /** 模型清单没取到 / 一个模型都没有时，那颗胶囊的说明。 */
+    expertModelEmpty: string
     /** 没给这个角色单独配模型时显示的那一颗（＝继承父 Agent）。 */
     expertModelFollow: string
     expertsLoading: string
@@ -1930,6 +1953,11 @@ export interface Translations {
     externalSessionsRename: string
     externalSessionsSave: string
     externalSessionsCancel: string
+    // 改名写回（11-22）：改名框里先说清会不会同步到对方软件自己那边。
+    externalSessionsRenameSync: string
+    externalSessionsRenameLocalOnly: string
+    externalSessionsRenameFailed: string
+    externalSessionsTitleLocalOnly: string
     externalSessionsArchive: string
     externalSessionsUnarchive: string
     externalSessionsDelete: string
@@ -1944,6 +1972,9 @@ export interface Translations {
     offloadsOpenFailed: string
     offloadsReveal: string
     offloadsCostUnknown: string
+  offloadsWaitingPermission: string
+  offloadsWaitingAnswer: string
+  offloadsWaitingTurn: string
     offloadsJump: string
     offloadsJumpFailed: string
     offloadsSessionId: string
@@ -1959,6 +1990,7 @@ export interface Translations {
      * 所以新建弹窗里是两个框：中文名 + 英文名（后端预填，用户可改）。
      */
     newAgentEnglishLabel: string
+    retranslateLabel: string
     /** 英文名框下面那行说明：它会变成什么，以及左栏显示什么。 */
     newAgentEnglishHelp: string
     /** WP-CREATE-CAT: label for the category <select> in the new-agent dialog. */
@@ -1979,7 +2011,6 @@ export interface Translations {
     newAgentFolderPrimary: string
     newAgentFolderPrimaryHint: string
     /** WP-CREATE-CAT: hint shown when the `events` category is selected (blocked for now). */
-    createEventAgentHint: string
     /**
      * WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色。
      * 我觉得很可爱」）：图标与颜色选择器的标签/图标标签/颜色标签/提示。
@@ -2510,6 +2541,10 @@ export interface Translations {
     applyingBody: string
     applyingBodyBackend: string
     applyingClose: string
+    /** 进度长时间没有回传时的提示（替换原先硬编码的中英混排调试语）。 */
+    applyingStale: string
+    /** 「详情」折叠标签，展开后才是原始日志行。 */
+    applyingDetail: string
     errorTitle: string
     errorBody: string
     notNow: string

@@ -403,7 +403,7 @@ describe('saveOnboardingLocalEndpoint', () => {
     installApiMock(async ({ path }: { path: string }) => {
       calls.push(path)
 
-      if (path === '/api/providers/validate') {
+      if (path === '/api/env/probe') {
         return { ok: true, reachable: true, message: '', models: [] }
       }
 
@@ -426,7 +426,7 @@ describe('saveOnboardingLocalEndpoint', () => {
     const api = vi.fn(async ({ body, path }: { body?: unknown; path: string }) => {
       calls.push({ body, path })
 
-      if (path === '/api/providers/validate') {
+      if (path === '/api/env/probe') {
         return { ok: true, reachable: true, message: '', models: ['llama-3.1-8b', 'qwen2.5-7b'] }
       }
 
@@ -465,7 +465,7 @@ describe('saveOnboardingLocalEndpoint', () => {
     const api = vi.fn(async ({ body, path }: { body?: unknown; path: string }) => {
       calls.push({ body, path })
 
-      if (path === '/api/providers/validate') {
+      if (path === '/api/env/probe') {
         return { ok: true, reachable: true, message: '', models: ['gpt-oss-120b'] }
       }
 
@@ -485,7 +485,7 @@ describe('saveOnboardingLocalEndpoint', () => {
     expect(result.ok).toBe(true)
 
     // The probe must receive the key so an auth-gated /v1/models enumerates.
-    const probe = calls.find(c => c.path === '/api/providers/validate')
+    const probe = calls.find(c => c.path === '/api/env/probe')
     expect(probe?.body).toMatchObject({
       key: 'OPENAI_BASE_URL',
       value: 'https://text.example.com/v1',
@@ -505,7 +505,7 @@ describe('saveOnboardingLocalEndpoint', () => {
 
   it('reports the runtime reason when resolution still fails after saving', async () => {
     installApiMock(async ({ path }: { path: string }) => {
-      if (path === '/api/providers/validate') {
+      if (path === '/api/env/probe') {
         return { ok: true, reachable: true, message: '', models: ['llama-3.1-8b'] }
       }
 

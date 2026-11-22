@@ -130,19 +130,21 @@ export async function createAgent(req: AgentCreateRequest): Promise<Agent> {
 /**
  * POST /api/agents/suggest-name —— 中文名 → 英文名 → 门牌（2026-11-16 i18n 定名刀）。
  *
- * 新建表单里用户只填中文名，英文名那个框靠这里预填（可改）。两条路径：
- * - 默认（`deep: false`）只过本地词表：零延迟、不联网，边打边翻不卡；
- * - `deep: true` 才允许问 LLM（用户点「重新翻译」时）。
+ * 新建表单里用户只填中文名，英文名那个框靠这里预填（可改）。翻译只有三条路
+ * （用户 2026-11-22）：纯 ASCII 原样、本地引擎、Google 引擎——自维护词表和 LLM
+ * 翻译都删了，所以也没有「deep 才认真翻」这一层。
+ *
+ * `refresh` 是那个刷新按钮：点一次就重新翻一次（后端不缓存）。
  *
  * 翻不出来时 `englishName` 是空串——那**不是错误**，是「这个框请你填」。
  * 所以这里不抛：把一次取名做成会失败的请求，等于让信箱在翻译不通时打不开。
  */
 export async function suggestAgentName(
   name: string,
-  options: { deep?: boolean } = {}
+  options: { refresh?: boolean } = {}
 ): Promise<{ agentId: string; englishName: string }> {
   const payload = await window.plobiDesktop.api<unknown>({
-    body: { deep: options.deep === true, name },
+    body: { name, refresh: options.refresh === true },
     method: 'POST',
     path: '/api/agents/suggest-name'
   })

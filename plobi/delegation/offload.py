@@ -165,10 +165,38 @@ class OffloadResult:
     #: 派工授权票（WP-L3-TICKET-MANDATE）。空串 = 通道派活时没带票，
     #: ``RoundLedger.append`` 会替它补一条追溯型票，不让这一轮没有授权记录。
     ticket_id: str = ""
+    #: **这条会话归哪些人**（`WP-EXTERNAL-THREAD-OWNER` §2.3）：名单，可多人（用户 11-22）。
+    #: 空名单是读数：派活那侧没点名 ⇒ 按「派它的那个 agent」（``reply_to``）算。
+    owners: list[str] = field(default_factory=list)
+    #: 老读侧认得的那一格：名单串成一个字符串（真正的形状看 ``owners``）。
+    owner: str = ""
+    #: Principal 给这条会话起的名字（软约束）。
+    title: str = ""
+    #: Principal 给的语义标签（自由文本）。
+    purpose: str = ""
+    #: **这一趟是续上原来那条会话，还是新开了一条**（只有 ACP 腿 ``session/load`` 走通才为真）。
+    #: 带上 ``session_id`` 却读到 False ⇒ 那句话要照实说出口，不许静默新建还假装续上。
+    resumed: bool = False
+    #: **结局三态**（``done``／``waiting``／``failed``）：从通道那侧一路带过来的读数。
+    #: 空串 = 老调用点没算过，用 :attr:`resolved_outcome` 按 ``ok`` 兜底。
+    outcome: str = ""
+    #: 等的是哪一类拍板（``permission``／``answer``）。空串 = 它没在等人。
+    waiting_on: str = ""
 
     @property
     def ok(self) -> bool:
         return not self.failure
+
+    @property
+    def resolved_outcome(self) -> str:
+        """三态读法（唯一入口）。
+
+        只有台账里**真的写了** ``waiting`` 才算等人；没写过的老行一律按 ``ok``
+        读成 done／failed —— 免得空串被谁顺手当成功处理。
+        """
+        if self.outcome:
+            return self.outcome
+        return "done" if self.ok else "failed"
 
 
 def _sha12(path: str) -> str:
@@ -206,6 +234,14 @@ def summarize_round(results: Iterable[OffloadResult]) -> str:
             lines.append(
                 f"{index}. 交给 {item.agent}｜目录 {item.cwd}｜权限档 {flag}｜"
                 f"耗时 {item.duration_seconds:.0f}s｜产出 {artifacts}｜{cost}{receipt}"
+            )
+        elif item.resolved_outcome == "waiting":
+            # 它不是办砸了，是**停下来等一句话**：说清等的是哪一类，
+            # 否则读的人只会去重试——而重试一遍还是卡在原地。
+            waits = "一句授权" if item.waiting_on == "permission" else "一句答复"
+            lines.append(
+                f"{index}. 交给 {item.agent}（停在等{waits}）｜目录 {item.cwd}｜权限档 {flag}｜"
+                f"{receipt}"
             )
         else:
             lines.append(
@@ -308,6 +344,13 @@ class RoundLedger:
             # 它随回包说的话（截一段）。没有它，界面上那一格除了"它没回话"无事可显示，
             # 而 10-22 实测那一趟是**干了活也说了话、只是没写回执文件**。
             "answer_excerpt": (result.answer or "").strip()[:280],
+            # 归属与命名那一族（`WP-EXTERNAL-THREAD-OWNER` §2.3）：**加字段＝向后兼容**，
+            # 老行没有这几格，读侧一律按缺省（空串／False）处理，不做迁移、不回头改文件。
+            "owners": list(getattr(result, "owners", ()) or ()),
+            "owner": result.owner,
+            "title": result.title,
+            "purpose": result.purpose,
+            "resumed": bool(result.resumed),
         }
         target = self.path
         target.parent.mkdir(parents=True, exist_ok=True)

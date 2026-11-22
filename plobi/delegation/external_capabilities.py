@@ -39,6 +39,10 @@ ACTIONS = ("read", "rename", "edit", "model", "permission", "send", "attachments
 class VendorCapabilities:
     vendor: str
     label: str
+    #: 一句人话：**这家的会话在我们这边是什么形状、能拿它干什么**。
+    #: 只写已核实的事实（读法形状 + 能不能接着说话），不抄厂商宣传语——
+    #: 名册是交给 Principal 自己挑的，它要的是「什么时候该找这一家」，不是广告。
+    blurb: str = ""
     # 各家共有的账本操作（改名/归档/删除/标记都在 Plobi 这一侧，与对方软件无关）
     ledger_actions: tuple[str, ...] = ("read", "rename", "archive", "delete", "mark")
     # 能不能往那条会话里接着说话
@@ -98,6 +102,7 @@ VENDORS: dict[str, VendorCapabilities] = {
     "qoder": VendorCapabilities(
         vendor="qoder",
         label="Qoder",
+        blurb="会话按项目目录落成 jsonl；项目目录在，就能接着说话",
         send=True,
         permission_aliases={
             "read_only": "default",
@@ -108,30 +113,31 @@ VENDORS: dict[str, VendorCapabilities] = {
     "codebuddy": VendorCapabilities(
         vendor="codebuddy",
         label="CodeBuddy",
+        blurb="会话按项目目录落成 jsonl，它自带 --resume 回跳；从 Plobi 里还不能往里说话",
         permission_aliases={
             "read_only": "plan",
             "edit": "acceptEdits",
             "full_auto": "bypassPermissions",
         },
     ),
-    "marvis": VendorCapabilities(vendor="marvis", label="Marvis"),
-    "cursor": VendorCapabilities(vendor="cursor", label="Cursor"),
-    "agy": VendorCapabilities(vendor="agy", label="agy"),
+    "marvis": VendorCapabilities(vendor="marvis", label="Marvis", blurb="本机 Marvis 桌面端，会话与正文都在它的 sqlite 库里；只能读，不接派活"),
+    "cursor": VendorCapabilities(vendor="cursor", label="Cursor", blurb="Cursor 编辑器，会话与正文压在它自己的 KV 大块里；只能读"),
+    "agy": VendorCapabilities(vendor="agy", label="agy", blurb="会话落 sqlite，正文按 step 一条条记着；只能读"),
     # OpenCode：**能续接说话**（现读 `opencode run --help`：`--session <id>` 续接那条会话）。
     # 它的回包是**逐行 JSON 事件**（不是 Qoder 那种一个对象）⇒ 解析在
     # `external_sessions.py::_parse_opencode_stream` 里，不在能力表这一层。
     # 11-17 实测：它的 ACP server 宣告 ``loadSession`` ⇒ ``session/load`` 真能续；
     # 它开出来的会话**落进它自己的会话库** ⇒ 会话面看得见、能接着说。
-    "opencode": VendorCapabilities(vendor="opencode", label="OpenCode", send=True, acp_resume=True),
+    "opencode": VendorCapabilities(vendor="opencode", label="OpenCode", blurb="会话落 sqlite；ACP 那条腿实测能续接 ⇒ 派完活还能接着说", send=True, acp_resume=True),
     # ── 11-15 新接会话腿的那三家（都**只读**：回跳旗标没实测过）────────────
-    "kiro": VendorCapabilities(vendor="kiro", label="Kiro"),
-    "copilot": VendorCapabilities(vendor="copilot", label="GitHub Copilot CLI"),
+    "kiro": VendorCapabilities(vendor="kiro", label="Kiro", blurb="会话直接躺在根目录的 jsonl 里，没有项目那一层；只能读"),
+    "copilot": VendorCapabilities(vendor="copilot", label="GitHub Copilot CLI", blurb="会话落 sqlite，正文按一问一答成对记着；只能读"),
     # Qoder 中国版：另一件安装（`product: qodercn`）⇒ 单列一家，不并进 qoder。
-    "qoder-cn": VendorCapabilities(vendor="qoder-cn", label="Qoder 中国版"),
+    "qoder-cn": VendorCapabilities(vendor="qoder-cn", label="Qoder 中国版", blurb="Qoder 中国版是另一件安装（账号、二进制、会话库都与 qoder 不重叠）；只能读"),
     # 11-15 再接会话腿的三家（都**只读**：回跳旗标没实测过）。
-    "gemini": VendorCapabilities(vendor="gemini", label="Gemini CLI"),
-    "kilo": VendorCapabilities(vendor="kilo", label="Kilo Code"),
-    "cline": VendorCapabilities(vendor="cline", label="Cline"),
+    "gemini": VendorCapabilities(vendor="gemini", label="Gemini CLI", blurb="会话在项目目录的 chats/ 下，一条一个 jsonl；只能读"),
+    "kilo": VendorCapabilities(vendor="kilo", label="Kilo Code", blurb="会话落 sqlite，正文按部件（parts）记着；只能读"),
+    "cline": VendorCapabilities(vendor="cline", label="Cline", blurb="一个会话一个目录，正文在 messages 里；只能读"),
 }
 
 

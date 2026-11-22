@@ -580,15 +580,15 @@ def test_every_creatable_category_can_be_created(
     - ``courses``：要绑一个课程文件夹（弹窗那一档要文件夹才能提交），但**不在** Mind 里立项
       （裁定 121 二那一格：课程条目是日程侧的数据）。
     - ``butler``：家务，不绑目录、不立项。
-    - ``events``：**建不了是设计如此**——它要日程里一个已确认的事项当来源
-      （``create-agent.ts::isCreateAgentCategoryBlocked``），弹窗那一档是关着的。
+    - ``events``：就是「有时间区间的活动」——比赛、会议、学期项目。不绑日程、不要
+      sourceEventId（用户 2026-11-22 撤掉了那条错设定），所以它也能直接建。
 
-    判据：能建的那四类都 200，且 Mind 树只出现在 projects／research 两类里。
+    判据：五类都 200，且 Mind 树只出现在 projects／research 两类里。
     """
     root = make_brain(disk=["Aura"])
     course_folder = tmp_path / "course-folder"
 
-    for category in ("projects", "research", "courses", "butler"):
+    for category in ("projects", "research", "courses", "butler", "events"):
         payload = {"id": f"probe-{category}", "name": f"Probe {category}", "category": category}
         if category == "courses":
             payload["projectPaths"] = [str(course_folder)]
@@ -612,16 +612,20 @@ def test_every_creatable_category_can_be_created(
     assert courses is not None and courses.project_path.endswith("course-folder")
     assert butler is not None and butler.project_path == ""
 
+    # events 也落盘了，而且不带来源日程（那条设定已经撤了）。
+    events = live_registry().get("probe-events")
+    assert events is not None and events.category == "events"
+    assert events.source_event_id == ""
 
-def test_events_agents_are_refused_without_a_confirmed_agenda_event(
+
+def test_events_agents_are_created_like_any_other_category(
     client, make_brain, isolated_registry
 ):
-    """events 那一类建不了是**设计如此**，不是坏了：它要日程里一个已确认的事项当来源。"""
+    """events 不是日程：不挂 sourceEventId 也能正常建（用户 2026-11-22）。"""
     make_brain(disk=["Aura"])
 
     response = create(client, {"id": "probe-events", "name": "Probe events", "category": "events"})
 
-    assert response.status_code == 400, response.json()
-    assert "sourceEventId" in response.json()["error"]
-    assert live_registry().get("probe-events") is None
+    assert response.status_code == 200, response.json()
+    assert live_registry().get("probe-events") is not None
 

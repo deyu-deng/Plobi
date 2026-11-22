@@ -26,7 +26,7 @@ import logging
 
 from typing import MutableMapping
 
-from agent.egress.rules import Table, _expands_to_env_entries
+from agent.egress.rules import ENGINE_ONLY_KINDS, Table, _expands_to_env_entries
 
 _log = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def apply_egress_env(
 def _bypass_entries(table: Table) -> list[str]:
     entries: list[str] = []
     for rule in table.rules:
-        if rule.via != "direct" or rule.kind == "geosite":
+        if rule.via != "direct" or rule.kind in ENGINE_ONLY_KINDS:
             continue
         if rule.kind == "all":
             continue

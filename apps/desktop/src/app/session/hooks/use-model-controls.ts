@@ -1,9 +1,10 @@
 import { type QueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
 
-import { getGlobalModelInfo } from '@/plobi'
 import { type ChatScope } from '@/app/console/chat/scope'
 import { translateNow, useI18n } from '@/i18n'
+import { qualifyModelId } from '@/lib/model-status-label'
+import { getGlobalModelInfo } from '@/plobi'
 import {
   $connectedDesktopApps,
   firstSelectableQuotaModel,
@@ -16,9 +17,9 @@ import {
   $activeSessionId,
   $currentModel,
   $currentProvider,
+  setComposerModelScope,
   setCurrentModel,
   setCurrentProvider,
-  setComposerModelScope,
   storedScopedComposerSelection
 } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/plobi'
@@ -139,13 +140,14 @@ export function useModelControls({
       // effect can never write into another agent's box).
       setComposerModelScope(scope)
 
-      let selection = pick
-
-      // 11-18 第三处之后，网关软件自己就是 provider：`workbuddy` + `hy3` 直接拼成
-      // `workbuddy/hy3`，不必再回头去找一个「hub 的 slug」。
-      if (isQuotaAppSlug(pick.provider)) {
-        selection = { model: `${pick.provider}/${pick.model}`, provider: pick.provider }
-      }
+      // 网关软件自己就是 provider：`workbuddy` + `hy3` 直接拼成 `workbuddy/hy3`。
+      // 但清单并不统一——hub 软件的 id 出厂就带 `<软件名>/` 前缀（`workbuddy/auto`），
+      // 普通 provider 给的是裸 id。拼接统一交给 `qualifyModelId`（幂等），否则像这里
+      // 之前那样无条件拼，就会把 `workbuddy/auto` 拼成 `workbuddy/workbuddy/auto`：
+      // 清单里不存在这个 id，切换必然 "was not found"，错 id 还会落进配置。
+      const selection = isQuotaAppSlug(pick.provider)
+        ? { model: qualifyModelId(pick.provider, pick.model), provider: pick.provider }
+        : pick
 
       // Snapshot for rollback: the switch is applied optimistically, so a
       // failure must restore the prior model/provider (store + query cache)
@@ -209,7 +211,9 @@ export function useModelControls({
       // not a provider the Plobi backend knows (`workbuddy_api` + `hy3`). Land it
       // on the same model in the vocabulary the backend speaks before anything
       // else reads it — otherwise the next turn 400s on an unknown provider.
-      if (model && isQuotaAppSlug(provider) && !model.startsWith(`${provider}/`)) {
+      // Same normalisation as `selectModel` uses: if qualifying the id changes it,
+      // the stored selection is still in the old vocabulary.
+      if (model && isQuotaAppSlug(provider) && qualifyModelId(provider, model) !== model) {
         await selectModel({ model, provider })
 
         return

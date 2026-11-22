@@ -223,3 +223,5 @@ apps/desktop/kanban.db
 temp_scan.txt
 temp/tms.txt
 temp/__head_office_preview.tsx
+# setuptools 的 sdist/wheel 中间产物（仓根的 build/lib，每次 python 打包都会重生成）
+/build/

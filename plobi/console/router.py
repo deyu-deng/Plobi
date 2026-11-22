@@ -65,7 +65,6 @@ from fastapi.responses import JSONResponse
 from plobi.agents.registry import (
     AGENT_CATEGORIES,
     DEFAULT_CATEGORY,
-    MAX_LIVE_EVENTS_AGENTS,
     MIND_PROJECT_CATEGORIES,
     AgentEntry,
     AgentRegistry,
@@ -908,9 +907,10 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     Mind first — ``Dossiers/projects/<项目名>`` with its 三件套 — and the registry
     only gets written once that tree exists, so no row ever claims a subtree that
     is not on disk. Mind unreachable / unwritable means the create fails.
-    裁定 19: ``category=events`` requires ``source_event_id`` pointing to a
-    confirmed agenda event, and live events agents are capped at
-    :data:`MAX_LIVE_EVENTS_AGENTS` (5).
+    裁定 19 已废止（用户 2026-11-22）：``category=events`` **不再**要求绑定一条
+    已确认的日程，也没有「同时最多 5 个」的上限。Events 指的是「有时间区间的活动」
+    ——比赛、会议、学期项目都算，本来就不是日程的附庸；把建这个人绑在日程上，
+    等于逼用户先去日历里编一条假日程才能建人。
     裁定 42 §42.2 ⑥: ``secretOverrides`` (env name → value) is the 密钥 override —
     it is injected into the 分身's process environment when it is started and is
     never written into the profile home; the values are deliberately not echoed
@@ -1015,30 +1015,10 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     # 晋升成手下，也不该把用户建过的手下降级。
     registered = True if existing is None else existing.registered
 
-    # 裁定 19: events lifecycle guards.
-    source_event_id = ""
-    if category == "events":
-        source_event_id = str(body.get("sourceEventId") or "").strip()
-        if not source_event_id:
-            return _error(
-                400,
-                "events agents require sourceEventId (a confirmed agenda event)",
-            )
-        # Validate the referenced event exists and is confirmed.
-        event_ok = _agenda_event_is_confirmed(source_event_id)
-        if not event_ok:
-            return _error(
-                400,
-                f"sourceEventId {source_event_id!r} is not a confirmed agenda event",
-            )
-        # Cap live events agents (an update of an existing events row does not
-        # count toward the cap — only a brand-new one does).
-        if existing is None or existing.category != "events":
-            if registry.count_live_events() >= MAX_LIVE_EVENTS_AGENTS:
-                return _error(
-                    400,
-                    f"at most {MAX_LIVE_EVENTS_AGENTS} live events agents allowed",
-                )
+    # 裁定 19 已废止（用户 2026-11-22）：events 就是「有时间区间的活动」（比赛、
+    # 会议、学期项目），不绑日程。旧行里那个 ``source_event_id`` 照样保留、照样回吐，
+    # 只是不再强求、也不再校验它指的日程还在不在。
+    source_event_id = str(body.get("sourceEventId") or "").strip()
 
     proposed = AgentEntry(
         name=agent_id,
@@ -1199,25 +1179,6 @@ def _project_path_is_windows_shaped(raw: str) -> bool:
     return bool(drive) or "\\" in text
 
 
-def _agenda_event_is_confirmed(event_id: str) -> bool:
-    """裁定 19: the sourceEventId must point to a confirmed agenda event.
-
-    Reads through AgendaService.get (read-only). Any failure (missing event,
-    non-confirmed status, agenda DB unreachable) returns False — fail-closed,
-    so a broken agenda state never silently lets an events agent through.
-    """
-    try:
-        from plobi.agenda import get_service
-
-        event = get_service().get(event_id)
-    except Exception as exc:
-        logger.warning("plobi console: sourceEventId lookup failed: %s", exc)
-        return False
-    if event is None:
-        return False
-    return getattr(event, "status", "") == "confirmed"
-
-
 def dissolve_agent(agent_id: str) -> Union[dict, JSONResponse]:
     """裁定 19: POST /api/agents/:id/dissolve — archive, do not delete.
 
@@ -1337,12 +1298,14 @@ async def suggest_agent_name_route(request: Request):
     if not name:
         return _error(400, "要先有个名字才能翻。")
 
-    # 默认只走本地词表（快、不联网）；前端点「重新翻译」时才允许问 LLM。
-    deep = bool(body.get("deep"))
+    # 翻译分两条通道（用户 2026-11-22 两次裁决）：自维护词表已删，引擎按质量排在
+    # naming.py 里；`refresh` 表达的是「用户点了框旁那枚刷新按钮」——那条通道会把
+    # 辅助 LLM 顶到最前（要准），不点则机翻优先（要快）。后端不缓存，翻一次是一次。
+    refresh = bool(body.get("refresh") or body.get("deep"))
 
     return {
         "ok": True,
-        "data": await run_in_threadpool(naming_for, name, allow_llm=deep),
+        "data": await run_in_threadpool(naming_for, name, force=refresh),
     }
 
 

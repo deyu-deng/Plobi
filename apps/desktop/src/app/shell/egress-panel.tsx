@@ -2,9 +2,10 @@
  * 左下底栏那一枚图标点出来的面板（用户 11-01：「设置里的 VPN 只是导入节点和配置规则的界面，
  * 控制应该在软件左侧底栏加一个图标，点击出现一个 overlay」）。
  *
- * 两屏，形状照 ikuuu 那两张截图，但只放控件：
+ * 三屏，形状照 ikuuu 那两张截图，但只放控件：
  *  · 控制屏 —— 一枚电源键（整机走不走 Plobi）、规则/全局、TUN/系统代理；
- *  · 节点屏 —— 卡片式选节点，点一张就换过去。
+ *  · 节点屏 —— 卡片式选节点，点一张就换过去；
+ *  · 规则屏 —— 表里的规则一行一条，增、删、挪、改去向（用户 11-22「完整的规则细化体验」）。
  *
  * 三条纪律：
  *  · 读数一律来自 `GET /api/network/status` 的 `switch` / `tun` 两格，面板不自己推
@@ -19,27 +20,44 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   asEgressBlock,
-  exitOf,
-  modeOf,
-  patchExit,
-  patchMode,
-  patchTransport,
-  proxyTooltip,
-  transportOf,
   type EgressBlock,
   type EgressStatusExtra,
   type EgressSwitch,
   type EgressTun,
+  exitOf,
+  isCatchAll,
+  modeOf,
+  patchExit,
+  patchMode,
+  patchRuleAdd,
+  patchRuleCatchAll,
+  patchRuleMove,
+  patchRuleRemove,
+  patchRuleVia,
+  patchTransport,
+  proxyTooltip,
+  readRule,
   type RuleMode,
-  type Transport
+  type RuleProblem,
+  type Transport,
+  transportOf
 } from '@/app/settings/egress-edit'
-import { useI18n } from '@/i18n'
-import { AlertTriangle, Check, Globe, LayoutGrid, Loader2, Power, Route } from '@/lib/icons'
-import { getNetworkEgress, getNetworkStatus, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
 import type { StatusbarItem } from '@/app/shell/statusbar-controls'
+import { useI18n } from '@/i18n'
+import { AlertTriangle, ArrowUp, Check, Globe, LayoutGrid, Loader2, Plus, Power, Route, Settings2, X } from '@/lib/icons'
+import { getNetworkEgress, getNetworkStatus, saveNetworkEgress } from '@/plobi'
 import type { NetworkEgressRecord, NetworkStatus } from '@/types/plobi'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
+
+/**
+ * 「后端没给这一格」时的空读数。
+ *
+ * 别写 `status?.membership?.groups ?? {}`：那个 `{}` 每次渲染都是**新对象**，而它下面三个
+ * `useMemo` 全拿 `groups` 当依赖 —— 每次重渲染都判定「依赖变了」，三次聚合白算，节点列表
+ * 在切筛选片时会跟着抖一下。空读数用一个模块级常量就稳定了。
+ */
+const NO_GROUPS: Record<string, string[]> = {}
 
 function Segmented<T extends string>({
   disabled,
@@ -114,8 +132,15 @@ export function EgressPanel() {
   const [error, setError] = useState('')
   //: 拨不过去的那一次：留着它的理由与目标，屏幕才可能给出那一个出口（与别人的网卡并行）。
   const [refused, setRefused] = useState<{ foreign: boolean; strict: boolean; target: Transport; why: string } | null>(null)
-  const [view, setView] = useState<'nodes' | 'switch'>('switch')
+  const [view, setView] = useState<'nodes' | 'rules' | 'switch'>('switch')
   const [filter, setFilter] = useState('')
+  //: 规则屏「加一条」那一行：写了一半的匹配与选好的去向。加进去之后匹配清空、去向留着
+  //: （连着加几条打到同一个出口是常态，每次重选一遍很烦）。
+  const [draft, setDraft] = useState('')
+  const [draftVia, setDraftVia] = useState('direct')
+  //: 写不出来的那一行：哪一个毛病，交给句子去说（`ruleProblems`）。不进 `error` ——
+  //: 那是「保存没成」，这是「还没发出去」。
+  const [draftProblem, setDraftProblem] = useState<RuleProblem | null>(null)
 
   const load = useCallback(async () => {
     const [nextRecord, nextStatus] = await Promise.all([getNetworkEgress(), getNetworkStatus()])
@@ -129,6 +154,7 @@ export function EgressPanel() {
   }, [load])
 
   const block = useMemo(() => asEgressBlock(record?.network?.egress), [record])
+
   //: 后端那份读数是唯一真源；它少给一格时退到**同一模块**的算法，而不是在这里再写一份判断。
   const ctl: EgressSwitch = status?.switch ?? {
     exit: exitOf(block),
@@ -136,10 +162,12 @@ export function EgressPanel() {
     transport: transportOf(block),
     vpn: transportOf(block) !== 'off'
   }
+
   const tun: EgressTun = status?.tun ?? {}
   const engineOk = status?.engine?.state === 'running-ours'
   const nodes = status?.membership?.nodes ?? Object.keys(block.nodes ?? {})
-  const groups = status?.membership?.groups ?? {}
+  const groups = status?.membership?.groups ?? NO_GROUPS
+
   /**
    * 筛选片只放**真的分过类**的组。
    *
@@ -152,6 +180,7 @@ export function EgressPanel() {
    */
   const groupNames = useMemo(() => {
     const all = new Set(nodes)
+
     return Object.keys(groups)
       .filter(name => {
         const members = groups[name] ?? []
@@ -175,12 +204,14 @@ export function EgressPanel() {
       let best = Number.POSITIVE_INFINITY
       groupNames.forEach(group => {
         const members = groups[group] ?? []
-        if (members.includes(name) && members.length < best) best = members.length
+
+        if (members.includes(name) && members.length < best) {best = members.length}
       })
       //: 不在任何筛选组里的节点（只属于自己的那一颗）排到最后：`Infinity` 不能直接拿去
       //: 相减 —— `Infinity - Infinity` 是 `NaN`，比较器返回 `NaN` 等于没有排序。
       size.set(name, best === Number.POSITIVE_INFINITY ? -1 : best)
     })
+
     return [...nodes].sort((a, b) => (size.get(b) ?? -1) - (size.get(a) ?? -1) || a.localeCompare(b))
   }, [groupNames, groups, nodes])
 
@@ -189,23 +220,25 @@ export function EgressPanel() {
     [filter, groups, ordered]
   )
 
-  /** 注册表那一半单独一次调用：它拒绝时那句话不许只进日志——表的声明与机器的事实是两份读数。 */
-  const moveProxy = useCallback(async (enabled: boolean) => {
-    const moved = await setNetworkSystemProxy(enabled)
-    if (moved.proxy && moved.proxy.state === 'refused') setError(moved.proxy.detail ?? '')
-    return moved
-  }, [])
-
-  /** 一次动作 = 改这一段 → 整段存回去（保存面是替换语义）→ 重新读那份唯一读数。 */
+  /**
+   * 一次动作 = 改这一段 → 整段存回去（保存面是替换语义）→ 重新读那份唯一读数。
+   *
+   * 注册表那一半**不在这里**：`_reload_egress_engine` 存完之后就按表 `ensure()` 过一遍
+   * （表说接管就接管，表说关掉就把注册表交还原主）。前端以前还自己补一次
+   * `setNetworkSystemProxy`，那是**同一个事务的第二半**——面板一关、组件一卸，这一半就没有
+   * 任何人在跑了，机器上留下"表说接管、注册表没动"（用户 11-22 报的「切模式中途退出即停」
+   * 就是这个形状）。现在一次 PUT 就是全部，关不关面板都不影响它落完。
+   */
   const apply = useCallback(
-    async (next: EgressBlock, proxy?: boolean) => {
+    async (next: EgressBlock) => {
       setBusy(true)
       setError('')
+
       try {
         const answer = await saveNetworkEgress({ egress: next })
+
         // 引擎那句话不许吞：这一屏存在的理由就是「配了不生效没人说」。
-        if (answer.engine?.state === 'failed') setError(answer.engine.detail ?? '')
-        if (proxy !== undefined) await moveProxy(proxy)
+        if (answer.engine?.state === 'failed') {setError(answer.engine.detail ?? '')}
         await load()
       } catch (cause: unknown) {
         // 被拒是解析器在说话，不是传输坏了——它那句话有用，就摆在这。
@@ -214,7 +247,7 @@ export function EgressPanel() {
         setBusy(false)
       }
     },
-    [load, moveProxy]
+    [load]
   )
 
   /**
@@ -226,29 +259,29 @@ export function EgressPanel() {
    */
   const flip = useCallback(
     async (target: Transport, opts: { allowForeign?: boolean; strictRoute?: boolean } = {}) => {
-      const prev = transportOf(block)
       setBusy(true)
       setError('')
       setRefused(null)
+
       try {
         const next = patchTransport(block, target, {
           ...(tun.block ?? {}),
           ...(opts.allowForeign ? { 'allow-foreign': true } : {}),
           ...(opts.strictRoute ? { 'strict-route': true } : {})
         })
+
         const answer = await saveNetworkEgress({ egress: next })
+
         if (answer.engine?.state === 'failed') {
           const why = answer.engine.detail ?? '引擎没起来'
+          //: 退回原样也是**一次完整的 PUT**：后端按这张退回去的表再 `ensure()` 一遍，注册表
+          //: 自然回到原来的载体（表里是系统代理就接管、是别的就交还）。以前这里另外补一刀
+          //: `moveProxy`，那半刀没人守着会丢（见 `apply` 的注释）。
           await saveNetworkEgress({ egress: block })
-          await moveProxy(prev === 'system')
-          // 两句拒因要分得开：并行别人的网卡与强制接管默认路由是两个不同的决定（一个网卡，一张路由表）。
           setRefused({ foreign: /allow-foreign/.test(why), strict: /strict-route/.test(why), target, why })
           setError(why)
-        } else if (target !== prev) {
-          // TUN 与系统代理互斥：拨一个就把另一个的注册表那一半带走/带回来。
-          // 它拒绝照样要说——那是这半截事实自己的答案，不是引擎那一半的。
-          await moveProxy(target === 'system')
         }
+
         await load()
       } catch (cause: unknown) {
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -256,15 +289,17 @@ export function EgressPanel() {
         setBusy(false)
       }
     },
-    [block, load, moveProxy, tun.block]
+    [block, load, tun.block]
   )
 
   /** 电源键：开着就整机交还；关掉时回到表里已经配过的那个载体（配过 TUN 就回 TUN）。 */
   const power = () => {
     if (ctl.vpn) {
       void flip('off')
+
       return
     }
+
     const configured = Boolean(block.engine?.tun?.name) && Boolean(block.engine?.tun?.stack)
     void flip(configured ? 'tun' : 'system')
   }
@@ -274,14 +309,55 @@ export function EgressPanel() {
   //: 而开关照旧亮着。形状说这一句（一枚警告），四句话的区别留在 tooltip。
   const proxyWarn = ctl.transport === 'system' && status?.system_proxy !== undefined && status.system_proxy.ours === false
 
+  //: 规则屏「去向」那一列的可选值：直连，或者表里认得的每一个节点。
+  const vias = useMemo(() => [{ label: copy.direct, value: 'direct' }, ...Object.keys(block.nodes ?? {}).map(name => ({ label: name, value: `proxy:${name}` }))], [block.nodes, copy.direct])
+  const rules = block.rules ?? []
+  const hasCatchAll = rules.some(isCatchAll)
+
+  /**
+   * 规则屏的每一次改动都走这一条：先算新块，算不出来（删兜底、挪过兜底）就只把话说出来，
+   * 再整段存回去。挪不动时 `patchRuleMove` 原样还回同一个块 —— 那就什么都不发。
+   */
+  const editRules = useCallback(
+    (mutate: (current: EgressBlock) => EgressBlock) => {
+      try {
+        const next = mutate(block)
+
+        if (next === block) {return}
+        void apply(next)
+      } catch (cause: unknown) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    },
+    [apply, block]
+  )
+
+  const addRule = useCallback(() => {
+    const reading = readRule(draft)
+
+    if (reading.error) {
+      setDraftProblem(reading.error)
+
+      return
+    }
+
+    setDraftProblem(null)
+    editRules(current => patchRuleAdd(current, draft, draftVia))
+    //: 匹配清空、去向留着：连着给同一个出口加几条是常态。
+    setDraft('')
+  }, [draft, draftVia, editRules])
+
   return (
     //: 宽度由这一格按屏给（弹窗那格是 `w-auto`，跟着这里走）：控制屏是一列控件，
     //: 22rem 够；节点屏是卡片，要**一行三张**才不显得空（用户 11-01：「怎么也要一横行
     //: 能同时显示三个卡片的宽度」）⇒ 32rem，三列各 ~158px，名字两行放得下。
+    //: 规则屏是「前缀 + 匹配 + 去向 + 三颗小按钮」一行，30rem 刚好不折行。
     //: 高度也要有界：这一屏挂在底栏弹窗里，弹窗的可视高度由视口给，内容顶出去就是**下半截看不见**
     //: （用户 11-05 那张截图正是切到一半）。列布局＋正文自己滚，表头那一行始终在。
     <div
-      className={`flex max-h-[min(70vh,34rem)] min-w-0 flex-col select-text ${view === 'nodes' ? 'w-[32rem]' : 'w-96'}`}
+      className={`flex max-h-[min(70vh,34rem)] min-w-0 flex-col select-text ${
+        view === 'nodes' ? 'w-[32rem]' : view === 'rules' ? 'w-[30rem]' : 'w-96'
+      }`}
       data-testid="egress-panel"
     >
       <div className="flex shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2 py-1.5">
@@ -290,6 +366,9 @@ export function EgressPanel() {
         </TabButton>
         <TabButton active={view === 'nodes'} icon={LayoutGrid} onClick={() => setView('nodes')}>
           {copy.tabNodes}
+        </TabButton>
+        <TabButton active={view === 'rules'} icon={Settings2} onClick={() => setView('rules')}>
+          {copy.tabRules}
         </TabButton>
         {busy ? <Loader2 className="ml-auto size-3.5 animate-spin text-(--ui-text-tertiary)" /> : null}
         {!busy && !loaded ? <AlertTriangle className="ml-auto size-3.5 text-destructive" title={copy.readFailed} /> : null}
@@ -316,9 +395,15 @@ export function EgressPanel() {
             <div className="grid min-w-0 grid-cols-1 gap-0.5">
               <div className="flex min-w-0 items-center gap-1.5">
                 <StatusDot ok={engineOk} title={status?.engine?.detail ?? copy.engineNotRead} />
-                <span className="truncate text-sm font-medium" title={ctl.exit || copy.direct}>
-                  {ctl.exit || copy.direct}
-                </span>
+                {loaded ? (
+                  <span className="truncate text-sm font-medium" title={ctl.exit || copy.direct}>
+                    {ctl.exit || copy.direct}
+                  </span>
+                ) : (
+                  //: 读表还没回来时不许先写一个「直连」上去：那是**结论**，不是占位。
+                  //: 屏幕照实说"还没读到"，等那份唯一的读数到了再写（用户 11-22 报的首屏空态）。
+                  <span aria-hidden="true" className="h-3.5 w-24 animate-pulse rounded bg-(--ui-control-hover-background)" />
+                )}
               </div>
               <span className={CAPTION} title={tun.reasons?.[0]}>
                 {ctl.transport === 'tun' ? copy.transportTun : ctl.transport === 'system' ? copy.transportSystem : copy.transportOff}
@@ -407,7 +492,7 @@ export function EgressPanel() {
             </div>
           ) : null}
         </div>
-      ) : (
+      ) : view === 'nodes' ? (
         <div className="grid min-w-0 grid-cols-1 gap-2 px-3 py-3">
           {groupNames.length > 0 ? (
             //: 换行而不是横向滚动：横向滚 + 藏滚动条时，最后一颗被面板边缘切一半，
@@ -458,8 +543,165 @@ export function EgressPanel() {
                 </span>
               </button>
             ))}
-            {shown.length === 0 ? <p className={CAPTION}>{copy.panelEmpty}</p> : null}
+            {!loaded ? (
+              //: 读表还没回来：屏上是"正在读"的形状，不是「还没有成员」——后者是**结论**，
+              //: 被读成"我的节点丢了"就太贵了（用户 11-22 报的首屏空态冒充加载态）。
+              <div className="col-span-3 grid grid-cols-3 gap-1.5" data-testid="nodes-skeleton">
+                {[0, 1, 2, 3, 4, 5].map(at => (
+                  <span className="h-10 animate-pulse rounded-lg bg-(--ui-control-hover-background)" key={at} />
+                ))}
+              </div>
+            ) : shown.length === 0 ? (
+              <p className={CAPTION}>{copy.panelEmpty}</p>
+            ) : null}
           </div>
+        </div>
+      ) : (
+        //: 规则屏：表里的规则一行一条，整段存回去（保存面是替换语义，和别处一个写法）。
+        <div className="grid min-w-0 grid-cols-1 gap-2 overflow-y-auto px-3 py-3">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <input
+              className="min-w-0 flex-1 rounded-lg border border-(--stroke-nous) bg-transparent px-2 py-1.5 font-mono text-xs outline-none placeholder:font-sans placeholder:text-(--ui-text-tertiary)"
+              disabled={busy || !loaded}
+              onChange={event => {
+                setDraft(event.target.value)
+                setDraftProblem(null)
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {addRule()}
+              }}
+              placeholder={copy.rulePlaceholder}
+              value={draft}
+            />
+            <select
+              className="w-24 shrink-0 rounded-lg border border-(--stroke-nous) bg-transparent px-1 py-1.5 text-xs"
+              disabled={busy || !loaded}
+              onChange={event => setDraftVia(event.target.value)}
+              title={copy.ruleVia}
+              value={draftVia}
+            >
+              {vias.map(via => (
+                <option key={via.value} value={via.value}>
+                  {via.label}
+                </option>
+              ))}
+            </select>
+            <button
+              aria-label={copy.addRule}
+              className="grid size-7 shrink-0 place-items-center rounded-lg border border-(--stroke-nous) text-(--ui-text-secondary) disabled:opacity-40"
+              disabled={busy || !loaded}
+              onClick={addRule}
+              type="button"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+
+          {draftProblem ? (
+            //: 写不出来的那一行当场说是哪一段不对，别等后端回一句 400。
+            <p className="text-xs text-destructive" data-testid="rule-problem">
+              {copy.ruleProblem(draftProblem)}
+            </p>
+          ) : (
+            <p className={CAPTION}>{copy.rulesHint}</p>
+          )}
+
+          {!loaded ? (
+            <div className="grid grid-cols-1 gap-1" data-testid="rules-skeleton">
+              {[0, 1, 2].map(at => (
+                <span className="h-7 animate-pulse rounded-lg bg-(--ui-control-hover-background)" key={at} />
+              ))}
+            </div>
+          ) : rules.length === 0 ? (
+            <p className={CAPTION}>{copy.rulesEmpty}</p>
+          ) : (
+            <div className="grid min-w-0 grid-cols-1 gap-1">
+              {rules.map((rule, index) => {
+                const reading = readRule(rule.match)
+                const catchAll = isCatchAll(rule)
+
+                return (
+                  <div
+                    className="flex min-w-0 items-center gap-1 rounded-lg border border-(--stroke-nous) px-1.5 py-1"
+                    data-match={rule.match}
+                    data-testid="rule-row"
+                    key={`${rule.match}#${index}`}
+                  >
+                    {/* 哪一类匹配：读的是 `readRule`，与后端同一个前缀表 —— 屏幕上不许有两套认法。 */}
+                    <span
+                      className="w-11 shrink-0 truncate text-[10px] text-(--ui-text-tertiary)"
+                      title={catchAll ? copy.ruleCatchAllNote : undefined}
+                    >
+                      {copy.ruleKinds[reading.kind] ?? reading.kind}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs" title={rule.match}>
+                      {rule.match}
+                    </span>
+                    <select
+                      aria-label={`${copy.ruleVia} ${rule.match}`}
+                      className="w-20 shrink-0 rounded-md border border-(--stroke-nous) bg-transparent px-1 py-1 text-xs disabled:opacity-40"
+                      disabled={busy || !loaded}
+                      onChange={event => editRules(current => patchRuleVia(current, index, event.target.value))}
+                      value={rule.via}
+                    >
+                      {vias.map(via => (
+                        <option key={via.value} value={via.value}>
+                          {via.label}
+                        </option>
+                      ))}
+                      {/* 表里可能有这里没列出来的去向（组、或已删掉的节点）：照实摆出来，别悄悄改成第一项。 */}
+                      {vias.some(via => via.value === rule.via) ? null : <option value={rule.via}>{rule.via}</option>}
+                    </select>
+                    {/* 兜底那条不给挪、不给删：它一挪/一没，排在它后面的规则就永远轮不到。 */}
+                    {catchAll ? (
+                      <span className="w-14 shrink-0 text-right text-[10px] text-(--ui-text-tertiary)">{copy.ruleCatchAllBadge}</span>
+                    ) : (
+                      <>
+                        <button
+                          aria-label={`${copy.ruleMoveUp} ${rule.match}`}
+                          className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) disabled:opacity-30"
+                          disabled={busy || index === 0}
+                          onClick={() => editRules(current => patchRuleMove(current, index, -1))}
+                          type="button"
+                        >
+                          <ArrowUp className="size-3" />
+                        </button>
+                        <button
+                          aria-label={`${copy.ruleMoveDown} ${rule.match}`}
+                          className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) disabled:opacity-30"
+                          disabled={busy || index === rules.length - 1}
+                          onClick={() => editRules(current => patchRuleMove(current, index, 1))}
+                          type="button"
+                        >
+                          <ArrowUp className="size-3 rotate-180" />
+                        </button>
+                        <button
+                          aria-label={`${copy.remove} ${rule.match}`}
+                          className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) disabled:opacity-30"
+                          disabled={busy}
+                          onClick={() => editRules(current => patchRuleRemove(current, index))}
+                          type="button"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {loaded && !hasCatchAll ? (
+            <button
+              className="justify-self-start rounded-lg border border-(--stroke-nous) px-2.5 py-1.5 text-xs text-(--ui-text-secondary)"
+              disabled={busy}
+              onClick={() => editRules(current => patchRuleCatchAll(current, ctl.exit ? `proxy:${ctl.exit}` : 'direct'))}
+              type="button"
+            >
+              {copy.catchAllFix}
+            </button>
+          ) : null}
         </div>
       )}
     </div>
@@ -484,6 +726,7 @@ export function EgressRailIcon({ className }: { className?: string }) {
 
   useEffect(() => {
     let alive = true
+
     //: `window.plobiDesktop` 缺席时 `getNetworkStatus()` 是**同步抛**的（读 `.api` 就炸）。
     //: 这个 effect 在 `useEffect` 里跑，同步抛会直接把整棵树上进错误边界——所以这里必须
     //: 是 async：async 函数里的同步抛会变成 rejected promise，下面的 `.catch` 才接得住。
@@ -492,13 +735,16 @@ export function EgressRailIcon({ className }: { className?: string }) {
     const read = async () => {
       try {
         const next = await getNetworkStatus()
-        if (alive) setVpn(Boolean((next as EgressStatusExtra).switch?.vpn))
+
+        if (alive) {setVpn(Boolean((next as EgressStatusExtra).switch?.vpn))}
       } catch {
         // 读不到就保持灰色：图标是状态的渲染，不是状态的来源。
       }
     }
+
     void read()
     const timer = setInterval(() => void read(), 60_000)
+
     return () => {
       alive = false
       clearInterval(timer)

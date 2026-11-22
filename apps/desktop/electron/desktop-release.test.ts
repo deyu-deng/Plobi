@@ -543,3 +543,75 @@ test('release payload 里的 id / url 要一路传到下载源', async () => {
   assert.equal(planDownloadSources(hit!.assets[0], '')[0].url, WIN_ASSET.apiUrl)
 })
 
+// ---------------------------------------------------------------------------
+// 0.3.3 自更新事故的三条回归：黑窗、竞态降级、helper 生死不可考。
+// 这三点合起来才把那一晚变成「一块黑窗刷屏 + 装了个源码版」。
+// ---------------------------------------------------------------------------
+
+function writeHelperForTest(installer = 'C:\\Temp\\Plobi-0.3.2-win-x64.exe'): string {
+  return writeUpdateHelper({
+    installerPath: installer,
+    installDir: 'D:\\Software\\Plobi',
+    appPath: 'D:\\Software\\Plobi\\Plobi.exe',
+    plobiHome: 'D:\\Data\\AppData\\plobi',
+    tag: 'v0.3.2'
+  })
+}
+
+function withHelper(run: (text: string) => void, installer?: string): void {
+  const helper = writeHelperForTest(installer)
+  try {
+    run(fs.readFileSync(helper, 'utf8'))
+  } finally {
+    try {
+      fs.unlinkSync(helper)
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+test('the update helper writes a heartbeat as its very first output', () => {
+  withHelper((text) => {
+    const lines = text.split(/\r?\n/)
+    const firstEcho = lines.findIndex((line) => line.startsWith('echo '))
+    const waitLabel = lines.findIndex((line) => line.includes(':plobi_wait_exit'))
+
+    assert.ok(firstEcho >= 0, 'helper must log something at all')
+    assert.match(lines[firstEcho], /plobi update helper started at %DATE% %TIME%/)
+    assert.ok(waitLabel > firstEcho, 'the heartbeat has to land before the app-exit wait, or a hung helper looks dead')
+  })
+})
+
+test('the update helper waits for the shell install to land before picking 2a or 2b', () => {
+  withHelper((text) => {
+    const installAt = text.indexOf('/S /D=')
+    const settleAt = text.indexOf('wait until the shell install has actually landed')
+    const bundledStageAt = text.indexOf('-Stage repository -BundleDir')
+
+    assert.ok(installAt >= 0 && settleAt > installAt, 'NSIS /S returns before resources\\backend exists -- judge only after it settles')
+    assert.ok(settleAt < bundledStageAt)
+    assert.match(text, /\$iname='Plobi-0\.3\.2-win-x64'/, 'the settle wait must watch the installer that is actually running')
+    assert.match(text, /Get-Process -ErrorAction SilentlyContinue \| Where-Object/)
+    assert.match(text, /Test-Path -LiteralPath \$probe/)
+    assert.match(text, /TotalSeconds -ge 20\)/, 'the installer needs a real settle window: resources\\backend lands late on slow disks')
+    assert.match(text, /ProcessName -like '\*Plobi\*'/, 'watch the whole Plobi family: NSIS temp processes are not named after the package')
+    assert.match(text, /TotalSeconds -ge 180/, 'the settle wait must be bounded')
+  })
+})
+
+test('every powershell the update helper starts is windowless', () => {
+  withHelper((text) => {
+    const invocations = text.match(/powershell [^\r\n]*/g) ?? []
+
+    assert.ok(invocations.length >= 2, 'expected the settle wait plus the install.ps1 calls')
+
+    for (const invocation of invocations) {
+      assert.match(invocation, /-WindowStyle Hidden/, `powershell must not surface a console: ${invocation}`)
+      assert.match(invocation, /-NoProfile/)
+    }
+
+    assert.doesNotMatch(text, /powershell -ExecutionPolicy Bypass -File/)
+  })
+})
+

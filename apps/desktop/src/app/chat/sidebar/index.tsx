@@ -7,14 +7,6 @@ import { StatusbarControls, type StatusbarItem } from '@/app/shell/statusbar-con
 import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -60,16 +52,15 @@ import {
   AGENT_COLOR_CHOICES,
   AGENT_ICON_CHOICES,
   type AgentCategory,
-  agentIdFromEnglish,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
   creatableCategoryOptions,
   createAgentErrorMessage,
   DEFAULT_AGENT_CATEGORY,
-  isCreateAgentCategoryBlocked,
   isCreateAgentSubmitDisabled,
   isValidEnglishName
 } from './create-agent'
+import { AgentFormDialog } from './agent-form'
 import { sidebarNavForLevel } from './nav-level'
 import { ProjectDialog } from './project-dialog'
 import { SidebarSegment, type SidebarSegmentItem } from './sidebar-segment'
@@ -209,6 +200,7 @@ export function ChatSidebar({
   // 英文名框有没有被用户亲手改过。改过之后中文名再怎么变都不许机器抢回去——
   // 用户改的是他的决定，自动翻译只负责给一个起点。
   const [createAgentEnglishTouched, setCreateAgentEnglishTouched] = useState(false)
+  const [createAgentTranslating, setCreateAgentTranslating] = useState(false)
   const [createAgentBusy, setCreateAgentBusy] = useState(false)
   const [createAgentError, setCreateAgentError] = useState<null | string>(null)
   const [createAgentCategory, setCreateAgentCategory] = useState<AgentCategory>(DEFAULT_AGENT_CATEGORY)
@@ -312,18 +304,35 @@ export function ChatSidebar({
     }
   }, [createAgentPaths])
 
+  // 那个刷新按钮：用户嫌翻得不对就点一次，重新走一遍翻译引擎（用户 2026-11-22）。
+  const retranslateCreateAgentEnglish = useCallback(async () => {
+    const trimmed = createAgentName.trim()
+
+    if (!trimmed || createAgentTranslating) {
+      return
+    }
+
+    setCreateAgentTranslating(true)
+
+    try {
+      const result = await suggestAgentName(trimmed, { refresh: true })
+
+      // 重新翻译就是要覆盖：用户点这个按钮的意图是「换一个」。
+      setCreateAgentEnglish(result.englishName)
+      setCreateAgentEnglishTouched(true)
+    } catch {
+      // 翻不出来不是错误：框里原来的值留着，让用户自己改。
+    } finally {
+      setCreateAgentTranslating(false)
+    }
+  }, [createAgentName, createAgentTranslating])
+
   const submitCreateAgent = useCallback(async () => {
     const trimmed = createAgentName.trim()
     const english = createAgentEnglish.trim()
 
     // 英文名是门牌的来源（2026-11-16 i18n 定名刀）：不合法就不发请求。
     if (!trimmed || !isValidEnglishName(english) || createAgentBusy) {
-      return
-    }
-
-    // Events agents need a schedule-backed source_event_id; the dialog
-    // disables submit for that category, but guard here too.
-    if (isCreateAgentCategoryBlocked(createAgentCategory)) {
       return
     }
 
@@ -596,230 +605,88 @@ export function ChatSidebar({
       )}
 
       <ProjectDialog />
-      <Dialog onOpenChange={value => !value && !createAgentBusy && setCreateAgentOpen(false)} open={createAgentOpen}>
-        <DialogContent className="max-w-md" onInteractOutside={event => event.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{c.newAgentLabel}</DialogTitle>
-            <DialogDescription>{c.newAgentDesc}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="grid gap-4"
-            onSubmit={event => {
-              event.preventDefault()
-              void submitCreateAgent()
-            }}
-          >
-            <div className="grid gap-1.5">
-              <label className="text-xs font-medium" htmlFor="new-agent-name">
-                {t.agents.nameLabel}
-              </label>
-              <Input
-                autoFocus
-                id="new-agent-name"
-                onChange={event => setCreateAgentName(event.target.value)}
-                value={createAgentName}
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <label className="text-xs font-medium" htmlFor="new-agent-english">
-                {c.newAgentEnglishLabel}
-              </label>
-              <Input
-                id="new-agent-english"
-                onChange={event => {
-                  setCreateAgentEnglishTouched(true)
-                  setCreateAgentEnglish(event.target.value)
-                }}
-                value={createAgentEnglish}
-              />
-              <p className="text-xs text-muted-foreground">
-                {isValidEnglishName(createAgentEnglish) ? (
-                  <>
-                    <span className="opacity-70">agent id:</span>{' '}
-                    <code>{agentIdFromEnglish(createAgentEnglish)}</code>
-                  </>
-                ) : (
-                  c.newAgentEnglishHelp
-                )}
-              </p>
-            </div>
-            <div className="grid gap-1.5">
-              <label className="text-xs font-medium" htmlFor="new-agent-category">
-                {c.newAgentCategoryLabel}
-              </label>
-              <Select
-                onValueChange={value => setCreateAgentCategory(value as AgentCategory)}
-                value={createAgentCategory}
-              >
-                <SelectTrigger aria-label={c.newAgentCategoryLabel} id="new-agent-category">
-                  <SelectValue placeholder={c.newAgentCategoryLabel} />
-                </SelectTrigger>
-                <SelectContent>
-                  {createAgentCategoryOptions.map(cat => (
-                    <SelectItem key={cat} value={cat}>
-                      {c.agentCategories[cat] ?? cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* WP-AGENT-CREATE-UPGRADE：每类一行帮助——选这类是干什么的。
-                  可选链：i18n 键被别线的整文件覆写卷走时降级为空串，绝不打挂整棵树。 */}
-              <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                {c.newAgentCategoryHelp?.[createAgentCategory] ?? ''}
-              </p>
-            </div>
-            {/* WP-STUDIO (裁定 36.1): a projects/research/courses agent needs the
-                folder(s) it works in. Butler agents work nowhere in particular,
-                so the picker never appears for them.
-                WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加
-                多个文件夹」）：单值 → 清单，可加多个；第一个是主文件夹。 */}
-            {categoryNeedsProjectPath(createAgentCategory) && (
-              <div className="grid gap-1.5">
-                <label className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
-                  {c.newAgentFoldersLabel}
-                </label>
-                {createAgentPaths.length === 0 ? (
-                  <p className="text-[0.75rem] text-(--ui-text-tertiary)">
-                    {c.newAgentFolderPlaceholder}
-                  </p>
-                ) : (
-                  <ul className="grid gap-1">
-                    {createAgentPaths.map((path, index) => (
-                      <li
-                        className={cn(
-                          'flex items-center gap-2 rounded-md bg-(--ui-control-hover-background) px-2 py-1 text-[0.75rem]'
-                        )}
-                        key={path}
-                      >
-                        <Codicon
-                          className="shrink-0 text-(--ui-text-tertiary)"
-                          name="folder"
-                          size="0.75rem"
-                        />
-                        <span className="min-w-0 flex-1 truncate" title={path}>
-                          {path}
-                        </span>
-                        {index === 0 && (
-                          <span className="shrink-0 text-[0.625rem] uppercase text-(--ui-text-quaternary)">
-                            {c.newAgentFolderPrimary}
-                          </span>
-                        )}
-                        <Button
-                          aria-label={c.newAgentFolderRemove}
-                          className="size-5 shrink-0 text-(--ui-text-quaternary) hover:text-foreground"
-                          onClick={() =>
-                            setCreateAgentPaths(createAgentPaths.filter(item => item !== path))
-                          }
-                          size="icon-xs"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Codicon name="close" size="0.75rem" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <Button
-                  className="self-start"
-                  onClick={() => void pickCreateAgentFolder()}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Codicon name="add" size="0.75rem" />
-                  {c.newAgentFolderAdd}
-                </Button>
-                <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                  {c.newAgentFolderPrimaryHint}
-                </p>
-              </div>
-            )}
-            {/* WP-AGENT-CREATE-UPGRADE：图标与颜色（用户 10-16 要回的「可爱」）。 */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
-                {c.newAgentAppearanceLabel}
-              </span>
-              <div className="flex flex-wrap items-center gap-1">
-                {AGENT_ICON_CHOICES.map(name => (
-                  <button
-                    aria-label={name}
-                    aria-pressed={createAgentIcon === name}
-                    className={cn(
-                      'flex size-7 items-center justify-center rounded-md',
-                      createAgentIcon === name
-                        ? 'bg-(--ui-control-hover-background) text-foreground'
-                        : 'text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
-                    )}
-                    key={name}
-                    onClick={() => setCreateAgentIcon(createAgentIcon === name ? '' : name)}
-                    type="button"
-                  >
-                    <Codicon name={name} size="0.875rem" />
-                  </button>
-                ))}
-                <Button
-                  aria-label={c.newAgentAppearanceClear}
-                  className="size-7 text-(--ui-text-quaternary) hover:text-foreground"
-                  onClick={() => {
-                    setCreateAgentIcon('')
-                    setCreateAgentColor('')
-                  }}
-                  size="icon-xs"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Codicon name="close" size="0.75rem" />
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {AGENT_COLOR_CHOICES.map(color => (
-                  <button
-                    aria-label={color}
-                    aria-pressed={createAgentColor === color}
-                    className={cn(
-                      'size-5 rounded-full ring-offset-2 transition-shadow',
-                      createAgentColor === color
-                        ? 'ring-2 ring-(--ui-text-tertiary) ring-offset-background'
-                        : 'hover:ring-2 hover:ring-(--ui-text-quaternary) hover:ring-offset-background'
-                    )}
-                    key={color}
-                    onClick={() => setCreateAgentColor(createAgentColor === color ? '' : color)}
-                    style={{ backgroundColor: color }}
-                    type="button"
-                  />
-                ))}
-              </div>
-              <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                {c.newAgentAppearanceHint}
-              </p>
-            </div>
-            {isCreateAgentCategoryBlocked(createAgentCategory) && (
-              <p className="text-xs text-destructive">{c.createEventAgentHint}</p>
-            )}
-            {createAgentError && <p className="text-xs text-destructive">{createAgentError}</p>}
-            <DialogFooter>
-              <Button disabled={createAgentBusy} onClick={() => setCreateAgentOpen(false)} type="button" variant="ghost">
-                {t.common.cancel}
-              </Button>
-              <Button
-                disabled={
-                  createAgentBusy ||
-                  isCreateAgentSubmitDisabled(
-                    createAgentName,
-                    createAgentEnglish,
-                    createAgentCategory,
-                    createAgentPaths
-                  )
-                }
-                type="submit"
-              >
-                {c.newAgentLabel}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <AgentFormDialog
+        appearanceLabels={{
+          clear: c.newAgentAppearanceClear,
+          hint: c.newAgentAppearanceHint,
+          label: c.newAgentAppearanceLabel
+        }}
+        busy={createAgentBusy}
+        busyLabel={c.newAgentLabel}
+        canSubmit={
+          !isCreateAgentSubmitDisabled(
+            createAgentName,
+            createAgentEnglish,
+            createAgentCategory,
+            createAgentPaths
+          )
+        }
+        cancelLabel={t.common.cancel}
+        color={createAgentColor}
+        description={c.newAgentDesc}
+        displayName={createAgentName}
+        englishHelp={c.newAgentEnglishHelp}
+        englishLabel={c.newAgentEnglishLabel}
+        englishName={createAgentEnglish}
+        error={createAgentError}
+        extra={
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="new-agent-category">
+              {c.newAgentCategoryLabel}
+            </label>
+            <Select onValueChange={value => setCreateAgentCategory(value as AgentCategory)} value={createAgentCategory}>
+              <SelectTrigger aria-label={c.newAgentCategoryLabel} id="new-agent-category">
+                <SelectValue placeholder={c.newAgentCategoryLabel} />
+              </SelectTrigger>
+              <SelectContent>
+                {createAgentCategoryOptions.map(cat => <SelectItem key={cat} value={cat}>{c.agentCategories[cat] ?? cat}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[0.6875rem] text-(--ui-text-tertiary)">{c.newAgentCategoryHelp?.[createAgentCategory] ?? ''}</p>
+          </div>
+        }
+        folderLabels={{
+          add: c.newAgentFolderAdd,
+          empty: c.newAgentFolderPlaceholder,
+          hint: c.newAgentFolderPrimaryHint,
+          label: c.newAgentFoldersLabel,
+          primary: c.agentEditPathPrimary,
+          remove: c.agentEditPathRemove
+        }}
+        icon={createAgentIcon}
+        idPrefix="new-agent"
+        nameLabel={t.agents.nameLabel}
+        onAddFolder={() => {
+          void pickCreateAgentFolder()
+        }}
+        onCancel={() => setCreateAgentOpen(false)}
+        onChangeColor={setCreateAgentColor}
+        onChangeIcon={setCreateAgentIcon}
+        onClearAppearance={() => {
+          setCreateAgentIcon('')
+          setCreateAgentColor('')
+        }}
+        onDisplayNameChange={setCreateAgentName}
+        onEnglishNameChange={value => {
+          setCreateAgentEnglishTouched(true)
+          setCreateAgentEnglish(value)
+        }}
+        onOpenChange={setCreateAgentOpen}
+        onRemoveFolder={path => setCreateAgentPaths(createAgentPaths.filter(item => item !== path))}
+        onRetranslate={() => {
+          void retranslateCreateAgentEnglish()
+        }}
+        onSubmit={() => {
+          void submitCreateAgent()
+        }}
+        open={createAgentOpen}
+        paths={createAgentPaths}
+        retranslateLabel={c.retranslateLabel}
+        showFolders={categoryNeedsProjectPath(createAgentCategory)}
+        submitLabel={c.newAgentLabel}
+        title={c.newAgentLabel}
+        translating={createAgentTranslating}
+      />
     </Sidebar>
   )
 }

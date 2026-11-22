@@ -293,4 +293,65 @@ describe('对话卡片：抬头', () => {
     )
     expect($openConversation.get()).toBeNull()
   })
+
+  it('改名框在能写回的那家先说清会同步，写上不了的先说清只改这边', async () => {
+    api.mockResolvedValue(TRANSCRIPT)
+    const view = renderPane({ ...EXTERNAL, titleWritable: true })
+
+    await screen.findByText('读完了，标题是 Sindri')
+    openActionsMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Rename/ }))
+
+    expect(screen.getByDisplayValue('跟它说一句').getAttribute('placeholder')).toBe(
+      'Renaming also updates the name inside that app'
+    )
+
+    view.unmount()
+    renderPane({ ...EXTERNAL, titleWritable: false })
+    await screen.findByText('读完了，标题是 Sindri')
+    openActionsMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Rename/ }))
+
+    expect(screen.getByDisplayValue('跟它说一句').getAttribute('placeholder')).toBe(
+      'Only Plobi changes — that app keeps its own name'
+    )
+  })
+
+  it('写不进它自己那边的：标题旁挂一枚「仅本地」，悬停是后端那句原话', async () => {
+    api.mockImplementation(({ method }: { method?: string }) =>
+      method === 'PATCH'
+        ? Promise.resolve({ data: { title_note: 'This app cannot be renamed here', written_back: false }, ok: true })
+        : Promise.resolve(TRANSCRIPT)
+    )
+    renderPane({ ...EXTERNAL, titleWritable: false })
+    await screen.findByText('读完了，标题是 Sindri')
+
+    openActionsMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Rename/ }))
+    fireEvent.change(screen.getByDisplayValue('跟它说一句'), { target: { value: '新名字' } })
+    fireEvent.keyDown(screen.getByDisplayValue('新名字'), { key: 'Enter' })
+
+    expect(await screen.findByText('Plobi only')).toBeTruthy()
+    expect(screen.getByTitle('This app cannot be renamed here')).toBeTruthy()
+  })
+
+  it('后端拒了就不把新名顶上去：改名框留着，原因挂在那枚红标上', async () => {
+    api.mockImplementation(({ method }: { method?: string }) =>
+      method === 'PATCH'
+        ? Promise.resolve({ data: { error: 'Qoder is open — close it first' }, ok: false })
+        : Promise.resolve(TRANSCRIPT)
+    )
+    renderPane({ ...EXTERNAL, titleWritable: true })
+    await screen.findByText('读完了，标题是 Sindri')
+
+    openActionsMenu()
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Rename/ }))
+    fireEvent.change(screen.getByDisplayValue('跟它说一句'), { target: { value: '新名字' } })
+    fireEvent.keyDown(screen.getByDisplayValue('新名字'), { key: 'Enter' })
+
+    expect(await screen.findByTitle('Qoder is open — close it first')).toBeTruthy()
+    // 牌子没换：屏上仍是老名字，输入框还开着（要改一下就能再存）。
+    expect(screen.queryByText('新名字')).toBeNull()
+    expect(screen.getByDisplayValue('新名字')).toBeTruthy()
+  })
 })

@@ -2,14 +2,21 @@ import { describe, expect, it } from 'vitest'
 
 import {
   asEgressBlock,
+  type EgressBlock,
   exitOf,
+  isCatchAll,
   modeOf,
   patchExit,
   patchMode,
+  patchRuleAdd,
+  patchRuleCatchAll,
+  patchRuleMove,
+  patchRuleRemove,
+  patchRuleVia,
   patchTransport,
   proxyTooltip,
-  transportOf,
-  type EgressBlock
+  readRule,
+  transportOf
 } from './egress-edit'
 
 const TUN_BLOCK = { 'allow-foreign': false, name: 'PlobiTun', stack: 'gvisor' }
@@ -77,6 +84,7 @@ describe('规则/全局与默认出口', () => {
         { match: '*', via: 'proxy:POOL' }
       ]
     })
+
     const next = patchExit(withExtra, 'a')
 
     expect(next.rules?.[0]).toEqual({ match: 'geosite:cn', via: 'direct' })
@@ -119,5 +127,76 @@ describe('proxyTooltip：声明与注册表是两句话', () => {
 
   it('没有读数就不说话——把"读不到"报成"没接管"是另一种谎', () => {
     expect(proxyTooltip(COPY, undefined)).toBe('')
+  })
+})
+
+describe('规则行：读得出来、删得掉、挪不过兜底', () => {
+  it('认得出引擎认的每一类，也认得出兜底那条', () => {
+    // 这张表与 `agent/egress/rules.py` 的 `_KIND_PREFIX` 同源：屏幕认不出的一行，
+    // 到了引擎那里就是另一个意思，两套认法是必须避免的那种 bug。
+    expect(readRule('example.com').kind).toBe('domain')
+    expect(readRule('*.example.com').kind).toBe('suffix')
+    expect(readRule('1.2.3.0/24').kind).toBe('cidr')
+    expect(readRule('geosite:cn').kind).toBe('geosite')
+    expect(readRule('geoip:cn').kind).toBe('geoip')
+    expect(readRule('keyword:ads').kind).toBe('keyword')
+    expect(readRule('regex:^ad\\.').kind).toBe('regex')
+    expect(readRule('process:C:\\a b.exe').kind).toBe('process')
+    expect(readRule('src:192.168.0.0/16').kind).toBe('src')
+    expect(readRule('*').kind).toBe('catchAll')
+  })
+
+  it('写不出来的那一行当场说错在哪，而不是当成一条奇怪的域名收下', () => {
+    expect(readRule('').error).toBe('empty')
+    expect(readRule('geosite:').error).toBe('emptyPayload')
+    // 冒号前不是已知前缀：`example.com:8080` 也走这里 —— 规则里端口没有意义。
+    expect(readRule('foo:bar').error).toBe('badPrefix')
+    expect(readRule('a b.com').error).toBe('space')
+    // 夹在中间的通配引擎不认；只认开头的 `*.`（子域名）与单独一条 `*`（兜底）。
+    expect(readRule('api.*.com').error).toBe('wildcard')
+    // 这两个前缀的取值里带空格是正常的，别误判。
+    expect(readRule('regex:^ad guard$').error).toBeUndefined()
+    expect(readRule('process:C:\\Program Files\\a.exe').error).toBeUndefined()
+  })
+
+  it('加一条插在兜底**之前**——插后面等于没插', () => {
+    const next = patchRuleAdd(block(), '*.example.com', 'proxy:a')
+
+    expect(next.rules?.map(rule => rule.match)).toEqual(['geosite:cn', '*.example.com', '*'])
+    expect(next.rules?.[1].via).toBe('proxy:a')
+  })
+
+  it('同一个匹配再加一次就是改它的去向，不留一条永远轮不到的死人', () => {
+    const next = patchRuleAdd(block(), 'geosite:cn', 'proxy:a')
+
+    expect(next.rules).toHaveLength(2)
+    expect(next.rules?.[0]).toEqual({ match: 'geosite:cn', via: 'proxy:a' })
+  })
+
+  it('兜底那条删不得：删了它，"没匹配上的去哪"就没有答案', () => {
+    const rules = block().rules ?? []
+    const at = rules.findIndex(isCatchAll)
+
+    expect(() => patchRuleRemove(block(), at)).toThrow()
+    // 别的规则照删。
+    expect(patchRuleRemove(block(), 0).rules?.map(rule => rule.match)).toEqual(['*'])
+  })
+
+  it('兜底那条也挪不动，别的规则跨不过它', () => {
+    // 已经贴着兜底的那一条再往下：原地还回同一个块（屏幕据此什么都不发）。
+    const same = block()
+    expect(patchRuleMove(same, 0, 1)).toBe(same)
+    // 兜底自己也不动。
+    expect(() => patchRuleMove(same, 1, -1)).not.toThrow()
+    expect(patchRuleMove(same, 1, -1)).toBe(same)
+  })
+
+  it('改去向只动那一条；补兜底走的是同一条加规则的路', () => {
+    const via = patchRuleVia(block(), 0, 'proxy:a')
+    expect(via.rules?.[0].via).toBe('proxy:a')
+    expect(via.rules?.[1]).toEqual({ match: '*', via: 'proxy:POOL' })
+
+    const added = patchRuleCatchAll(block({ rules: [{ match: 'geosite:cn', via: 'direct' }] }), 'direct')
+    expect(added.rules?.map(rule => rule.match)).toEqual(['geosite:cn', '*'])
   })
 })

@@ -224,34 +224,104 @@ function Get-WindowsArch {
 
 # ============================================================================
 
+# ---------------------------------------------------------------------------
+# Console output gate
+# ---------------------------------------------------------------------------
+# 自更新时 install.ps1 是由一个**无窗口**的 helper 带着 -NonInteractive 调起来的。
+# 但 Write-Host 走的是 host，不受 `>> 日志` 重定向影响 —— 75 处输出于是全部变成
+# 黑窗里的刷屏，日志里反而一片空白（0.3.3 那晚就是这样，日志只有一段断掉的下载）。
+# 所以所有输出统一过这道闸门：
+#   * 交互安装（用户自己开终端跑）：原样 Write-Host，颜色照旧；
+#   * 非交互 / 有 PLOBI_LOG / PLOBI_QUIET=1：只追加进日志文件，不碰 host。
+#
+# 注意：**不要**把下面的 Write-PlobiLine 改成 Write-Output。stdout 是 stage
+# 协议的 JSON 通道，混进人类可读文本会让驱动方（桌面引导、CI）解析失败。
+$script:PlobiQuietCache = $null
+
+function Test-PlobiQuietOutput {
+    if ($null -ne $script:PlobiQuietCache) { return $script:PlobiQuietCache }
+
+    $quiet = $false
+    if ($env:PLOBI_QUIET -eq "1" -or $env:PLOBI_LOG) { $quiet = $true }
+    elseif ($NonInteractive) { $quiet = $true }
+
+    $script:PlobiQuietCache = $quiet
+    return $quiet
+}
+
+function Write-PlobiLog {
+    param([string]$Message)
+
+    $logPath = $env:PLOBI_LOG
+    if (-not $logPath) { return }
+
+    try {
+        Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        # 写日志失败绝不能让安装失败。
+    }
+}
+
+# 与 Write-Host 的参数面保持兼容（-ForegroundColor / -BackgroundColor / -NoNewline），
+# 调用点因此可以逐字替换，不必改写 75 处调用的形式。
+function Write-PlobiLine {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromPipeline = $true)] [object]$Object = "",
+        [ConsoleColor]$ForegroundColor,
+        [ConsoleColor]$BackgroundColor,
+        [switch]$NoNewline
+    )
+
+    begin { $chunks = New-Object System.Collections.ArrayList }
+    process {
+        if ($null -eq $Object) { $Object = "" }
+        [void]$chunks.Add([string]$Object)
+    }
+    end {
+        $text = ($chunks -join " ")
+
+        if (Test-PlobiQuietOutput) {
+            Write-PlobiLog $text
+            return
+        }
+
+        $hostArgs = @{ Object = $text }
+        if ($PSBoundParameters.ContainsKey("ForegroundColor")) { $hostArgs["ForegroundColor"] = $ForegroundColor }
+        if ($PSBoundParameters.ContainsKey("BackgroundColor")) { $hostArgs["BackgroundColor"] = $BackgroundColor }
+        if ($NoNewline) { $hostArgs["NoNewline"] = $true }
+        Write-Host @hostArgs
+    }
+}
+
 function Write-Banner {
-    Write-Host ""
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host "|             * Plobi Agent Installer                    |" -ForegroundColor Magenta
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host "|  An open source AI agent by Nous Research.              |" -ForegroundColor Magenta
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Magenta
-    Write-Host ""
+    Write-PlobiLine ""
+    Write-PlobiLine "+---------------------------------------------------------+" -ForegroundColor Magenta
+    Write-PlobiLine "|             * Plobi Agent Installer                    |" -ForegroundColor Magenta
+    Write-PlobiLine "+---------------------------------------------------------+" -ForegroundColor Magenta
+    Write-PlobiLine "|  An open source AI agent by Nous Research.              |" -ForegroundColor Magenta
+    Write-PlobiLine "+---------------------------------------------------------+" -ForegroundColor Magenta
+    Write-PlobiLine ""
 }
 
 function Write-Info {
     param([string]$Message)
-    Write-Host "-> $Message" -ForegroundColor Cyan
+    Write-PlobiLine "-> $Message" -ForegroundColor Cyan
 }
 
 function Write-Success {
     param([string]$Message)
-    Write-Host "[OK] $Message" -ForegroundColor Green
+    Write-PlobiLine "[OK] $Message" -ForegroundColor Green
 }
 
 function Write-Warn {
     param([string]$Message)
-    Write-Host "[!] $Message" -ForegroundColor Yellow
+    Write-PlobiLine "[!] $Message" -ForegroundColor Yellow
 }
 
 function Write-Err {
     param([string]$Message)
-    Write-Host "[X] $Message" -ForegroundColor Red
+    Write-PlobiLine "[X] $Message" -ForegroundColor Red
 }
 
 function Invoke-NativeWithRelaxedErrorAction {
@@ -767,7 +837,7 @@ function Test-Python {
         # uv ran but Python still not findable -- show what happened
         if ($uvExitCode -ne 0) {
             Write-Warn "uv python install output:"
-            Write-Host $uvOutput -ForegroundColor DarkGray
+            Write-PlobiLine $uvOutput -ForegroundColor DarkGray
         }
     } catch {
         # Restore EAP in case the try block threw before the assignment
@@ -3015,7 +3085,7 @@ function Install-NodeDeps {
                     $snippet = if ($errText.Length -gt 1200) { $errText.Substring(0, 1200) + "..." } else { $errText }
                     Write-Info "  npm output:"
                     foreach ($line in $snippet -split "`n") {
-                        Write-Host "    $line" -ForegroundColor DarkGray
+                        Write-PlobiLine "    $line" -ForegroundColor DarkGray
                     }
                     Write-Info "  Full log: $logPath"
                     Show-NpmCertHint $errText | Out-Null
@@ -3117,7 +3187,7 @@ function Install-NodeDeps {
                                 $snippet = if ($pwErr.Length -gt 1200) { $pwErr.Substring(0, 1200) + "..." } else { $pwErr }
                                 Write-Info "  playwright output:"
                                 foreach ($line in $snippet -split "`n") {
-                                    Write-Host "    $line" -ForegroundColor DarkGray
+                                    Write-PlobiLine "    $line" -ForegroundColor DarkGray
                                 }
                                 Write-Info "  Full log: $pwLog"
                             }
@@ -3445,7 +3515,7 @@ function Install-Desktop {
             if ($errText) {
                 $snippet = if ($errText.Length -gt 1800) { $errText.Substring(0, 1800) + "..." } else { $errText }
                 Write-Info "  desktop build output:"
-                foreach ($line in $snippet -split "`n") { Write-Host "    $line" -ForegroundColor DarkGray }
+                foreach ($line in $snippet -split "`n") { Write-PlobiLine "    $line" -ForegroundColor DarkGray }
                 Write-Info "  Full log: $buildLog"
             }
             throw "apps/desktop build failed (exit $code)"
@@ -3617,7 +3687,7 @@ function Install-PlatformSdks {
     }
     if ($needed.Count -eq 0) { return }
 
-    Write-Host ""
+    Write-PlobiLine ""
     Write-Info "Verifying platform SDKs for tokens found in $envPath ..."
 
     # Verify each SDK's import without triggering side-effect imports.
@@ -3661,7 +3731,7 @@ function Install-PlatformSdks {
 
         foreach ($sdk in $missing) {
             Write-Info "  Installing $($sdk.Spec) ..."
-            & $pythonExe -m pip install $sdk.Spec 2>&1 | ForEach-Object { Write-Host "    $_" }
+            & $pythonExe -m pip install $sdk.Spec 2>&1 | ForEach-Object { Write-PlobiLine "    $_" }
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "  Installed $($sdk.Import)"
             } else {
@@ -3687,9 +3757,9 @@ function Invoke-SetupWizard {
         return
     }
 
-    Write-Host ""
+    Write-PlobiLine ""
     Write-Info "Starting setup wizard..."
-    Write-Host ""
+    Write-PlobiLine ""
 
     Push-Location $InstallDir
 
@@ -3725,10 +3795,10 @@ function Start-GatewayIfConfigured {
     $whatsappEnabled = $content | Where-Object { $_ -match "^WHATSAPP_ENABLED=true" }
     $whatsappSession = "$PlobiHome\whatsapp\session\creds.json"
     if ($whatsappEnabled -and -not (Test-Path $whatsappSession)) {
-        Write-Host ""
+        Write-PlobiLine ""
         Write-Info "WhatsApp is enabled but not yet paired."
         Write-Info "Running 'plobi whatsapp' to pair via QR code..."
-        Write-Host ""
+        Write-PlobiLine ""
         # Non-interactive callers (GUI installer, CI) skip the QR-pair prompt;
         # WhatsApp pairing requires a human looking at a phone camera, so the
         # downstream UI is responsible for surfacing this when it makes sense.
@@ -3746,10 +3816,10 @@ function Start-GatewayIfConfigured {
         }
     }
 
-    Write-Host ""
+    Write-PlobiLine ""
     Write-Info "Messaging platform token detected!"
     Write-Info "The gateway handles messaging platforms and cron job execution."
-    Write-Host ""
+    Write-PlobiLine ""
 
     # In non-interactive mode the gateway lifecycle is the caller's problem
     # (the GUI manages its own gateway process, CI doesn't want background
@@ -3782,59 +3852,59 @@ function Start-GatewayIfConfigured {
 }
 
 function Write-Completion {
-    Write-Host ""
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Green
-    Write-Host "|              [OK] Installation Complete!                |" -ForegroundColor Green
-    Write-Host "+---------------------------------------------------------+" -ForegroundColor Green
-    Write-Host ""
+    Write-PlobiLine ""
+    Write-PlobiLine "+---------------------------------------------------------+" -ForegroundColor Green
+    Write-PlobiLine "|              [OK] Installation Complete!                |" -ForegroundColor Green
+    Write-PlobiLine "+---------------------------------------------------------+" -ForegroundColor Green
+    Write-PlobiLine ""
     
     # Show file locations
-    Write-Host "* Your files:" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "   Config:    " -NoNewline -ForegroundColor Yellow
-    Write-Host "$PlobiHome\config.yaml"
-    Write-Host "   API Keys:  " -NoNewline -ForegroundColor Yellow
-    Write-Host "$PlobiHome\.env"
-    Write-Host "   Data:      " -NoNewline -ForegroundColor Yellow
-    Write-Host "$PlobiHome\cron\, sessions\, logs\"
-    Write-Host "   Code:      " -NoNewline -ForegroundColor Yellow
-    Write-Host "$PlobiHome\plobi-agent\"
-    Write-Host ""
+    Write-PlobiLine "* Your files:" -ForegroundColor Cyan
+    Write-PlobiLine ""
+    Write-PlobiLine "   Config:    " -NoNewline -ForegroundColor Yellow
+    Write-PlobiLine "$PlobiHome\config.yaml"
+    Write-PlobiLine "   API Keys:  " -NoNewline -ForegroundColor Yellow
+    Write-PlobiLine "$PlobiHome\.env"
+    Write-PlobiLine "   Data:      " -NoNewline -ForegroundColor Yellow
+    Write-PlobiLine "$PlobiHome\cron\, sessions\, logs\"
+    Write-PlobiLine "   Code:      " -NoNewline -ForegroundColor Yellow
+    Write-PlobiLine "$PlobiHome\plobi-agent\"
+    Write-PlobiLine ""
     
-    Write-Host "---------------------------------------------------------" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "* Commands:" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "   plobi              " -NoNewline -ForegroundColor Green
-    Write-Host "Start chatting"
-    Write-Host "   plobi setup        " -NoNewline -ForegroundColor Green
-    Write-Host "Configure API keys & settings"
-    Write-Host "   plobi config       " -NoNewline -ForegroundColor Green
-    Write-Host "View/edit configuration"
-    Write-Host "   plobi config edit  " -NoNewline -ForegroundColor Green
-    Write-Host "Open config in editor"
-    Write-Host "   plobi gateway      " -NoNewline -ForegroundColor Green
-    Write-Host "Start messaging gateway (Telegram, Discord, etc.)"
-    Write-Host "   plobi update       " -NoNewline -ForegroundColor Green
-    Write-Host "Update to latest version"
-    Write-Host ""
+    Write-PlobiLine "---------------------------------------------------------" -ForegroundColor Cyan
+    Write-PlobiLine ""
+    Write-PlobiLine "* Commands:" -ForegroundColor Cyan
+    Write-PlobiLine ""
+    Write-PlobiLine "   plobi              " -NoNewline -ForegroundColor Green
+    Write-PlobiLine "Start chatting"
+    Write-PlobiLine "   plobi setup        " -NoNewline -ForegroundColor Green
+    Write-PlobiLine "Configure API keys & settings"
+    Write-PlobiLine "   plobi config       " -NoNewline -ForegroundColor Green
+    Write-PlobiLine "View/edit configuration"
+    Write-PlobiLine "   plobi config edit  " -NoNewline -ForegroundColor Green
+    Write-PlobiLine "Open config in editor"
+    Write-PlobiLine "   plobi gateway      " -NoNewline -ForegroundColor Green
+    Write-PlobiLine "Start messaging gateway (Telegram, Discord, etc.)"
+    Write-PlobiLine "   plobi update       " -NoNewline -ForegroundColor Green
+    Write-PlobiLine "Update to latest version"
+    Write-PlobiLine ""
     
-    Write-Host "---------------------------------------------------------" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "[*] Restart your terminal for PATH changes to take effect" -ForegroundColor Yellow
-    Write-Host ""
+    Write-PlobiLine "---------------------------------------------------------" -ForegroundColor Cyan
+    Write-PlobiLine ""
+    Write-PlobiLine "[*] Restart your terminal for PATH changes to take effect" -ForegroundColor Yellow
+    Write-PlobiLine ""
     
     if (-not $HasNode) {
-        Write-Host "Note: Node.js could not be installed automatically." -ForegroundColor Yellow
-        Write-Host "Browser tools need Node.js. Install manually:" -ForegroundColor Yellow
-        Write-Host "  https://nodejs.org/en/download/" -ForegroundColor Yellow
-        Write-Host ""
+        Write-PlobiLine "Note: Node.js could not be installed automatically." -ForegroundColor Yellow
+        Write-PlobiLine "Browser tools need Node.js. Install manually:" -ForegroundColor Yellow
+        Write-PlobiLine "  https://nodejs.org/en/download/" -ForegroundColor Yellow
+        Write-PlobiLine ""
     }
     
     if (-not $HasRipgrep) {
-        Write-Host "Note: ripgrep (rg) was not installed. For faster file search:" -ForegroundColor Yellow
-        Write-Host "  winget install BurntSushi.ripgrep.MSVC" -ForegroundColor Yellow
-        Write-Host ""
+        Write-PlobiLine "Note: ripgrep (rg) was not installed. For faster file search:" -ForegroundColor Yellow
+        Write-PlobiLine "  winget install BurntSushi.ripgrep.MSVC" -ForegroundColor Yellow
+        Write-PlobiLine ""
     }
 }
 
@@ -4322,9 +4392,9 @@ function Set-DataDirChoice {
     }
 
     while ($true) {
-        Write-Host ""
+        Write-PlobiLine ""
         Write-Info "Plobi 的运行数据（配置、数据库、缓存）写在一个目录里。手打路径就照你写的来。"
-        Write-Host "  建议：$default"
+        Write-PlobiLine "  建议：$default"
         $answer = Read-Host "  数据目录（回车=建议值，输入路径=改到别处，q=退出）"
         if ($answer -match "^\s*(q|quit|exit)\s*$") {
             Write-Err "已取消：数据目录没定，后面每一步都没有落点"
@@ -4343,7 +4413,7 @@ function Set-DataDirChoice {
             return
         }
         Write-Warn "这个目录不能用：$($r.reason)"
-        Write-Host "  换一条路径，或回车回到建议值。"
+        Write-PlobiLine "  换一条路径，或回车回到建议值。"
     }
 }
 
@@ -4472,11 +4542,11 @@ try {
     }
 
     # Interactive mode: keep today's friendly recovery hint.
-    Write-Host ""
+    Write-PlobiLine ""
     Write-Err "Installation failed: $_"
-    Write-Host ""
+    Write-PlobiLine ""
     Write-Info "If the error is unclear, try downloading and running the script directly:"
-    Write-Host "  Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/deyu-deng/Plobi/main/scripts/install.ps1' -OutFile install.ps1" -ForegroundColor Yellow
-    Write-Host "  .\install.ps1" -ForegroundColor Yellow
-    Write-Host ""
+    Write-PlobiLine "  Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/deyu-deng/Plobi/main/scripts/install.ps1' -OutFile install.ps1" -ForegroundColor Yellow
+    Write-PlobiLine "  .\install.ps1" -ForegroundColor Yellow
+    Write-PlobiLine ""
 }

@@ -1,23 +1,19 @@
 import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
-import { previewAgentRename, renameAgent, updateAgent } from '@/app/console/api'
+import { previewAgentRename, renameAgent, suggestAgentName, updateAgent } from '@/app/console/api'
 import { refreshConsoleAgents } from '@/app/console/store/agents'
 import type { Agent } from '@/app/console/types'
+import { agentRoute, agentRouteId } from '@/app/routes'
+import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { pickProjectFolder } from '@/store/projects'
 
-import { AGENT_COLOR_CHOICES, AGENT_ICON_CHOICES, agentIdFromEnglish, isValidEnglishName } from './create-agent'
+import { AgentFormDialog } from './agent-form'
+import { agentIdFromEnglish, isValidEnglishName } from './create-agent'
 
 /**
  * 「三个点 → 编辑这个 Agent」（用户 10-21：「可以编辑更多信息，比如修改添加
@@ -27,7 +23,7 @@ import { AGENT_COLOR_CHOICES, AGENT_ICON_CHOICES, agentIdFromEnglish, isValidEng
  *   - 中文名（`displayName`）：左栏那行字
  *   - 英文名（`displayNameEn`）：英文界面里那行字，同时是门牌 `agent_id` 的唯一来源
  * 门牌不让手填——用户想改门牌就改英文名，`agentIdFromEnglish` 派生出新的 `agent_id`，
- * 派活、记忆、历史跟着换（还是要走一遍 dry-run 清单再确认，见 `askRename`）。
+ * 派活、记忆、历史跟着换（还是要走一遍 dry-run 清单再确认，见 `confirmRename`）。
  *   - 图标与颜色（创建时选过、左栏以前从不渲染，现在两边一致）
  *   - 工作目录清单（主文件夹在前；后端取首个驱动右栏挂载）
  *
@@ -45,6 +41,8 @@ export function AgentEditDialog({
 }) {
   const { t } = useI18n()
   const c = t.console
+  const navigate = useNavigate()
+  const location = useLocation()
   const [displayName, setDisplayName] = useState(agent.name || agent.id)
   const [icon, setIcon] = useState(agent.icon ?? '')
   const [color, setColor] = useState(agent.color ?? '')
@@ -55,7 +53,36 @@ export function AgentEditDialog({
   // 拿到才显示——不预告一个可能失败的清单。
   const [englishName, setEnglishName] = useState(agent.displayNameEn ?? '')
   const [renameSteps, setRenameSteps] = useState<string[] | null>(null)
+  // 保存时如果英文名改了，得连门牌一起搬。这一步不许「先把显示名落库、门牌回头再说」
+  // （用户 2026-11-22 亲眼看见的裂缝：侧栏 Plobi-Desktop，对话框还在念旧 id）。
+  // 所以清单摊出来之前一格都没写盘，确认之后 rename + patch 连着做完。
+  const [pendingSave, setPendingSave] = useState<null | { name: string; nextId: string }>(null)
   const [renaming, setRenaming] = useState(false)
+  const [translating, setTranslating] = useState(false)
+
+  // 刷新按钮：翻得不对就重翻一次（用户 2026-11-22）。翻译源是中文名。
+  async function retranslate() {
+    const source = displayName.trim()
+
+    if (!source || translating) {
+      return
+    }
+
+    setTranslating(true)
+
+    try {
+      const result = await suggestAgentName(source, { refresh: true })
+
+      if (result.englishName) {
+        setEnglishName(result.englishName)
+        setRenameSteps(null)
+      }
+    } catch {
+      // 翻不出来就维持原样，让用户自己写。
+    } finally {
+      setTranslating(false)
+    }
+  }
   const nextId = agentIdFromEnglish(englishName)
 
   // 每次打开都从名册现状回填：攒着上一次关窗时的半截输入再来一次很吓人。
@@ -72,35 +99,31 @@ export function AgentEditDialog({
     setPaths(agent.projectPaths ?? (agent.projectPath ? [agent.projectPath] : []))
   }, [agent.color, agent.displayNameEn, agent.icon, agent.id, agent.name, agent.projectPath, agent.projectPaths, open])
 
-  const askRename = async () => {
-    const next = nextId
+  // 真正落库的那一下：改名（门牌 + 名册 + 磁盘 + session 全搬）先做，再用**新 id**
+  // 把这张表单的字段写回去。顺序反了就会出现「显示名是新名字、门牌还是旧的」这种
+  // 半截状态——那正是用户 11-22 看到的分裂。
+  const confirmRename = async () => {
+    const next = pendingSave?.nextId
 
-    if (!next || next === agent.id) {
+    if (!next) {
       return
     }
-
-    setBusy(true)
-
-    try {
-      const preview = await previewAgentRename(agent.id, next)
-
-      setRenameSteps(preview.steps ?? [])
-    } catch (cause) {
-      notifyError(cause, c.agentEditRenameFailed)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const confirmRename = async () => {
-    const next = nextId
 
     setRenaming(true)
 
     try {
       await renameAgent(agent.id, next)
+      await patchFields(next, pendingSave.name)
       setRenameSteps(null)
+      setPendingSave(null)
       await refreshConsoleAgents()
+
+      // 门牌换了，路由也得跟着走：还停在 `/agents/<旧id>` 的话，输入框、名册
+      // 查表、会话归属全都对着一个已经不存在的 id 取值。
+      if ((agentRouteId(location.pathname) || '').toLowerCase() === agent.id.toLowerCase()) {
+        navigate(agentRoute(next), { replace: true })
+      }
+
       notify({ message: c.agentEditRenamed })
       onOpenChange(false)
     } catch (cause) {
@@ -108,6 +131,20 @@ export function AgentEditDialog({
     } finally {
       setRenaming(false)
     }
+  }
+
+  // 只送用户真改过的格；一个目录都没绑的（butler）不送这一格，免得把「本来就没有」
+  // 写成「清空」。
+  const patchFields = async (id: string, name: string) => {
+    await updateAgent(id, {
+      color,
+      displayName: name,
+      // 英文名跟着这张表单一起存：它就是门牌来源，空了会让英文界面回落到中文名
+      // （后端允许空串，语义是「没有英文名」）。
+      displayNameEn: englishName.trim(),
+      icon,
+      ...(paths.length ? { projectPaths: paths } : {})
+    })
   }
 
   const addFolder = async () => {
@@ -118,6 +155,9 @@ export function AgentEditDialog({
     }
   }
 
+  // 保存一键到底：英文名没改就只落字段；改了就把 dry-run 清单摊出来（此刻一格都
+  // 没写盘），用户点确认才 rename + patch 连着做。以前这里先 patch 再问改名，等于
+  // 把「名字改了但门牌没改」当成正常结果给了用户。
   const save = async () => {
     const name = displayName.trim()
 
@@ -128,20 +168,22 @@ export function AgentEditDialog({
     setBusy(true)
 
     try {
-      await updateAgent(agent.id, {
-        color,
-        displayName: name,
-        // 英文名跟着这张表单一起存：它就是门牌来源，空了会让英文界面回落到中文名
-        // （后端允许空串，语义是「没有英文名」）。手门牌那一步在下面的「改名…」。
-        displayNameEn: englishName.trim(),
-        icon,
-        // 只有这张表单上真能改的目录才送；一个都没绑的（butler）不送这一格，
-        // 免得把「本来就没有」写成「清空」。
-        ...(paths.length ? { projectPaths: paths } : {})
-      })
-      await refreshConsoleAgents()
-      notify({ message: c.agentEditSaved })
-      onOpenChange(false)
+      const next = isValidEnglishName(englishName) ? agentIdFromEnglish(englishName) : ''
+      const needsRename = Boolean(next) && next.toLowerCase() !== agent.id.toLowerCase()
+
+      if (!needsRename) {
+        await patchFields(agent.id, name)
+        await refreshConsoleAgents()
+        notify({ message: c.agentEditSaved })
+        onOpenChange(false)
+
+        return
+      }
+
+      const preview = await previewAgentRename(agent.id, next)
+
+      setPendingSave({ name, nextId: next })
+      setRenameSteps(preview.steps ?? [])
     } catch (cause) {
       notifyError(cause, c.agentEditFailed)
     } finally {
@@ -150,228 +192,121 @@ export function AgentEditDialog({
   }
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{c.agentEditTitle}</DialogTitle>
-          <DialogDescription>{c.agentEditBody.replace('{name}', agent.name || agent.id)}</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.agentEditNameLabel}</span>
-            <input
-              className="h-8 w-full rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 text-sm outline-none focus:border-(--ui-stroke-secondary)"
-              onChange={event => setDisplayName(event.target.value)}
-              value={displayName}
-            />
-          </label>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.agentEditAppearanceLabel}</span>
-            <div className="flex flex-wrap items-center gap-1">
-              {AGENT_ICON_CHOICES.map(name => (
-                <button
-                  aria-label={name}
-                  aria-pressed={icon === name}
-                  className={cn(
-                    'flex size-7 items-center justify-center rounded-md',
-                    icon === name
-                      ? 'bg-(--ui-control-hover-background) text-foreground'
-                      : 'text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
-                  )}
-                  key={name}
-                  onClick={() => setIcon(icon === name ? '' : name)}
-                  type="button"
-                >
-                  <Codicon name={name} size="0.875rem" />
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {AGENT_COLOR_CHOICES.map(choice => (
-                <button
-                  aria-label={choice}
-                  aria-pressed={color === choice}
-                  className={cn(
-                    'size-5 rounded-full border transition-transform hover:scale-110',
-                    color === choice ? 'border-foreground' : 'border-transparent'
-                  )}
-                  key={choice}
-                  onClick={() => setColor(color === choice ? '' : choice)}
-                  style={{ backgroundColor: choice }}
-                  type="button"
-                />
-              ))}
-              <button
-                aria-label={c.agentEditAppearanceClear}
-                className="flex size-5 items-center justify-center rounded-full text-(--ui-text-quaternary) hover:text-foreground"
-                onClick={() => {
-                  setIcon('')
-                  setColor('')
-                }}
-                type="button"
-              >
-                <Codicon name="close" size="0.75rem" />
-              </button>
-            </div>
-            <div className="flex items-center gap-1.5 text-[0.6875rem] text-(--ui-text-tertiary)">
-              <span>{c.agentEditPreviewLabel}</span>
-              {icon
-                ? (
-                    <span className="flex items-center gap-1" style={color ? { color } : undefined}>
-                      <Codicon name={icon} size="0.875rem" />
-                      {displayName.trim() || agent.id}
-                    </span>
-                  )
-                : (
-                    <span className="flex items-center gap-1">
-                      <span className="size-2 rounded-full" style={{ backgroundColor: color || 'var(--ui-text-quaternary)' }} />
-                      {displayName.trim() || agent.id}
-                    </span>
-                  )}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.agentEditPathsLabel}</span>
-            {paths.length === 0 && (
-              <p className="text-[0.6875rem] text-(--ui-text-quaternary)">{c.agentEditPathsEmpty}</p>
-            )}
-            <ul className="flex flex-col gap-1">
-              {paths.map((path, index) => (
-                <li
-                  className="flex items-center gap-1.5 rounded-md border border-(--ui-stroke-tertiary) px-2 py-1 text-xs"
-                  key={path}
-                >
-                  <Codicon className="shrink-0 text-(--ui-text-tertiary)" name={index === 0 ? 'folder-active' : 'folder'} size="0.75rem" />
-                  <span className="min-w-0 flex-1 truncate" title={path}>
-                    {path}
-                  </span>
-                  {index === 0 && (
-                    <span className="shrink-0 text-[0.625rem] text-(--ui-text-quaternary)">{c.agentEditPathPrimary}</span>
-                  )}
-                  <button
-                    aria-label={c.agentEditPathRemove}
-                    className="flex size-5 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground"
-                    onClick={() => setPaths(paths.filter(item => item !== path))}
-                    type="button"
-                  >
-                    <Codicon name="close" size="0.75rem" />
-                  </button>
+    <AgentFormDialog
+      appearanceLabels={{ clear: c.agentEditAppearanceClear, label: c.agentEditAppearanceLabel }}
+      busy={busy}
+      busyLabel={c.agentEditSaving}
+      canSubmit={Boolean(displayName.trim())}
+      cancelLabel={c.agentEditCancel}
+      color={color}
+      description={c.agentEditBody.replace('{name}', agent.id)}
+      displayName={displayName}
+      englishHelp={c.newAgentEnglishHelp}
+      englishLabel={c.newAgentEnglishLabel}
+      englishName={englishName}
+      extra={
+        renameSteps && (
+          <div
+            className="flex flex-col gap-1.5 rounded-md border border-(--ui-stroke-secondary) p-2"
+            role="alertdialog"
+          >
+            <span className="text-xs font-medium">
+              {c.agentEditRenameTitle.replace('{name}', pendingSave?.nextId ?? nextId)}
+            </span>
+            <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
+              {c.agentEditRenameBody.replace('{count}', String(renameSteps.length))}
+            </span>
+            <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto text-[0.6875rem] text-(--ui-text-quaternary)">
+              {renameSteps.map(line => (
+                <li className="truncate" key={line} title={line}>
+                  {line}
                 </li>
               ))}
             </ul>
-            <button
-              aria-label={c.agentEditPathAdd}
-              className="flex items-center gap-1 self-start rounded-md px-1.5 py-0.5 text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground"
-              onClick={() => {
-                void addFolder()
-              }}
-              type="button"
-            >
-              <Codicon name="add" size="0.75rem" />
-              {c.agentEditPathAdd}
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="flex flex-col gap-1">
-              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.newAgentEnglishLabel}</span>
-              <input
-                className="h-8 w-full rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 text-sm outline-none focus:border-(--ui-stroke-secondary)"
-                onChange={event => {
-                  setEnglishName(event.target.value)
-                  setRenameSteps(null)
-                }}
-                value={englishName}
-              />
-            </label>
-            {/* 门牌不是另一件东西，就是这个英文名折出来的那一串，所以直接摊在眼前：
-                用户改一个字就看见 agent id 跟着变，不必猜。 */}
-            <span className="text-[0.6875rem] text-(--ui-text-quaternary)">
-              {isValidEnglishName(englishName) ? (
-                <>
-                  agent id: <code className="rounded bg-(--ui-control-hover-background) px-1">{nextId}</code>
-                </>
-              ) : (
-                c.newAgentEnglishHelp
-              )}
-            </span>
-            {isValidEnglishName(englishName) && nextId !== agent.id && !renameSteps && (
-              <button
-                className="self-start rounded-md border border-(--ui-stroke-tertiary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-60"
-                disabled={busy}
+            <div className="flex items-center gap-1.5">
+              <Button
+                disabled={renaming}
                 onClick={() => {
-                  void askRename()
+                  void confirmRename()
                 }}
+                size="sm"
                 type="button"
               >
-                {c.agentEditIdentityChange}
-              </button>
-            )}
-            {renameSteps && (
-              <div
-                className="flex flex-col gap-1.5 rounded-md border border-(--ui-stroke-secondary) p-2"
-                role="alertdialog"
+                {c.agentEditRenameConfirm}
+              </Button>
+              <Button
+                disabled={renaming}
+                onClick={() => {
+                  setRenameSteps(null)
+                  setPendingSave(null)
+                }}
+                size="sm"
+                type="button"
+                variant="ghost"
               >
-                <span className="text-xs font-medium">{c.agentEditRenameTitle.replace('{name}', nextId)}</span>
-                <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                  {c.agentEditRenameBody.replace('{count}', String(renameSteps.length))}
-                </span>
-                <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto text-[0.6875rem] text-(--ui-text-quaternary)">
-                  {renameSteps.map(line => (
-                    <li className="truncate" key={line} title={line}>
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    className="rounded-md bg-(--ui-accent) px-2 py-1 text-[0.6875rem] text-white disabled:opacity-60"
-                    disabled={renaming}
-                    onClick={() => {
-                      void confirmRename()
-                    }}
-                    type="button"
-                  >
-                    {c.agentEditRenameConfirm}
-                  </button>
-                  <button
-                    className="rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground hover:bg-(--ui-control-hover-background)"
-                    disabled={renaming}
-                    onClick={() => setRenameSteps(null)}
-                    type="button"
-                  >
-                    {c.agentEditRenameCancel}
-                  </button>
-                </div>
-              </div>
-            )}
+                {c.agentEditRenameCancel}
+              </Button>
+            </div>
           </div>
+        )
+      }
+      folderLabels={{
+        add: c.agentEditPathAdd,
+        empty: c.agentEditPathsEmpty,
+        label: c.agentEditPathsLabel,
+        primary: c.agentEditPathPrimary,
+        remove: c.agentEditPathRemove
+      }}
+      icon={icon}
+      idPrefix="edit-agent"
+      nameLabel={c.agentEditNameLabel}
+      onAddFolder={() => {
+        void addFolder()
+      }}
+      onCancel={() => onOpenChange(false)}
+      onChangeColor={setColor}
+      onChangeIcon={setIcon}
+      onClearAppearance={() => {
+        setIcon('')
+        setColor('')
+      }}
+      onDisplayNameChange={setDisplayName}
+      onEnglishNameChange={value => {
+        setEnglishName(value)
+        setRenameSteps(null)
+      }}
+      onOpenChange={onOpenChange}
+      onRemoveFolder={path => setPaths(paths.filter(item => item !== path))}
+      onRetranslate={() => {
+        void retranslate()
+      }}
+      onSubmit={() => {
+        void save()
+      }}
+      open={open}
+      paths={paths}
+      preview={
+        <div className="flex items-center gap-1.5 text-[0.6875rem] text-(--ui-text-tertiary)">
+          <span>{c.agentEditPreviewLabel}</span>
+          {icon
+            ? (
+                <span className="flex items-center gap-1" style={color ? { color } : undefined}>
+                  <Codicon name={icon} size="0.875rem" />
+                  {displayName.trim() || agent.id}
+                </span>
+              )
+            : (
+                <span className="flex items-center gap-1">
+                  <span className="size-2 rounded-full" style={{ backgroundColor: color || 'var(--ui-text-quaternary)' }} />
+                  {displayName.trim() || agent.id}
+                </span>
+              )}
         </div>
-
-        <DialogFooter>
-          <button
-            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-(--ui-control-hover-background)"
-            disabled={busy}
-            onClick={() => onOpenChange(false)}
-            type="button"
-          >
-            {c.agentEditCancel}
-          </button>
-          <button
-            className="rounded-md bg-(--ui-accent) px-3 py-1.5 text-sm text-white disabled:opacity-60"
-            disabled={busy || !displayName.trim()}
-            onClick={() => {
-              void save()
-            }}
-            type="button"
-          >
-            {busy ? c.agentEditSaving : c.agentEditSave}
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      }
+      retranslateLabel={c.retranslateLabel}
+      submitLabel={c.agentEditSave}
+      title={c.agentEditTitle}
+      translating={translating}
+    />
   )
 }

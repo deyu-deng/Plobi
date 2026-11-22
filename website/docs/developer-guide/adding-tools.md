@@ -196,9 +196,90 @@ OPTIONAL_ENV_VARS = {
         "url": "https://weatherapi.com/",
         "tools": ["weather"],
         "password": True,
+        "category": "tool",
     },
 }
 ```
+
+`category` decides **where the field shows up** in Settings — it does not enable
+anything:
+
+| `category` | Surfaces under | Read by |
+| --- | --- | --- |
+| `tool` | Tools & Keys → Tools | the tool itself, at call time |
+| `provider` | Settings → Providers (model API keys) | the model client |
+| `messaging` | Messaging page (or Tools & Keys → Settings for gateway-wide rows) | the gateway adapter |
+| `setting` | Tools & Keys → Settings | server / webhook / gateway boot |
+
+Two things worth knowing before you pick `tool`:
+
+- The `tools` field is **documentation only**. It is printed by `plobi env` as a
+  hint (`WEATHER_API_KEY → weather`) and returned to the desktop client; nothing
+  in tool registration or toolset resolution reads it. A key being present or
+  absent never changes which tools are registered — it only changes whether the
+  tool works once called.
+- `category="tool"` (and `messaging`) puts the variable on the subprocess
+  blocklist in `tools/environments/local.py`, so terminals and `execute_code`
+  never inherit it. If a shell command is supposed to `curl` the service with
+  that credential, use `category="skill"` instead.
+
+Note that a credential is not a toolset switch: toolsets (see `toolsets.py`) are
+what gate tools in or out of the model's tool list. See
+[Toolsets reference](../reference/toolsets-reference.md) for that axis.
+
+### Optional: give the row a Test button
+
+A row that only stores a key cannot tell the user *whether it works* — a typo sits
+there looking healthy until the first real call fails. Register a probe and the
+desktop client grows a Test button on that row:
+
+```python
+# plobi_cli/env_probe.py
+_PROBES = {
+    "WEATHER_API_KEY": _probe_weather,
+}
+
+
+def _probe_weather(value: str) -> Dict[str, Any]:
+    # One tiny real request against the service — no mocking, no cached answer.
+    resp = httpx.get("https://api.weatherapi.com/v1/current.json",
+                     params={"key": value, "q": "London"}, timeout=10)
+    if resp.status_code in (401, 403):
+        return {"ok": False, "reachable": True, "message": str(resp.status_code)}
+    return {"ok": True, "reachable": True, "message": "", "sample": resp.json()["location"]["name"]}
+```
+
+Each probe returns four things, and the three outcomes stay distinct in the UI:
+
+| Field | Meaning | Shown as |
+| --- | --- | --- |
+| `ok` | the service accepted the credential | 可用 (green) |
+| `reachable=False` | the probe never reached the service (offline, nothing listening) | 连不上服务 (grey) |
+| `ok=False, reachable=True` | the service answered and refused the credential | 被拒绝 (red) |
+| `sample` | what the service actually returned | appended as proof |
+
+This registry is also the only one for **model provider** keys. The Providers
+page (`POST /api/providers/validate`) and Tools & Keys (`POST /api/env/probe`)
+both read `_PROBES`; the provider route is now a thin alias that only translates
+the answer. Adding a credential is therefore one edit, and a provider key gets a
+Test button on both surfaces instead of sending the user to another page to find
+out whether it works.
+
+Rules of the registry:
+
+- A key **without** an entry gets no Test button — never a button whose only
+  possible answer is "unsupported".
+- A probe takes `(value: str, api_key: str = "")`. The second argument is only
+  for services that need another secret to be reachable at all (a custom
+  `OPENAI_BASE_URL` whose `/models` sits behind auth); ignore it otherwise.
+- `reachable=False` must not be reported as a bad credential; a self-hosted
+  endpoint that is merely down is not a wrong key.
+- The probe runs against the **draft** value in the input when there is one, so a
+  mistyped key is caught before saving.
+- Prefer a cheap real call over a `/models` style endpoint when the service has
+  one, and surface a short `sample` (what was translated, resolved, etc.) — it is
+  the difference between "the key was accepted" and "the thing actually works".
+
 
 ## Checklist
 
@@ -207,5 +288,6 @@ OPTIONAL_ENV_VARS = {
 - [ ] Confirmed this really should be a built-in/core tool and not a plugin
 - [ ] Handler returns JSON strings, errors returned as `{"error": "..."}`
 - [ ] Optional: API key added to `OPTIONAL_ENV_VARS` in `plobi_cli/config.py`
+- [ ] Optional: credential probe registered in `plobi_cli/env_probe.py` (gives the row a Test button)
 - [ ] Optional: Added to `toolset_distributions.py` for batch processing
 - [ ] Tested with `plobi chat -q "Use the weather tool for London"`

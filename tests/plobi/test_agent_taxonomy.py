@@ -4,8 +4,8 @@ Covers:
 
 * Four categories (projects/butler/events/research) land on disk with the
   correct default ``project_path`` and the bound folder is created.
-* ``events`` agents require ``sourceEventId`` (a confirmed agenda event) —
-  missing → 400; sixth live events agent → 400.
+* ``events`` agents need nothing extra: no ``sourceEventId``, no cap — an
+  events agent is just "something with a time span" (比赛/会议/学期项目).
 * ``POST /api/agents/:id/dissolve`` archives the profile dir + marks the row
   archived; the default list hides it, ``?include_archived=1`` shows it.
 * Backward compat: a legacy ``projects.yaml`` row without ``category`` loads
@@ -26,7 +26,6 @@ from fastapi.testclient import TestClient
 from plobi.agents.registry import (
     AGENT_CATEGORIES,
     DEFAULT_CATEGORY,
-    MAX_LIVE_EVENTS_AGENTS,
     AgentEntry,
     AgentRegistry,
 )
@@ -160,12 +159,6 @@ def test_four_categories_land_with_correct_project_path(
     ]
     for agent_id, cat, expected_path in cases:
         body = {"id": agent_id, "category": cat}
-        if cat == "events":
-            # events needs a confirmed sourceEventId — stub it.
-            monkeypatch.setattr(
-                console_router, "_agenda_event_is_confirmed", lambda eid: True
-            )
-            body["sourceEventId"] = "evt_confirmed_1"
         resp = client.post("/api/agents", json=body)
         assert resp.status_code == 200, (agent_id, resp.json())
         row = resp.json()["data"]
@@ -222,98 +215,32 @@ def test_overview_returns_project_path(client, _isolated_state):
 
 
 # --------------------------------------------------------------------------- #
-# 裁定 19: events lifecycle guards
+# 用户 2026-11-22：events 不是「日程」。它指的是有时间区间的活动——比赛、会议、
+# 学期项目。所以既不需要 sourceEventId，也没有「最多五个」这种上限。
 # --------------------------------------------------------------------------- #
 
 
-def test_events_agent_without_source_event_id_is_400(
-    client, _isolated_state, monkeypatch
-):
-    """Acceptance #2a: events category without sourceEventId → 400."""
+def test_events_agent_needs_no_source_event(client, _isolated_state, monkeypatch):
+    """events 类直接建就行，不必先挂一条已确认的日程。"""
     _stub_spawn(_isolated_state, monkeypatch)
-    resp = client.post(
-        "/api/agents", json={"id": "evt-no-src", "category": "events"}
-    )
-    assert resp.status_code == 400
-    assert resp.json()["ok"] is False
-    assert "sourceEventId" in resp.json()["error"] or "source_event" in resp.json()["error"]
-    assert _isolated_state.get("evt-no-src") is None
+    resp = client.post("/api/agents", json={"id": "evt-plain", "category": "events"})
+    assert resp.status_code == 200, resp.json()
+    row = resp.json()["data"]
+    assert row["category"] == "events"
+    assert console_router.get_registry().get("evt-plain") is not None
 
 
-def test_events_agent_with_unconfirmed_source_event_is_400(
-    client, _isolated_state, monkeypatch
-):
-    """sourceEventId must point to a *confirmed* agenda event — fail-closed."""
+def test_events_agents_have_no_cap(client, _isolated_state, monkeypatch):
+    """建到第七个也不拦：上限这件事本身被撤了。"""
     _stub_spawn(_isolated_state, monkeypatch)
-    monkeypatch.setattr(
-        console_router, "_agenda_event_is_confirmed", lambda eid: False
-    )
-    resp = client.post(
-        "/api/agents",
-        json={"id": "evt-bad-src", "category": "events", "sourceEventId": "evt_x"},
-    )
-    assert resp.status_code == 400
-    assert resp.json()["ok"] is False
-    assert _isolated_state.get("evt-bad-src") is None
 
-
-def test_sixth_events_agent_is_400(client, _isolated_state, monkeypatch):
-    """Acceptance #2b: the 6th live events agent is rejected (cap = 5)."""
-    _stub_spawn(_isolated_state, monkeypatch)
-    monkeypatch.setattr(
-        console_router, "_agenda_event_is_confirmed", lambda eid: True
-    )
-    # Register 5 events agents directly (bypassing the API to seed the cap).
-    for i in range(MAX_LIVE_EVENTS_AGENTS):
-        _isolated_state.upsert(
-            AgentEntry(
-                name=f"evt-{i}",
-                role="principal",
-                category="events",
-                source_event_id=f"confirmed_{i}",
-            )
+    for i in range(7):
+        resp = client.post(
+            "/api/agents", json={"id": f"evt-many-{i}", "category": "events"}
         )
-    _isolated_state.save()
-    console_router.reload_registry()
-    # The 6th via the API → 400.
-    resp = client.post(
-        "/api/agents",
-        json={"id": "evt-6", "category": "events", "sourceEventId": "confirmed_6"},
-    )
-    assert resp.status_code == 400
-    assert resp.json()["ok"] is False
-    assert "5" in resp.json()["error"] or "events" in resp.json()["error"]
-    assert _isolated_state.get("evt-6") is None
+        assert resp.status_code == 200, (i, resp.json())
 
-
-def test_events_cap_not_counted_on_update(client, _isolated_state, monkeypatch):
-    """Updating an existing events agent (same id) does not trip the cap."""
-    _stub_spawn(_isolated_state, monkeypatch)
-    monkeypatch.setattr(
-        console_router, "_agenda_event_is_confirmed", lambda eid: True
-    )
-    for i in range(MAX_LIVE_EVENTS_AGENTS):
-        _isolated_state.upsert(
-            AgentEntry(
-                name=f"evt-{i}",
-                role="principal",
-                category="events",
-                source_event_id=f"confirmed_{i}",
-            )
-        )
-    _isolated_state.save()
-    console_router.reload_registry()
-    # Re-POST one of the existing ids → should succeed (not counted as new).
-    resp = client.post(
-        "/api/agents",
-        json={
-            "id": "evt-0",
-            "category": "events",
-            "sourceEventId": "confirmed_0",
-        },
-    )
-    # evt-0 is not an agenda entry, so it goes through upsert (update path).
-    assert resp.status_code == 200
+    assert console_router.get_registry().get("evt-many-6") is not None
 
 
 # --------------------------------------------------------------------------- #

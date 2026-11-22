@@ -1,4 +1,4 @@
-import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
+﻿import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
 import type { Translations } from './types'
 
@@ -703,7 +703,39 @@ export const en: Translations = {
       refreshSub: 'Refresh',
       refreshSubHint: 'Re-pull the subscription link this machine saved; members update, your own groups stay',
       tabNodes: 'Nodes',
+      tabRules: 'Rules',
       tabSwitch: 'Switch',
+      rulePlaceholder: 'example.com / *.example.com / geoip:cn',
+      ruleVia: 'Goes to',
+      rulesHint: 'One per line: a domain, *.subdomain, 1.2.3.0/24, geosite:category, geoip:region, keyword:word, regex:pattern, process:name, src:subnet.',
+      rulesEmpty: 'The table has no rules yet.',
+      ruleCatchAllBadge: 'default',
+      ruleCatchAllNote: 'The last one: everything unmatched goes here. It cannot be removed or moved up.',
+      catchAllFix: 'Add the default destination',
+      ruleMoveUp: 'Move up',
+      ruleMoveDown: 'Move down',
+      ruleProblem: (problem: string) =>
+        (
+          {
+            badPrefix: 'That prefix is not one of ours: only geosite/geoip/keyword/regex/process/src.',
+            empty: 'This line is empty.',
+            emptyPayload: 'Nothing after the colon.',
+            space: 'No spaces on this line.',
+            wildcard: 'A star has two forms only: a leading *. (subdomain), or a lone * (the default).'
+          } as Record<string, string>
+        )[problem] ?? problem,
+      ruleKinds: {
+        catchAll: 'default',
+        cidr: 'subnet',
+        domain: 'domain',
+        geoip: 'region',
+        geosite: 'category',
+        keyword: 'keyword',
+        process: 'process',
+        regex: 'regex',
+        src: 'source',
+        suffix: 'suffix'
+      },
       transportOff: 'Not taken over',
       transportSystem: 'System proxy',
       transportTun: 'TUN',
@@ -918,9 +950,15 @@ export const en: Translations = {
       optional: 'Optional',
       enterValueFirst: 'Enter a value first.',
       couldNotSave: 'Could not save credential.',
-        remove: 'Remove',
+      remove: 'Remove',
       getKey: 'Get a key',
-      saving: 'Saving'
+      saving: 'Saving',
+      test: 'Test',
+      testing: 'Testing…',
+      testOk: 'Key works',
+      testRejected: 'Key rejected',
+      testUnreachable: 'Could not reach the service',
+      testSample: sample => `Answered: ${sample}`
     },
     envActions: {
       actionsFor: label => `Actions for ${label}`,
@@ -2239,6 +2277,8 @@ export const en: Translations = {
     expertsRunning: 'running',
     expertsEmpty: 'No experts dispatched yet',
     expertsIdleHint: 'This expert has not been dispatched yet. When the Conductor hands out work with this role, its log shows up here.',
+  expertsIdleTitle: 'Nothing dispatched to this role yet',
+  expertModelEmpty: 'Model catalog has not loaded yet',
     expertModelHint: 'Model used when dispatching it',
     expertModelFollow: 'Follow the Principal',
     expertsLoading: 'Reading experts…',
@@ -2251,6 +2291,10 @@ export const en: Translations = {
     externalSessionsRename: 'Rename',
     externalSessionsSave: 'Save',
     externalSessionsCancel: 'Cancel',
+    externalSessionsRenameSync: 'Renaming also updates the name inside that app',
+    externalSessionsRenameLocalOnly: 'Only Plobi changes — that app keeps its own name',
+    externalSessionsRenameFailed: 'Rename failed — try again',
+    externalSessionsTitleLocalOnly: 'Plobi only',
     externalSessionsArchive: 'Archive',
     externalSessionsUnarchive: 'Unarchive',
     externalSessionsDelete: 'Delete',
@@ -2263,6 +2307,9 @@ export const en: Translations = {
     offloadsNoArtifact: 'There is no artifact to open for this task (it may not have completed).',
     offloadsOpenFailed: 'Could not open the file at this path.',
     offloadsReveal: 'Open the files it generated',
+    offloadsWaitingPermission: 'It stopped for a permission — not a failure. Answer it and it continues.',
+    offloadsWaitingAnswer: 'It stopped for an answer — not a failure. Answer it and it continues.',
+    offloadsWaitingTurn: 'The previous message on this session is still running — it is queued, do not resend.',
     offloadsCostUnknown: 'cost unknown',
     offloadsJump: 'Open this conversation in that app',
     offloadsJumpFailed: 'Cannot open it there: ',
@@ -2275,7 +2322,8 @@ export const en: Translations = {
       'An agent is a member of your team: it owns one kind of work and remembers your preferences over time. Create it and you can call on it by name in the left rail.',
     // 2026-11-16（i18n 定名刀）：中文名只当显示名，门牌从英文名来。
     newAgentEnglishLabel: 'English name',
-    newAgentEnglishHelp: 'Becomes the agent id (lowercase, hyphenated). The left rail keeps showing the Chinese name.',
+    retranslateLabel: 'Translate again',
+    newAgentEnglishHelp: 'Lowercase letters, digits and hyphens.',
     newAgentCategoryLabel: 'Category',
     newAgentCategoryHelp: {
       projects: 'Project: has its own work folder and drives one concrete thing forward.',
@@ -2294,7 +2342,6 @@ export const en: Translations = {
     newAgentFolderPrimary: 'Main',
     newAgentFolderPrimaryHint:
       'The first one is the main folder: the agent’s terminal starts there.',
-    createEventAgentHint: 'Event agents must be created from the schedule (coming later).',
     // WP-AGENT-CREATE-UPGRADE (user 10-16): icon & color, back from the old base.
     newAgentAppearanceLabel: 'Icon & color',
     newAgentAppearanceHint: 'Optional — by default the color follows the name.',
@@ -2940,10 +2987,12 @@ export const en: Translations = {
     copied: 'Copied',
     done: 'Done',
     applyingBody:
-      'The Plobi updater takes over in its own window and reopens Plobi automatically when it’s done. Please don’t reopen Plobi yourself while it’s updating.',
+      'The updater takes over and reopens Plobi on its own when it’s done. Please don’t open it yourself meanwhile.',
     applyingBodyBackend:
       'The remote backend is applying the update and will restart. Plobi reconnects automatically when it’s back.',
     applyingClose: 'This window will close while the update runs, then Plobi reopens on its own.',
+    applyingStale: 'No progress reported yet — still working.',
+    applyingDetail: 'Details',
     errorTitle: 'Update didn’t finish',
     errorBody: 'Nothing was lost. Try again now.',
     notNow: 'Not now',

@@ -179,7 +179,11 @@ describe('一行（Qoder：28px 高、零描边、hover 才出底色）', () => 
 
     const label = screen.getByText('本地')
     expect(label.className).toContain('sr-only')
-    expect(label.getAttribute('title')).toBe('本地')
+    // 11-22：原本断的是原生 `title=`。原生提示由窗口自己画、贴窗口边就被裁（右上角那三个
+    // 容器里就是这么被切一刀的），全文已改走 `Tip`（Radix Portal）—— 所以这里断的是
+    // 「交给 Tooltip 管了」，不是「还挂着 title」。
+    expect(label.getAttribute('title')).toBeNull()
+    expect(label.getAttribute('data-state')).toBe('closed')
     expect(container.querySelector('[data-monitor-icon]')).toBeTruthy()
     expect(screen.getByText('aura')).toBeTruthy()
   })
@@ -198,6 +202,19 @@ describe('一行（Qoder：28px 高、零描边、hover 才出底色）', () => 
 
     fireEvent.click(screen.getByRole('button'))
     expect(onClick).toHaveBeenCalled()
+  })
+
+  it('整行的悬浮说明走 `Tip`，不再挂原生 `title=`（贴窗口边会被裁）', () => {
+    const onClick = vi.fn()
+    const { container } = render(<MonitorRow label="本地" onClick={onClick} title="本地目录" />)
+
+    const row = screen.getByRole('button')
+
+    // 原生提示由窗口自己画，右上角那三个容器贴着窗口边时只剩半截 —— 11-22 起全文交给
+    // Radix Portal 画，所以按钮上不该再有 `title`，而行仍留着读屏用的 `aria-label`。
+    expect(row.getAttribute('title')).toBeNull()
+    expect(row.getAttribute('aria-label')).toBe('本地目录')
+    expect(container.querySelector('[data-monitor-row][title]')).toBeNull()
   })
 
   it('按下态与「动作在飞就别再点」都接得住（旧 rail 行的两条，不能丢）', () => {

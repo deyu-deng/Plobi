@@ -3260,7 +3260,8 @@ class TestWebServerEndpoints:
     def test_parse_model_ids_handles_openai_and_bare_shapes(self):
         """Model discovery must tolerate the common /v1/models shapes and
         never raise (so a slightly non-standard local endpoint still works)."""
-        from plobi_cli.web_server import _parse_model_ids
+        # Lives with the probe that uses it, in the shared registry.
+        from plobi_cli.env_probe import _parse_model_ids
 
         class FakeResp:
             def __init__(self, payload, ok=True):

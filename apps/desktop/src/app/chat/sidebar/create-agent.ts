@@ -151,19 +151,11 @@ export function categoryNeedsProjectPath(category: AgentCategory): boolean {
 }
 
 /**
- * The `events` category cannot be created from this dialog yet — it needs a
- * `source_event_id` from the schedule. The dialog disables submit and shows a
- * hint instead of letting the backend return 400. Centralised so the UI and
- * tests agree on the rule.
- */
-export function isCreateAgentCategoryBlocked(category: AgentCategory): boolean {
-  return category === 'events'
-}
-
-/**
- * Whether submit should stay disabled for the current dialog state: blocked
- * category, missing name, bad English name (门牌来源), or a workspace category
- * with no folder picked yet.
+ * Whether submit should stay disabled for the current dialog state: missing name,
+ * bad English name (门牌来源), or a workspace category with no folder picked yet.
+ *
+ * `events` 不再在这里被拦（用户 2026-11-22）：它指的是「有时间区间的活动」——
+ * 比赛、会议、学期项目，本来就不需要先有一条日程。
  *
  * WP-AGENT-CREATE-UPGRADE：`projectPaths` 是清单（主文件夹在前）；空清单 = 没绑。
  */
@@ -173,10 +165,6 @@ export function isCreateAgentSubmitDisabled(
   category: AgentCategory,
   projectPaths?: readonly (null | string)[] | null
 ): boolean {
-  if (isCreateAgentCategoryBlocked(category)) {
-    return true
-  }
-
   if (!name.trim()) {
     return true
   }

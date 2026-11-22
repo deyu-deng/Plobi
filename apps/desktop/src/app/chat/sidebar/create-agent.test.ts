@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  AGENT_CATEGORY_VALUES,
   DEFAULT_AGENT_CATEGORY,
   agentIdFromEnglish,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
   createAgentErrorMessage,
-  isCreateAgentCategoryBlocked,
   isCreateAgentSubmitDisabled,
-  isValidEnglishName,
-  type AgentCategory
+  isValidEnglishName
 } from './create-agent'
 
 // 2026-11-16（i18n 定名刀）：门牌（agent_id）不再是「名字的 slug + 短哈希」，而是
@@ -119,13 +116,15 @@ describe('buildCreateAgentBody', () => {
   })
 })
 
-describe('isCreateAgentCategoryBlocked', () => {
-  it('blocks only the events category', () => {
-    expect(isCreateAgentCategoryBlocked('events')).toBe(true)
+describe('events 类不再被封禁（用户 2026-11-22）', () => {
+  it('事件类只要名字与英文名齐了就能提交，不需要先有日程', () => {
+    expect(isCreateAgentSubmitDisabled('校运会', 'Sports-Meet', 'events')).toBe(false)
+    expect(isCreateAgentSubmitDisabled('校运会', 'Sports-Meet', 'events', [])).toBe(false)
+  })
 
-    for (const cat of AGENT_CATEGORY_VALUES.filter(c => c !== 'events')) {
-      expect(isCreateAgentCategoryBlocked(cat as AgentCategory)).toBe(false)
-    }
+  it('见不得人的名字照样拦住（拦的是名字，不是类别）', () => {
+    expect(isCreateAgentSubmitDisabled('', 'Sports-Meet', 'events')).toBe(true)
+    expect(isCreateAgentSubmitDisabled('校运会', '校运会', 'events')).toBe(true)
   })
 })
 
@@ -221,8 +220,8 @@ describe('isCreateAgentSubmitDisabled (WP-STUDIO, 裁定 36.1)', () => {
     expect(isCreateAgentSubmitDisabled('Butler', 'Butler', 'butler')).toBe(false)
   })
 
-  it('always keeps submit disabled for events and for an empty name', () => {
-    expect(isCreateAgentSubmitDisabled('Whatever', 'Whatever', 'events', ['D:/x'])).toBe(true)
+  it('keeps submit disabled for an empty name (events is no longer special)', () => {
+    expect(isCreateAgentSubmitDisabled('Whatever', 'Whatever', 'events', ['D:/x'])).toBe(false)
     expect(isCreateAgentSubmitDisabled('   ', '   ', 'butler')).toBe(true)
   })
 

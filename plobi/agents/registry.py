@@ -221,10 +221,6 @@ def build_default_project_paths(
 
 DEFAULT_PROJECT_PATHS: dict[str, str] = build_default_project_paths()
 
-# 裁定 19: events 生命周期护栏。一个 events 类代理必须挂到一条用户已确认的
-# agenda 事项；同时存活 events 类代理上限（超即 400）。
-MAX_LIVE_EVENTS_AGENTS = 5
-
 
 def default_project_path(category: str) -> str:
     """Default folder binding for a category; ``""`` when none (butler)."""
@@ -965,12 +961,6 @@ class AgentRegistry:
     def archived_entries(self) -> list[AgentEntry]:
         """Rows marked archived by ``dissolve`` — visible only on explicit ask."""
         return [e for e in self.entries() if e.archived]
-
-    def count_live_events(self) -> int:
-        """裁定 19: 存活 events 类代理计数（用于 ≤5 上限护栏）。"""
-        return sum(
-            1 for e in self.live_entries() if e.category == "events"
-        )
 
     # ------------------------------------------------------------------ #
     # 模型路由

@@ -56,6 +56,11 @@ from plobi_cli import __version__, __release_date__
 from plobi_cli.self_update import (SELF_UPDATE_FROZEN_MSG, apply_git_update,
                           git_update_state, local_self_update_applies, refusal)
 
+# Live checks for Tools & Keys credentials that are not model providers (a
+# translation engine, a self-hosted endpoint). Kept in its own module because
+# each one has a bespoke call shape, unlike the shared /v1/models probe.
+from plobi_cli.env_probe import is_probeable as _is_probeable, probe_env_value as _probe_env_value
+
 from plobi_cli.config import (
     cfg_get,
     DEFAULT_CONFIG,
@@ -1093,6 +1098,19 @@ class EnvVarDelete(BaseModel):
 
 class EnvVarReveal(BaseModel):
     key: str
+    profile: Optional[str] = None
+
+
+class EnvVarProbe(BaseModel):
+    key: str
+    # Optional on purpose: the SPA tests the value the user typed but has not
+    # saved yet, so a wrong key is caught before it ever reaches .env. Empty
+    # means "check whatever is on disk / in the environment".
+    value: str = ""
+    # Optional second secret, read only by probes that need it to reach the
+    # service — a custom ``OPENAI_BASE_URL`` whose ``/models`` sits behind
+    # auth. Ignored by every other probe.
+    api_key: str = ""
     profile: Optional[str] = None
 
 
@@ -6670,6 +6688,11 @@ async def get_env_vars(profile: Optional[str] = None):
             # Keys page can list (and let the user manage) them instead of
             # hiding everything it doesn't recognise.
             "custom": custom,
+            # True when POST /api/env/probe knows how to check this credential
+            # live. The Tools sub-page renders a "Test" button only for these —
+            # the registry lives in env_probe so a row can never advertise a
+            # check that does not exist.
+            "probe": _is_probeable(var_name),
         }
 
     result = {}
@@ -6714,106 +6737,26 @@ async def set_env_var(body: EnvVarUpdate, profile: Optional[str] = None):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# Live credential probes keyed by env var. Each entry is (method, url, auth)
-# where auth is "bearer" (Authorization header) or "query" (?key=). A cheap
-# read-only models/key call that 401s on a bad token — enough to catch a
-# mistyped key before it's persisted. Providers absent from this map (or local
-# endpoints) are not network-validated; the client treats those as "unknown".
-_CREDENTIAL_PROBES: dict[str, tuple[str, str]] = {
-    "OPENROUTER_API_KEY": ("https://openrouter.ai/api/v1/key", "bearer"),
-    "OPENAI_API_KEY": ("https://api.openai.com/v1/models", "bearer"),
-    "XAI_API_KEY": ("https://api.x.ai/v1/models", "bearer"),
-    "GEMINI_API_KEY": ("https://generativelanguage.googleapis.com/v1beta/models", "query"),
-}
-
-
-def _parse_model_ids(resp: "Any") -> List[str]:
-    """Extract model ids from an OpenAI-compatible ``/v1/models`` response.
-
-    Tolerant of the common shapes: ``{"data": [{"id": ...}]}`` (OpenAI / vLLM /
-    llama.cpp) and a bare ``{"data": ["id", ...]}``. Returns ``[]`` on any
-    parse/HTTP error so a slightly non-standard endpoint never hard-blocks.
-    """
-    try:
-        if not resp.is_success:
-            return []
-        payload = resp.json()
-    except Exception:
-        return []
-    data = payload.get("data") if isinstance(payload, dict) else payload
-    if not isinstance(data, list):
-        return []
-    ids: List[str] = []
-    for item in data:
-        if isinstance(item, dict):
-            mid = str(item.get("id") or "").strip()
-        else:
-            mid = str(item or "").strip()
-        if mid:
-            ids.append(mid)
-    return ids
-
-
+# Provider-key probes live in plobi_cli/env_probe.py — the same registry the
+# Tools & Keys page reads — so adding a credential is one edit, not two. This
+# route stays as a thin alias because the provider wizard still calls it.
 @app.post("/api/providers/validate")
-async def validate_provider_credential(body: EnvVarUpdate, request: Request):
-    """Live-probe a provider credential before it's saved.
+async def validate_provider_credential(body: EnvVarProbe, request: Request):
+    """Live-probe a provider credential before it's saved (alias of ``/api/env/probe``).
 
-    Returns {ok, reachable, message}. ok=True means the provider accepted the
-    key; ok=False + reachable=True means the key is bad (caller should block);
-    reachable=False means the network probe couldn't run (caller may save with
-    a warning rather than hard-blocking offline users).
+    Returns {ok, reachable, message} (+ ``models`` for ``OPENAI_BASE_URL``).
+    ok=True means the provider accepted the key; ok=False + reachable=True means
+    the key is bad (caller should block); reachable=False means the network probe
+    couldn't run (caller may save with a warning rather than hard-blocking).
     """
     _require_token(request)
-    import httpx
-
     key = (body.key or "").strip()
     value = (body.value or "").strip()
-    if not value:
-        return {"ok": False, "reachable": True, "message": "Enter a value first."}
-
-    # Local / custom endpoint: validate connectivity, not auth — any HTTP
-    # response (even 401) proves the endpoint is up. Also surface the model
-    # ids the endpoint advertises (OpenAI ``/v1/models`` shape) so the GUI can
-    # auto-pick a default without asking the user to type a model name.
-    if key == "OPENAI_BASE_URL":
-        url = value.rstrip("/") + "/models"
-        # Send the optional API key so endpoints that require auth on
-        # ``/v1/models`` (many hosted OpenAI-compatible servers) still enumerate
-        # their models instead of returning an empty list behind a 401.
-        api_key = (body.api_key or "").strip()
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
-        try:
-            with httpx.Client(timeout=httpx.Timeout(8.0)) as client:
-                resp = client.get(url, headers=headers)
-            return {"ok": True, "reachable": True, "message": "", "models": _parse_model_ids(resp)}
-        except Exception:
-            return {"ok": False, "reachable": False, "message": f"Could not reach {url}."}
-
-    probe = _CREDENTIAL_PROBES.get(key)
-    if not probe:
-        # No probe for this provider — can't validate, don't block.
-        return {"ok": True, "reachable": False, "message": ""}
-
-    url, auth = probe
-    headers = {"Accept": "application/json"}
-    params = {}
-    if auth == "bearer":
-        headers["Authorization"] = f"Bearer {value}"
-    else:
-        params["key"] = value
-
-    try:
-        with httpx.Client(timeout=httpx.Timeout(10.0)) as client:
-            resp = client.get(url, headers=headers, params=params)
-    except Exception:
-        return {"ok": False, "reachable": False, "message": "Could not reach the provider to verify the key."}
-
-    if resp.status_code in (401, 403):
-        return {"ok": False, "reachable": True, "message": "That API key was rejected. Double-check it and try again."}
-    if resp.status_code == 429 or resp.is_success:
-        # 429 = key is valid but rate-limited; success = valid.
-        return {"ok": True, "reachable": True, "message": ""}
-    return {"ok": False, "reachable": True, "message": f"Provider returned HTTP {resp.status_code} for this key."}
+    if not value: return {"ok": False, "reachable": True, "message": "Enter a value first."}
+    # No probe for this credential — can't validate, don't block.
+    if not _is_probeable(key): return {"ok": True, "reachable": False, "message": ""}
+    # The probe does real network I/O (up to 10s) — keep it off the event loop.
+    return await asyncio.to_thread(_probe_env_value, key, value, (body.api_key or "").strip())
 
 
 @app.delete("/api/env")
@@ -6867,6 +6810,70 @@ async def reveal_env_var(
 
     _log.info("env/reveal: %s", body.key)
     return {"key": body.key, "value": value}
+
+
+@app.post("/api/env/probe")
+async def probe_env_var(
+    body: EnvVarProbe, request: Request, profile: Optional[str] = None
+):
+    """Live-probe a Tools & Keys credential and report whether it works.
+
+    Same three states /api/providers/validate uses, so both settings surfaces
+    read identically to the client:
+
+    - ``ok=True``: the service accepted the credential (``sample`` may carry the
+      translation it produced, which is the honest proof it works);
+    - ``ok=False, reachable=True``: the credential is wrong and ``message`` says
+      why (bad key, quota gone, endpoint answered 500);
+    - ``reachable=False``: the probe could not run at all (offline, nothing
+      listening) — the client must not call that a wrong key.
+
+    ``supported=False`` means this var has no probe; the row never shows a Test
+    button, so the SPA only reaches that case by mistake.
+    """
+    _require_token(request)
+
+    key = (body.key or "").strip()
+
+    if not _is_probeable(key):
+        return {
+            "supported": False,
+            "ok": False,
+            "reachable": False,
+            "message": "",
+            "sample": "",
+        }
+
+    value = (body.value or "").strip()
+
+    if not value:
+        # Fall back to what the app itself will read: .env first (what the user
+        # saved), then the live environment (a key exported by a wrapper).
+        with _profile_scope(body.profile or profile):
+            value = (load_env().get(key) or "").strip()
+        value = value or (os.environ.get(key) or "").strip()
+
+    if not value:
+        return {
+            "supported": True,
+            "ok": False,
+            "reachable": True,
+            "message": "Enter a value first.",
+            "sample": "",
+        }
+
+    # The probe does real network I/O (up to 10s) — keep it off the event loop.
+    result = await asyncio.to_thread(_probe_env_value, key, value, (body.api_key or "").strip())
+
+    # Never log the credential: only the name and the verdict.
+    _log.info(
+        "env/probe: %s ok=%s reachable=%s",
+        key,
+        result.get("ok"),
+        result.get("reachable"),
+    )
+
+    return {"supported": True, **result}
 
 
 # Entries omit fields they don't need to override; the catalog builder fills
@@ -15109,8 +15116,16 @@ async def put_network_egress(body: NetworkEgressUpdate, profile: Optional[str] =
         ok, issues = replace_egress(body.network, notes=seed_notes)
     if not ok:
         raise HTTPException(status_code=400, detail="; ".join(issues))
-    with _profile_scope(body.profile or profile):
-        engine_answer = _reload_egress_engine()
+
+    # reload 里有起引擎探针，还有 `stop_ours` 的等待（最多十几秒）。它原先同步跑在
+    # async 路由里，等于把整个事件循环钉住：这十几秒里连 `/api/status` 都回不了，
+    # 面板上别的按钮全成了「点了没反应」。丢进线程，循环继续转；这件事也就跟
+    # 「面板还开着吗」彻底解耦 —— 关掉面板，保存好的表照样被引擎看见。
+    def _reload_in_scope() -> Dict[str, Any]:
+        with _profile_scope(body.profile or profile):
+            return _reload_egress_engine()
+
+    engine_answer = await asyncio.to_thread(_reload_in_scope)
     # 面板送来的表只带它有的格子；补了什么要当场说出来，否则「保存成功但引擎还是
     # 起不来」会变成下一次要重新排查一遍的账（口径：不静默改写别人的文件）。
     return {"ok": True, "engine": engine_answer, "seeded": seed_notes}

@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TRANSLATIONS } from '@/i18n/catalog'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getNetworkEgress = vi.fn()
 const getNetworkStatus = vi.fn()
@@ -81,7 +81,10 @@ describe('底栏那个面板的控制屏', () => {
     const egress = sent().egress
     expect(egress.engine.tun).toEqual({ 'allow-foreign': false, enabled: true, name: 'PlobiTun', stack: 'gvisor' })
     expect(egress.system_proxy).toEqual({ enabled: false })
-    expect(setNetworkSystemProxy).toHaveBeenCalledWith(false)
+    // 注册表那一半**不归前端**：后端存完按这张表 `ensure()` 一遍（表说不接管就交还原主）。
+    // 前端再自己补一刀就是同一事务的第二半，面板一关就没人跑了（11-22 那次半截事务）。
+    expect(setNetworkSystemProxy).not.toHaveBeenCalled()
+    expect(saveNetworkEgress).toHaveBeenCalledTimes(1)
     // 成员与规则整段带着走：保存面是替换语义，少带一个键等于删掉一个键。
     expect(Object.keys(egress.nodes)).toEqual(['🇯🇵 日本W01'])
     expect(egress.rules).toHaveLength(2)
@@ -116,18 +119,19 @@ describe('底栏那个面板的控制屏', () => {
     expect(screen.getByTestId('proxy-warning').getAttribute('title')).toBe(copy.proxyDeclaredNotApplied)
   })
 
-  it('接管被拒那句话要上屏——它是解析器/监督在说话，不是装饰', async () => {
-    setNetworkSystemProxy.mockResolvedValue({
-      enabled: false,
-      ok: false,
-      proxy: { detail: '接管前那份备份读不出来', state: 'refused' }
+  it('后端那句「接管被拒」要上屏——它是解析器/监督在说话，不是装饰', async () => {
+    // 注册表那一半归后端之后，`ensure()` 的结论跟着 `engine.detail` 一起回来；
+    // 前端唯一的活是别把这句话吞掉。
+    saveNetworkEgress.mockResolvedValue({
+      engine: { detail: 'running-ours；系统代理：接管前那份备份读不出来', state: 'failed' },
+      ok: true
     })
     render(<EgressPanel />)
     await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOff })).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: copy.powerOff }))
 
-    await waitFor(() => expect(screen.getByText('接管前那份备份读不出来')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByText(/接管前那份备份读不出来/).length).toBeGreaterThan(0))
   })
 })
 
@@ -184,7 +188,10 @@ describe('拨不过去与没读到表', () => {
     expect(screen.queryByRole('button', { name: copy.strictRouteRetry })).toBeNull()
     // 第二次写盘必须把**原样**放回去：表里写着 TUN 而机器上什么都没有，就是 10-29 那次事故的形状。
     expect(sent().egress.engine.tun.enabled).toBe(false)
-    expect(setNetworkSystemProxy).toHaveBeenLastCalledWith(true)
+    // 退回去的也是一次**完整**的 PUT：系统代理那一格按原表放回去（本来是接管），后端据此
+    // 再 `ensure()` 一遍，注册表自然回到原来的载体。前端不再另外拨一刀（11-22 半截事务）。
+    expect(sent().egress.system_proxy).toEqual({ enabled: true })
+    expect(setNetworkSystemProxy).not.toHaveBeenCalled()
     expect(saveNetworkEgress).toHaveBeenCalledTimes(2)
 
     fireEvent.click(screen.getByRole('button', { name: copy.allowForeignRetry }))
@@ -308,15 +315,18 @@ describe('左下底栏那一格', () => {
     fireEvent.click(await screen.findByRole('button', { name: copy.tabNodes }))
 
     expect(screen.queryByRole('button', { name: 'POOL' })).toBeNull()
+
     const chips = [...(screen.getByRole('button', { name: copy.panelAll }).parentElement?.children ?? [])].map(
       element => element.textContent
     )
+
     expect(chips).toEqual([copy.panelAll, '日本', '香港'])
 
     const cards = screen
       .getAllByRole('button')
       .filter(button => /W0\d/.test(button.textContent ?? ''))
       .map(button => button.getAttribute('title'))
+
     expect(cards).toEqual([
       '🇯🇵 日本W01',
       '🇯🇵 日本W02',
@@ -394,5 +404,74 @@ describe('机器原话不许顶在这一屏上', () => {
     await waitFor(() => expect(screen.getByText(copy.refused)).toBeTruthy())
     expect(screen.queryByText(/remote method|Invalid character/)).toBeNull()
     expect(screen.getByText(copy.refused).getAttribute('title')).toContain('Invalid character')
+  })
+})
+
+describe('底栏那个面板的规则屏', () => {
+  const openRules = async () => {
+    render(<EgressPanel />)
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.tabRules })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: copy.tabRules }))
+  }
+
+  it('表里的规则一行一条；兜底那条不给删、不给挪', async () => {
+    await openRules()
+
+    const rows = await screen.findAllByTestId('rule-row')
+    expect(rows.map(row => row.getAttribute('data-match'))).toEqual(['geosite:cn', '*'])
+    // 兜底删不得：删了它，「没匹配上的流量去哪」就没有答案（引擎那边也会拒）。
+    expect(screen.queryByRole('button', { name: `${copy.remove} *` })).toBeNull()
+    expect(screen.queryByRole('button', { name: `${copy.ruleMoveUp} *` })).toBeNull()
+    // 别的规则照旧能删能挪。
+    expect(screen.getByRole('button', { name: `${copy.remove} geosite:cn` })).toBeTruthy()
+    // 兜底那行的去向位置给的是徽标词，不是三颗按钮（按整行文本判，避开同词的别处）。
+    expect(rows[1].textContent).toContain(copy.ruleCatchAllBadge)
+  })
+
+  it('加一条：整段存回去，而且插在兜底**之前**', async () => {
+    await openRules()
+
+    fireEvent.change(screen.getByPlaceholderText(copy.rulePlaceholder), { target: { value: '*.example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: copy.addRule }))
+
+    await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalledTimes(1))
+    expect(sent().egress.rules.map((rule: { match: string }) => rule.match)).toEqual(['geosite:cn', '*.example.com', '*'])
+    // 去向是那一格当时选的值（默认直连），不是悄悄挑第一个节点。
+    expect(sent().egress.rules[1].via).toBe('direct')
+  })
+
+  it('写不出来的那一行当场说错在哪，一次都不发', async () => {
+    await openRules()
+
+    fireEvent.change(screen.getByPlaceholderText(copy.rulePlaceholder), { target: { value: 'foo:bar' } })
+    fireEvent.click(screen.getByRole('button', { name: copy.addRule }))
+
+    const problem = await screen.findByTestId('rule-problem')
+    expect(problem.textContent).toBe(copy.ruleProblem('badPrefix'))
+    expect(saveNetworkEgress).not.toHaveBeenCalled()
+  })
+
+  it('删一条就是把剩下的整段存回去', async () => {
+    await openRules()
+
+    fireEvent.click(await screen.findByRole('button', { name: `${copy.remove} geosite:cn` }))
+
+    await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalledTimes(1))
+    expect(sent().egress.rules).toEqual([{ match: '*', via: 'proxy:POOL' }])
+  })
+})
+
+describe('还没读到表的时候：屏上给的是"正在读"，不是结论', () => {
+  it('首屏不许拿「还没有成员」冒充加载中（用户 11-22 报的那一格）', async () => {
+    // 表一直在路上：`loaded` 还是假 —— 这时候说「还没有成员」是**结论**，
+    // 会被读成"我的节点丢了"，而真正的答案只是"还没读到"。
+    getNetworkEgress.mockImplementation(() => new Promise(() => {}))
+    render(<EgressPanel />)
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.tabNodes })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: copy.tabNodes }))
+
+    expect(await screen.findByTestId('nodes-skeleton')).toBeTruthy()
+    expect(screen.queryByText(copy.panelEmpty)).toBeNull()
   })
 })

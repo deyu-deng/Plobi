@@ -1401,16 +1401,70 @@ def _trust_pairs_for(path: Path, old_key: str, new_key: str) -> List[list]:
     ]
 
 
+def _normalize_subtree(subtree: str) -> str:
+    """逻辑路径归一：剥掉已退役的 ``Surface/`` 头，种类名改回首字母大写。
+
+    2026-11-22 踩过的坑：老名册行写的是 ``Surface/dossiers/projects/plobi-dev``，
+    而 ``mind.paths`` 只认 ``Dossiers/…`` 这套新头——于是 ``real_target`` 把它当脑内
+    相对路径、算出一个根本不存在的目录，搬目录那一步按「src 不存在」静默跳过，
+    改完名磁盘上还留着一个旧目录。
+    """
+    text = (subtree or "").strip().strip("/")
+
+    if not text:
+        return ""
+
+    head, _, tail = text.partition("/")
+
+    if head.lower() == "surface":
+        text = tail
+        head, _, tail = text.partition("/")
+
+    kinds = {"notes", "diary", "dossiers", "meta", "inbox"}
+
+    if head.lower() in kinds:
+        remainder = tail or ""
+        text = f"{head.capitalize()}/{remainder}" if remainder else head.capitalize()
+
+    return text
+
+
 def _mind_subtree_dir(subtree: str) -> Optional[Path]:
-    """名册行上那棵子树的**物理**目录（逻辑路径 ``Dossiers/<类>/<名>`` 解析过来）。"""
-    if not (subtree or "").strip():
+    """名册行上那棵子树的**物理**目录（逻辑路径 ``Dossiers/<类>/<名>`` 解析过来）。
+
+    ``real_target`` 依赖 ``HUMAN_ROOT``（env 或注册表钉住的指针）。桌面进程里它总是
+    钉好的，可改名也可能从命令行/测试里跑——那时解析出来的目录压根不存在。所以这里
+    再补一条**只看数据目录**的兜底：``<PLOBI_HOME>/dossiers/<类>/<名>``。
+    """
+    subtree = _normalize_subtree(subtree)
+
+    if not subtree:
         return None
+
+    resolved: Optional[Path] = None
+
     try:
         from plobi.mind.paths import real_target
 
-        return real_target(subtree)
+        resolved = Path(real_target(subtree))
     except Exception:
-        return None
+        resolved = None
+
+    if resolved is not None and resolved.exists():
+        return resolved
+
+    parts = [part for part in subtree.split("/") if part]
+
+    if len(parts) >= 3 and parts[0].lower() in {"dossiers", "notes", "diary", "meta", "inbox"}:
+        home = _get_default_plobi_home()
+        for candidate in (
+            home.joinpath(parts[0].lower(), *parts[1:]),
+            home.joinpath(parts[0].lower(), parts[-1]),
+        ):
+            if candidate.exists():
+                return candidate
+
+    return resolved
 
 
 def _kanban_db_path() -> Optional[Path]:
@@ -1614,7 +1668,8 @@ def plan_identity_rename(old_name: str, new_name: str) -> Tuple[dict, List[dict]
 
     steps.append({"kind": "config-rekey", "old": old_key, "new": new_key})
 
-    subtree = (entry.mind_subtree or "").strip()
+    subtree = _normalize_subtree(entry.mind_subtree)
+
     if subtree:
         head, _, _tail = subtree.rpartition("/")
         new_subtree = f"{head}/{new_key}" if head else new_key

@@ -12744,7 +12744,39 @@ ipcMain.handle('plobi:updates:release-check', async () => {
   }
 })
 
-ipcMain.handle('plobi:updates:release-install', async () => {
+// helper 是「装完再拉起新版」的唯一执行者。spawn() 返回了 pid 只说明
+// CreateProcess 没当场报错，不说明它活过了第一秒：脚本被清理、杀软拦下、
+// cmd 拿不到权限，都会在几十毫秒内退出。而那时我们已经在退出的路上，用户看到的
+// 只是「应用关了、版本没变、日志里连心跳都没有」。
+//
+// 探活两次（500ms / 1500ms），任何一次失败都算没起来。
+async function waitForHelperLiveness(pid: number): Promise<boolean> {
+  const isAlive = (): boolean => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      // EPERM = 进程还在，只是不归我们管（提权场景），同样算活着。
+      return (error as NodeJS.ErrnoException)?.code === 'EPERM'
+    }
+  }
+
+  for (const delay of [500, 1000]) {
+    await new Promise((resolve) => setTimeout(resolve, delay))
+
+    if (!isAlive()) {
+      return false
+    }
+  }
+
+  return true
+}
+
+// 防重入：连点两下「更新」会起两份 helper、两个安装器同时改同一个目录，
+// 结果是装一半（UI 上也拦了，但 UI 状态可以被刷新/新窗口重置，主进程得自己守）。
+let releaseInstallInFlight = false
+
+async function runReleaseInstall() {
   const current = resolvePlobiVersion()
   // 用**缓存里那一份**（用户刚在界面上看到的就是它），不要再打一次 GitHub。
   const lookup = await releaseLookup.lookup()
@@ -12783,7 +12815,23 @@ ipcMain.handle('plobi:updates:release-install', async () => {
   // CDN）→ 原地址」逐条去试，并把 curl 的失败原因写进日志——所以把
   // `rememberLog` 一起递进去，出问题时日志里能看到 (28)/(56)，而不是只有
   // 「下载失败」四个字。
-  const downloaded = await downloadAsset(asset, dest, undefined, asset.size, rememberLog)
+  // 下载进度必须往上报：400 MB 的包，界面拿着 `percent: null` 只能画一根不动
+  // 的条子，八秒后弹 stale —— 用户看到的是「更新卡死」，实际一直好好的。
+  // 封顶 99：100 留给「安装器已经接手」，别提前把话说满。
+  const onDownloadProgress = (received: number, total: number): void => {
+    const percent = total > 0 ? Math.min(99, Math.floor((received / total) * 100)) : null
+
+    emitUpdateProgress({ stage: 'fetch', message: `正在下载 ${asset.name}…`, percent })
+  }
+
+  const downloaded = await downloadAsset(
+    asset,
+    dest,
+    undefined,
+    asset.size,
+    rememberLog,
+    onDownloadProgress
+  )
 
   if (!downloaded) {
     emitUpdateProgress({ stage: 'error', message: '下载新版安装包失败。', percent: null })
@@ -12809,11 +12857,23 @@ ipcMain.handle('plobi:updates:release-install', async () => {
 
   const helperPid = spawnUpdateHelper(helper)
 
+  // 自证：helper 没起来就**不能**退出。后端锁已经松了、marker 还没写，
+  // 直接 app.quit() 的结果是「窗口关了、版本没变、下次启动还要重新装后端」。
+  // 先确认它真的活下来了，再谈退出。
+  if (!helperPid || !(await waitForHelperLiveness(helperPid))) {
+    await startPlobi().catch(() => undefined)
+    emitUpdateProgress({
+      stage: 'error',
+      message: '更新助手没能启动，安装没有开始。当前版本未改动，请重试。',
+      percent: null
+    })
+
+    return { ok: false, reason: 'helper-spawn-failed' }
+  }
+
   // 标记「更新正在进行」：helper 装完会拉起新版本，那时它看到这个标记就
   // 先等 helper 收工（老规矩，见 update-marker.ts）。
-  if (helperPid) {
-    writeUpdateMarker(PLOBI_HOME, helperPid)
-  }
+  writeUpdateMarker(PLOBI_HOME, helperPid)
 
   emitUpdateProgress({
     stage: 'restart',
@@ -12826,6 +12886,20 @@ ipcMain.handle('plobi:updates:release-install', async () => {
   }, 400)
 
   return { ok: true, restarting: true, latest: release.version, tag: release.tag }
+}
+
+ipcMain.handle('plobi:updates:release-install', async () => {
+  if (releaseInstallInFlight) {
+    return { ok: false, reason: 'already-running', message: '更新已经在进行，等它装完就行。' }
+  }
+
+  releaseInstallInFlight = true
+
+  try {
+    return await runReleaseInstall()
+  } finally {
+    releaseInstallInFlight = false
+  }
 })
 
 ipcMain.handle('plobi:updates:branch:get', async () => readDesktopUpdateConfig())

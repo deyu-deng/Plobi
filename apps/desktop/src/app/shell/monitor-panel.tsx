@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { Tip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 /**
@@ -328,12 +329,13 @@ export function MonitorRow({
     <>
       {icon ? <MonitorIcon>{icon}</MonitorIcon> : null}
       {label !== undefined && label !== null ? (
-        <span
-          className={cn('min-w-0 truncate text-xs leading-4 text-(--ui-text-secondary)', dense && 'sr-only')}
-          title={typeof label === 'string' ? label : undefined}
-        >
-          {label}
-        </span>
+        <Tip label={typeof label === 'string' ? label : ''} side="bottom">
+          <span
+            className={cn('min-w-0 truncate text-xs leading-4 text-(--ui-text-secondary)', dense && 'sr-only')}
+          >
+            {label}
+          </span>
+        </Tip>
       ) : null}
       {value !== undefined && value !== null ? (
         <span className="ml-auto min-w-0 truncate text-xs leading-4 text-(--ui-text-tertiary)">{value}</span>
@@ -352,24 +354,28 @@ export function MonitorRow({
 
   if (onClick) {
     return (
-      <button
-        aria-pressed={ariaPressed}
-        className={rowClass}
-        data-monitor-row=""
-        disabled={disabled}
-        onClick={onClick}
-        title={title}
-        type="button"
-      >
-        {content}
-      </button>
+      <Tip label={title ?? ''} side="bottom">
+        <button
+          aria-label={title}
+          aria-pressed={ariaPressed}
+          className={rowClass}
+          data-monitor-row=""
+          disabled={disabled}
+          onClick={onClick}
+          type="button"
+        >
+          {content}
+        </button>
+      </Tip>
     )
   }
 
   return (
-    <div className={rowClass} data-monitor-row="" title={title}>
-      {content}
-    </div>
+    <Tip label={title ?? ''} side="bottom">
+      <div className={rowClass} data-monitor-row="">
+        {content}
+      </div>
+    </Tip>
   )
 }
 

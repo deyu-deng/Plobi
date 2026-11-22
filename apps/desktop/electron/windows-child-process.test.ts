@@ -135,3 +135,48 @@ test('bootstrap PowerShell runner hides Windows console children', () => {
   assert.match(source, /function hiddenWindowsChildOptions\(options = \{\}\)/)
   requireHiddenChildOptions(source, /spawn\(\s*ps,\s*fullArgs/)
 })
+
+// ---------------------------------------------------------------------------
+// 0.3.3 的黑窗：helper 明明 windowsHide 了，windowsHide 只管直接子进程，
+// 且 detached 会让孙进程（powershell）自己新开一块可见控制台。
+// ---------------------------------------------------------------------------
+
+test('the update helper is spawned windowless, never detached', () => {
+  const release = readElectronFile('desktop-release.ts')
+  const winspawn = readElectronFile('winspawn.ts')
+
+  const spawnIndex = release.indexOf('export function spawnUpdateHelper')
+  assert.notEqual(spawnIndex, -1, 'missing spawnUpdateHelper')
+
+  const snippet = release.slice(spawnIndex, spawnIndex + 1200)
+
+  assert.match(release, /import \{ windowlessLaunchOptions \} from '\.\/winspawn'/)
+  assert.match(snippet, /windowlessLaunchOptions\(\)/)
+  assert.doesNotMatch(
+    snippet,
+    /detached: true/,
+    'Windows 上 detached=DETACHED_PROCESS：helper 没有控制台，它内部的 powershell 只能自己新分配一块**可见**的，黑窗就是这么来的'
+  )
+
+  assert.match(winspawn, /export const CREATE_NO_WINDOW = 0x08000000/)
+  assert.match(winspawn, /process\.platform === 'win32' \? extra \| CREATE_NO_WINDOW : extra/)
+  assert.match(winspawn, /detached: false, creationflags: hiddenFlags\(\)/)
+})
+
+test('the installer stops shouting once it has no console to shout into', () => {
+  const install = fs
+    .readFileSync(path.join(ELECTRON_DIR, '..', '..', '..', 'scripts', 'install.ps1'), 'utf8')
+    .replace(/\r\n/g, '\n')
+
+  // 所有人类可读输出都穿过同一个闸门；Write-Host 只允许出现在闸门内部。
+  assert.match(install, /function Write-PlobiLine \{/)
+  assert.match(install, /function Test-PlobiQuietOutput \{/)
+  assert.match(install, /\$NonInteractive\) \{ \$quiet = \$true \}/)
+  assert.match(install, /Write-Host @hostArgs\n/)
+
+  const directHostCalls = install.split('\n').filter((line) => /^\s*Write-Host\b/.test(line))
+  assert.deepEqual(directHostCalls, ['        Write-Host @hostArgs'], 'install.ps1 里任何一处裸 Write-Host 都会在无窗口控制台里被丢掉，又或者在可见控制台里刷屏')
+
+  // stage 协议的 stdout 不能被动：它还是 Write-Output 的活儿。
+  assert.match(install, /Write-Output/)
+})

@@ -1,8 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
 
-import type { PlobiGateway } from '@/plobi'
 import type { IconComponent } from '@/lib/icons'
-import type { EnvVarInfo } from '@/types/plobi'
+import type { PlobiGateway } from '@/plobi'
+import type { EnvProbeResult, EnvVarInfo } from '@/types/plobi'
 
 export type SettingsView =
   | 'about'
@@ -63,5 +63,12 @@ export interface EnvRowProps {
   onSave: (key: string) => void
   onClear: (key: string) => void
   onReveal: (key: string) => void
+  /**
+   * Live credential check — only present on surfaces whose rows can be probed
+   * (`info.probe`). Verdicts are keyed by env var name.
+   */
+  testing?: string | null
+  probeResults?: Record<string, EnvProbeResult>
+  onProbe?: (key: string) => void
   compact?: boolean
 }

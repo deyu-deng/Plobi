@@ -18,6 +18,7 @@ from __future__ import annotations
 import ctypes
 import json
 import logging
+import os
 import subprocess
 import sys
 from typing import Any, Optional
@@ -181,6 +182,35 @@ def route_taken(name: str) -> tuple[bool, str, list[dict[str, Any]]]:
     ), holders
 
 
+def _sidecar_reading() -> dict[str, Any]:
+    """提权侧车现在什么样：在不在岗、它**自己**是不是真拿到了管理员。
+
+    从此「TUN 能不能开」有两个来源：本进程就是管理员（开发态势——从提权过的终端启动
+    Plobi），或者侧车在岗且确实提了权（装好的机器上的常态）。只认前者的后果是装好的机器
+    永远亮红三角，因为用户永远不会主动用管理员权限去开一个聊天软件。
+    """
+    from agent.egress import helper_client
+
+    if helper_client.is_serving():
+        # 本进程就是侧车：admin 已经写在 preflight 之外那一格里，别自己连自己
+        return {"available": True, "ready": False, "detail": "本进程即侧车", "pid": os.getpid()}
+    if not helper_client.supported():
+        return {"available": False, "ready": False,
+                "detail": f"这个平台没有侧车这条线（{sys.platform}）", "pid": None}
+    reply = helper_client.ping()
+    if not reply.get("ok"):
+        return {"available": False, "ready": False,
+                "detail": str(reply.get("said") or reply.get("error") or "侧车没答话"), "pid": None}
+    result = reply.get("result") or {}
+    elevated = bool(result.get("admin"))
+    return {
+        "available": True,
+        "ready": elevated,
+        "detail": "" if elevated else f"侧车在岗但没提权（{result.get('admin_detail') or '原因不明'}）",
+        "pid": result.get("pid"),
+    }
+
+
 def preflight(table: Optional[Table] = None, *, workdir: str | None = None) -> dict[str, Any]:
     """Can we hand this machine's default route to our engine — with the reasons."""
     tun = dict((table.engine_tun if table is not None else {}) or {})
@@ -190,6 +220,7 @@ def preflight(table: Optional[Table] = None, *, workdir: str | None = None) -> d
         "stack": str(tun.get("stack") or ""),
         "supported": supported(),
         "admin": False,
+        "sidecar": {},
         "holders": [],
         "holders_error": "",
         "adapters_error": "",
@@ -211,11 +242,22 @@ def preflight(table: Optional[Table] = None, *, workdir: str | None = None) -> d
 
     admin, why = is_admin()
     out["admin"] = admin
-    if not admin:
-        out["reasons"].append(
-            "这个进程不是管理员 —— TUN 要建网卡就得提权。我们不自己弹 UAC：以管理员身份重启 Plobi 再拨这个开关"
-            + (f"（{why}）" if why else "")
+    sidecar = _sidecar_reading()
+    out["sidecar"] = sidecar
+    if not (admin or sidecar.get("ready")):
+        # 文案换了（2026-11-22）：原来的「以管理员身份重启 Plobi 再拨这个开关」是一条
+        # 用户永远走不通的路——产品不会让用户用管理员权限去开一个聊天软件。现在这只手
+        # 是提权侧车，所以要说的不是「你去提权」，而是「那只手里现在没人」。
+        said = (
+            "没有能提权的手 —— TUN 要建网卡就得有一个管理员进程。装好的机器上这只手是提权侧车"
+            "（登录时由计划任务「Plobi Egress Helper」拉起）；它现在不在岗：要么安装器那一步没跑成，"
+            "要么它没起来（看 logs/egress-helper.log）"
         )
+        if sidecar.get("detail"):
+            said += f"。侧车读数：{sidecar['detail']}"
+        if why:
+            said += f"（本进程也不是管理员：{why}）"
+        out["reasons"].append(said)
 
     #: The driver, not the permission.  Measured 11-01: the guard passed on an elevated
     #: process and mihomo still came up with **no TUN at all** because nothing was loading

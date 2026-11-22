@@ -17,6 +17,13 @@ export type ExternalSession = {
   related_source: 'l2' | 'path' | 'title' | 'unknown' | string
   sendable: boolean
   title: string
+  /**
+   * 改名能写进对方软件自己那一格吗（11-22 写回）。
+   *
+   * `true`：改完它也变；`false`：它的标题就是聊天内容本身（或索引在它自己进程里），
+   * 只能改在 Plobi 这边。改名框里要**先**说清这件事，别让人改完才发现。
+   */
+  title_writable?: boolean
   updated_at: string
   vendor: string
 }
@@ -184,7 +191,15 @@ export function patchExternalSession(
   vendor: string,
   sessionId: string,
   fields: { archived?: boolean, pinned?: boolean, title?: string }
-): Promise<{ data: { entry?: Record<string, unknown> }, ok: boolean }> {
+): Promise<{
+  data: {
+    entry?: Record<string, unknown>
+    /** 名字有没有真写进那家软件自己那边（11-22 写回）；`undefined`＝这次没改名。 */
+    title_note?: string
+    written_back?: boolean
+  }
+  ok: boolean
+}> {
   return api(
     `/api/agents/${encodeURIComponent(agentId)}/external-sessions/${encodeURIComponent(vendor)}/${encodeURIComponent(sessionId)}`,
     { body: fields, method: 'PATCH' }

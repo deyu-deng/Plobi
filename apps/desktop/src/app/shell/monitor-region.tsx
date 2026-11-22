@@ -7,6 +7,7 @@ import { DossierFace } from '@/app/dossier/dossier-panel'
 import { MindPendingFace } from '@/app/mind-pending-overlay'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { $monitorFace, $monitorPinned, toggleMonitorPin } from '@/store/layout'
@@ -183,18 +184,19 @@ export function MonitorRegion({
       title={face?.title ?? ''}
       trailing={
         showPin ? (
-          <Button
-            aria-label={pinned ? v.dossierUnpin : v.dossierPin}
-            aria-pressed={pinned}
-            className={cn('shrink-0', pinned ? 'text-foreground' : 'text-(--ui-text-tertiary)')}
-            data-testid="dossier-pin"
-            onClick={() => toggleMonitorPin()}
-            size="icon-xs"
-            title={pinned ? v.dossierUnpin : v.dossierPin}
-            variant="ghost"
-          >
-            <Codicon name="pin" size="0.85rem" />
-          </Button>
+          <Tip label={pinned ? v.dossierUnpin : v.dossierPin} side="bottom">
+            <Button
+              aria-label={pinned ? v.dossierUnpin : v.dossierPin}
+              aria-pressed={pinned}
+              className={cn('shrink-0', pinned ? 'text-foreground' : 'text-(--ui-text-tertiary)')}
+              data-testid="dossier-pin"
+              onClick={() => toggleMonitorPin()}
+              size="icon-xs"
+              variant="ghost"
+            >
+              <Codicon name="pin" size="0.85rem" />
+            </Button>
+          </Tip>
         ) : null
       }
     />

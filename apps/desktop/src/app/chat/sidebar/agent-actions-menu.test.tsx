@@ -42,6 +42,7 @@ vi.mock('@/store/notifications', () => ({
 }))
 
 vi.mock('react-router-dom', () => ({
+  useLocation: () => ({ pathname: '/agents/aura' }),
   useNavigate: () => navigate
 }))
 

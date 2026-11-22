@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,6 +68,15 @@ const SOFTWARE_ROLE = {
 
 const ROLES_BODY = { data: { capabilities: POOL, roles: [FILE_ROLE, SOFTWARE_ROLE] }, ok: true }
 const OPTIONS_BODY = { providers: [{ models: ['deepseek-v4.1-flash'], name: 'WorkBuddy', slug: 'workbuddy' }] }
+
+// 一份混了两种清单形态的 options：hub 软件出厂就带前缀（`workbuddy/auto`），
+// 普通 provider 给的是裸 id（`claude-opus-4.8`）。选择器两种都得认。
+const GROUPED_OPTIONS_BODY = {
+  providers: [
+    { models: ['auto', 'workbuddy/deepseek-v4.1-flash'], name: 'WorkBuddy', slug: 'workbuddy' },
+    { models: ['claude-opus-4.8'], name: 'Anthropic', slug: 'anthropic' }
+  ]
+}
 
 beforeEach(() => {
   api.mockReset()
@@ -172,7 +181,78 @@ describe('名手那一格', () => {
   it('模型那一颗读这一格自己的名单：配过的显示模型名，没配的显示跟随首席', async () => {
     renderTab()
 
-    expect(await screen.findByText('deepseek-v4.1-flash')).toBeTruthy()
+    // 存的是 `workbuddy/deepseek-v4.1-flash`，上屏要给人看的名字——不是把机器 id
+    // 原样印在胶囊上（那一版直接把 `workbuddy/...` 印出来，看着像路径）。
+    expect(await screen.findByText('Deepseek V4.1 Flash')).toBeTruthy()
+    expect(screen.queryByText('workbuddy/deepseek-v4.1-flash')).toBeNull()
     expect(screen.getByText('Follow the Principal')).toBeTruthy()
+  })
+
+  it('模型清单按 provider 分组：组头写它的人话名字，不把各家模型摊平成一列', async () => {
+    api.mockImplementation((request: { method?: string; path: string }) => {
+      if (request.path.startsWith('/api/model/options')) {
+        return Promise.resolve(GROUPED_OPTIONS_BODY)
+      }
+
+      if (request.method === 'PUT') {
+        return Promise.resolve({ body: { disabled_capabilities: [], model: null }, ok: true })
+      }
+
+      return Promise.resolve(ROLES_BODY)
+    })
+
+    renderTab()
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /Model used when dispatching it · Deepseek V4\.1 Flash/ }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse'
+    })
+
+    expect(await screen.findByText('WorkBuddy')).toBeTruthy()
+    expect(screen.getByText('Anthropic')).toBeTruthy()
+  })
+
+  it('清单里已带前缀的 id 不再拼一层：写回后端的是单前缀', async () => {
+    // 两种清单混在同一份 options 里：hub 软件给 `workbuddy/auto`，普通 provider 给裸 id。
+    api.mockImplementation((request: { body?: { model?: string }; method?: string; path: string }) => {
+      if (request.path.startsWith('/api/model/options')) {
+        return Promise.resolve(GROUPED_OPTIONS_BODY)
+      }
+
+      if (request.method === 'PUT') {
+        return Promise.resolve({ body: { disabled_capabilities: [], model: request.body?.model }, ok: true })
+      }
+
+      return Promise.resolve(ROLES_BODY)
+    })
+
+    renderTab()
+
+    fireEvent.pointerDown(await screen.findByRole('button', { name: /Model used when dispatching it · Deepseek V4\.1 Flash/ }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse'
+    })
+
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Auto' }))
+
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: { model: 'workbuddy/auto' },
+          method: 'PUT',
+          path: '/api/experts/roles/software'
+        })
+      )
+    )
+
+    // 旧的盲拼会写出 `workbuddy/workbuddy/auto`，后端查不到这个 id，切换必失败。
+    const written = api.mock.calls
+      .filter(([request]) => (request as { method?: string }).method === 'PUT')
+      .map(([request]) => (request as { body?: { model?: string } }).body?.model)
+
+    expect(written).toContain('workbuddy/auto')
+    expect(written.some(value => (value ?? '').includes('workbuddy/workbuddy/'))).toBe(false)
   })
 })

@@ -39,6 +39,7 @@ import yaml
 
 from agent.egress.mihomo_config import CONFIG_BASENAME, compile_config, verify_with_binary
 from agent.egress import engine_files
+from agent.egress import helper_client
 from agent.egress.rules import Table, load_table
 from agent.egress.winspawn import NO_WINDOW, hidden
 
@@ -611,12 +612,63 @@ def _arm_supervisor(table: Table, *, home: str | Path | None = None) -> None:
         _log.warning("engine is up but the supervisor did not arm: %s", why)
 
 
+def _report_from(payload: dict[str, Any]) -> EngineReport:
+    """侧车回的 dict → 本进程的 ``EngineReport``。
+
+    ``EngineReport`` 是 frozen dataclass，两侧都认它、屏幕只读它的 ``lines()``；所以在
+    边界上立刻还原成对象，别让「有时是对象、有时是 dict」漏到调用方去——那种东西一旦
+    漏出去，第一个 ``.state`` 就会在某个分支上炸。
+    """
+    data = payload or {}
+    return EngineReport(
+        str(data.get("state") or FAILED),
+        str(data.get("detail") or ""),
+        int(data.get("mixed_port") or 0),
+        str(data.get("workdir") or ""),
+        str(data.get("config_source") or ""),
+        data.get("pid"),
+        str(data.get("probe") or ""),
+        tuple(data.get("notes") or ()),
+    )
+
+
+def _relay(cmd: str, *, home: str | Path | None = None, **args: Any) -> Optional[EngineReport]:
+    """能交给提权侧车就交给它；交不了（或半路没了）返回 ``None``，本进程照旧干。
+
+    三条判断，每条都有代价：
+
+    * **先问在不在**（``should_delegate``）。不在就不必让每条命令各撞一次超时——普通权限
+      起 mixed 端口引擎本来就是这条路的常态，侧车是加分项而不是前提。
+    * **侧车自己报的失败不重来**：它可能已经停掉了旧引擎、写了记录，本进程再干一遍就是两个
+      进程抢一个端口。所以只有 ``sidecar-*``（压根没接上握手）才回落本地。
+    * 成功时在日志里留一句「谁干的」：一次 TUN 究竟是提权侧车建的还是本进程建的，事后只能
+      从这一行看出来。
+    """
+    if not helper_client.should_delegate(home=home):
+        # 侧车不在就叫它一次（登录时起过，空闲久了会自己退）。叫不醒就本进程干：没有提权
+        # 也照样能起 mixed 端口引擎，只是 TUN 那一条路走不通——那是降级，不是失败。
+        if not helper_client.start(home=home):
+            return None
+    reply = helper_client.call(cmd, home=home, **args)
+    if not reply.get("ok"):
+        error = str(reply.get("error") or "")
+        if error.startswith("sidecar-"):
+            _log.warning("sidecar could not take %s (%s) — doing it here", cmd, error)
+            return None
+        return EngineReport(FAILED, f"侧车执行 {cmd} 失败：{reply.get('error') or '没有原因'}")
+    _log.info("command %s executed by the elevated sidecar", cmd)
+    return _report_from(reply.get("result") or {})
+
+
 def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0) -> EngineReport:
     """Bring the engine up if it is ours to bring up.
 
     Never stops a process Plobi did not start, and never restarts a healthy one:
     a supervision path that retries on its own turns one outage into a loop.
     """
+    relayed = _relay("engine.ensure", home=home, wait_s=wait_s)
+    if relayed is not None:
+        return relayed
     snap = snapshot(table, home=home)
     current = status(table, home=home)
     if not snap.enabled:
@@ -809,6 +861,11 @@ def reload_engine(table: Table, *, home: str | Path | None = None) -> EngineRepo
 
 def stop_ours(table: Table, *, home: str | Path | None = None) -> EngineReport:
     """Stop only an engine Plobi started."""
+    # 停引擎必须走同一个身体：侧车起的那个进程，普通权限的后端能看见、能探端口，但
+    # 未必杀得掉（它继承了管理员令牌）。谁起的谁停，否则「关了开关、进程还在」。
+    relayed = _relay("engine.stop", home=home)
+    if relayed is not None:
+        return relayed
     snap = snapshot(table, home=home)
     rec = snap.record
     if not rec or rec.get("unreadable"):

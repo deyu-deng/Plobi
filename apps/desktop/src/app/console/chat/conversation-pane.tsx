@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useI18n } from '@/i18n'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
@@ -192,13 +193,15 @@ export function ConversationPane({
 
         {lines.length === 0 && !error && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-8 text-center">
-            <p className="text-xs text-(--ui-text-tertiary)">
-              {kind === 'external'
-                ? c.externalSessionsNoMessages
-                : sessionId
-                  ? c.expertsEmpty
-                  : c.expertsIdleHint}
-            </p>
+            {kind === 'external' ? (
+              <p className="text-xs text-(--ui-text-tertiary)">{c.externalSessionsNoMessages}</p>
+            ) : sessionId ? (
+              <p className="text-xs text-(--ui-text-tertiary)">{c.expertsEmpty}</p>
+            ) : (
+              // 这一类名手还没被派过活。原来只有一句挤在一起的长句，读起来像报错；
+              // 这里统一走 EmptyState：一行短标题 + 一句说明，与别处空态同一形状。
+              <EmptyState className="min-h-0" description={c.expertsIdleHint} title={c.expertsIdleTitle} />
+            )}
           </div>
         )}
       </div>
@@ -233,8 +236,22 @@ function ConversationTopBar({ conversation, detail }: { conversation: OpenConver
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  /**
+   * 「刚才这次改名只改在 Plobi 这边」那枚注脚（11-22 写回）。
+   *
+   * 它挂在**这次改名**上，不是这条会话的属性 ⇒ 换一条会话就摘掉；
+   * 内容存后端那原话（「这家软件里改不了名」），鼠标停上去才展开。
+   */
+  const [localOnlyNote, setLocalOnlyNote] = useState('')
+  /** 这次改名被后端顶回来了（软件正开着等）——原话贴出来，改名框**不关**，人改一下就能再存。 */
+  const [renameError, setRenameError] = useState('')
 
   const external = conversation.kind === 'external' ? conversation : null
+
+  useEffect(() => {
+    setLocalOnlyNote('')
+    setRenameError('')
+  }, [external?.sessionId])
 
   const saveRename = () => {
     const title = draft.trim()
@@ -243,10 +260,24 @@ function ConversationTopBar({ conversation, detail }: { conversation: OpenConver
       return
     }
 
-    void patchExternalSession(external.agentId, external.vendor, external.sessionId, { title }).then(() => {
-      setRenaming(false)
-      openConversation({ ...external, title })
-    })
+    void patchExternalSession(external.agentId, external.vendor, external.sessionId, { title })
+      .then(result => {
+        // 那家软件开着、或它的文件写不进去：后端直接拒（409 一类）。这时**不许**把新名字
+        // 顶到屏上——屏上叫新名、它自己那边还是老名，人回头再改一遍就撞上了。
+        if (!result.ok) {
+          setRenameError(String((result.data as { error?: string } | undefined)?.error || ''))
+
+          return
+        }
+
+        setRenameError('')
+        setRenaming(false)
+        // 写进去了就不留标；没写进去把后端那句人话留下，标题旁边挂一枚「仅本地」——
+        // 不许让人回头对着两个不一样的名字自己猜哪边算数。
+        setLocalOnlyNote(result.data?.written_back === false ? String(result.data?.title_note || '') : '')
+        openConversation({ ...external, title })
+      })
+      .catch(() => setRenameError(c.externalSessionsRenameFailed))
   }
 
   const toggleArchive = () => {
@@ -297,26 +328,53 @@ function ConversationTopBar({ conversation, detail }: { conversation: OpenConver
       )}
 
       {renaming ? (
-        <input
-          autoFocus
-          className="min-w-0 flex-1 rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 py-0.5 text-[0.8125rem] text-foreground outline-none focus:border-(--ui-stroke-secondary)"
-          onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              saveRename()
-            }
+        <>
+          <input
+            autoFocus
+            className={`min-w-0 flex-1 rounded-md border bg-transparent px-2 py-0.5 text-[0.8125rem] text-foreground outline-none ${renameError ? 'border-(--ui-red)' : 'border-(--ui-stroke-tertiary) focus:border-(--ui-stroke-secondary)'}`}
+            onChange={event => {
+              setDraft(event.target.value)
+              setRenameError('')
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                saveRename()
+              }
 
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              setRenaming(false)
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setRenaming(false)
+              }
+            }}
+            placeholder={
+              external?.titleWritable === true
+                ? c.externalSessionsRenameSync
+                : external?.titleWritable === false
+                  ? c.externalSessionsRenameLocalOnly
+                  : undefined
             }
-          }}
-          value={draft}
-        />
+            value={draft}
+          />
+          {renameError ? (
+            <span className="shrink-0 text-(--ui-red)" title={renameError}>
+              <Codicon name="warning" size="0.75rem" />
+            </span>
+          ) : null}
+        </>
       ) : (
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-foreground" title={detail}>
-          {conversation.title}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground" title={detail}>
+            {conversation.title}
+          </span>
+          {localOnlyNote ? (
+            <span
+              className="shrink-0 rounded border border-(--ui-stroke-tertiary) px-1 text-[0.62rem] leading-4 text-(--ui-text-tertiary)"
+              title={localOnlyNote}
+            >
+              {c.externalSessionsTitleLocalOnly}
+            </span>
+          ) : null}
         </span>
       )}
 

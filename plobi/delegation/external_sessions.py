@@ -1012,6 +1012,8 @@ def all_sessions() -> list[dict[str, Any]]:
             sessions.extend(read_sessions(spec))
         except Exception:  # noqa: BLE001 - 一家读不动不是整格的理由
             continue
+    # 纯 ACP 客席没有会话库读法 ⇒ 它们那几条从我们自己的台账补上（见 ``acp_ledger``）。
+    sessions.extend(_acp_sessions())
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     _ALL_CACHE["rows"] = sessions
     _ALL_CACHE["at"] = now
@@ -1050,6 +1052,21 @@ def session_sources() -> list[dict[str, Any]]:
             "root": str(root),
             "sessions": counts.get(vendor, 0),
             "sendable": vendor in SENDABLE,
+            "vendor": vendor,
+        })
+
+    # 账上有、这里却没有读法的家（纯 ACP 客席）：也照实出一行。
+    # 两件事都得说出来：**读不动它们的库**是事实，**会话号在我们账上**也是事实。
+    acp_rows = _acp_sessions()
+    known = {item["vendor"] for item in acp_rows}
+    for vendor in sorted(known - set(SESSION_SPECS)):
+        mine = [item for item in acp_rows if item["vendor"] == vendor]
+        sources.append({
+            "readable": False,
+            "reason": "这家没有本地会话库读法；从 Plobi 派过去的活按会话号记在账上",
+            "root": "",
+            "sessions": len(mine),
+            "sendable": any(item["sendable"] for item in mine),
             "vendor": vendor,
         })
 
@@ -1294,6 +1311,295 @@ def restore_entry(agent: str, vendor: str, session_id: str) -> dict[str, Any]:
     return {"ok": True, "data": {"entry": entry}}
 
 
+# ── 「这条会话归谁」：账本顶层的 `_owners` 段（WP-EXTERNAL-THREAD-OWNER §2.1）──
+#
+# 用户 11-22 拍：**归属由 Principal 自己判**，不靠代码猜标题（「毕竟有些会话看标题
+# 是看不出来的」）。于是账本里长出**一份归属名单**：一条会话可以同时记在几个 L2 名下
+# （用户 11-22 二次拍板：「其实我觉得一个会话可以多归属的。没必要限制单归属」——
+# 前半程聊建模、后半程说写稿的活，硬塞给一个人就是失真），改归属就是改这份名单。
+# 与 `relevance.json` 的关系是**并列不是替换**——那边是「每个 Agent 各记一条与它有关
+# 的 bool」（同一会话可以既 A 说有关、B 没说话＝多份意见），这里是「这一条归谁」
+# （一份名单）；老段原样留着当中立兜底。
+#
+# 四个语义**必须分得开**（这一笔的要害）：
+#   * **没有这条记录** ⇒ 没人判过 ⇒ 走老那条四层判链，行为与今天一个字不差；
+#   * **`owners=[]`**  ⇒ 判过了、明确无主／待重判 ⇒ `related=None`；
+#   * **`owners=["A"]`** ⇒ A 得 True，**其余所有 L2 得 False**（判过就是判过）；
+#   * **`owners=["A","B"]`** ⇒ A、B 都得 True，其余得 False。
+#
+# **兼容早期单值形**：读到字符串形 `owner` ⇒ 当 `[owner]` 用；`owner=""` ⇒ 当 `[]` 用。
+# 旧账本一律**不迁移、不报错**。
+
+#: 账本顶层的**保留段**。下划线打头 ⇒ 与 agent 名不可能撞（名册里的名字不带这个形状），
+#: 而 `_agent_index()` 只按 agent 名取桶，也不会把这段读成某一家的会话。
+OWNERS_KEY = "_owners"
+
+#: 软约束（**只提示、不拦截**，用户明确说不是受控词表）：语义标签的建议词表。
+PURPOSE_HINTS = ("建模仿真", "代码改动", "资料调研", "文档写作", "数据处理", "排障诊断", "其他")
+#: 软约束：会话名的建议形状与长度（只进 `notes`，绝不写成 400）。
+TITLE_SHAPE_HINT = "[<L2 名>] <这件事>"
+TITLE_SOFT_LIMIT = 40
+
+
+def _owners_of(payload: dict[str, Any]) -> dict[str, Any]:
+    """账本里那一整段 `_owners`。旧账本没有这一段 ⇒ `{}`（**不迁移、不报错**）。"""
+    owners = payload.get(OWNERS_KEY)
+    return owners if isinstance(owners, dict) else {}
+
+
+def owners_snapshot() -> dict[str, Any]:
+    """只读：`_owners` 的当前形状（键＝`<vendor>:<id>`），判归属前后都能照一眼。"""
+    return {
+        str(key): dict(value)
+        for key, value in _owners_of(_load_index()).items()
+        if isinstance(value, dict)
+    }
+
+
+def roster_names() -> Optional[set[str]]:
+    """名册上**现在还在**的 L2 名单。
+
+    返回 `None` ＝ 名册读不出来（工具外面那一层没起来？）——这与「名册里一个人都没有」
+    是两句不同的话：前者不能拿来做拒绝依据（会把所有人的判断全打回去），后者可以。
+    """
+    try:
+        from plobi.agents.registry import AgentRegistry
+
+        agents = AgentRegistry.load().agents
+    except Exception:  # noqa: BLE001 - 名册读不动 ≠ 账本有错
+        return None
+    if isinstance(agents, dict):
+        return {str(name) for name in agents}
+    names: set[str] = set()
+    for item in agents or ():
+        name = str(getattr(item, "name", "") or "").strip()
+        if name:
+            names.add(name)
+
+    return names
+
+
+def normalize_owners(raw: Any) -> list[str]:
+    """把参数／记录里那一格读成**名单**（用户 11-22：一条会话可以多归属）。
+
+    * 数组 ⇒ 原样（去掉空串与重复，保序）；
+    * 字符串 ⇒ 当**一个人**（兼容早期的单值形 `owner="某 L2"`），空串 ⇒ `[]`；
+    * 什么都没有 ⇒ `[]`。
+    """
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple, set)):
+        return []
+    out: list[str] = []
+    for item in raw:
+        name = str(item or "").strip()
+        if name and name not in out:
+            out.append(name)
+
+    return out
+
+
+def record_owners(record: Any) -> list[str]:
+    """一条 `_owners` 记录里的名单：**先读 `owners`**；老账本只有单值 `owner` ⇒ 当 `[owner]` 用、
+    `owner=""` ⇒ 当 `[]` 用（不迁移、不报错）。"""
+    if not isinstance(record, dict):
+        return []
+    if "owners" in record:
+        return normalize_owners(record.get("owners"))
+
+    return normalize_owners(record.get("owner"))
+
+
+def _owner_verdict(
+    record: Any, mine: str, roster: Optional[set[str]],
+) -> tuple[Optional[bool], str]:
+    """把一条 `_owners` 记录读成「这条对 `mine` 而言相关吗」。
+
+    返回值第二格是 `related_source`：`owner`（判过的说了算）／`owner-gone`
+    （名单里的人名册里已经查不到 ⇒ 按无主处理，**不许**当 False 把会话藏起来）。
+
+    **名单语义**（§2.1）：我在名单里 ⇒ True；我不在 ⇒ False；名单是空的 ⇒ None。
+    名单里查不到的人**逐个剔掉**（那个 L2 改名／删了），全剔光了按 `[]` 处理并报 `owner-gone`。
+    """
+    if not isinstance(record, dict):
+        return None, "none"
+    names = record_owners(record)
+    if not names:
+        return None, "owner"            # 判过了：无主／待重判
+    if roster is not None:
+        names = [name for name in names if name in roster]
+        if not names:
+            return None, "owner-gone"   # 全都不在了 ⇒ 按 [] 处理，但不藏
+    if not mine:
+        return None, "owner"            # 通览（没有「我」这一行）：只报它归谁
+
+    return (mine in names), "owner"     # 在名单里就相关，不在就不相关（几个人可以都真）
+
+
+def _gone_note(record: Any) -> str:
+    """名单里的人查不到了 ⇒ 一句人话（**绝不**把会话藏起来）。"""
+    names = record_owners(record)
+    who = "、".join(f"「{name}」" for name in names) or "「（空）」"
+    people = "这些人" if len(names) > 1 else "这个人"
+
+    return f"这条原先判给 {who}，名册里已经没有{people} ⇒ 先按无主处理，请重判归属"
+
+
+def _soft_notes(owners: Sequence[str], title: str, purpose: str) -> list[str]:
+    """软约束的提示语（只提示，不拦截、不写 400）。"""
+    notes: list[str] = []
+    if title:
+        if len(title) > TITLE_SOFT_LIMIT:
+            notes.append(f"会话名 {len(title)} 字，建议压到 {TITLE_SOFT_LIMIT} 字内：{title[:24]}…")
+        if owners and not any(title.startswith(f"[{name}]") for name in owners):
+            notes.append(f"会话名建议起成「{TITLE_SHAPE_HINT}」（软约束，不是必须）：现在叫「{title}」")
+    if purpose and purpose not in PURPOSE_HINTS:
+        notes.append(f"语义标签「{purpose}」不在建议词表里（照收，不用改）")
+
+    return notes
+
+
+def assign_owner(items: Sequence[dict[str, Any]], *, by: str = "") -> dict[str, Any]:
+    """Principal 判归属（§2.4）：批量写 `_owners`，**逐条**回报成没成。
+
+    * `owners=[]` ⇒ 解除归属（回到待判），**不是**「没有这条记录」（两者语义不同）；
+    * `owners` 可以传数组（多归属），也兼容直接传字符串（内部包成数组）；
+    * `title` / `purpose` 缺键 ⇒ 不动那一格；传空串 ⇒ 清掉那一格；
+    * `vendor` / `id` / `owners` 里**每个**非空名字 任一不过 ⇒ 这一条**不写**，
+      原因摆在那一条的结果里（不落半条脏数据）。
+
+    整批一次落盘（沿用 `_save_index()` 的 tmp ＋ `os.replace`），不另写一套。
+    """
+    roster = roster_names()
+    payload = _load_index()
+    owners = _owners_of(payload)
+    payload[OWNERS_KEY] = owners
+    written: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    notes: list[str] = []
+    for raw in items or ():
+        item = raw if isinstance(raw, dict) else {}
+        vendor = str(item.get("vendor") or "").strip().lower()
+        session_id = str(item.get("id") or "").strip()
+        names = record_owners({"owners": item["owners"]}) if "owners" in item \
+            else normalize_owners(item.get("owner"))
+        problem = ""
+        if not vendor or vendor not in _known_vendors():
+            problem = f"不认识这家软件：{vendor or '（空）'}（认得：{'、'.join(_known_vendors()) or '无'}）"
+        elif not SESSION_ID_RE.match(session_id):
+            problem = f"会话号不是可执行形状：{session_id[:60] or '（空）'}"
+        elif roster is not None:
+            # **逐个**校验：有任何一个不在名册就说清是哪一个，整条不写（别落半条脏数据）。
+            unknown = [name for name in names if name not in roster]
+            if unknown:
+                problem = (f"名册里没有这个人：{'、'.join(unknown)}"
+                           f"（可判给：{'、'.join(sorted(roster)) or '（名册是空的）'}）")
+        if problem:
+            rejected.append({"vendor": vendor, "id": session_id, "ok": False, "reason": problem})
+            continue
+
+        key = _key(vendor, session_id)
+        record = dict(owners.get(key)) if isinstance(owners.get(key), dict) else {}
+        record.pop("owner", None)      # 单值形是早期的形状：改成就写名单，不留两份真源
+        record["owners"] = list(names)
+        for field, limit in (("title", 120), ("purpose", 60)):
+            if field not in item:
+                continue
+            value = str(item.get(field) or "").strip()
+            if value:
+                record[field] = value[:limit]
+            else:
+                record.pop(field, None)
+        record["by"] = str(by or "").strip()
+        record["at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        owners[key] = record
+        written.append({
+            "vendor": vendor,
+            "id": session_id,
+            "ok": True,
+            "owners": list(names),
+            "title": str(record.get("title") or ""),
+            "purpose": str(record.get("purpose") or ""),
+            "note": "已清空归属（回到待判）" if not names else "",
+        })
+        notes.extend(_soft_notes(names, str(record.get("title") or ""), str(record.get("purpose") or "")))
+
+    if not written:
+        # 一条都没写成 ⇒ 账本**一个字节都不动**（不落脏数据），原因逐条摆出来。
+        if roster is None:
+            notes.append("名册读不出来（工具外面那一层没起来？）⇒ 没法校验 owners，先不写。")
+        return {"ok": False, "written": [], "rejected": rejected, "notes": _dedupe(notes)}
+    if not _save_index(payload):
+        return {"ok": False, "status": 500, "error": "账本写不进去（磁盘只读？）",
+                "written": [], "rejected": rejected + [
+                    {**item, "ok": False, "reason": "账本写不进去，这一条没落地"} for item in written
+                ], "notes": _dedupe(notes)}
+    if roster is None:
+        notes.append("名册读不出来（工具外面那一层没起来？）⇒ 这一批的 owners 未校验，已照写。")
+
+    return {"ok": not rejected, "written": written, "rejected": rejected,
+            "notes": _dedupe(notes), "roster_checked": roster is not None}
+
+
+def _dedupe(items: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+
+    return out
+
+
+def sessions_overview(agent_name: str = "") -> dict[str, Any]:
+    """**通览全量候选**（L1 判归属时的那一屏）：不按某个人过滤，每条都带它归谁。
+
+    与 `sessions_for_agent` 的差别只有两点：① 不筛 `related`；② 每条多两格
+    `owners`（名单）／`purpose`——要一条条判，看的正是这两格。
+    """
+    payload = _load_index()
+    owners = _owners_of(payload)
+    roster = roster_names()
+    entry = _entry_for(agent_name) if str(agent_name or "").strip() else None
+    mine = str(getattr(entry, "name", "") or "")
+    agent_key = mine or str(agent_name or "").strip()
+    ledger = _agent_index(payload, agent_key) if agent_key else {}
+    marks = load_marks(agent_key) if agent_key else {}
+    dispatch = _plobi_dispatch_owners() if entry is not None else {}
+    sessions: list[dict[str, Any]] = []
+    for session in all_sessions():
+        record = _entry_for_session(ledger, session["vendor"], session["id"])
+        if isinstance(record.get("deleted"), dict):
+            continue
+        held = owners.get(_key(session["vendor"], session["id"]))
+        if isinstance(held, dict):
+            related, source = _owner_verdict(held, mine, roster)
+        elif entry is not None:
+            related, source = _related(entry, session, marks, dispatch, owners=owners, roster=roster)
+        else:
+            related, source = None, "unknown"
+        row = {
+            **session,
+            "owners": record_owners(held),
+            "purpose": str((held or {}).get("purpose") or "") if isinstance(held, dict) else "",
+            "related": related,
+            "related_source": source,
+        }
+        if source == "owner-gone":
+            row["owner_note"] = _gone_note(held)
+        sessions.append(row)
+    sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+
+    return {
+        "scope": "all",
+        "reason": "" if sessions else "这台机器上还没发现可读的外部会话",
+        "sessions": sessions,
+        "sources": session_sources(),
+    }
+
+
 # ── L2 的归属过滤 ─────────────────────────────────────────────────────────
 
 def _marks_file() -> Path:
@@ -1407,8 +1713,20 @@ def _related(
     session: dict[str, Any],
     marks: dict[str, bool],
     dispatch: Optional[dict[str, str]] = None,
+    *,
+    owners: Optional[dict[str, Any]] = None,
+    roster: Optional[set[str]] = None,
 ) -> tuple[Optional[bool], str]:
     key = f"{session['vendor']}:{session['id']}"
+
+    # ── **判过的说了算**（`WP-EXTERNAL-THREAD-OWNER` §2.2 第一步）────────────
+    # 用户 11-22：「有些会话看标题是看不出来的」⇒ 归属由 Principal 自己给，
+    # 给了就按它的判，不再拿标题字串去猜。没判过（没有这条记录）⇒ 落到下面那条老链，
+    # 一个字不改。`owners` 由调用方**整轮只读一次盘**传进来（别每条会话读一遍）。
+    held = owners.get(key) if isinstance(owners, dict) else None
+    if isinstance(held, dict):
+        return _owner_verdict(held, str(getattr(entry, "name", "") or ""), roster)
+
     if key in marks:
         return marks[key], "l2"
 
@@ -1454,25 +1772,41 @@ def sessions_for_agent(agent_name: str) -> dict[str, Any]:
 
     marks = load_marks(entry.name if hasattr(entry, "name") else agent_name)
     agent_key = entry.name if hasattr(entry, "name") else agent_name
-    ledger = _agent_index(_load_index(), agent_key)
+    payload = _load_index()
+    ledger = _agent_index(payload, agent_key)
     #: 台账里那些「Plobi 派出去的活」——**整轮只读一次**（每条会话读一遍太浪费）。
     dispatch = _plobi_dispatch_owners()
+    #: 「这条归谁」那一段也**整轮只读一次**；名册同理（只在有人判过时才用得上）。
+    owners = _owners_of(payload)
+    roster = roster_names() if owners else None
     sessions = []
     for session in all_sessions():
         record = _entry_for_session(ledger, session["vendor"], session["id"])
         if isinstance(record.get("deleted"), dict):
             # 删掉的是**读数**：它还在盘上（或只在账本里藏着），但这一屏不再列。
             continue
-        related, source = _related(entry, session, marks, dispatch)
+        related, source = _related(entry, session, marks, dispatch, owners=owners, roster=roster)
         if isinstance(record.get("title"), str) and record["title"].strip():
             session = {**session, "title": record["title"].strip()}
-        sessions.append({
+        held = owners.get(_key(session["vendor"], session["id"]))
+        row = {
             **session,
             "archived": bool(record.get("archived")),
             "pinned": bool(record.get("pinned")),
             "related": related,
             "related_source": source,
-        })
+            # 改名之后它自己那边跟不跟着变（11-22 写回）：这一格给界面用——
+            # 让人在按下「改名」之前就知道会发生什么，而不是改完才发现只有 Plobi 变了。
+            "title_writable": _title_writable(session["vendor"]),
+        }
+        # 归属那两格只在这一条**判过**时出现（没判过的会话不长这两格，形状与今天一致）。
+        if isinstance(held, dict):
+            row["owners"] = record_owners(held)
+            row["purpose"] = str(held.get("purpose") or "")
+        if source == "owner-gone":
+            # 名单里的人查不到 ⇒ 按无主处理，但要说人话：**不许**把它当 False 藏掉。
+            row["owner_note"] = _gone_note(held)
+        sessions.append(row)
     # 先按时间倒序，再按「置顶 → 档位」稳定排序：同一档里仍然是新的在前。
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     sessions.sort(key=lambda item: (0 if item.get("pinned") else 1, {True: 0, None: 1, False: 2}[item["related"]]))
@@ -1486,6 +1820,20 @@ def sessions_for_agent(agent_name: str) -> dict[str, Any]:
 
 
 # ── 读 ────────────────────────────────────────────────────────────────────
+
+def _title_writable(vendor: str) -> bool:
+    """这家的名字改得进它自己那边吗（写回能力表说了算）。
+
+    特意**不在模块顶层** import：``title_writeback`` 反过来要读这张表，
+    顶层互相 import 会结成环；这里每次查一次表，代价可以忽略。
+    """
+    try:
+        from plobi.delegation.title_writeback import writable
+
+        return bool(writable(str(vendor)))
+    except Exception:  # 写回层出毛病不该拖垮读会话这一屏
+        return False
+
 
 def _locate(vendor: str, session_id: str) -> Optional[dict[str, Any]]:
     if not SESSION_ID_RE.match(str(session_id or "")):
@@ -1505,7 +1853,13 @@ def _in_agent_scope(agent_name: str, vendor: str, session_id: str) -> bool:
     session = _locate(vendor, session_id)
     if session is None:
         return False
-    related, _source = _related(entry, session, marks, _plobi_dispatch_owners())
+    # 与 `sessions_for_agent` 同一张口径：判过的按那份名单走，没判过的走老链。
+    payload = _load_index()
+    owners = _owners_of(payload)
+    related, _source = _related(
+        entry, session, marks, _plobi_dispatch_owners(),
+        owners=owners, roster=roster_names() if owners else None,
+    )
 
     return related is not False
 
@@ -1900,12 +2254,104 @@ def _send_argv(vendor: str, binary: str, session_id: str, body: str) -> list[str
     raise ValueError(f"没登记这家怎么续接：{vendor}")
 
 
-def send_message(vendor: str, session: dict[str, Any], text: str, *, timeout: float = 600.0) -> dict[str, Any]:
+# ── 纯 ACP 客席：会话面与续接（台账见 ``plobi/delegation/acp_ledger.py``）─────
+#
+# 那 29 家没有会话库读法，活却是我们派进去的。派那趟落一行，会话面照它出数，
+# 接着说就照行里的号走 ACP ``session/load`` —— 不另写 29 套 CLI 垫片。
+
+
+def _acp_ledger():
+    from plobi.delegation import acp_ledger
+
+    return acp_ledger
+
+
+def _acp_sessions() -> list[dict[str, Any]]:
+    """纯 ACP 客席的那几条（读不动库的家，就靠这一格出现在会话面里）。"""
+    try:
+        return _acp_ledger().as_sessions()
+    except Exception:  # noqa: BLE001 - 台账坏了不是整格掀掉的理由，与上面逐家兜住同理
+        return []
+
+
+def _send_via_acp(vendor: str, session: dict[str, Any], body: str, row: dict[str, Any],
+                  *, timeout: float = 600.0) -> dict[str, Any]:
+    """把这句话接着那条 ACP 会话说下去（``session/load``）。
+
+    这条路与 qoder／opencode 实测过的那条腿是同一条：会话号交回派活那一趟，
+    客席自己宣告过 ``loadSession`` 就接得上。**没宣告就如实报错**（不假装能续），
+    并把这一行的 ``resume_state`` 记成 ``no`` —— 下次别再勾引人点它。
+    """
+    from agent import external_offload as channel
+
+    project = str(row.get("project") or session.get("project") or "").strip()
+    if not project:
+        return {"ok": False, "status": 409, "error": "这条会话没记工作目录，不知道去哪儿续"}
+
+    started = time.time()
+    result = channel.run_task(body, cwd=project, agent=vendor,
+                              session_id=str(session.get("id") or row.get("session_id") or ""))
+    # 回执文件与随包那句话不是一回事（见 `OffloadResult.answer`）：哪个有取哪个。
+    reply = str(getattr(result, "reply", "") or getattr(result, "answer", "") or "")
+    error = str(getattr(result, "error", "") or "")
+    resumed = bool(getattr(result, "resumed", False))
+    handle = str(getattr(result, "external_session", "") or "") or str(session.get("id") or "")
+    source = str(getattr(result, "external_session_source", "") or "")
+
+    ledger = _acp_ledger()
+    if resumed and not error:
+        ledger.record(vendor, handle, project=project, reply=reply, source=source,
+                      resume_state=ledger.RESUME_OK)
+    elif not resumed:
+        ledger.record(vendor, handle, project=project, source=source,
+                      resume_state=ledger.RESUME_NO)
+
+    ok = bool(reply) and not error
+    return {
+        "ok": ok,
+        "data": {
+            "reply": reply,
+            "resumed": resumed,
+            "via": "acp",
+            "duration_seconds": round(time.time() - started, 2),
+        },
+        "error": "" if ok else (error or "它没有回话"),
+    }
+
+
+def send_message(vendor: str, session: dict[str, Any], text: str, *,
+                 timeout: float = 600.0, queue_timeout: float | None = None) -> dict[str, Any]:
+    """往这条会话里说一句（**同一会话按到达顺序排队**，不打断前面那句）。
+
+    排队语义见 :mod:`agent.session_gate`：一条会话同时在发两句，就是我们替它把
+    两个 turn 叠进同一条上下文。所以这里先占闸再发；没占到不是"发送失败"，
+    是"前面那句还没完"——那一句要照实说出来，别让人以为消息丢了。
+    """
+    from agent import session_gate
+
+    try:
+        with session_gate.session_turn(vendor, str(session.get("id") or ""),
+                                       timeout=queue_timeout) as turn:
+            result = _send_now(vendor, session, text, timeout=timeout)
+    except session_gate.QueueTimeout as exc:
+        return {"ok": False, "status": 409, "error": str(exc),
+                "outcome": "waiting", "waiting_on": "turn"}
+    result.setdefault("queued_seconds", turn["queued_seconds"])
+    return result
+
+
+def _send_now(vendor: str, session: dict[str, Any], text: str, *, timeout: float = 600.0) -> dict[str, Any]:
     body = (text or "").strip()
     if not body:
         return {"ok": False, "status": 400, "error": "说点什么再发"}
     if len(body) > MAX_MESSAGE_CHARS:
         return {"ok": False, "status": 400, "error": f"一次最多 {MAX_MESSAGE_CHARS} 字"}
+    # 纯 ACP 客席：这个号在我们自己账上 ⇒ 走 ACP `session/load` 接着说。
+    # 它们本来就没有 CLI 回跳旗标，硬走那条命令只是白起一次进程。
+    acp_row = _acp_ledger().find(vendor, str(session.get("id") or ""))
+    if acp_row is not None:
+        return _send_via_acp(vendor, session, body, acp_row, timeout=timeout)
+
     if vendor not in SENDABLE:
         usable = "、".join(sorted(SENDABLE)) or "（本机一家都接不上）"
         return {"ok": False, "status": 400, "error": f"这家还不能从 Plobi 里说话；现在能续接的：{usable}"}
@@ -1990,12 +2436,39 @@ def mark_for_agent(agent_name: str, items: Iterable[dict[str, Any]]) -> dict[str
     return {"ok": True, "data": {"written": written}}
 
 def update_for_agent(agent_name: str, vendor: str, session_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    """改一条外部会话在 Plobi 侧的记录；**改名另外真写回对方软件**（能写的那些）。
+
+    11-22 起改名不再只是「改自己账本」：真源表 ``title_write`` 那一格有值的家，
+    先写它自己的标题位，写成了才记账；写不了的家照样记账，但把「只在 Plobi 里生效」
+    一路带进回话里——不许让人以为对方那边也跟着变了。
+    """
     if not _in_agent_scope(agent_name, vendor, session_id):
         return {"ok": False, "status": 404, "error": "这条会话不在这个 Agent 的名单里"}
 
-    return update_entry(agent_name, vendor, session_id,
-                        title=fields.get("title"), pinned=fields.get("pinned"),
+    from plobi.delegation import title_writeback
+
+    title = fields.get("title")
+    writeback: Optional[dict[str, Any]] = None
+    if title is not None:
+        writeback = title_writeback.writeback_title(vendor, session_id, title)
+        status = str(writeback.get("status") or "")
+        # 软件开着／真写坏了／会话已没了 ⇒ 这笔改名不落地（账本也不改，免得两边对不上）
+        if status in {"busy", "failed", "not_found"}:
+            code = {"busy": 409, "not_found": 404}.get(status, 500)
+            return {
+                "ok": False,
+                "status": code,
+                "error": title_writeback.status_line(writeback, vendor),
+                "data": {"writeback": writeback},
+            }
+    result = update_entry(agent_name, vendor, session_id,
+                        title=title, pinned=fields.get("pinned"),
                         archived=fields.get("archived"))
+    if writeback is not None and result.get("ok"):
+        result["data"]["writeback"] = writeback
+        result["data"]["written_back"] = str(writeback.get("status") or "") == "written"
+        result["data"]["title_note"] = title_writeback.status_line(writeback, vendor)
+    return result
 
 
 def delete_for_agent(agent_name: str, vendor: str, session_id: str) -> dict[str, Any]:

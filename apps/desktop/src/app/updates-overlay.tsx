@@ -494,32 +494,37 @@ function ApplyingView({ apply, isBackend }: { apply: UpdateApplyState; isBackend
         ) : null}
       </div>
 
-      <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            'h-full rounded-full bg-primary transition-[width] duration-300 ease-out',
-            percent === null && (stale ? 'w-1/3 bg-foreground/30' : 'w-1/3 animate-pulse')
-          )}
-          style={percent !== null ? { width: `${percent}%` } : undefined}
-        />
+      <div className="flex items-center gap-3">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              'h-full rounded-full bg-primary transition-[width] duration-300 ease-out',
+              percent === null && (stale ? 'w-1/3 bg-foreground/30' : 'w-1/3 animate-pulse')
+            )}
+            style={percent !== null ? { width: `${percent}%` } : undefined}
+          />
+        </div>
+        {percent !== null ? (
+          <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{percent}%</span>
+        ) : null}
       </div>
-      {stale ? (
-        <p className="-mt-3 text-center text-xs text-muted-foreground">
-          还没回来 · Still waiting — 这个弹层不再闪了，等后台回答或直接关掉
-        </p>
-      ) : null}
+
+      {stale ? <p className="-mt-3 text-center text-xs text-muted-foreground">{u.applyingStale}</p> : null}
 
       {recentLog.length > 1 ? (
-        <div className="max-h-24 overflow-hidden rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-left font-mono text-[11px] leading-4 text-muted-foreground">
-          {recentLog.map((entry, index) => (
-            <div className="truncate" key={`${entry.at}-${index}`}>
-              {entry.message}
-            </div>
-          ))}
-        </div>
+        <details className="group">
+          <summary className="cursor-pointer list-none text-center text-xs text-muted-foreground hover:text-foreground">
+            {u.applyingDetail}
+          </summary>
+          <div className="mt-2 max-h-24 overflow-hidden rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-left font-mono text-[11px] leading-4 text-muted-foreground">
+            {recentLog.map((entry, index) => (
+              <div className="truncate" key={`${entry.at}-${index}`}>
+                {entry.message}
+              </div>
+            ))}
+          </div>
+        </details>
       ) : null}
-
-      <p className="text-center text-xs text-muted-foreground">{u.applyingClose}</p>
     </div>
   )
 }

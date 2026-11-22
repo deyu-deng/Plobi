@@ -109,6 +109,10 @@ export interface EnvVarInfo {
   description: string
   is_password: boolean
   is_set: boolean
+  // True when POST /api/env/probe knows how to check this credential live, so
+  // the row earns a "Test" button. Registry: plobi_cli/env_probe.py — a row can
+  // only advertise a check that actually exists.
+  probe?: boolean
   // Backend-derived provider grouping hints (from the unified provider catalog
   // in plobi_cli/provider_catalog.py). When present, the Keys tab groups by
   // this provider identity — the SAME one `plobi model` uses — instead of
@@ -118,6 +122,26 @@ export interface EnvVarInfo {
   redacted_value: null | string
   tools: string[]
   url: null | string
+}
+
+/** Verdict from POST /api/env/probe for a Tools & Keys credential. */
+export interface EnvProbeResult {
+  message: string
+  ok: boolean
+  // False = the probe itself could not run (offline, nothing listening). The UI
+  // must not present that as a wrong credential.
+  reachable: boolean
+  // What the service actually answered with (e.g. 你好 → Hello) — the honest
+  // proof a translation engine works, not just that it accepted the key.
+  sample?: string
+  // Model ids the endpoint advertises. Only the OPENAI_BASE_URL probe fills
+  // it in; the provider wizard reads the first one as the default model.
+  models?: string[] | null
+}
+
+export interface EnvProbeResponse extends EnvProbeResult {
+  // False when the key has no registered probe.
+  supported: boolean
 }
 
 export type MemoryProviderFieldKind = 'secret' | 'select' | 'text'
@@ -431,6 +455,10 @@ export type OffloadRound = {
   external_session?: string
   external_session_source?: string
   failure?: string
+  /** 结局三态（`done`/`waiting`/`failed`）；老台账行没有这一格。 */
+  outcome?: string
+  /** 等的是哪一类（`permission`/`answer`/`turn`）。 */
+  waiting_on?: string
   permission_flag?: string
   ts?: string
   usage?: null | Record<string, unknown>

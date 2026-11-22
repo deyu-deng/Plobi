@@ -25,6 +25,15 @@ const notify = vi.fn()
 const notifyError = vi.fn()
 const onOpenChange = vi.fn()
 
+// 改名成功后要跟着换掉地址栏里那条门牌，所以组件会问一遍 location 再 navigate。
+// 这里给个假路由：地址栏停在旧门牌上，跳转本身只做记录。
+const navigate = vi.fn()
+
+vi.mock('react-router-dom', () => ({
+  useLocation: () => ({ pathname: '/agent/aura' }),
+  useNavigate: () => navigate
+}))
+
 vi.mock('@/app/console/api', () => ({
   previewAgentRename: (...args: unknown[]) => previewAgentRename(...(args as [])),
   renameAgent: (...args: unknown[]) => renameAgent(...(args as [])),
@@ -73,7 +82,8 @@ vi.mock('@/i18n', () => ({
         agentEditSaving: '正在保存…',
         agentEditTitle: '编辑 Agent',
         newAgentEnglishHelp: '它会转成 Agent 的机器键（小写、连字符）；左栏显示的还是中文名。',
-        newAgentEnglishLabel: '英文名'
+        newAgentEnglishLabel: '英文名',
+        retranslateLabel: '重新翻译'
       }
     }
   })
@@ -96,6 +106,7 @@ afterEach(() => {
   notify.mockClear()
   notifyError.mockClear()
   onOpenChange.mockClear()
+  navigate.mockClear()
 })
 
 function renderDialog() {
@@ -116,90 +127,82 @@ describe('AgentEditDialog — 中文名与英文名是两格', () => {
     expect(screen.getByDisplayValue('Aura')).toBeTruthy()
   })
 
-  // 门牌不是另一样东西：英文名一改，派生出来的 agent id 立刻摊在输入框下面，
-  // 用户在这张表单上永远看不到「请输入 id」这种要求。
-  it('spells out the agent id it derives from the English name', () => {
+  // 门牌不摆在界面上：那是路由和磁盘目录的事，用户要的是名字，不是一个 agent id
+  // 元注释（用户 2026-11-22：「界面也有很多没必要展示给用户的元注释，该删的删」）。
+  it('never prints the agent id on screen', () => {
     renderDialog()
 
-    expect(screen.getByText('aura')).toBeTruthy()
+    expect(screen.queryByText(/agent id/i)).toBeNull()
 
     typeEnglish('Aura Nova')
 
-    expect(screen.getByText('aura-nova')).toBeTruthy()
+    expect(screen.queryByText('aura-nova')).toBeNull()
   })
 
-  it('offers no rename button while the English name is empty or not ASCII', () => {
+  // 保存那一格是 PATCH 窄口：英文名没动就只落字段，门牌、名册键、磁盘一处都不碰。
+  it('saves through the narrow PATCH when the identity did not change', async () => {
     renderDialog()
 
-    typeEnglish('')
-    expect(screen.queryByText('改名…')).toBeNull()
-
-    typeEnglish('光环二号')
-    expect(screen.queryByText('改名…')).toBeNull()
-  })
-
-  // 保存那一格是 PATCH 窄口：文件名（displayNameEn）与中文名一起送，门牌不在其内。
-  it('saves the English name through the narrow PATCH', async () => {
-    renderDialog()
-
-    typeEnglish('Aura Nova')
+    fireEvent.change(screen.getByLabelText('左栏里叫它什么'), { target: { value: '光环二号' } })
     fireEvent.click(screen.getByText('保存'))
 
     await waitFor(() =>
       expect(updateAgent).toHaveBeenCalledWith(
         'aura',
-        expect.objectContaining({ displayName: '光环', displayNameEn: 'Aura Nova' })
+        expect.objectContaining({ displayName: '光环二号', displayNameEn: 'Aura' })
       )
     )
+    expect(previewAgentRename).not.toHaveBeenCalled()
     expect(renameAgent).not.toHaveBeenCalled()
   })
 
-  it('offers no rename button until the identity field actually changes', () => {
-    renderDialog()
-
-    expect(screen.queryByText('改名…')).toBeNull()
-
-    typeEnglish('aura-new')
-
-    expect(screen.getByText('改名…')).toBeTruthy()
-  })
-
-  it('asks for the plan first, and does not touch anything yet', async () => {
+  // 改英文名＝改门牌。保存这一下必须**先摊清单、一格都不写盘**：以前是先把字段 PATCH
+  // 下去、再问要不要改名，于是出现「左栏 Plobi-Desktop、对话框还念旧 id」的半截状态。
+  it('shows the plan before writing anything when the identity changes', async () => {
     renderDialog()
     typeEnglish('aura-new')
 
-    fireEvent.click(screen.getByText('改名…'))
+    fireEvent.click(screen.getByText('保存'))
 
     await waitFor(() => expect(previewAgentRename).toHaveBeenCalledWith('aura', 'aura-new'))
+    expect(updateAgent).not.toHaveBeenCalled()
     expect(renameAgent).not.toHaveBeenCalled()
     expect(screen.getByText('改成「aura-new」？')).toBeTruthy()
     expect(screen.getByText('会一起改过来的地方（2 处）：')).toBeTruthy()
-    expect(screen.getByText('名册那一行：aura → aura-new')).toBeTruthy()
   })
 
-  it('renames only on the confirm, then refreshes the rail and closes', async () => {
+  it('renames first on the confirm, then patches the row under the new id', async () => {
     renderDialog()
     typeEnglish('aura-new')
-    fireEvent.click(screen.getByText('改名…'))
+    fireEvent.click(screen.getByText('保存'))
 
     await waitFor(() => expect(screen.getByText('确认改名')).toBeTruthy())
     fireEvent.click(screen.getByText('确认改名'))
 
     await waitFor(() => expect(renameAgent).toHaveBeenCalledWith('aura', 'aura-new'))
+    // 字段写在**新** id 上：写在旧 id 上只会造出一条查不到的孤儿。
+    await waitFor(() =>
+      expect(updateAgent).toHaveBeenCalledWith(
+        'aura-new',
+        expect.objectContaining({ displayName: '光环', displayNameEn: 'aura-new' })
+      )
+    )
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
     expect(refreshConsoleAgents).toHaveBeenCalled()
     expect(notify).toHaveBeenCalledWith({ message: '已改名。' })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('backs out of the confirm without renaming', async () => {
+  it('backs out of the confirm without renaming or patching', async () => {
     renderDialog()
     typeEnglish('aura-new')
-    fireEvent.click(screen.getByText('改名…'))
+    fireEvent.click(screen.getByText('保存'))
 
     await waitFor(() => expect(screen.getByText('先不改')).toBeTruthy())
     fireEvent.click(screen.getByText('先不改'))
 
     expect(renameAgent).not.toHaveBeenCalled()
+    expect(updateAgent).not.toHaveBeenCalled()
     expect(screen.queryByText('改成「aura-new」？')).toBeNull()
   })
 
@@ -208,9 +211,10 @@ describe('AgentEditDialog — 中文名与英文名是两格', () => {
     renderDialog()
     typeEnglish('aura-new')
 
-    fireEvent.click(screen.getByText('改名…'))
+    fireEvent.click(screen.getByText('保存'))
 
     await waitFor(() => expect(notifyError).toHaveBeenCalled())
+    expect(updateAgent).not.toHaveBeenCalled()
     expect(renameAgent).not.toHaveBeenCalled()
   })
 })

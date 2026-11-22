@@ -336,6 +336,16 @@ def to_ledger_result(channel_result: Any) -> LedgerResult:
         # 以前它在这一跳被丢掉 ⇒ 台账里没有它说过的一句话，界面上那一格无事可显示。
         answer=str(getattr(channel_result, "text", "") or ""),
         reply_to=str(getattr(channel_result, "reply_to", "") or ""),
+        # 归属与命名那一族（`WP-EXTERNAL-THREAD-OWNER` §2.3）：台账要留一行「谁派的名叫
+        # 什么的活、是不是续上的」，所以这几格跟着通道结果一起过去。`owners` 是名单
+        # （用户 11-22：一条会话可以多归属），`owner` 留着当老读侧能认的一格逗号串。
+        owners=list(getattr(channel_result, "owners", ()) or ()),
+        owner=str(getattr(channel_result, "owner", "") or ""),
+        title=str(getattr(channel_result, "title", "") or ""),
+        purpose=str(getattr(channel_result, "purpose", "") or ""),
+        resumed=bool(getattr(channel_result, "resumed", False)),
+        outcome=str(getattr(channel_result, "outcome", "") or ""),
+        waiting_on=str(getattr(channel_result, "waiting_on", "") or ""),
     )
 
 
@@ -343,10 +353,69 @@ def to_ledger_result(channel_result: Any) -> LedgerResult:
 # handlers
 # --------------------------------------------------------------------------- #
 
+def _vendor_facts() -> Dict[str, Dict[str, Any]]:
+    """每家外部软件的**决策事实**，全从真源表派生（这里不另列一份名字/描述）。
+
+    为什么要这一层：以前 status 只回 `name / can_use / why_not / capabilities`——
+    Principal 拿到的是一串 id，**看不出这一家是干什么的、能不能接着说话**，
+    于是只能按名字眼熟程度挑。名册要能让它自己决策，就得把「是什么 + 能干什么」
+    一起递过去；但**不许在工具层手抄一份**（第三家进来就要改两处 ⇒ 迟早漂）。
+
+    所以：人工那句人话，**实测过的那几家**在 `external_capabilities.VENDORS[..].blurb`
+    （写的是「会话长什么样 + 能拿它干什么」），**没实测过的**照官方公开信息写在
+    真源表 `VendorRow.blurb`（写的是「它是谁家的什么东西」）——
+    `blurb_source` 这一格就是用来分清这两种的，别把它们混成一样可信。
+    其余能力位一律从 `VENDOR_ROWS` 的真字段反射出来——**表里没有的格子就不补**，
+    空着比编一句强。
+    """
+    from agent.vendor_registry import VENDOR_ROWS
+
+    facts: Dict[str, Dict[str, Any]] = {}
+    for row in VENDOR_ROWS:
+        spec = capabilities(row.id)  # 只在「接进派活/会话腿」的那几家有；没有就是 None
+        # 实测那几家的描述压过公开定位（同一家两处都有时，以本机现核的为准）
+        measured = bool(spec is not None and spec.blurb)
+        facts[row.id] = {
+            # 这一家叫什么（人话名），没登记显示名就照 id 原样，不硬编一个"漂亮名字"
+            "label": spec.label if spec is not None else row.id,
+            # 一句人话：这一家是干什么的。空串 = 还没写过（不装成有）
+            "blurb": (spec.blurb if measured else row.blurb),
+            # 上面那句的出处：measured＝本机实测过、public＝照官方公开信息写的、空＝还没写
+            "blurb_source": "measured" if measured else ("public" if row.blurb else ""),
+            # 能不能派活（False = 只能读它的会话，比如 Marvis / Cursor）
+            "offloadable": bool(row.offloadable),
+            # 它有几条派活腿：cli（命令行）/ acp（协议）
+            "legs": list(row.legs),
+            # 派完活能不能接着那条会话继续说（续不上就只能新开）
+            "resumable": bool(spec.acp_resume) if spec is not None else bool(row.resume_argv),
+            # 它的会话在本机落哪儿（空 = 还没接读法 ⇒ 会话面看不见它）
+            "session_source": row.session.vendor if row.session else "",
+            # 怎么装它（空 = 没登记安装命令，别硬给一条）
+            "install": row.install.command if row.install else "",
+        }
+    return facts
+
+
 def _handle_status(_args: Dict[str, Any], **_kw: Any) -> str:
     rows = selectable(agent_roster())
-    return json.dumps({"agents": rows, "note": "can_use=false 的那一行点了必失败，别当备选。"},
-                      ensure_ascii=False)
+    facts = _vendor_facts()
+    for row in rows:
+        row.update(facts.get(str(row.get("name") or ""), {}))
+    return json.dumps(
+        {
+            "agents": rows,
+            "note": (
+                "can_use=false 的那一行点了必失败，别当备选。"
+                "挑之前先看这几格：`blurb`（这一家是干什么的，空＝还没写）、"
+                "`blurb_source`（measured＝本机实测过、public＝照官方公开信息写的，"
+                "后者只保证「它是谁家的什么东西」，不含本机实测结论）、"
+                "`offloadable`（false 只能读它的会话，派不出去）、`legs`（有哪几条派活腿）、"
+                "`resumable`（true 才能派完接着那条会话说）、"
+                "`session_source`（空＝它的会话在这儿看不见，别指望 scan 到它）。"
+            ),
+        },
+        ensure_ascii=False,
+    )
 
 
 def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
@@ -389,6 +458,28 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
 
     reply_to = (get_session_env("PLOBI_AGENT_ID") or "").strip()
 
+    # 归属与名字（`WP-EXTERNAL-THREAD-OWNER` §2.3）：**这一趟就把话说清**，不留给
+    # 事后按标题猜。`owners` 留空 ⇒ 归现在派活的那个人（L1 派就是 L1，L2 派就是它自己）；
+    # 也可以一次给几个人（用户 11-22：一条会话可以多归属），传字符串也认（内部包成数组）。
+    from plobi.delegation.external_sessions import normalize_owners
+
+    session_id = str(args.get("session_id") or "").strip()
+    title = str(args.get("title") or "").strip()
+    purpose = str(args.get("purpose") or "").strip()
+    owners = normalize_owners(args.get("owners", args.get("owner"))) or ([reply_to] if reply_to else [])
+
+    # 派活四要素（`WP-OFFLOAD-BRIEF`，11-22）：目标/产出/可用/边界。
+    # 给了哪几样就拼进正文——缺的不留空标题，免得它照着空标题自己编边界出来；
+    # 缺哪样也不拒，只是当场说出来（缺边界的活十有八九会停下来等一句授权）。
+    from plobi.delegation.brief import check_brief, compose_brief, gaps_hint
+
+    deliverable = str(args.get("deliverable") or "").strip()
+    tools_hint = str(args.get("tools") or "").strip()
+    bounds = str(args.get("bounds") or "").strip()
+    brief_gaps = check_brief(task, deliverable, tools_hint, bounds)
+    if deliverable or tools_hint or bounds:
+        task = compose_brief(task, deliverable, tools_hint, bounds)
+
     # 裁定 215：外包改成**派发前**预授权票，不再是事后补的追溯票。
     # 这一发是人（或域 Router）主动调用工具，等于已放行 ⇒ 直接 active；
     # 外部不可信事件走 webhook 的 observe 门，不经过这里。
@@ -411,11 +502,56 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
     )
     result = channel.run_task(task, cwd=cwd, agent=agent_name,
                               permission_mode=args.get("permission_mode") or None,
-                              reply_to=reply_to)
+                              reply_to=reply_to,
+                              session_id=session_id, owners=owners,
+                              title=title, purpose=purpose)
     # 票号跟着结果走，不扩 RoundLedger.append 的签名（测试里的假 ledger 与老调用方
     # 都照旧）；真账的 append 会从 result.ticket_id 认出预授权票并替它落终态。
     ledger_row = dataclasses.replace(to_ledger_result(result), ticket_id=ticket.id)
     RoundLedger().append(ledger_row, brief=task)
+
+    # ── 纯 ACP 客席：会话号落我们自己的台账（会话面才看得见）──────────────
+    # 判据是「**这家有没有本地会话读法**」，不是「哪个信封给的号」——
+    # 11-22 实测：qwen 走的是 CLI 腿，号从 `result.session_id` 回来（不带 `acp.` 前缀），
+    # 按信封前缀判就把它漏掉了，会话面照样看不见。凡能力表里没有读法的家，
+    # 号一回来就该进账；有读法的那 12 家本来就扫得到，别在这儿记重影。
+    if ledger_row.external_session and capabilities(agent_name) is None:
+        from plobi.delegation import acp_ledger
+
+        acp_ledger.record(
+            agent_name,
+            str(ledger_row.external_session),
+            project=str(cwd or ""),
+            title=title or task[:60],
+            purpose=purpose,
+            # 回执文件与随包那句话分开存着（见 `OffloadResult.answer` 的注释）：
+            # 会话面要说「刚才说到哪儿」，两处哪个有就取哪个。
+            reply=str(getattr(result, "reply", "") or getattr(result, "answer", "") or ""),
+            source=str(ledger_row.external_session_source or ""),
+            resume_state=acp_ledger.RESUME_OK if ledger_row.resumed else acp_ledger.RESUME_UNKNOWN,
+        )
+
+    # ── 派完立刻记名（§2.3）──────────────────────────────────────────────
+    # 拿到的会话号就写进 `_owners`，不等下一次扫。**有什么记什么**：owners / title /
+    # purpose 全都空着就一条记录也不写——别把「没提」悄悄写成「判过了＝无主」。
+    notes: list[str] = []
+    if ledger_row.external_session and (owners or title or purpose):
+        from plobi.delegation.external_sessions import assign_owner
+
+        assigned = assign_owner(
+            [{
+                "vendor": agent_name,
+                "id": ledger_row.external_session,
+                "owners": list(owners),
+                "title": title,
+                "purpose": purpose,
+            }],
+            by=reply_to or "l1",
+        )
+        if not assigned.get("ok"):
+            for item in assigned.get("rejected") or ():
+                notes.append(f"账本没记上这条：{item.get('reason') or '（没给原因）'}")
+        notes.extend(assigned.get("notes") or ())
 
     detail = getattr(result, "error", "") or ""
     payload: Dict[str, Any] = {
@@ -437,10 +573,35 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
     payload["job"] = ledger_row.job
     payload["reply"] = ledger_row.reply
     payload["reply_status"] = ledger_row.reply_status
+    # 三态：`waiting` 与 `failed` 的下一步动作不一样——前者等人回一句，
+    # 后者才是重试或换人。只报 `ok` 的话，这两种形状在回包里长得一模一样。
+    payload["outcome"] = ledger_row.resolved_outcome
+    if brief_gaps:
+        # 缺项不是错误，是这一趟的**已知风险**：读的人知道它为什么可能半路停下来。
+        payload["brief_gaps"] = brief_gaps
+        payload["brief_hint"] = gaps_hint(brief_gaps)
+    if ledger_row.waiting_on:
+        payload["waiting_on"] = ledger_row.waiting_on
     if ledger_row.external_session:
         # 有值才提这一格，没值不提、也不写"未知会话"糊弄（判据：空串不是可跳的标识）。
         payload["external_session"] = ledger_row.external_session
         payload["external_session_source"] = ledger_row.external_session_source
+    # 归属与命名照实回报：报了没生效（比如名单里有人不在名册）要在这一屏说清，别让人以为记上了。
+    if ledger_row.owners:
+        payload["owners"] = list(ledger_row.owners)
+    if ledger_row.title:
+        payload["title"] = ledger_row.title
+    if ledger_row.purpose:
+        payload["purpose"] = ledger_row.purpose
+    payload["resumed"] = bool(ledger_row.resumed)
+    if session_id and ledger_row.external_session and not ledger_row.resumed:
+        # 用户拍了要复用，这里却只能新开 ⇒ **必须说人话**，不许悄悄换个会话交差。
+        payload["resume_note"] = (
+            f"这条没能续上，是新开的（给你的是 {ledger_row.external_session}）："
+            "这家走的是 CLI 腿，或者它不支持 session/load——`session_id` 只对 ACP 腿有效。"
+        )
+    if notes:
+        payload["notes"] = notes
     if not result.ok:
         payload["error"] = failure_note(ledger_row.failure) if ledger_row.failure else detail
         payload["raw_error"] = detail
@@ -462,8 +623,12 @@ def _sha(path: str) -> str:
 STATUS_SCHEMA = {
     "name": "external_offload_status",
     "description": (
-        "列出本机上可以外包过去的外部 AI 软件，每个都带『能不能用 + 为什么不能』。"
+        "列出本机上可以外包过去的外部 AI 软件，**每家一行、一行里带齐你挑它要看的几件事**："
+        "能不能用（`can_use` / `why_not`）、这一家是干什么的（`blurb`）、"
+        "能不能派活（`offloadable`）、有哪几条派活腿（`legs`）、"
+        "派完能不能接着那条会话说（`resumable`）、它的会话在这儿看不看得见（`session_source`）。"
         "在决定把一段活交出去之前先问它；can_use=false 的不要交。"
+        "**它是唯一的名册**：别凭名字眼熟挑软件，也别自己猜某家支持什么。"
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
@@ -479,15 +644,40 @@ RUN_SCHEMA = {
         "别外包：一句话能答的、必须用本会话上下文的（继续上一轮、引用我们刚说的话）、"
         "以及目的地在 Plobi 自己那几个代码仓里的（会被拒）。"
         "交完必须回报：哪一段是它干的、产出落在哪个路径 + sha256、耗时、用量或『未知』。"
+        "**同一个项目的老会话还能接着用**：scan 里看到合适的就把 `session_id` 一起交上去（"
+        "续上就复用那条，不再开新的），顺手用 `title` / `purpose` 给它起名打标签。"
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "task": {"type": "string", "description": "要外包的那一段，一句话说清做到什么程度。"},
+            "task": {"type": "string", "description":
+                "要外包的那一段：说清**做到什么程度算完**（目标）。"
+                "能独立验收的活，把「产出/可用/边界」也一并写（见下面三个参数）——"
+                "四样齐了它才不用半路来问你。"},
+            "deliverable": {"type": "string", "description":
+                "四要素之二：要什么形状的产出、落在哪儿（如「改好的 src/app.ts + 一句改动摘要」）。"
+                "只说目标不说产出，回来的东西常常对不上你要的形状。"},
+            "tools": {"type": "string", "description":
+                "四要素之三：它可以从哪儿拿工具、命令、资料（如「只准用仓库里的 pnpm 脚本」）。"
+                "留空的活它会自己找路，可能绕远。"},
+            "bounds": {"type": "string", "description":
+                "四要素之四：不许做什么（改别的文件、装东西、动远端、花钱）。"
+                "**这一项最省事也最值钱**：写清边界，它就不会半路停下来等你授权。"},
             "cwd": {"type": "string", "description": "它干活的项目目录（产出就落这里）。"},
             "agent": {"type": "string", "description":
                 "交给谁；名字只认 external_offload_status 返回的那份本机清单，别照下面任何一句示例猜。"
                 "留空＝用默认那家。"},
+            "session_id": {"type": "string", "description":
+                "要接着用的那条外部会话号（`external_sessions_scan` 里的 `id`）。"
+                "留空＝新开一条。只有走 ACP 那一路的软件能续；续不上会如实告诉你『这条没能续上，是新开的』。"},
+            "owners": {"type": "array", "items": {"type": "string"}, "description":
+                "这条会话归谁，**可多个**（写名册上的名字，如 [\"写稿助手\", \"建模助手\"]）："
+                "一条会话的活横跨两个 L2 时就都写上。留空＝归现在派活的人；"
+                "要清空归属（回到待判）用 external_session_assign 传 []。"},
+            "title": {"type": "string", "description":
+                "给这条会话起个名，建议成「[<你的名字>] <这件事>」的样子（软约束，不必照抄）。"},
+            "purpose": {"type": "string", "description":
+                "这条会话在干什么，一句话的标签（如「建模仿真」「代码改动」「资料调研」；软约束，不是词表，照实写）。"},
             "permission_mode": {"type": "string", "description":
                 "该 Agent 自带的权限档名，档名各家不通用（CodeBuddy 是 `bypassPermissions`，"
                 "Qoder 是 `bypass_permissions`）。留空＝用该家登记的默认档："
@@ -506,8 +696,18 @@ SCAN_SCHEMA = {
         "`related=true`（项目目录或标题点到你）／`null`（还没判断）／`false`（你标过无关）。"
         "用户问「有哪些跟我有关的对话」、或你要决定跟哪条继续谈之前，先扫这一遍；"
         "**判不准的别猜**，看完标题与项目再决定，标完用 external_sessions_mark 记下来。"
+        "要给别人（或某条无主的会话）重新定归属时，用 `scope=\"all\"` 把**全量候选**连"
+        "`owners`（名单）/ `purpose` 一起取回来，再用 external_session_assign 改。"
     ),
-    "parameters": {"type": "object", "properties": {}, "required": []},
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["mine", "all"], "description":
+                "mine（默认）＝只看跟我有关的这一屏；all＝全量候选，每条带 owners / purpose，"
+                "用来一条条判归属（要改归属先扫这个）。"},
+        },
+        "required": [],
+    },
 }
 
 MARK_SCHEMA = {
@@ -540,7 +740,13 @@ MARK_SCHEMA = {
 
 RENAME_SCHEMA = {
     "name": "external_sessions_rename",
-    "description": "给本机某一条外部会话改个只在你这里生效的名字（对方软件自己的界面不跟着变）。",
+    "description": (
+        "给本机某一条外部会话改名字。**能写回的家会真写进它自己的标题位**（CodeBuddy／Kiro／"
+        "Marvis／agy／OpenCode／Kilo／Copilot）——改完在对方软件里也看得见；写不了的家"
+        "（Gemini／Cline／Cursor／Qoder 那一族，标题就是它的第一句人话）只改 Plobi 这边，"
+        "回话里的 title_note 会说清是哪一种。对方软件正开着时会拒改（它会拿旧名字盖回去），"
+        "先关掉再改。"
+    ),
     "parameters": {
         "type": "object",
         "properties": {
@@ -700,17 +906,24 @@ def _agent_identity() -> str:
 
 def _handle_scan(args: Dict[str, Any], **_kw: Any) -> str:
     agent = _agent_identity()
-    if not agent:
+    scope = str(args.get("scope") or "").strip().lower() or "mine"
+    if scope not in ("mine", "all"):
+        return json.dumps({"ok": False, "error": "scope 只认 mine / all"}, ensure_ascii=False)
+    # `all` 这一屏是给 **L1（Principal）判归属**用的，而 L1 这一行**本来就没有 Agent 名**，
+    # 所以这里**不限制谁调**（§2.4）；`mine` 才需要知道「我」是谁。
+    if scope == "mine" and not agent:
         return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，判不了归属"}, ensure_ascii=False)
 
-    from plobi.delegation.external_sessions import sessions_for_agent
+    from plobi.delegation.external_sessions import sessions_for_agent, sessions_overview
 
-    payload = sessions_for_agent(agent)
+    payload = sessions_overview(agent) if scope == "all" else sessions_for_agent(agent)
     rows = [
         {
             "id": item["id"],
             "capabilities": (capabilities(item["vendor"]).as_list() if capabilities(item["vendor"]) else []),
+            "owners": list(item.get("owners") or ()),
             "project": item.get("project") or "",
+            "purpose": item.get("purpose") or "",
             "related": item.get("related"),
             "related_source": item.get("related_source"),
             "title": item.get("title") or "",
@@ -719,6 +932,9 @@ def _handle_scan(args: Dict[str, Any], **_kw: Any) -> str:
         }
         for item in payload["sessions"]
     ]
+    for row, item in zip(rows, payload["sessions"]):
+        if item.get("owner_note"):
+            row["owner_note"] = item["owner_note"]
     # 能力位也挂在 source 上：一家软件整体能做什么，不必逐行翻。
     sources = []
     for source in payload.get("sources", []):
@@ -728,7 +944,8 @@ def _handle_scan(args: Dict[str, Any], **_kw: Any) -> str:
     for row in rows:
         counts["related" if row["related"] is True else "unrelated" if row["related"] is False else "unknown"] += 1
 
-    return json.dumps({"counts": counts, "ok": True, "sessions": rows[:80], "sources": sources},
+    return json.dumps({"counts": counts, "ok": True, "scope": scope,
+                       "sessions": rows[:80 if scope == "mine" else 200], "sources": sources},
                       ensure_ascii=False)
 
 
@@ -758,7 +975,19 @@ def _handle_send(args: Dict[str, Any], **_kw: Any) -> str:
 
     vendor, session_id = _session_target(args)
     if not supports(vendor, "send"):
-        return json.dumps({"ok": False, "error": unsupported_note(vendor, "send")}, ensure_ascii=False)
+        # 能力表没写这一家能发，但它要是我们派过活的纯 ACP 客席（台账上有这号），
+        # 这条路照样走得通 —— 挡在这儿等于把 29 家刚接上的续接又掐回去。
+        from plobi.delegation import acp_ledger
+
+        if acp_ledger.find(vendor, session_id) is None:
+            note = unsupported_note(vendor, "send")
+            if capabilities(vendor) is None and vendor in _vendor_facts():
+                # 它在名册上（派得动活），只是能力表里没登记 `send` 这一腿：
+                # 纯 ACP 客席的会话号只能从我们自己派过的那趟里来 ⇒ 说清怎么才有的接，
+                # 别拿"不认识这家软件"去糊弄一句它明明能接活的话。
+                note = (f"{vendor} 还没从 Plobi 派过活：这类纯 ACP 客席要先派一趟、"
+                        f"拿到会话号，才接得上后面的话")
+            return json.dumps({"ok": False, "error": note}, ensure_ascii=False)
     if args.get("attachments") and not supports(vendor, "attachments"):
         # 附件不能悄悄丢：模型以为带上了、对方其实什么都没收到，是最坏的一种假成功。
         return json.dumps({"ok": False, "error": unsupported_note(vendor, "attachments")}, ensure_ascii=False)
@@ -809,6 +1038,67 @@ def _handle_permission(args: Dict[str, Any], **_kw: Any) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
+ASSIGN_SCHEMA = {
+    "name": "external_session_assign",
+    "description": (
+        "改外部会话的**归属名单**（归哪几个 Agent），顺手能改名和打语义标签。"
+        "归属由你自己判：**判过的说了算**，之后所有 Agent 看这一条的 related 都按它算——"
+        "在名单里的人 saw=True，不在的人 saw=False，名单空着＝判过了但无主（related=null）。"
+        "**一条会话可以多归属**（前半程聊建模、后半程说写稿，就两个 L2 都写上）；"
+        "`owners` 传 [] ＝清空归属、回到待判，只给一个人就传 [\"某人\"]（传字符串也认）。"
+        "改之前先 `external_sessions_scan(scope=\"all\")` 把候选连同 `owners` / `purpose` 取回来，"
+        "照着标题、项目、上线事由判，别猜。"
+        "**软约束**（只提示不拦截）：名字建议起成「[<你的名字>] <这件事>」，别超过 40 字；"
+        "语义标签照实写一句话，词表只是建议（建模仿真／代码改动／资料调研／文档写作／数据处理／排障诊断／其他）。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "vendor": {"type": "string", "description": "哪家软件：" + vendor_list_text() + "。"},
+                        "id": {"type": "string", "description": "scan 回来的会话号。"},
+                        "owners": {"type": "array", "items": {"type": "string"}, "description":
+                            "归给哪几个 Agent（名册上的名字，可多个：一条会话能多归属）。"
+                            "传 [] ＝清空归属（回到待判）；传单个名字的字符串也认。"},
+                        "title": {"type": "string", "description":
+                            "顺手改名（只在你这里生效）。不建议超过 40 字，别改就整格省掉它。"},
+                        "purpose": {"type": "string", "description":
+                            "顺手打语义标签，一句话。别改就整格省掉它。"},
+                    },
+                    "required": ["vendor", "id"],
+                },
+            },
+        },
+        "required": ["items"],
+    },
+}
+
+
+def _handle_assign(args: Dict[str, Any], **_kw: Any) -> str:
+    """改归属（§2.4）：`_owners` 里那一格，判了就算，不再让代码按标题猜。"""
+    items = args.get("items")
+    if not isinstance(items, list) or not items:
+        return json.dumps({"ok": False, "error": "items 要给一个数组，一条会话一项"}, ensure_ascii=False)
+
+    from plobi.delegation.external_sessions import assign_owner
+
+    agent = _agent_identity()
+    result = assign_owner([item for item in items if isinstance(item, dict)], by=agent or "l1")
+    if not result.get("ok"):
+        # 逐条不成的摆出来（别只回一句"失败了"）。
+        kept = result.get("error") or "；".join(
+            f"{item.get('vendor')}:{item.get('id')} → {item.get('reason')}"
+            for item in (result.get("rejected") or ())
+        )
+        result["error"] = kept
+
+    return json.dumps(result, ensure_ascii=False)
+
+
 def _check_drivable() -> bool:
     """只判一个当场事实：这台有没有可驱动的外部 Agent 命令。**不当默认关**（见模块头 2）。"""
     from agent import external_offload as channel
@@ -849,6 +1139,15 @@ registry.register(
     toolset=TOOLSET,
     schema=MARK_SCHEMA,
     handler=_handle_mark,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_session_assign",
+    toolset=TOOLSET,
+    schema=ASSIGN_SCHEMA,
+    handler=_handle_assign,
     check_fn=_check_drivable,
     emoji="🗂",
 )

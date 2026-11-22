@@ -3,15 +3,15 @@ import { type ChangeEvent, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { translateNow, useI18n } from '@/i18n'
-import { ChevronDown, ExternalLink, Loader2, Plus, Save, Trash2 } from '@/lib/icons'
+import { Activity, AlertTriangle, CheckCircle2, ChevronDown, ExternalLink, Loader2, Save, Trash2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import type { EnvVarInfo } from '@/types/plobi'
+import type { EnvProbeResult, EnvVarInfo } from '@/types/plobi'
 
 import { ConnectionControl } from './connection-control'
 import { CONTROL_TEXT } from './constants'
-import { ProviderBrand } from './provider-brand'
 import { prettyName, withoutKey } from './helpers'
 import { ListRow } from './primitives'
+import { ProviderBrand } from './provider-brand'
 import type { EnvRowProps } from './types'
 
 export type KeyRowProps = Omit<EnvRowProps, 'info' | 'varKey'>
@@ -59,7 +59,7 @@ export function KeyField({
   varKey: string
 }) {
   const { t } = useI18n()
-  const { edits, onClear, onSave, saving, setEdits } = rowProps
+  const { edits, onClear, onProbe, onSave, probeResults, saving, setEdits, testing } = rowProps
   const editing = edits[varKey] !== undefined
   // Bare (plain subtext) only while the group is collapsed and idle. Expanding
   // the card counts as "focused in", so it gets full input chrome too.
@@ -68,6 +68,12 @@ export function KeyField({
   const dirty = draft.trim().length > 0
   const busy = saving === varKey
   const masked = info.redacted_value ?? '••••••••'
+  // Only rows the backend registered a probe for earn a Test button — never a
+  // button whose only possible answer is "unsupported".
+  const canProbe = Boolean(info.probe && onProbe)
+  const probing = testing === varKey
+  const verdict: EnvProbeResult | undefined = canProbe ? probeResults?.[varKey] : undefined
+  const verdictNode = verdict ? <CredentialProbeVerdict result={verdict} /> : null
   const startEdit = () => setEdits(c => ({ ...c, [varKey]: '' }))
   const cancel = () => setEdits(c => withoutKey(c, varKey))
   const update = (e: ChangeEvent<HTMLInputElement>) => setEdits(c => ({ ...c, [varKey]: e.target.value }))
@@ -86,59 +92,107 @@ export function KeyField({
 
   if (info.is_set && !editing) {
     return (
-      <Input
-        className={cn(CREDENTIAL_CONTROL_CLASS, bare && CRED_BARE, 'cursor-pointer text-muted-foreground')}
-        onFocus={startEdit}
-        readOnly
-        value={masked}
-      />
+      <div className="grid gap-1">
+        <Input
+          className={cn(CREDENTIAL_CONTROL_CLASS, bare && CRED_BARE, 'cursor-pointer text-muted-foreground')}
+          onFocus={startEdit}
+          readOnly
+          value={masked}
+        />
+        {verdictNode}
+      </div>
     )
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-      <Input
-        autoFocus={editing}
-        className={cn(CREDENTIAL_CONTROL_CLASS, bare && CRED_BARE)}
-        onChange={update}
-        onFocus={() => {
-          if (!editing) {
-            startEdit()
-          }
-        }}
-        onKeyDown={keydown}
-        placeholder={placeholder ?? t.settings.credentials.pasteKey}
-        type={editType}
-        value={draft}
-      />
-      {/* Inline trailing controls — mirrors SearchField's inline clear button.
-          No floating hint row that reflows the grid or overlaps the card body;
-          Esc still cancels via keydown. */}
-      {editing && (info.is_set || dirty) && (
-        <div className="flex items-center gap-1">
-          {info.is_set && (
-            <Button
-              aria-label={t.settings.credentials.remove}
-              className="text-muted-foreground hover:text-destructive"
-              disabled={busy}
-              onClick={() => void onClear(varKey)}
-              size="icon-xs"
-              title={t.settings.credentials.remove}
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 />
-            </Button>
-          )}
-          {dirty && (
-            <Button className="h-8" disabled={busy} onClick={() => void onSave(varKey)} size="sm">
-              {busy ? <Loader2 className="animate-spin" /> : <Save />}
-              {busy ? t.settings.credentials.saving : t.common.save}
-            </Button>
-          )}
-        </div>
-      )}
+    <div className="grid gap-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <Input
+          autoFocus={editing}
+          className={cn(CREDENTIAL_CONTROL_CLASS, bare && CRED_BARE)}
+          onChange={update}
+          onFocus={() => {
+            if (!editing) {
+              startEdit()
+            }
+          }}
+          onKeyDown={keydown}
+          placeholder={placeholder ?? t.settings.credentials.pasteKey}
+          type={editType}
+          value={draft}
+        />
+        {/* Inline trailing controls — mirrors SearchField's inline clear button.
+            No floating hint row that reflows the grid or overlaps the card body;
+            Esc still cancels via keydown. */}
+        {editing && (info.is_set || dirty) && (
+          <div className="flex items-center gap-1">
+            {canProbe && (
+              <Button
+                aria-label={t.settings.credentials.test}
+                className="text-muted-foreground hover:text-foreground"
+                disabled={busy || probing}
+                onClick={() => void onProbe?.(varKey)}
+                size="icon-xs"
+                title={t.settings.credentials.test}
+                type="button"
+                variant="ghost"
+              >
+                {probing ? <Loader2 className="animate-spin" /> : <Activity />}
+              </Button>
+            )}
+            {info.is_set && (
+              <Button
+                aria-label={t.settings.credentials.remove}
+                className="text-muted-foreground hover:text-destructive"
+                disabled={busy}
+                onClick={() => void onClear(varKey)}
+                size="icon-xs"
+                title={t.settings.credentials.remove}
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 />
+              </Button>
+            )}
+            {dirty && (
+              <Button className="h-8" disabled={busy} onClick={() => void onSave(varKey)} size="sm">
+                {busy ? <Loader2 className="animate-spin" /> : <Save />}
+                {busy ? t.settings.credentials.saving : t.common.save}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+      {verdictNode}
     </div>
+  )
+}
+
+/**
+ * One-line verdict under a probed credential. Three outcomes stay distinct:
+ * accepted, rejected by the service, and "we never got an answer" — the last one
+ * must not read as a bad key, so it stays neutral grey instead of red.
+ */
+function CredentialProbeVerdict({ result }: { result: EnvProbeResult }) {
+  const { t } = useI18n()
+  const copy = t.settings.credentials
+  const Icon = result.ok ? CheckCircle2 : AlertTriangle
+  const headline = result.ok ? copy.testOk : result.reachable ? copy.testRejected : copy.testUnreachable
+  const detail = result.sample ? copy.testSample(result.sample) : result.message
+
+  return (
+    <p
+      className={cn(
+        'flex min-w-0 items-start gap-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height)',
+        result.ok ? 'text-primary' : result.reachable ? 'text-destructive' : 'text-(--ui-text-tertiary)'
+      )}
+    >
+      <Icon className="mt-0.5 size-3 shrink-0" />
+      <span className="min-w-0 break-words">
+        {headline}
+        {detail ? <span className="text-(--ui-text-tertiary)"> · {detail}</span> : null}
+      </span>
+    </p>
   )
 }
 
@@ -363,8 +417,8 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
         </>
       }
       expanded={expandable ? expanded : undefined}
-      onActivate={expandable ? onToggle : undefined}
       icon={<ProviderBrand envKey={group.primary[0]} name={group.name} />}
+      onActivate={expandable ? onToggle : undefined}
       title={group.name}
     />
   )

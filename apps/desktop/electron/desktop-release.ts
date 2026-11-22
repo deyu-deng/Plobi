@@ -22,6 +22,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { windowlessLaunchOptions } from './winspawn'
+
 export interface ReleaseAsset {
   name: string
   browser_download_url: string
@@ -505,7 +507,14 @@ export async function downloadAsset(
   dest: string,
   timeoutMs = 30 * 60 * 1000,
   expectedSize = 0,
-  onLog?: (line: string) => void
+  onLog?: (line: string) => void,
+  /**
+   * 已下 / 总量（字节）。`expectedSize <= 0` 时总量传 0，调用方自己当未知处理。
+   *
+   * 没这个回调的代价在 0.3.3 上现过：400 MB 的包在下，界面拿著 `percent: null`
+   * 只能画一根不动的条子，八秒后弹出 stale 提示，用户就以为卡死了。
+   */
+  onProgress?: (received: number, total: number) => void
 ): Promise<boolean> {
   // 传字符串＝只认这一个地址（老调用点、脚手架仍可用）；传资产则按
   // `planDownloadSources` 排出来的 镜像 → 资产 API → 原地址 依次去试。
@@ -569,6 +578,30 @@ export async function downloadAsset(
         stderr = (stderr + String(chunk)).slice(-600)
       })
 
+      // 进度：curl 写的就是 `dest` 本体，所以「文件多大」就是「下了多少」。
+      // 采样而不是解析 curl 输出：`--fail` + `-C -` 各档下的输出格式不一致，
+      // 而 stat 一个正在写的文件便宜到可以忽略。
+      const tick = onProgress
+        ? setInterval(() => {
+            const got = sizeOf()
+
+            if (got < 0) {
+              return
+            }
+
+            try {
+              onProgress(got, expectedSize)
+            } catch {
+              /* 回调自己炸了不能拖累下载 */
+            }
+          }, 500)
+        : null
+      const stopTick = (): void => {
+        if (tick) {
+          clearInterval(tick)
+        }
+      }
+
       const timer = setTimeout(() => {
         try {
           child.kill()
@@ -579,10 +612,12 @@ export async function downloadAsset(
 
       child.on('error', (err: Error) => {
         clearTimeout(timer)
+        stopTick()
         resolve({ code: -1, stderr: `spawn ${curlBinary()}: ${err.message}` })
       })
       child.on('close', (exitCode) => {
         clearTimeout(timer)
+        stopTick()
         resolve({ code: typeof exitCode === 'number' ? exitCode : -1, stderr })
       })
     })
@@ -590,6 +625,14 @@ export async function downloadAsset(
   // 上一轮已经拉完的那一个：直接收货。
   if (expectedSize > 0 && isCompleteDownload(sizeOf(), expectedSize)) {
     log(`[updates] download: 复用已下载的安装包 ${dest}`)
+
+    // 复用的这条路上也得把进度报到头，不然界面还停在 `percent: null`，
+    // 八秒后又弹 stale —— 明明一步没等。
+    try {
+      onProgress?.(expectedSize, expectedSize)
+    } catch {
+      /* 回调自己炸了不能拖累下载 */
+    }
 
     return true
   }
@@ -717,7 +760,9 @@ export function writeUpdateHelper(opts: {
   // The helper's paths belong to the platform it will RUN on, which is not
   // necessarily the one writing it (tests, a cross-build). `path.win32` keeps
   // the separators honest instead of emitting `D:\Software\Plobi/resources`.
-  const joinPath = isWindows ? path.win32.join : path.join
+  // posix 那一侧要显式用 `path.posix.join`：宿主的 `path.join` 在 Windows 上
+  // 是 win32 语义，会往 .sh 里写 `\Applications\Plobi.app\...`。
+  const joinPath = isWindows ? path.win32.join : path.posix.join
   const agentDir = joinPath(opts.plobiHome, 'plobi-agent')
   const installScript = joinPath(agentDir, 'scripts', isWindows ? 'install.ps1' : 'install.sh')
   const appBundle = isMac ? macAppBundleFromExec(opts.appPath) : ''
@@ -739,6 +784,18 @@ export function writeUpdateHelper(opts: {
     lines.push('PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"')
     lines.push(`PLOBI_LOG='${logPath}'`)
   }
+
+  // ---- heartbeat ----------------------------------------------------------
+  //
+  // 日志的第一行必须是「helper 真的跑起来了」。否则事后无从区分三种局面：
+  //   * helper 压根没被拉起（spawn 失败、被杀软拦掉、cmd 拿不到权限）；
+  //   * helper 起来了，但卡在第 0 步等 Plobi.exe 退出；
+  //   * helper 起来了、也跑完了。
+  // 0.3.3 那次日志里只有一段断掉的下载，看不出 helper 死活，就是因为缺这一行。
+  lines.push(`${mark} --- heartbeat: 日志首行用来判定 helper 有没有真的跑起来 ---`)
+  lines.push('echo ===== plobi update helper started at %DATE% %TIME% ===== >> "%PLOBI_LOG%"')
+  lines.push(`echo helper: installer="${opts.installerPath}" >> "%PLOBI_LOG%"`)
+  lines.push(`echo helper: install-dir="${opts.installDir}" tag=${opts.tag} >> "%PLOBI_LOG%"`)
 
   // ---- 0) wait for this app to really exit -------------------------------
   lines.push(`${mark} --- 0) wait until this app has really quit (its files are locked until then) ---`)
@@ -817,6 +874,43 @@ export function writeUpdateHelper(opts: {
     lines.push(`"${opts.installerPath}" --appimage-extract-and-run >> "$PLOBI_LOG" 2>&1 &`)
   }
 
+  // ---- 1b) 等壳真的落地（快照竞态） --------------------------------------
+  //
+  // NSIS 的 `/S` 在需要提权、或把解包交给子进程时**会先返回**，此时安装目录里
+  // 的 `resources\backend` 还没解压出来。紧跟着的 `if exist ...\install.ps1`
+  // 因此判成「这个包不带后端」，掉进 2b 去 clone 源码 —— 0.3.3 那块黑窗里正在
+  // 跑 install.ps1，就是这个误判（resources\backend 的 CreationTime 23:12:24
+  // 晚于 helper 判定时刻 23:12:21）。
+  //
+  // 判据：一直等到打包后端出现；只有当安装器进程已经消失、且 8 秒后仍未出现，
+  // 才认定这是真的源码安装（老包）。上限 180 秒，绝不死等。
+  if (isWindows) {
+    const installerBase = path.basename(opts.installerPath, path.extname(opts.installerPath))
+    const waitScript = [
+      `$di='${opts.installDir}'`,
+      `$probe=Join-Path $di 'resources\\backend\\scripts\\install.ps1'`,
+      `$iname='${installerBase}'`,
+      `$t0=Get-Date`,
+      `while($true){`,
+      `if(Test-Path -LiteralPath $probe){'install: bundled backend landed';break}`,
+      // 进程名按族算：NSIS 的临时进程名不一定等于包名，只认包名会把
+      // 「还在装」读成「已经装完」。
+      `$alive=@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like '*Plobi*' -or $_.ProcessName -eq $iname }).Count -gt 0`,
+      `if((-not $alive) -and (((Get-Date)-$t0).TotalSeconds -ge 20)){'install: installer exited, no bundled backend -- source install';break}`,
+      `if(((Get-Date)-$t0).TotalSeconds -ge 180){'install: wait timed out';break}`,
+      `Start-Sleep -Milliseconds 500`,
+      `}`
+    ]
+      .join('; ')
+      // `while($true){` 后面不能再接分号：`{; if` 虽然能跑，但读起来像笔误。
+      .replace('{; ', '{ ')
+
+    lines.push(`${mark} --- 1b) wait until the shell install has actually landed before judging 2a/2b ---`)
+    lines.push(
+      `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "${waitScript}" >> "%PLOBI_LOG%" 2>&1`
+    )
+  }
+
   // ---- 2) the agent is installed out of the same package --------------------
   //
   // Two shapes, decided by what the new package actually contains:
@@ -832,7 +926,7 @@ export function writeUpdateHelper(opts: {
   // `Contents/Resources`. The bundle sits at the same path before and after
   // the swap, so this resolves correctly on both sides of step 1.
   const resourcesRoot = isMac
-    ? path.join(appBundle, 'Contents', 'Resources')
+    ? joinPath(appBundle, 'Contents', 'Resources')
     : joinPath(opts.installDir, 'resources')
 
   const bundledAgent = joinPath(resourcesRoot, 'backend')
@@ -849,15 +943,15 @@ export function writeUpdateHelper(opts: {
     // stage is skipped too: the desktop's own node deps travel in the package,
     // and npm would need the network.
     lines.push(
-      `  powershell -ExecutionPolicy Bypass -File "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" -Stage repository -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+      `  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" -Stage repository -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
     )
     lines.push(
-      `  powershell -ExecutionPolicy Bypass -File "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" -Stage dependencies -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+      `  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" -Stage dependencies -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
     )
     lines.push(`) else (`)
     lines.push(`  rem --- 2b) source install: move the checkout to the same tag ---`)
     lines.push(
-      `  powershell -ExecutionPolicy Bypass -File "${installScript}" -Tag "${opts.tag}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+      `  powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${installScript}" -Tag "${opts.tag}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
     )
     lines.push(
       `  rem --- 2c) the tag checkout leaves a detached HEAD: point main at the release commit and attach to it ---`
@@ -889,6 +983,7 @@ export function writeUpdateHelper(opts: {
   lines.push(`${mark} --- 3) start the app again ---`)
 
   if (isWindows) {
+    lines.push('echo ===== helper done at %DATE% %TIME%, starting the app ===== >> "%PLOBI_LOG%"')
     lines.push(`start "" "${opts.appPath}"`)
     lines.push('endlocal')
   } else if (isMac) {
@@ -914,10 +1009,15 @@ export function writeUpdateHelper(opts: {
 export function spawnUpdateHelper(helperPath: string): number | null {
   const isWindows = process.platform === 'win32'
 
+  // Windows 上**不能** detached：DETACHED_PROCESS 给 helper 的是「没有控制台」，
+  // 于是它内部那条 powershell 只能自己新分配一块**可见**控制台——用户看到的
+  // 那块黑窗正是它，里面滚动的是 install.ps1 的 Write-Host 输出。
+  // CREATE_NO_WINDOW 给 helper 一块**无窗口**控制台，powershell 继承同一块，
+  // 全程无窗；活过父进程退出靠 stdio: 'ignore' + child.unref()，与窗口无关。
+  // 收口说明见 winspawn.ts。
   const child = spawn(isWindows ? 'cmd.exe' : 'sh', isWindows ? ['/c', helperPath] : [helperPath], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
+    ...windowlessLaunchOptions(),
+    stdio: 'ignore'
   })
 
   child.unref()

@@ -136,10 +136,19 @@ def test_a_platform_we_have_not_implemented_is_refused(monkeypatch):
 
 
 def test_no_elevation_is_refused_without_asking_for_it(monkeypatch, quiet_guard):
+    """方案 B 之后：没有那只手就直接说清，**不再**提「会弹 UAC」。
+
+    以前这里断言的是一句「TUN 需要管理员，会弹一次 UAC」；整包 asInvoker + 提权侧车之后
+    早就没有那条会弹窗的路了，再留着这句话等于向用户承诺一个不存在的行为。所以这条测试
+    改成钉住新契约：拒绝、说清缺什么（缺一个管理员进程）、指向侧车，且绝口不提 UAC。
+    """
     monkeypatch.setattr(tun, "is_admin", lambda: (False, ""))
     verdict = tun.preflight(_tun_table())
     assert verdict["ok"] is False
-    assert any("管理员" in r and "UAC" in r for r in verdict["reasons"]), verdict["reasons"]
+    reasons = "\n".join(verdict["reasons"])
+    assert "管理员" in reasons, verdict["reasons"]
+    assert "侧车" in reasons, verdict["reasons"]
+    assert "UAC" not in reasons, verdict["reasons"]
 
 
 def test_somebody_elses_tun_means_we_do_not_take_the_default_route(monkeypatch, quiet_guard):

@@ -399,3 +399,32 @@ def test_the_vpn_shape_compiles_and_the_front_door_stays_out_of_the_engine(monke
     }}})
     with pytest.raises(EgressConfigError, match="own mixed-port"):
         compile_config(loop)
+
+def test_the_wider_matcher_vocabulary_lands_in_engine_grammar():
+    table = load_table(
+        config={
+            "network": {
+                "egress": {
+                    "proxies": {"local": {"url": "http://127.0.0.1:8234"}},
+                    "rules": [
+                        {"match": "geoip:cn", "via": "direct"},
+                        {"match": "keyword:ads", "via": "proxy:local"},
+                        {"match": "process:chrome.exe", "via": "direct"},
+                        {"match": "src:192.168.0.0/16", "via": "direct"},
+                        {"match": "regex:^ad\\.[A-Z]+$", "via": "direct"},
+                        {"match": "*", "via": "proxy:local"},
+                    ],
+                    "engine": {"enabled": True, "mixed_port": _MIXED},
+                }
+            }
+        }
+    )
+    assert _render(table)["rules"] == [
+        "GEOIP,cn,DIRECT",
+        "DOMAIN-KEYWORD,ads,local",
+        "PROCESS-NAME,chrome.exe,DIRECT",
+        # source ranges take no ``no-resolve``: the OS resolved it already
+        "SRC-IP-CIDR,192.168.0.0/16,DIRECT",
+        "DOMAIN-REGEX,^ad\\.[A-Z]+$,DIRECT",
+        "MATCH,local",
+    ]

@@ -4,8 +4,35 @@ import {
   currentPickerSelection,
   displayModelName,
   formatModelStatusLabel,
+  qualifyModelId,
   reasoningEffortLabel
 } from './model-status-label'
+
+describe('qualifyModelId', () => {
+  it('qualifies a bare catalog id with its provider', () => {
+    expect(qualifyModelId('openai', 'gpt-5.5')).toBe('openai/gpt-5.5')
+  })
+  it('leaves an already-qualified id alone — catalogs are not uniform', () => {
+    // Hub software ships `workbuddy/auto`; a blind concat produced
+    // `workbuddy/workbuddy/auto`, which no catalog contains, so every switch 404'd.
+    expect(qualifyModelId('workbuddy', 'workbuddy/auto')).toBe('workbuddy/auto')
+    expect(qualifyModelId('workbuddy', 'workbuddy/deepseek-v4.1-flash')).toBe('workbuddy/deepseek-v4.1-flash')
+  })
+  it('is idempotent, so a second pass cannot add a second prefix', () => {
+    const once = qualifyModelId('workbuddy', 'auto')
+    expect(qualifyModelId('workbuddy', once)).toBe(once)
+    expect(qualifyModelId('workbuddy', qualifyModelId('workbuddy', once))).toBe(once)
+  })
+  it('never rewrites a foreign provider prefix', () => {
+    expect(qualifyModelId('workbuddy', 'openai/gpt-5.5')).toBe('workbuddy/openai/gpt-5.5')
+  })
+  it('degrades safely on empty input', () => {
+    expect(qualifyModelId('workbuddy', '')).toBe('')
+    expect(qualifyModelId('workbuddy', '   ')).toBe('')
+    expect(qualifyModelId('', 'auto')).toBe('auto')
+    expect(qualifyModelId(' workbuddy ', ' auto ')).toBe('workbuddy/auto')
+  })
+})
 
 describe('model-status-label', () => {
   it('formats display names consistently', () => {

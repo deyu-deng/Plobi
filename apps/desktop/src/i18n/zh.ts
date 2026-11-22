@@ -1,4 +1,4 @@
-import { defineFieldCopy } from '@/app/settings/field-copy'
+﻿import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import type { Translations } from './types'
 
@@ -683,7 +683,39 @@ export const zh: Translations = {
       refreshSub: '更新',
       refreshSubHint: '按存过的订阅链接重新拉一次：成员更新，我自己配的组保留',
       tabNodes: '节点',
+      tabRules: '规则',
       tabSwitch: '控制',
+      rulePlaceholder: 'example.com / *.example.com / geoip:cn',
+      ruleVia: '去向',
+      rulesHint: '一行一条：域名、*.子域名、1.2.3.0/24、geosite:分类、geoip:地区、keyword:词、regex:正则、process:进程名、src:来源网段。',
+      rulesEmpty: '表里还没有规则。',
+      ruleCatchAllBadge: '默认去向',
+      ruleCatchAllNote: '最后一条：所有没匹配上的流量都走这里，删不掉、也挪不到前面。',
+      catchAllFix: '补上默认去向',
+      ruleMoveUp: '往上',
+      ruleMoveDown: '往下',
+      ruleProblem: (problem: string) =>
+        (
+          {
+            badPrefix: '冒号前那段前缀不认识：只有 geosite/geoip/keyword/regex/process/src 能用。',
+            empty: '这一行是空的。',
+            emptyPayload: '冒号后面没有内容。',
+            space: '这一行里不能有空格。',
+            wildcard: '星号只有两种写法：开头的 *.（子域名），或者单独一条 *（兜底）。'
+          } as Record<string, string>
+        )[problem] ?? problem,
+      ruleKinds: {
+        catchAll: '兜底',
+        cidr: '网段',
+        domain: '域名',
+        geoip: '地区库',
+        geosite: '分类库',
+        keyword: '关键词',
+        process: '进程',
+        regex: '正则',
+        src: '来源',
+        suffix: '后缀'
+      },
       transportOff: '未接管',
       transportSystem: '系统代理',
       transportTun: 'TUN',
@@ -1109,9 +1141,15 @@ export const zh: Translations = {
       optional: '可选',
       enterValueFirst: '请先输入一个值。',
       couldNotSave: '无法保存凭据。',
-        remove: '移除',
+      remove: '移除',
       getKey: '获取密钥',
-      saving: '保存中'
+      saving: '保存中',
+      test: '测试',
+      testing: '测试中…',
+      testOk: '密钥可用',
+      testRejected: '密钥被拒绝',
+      testUnreachable: '连不上服务',
+      testSample: sample => `返回：${sample}`
     },
     envActions: {
       actionsFor: label => `${label} 的操作`,
@@ -2373,6 +2411,8 @@ export const zh: Translations = {
     expertsRunning: '正在干',
     expertsEmpty: '还没有派过专家',
     expertsIdleHint: '这一类专家还没被派过活。指挥派工时指定这个角色，它干完的日志就会出现在这里。',
+  expertsIdleTitle: '这一类专家还没派过活',
+  expertModelEmpty: '模型清单还没到',
     expertModelHint: '派它时用的模型',
     expertModelFollow: '跟随首席',
     expertsLoading: '正在读专家…',
@@ -2385,6 +2425,11 @@ export const zh: Translations = {
     externalSessionsRename: '改名',
     externalSessionsSave: '保存',
     externalSessionsCancel: '取消',
+    // 改名写回（11-22）：按下保存**之前**就说清会不会同步到对方软件里。
+    externalSessionsRenameSync: '改名会同步到它自己那边',
+    externalSessionsRenameLocalOnly: '这家只改 Plobi 这边，它自己那边不变',
+    externalSessionsRenameFailed: '没改成，再来一次',
+    externalSessionsTitleLocalOnly: '仅本地',
     externalSessionsArchive: '归档',
     externalSessionsUnarchive: '取消归档',
     externalSessionsDelete: '删除',
@@ -2397,6 +2442,9 @@ export const zh: Translations = {
     offloadsNoArtifact: '本次任务没有可打开的产物（可能未执行成功）。',
     offloadsOpenFailed: '无法打开该路径对应的文件。',
     offloadsReveal: '打开它生成的文件',
+    offloadsWaitingPermission: '它停在等一句授权 —— 不是办砸了，回它一句就继续。',
+    offloadsWaitingAnswer: '它停在等一句答复 —— 不是办砸了，回它一句就继续。',
+    offloadsWaitingTurn: '这条会话前面那句还没发完 —— 排队等着，别重发。',
     offloadsCostUnknown: '花费未知',
     offloadsJump: '在那台软件里打开这条会话',
     offloadsJumpFailed: '跳不进那台软件：',
@@ -2408,7 +2456,8 @@ export const zh: Translations = {
     newAgentDesc: '智能体是你团队里的一员：有自己专管的事，能长期记住你的偏好。建好就能在左边点名找它。',
     // 2026-11-16（i18n 定名刀）：中文名只当显示名，门牌从英文名来。
     newAgentEnglishLabel: '英文名',
-    newAgentEnglishHelp: '它会转成 Agent 的机器键（小写、连字符）；左栏显示的还是中文名。',
+    retranslateLabel: '重新翻译',
+    newAgentEnglishHelp: '小写字母、数字、连字符。',
     newAgentCategoryLabel: '分类',
     // 每类一行帮助：选这类是干什么的（原来只有一个裸下拉）。
     newAgentCategoryHelp: {
@@ -2427,7 +2476,6 @@ export const zh: Translations = {
     newAgentFolderRemove: '移除',
     newAgentFolderPrimary: '主',
     newAgentFolderPrimaryHint: '第一个是主文件夹：智能体的命令行默认落在这里。',
-    createEventAgentHint: '事件类代理请通过日程创建（后续支持）。',
     // WP-AGENT-CREATE-UPGRADE：图标与颜色回归（用户 10-16「之前底座还可以选择图标和颜色。我觉得很可爱」）。
     newAgentAppearanceLabel: '图标与颜色',
     newAgentAppearanceHint: '可不选——默认按名字自动配色。',
@@ -3075,10 +3123,11 @@ export const zh: Translations = {
     copy: '复制',
     copied: '已复制',
     done: '完成',
-    applyingBody:
-      'Plobi 更新器会在自己的窗口中接管，并在完成后自动重新打开 Plobi。更新期间请不要自行重新打开 Plobi。',
+    applyingBody: '更新器接管中，完成后会自动重新打开 Plobi。期间请勿手动打开。',
     applyingBodyBackend: '远程后端正在应用更新并将重启。恢复后 Plobi 会自动重新连接。',
     applyingClose: '此窗口会在更新期间关闭，随后 Plobi 会自动重新打开。',
+    applyingStale: '后台暂未回传进度，仍在处理中…',
+    applyingDetail: '详情',
     errorTitle: '更新未完成',
     errorBody: '没有数据丢失。你可以现在重试。',
     notNow: '暂不',

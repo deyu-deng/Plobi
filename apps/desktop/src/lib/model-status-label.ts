@@ -59,6 +59,36 @@ export function modelBaseId(model: string): string {
   return slash >= 0 ? trimmed.slice(slash + 1) : trimmed
 }
 
+/**
+ * The id the backend stores for a model: `<provider>/<bare model>`.
+ *
+ * Catalogs are NOT uniform: hub-software providers ship ids already qualified
+ * (`workbuddy/auto`), while plain providers ship a bare id (`gpt-4o`). Callers must
+ * never hand-concatenate — doing so on an already-qualified id yields
+ * `workbuddy/workbuddy/auto`, which no catalog contains, so the switch failed with
+ * "was not found" and the bad id could even reach profile config.
+ *
+ * This is the single place that builds such an id, and it is idempotent by
+ * construction: `qualifyModelId('workbuddy', 'workbuddy/auto')` and
+ * `qualifyModelId('workbuddy', 'auto')` both return `workbuddy/auto`.
+ */
+export function qualifyModelId(provider: string, model: string): string {
+  const slug = provider.trim()
+  const bare = model.trim()
+
+  if (!bare) {
+    return ''
+  }
+
+  if (!slug) {
+    return bare
+  }
+
+  const prefix = `${slug}/`
+
+  return bare.startsWith(prefix) ? bare : `${prefix}${bare}`
+}
+
 // Trailing model-id variants that should render as a grayed tag beside the
 // name (e.g. "Opus 4.8" + "Fast") rather than collapsing two distinct ids to
 // the same display name.

@@ -1,4 +1,4 @@
-import { defineFieldCopy } from '@/app/settings/field-copy'
+﻿import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale } from './define-locale'
 
@@ -630,7 +630,39 @@ export const ja = defineLocale({
       refreshSub: '更新',
       refreshSubHint: '保存済みサブスクリプションを再取得：メンバーは更新、自分のグループは保持',
       tabNodes: 'ノード',
+      tabRules: 'ルール',
       tabSwitch: '切替',
+      rulePlaceholder: 'example.com / *.example.com / geoip:cn',
+      ruleVia: '宛先',
+      rulesHint: '1行に1件：ドメイン、*.サブドメイン、1.2.3.0/24、geosite:分類、geoip:地域、keyword:語、regex:正規表現、process:プロセス名、src:送信元網。',
+      rulesEmpty: 'テーブルにルールがまだありません。',
+      ruleCatchAllBadge: '既定',
+      ruleCatchAllNote: '最後の1件：一致しなかった通信はすべてここへ。削除も、前への移動もできません。',
+      catchAllFix: '既定の宛先を補う',
+      ruleMoveUp: '上へ',
+      ruleMoveDown: '下へ',
+      ruleProblem: (problem: string) =>
+        (
+          {
+            badPrefix: 'この接頭辞は扱えません：geosite/geoip/keyword/regex/process/src のみ。',
+            empty: 'この行は空です。',
+            emptyPayload: 'コロンの後ろがありません。',
+            space: 'この行に空白は使えません。',
+            wildcard: 'アスタリスクは2通りだけ：先頭の *.（サブドメイン）か、単独の *（既定）。'
+          } as Record<string, string>
+        )[problem] ?? problem,
+      ruleKinds: {
+        catchAll: '既定',
+        cidr: '網',
+        domain: 'ドメイン',
+        geoip: '地域',
+        geosite: '分類',
+        keyword: '語',
+        process: 'プロセス',
+        regex: '正規',
+        src: '送信元',
+        suffix: '接尾'
+      },
       transportOff: '引き取らない',
       transportSystem: 'システムプロキシ',
       transportTun: 'TUN',
@@ -1061,9 +1093,15 @@ export const ja = defineLocale({
       optional: '省略可能',
       enterValueFirst: '最初に値を入力してください。',
       couldNotSave: '認証情報を保存できませんでした。',
-        remove: '削除',
+      remove: '削除',
       getKey: 'キーを取得',
-      saving: '保存中'
+      saving: '保存中',
+      test: 'テスト',
+      testing: 'テスト中…',
+      testOk: 'キーは有効',
+      testRejected: 'キーが拒否されました',
+      testUnreachable: 'サービスに接続できません',
+      testSample: sample => `応答: ${sample}`
     },
     envActions: {
       actionsFor: label => `${label} のアクション`,
@@ -2122,6 +2160,8 @@ export const ja = defineLocale({
     expertsRunning: '実行中',
     expertsEmpty: 'まだ専門家を派遣していません',
     expertsIdleHint: 'この専門家はまだ派遣されていません。指揮者がこの役割で仕事を割り当てると、そのログがここに表示されます。',
+  expertsIdleTitle: 'この役割はまだ派遣されていません',
+  expertModelEmpty: 'モデル一覧がまだ届いていません',
     expertModelHint: '派遣時に使うモデル',
     expertModelFollow: '首席に従う',
     expertsLoading: '専門家を読み込み中…',
@@ -2134,6 +2174,10 @@ export const ja = defineLocale({
     externalSessionsRename: '名前を変更',
     externalSessionsSave: '保存',
     externalSessionsCancel: 'キャンセル',
+    externalSessionsRenameSync: '改名はアプリ側の名前にも反映されます',
+    externalSessionsRenameLocalOnly: 'Plobi 側だけ変わり、アプリ側の名前はそのままです',
+    externalSessionsRenameFailed: '名前を変更できませんでした。もう一度お試しください',
+    externalSessionsTitleLocalOnly: 'ローカルのみ',
     externalSessionsArchive: 'アーカイブ',
     externalSessionsUnarchive: 'アーカイブ解除',
     externalSessionsDelete: '削除',
@@ -2146,6 +2190,9 @@ export const ja = defineLocale({
     offloadsNoArtifact: 'このタスクには開ける成果物がありません（おそらく正常に完了していません）。',
     offloadsOpenFailed: 'このパスに対応するファイルを開けませんでした。',
     offloadsReveal: '生成されたファイルを開く',
+    offloadsWaitingPermission: '権限の一言待ちで止まっています（失敗ではありません）。返せば続きます。',
+    offloadsWaitingAnswer: '返答待ちで止まっています（失敗ではありません）。返せば続きます。',
+    offloadsWaitingTurn: 'このセッションの前の一言がまだ実行中です（順番待ち）。再送しないでください。',
     offloadsCostUnknown: '費用不明',
     offloadsJump: 'そのアプリでこの会話を開く',
     offloadsJumpFailed: 'そのアプリで開けませんでした：',
@@ -2155,7 +2202,8 @@ export const ja = defineLocale({
     newAgentDesc: 'エージェントはチームの一員：担当する仕事を持ち、あなたの好みを長く覚えます。作れば左のレールで名前で呼べます。',
     // 2026-11-16（i18n 定名刀）：中国語名は表示名のみ、ID は英語名から作る。
     newAgentEnglishLabel: '英語名',
-    newAgentEnglishHelp: 'エージェント ID（小文字・ハイフン区切り）になります。左レールには中国語名が表示されます。',
+    retranslateLabel: '再翻訳',
+    newAgentEnglishHelp: '小文字・数字・ハイフンのみ。',
     newAgentCategoryLabel: 'カテゴリ',
     newAgentCategoryHelp: {
       projects: 'プロジェクト：作業フォルダを持ち、具体的なことを進めます。',
@@ -2172,7 +2220,6 @@ export const ja = defineLocale({
     newAgentFolderRemove: '削除',
     newAgentFolderPrimary: 'メイン',
     newAgentFolderPrimaryHint: '先頭がメインフォルダ：エージェントの端末はここから始まります。',
-    createEventAgentHint: 'イベント系エージェントはスケジュールから作成してください（近日公開）。',
     newAgentAppearanceLabel: 'アイコンと色',
     newAgentAppearanceHint: '任意——既定では名前から色を付けます。',
     newAgentIconLabel: 'アイコン',
@@ -2822,10 +2869,11 @@ export const ja = defineLocale({
     copy: 'コピー',
     copied: 'コピーしました',
     done: '完了',
-    applyingBody:
-      'Plobi アップデーターが独自のウィンドウで引き継ぎ、完了後に自動的に Plobi を再度開きます。更新中はご自分で Plobi を開き直さないでください。',
+    applyingBody: 'アップデータが引き継ぎ、完了後に自動で Plobi を開きます。その間は手動で開かないでください。',
     applyingBodyBackend: 'リモートバックエンドが更新を適用して再起動します。復帰すると Plobi が自動的に再接続します。',
     applyingClose: 'このウィンドウは更新中に閉じ、その後 Plobi が自動的に再度開きます。',
+    applyingStale: 'まだ進捗の応答がありません。処理は続いています。',
+    applyingDetail: '詳細',
     errorTitle: '更新が完了しませんでした',
     errorBody: 'ご安心ください。何も失われていません。今すぐ再試行できます。',
     notNow: '今は後で',

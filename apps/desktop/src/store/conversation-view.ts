@@ -21,6 +21,13 @@ export type OpenConversation =
     sessionId: string
     title: string
     /**
+     * 改名能不能写进那家软件自己的标题位（`ExternalSession.title_writable`，11-22 写回）。
+     *
+     * 带着它，主区才敢在**按下保存之前**就说清「改完它也变」还是「只改 Plobi 这边」；
+     * 缺省＝不知道，那就什么都不说（老数据、老清单不因这一格变样）。
+     */
+    titleWritable?: boolean
+    /**
      * 这条会话最后一句话的时间（`ExternalSession.updated_at`，本地时间串）。
      * **抬头要它**：左栏那一行有时间，点开就没了 ⇒ 两个屏对不上。
      * 后端早就在返回里给全了，这里只是把它带过去（协议不动）。

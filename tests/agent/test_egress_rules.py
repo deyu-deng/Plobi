@@ -529,3 +529,55 @@ def test_a_dropped_range_is_named_by_its_own_sentence(monkeypatch, caplog):
     assert any("address ranges" in line and "10.0.0.0/8" in line for line in said), said
     assert not any("node or group" in line for line in said), said
     assert not any("catch-all" in line and "rule is direct" in line for line in said), said
+
+# --- the wider matcher vocabulary (2026-11-22) ------------------------------
+def test_prefixed_matchers_compile_into_their_own_kinds_and_values():
+    table = _table(
+        rules=[
+            {"match": "geoip:cn", "via": "direct"},
+            {"match": "keyword:ads", "via": "direct"},
+            {"match": "process:chrome.exe", "via": "direct"},
+            {"match": "src:192.168.0.0/16", "via": "direct"},
+            {"match": "regex:^ad\\.[A-Z]+$", "via": "direct"},
+            {"match": "*", "via": "proxy:local"},
+        ]
+    )
+    assert [(r.kind, r.value) for r in table.rules[:5]] == [
+        ("geoip", "cn"),
+        ("keyword", "ads"),
+        ("process", "chrome.exe"),
+        ("src-cidr", "192.168.0.0/16"),
+        # case survives: a lowered regex would silently stop matching [A-Z]
+        ("regex", "^ad\\.[A-Z]+$"),
+    ]
+
+
+def test_every_engine_only_kind_is_named_rather_than_answered_locally():
+    table = _table(
+        rules=[
+            {"match": "geoip:cn", "via": "direct"},
+            {"match": "keyword:ads", "via": "direct"},
+            {"match": "process:chrome.exe", "via": "direct"},
+            {"match": "src:192.168.0.0/16", "via": "direct"},
+            {"match": "regex:^ad\\.[A-Z]+$", "via": "direct"},
+            {"match": "*", "via": "proxy:local"},
+        ]
+    )
+    assert [r.kind for r in table.engine_only_rules][:5] == [
+        "geoip",
+        "keyword",
+        "process",
+        "src-cidr",
+        "regex",
+    ]
+    # no database, no process name, no source address: all five defer, so the
+    # catch-all is what a locally-answered child actually gets
+    assert decide(table, "example.test").proxy_url == _TABLE_PROXY
+
+
+def test_a_malformed_prefixed_matcher_says_which_prefix_it_tripped_on():
+    with pytest.raises(EgressConfigError, match="is not a CIDR"):
+        _table(rules=[{"match": "src:192.168.0.0/33", "via": "direct"}])
+    # a recognised prefix with an empty payload must not become an exact host
+    with pytest.raises(EgressConfigError, match="needs a substring"):
+        _table(rules=[{"match": "keyword:", "via": "direct"}])

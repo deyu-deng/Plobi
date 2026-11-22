@@ -25,6 +25,10 @@ export type OffloadRoundReply = {
   reply?: string
   reply_status?: string
   reply_to?: string
+  /** 结局三态（`WP-OFFLOAD-OUTCOME`，11-22）：`done`/`waiting`/`failed`。 */
+  outcome?: string
+  /** 等的是哪一类：`permission`/`answer`/`turn`。 */
+  waiting_on?: string
   /** 派发前那张预授权票（后端在 offloads 行上顺带补 ticket_status）。 */
   ticket_id?: string
   ticket_status?: string
@@ -207,6 +211,38 @@ export type RoundFacts = {
   credits: null | number
   durationSeconds: null | number
   permissionFlag: string
+}
+
+export type RoundOutcome = 'done' | 'failed' | 'waiting'
+
+/**
+ * 这一趟的结局三态（`WP-OFFLOAD-OUTCOME`，11-22）。
+ *
+ * 为什么要三态而不是「成功/失败」：`waiting` 是**它停下来等一句话**，下一步是回它一句；
+ * `failed` 才是重试或换人。摆成同一个红字，读的人只会去重试——重试一遍还卡在原地。
+ *
+ * 空串＝后端那一列没有（老台账行），按 `failure` 兜底，与后端 `resolved_outcome`
+ * 同一条规矩：**空串绝不当成功**。
+ */
+export function roundOutcome(round: OffloadRoundWithReply): RoundOutcome {
+  const outcome = (round.outcome ?? '').trim()
+
+  if (outcome === 'done' || outcome === 'failed' || outcome === 'waiting') {
+    return outcome
+  }
+
+  return (round.failure ?? '').trim() ? 'failed' : 'done'
+}
+
+/** 它在等哪一句（只有 `waiting` 才有意义；其余返回空串）。 */
+export function waitingKind(round: OffloadRoundWithReply): 'answer' | 'permission' | 'turn' | '' {
+  if (roundOutcome(round) !== 'waiting') {
+    return ''
+  }
+
+  const kind = (round.waiting_on ?? '').trim()
+
+  return kind === 'permission' || kind === 'answer' || kind === 'turn' ? kind : 'answer'
 }
 
 /**
