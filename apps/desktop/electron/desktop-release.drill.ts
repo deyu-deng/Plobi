@@ -36,11 +36,15 @@ if (asset) {
   console.log(`DOWNLOAD: ${ok ? 'ok' : 'FAILED'} → ${dest} (${(size / 1048576).toFixed(1)} MB)`)
 
   if (ok) {
+    // A drill of the helper THIS machine would run, not of the Windows one:
+    // the macOS shape (unpack, re-sign, swap the bundle) is worth reading too.
+    const isMac = process.platform === 'darwin'
+
     const helper = writeUpdateHelper({
       installerPath: dest,
-      installDir: 'D:\\Software\\Plobi',
-      appPath: 'D:\\Software\\Plobi\\Plobi.exe',
-      plobiHome: 'D:\\Data\\AppData\\plobi',
+      installDir: isMac ? '/Applications/Plobi.app/Contents/MacOS' : 'D:\\Software\\Plobi',
+      appPath: isMac ? '/Applications/Plobi.app/Contents/MacOS/Plobi' : 'D:\\Software\\Plobi\\Plobi.exe',
+      plobiHome: os.homedir() + '/Library/Application Support/plobi',
       tag: release.tag
     })
 

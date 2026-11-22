@@ -17,6 +17,7 @@ import {
   compareVersions,
   createReleaseLookup,
   isCompleteDownload,
+  macAppBundleFromExec,
   parseReleaseTag,
   pickInstallerAsset,
   planDownloadAttempts,
@@ -106,10 +107,20 @@ test('pickInstallerAsset returns null when this platform has no artifact', () =>
   assert.equal(pickInstallerAsset(r, 'win32', 'arm64'), null)
 })
 
-test('canSelfUpdate says no on macOS (unsigned builds cannot be swapped in place)', () => {
+test('canSelfUpdate is true wherever we ship an installer', () => {
   assert.equal(canSelfUpdate('win32'), true)
   assert.equal(canSelfUpdate('linux'), true)
-  assert.equal(canSelfUpdate('darwin'), false)
+  // macOS used to answer false ("an unsigned app cannot be swapped in place").
+  // What breaks in place is a signature we cannot reproduce; our builds are
+  // ad hoc signed, and the helper re-signs the replacement ad hoc too.
+  assert.equal(canSelfUpdate('darwin'), true)
+})
+
+test('the macOS exec path resolves to the bundle the helper has to replace', () => {
+  assert.equal(
+    macAppBundleFromExec('/Applications/Plobi.app/Contents/MacOS/Plobi'),
+    '/Applications/Plobi.app'
+  )
 })
 
 test('the update helper installs the shell first, then the agent out of that package', () => {
@@ -118,7 +129,8 @@ test('the update helper installs the shell first, then the agent out of that pac
     installDir: 'D:\\Software\\Plobi',
     appPath: 'D:\\Software\\Plobi\\Plobi.exe',
     plobiHome: 'D:\\Data\\AppData\\plobi',
-    tag: 'v0.3.2'
+    tag: 'v0.3.2',
+    platform: 'win32'
   })
 
   try {
@@ -162,7 +174,8 @@ test('the update helper waits for the app to exit before installing', () => {
     installDir: 'D:\\Software\\Plobi',
     appPath: 'D:\\Software\\Plobi\\Plobi.exe',
     plobiHome: 'D:\\Data\\AppData\\plobi',
-    tag: 'v0.3.2'
+    tag: 'v0.3.2',
+    platform: 'win32'
   })
 
   try {
@@ -188,13 +201,76 @@ test('the update helper waits for the app to exit before installing', () => {
   }
 })
 
+test('the macOS helper unpacks the zip, re-signs it and swaps the whole bundle', () => {
+  const helper = writeUpdateHelper({
+    installerPath: '/var/folders/xx/T/Plobi-0.3.3-mac-arm64.zip',
+    installDir: '/Applications/Plobi.app/Contents/MacOS',
+    appPath: '/Applications/Plobi.app/Contents/MacOS/Plobi',
+    plobiHome: '/Users/me/Library/Application Support/plobi',
+    tag: 'v0.3.3',
+    platform: 'darwin'
+  })
+
+  try {
+    const text = fs.readFileSync(helper, 'utf8')
+
+    // A shell script, not a .cmd -- and its comments must be `#`, not `rem`.
+    assert.match(text, /^#!\/bin\/sh/)
+    assert.doesNotMatch(text, /^rem /m)
+
+    // 1) unpack out of the zip (a .dmg would need mounting), then make the
+    //    result launchable here: no quarantine, ad hoc signature like ours.
+    assert.match(text, /ditto -x -k "\/var\/folders\/xx\/T\/Plobi-0\.3\.3-mac-arm64\.zip"/)
+    assert.match(text, /xattr -dr com\.apple\.quarantine "\$NEW_APP"/)
+    assert.match(text, /codesign --force --deep --sign - "\$NEW_APP"/)
+
+    // 2) the bundle is swapped whole, with the old one kept until the copy
+    //    is verifiably on disk (a half-copied .app launches nothing)
+    assert.match(text, /OLD_APP="\/Applications\/Plobi\.app"/)
+    assert.match(text, /mv "\$OLD_APP" "\$BACKUP_APP"/)
+    assert.match(text, /\[ -f "\$OLD_APP\/Contents\/Info\.plist" \]/)
+    assert.match(text, /mv "\$BACKUP_APP" "\$OLD_APP"/)
+
+    // 3) the agent comes out of the NEW bundle -- Contents/Resources, not
+    //    Contents/MacOS/resources
+    assert.match(text, /--bundle-dir "\/Applications\/Plobi\.app\/Contents\/Resources\/backend"/)
+    assert.match(text, /--wheelhouse "\/Applications\/Plobi\.app\/Contents\/Resources\/wheelhouse"/)
+    assert.match(text, /--tag "v0\.3\.3"/)
+    assert.doesNotMatch(text, /-Stage repository/)
+    assert.doesNotMatch(text, /--stage venv/)
+
+    // 4) and it is reopened as an APP, not as a binary inside it
+    assert.match(text, /open "\/Applications\/Plobi\.app"/)
+    assert.doesNotMatch(text, /start ""/)
+
+    // order: wait → unpack → swap → agent install → open
+    const waitAt = text.indexOf('pgrep')
+    const unpackAt = text.indexOf('ditto -x -k')
+    const swapAt = text.indexOf('mv "$OLD_APP"')
+    const agentAt = text.indexOf('--bundle-dir')
+    const openAt = text.indexOf('open "/Applications/Plobi.app"')
+
+    assert.ok(waitAt >= 0 && waitAt < unpackAt, 'the wait must come first')
+    assert.ok(swapAt > unpackAt, 'the swap must come after the unpack')
+    assert.ok(agentAt > swapAt, 'the agent must be installed after the swap (it comes out of the new bundle)')
+    assert.ok(openAt > agentAt, 'the app is reopened last')
+  } finally {
+    try {
+      fs.unlinkSync(helper)
+    } catch {
+      /* already gone */
+    }
+  }
+})
+
 test('the update helper leaves the checkout on a branch, not on a detached HEAD', () => {
   const helper = writeUpdateHelper({
     installerPath: 'C:\\Temp\\Plobi-0.3.2-win-x64.exe',
     installDir: 'D:\\Software\\Plobi',
     appPath: 'D:\\Software\\Plobi\\Plobi.exe',
     plobiHome: 'D:\\Data\\AppData\\plobi',
-    tag: 'v0.3.2'
+    tag: 'v0.3.2',
+    platform: 'win32'
   })
 
   try {
@@ -219,7 +295,8 @@ test('the update helper is written into the temp dir, not into the install', () 
     installDir: 'D:\\Software\\Plobi',
     appPath: 'D:\\Software\\Plobi\\Plobi.exe',
     plobiHome: 'D:\\Data\\AppData\\plobi',
-    tag: 'v0.3.2'
+    tag: 'v0.3.2',
+    platform: 'win32'
   })
 
   try {

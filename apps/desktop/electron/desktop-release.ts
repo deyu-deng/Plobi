@@ -128,11 +128,46 @@ export function pickInstallerAsset(
 }
 
 /**
- * macOS refuses to swap an unsigned app in place (no signature ⇒ Gatekeeper
- * and the updater both refuse). We say so instead of pretending.
+ * Whether this platform can swap the running install in place.
+ *
+ * Windows: the NSIS installer replaces the whole app directory.
+ * Linux:   the AppImage is one self-contained file.
+ * macOS:   the `.zip` is unpacked with `ditto`, de-quarantined, re-signed ad
+ *          hoc, and the bundle is swapped with the old one kept as a rollback.
+ *
+ * macOS was excluded here because "an unsigned app cannot be replaced in
+ * place". What actually breaks in-place replacement is a signature we cannot
+ * reproduce: replace a Developer-ID/notarised bundle with an ad-hoc one and
+ * Gatekeeper refuses to launch it. Our builds are signed ad hoc in the first
+ * place (see the notarisation note in the release workflow), so the
+ * replacement carries the same kind of signature as the thing it replaces --
+ * `codesign --force --deep -s -` on the extracted bundle keeps that true even
+ * when the zip came from a machine whose keychain is not this one.
+ *
+ * The consequence the UI must know about: on macOS the update is not silent --
+ * the helper quits the app, swaps the bundle, and reopens it.
  */
 export function canSelfUpdate(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === 'win32' || platform === 'linux'
+  return platform === 'win32' || platform === 'linux' || platform === 'darwin'
+}
+
+/**
+ * `/Applications/Plobi.app/Contents/MacOS/Plobi` ⇒ `/Applications/Plobi.app`.
+ *
+ * The helper needs the BUNDLE (that is what `ditto` copies and what `open`
+ * launches); the exec path it is handed only names the binary inside it.
+ */
+export function macAppBundleFromExec(appPath: string): string {
+  const trimmed = String(appPath || '').replace(/\/+$/, '')
+  const hit = /^(.*\.app)\/Contents\/MacOS\/[^/]+$/.exec(trimmed)
+
+  if (hit) {
+    return hit[1]
+  }
+
+  // Not the canonical layout (someone running the binary straight out of a
+  // build dir): walk up, hoping the three levels are still there.
+  return path.resolve(trimmed, '..', '..', '..')
 }
 
 function curlBinary(): string {
@@ -659,6 +694,11 @@ export function isCompleteDownload(actualSize: number, expectedSize: number): bo
  *
  * It must be detached: the app is quitting, and the venv shim it holds has
  * to be released before step 2 can touch the venv.
+ *
+ * macOS takes a different shape for step 1: the download is a `.zip`, so the
+ * helper unpacks it with `ditto`, strips the quarantine flag, re-signs it ad
+ * hoc and swaps the whole `.app` -- keeping the old bundle around until the
+ * new one is on disk (see `canSelfUpdate`). Steps 0, 2 and 3 are the same.
  */
 export function writeUpdateHelper(opts: {
   installerPath: string
@@ -667,19 +707,41 @@ export function writeUpdateHelper(opts: {
   plobiHome: string
   tag: string
   logPath?: string
+  /** Testing seam: the helper's shape is decided per platform. */
+  platform?: NodeJS.Platform
 }): string {
+  const platform = opts.platform ?? process.platform
+  const isWindows = platform === 'win32'
+  const isMac = platform === 'darwin'
   const logPath = opts.logPath || path.join(os.tmpdir(), 'plobi-desktop-update.log')
-  const agentDir = path.join(opts.plobiHome, 'plobi-agent')
-  const installScript = path.join(agentDir, 'scripts', 'install.ps1')
-  const isWindows = process.platform === 'win32'
+  // The helper's paths belong to the platform it will RUN on, which is not
+  // necessarily the one writing it (tests, a cross-build). `path.win32` keeps
+  // the separators honest instead of emitting `D:\Software\Plobi/resources`.
+  const joinPath = isWindows ? path.win32.join : path.join
+  const agentDir = joinPath(opts.plobiHome, 'plobi-agent')
+  const installScript = joinPath(agentDir, 'scripts', isWindows ? 'install.ps1' : 'install.sh')
+  const appBundle = isMac ? macAppBundleFromExec(opts.appPath) : ''
+  // The same helper is written as .cmd and as .sh: the comment marker and the
+  // log redirect differ, so they are picked once, here.
+  const mark = isWindows ? 'rem' : '#'
 
   const lines: string[] = []
-  lines.push('@echo off')
-  lines.push('setlocal')
-  lines.push(`set "PLOBI_LOG=${logPath}"`)
+
+  if (isWindows) {
+    lines.push('@echo off')
+    lines.push('setlocal')
+    lines.push(`set "PLOBI_LOG=${logPath}"`)
+  } else {
+    lines.push('#!/bin/sh')
+    // Launched from Finder, an Electron app inherits a minimal PATH. `ditto`,
+    // `codesign`, `xattr` and `pgrep` all live in /usr/bin, but do not bet on
+    // the inherited value.
+    lines.push('PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"')
+    lines.push(`PLOBI_LOG='${logPath}'`)
+  }
 
   // ---- 0) wait for this app to really exit -------------------------------
-  lines.push('rem --- 0) wait until this app has really quit (its files are locked until then) ---')
+  lines.push(`${mark} --- 0) wait until this app has really quit (its files are locked until then) ---`)
 
   if (isWindows) {
     lines.push('set /a PL0BI_WAITED=0')
@@ -691,6 +753,11 @@ export function writeUpdateHelper(opts: {
     lines.push('timeout /t 2 /nobreak >NUL')
     lines.push('goto plobi_wait_exit')
     lines.push(':plobi_app_gone')
+  } else if (isMac) {
+    // Match the BUNDLE's binary, not the word "Plobi": the helper's own
+    // command line carries the log path, and a loose pattern would wait on
+    // itself forever.
+    lines.push(`while pgrep -f '${appBundle}/Contents/MacOS/' >/dev/null 2>&1; do sleep 2; done`)
   } else {
     lines.push('while pgrep -f "Plobi" >/dev/null 2>&1; do sleep 2; done')
   }
@@ -701,13 +768,53 @@ export function writeUpdateHelper(opts: {
   // runtime source + the locked dependency wheels), and the backend sync below
   // has to read them out of the NEW install dir. Order: install the shell,
   // then install the agent out of the package that just landed.
-  lines.push('rem --- 1) the shell is replaced by the new installer ---')
+  lines.push(`${mark} --- 1) the shell is replaced by the new installer ---`)
 
   if (isWindows) {
     lines.push(`"${opts.installerPath}" /S /D=${opts.installDir} >> "%PLOBI_LOG%" 2>&1`)
+  } else if (isMac) {
+    // The macOS asset is a `.zip`: unpack it beside the download, then make
+    // the result launchable on THIS machine -- a zip carries no usable code
+    // signature for a keychain it was not built in, and anything downloaded
+    // by our own curl still ends up quarantined once it passes through
+    // LaunchServices.
+    lines.push(`WORK="$(mktemp -d "\${TMPDIR:-/tmp}/plobi-update.XXXXXX")"`)
+    lines.push(`ditto -x -k "${opts.installerPath}" "$WORK" >> "$PLOBI_LOG" 2>&1`)
+    lines.push('NEW_APP="$(ls -d "$WORK"/*.app 2>/dev/null | head -1)"')
+    lines.push('if [ -z "$NEW_APP" ]; then')
+    lines.push(`  echo "no .app inside ${opts.installerPath}" >> "$PLOBI_LOG"`)
+    lines.push('  rm -rf "$WORK"')
+    lines.push('  exit 1')
+    lines.push('fi')
+    lines.push('xattr -dr com.apple.quarantine "$NEW_APP" >> "$PLOBI_LOG" 2>&1')
+    // Ad hoc, like the build we are replacing: `--deep` covers the frameworks
+    // and helpers, `-` means "no identity", which is exactly what our CI does.
+    lines.push('codesign --force --deep --sign - "$NEW_APP" >> "$PLOBI_LOG" 2>&1')
+    // Swap the WHOLE bundle, keeping the old one until the new one is on disk.
+    // A half-copied bundle is worse than an old one: it will not launch, and
+    // the user has no app to retry from.
+    lines.push(`OLD_APP="${appBundle}"`)
+    lines.push('BACKUP_APP="$OLD_APP.plobi-old"')
+    lines.push('rm -rf "$BACKUP_APP"')
+    lines.push('if mv "$OLD_APP" "$BACKUP_APP" && ditto "$NEW_APP" "$OLD_APP" && [ -f "$OLD_APP/Contents/Info.plist" ]; then')
+    lines.push('  rm -rf "$BACKUP_APP"')
+    lines.push('else')
+    lines.push(`  echo "bundle swap failed -- putting the old one back" >> "$PLOBI_LOG"`)
+    // Undo only what we actually did: when the `mv` itself failed (no write
+    // permission on /Applications, say), the old bundle is still in place, and
+    // deleting it "to make room for the backup" would be a destructive
+    // rollback -- exactly the case this branch exists to avoid.
+    lines.push('  if [ -d "$BACKUP_APP" ]; then')
+    lines.push('    rm -rf "$OLD_APP"')
+    lines.push('    mv "$BACKUP_APP" "$OLD_APP"')
+    lines.push('  fi')
+    lines.push('  rm -rf "$WORK"')
+    lines.push('  exit 1')
+    lines.push('fi')
+    lines.push('rm -rf "$WORK"')
   } else {
     lines.push(`chmod +x "${opts.installerPath}" >> "$PLOBI_LOG" 2>&1`)
-    lines.push(`"${opts.installerPath}" --appimage-extract-and-run >> "$PLOBI_LOG%" 2>&1 &`)
+    lines.push(`"${opts.installerPath}" --appimage-extract-and-run >> "$PLOBI_LOG" 2>&1 &`)
   }
 
   // ---- 2) the agent is installed out of the same package --------------------
@@ -718,13 +825,21 @@ export function writeUpdateHelper(opts: {
   //     same version as the shell by construction;
   //   * it does not (an old package, or a source install): move the checkout
   //     to the release tag, the way we always have.
-  lines.push('rem --- 2) the agent is installed from the same package ---')
+  lines.push(`${mark} --- 2) the agent is installed from the same package ---`)
 
-  const bundledAgent = path.join(opts.installDir, 'resources', 'backend')
-  const bundledWheelhouse = path.join(opts.installDir, 'resources', 'wheelhouse')
+  // Where the package keeps its backend: Windows and Linux put `resources/`
+  // straight into the install dir, a macOS `.app` keeps it one level down in
+  // `Contents/Resources`. The bundle sits at the same path before and after
+  // the swap, so this resolves correctly on both sides of step 1.
+  const resourcesRoot = isMac
+    ? path.join(appBundle, 'Contents', 'Resources')
+    : joinPath(opts.installDir, 'resources')
+
+  const bundledAgent = joinPath(resourcesRoot, 'backend')
+  const bundledWheelhouse = joinPath(resourcesRoot, 'wheelhouse')
 
   if (isWindows) {
-    lines.push(`if exist "${path.join(bundledAgent, 'scripts', 'install.ps1')}" (`)
+    lines.push(`if exist "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" (`)
     lines.push(`  rem --- 2a) bundled backend: install it out of the package, offline ---`)
     // Two stages, not the whole script: `repository` copies the packaged source,
     // `dependencies` installs the locked wheels from the packaged wheelhouse
@@ -734,10 +849,10 @@ export function writeUpdateHelper(opts: {
     // stage is skipped too: the desktop's own node deps travel in the package,
     // and npm would need the network.
     lines.push(
-      `  powershell -ExecutionPolicy Bypass -File "${path.join(bundledAgent, 'scripts', 'install.ps1')}" -Stage repository -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+      `  powershell -ExecutionPolicy Bypass -File "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" -Stage repository -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
     )
     lines.push(
-      `  powershell -ExecutionPolicy Bypass -File "${path.join(bundledAgent, 'scripts', 'install.ps1')}" -Stage dependencies -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
+      `  powershell -ExecutionPolicy Bypass -File "${joinPath(bundledAgent, 'scripts', 'install.ps1')}" -Stage dependencies -BundleDir "${bundledAgent}" -Wheelhouse "${bundledWheelhouse}" -PlobiHome "${opts.plobiHome}" -InstallDir "${agentDir}" -NonInteractive >> "%PLOBI_LOG%" 2>&1`
     )
     lines.push(`) else (`)
     lines.push(`  rem --- 2b) source install: move the checkout to the same tag ---`)
@@ -754,15 +869,15 @@ export function writeUpdateHelper(opts: {
     // Same two shapes as the Windows branch. The POSIX stage names differ:
     // install.sh calls the dependency stage `python-deps`.
     lines.push(`if [ -d "${bundledAgent}" ]; then`)
-    lines.push(`  rem --- 2a) bundled backend: install it out of the package, offline ---`)
+    lines.push(`  ${mark} --- 2a) bundled backend: install it out of the package, offline ---`)
     lines.push(
-      `  sh "${path.join(bundledAgent, 'scripts', 'install.sh')}" --stage repository --bundle-dir "${bundledAgent}" --wheelhouse "${bundledWheelhouse}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" --non-interactive >> "$PLOBI_LOG" 2>&1`
+      `  sh "${joinPath(bundledAgent, 'scripts', 'install.sh')}" --stage repository --bundle-dir "${bundledAgent}" --wheelhouse "${bundledWheelhouse}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" --non-interactive >> "$PLOBI_LOG" 2>&1`
     )
     lines.push(
-      `  sh "${path.join(bundledAgent, 'scripts', 'install.sh')}" --stage python-deps --bundle-dir "${bundledAgent}" --wheelhouse "${bundledWheelhouse}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" --non-interactive >> "$PLOBI_LOG" 2>&1`
+      `  sh "${joinPath(bundledAgent, 'scripts', 'install.sh')}" --stage python-deps --bundle-dir "${bundledAgent}" --wheelhouse "${bundledWheelhouse}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" --non-interactive >> "$PLOBI_LOG" 2>&1`
     )
     lines.push(`else`)
-    lines.push(`  rem --- 2b) source install: move the checkout to the same tag ---`)
+    lines.push(`  ${mark} --- 2b) source install: move the checkout to the same tag ---`)
     lines.push(
       `  sh "${installScript}" --tag "${opts.tag}" --plobi-home "${opts.plobiHome}" --dir "${agentDir}" >> "$PLOBI_LOG" 2>&1`
     )
@@ -771,9 +886,18 @@ export function writeUpdateHelper(opts: {
     lines.push(`fi`)
   }
 
-  lines.push('rem --- 3) start the app again ---')
-  lines.push(`start "" "${opts.appPath}"`)
-  lines.push('endlocal')
+  lines.push(`${mark} --- 3) start the app again ---`)
+
+  if (isWindows) {
+    lines.push(`start "" "${opts.appPath}"`)
+    lines.push('endlocal')
+  } else if (isMac) {
+    // `open` on the BUNDLE: the binary path inside it is not what LaunchServices
+    // (or Gatekeeper) wants, and a replaced bundle needs to be launched as an app.
+    lines.push(`open "${appBundle}"`)
+  } else {
+    lines.push(`"${opts.appPath}" >/dev/null 2>&1 &`)
+  }
 
   const helperPath = path.join(os.tmpdir(), `plobi-desktop-update-${Date.now()}.${isWindows ? 'cmd' : 'sh'}`)
   fs.writeFileSync(helperPath, lines.join('\n') + '\n', 'utf8')
