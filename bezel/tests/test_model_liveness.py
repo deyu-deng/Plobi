@@ -341,3 +341,46 @@ def test_single_model_detail_route_supports_slashed_ids(monkeypatch, state_with)
     assert ok.json()["id"] == "qoder/sonus"
     assert missing.status_code == 404
 
+
+
+class UmbrellaProv(CatalogProv):
+    """A leg that fans out to per-vendor legs and publishes nothing itself."""
+
+    publishes_models = False
+
+
+def test_an_umbrella_leg_with_no_catalog_of_its_own_settles_in_one_pass():
+    """The umbrella is answered by definition; it must not look like a stalled leg.
+
+    Reported symptom (2026-11-19): the picker showed "no model" while chat kept
+    working. The umbrella (magpie) is signed in and answers, but by design
+    publishes an empty catalogue — every row belongs to a vendor leg. Counting
+    it as pending burned all ``_MODELS_MAX_PASSES`` passes on a leg that never
+    could fill its list, and the refresh loop then switched itself off.
+    """
+    umbrella = UmbrellaProv("magpie", [None] * 20)
+    leg = CatalogProv("workbuddy", [["deepseek-v4.1-flash"]])
+    reg = _registry(umbrella, leg)
+
+    asyncio.run(reg.ensure_models_refreshed())
+
+    assert reg._models_passes == 1, "one pass is enough once the umbrella is not pending"
+    assert reg._models_refreshed is True, "the catalogue is settled, not abandoned"
+    assert reg._legs_without_catalog() == []
+    assert ids(reg.list_models(selectable_only=True)) == ["workbuddy/deepseek-v4.1-flash"]
+
+
+def test_the_retry_budget_is_spent_only_on_legs_that_could_answer():
+    umbrella = UmbrellaProv("magpie", [None] * 20)
+    silent = CatalogProv("qoder", [None] * 20)
+    reg = _registry(umbrella, silent)
+
+    async def _go():
+        for _ in range(_MODELS_MAX_PASSES):
+            reg._models_attempt = 0.0
+            await reg.models_refresh_task()
+
+    asyncio.run(_go())
+
+    assert silent.calls == _MODELS_MAX_PASSES, "a leg that could answer is still retried"
+    assert reg._legs_without_catalog() == ["qoder"], "the umbrella is never a retry candidate"

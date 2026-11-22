@@ -519,8 +519,21 @@ async def _recheck_after_login(app_id: str) -> None:
     acc = next((a for a in prov.accounts if a.schedulable()), None)
     if acc is None:
         return
+    # `credential_health` — and therefore the catalog gate — reads the leg's own probe
+    # verdict, and that verdict is cached behind a TTL. Signing in is exactly the event
+    # that makes the cache wrong, so re-read it instead of trusting it.
+    probe = getattr(prov, "probe", None)
+    if callable(probe):
+        try:
+            await probe(force=True)
+        except Exception:  # noqa: BLE001
+            pass
     try:
-        await reg._refresh_provider_models(app_id)
+        # Through the gate, not around it: ensure_models_refreshed re-reads the credential
+        # /seat signature on entry and the re-probe above just moved it, so the passes this
+        # registry burned while the leg was signed out are discarded — and every leg the
+        # same outage left empty gets another chance, not only this one.
+        await reg.ensure_models_refreshed()
         await prov.refresh_quota(acc)
     except Exception:  # noqa: BLE001
         pass

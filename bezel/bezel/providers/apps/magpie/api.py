@@ -73,6 +73,9 @@ HEALTH_TTL_SECONDS = 5.0
 class MagpieProvider(Provider):
     name = "magpie"
     display_name = "Magpie"
+    # The umbrella itself publishes nothing: every model row belongs to the
+    # vendor leg it was discovered for (see ``MagpieProviderLeg``).
+    publishes_models = False
     # The gateway speaks OpenAI, streams, and passes tools through to the vendor
     # (their `zen-free` plugin even needs a tool list to get an answer at all).
     default_capabilities = Capabilities(
@@ -829,6 +832,9 @@ class MagpieProviderLeg(MagpieProvider):
     the sign-in lives behind magpie (user, 11-09 20:0x: 「前端还是用我们自己的
     操作逻辑。要配置 workbuddy 就要在相应的卡片点击加号配置的」).
     """
+
+    # A leg does own the catalogue for its own vendor, unlike the umbrella.
+    publishes_models = True
 
     def __init__(
         self,

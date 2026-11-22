@@ -143,6 +143,10 @@ class Provider:
     display_name: str = ""
     # model ids this provider serves in the unified namespace, e.g. "cursor/gpt-4o"
     served_models: tuple[str, ...] = ()
+    # Does this leg own a catalogue? Umbrella legs only fan out to their
+    # per-vendor children and deliberately keep ``served_models`` empty, so an
+    # empty list there is the intended state, not a failed refresh.
+    publishes_models: bool = True
     # Default capability flags; subclasses override ``capabilities()`` when needed.
     default_capabilities: Capabilities = Capabilities()
 

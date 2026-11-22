@@ -41,8 +41,9 @@ from .providers.mock import MockProvider
 logger = logging.getLogger(__name__)
 
 #: Ceiling on catalog-refresh passes for a leg that keeps answering with no models. Past
-#: this the leg stays empty until its next sign-in, so a permanently-empty catalog costs a
-#: handful of upstream calls rather than an endless poll.
+#: this the leg stays empty until the credential or seat situation moves (see
+#: ``Registry._models_state_signature``), so a permanently-empty catalog costs a handful of
+#: upstream calls rather than an endless poll — while an actual sign-in still gets a retry.
 _MODELS_MAX_PASSES = 6
 
 # All upstream adapters are registered here. Add a new desktop app by writing a
@@ -220,6 +221,10 @@ class Registry:
         self._models_refreshed = False
         self._models_attempt = 0.0
         self._models_passes = 0
+        # The credential/seat situation the three fields above were earned in. A pass
+        # budget only means something relative to the state it was spent in, so this is
+        # the key the latch is validated against (see _models_state_signature).
+        self._models_state = None
 
     async def build(self):
         for name, pcfg in self.config.get("providers", {}).items():
@@ -354,6 +359,26 @@ class Registry:
                 logger.info("%s: %d seat(s) appeared after boot; re-reading its catalog", name, len(found))
                 self._rebuild_model_index()
 
+    def _models_state_signature(self) -> tuple:
+        """What a catalog refresh's outcome actually depends on: which legs exist, how
+        many seats each one can schedule from, and whether that seat's credential is
+        live right now.
+
+        This is the answer to "when may the pass budget start over". Six passes spent
+        while a leg was signed out say nothing about that leg once the user signs in,
+        and a leg that appeared on demand after boot starts with a clean slate by
+        construction. Validating the latch against this signature is what makes the
+        "giving up until next sign-in" promise below literally true, without every
+        sign-in path having to remember to poke a reset.
+        """
+        state = []
+        for name in sorted(self.providers):
+            prov = self.providers[name]
+            seats = sum(1 for a in getattr(prov, "accounts", ()) if a.schedulable())
+            live = self.credential_health(prov)[0] if seats else False
+            state.append((name, seats, live))
+        return tuple(state)
+
     async def ensure_models_refreshed(self) -> None:
         """Refresh every provider's model catalog from upstream, retrying until no leg is
         left with nothing to offer.
@@ -369,8 +394,31 @@ class Registry:
         So the flag stays down while a live leg with an account still has no catalog, and
         ``models_refresh_task`` re-arms within ``_MODELS_RETRY_AFTER`` and a bounded number
         of passes.
+
+        The budget is per *credential/seat state*, not per process: ``_models_state_signature``
+        is re-read on entry, so a sign-in, a seat that shows up after boot, and a leg enabled
+        on demand each start a fresh budget. That is what the give-up log below has always
+        claimed and what a bare latch could not deliver — the gate used to outlive the reason
+        it closed, and a leg that was empty at hour zero stayed empty for the whole process.
         """
+        state = self._models_state_signature()
+        if self._models_state is None:
+            # Nothing has been given up on yet, so there is no stale verdict to discard:
+            # adopt the current world and let the latch stand as it is.
+            self._models_state = state
+        elif state != self._models_state:
+            logger.info(
+                "credential or seat set changed; reopening the model catalog refresh "
+                "(was %d leg(s), now %d)", len(self._models_state), len(state),
+            )
+            self._models_state = state
+            self._models_refreshed = False
+            self._models_passes = 0
+            self._models_attempt = 0.0
         if self._models_refreshed:
+            # Nothing to do in this world. Record that we looked, so the poll-side re-arm
+            # below stays on its floor instead of re-checking on every /v1/models call.
+            self._models_attempt = time.monotonic()
             return
         async with self._models_lock:
             if self._models_refreshed:
@@ -397,6 +445,14 @@ class Registry:
         card or a leg with no account must not be polled forever."""
         out: list[str] = []
         for name, prov in self.providers.items():
+            # A leg that publishes no catalogue of its own (an umbrella such as
+            # magpie, which fans out to its per-vendor legs) is answered by
+            # definition. Counting it as pending burned the whole retry budget
+            # on a leg that never could fill its list; once _MODELS_MAX_PASSES
+            # ran out the refresh loop switched off for the rest of the session
+            # and the picker showed "no model" while chat kept working.
+            if not getattr(prov, "publishes_models", True):
+                continue
             if prov.served_models or not any(a.schedulable() for a in prov.accounts):
                 continue
             if self.credential_health(prov)[0]:
@@ -405,7 +461,8 @@ class Registry:
 
     def models_refresh_task(self) -> asyncio.Task:
         """The model-refresh task for this process, created on first ask and re-armed
-        while a live leg still has no catalog.
+        while a live leg still has no catalog — or once more whenever the credential/seat
+        situation has moved since the last verdict.
 
         A reader that only wants the catalog can wait on this with a short timeout
         instead of doing the work itself — so a slow leg makes the answer *later*, never
@@ -415,9 +472,14 @@ class Registry:
         task = getattr(self, "_refresh_task", None)
         if task is None:
             self._refresh_task = asyncio.create_task(self.ensure_models_refreshed())
-        elif task.done() and not self._models_refreshed and (
+        elif task.done() and (
             time.monotonic() - self._models_attempt >= self._MODELS_RETRY_AFTER
         ):
+            # No `not self._models_refreshed` guard here on purpose: a latched gate is a
+            # verdict about the world as it was when it closed, and only the gate itself
+            # can tell whether that world still holds. Re-arming is cheap — with nothing
+            # changed it re-reads the signature and returns — while skipping it is what
+            # let a closed gate outlive its reason and never be asked again.
             self._refresh_task = asyncio.create_task(self.ensure_models_refreshed())
         return self._refresh_task
 
