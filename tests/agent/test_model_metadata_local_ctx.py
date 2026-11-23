@@ -480,7 +480,10 @@ class TestDetectLocalServerTypeAuth:
         client_mock.__exit__ = MagicMock(return_value=False)
         client_mock.get.return_value = resp
 
-        with patch("httpx.Client", return_value=client_mock) as mock_client:
+        # The TCP pre-flight is what keeps a dead loopback port from costing a
+        # full HTTP timeout, so it has to be stubbed for the probe to be seen.
+        with patch("agent.model_metadata._probe_reachable", return_value=True), \
+             patch("httpx.Client", return_value=client_mock) as mock_client:
             result = detect_local_server_type("http://localhost:1234/v1", api_key="lm-token")
 
         assert result == "lm-studio"
@@ -500,7 +503,8 @@ class TestDetectLocalServerTypeAuth:
         client_mock.get.return_value = resp
 
         result = None
-        with patch("httpx.Client", return_value=client_mock):
+        with patch("agent.model_metadata._probe_reachable", return_value=True), \
+             patch("httpx.Client", return_value=client_mock):
             result = detect_local_server_type("http://localhost:1234/api/v1")
 
         assert result == "lm-studio"
@@ -522,7 +526,8 @@ class TestDetectLocalServerTypeLocalhostIPv4:
         client_mock.__exit__ = MagicMock(return_value=False)
         client_mock.get.return_value = resp
 
-        with patch("httpx.Client", return_value=client_mock):
+        with patch("agent.model_metadata._probe_reachable", return_value=True), \
+             patch("httpx.Client", return_value=client_mock):
             detect_local_server_type("http://localhost:8317/v1")
 
         for call in client_mock.get.call_args_list:
@@ -864,9 +869,16 @@ class TestLocalContextProbeTTLCache:
         assert detect.call_count == 2
 
 
-    def test_none_result_not_cached(self):
-        """A failed probe (None) must NOT be memoized — a retry within the TTL
-        window must re-probe so a server that comes up mid-startup is caught."""
+    def test_none_result_cached_for_short_ttl(self):
+        """A failed probe (None) IS memoized — but only for the short TTL.
+
+        Previously negative results were never cached. One agent build calls
+        this probe several times, and on a machine whose loopback bytes are
+        taken over by the egress proxy every one of those calls paid the full
+        waterfall — 38 s of a 49 s build, past the 30 s init budget. The trade
+        off is the 30 s TTL: a server started right after a failed probe is
+        still picked up on the next build, just not instantly.
+        """
         from agent.model_metadata import _query_local_context_length
 
         # First probe: server unreachable -> detect returns None, all queries miss -> None.
@@ -880,9 +892,87 @@ class TestLocalContextProbeTTLCache:
         with patch("agent.model_metadata.detect_local_server_type", return_value=None) as detect, \
              patch("httpx.Client", return_value=client_mock):
             first = _query_local_context_length("m", "http://localhost:11434/v1")
-            # Retry within TTL must re-probe (None was not cached).
             second = _query_local_context_length("m", "http://localhost:11434/v1")
 
         assert first is None
         assert second is None
-        assert detect.call_count == 2, "None result was wrongly cached; retry did not re-probe"
+        assert detect.call_count == 1, "None result must be memoized within the TTL"
+
+        # Expiry is what re-opens the door for a late-starting server: dropping
+        # the memo (equivalent to the TTL running out) must probe again.
+        with patch("agent.model_metadata._LOCAL_CTX_PROBE_CACHE", {}), \
+             patch("agent.model_metadata.detect_local_server_type", return_value=None) as detect_expired, \
+             patch("httpx.Client", return_value=client_mock):
+            third = _query_local_context_length("m", "http://localhost:11434/v1")
+
+        assert third is None
+        assert detect_expired.call_count == 1, "expired negative result was not re-probed"
+
+
+class TestLocalProbeIsolation:
+    """The 2026-11-23 ``agent initialization timed out`` regression.
+
+    Loopback probes used to inherit the process proxy and pay a full timeout
+    each: a transparent proxy answered with its own error page instead of the
+    kernel's instant connection-refused. Sixteen such probes ran in series
+    while the agent was being built, which lands far past the init budget.
+    """
+
+    def test_probe_client_is_proxy_free_and_short_fused(self):
+        from agent.model_metadata import _PROBE_TIMEOUT_LOCAL, _probe_client
+
+        with patch("httpx.Client") as client_cls:
+            _probe_client(3.0, {"Authorization": "Bearer k"}, url="http://127.0.0.1:8000/v1")
+
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs["trust_env"] is False, "loopback probes must never inherit the proxy"
+        assert kwargs["timeout"] == _PROBE_TIMEOUT_LOCAL
+        assert kwargs["headers"] == {"Authorization": "Bearer k"}
+
+    def test_probe_client_never_inherits_proxy_for_remote_hosts_either(self):
+        from agent.model_metadata import _probe_client
+
+        with patch("httpx.Client") as client_cls:
+            _probe_client(3.0, {}, url="https://api.example.com/v1")
+
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs["timeout"] == 3.0, "remote probes keep their own budget"
+        assert kwargs["trust_env"] is False, "a proxy error page must never pass for a server"
+
+    def test_dead_loopback_port_skips_the_http_waterfall(self):
+        from agent.model_metadata import detect_local_server_type
+
+        with patch("agent.model_metadata._endpoint_probe_path_cache", {}), \
+             patch("agent.model_metadata._probe_reachable", return_value=False) as reachable, \
+             patch("httpx.Client") as client_cls:
+            assert detect_local_server_type("http://127.0.0.1:8000/v1") is None
+
+        reachable.assert_called_once()
+        assert not client_cls.called, "no HTTP probe should be paid for a dead port"
+
+    def test_proxy_error_page_stops_the_waterfall(self):
+        from agent.model_metadata import detect_local_server_type
+
+        resp = MagicMock()
+        resp.status_code = 502
+        client_mock = MagicMock()
+        client_mock.__enter__ = lambda s: client_mock
+        client_mock.__exit__ = MagicMock(return_value=False)
+        client_mock.get.return_value = resp
+
+        with patch("agent.model_metadata._endpoint_probe_path_cache", {}), \
+             patch("agent.model_metadata._probe_reachable", return_value=True), \
+             patch("httpx.Client", return_value=client_mock):
+            assert detect_local_server_type("http://127.0.0.1:8000/v1") is None
+
+        assert client_mock.get.call_count == 1, "a 502 for a loopback address means a proxy answered"
+
+    def test_negative_result_is_memoized(self):
+        from agent.model_metadata import detect_local_server_type
+
+        with patch("agent.model_metadata._endpoint_probe_path_cache", {}), \
+             patch("agent.model_metadata._probe_reachable", return_value=False) as reachable:
+            detect_local_server_type("http://127.0.0.1:8000/v1")
+            detect_local_server_type("http://127.0.0.1:8000/v1")
+
+        assert reachable.call_count == 1, "the second call must be served from the negative cache"

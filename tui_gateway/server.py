@@ -1328,8 +1328,16 @@ def _build_stack_hint(session: dict) -> str:
         return f"（线程 {thread.name} 已经不在，但 ready 没被 set —— 建到一半被杀）"
     import traceback
 
-    frames = traceback.extract_stack(frame)[-6:]
-    where = " ← ".join(f"{f.filename.split(os.sep)[-1]}:{f.lineno} {f.name}" for f in frames)
+    # 2026-11-23 现场：截到的 6 帧全是标准库（socket.readinto ← client.getresponse
+    # ← request.http_open），一眼看过去像是「网络卡了」，实际是
+    # agent/model_metadata.py 在串行探测本地模型服务器。库帧对被甩锅的那一层
+    # 毫无用处，所以先只留 Plobi 自己的帧（项目根之下的路径），不够再拿库帧
+    # 补齐——否则这条提示永远只是把读者送回"网络问题"这个错误答案。
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
+    frames = traceback.extract_stack(frame)
+    own = [f for f in frames if os.path.abspath(f.filename).startswith(project_root)]
+    picked = (own or frames)[-6:]
+    where = " ← ".join(f"{f.filename.split(os.sep)[-1]}:{f.lineno} {f.name}" for f in picked)
     return f"（卡在：{where}）"[:600]
 
 

@@ -676,6 +676,81 @@ def _localhost_to_ipv4(url: str) -> str:
     )
 
 
+#: Budgets for every "is a model server running here?" probe below.
+#:
+#: 2026-11-23 (dev box, Plobi egress up, base_url = the local gateway on
+#: ``127.0.0.1:8000``): the agent build path fired 16 of these probes in
+#: series, and each one cost 1.4-1.7 s because the loopback socket was taken
+#: over by the transparent proxy and answered with its 502 error page instead
+#: of an immediate connection-refused. That was 38 s out of a 49 s build —
+#: straight through the gateway's 30 s ``agent initialization timed out`` wall.
+#:
+#: A local probe only has to learn "did something answer", so it gets a
+#: sub-second budget, never inherits a proxy, and pays a cheap TCP pre-flight
+#: first. Worse than slow, going through the proxy can *hide* a live server
+#: behind an error page, so ``trust_env`` is off even when the proxy is fast.
+_PROBE_TIMEOUT_LOCAL = 0.4
+_PROBE_PREFLIGHT_TIMEOUT = 0.25
+
+
+def _is_local_endpoint(url: str) -> bool:
+    """True when ``url`` targets this machine or a private LAN/mesh host."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    try:
+        host = (urlsplit(url).hostname or "").strip().lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    if host in ("localhost", "::1", "0.0.0.0") or host.endswith(".localhost"):
+        return True
+    if host.endswith((".local", ".lan", ".internal")):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Single-label hostnames ("nas", "workstation") only resolve on a LAN.
+        return "." not in host and ":" not in host
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def _probe_client(timeout: float, headers: dict, *, url: str = ""):
+    """An ``httpx.Client`` for local-server probes: proxy-free, short-fused."""
+    import httpx
+
+    if url and _is_local_endpoint(url):
+        timeout = min(float(timeout), _PROBE_TIMEOUT_LOCAL)
+    return httpx.Client(timeout=timeout, headers=headers, trust_env=False)
+
+
+def _probe_reachable(url: str, timeout: float = _PROBE_PREFLIGHT_TIMEOUT) -> bool:
+    """TCP pre-flight: cheap "is anything listening" before spending HTTP probes.
+
+    Loopback connects normally fail in microseconds. They do not when a
+    transparent proxy owns the socket — then the kernel-level check is the only
+    affordable way to find out the port is dead. A ``True`` here does not prove
+    the server is the one we are looking for; the HTTP waterfall still runs.
+    """
+    import socket
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except Exception:
+        return False
+    if not host:
+        return False
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
     """Detect which local server is running at base_url by probing known endpoints.
 
@@ -685,8 +760,6 @@ def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
     calls (e.g. every 5-minute metadata refresh) never re-run the waterfall
     and never spray 404s at endpoints the server does not expose.
     """
-    import httpx
-
     normalized = _normalize_base_url(base_url)
 
     # Resolve localhost to IPv4 to avoid 2s IPv6 timeout on Windows dual-stack.
@@ -700,19 +773,40 @@ def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
     lmstudio_url = _lmstudio_server_root(normalized)
 
     cached = _endpoint_probe_path_cache.get(server_url)
-    if cached is not None and (time.monotonic() - cached[1]) < _ENDPOINT_PROBE_TTL_SECONDS:
-        return cached[0]
+    if cached is not None:
+        value, stamp = cached
+        # "Nothing here" results get the short TTL: the user may start Ollama a
+        # minute from now, but re-running the whole waterfall on every single
+        # build for a server that simply is not there is what blew the init
+        # budget in the first place.
+        ttl = _ENDPOINT_PROBE_TTL_SECONDS if value is not None else _LOCAL_CTX_PROBE_TTL_SECONDS
+        if (time.monotonic() - stamp) < ttl:
+            return value
+
+    # Ask the kernel before asking HTTP: on a machine whose loopback sockets
+    # are hijacked by a transparent proxy, connect() stalls for seconds while a
+    # refused connection would normally come back in microseconds.
+    if _is_local_endpoint(server_url) and not _probe_reachable(server_url):
+        _endpoint_probe_path_cache[server_url] = (None, time.monotonic())
+        return None
 
     headers = _auth_headers(api_key)
 
     result: Optional[str] = None
     try:
-        with httpx.Client(timeout=2.0, headers=headers) as client:
+        with _probe_client(2.0, headers, url=server_url) as client:
             # LM Studio exposes /api/v1/models — check first (most specific)
             try:
                 r = client.get(f"{lmstudio_url}/api/v1/models")
                 if r.status_code == 200:
                     result = "lm-studio"
+                elif _is_local_endpoint(server_url) and r.status_code in (502, 503, 504):
+                    # A gateway error page for a *loopback* address means the
+                    # request never reached a local model server: something in
+                    # front of it (egress proxy) answered. Every remaining probe
+                    # would get the same page, so stop paying for them.
+                    _endpoint_probe_path_cache[server_url] = (None, time.monotonic())
+                    return None
             except Exception:
                 pass
             if result is None:
@@ -753,8 +847,10 @@ def detect_local_server_type(base_url: str, api_key: str = "") -> Optional[str]:
     except Exception:
         pass
 
-    if result is not None:
-        _endpoint_probe_path_cache[server_url] = (result, time.monotonic())
+    # Memoize either way: positive answers get the long TTL, "nothing here"
+    # the short one (see the cache lookup above). Leaving negatives uncached
+    # made every caller re-pay the whole waterfall.
+    _endpoint_probe_path_cache[server_url] = (result, time.monotonic())
     return result
 
 
@@ -1459,7 +1555,7 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Option
     headers = _auth_headers(api_key)
 
     try:
-        with httpx.Client(timeout=3.0, headers=headers) as client:
+        with _probe_client(3.0, headers, url=server_url) as client:
             resp = client.post(f"{server_url}/api/show", json={"name": bare_model})
             if resp.status_code != 200:
                 return None
@@ -1513,7 +1609,7 @@ def query_ollama_supports_vision(model: str, base_url: str, api_key: str = "") -
     headers = _auth_headers(api_key)
 
     try:
-        with httpx.Client(timeout=3.0, headers=headers) as client:
+        with _probe_client(3.0, headers, url=server_url) as client:
             resp = client.post(f"{server_url}/api/show", json={"name": bare_model})
             if resp.status_code != 200:
                 return None
@@ -1574,8 +1670,11 @@ def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Opti
         return cached[0]
 
     result = _query_ollama_api_show_uncached(model, base_url, api_key=api_key)
-    if result:  # positive-only — never memoize a failed probe
-        _LOCAL_CTX_PROBE_CACHE[cache_key] = (result, now)
+    # Failures are memoized too: one agent build calls this several times, and
+    # on a machine where the probe path is slow (see _PROBE_TIMEOUT_LOCAL) the
+    # repeats alone can push the build past the initialization budget. The TTL
+    # is short (30 s), so a server the user starts right after is still seen.
+    _LOCAL_CTX_PROBE_CACHE[cache_key] = (result, now)
     return result
 
 
@@ -1590,7 +1689,7 @@ def _query_ollama_api_show_uncached(model: str, base_url: str, api_key: str = ""
     headers = _auth_headers(api_key)
 
     try:
-        with httpx.Client(timeout=5.0, headers=headers) as client:
+        with _probe_client(5.0, headers, url=server_url) as client:
             resp = client.post(f"{server_url}/api/show", json={"name": model})
             if resp.status_code != 200:
                 return None
@@ -1687,9 +1786,9 @@ def _query_local_context_length(model: str, base_url: str, api_key: str = "") ->
     # that fails during a startup race would suppress a legit retry seconds
     # later once the server is reachable. Positive-only caching still fully
     # bounds the hot-path probe rate (a reachable server returns a value and
-    # gets cached); an unreachable one simply re-probes on the next call.
-    if result:
-        _LOCAL_CTX_PROBE_CACHE[cache_key] = (result, now)
+    # gets cached — and so does an unreachable one, for the same short TTL:
+    # see the note in _query_ollama_api_show about repeated probes per build.
+    _LOCAL_CTX_PROBE_CACHE[cache_key] = (result, now)
     return result
 
 
@@ -1715,7 +1814,7 @@ def _query_local_context_length_uncached(model: str, base_url: str, api_key: str
         server_type = None
 
     try:
-        with httpx.Client(timeout=3.0, headers=headers) as client:
+        with _probe_client(3.0, headers, url=server_url) as client:
             # Ollama: /api/show returns model details with context info
             if server_type == "ollama":
                 resp = client.post(f"{server_url}/api/show", json={"name": model})
