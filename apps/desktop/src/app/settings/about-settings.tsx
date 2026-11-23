@@ -80,6 +80,18 @@ export function AboutSettings() {
   // 壳那边的更新（查 release → 下载 → 装）根本不靠 git，那一条才是装机版要的。
   const agentCheckoutMissing = !supported && status?.reason === 'not-a-git-checkout'
 
+  // ONE update-executing button on screen, never two.  These used to be
+  // independent conditions, so a checkout that was also behind a published
+  // release showed both 「升级到 0.3.4」 (shell download+install) and 「立即更新」
+  // (git self-update) side by side — same job, two entries, user left guessing
+  // (11-23: 「怎么有两个更新按钮呢？保留『更新』就行了」).
+  // The shell upgrade wins when it is available: for a packaged install it is
+  // the only path that actually replaces the app.  「立即检查」 is not part of
+  // this exclusion — it only re-reads the version, so it stays on screen and
+  // remains the way to retry after a failed download.
+  const shellUpgradeReady = Boolean(release?.newer && release.canUpdate)
+  const agentUpdateReady = !shellUpgradeReady && behind > 0 && supported && !applying
+
   const handleCheck = async () => {
     setJustChecked(false)
     setReleaseError('')
@@ -213,18 +225,21 @@ export function AboutSettings() {
               {checking ? a.checking : a.checkNow}
             </Button>
 
-            {release?.newer && release.canUpdate ? (
+            {/* 做更新的按钮只能有一个。壳升级（下载安装包）和「立即更新」
+                （git 检出的自我更新）干的是同一件事，条件互相独立时就会并排
+                出现，让人猜该点哪个（11-23 用户截图）。
+                「立即检查」不算——它只重查版本、不装东西，留着才能在升级失败
+                之后手动重试，所以它常驻、不进这条互斥。 */}
+            {shellUpgradeReady ? (
               <Button
                 disabled={releaseInstalling || applying}
                 onClick={() => void handleUpgrade()}
                 size="sm"
               >
                 {releaseInstalling ? <Loader2 className="size-3 animate-spin" /> : null}
-                {a.upgradeTo(release.latest ?? '')}
+                {a.upgradeTo(release?.latest ?? '')}
               </Button>
-            ) : null}
-
-            {behind > 0 && supported && !applying && (
+            ) : agentUpdateReady ? (
               <>
                 <Button onClick={() => startActiveUpdate()} size="sm">
                   {a.updateNow}
@@ -233,7 +248,7 @@ export function AboutSettings() {
                   {a.seeWhatsNew}
                 </Button>
               </>
-            )}
+            ) : null}
 
             <Button asChild className="ml-auto" size="sm" variant="text">
               <a

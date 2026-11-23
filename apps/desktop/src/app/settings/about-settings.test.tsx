@@ -69,6 +69,26 @@ describe('About panel: the desktop release line', () => {
 
     expect(screen.getByText(en.settings.about.updateReadyVersion('0.3.1'))).toBeTruthy()
     expect(screen.getByRole('button', { name: en.settings.about.upgradeTo('0.3.1') })).toBeTruthy()
+    // 执行更新的按钮只有一个：壳更新在手时，「立即更新」必须让位
+    // （用户 11-23：两个更新按钮不知道该点哪个）。「立即检查」只重查版本、
+    // 不装东西，它留着——升级失败后还得靠它重试。
+    expect(screen.queryByText(en.settings.about.updateNow)).toBeNull()
+    expect(screen.getByText(en.settings.about.checkNow)).toBeTruthy()
+  })
+
+  it('does not offer the upgrade when there is no installable shell release', () => {
+    // 检出落后、但没有可装的壳更新：走「立即更新」，且不许冒出「升级到 x」。
+    $updateStatus.set({
+      supported: true,
+      behind: 2,
+      updateAvailable: true,
+      fetchedAt: 0
+    })
+
+    render(<AboutSettings />)
+
+    expect(screen.getByText(en.settings.about.updateNow)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /升级到|upgrade to/i })).toBeNull()
   })
 
   it('does not claim "you are on the latest version" when the release check failed', () => {
