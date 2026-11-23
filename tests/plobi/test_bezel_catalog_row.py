@@ -131,7 +131,9 @@ def test_the_rows_are_named_after_the_software(hub_answers):
         payload = build_models_payload(_ctx(), explicit_only=True)
 
     assert _hub_row(payload, "workbuddy")["name"] == "WorkBuddy"
-    assert _hub_row(payload, "opencode-zen-free")["name"] == "OpenCode Free"
+    # 软件名跟着网关目录走：11-2x 起这家的品牌名是「OpenCode Zen Free」（
+    # providers.yaml 已改），屏上就不许再显示旧名「OpenCode Free」。
+    assert _hub_row(payload, "opencode-zen-free")["name"] == "OpenCode Zen Free"
     for row in _hub_rows(payload):
         assert "bezel" not in str(row.get("name", "")).lower()
 

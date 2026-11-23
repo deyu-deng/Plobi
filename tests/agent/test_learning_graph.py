@@ -66,7 +66,10 @@ def test_skill_node_timestamp_uses_iso_usage_activity(tmp_path, monkeypatch):
     assert nodes["iso-skill"].timestamp == 1_777_550_400
 
 
-def test_memory_is_cards_split_on_separator(tmp_path):
+def test_memory_is_cards_split_on_separator(tmp_path, monkeypatch):
+    # 身份必须显式绑死：空 PLOBI_AGENT_ID 现在是「按当前会话认」，无会话时落
+    # 指挥（secretary）名下，不再默认 L1（裁定 178 乙案 + 会话级身份）。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "l1")
     home = tmp_path / ".plobi"
     own = home / "memory" / "agents" / "l1"
     own.mkdir(parents=True)

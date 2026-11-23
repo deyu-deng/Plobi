@@ -2023,10 +2023,17 @@ class TestWebServerEndpoints:
         """
         from plobi_cli.provider_catalog import provider_catalog
 
+        catalog = [d for d in provider_catalog() if d.tab == "keys" and d.api_key_env_vars]
+        # 一把凭据可以喂一家软件，也可以喂网关的整组（BEZEL_API_KEY 就是后者：
+        # 一家软件一行是**展示**口径，凭据仍是那一把）。卡片只能记一个 provider
+        # 名，所以共享同一把 key 的成员只要求「记的是本组的一员」，不要求逐个
+        # 认领——逐个认领等于要求一张卡同时叫十个名字。
+        owners: dict[str, set[str]] = {}
+        for d in catalog:
+            owners.setdefault(d.api_key_env_vars[0], set()).add(d.slug)
+
         data = self.client.get("/api/env").json()
-        for d in provider_catalog():
-            if d.tab != "keys" or not d.api_key_env_vars:
-                continue
+        for d in catalog:
             # The PRIMARY credential var must surface as this provider's card.
             # (Shared aliases like GITHUB_TOKEN are intentionally left on their
             # existing tool category and not hijacked — see the copilot test.)
@@ -2034,8 +2041,14 @@ class TestWebServerEndpoints:
             assert primary in data, f"{primary} ({d.slug}) missing from /api/env"
             info = data[primary]
             assert info["category"] == "provider"
-            assert info["provider"] == d.slug
-            assert info["provider_label"] == d.label
+            if len(owners[primary]) == 1:
+                assert info["provider"] == d.slug
+                assert info["provider_label"] == d.label
+            else:
+                assert info["provider"] in owners[primary], (
+                    f"{primary} 的卡片记的是 {info['provider']}，"
+                    f"既不是 {d.slug} 也不在本组 {sorted(owners[primary])} 里"
+                )
 
     def test_get_env_vars_provider_rows_carry_grouping_hints(self):
         """Provider env rows expose the backend `provider`/`provider_label` the
@@ -2525,16 +2538,26 @@ class TestWebServerEndpoints:
         )
 
     def test_messaging_catalog_covers_gateway_platforms(self):
-        """Catalog is derived from the Platform enum, so every built-in shows up."""
-        from gateway.config import Platform
+        """Catalog covers every built-in gateway platform.
+
+        Uses the ``_BUILTIN_PLATFORM_VALUES`` snapshot rather than
+        ``Platform.__members__`` on purpose: plugin platforms spawn dynamic
+        members through ``Platform._missing_`` as soon as anything resolves
+        them, and those land in ``_member_map_``. Asserting over
+        ``__members__`` therefore made this test depend on which plugin the
+        running build happened to ship (the desktop bundle carries
+        ``plugins/platforms/google_chat``, a bare source checkout does not),
+        producing a file-order-dependent red.
+        """
+        from gateway.config import _BUILTIN_PLATFORM_VALUES
 
         resp = self.client.get("/api/messaging/platforms")
         platforms = {entry["id"] for entry in resp.json()["platforms"]}
 
-        for member in Platform.__members__.values():
-            if member.value == "local":
+        for value in sorted(_BUILTIN_PLATFORM_VALUES):
+            if value == "local":
                 continue
-            assert member.value in platforms, f"Missing gateway platform {member.value} from /api/messaging/platforms"
+            assert value in platforms, f"Missing gateway platform {value} from /api/messaging/platforms"
 
     def test_messaging_catalog_includes_plugin_platforms(self, monkeypatch):
         """Plugin-registered adapters appear in the catalog without per-platform code."""

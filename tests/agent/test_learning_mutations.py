@@ -23,7 +23,10 @@ Body.
 
 
 @pytest.fixture
-def home():
+def home(monkeypatch):
+    # 身份显式绑 L1：空 PLOBI_AGENT_ID 现在按当前会话认，无会话时落指挥
+    # （secretary）名下，这批固件摆在 memory/agents/l1 就会读不到。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "l1")
     base = get_plobi_home()
     own = base / "memory" / "agents" / "l1"
     own.mkdir(parents=True, exist_ok=True)

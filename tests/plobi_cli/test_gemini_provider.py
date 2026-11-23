@@ -51,8 +51,12 @@ class TestGeminiAliases:
     def test_explicit_gemini(self):
         assert resolve_provider("gemini") == "gemini"
 
-    def test_alias_google(self):
-        assert resolve_provider("google") == "gemini"
+    def test_alias_google_resolves_to_the_gateway_leg(self):
+        # 「google」现在同时是网关目录里的一家软件（B 类，裁定 45/47：屏上
+        # 一家软件一行），而 ``resolve_provider`` 先认软件名再看别名，所以它
+        # 落在 ``google`` 这条腿上而不是 gemini。要 Google AI Studio 就显式写
+        # ``gemini``（下面几条照旧），这两条路不许再互相顶。
+        assert resolve_provider("google") == "google"
 
     def test_alias_google_gemini(self):
         assert resolve_provider("google-gemini") == "gemini"

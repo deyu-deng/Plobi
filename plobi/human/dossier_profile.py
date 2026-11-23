@@ -129,14 +129,20 @@ class Stage:
     kind: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        # 落盘只写「真有的东西」：``due``/``kind`` 空着就不出现。补成空串会把用户
+        # 从没写过的两个字面量塞进档案，下次 diff 就变成「谁改了这个阶段」的假信号
+        # （旧档案本来也没有这两个键）。
+        data: dict[str, Any] = {
             "id": self.id,
             "title": self.title,
             "detail": self.detail,
             "done": self.done,
-            "due": self.due,
-            "kind": self.kind,
         }
+        if self.due:
+            data["due"] = self.due
+        if self.kind:
+            data["kind"] = self.kind
+        return data
 
 
 @dataclass

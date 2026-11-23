@@ -139,7 +139,18 @@ class ModelRoute:
 
     @property
     def qualified(self) -> str:
+        """The single string a row shows, and the request id rebuilds from.
+
+        11-2x：网关那 22 家软件**各自就是 provider**，而它们的模型 id 也叫
+        ``<软件>/<模型>``。照字面拼 ``provider/model`` 会得到
+        ``workbuddy/workbuddy/deepseek-v4.1-flash`` —— 同一个词连着写两遍。前端的
+        ``splitQualified`` 只切第一刀，剩下的那半截带着前缀进 UI（用户 11-14 明说
+        「UI 上不要带 workbuddy」）。所以 provider 已经是 id 首段时不再补：拼回去
+        仍是等价的 ``<provider>/<rest>``，可逆，前端把它切回来还是原来的请求 id。
+        """
         if self.provider and self.model:
+            if self.model == self.provider or self.model.startswith(f"{self.provider}/"):
+                return self.model
             return f"{self.provider}/{self.model}"
         return self.model or self.provider
 
