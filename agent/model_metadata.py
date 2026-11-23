@@ -2241,6 +2241,32 @@ def get_model_context_length(
                 save_context_length(model, base_url, ctx)
             return ctx
 
+    # 1c. 订阅额度那组的软件：厂商名册自己写着的窗口，压在下面整条探测链**之前**。
+    #
+    # 这些端点是本地网关（127.0.0.1:8000），step 2 一眼把它当「自定义未知端点」，
+    # 探测必然失败，失败后 3b 的族名兜底会拿 "claude" 这种词猜 200K —— 猜出来的
+    # 值盖掉厂商公布的值（opus 5.5 是 1M），压缩点就错了一档。所以厂商值先问。
+    # 11-18 第三处：网关那 22 家软件各自就是 provider，`bezel` 只是传输名；只认
+    # 机器标识会让 `workbuddy/...` 这种软件名漏掉厂商自己给的窗口值。
+    from providers.hub_software import hub_group
+
+    # 方案 C 之后不再有 `is_hub_software`：问组，别问名字表。
+    # `owns` = 成员或组 owner 自己，正是旧 `is_hub_software` 的语义。
+    _hub_provider = provider
+    if (not _hub_provider or _hub_provider in {"openrouter", "custom"}) and base_url:
+        _hub_provider = _infer_provider_from_url(base_url) or _hub_provider
+    if hub_group().owns(_hub_provider):
+        try:
+            from plobi.agents.registry import bezel_api_key, bezel_base_url
+            from plobi.quota.gateway import catalog_tuning
+
+            knobs = catalog_tuning(bezel_base_url(), bezel_api_key()).get(model) or {}
+            window = (knobs.get("context") or {}).get("max")
+            if isinstance(window, int) and window > 0:
+                return window
+        except Exception:
+            pass  # A hub we cannot reach is not a reason to change what a turn does.
+
     # 2. Active endpoint metadata for truly custom/unknown endpoints.
     # Known providers (Copilot, OpenAI, Anthropic, etc.) skip this — their
     # /models endpoint may report a provider-imposed limit (e.g. Copilot
@@ -2316,29 +2342,9 @@ def get_model_context_length(
             if inferred:
                 effective_provider = inferred
 
-    # 5a0. The local quota hub publishes, per model, the window that model's own vendor
-    # list writes (measured 2026-11-01: Antigravity's Claude Opus 5.5 row says 1M and its
-    # GPT-OSS 120B says 131072; Qoder's `auto` says 200K; Kiro says 1M on `auto`, 164K on
-    # deepseek-3.2). These numbers are what decides when Plobi compresses, and before
-    # this step the subscription legs fell through the whole probe chain to the 256K
-    # fallback — a guess, on a model whose real window the vendor had already told us.
-    # 11-18 第三处：网关那 22 家软件各自就是 provider，`bezel` 只是传输名。
-    # 只认机器标识会让 `workbuddy/...` 这种软件名漏掉厂商自己给的窗口值。
-    from providers.hub_software import hub_group
-
-    # 方案 C 之后不再有 `is_hub_software`：问组，别问名字表。
-    # `owns` = 成员或组 owner 自己，正是旧 `is_hub_software` 的语义。
-    if hub_group().owns(effective_provider):
-        try:
-            from plobi.agents.registry import bezel_api_key, bezel_base_url
-            from plobi.quota.gateway import catalog_tuning
-
-            knobs = catalog_tuning(bezel_base_url(), bezel_api_key()).get(model) or {}
-            window = (knobs.get("context") or {}).get("max")
-            if isinstance(window, int) and window > 0:
-                return window
-        except Exception:
-            pass  # A hub we cannot reach is not a reason to change what a turn does.
+    # 5a0 已经搬到上面 1c：厂商发布的窗口要压过自定义端点那条探测链（否则本地
+    # 网关探测失败后，3b 的族名兜底会用一个猜出来的 200K 盖掉 1M）。这里不再问
+    # 一次——问两次就会有两套先后，一处改动漏掉另一处。
 
     # 5a. Copilot live /models API — max_prompt_tokens from the user's account.
     # This catches account-specific models (e.g. claude-opus-4.6-1m) that

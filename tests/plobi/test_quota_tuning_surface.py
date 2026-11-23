@@ -124,9 +124,11 @@ def test_the_picker_row_carries_the_levels_and_the_window(monkeypatch):
 
     _patch_catalog(monkeypatch, catalog_tuning("http://x", open_url=_opener(CATALOG)))
     rows = [
-        {"slug": "bezel", "name": "订阅额度", "models": [
-            "antigravity/claude-opus-5-5", "antigravity/gpt-oss-120b-medium",
-            "kiro_cli/deepseek-3.2", "workbuddy/glm-5.3"]},
+        # 一家软件一行（裁定 45/46）：`bezel` 只是传输名，不上屏，也不再是行的 slug。
+        {"slug": "antigravity", "name": "Antigravity",
+         "models": ["antigravity/claude-opus-5-5", "antigravity/gpt-oss-120b-medium"]},
+        {"slug": "kiro", "name": "Kiro", "models": ["kiro_cli/deepseek-3.2"]},
+        {"slug": "workbuddy", "name": "WorkBuddy", "models": ["workbuddy/glm-5.3"]},
         {"slug": "openrouter", "name": "OpenRouter", "models": ["anthropic/claude-opus-4.8"]},
     ]
 
@@ -148,27 +150,30 @@ def test_the_picker_row_carries_the_levels_and_the_window(monkeypatch):
     # One level is not a menu, but it is still what the model runs at.
     assert caps["antigravity/gpt-oss-120b-medium"]["efforts"] == ["medium"], caps
     # Kiro published limits, not levels: the generic `reasoning` answer stands.
-    assert "efforts" not in caps["kiro_cli/deepseek-3.2"], caps
-    assert caps["kiro_cli/deepseek-3.2"]["context"] == {
+    kiro = rows[1]["capabilities"]
+    assert "efforts" not in kiro["kiro_cli/deepseek-3.2"], kiro
+    assert kiro["kiro_cli/deepseek-3.2"]["context"] == {
         "adjustable": True,
         "choices": [32768, 65536, 131072, 164000],
         "default": 164000,
         "max": 164000,
-    }, caps
+    }, kiro
     # A model the hub said nothing about keeps the pre-existing shape for the levels,
     # and gets a budget from Plobi's own table (glm ⇒ 202752) rather than from nobody.
-    assert caps["workbuddy/glm-5.3"].get("efforts") is None, caps
-    assert caps["workbuddy/glm-5.3"]["context"] == {
+    wb = rows[2]["capabilities"]
+    assert wb["workbuddy/glm-5.3"].get("efforts") is None, wb
+    assert wb["workbuddy/glm-5.3"]["context"] == {
         "adjustable": True,
         "choices": [32768, 65536, 131072, 202752],
         "default": 202752,
         "max": 202752,
-    }, caps
+    }, wb
     # Another provider's rows are untouched by the hub's answers — but they still get
     # a window menu of their own (this model is in nobody's catalog, so the ceiling is
     # Plobi's blanket fallback).
-    assert "efforts" not in rows[1]["capabilities"]["anthropic/claude-opus-4.8"]
-    assert rows[1]["capabilities"]["anthropic/claude-opus-4.8"]["context"]["adjustable"] is True
+    other = rows[3]["capabilities"]
+    assert "efforts" not in other["anthropic/claude-opus-4.8"]
+    assert other["anthropic/claude-opus-4.8"]["context"]["adjustable"] is True
 
 
 def test_a_vendor_menu_goes_through_untouched(monkeypatch):
@@ -181,7 +186,7 @@ def test_a_vendor_menu_goes_through_untouched(monkeypatch):
                         "default": 200000, "max": 1000000},
         },
     })
-    rows = [{"slug": "bezel", "name": "订阅额度", "models": ["qoder/qwen3.8-max"]}]
+    rows = [{"slug": "qoder", "name": "Qoder", "models": ["qoder/qwen3.8-max"]}]
 
     inventory._apply_capabilities(rows)
 
@@ -197,7 +202,7 @@ def test_a_ceiling_with_one_rung_left_has_no_menu(monkeypatch):
     from plobi_cli import inventory
 
     _patch_catalog(monkeypatch, {"tiny/tiny-1": {"context": {"max": 16384}}})
-    rows = [{"slug": "bezel", "name": "订阅额度", "models": ["tiny/tiny-1"]}]
+    rows = [{"slug": "qoder", "name": "Qoder", "models": ["tiny/tiny-1"]}]
 
     inventory._apply_capabilities(rows)
 
@@ -227,14 +232,18 @@ def test_the_published_window_is_what_plobi_budgets_the_conversation_against(mon
     })
 
     assert get_model_context_length(
-        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="bezel"
+        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="antigravity"
     ) == 1000000
     assert get_model_context_length(
-        "kiro_cli/deepseek-3.2", base_url="http://127.0.0.1:8000/v1", provider="bezel"
+        "kiro_cli/deepseek-3.2", base_url="http://127.0.0.1:8000/v1", provider="kiro"
     ) == 164000
+    # 存量配置里 provider 还写着传输名 `bezel` 的老机器：组 owner 照样认，不用改配置。
+    assert get_model_context_length(
+        "antigravity/claude-opus-5-5", base_url="http://127.0.0.1:8000/v1", provider="bezel"
+    ) == 1000000
     # A model the hub has no answer for is not a reason to claim a window.
     assert get_model_context_length(
-        "antigravity/unknown-9", base_url="http://127.0.0.1:8000/v1", provider="bezel"
+        "antigravity/unknown-9", base_url="http://127.0.0.1:8000/v1", provider="antigravity"
     ) != 1000000
 
 
