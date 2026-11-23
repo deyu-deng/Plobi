@@ -140,7 +140,10 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     # 2026-11-15：短名表随日程秘书单例一起删了，没有 displayName 就回 id。
     assert row["name"] == "agenda"
     assert row["status"] == "idle"  # no L3 children in flight
-    assert row["model"] == "bezel/workbuddy/deepseek-v4.1-flash"  # ADR-0011 default route（deepseek-chat 已退役）
+    # ADR-0011 default route（deepseek-chat 已退役）。11-2x 起网关那 22 家软件各自就是
+    # provider，模型 id 也叫 `<软件>/<模型>`：`qualified` 不再把同名前缀补第二遍，否则
+    # 行上是 `workbuddy/workbuddy/...`，`splitQualified` 切完还剩半截前缀进 UI。
+    assert row["model"] == "workbuddy/deepseek-v4.1-flash"
     assert row["todayCalls"] == 0
     # profile 连根拔（11-05）：行上连键都不许再有——谁把它加回来这里就红。
     assert "profile" not in row

@@ -65,7 +65,9 @@ _BEZEL_READERS = {
     "bezel/bezel/providers/apps/antigravity/network.py",
     "bezel/bezel/providers/apps/antigravity/oauth.py",
     "bezel/bezel/providers/apps/antigravity/tool_bridge.py",
-    "bezel/bezel/providers/apps/gemini/oauth.py",
+    # 11-20 网关那批腿退场，gemini 这条挪进了 `_archive/`——档还是那一档
+    # （同样不碰单一读法），名单跟着路径走，别把挪动读成「少了一条」。
+    "bezel/bezel/providers/apps/_archive/gemini/oauth.py",
 }
 
 

@@ -18,8 +18,9 @@ def _seed_memory(plobi_home, memory_text="", user_text=""):
     """Seed the shared memory root the way 裁定 181 lays it out.
 
     ``memory/USER.md`` is one shared copy; an agent's own notes live per identity
-    under ``memory/agents/<slug>/MEMORY.md`` — the hermetic test environment sets
-    no ``PLOBI_AGENT_ID``, so the identity resolves to the L1 slug.
+    under ``memory/agents/<slug>/MEMORY.md`` — the fixture binds
+    ``PLOBI_AGENT_ID=l1`` so the identity is the L1 slug instead of falling back
+    to whoever owns the current session (conductor when there is none).
     """
     mem_dir = plobi_home / "memory"
     mem_dir.mkdir(parents=True, exist_ok=True)
@@ -45,6 +46,7 @@ def isolated_home(tmp_path, monkeypatch):
     plobi_home = tmp_path / ".plobi"
     plobi_home.mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(plobi_home))
+    monkeypatch.setenv("PLOBI_AGENT_ID", "l1")
     monkeypatch.chdir(tmp_path)  # avoid picking up the repo's AGENTS.md
     return plobi_home
 
