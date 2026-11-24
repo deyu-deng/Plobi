@@ -94,15 +94,20 @@ export function AgentProgressPane({ agentId }: { agentId: string }) {
         </div>
       </header>
 
-      {!agent.hasHome ? (
+      {!agent.instanceReady ? (
         <div className="mt-3">
-          <EmptyState description={v.noHomeDesc} title={v.noHome} />
+          {/* 实例没立起来才是真异常（共享层里那份身份文件不在盘上）。 */}
+          <EmptyState description={v.notReadyDesc} title={v.notReady} />
         </div>
       ) : (
         <div className="mt-3 space-y-1.5">
-          {/* 档案本体还没建立 ＝ 这一档还没建（不是「读不到」）。 */}
+          {/* 档案本体还没建立 ＝ 这一档还没建（不是「读不到」）。
+              家目录是**可选的**：没接上人读面时说「未接入」，不冒充「实例没建」。 */}
           {docs.length === 0 && !agent.profileExists && (
-            <EmptyState description={v.notBuiltDesc('dossier.json')} title={v.notBuilt} />
+            <EmptyState
+              description={agent.hasHome ? v.notBuiltDesc('dossier.json') : v.noHomeDesc}
+              title={agent.hasHome ? v.notBuilt : v.noHome}
+            />
           )}
           {docs.map(doc => {
             const expanded = firstOpen === doc.key

@@ -45,6 +45,8 @@ export interface SurfaceAgent {
   homeLabel: string
   homePath: string
   hasHome: boolean
+  /** 实例立没立起来（身份文件在盘上）。健康度看它，别拿 `hasHome` 当判据。 */
+  instanceReady: boolean
   workPath: string
   workPaths: string[]
   /** 生命周期状态（`active`／`paused`…）——侧栏那颗点认它，**不是**现状。 */
@@ -71,5 +73,5 @@ export interface SurfaceAgentPage extends Omit<SurfaceAgent, 'docs'> {
 export interface SurfaceIndex {
   roster: string
   agents: SurfaceAgent[]
-  totals: { agents: number; withHome: number; withoutHome: number }
+  totals: { agents: number; withHome: number; withoutHome: number; ready: number; notReady: number }
 }

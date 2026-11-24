@@ -53,6 +53,14 @@ def live(monkeypatch, tmp_path):
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("HUMAN_ROOT", str(surface))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "projects.yaml"))
+    # 实例判据读共享层 souls/，关进 tmp，别摸到真 ~/Plobi。
+    plobi_home = tmp_path / "plobi"
+    (plobi_home / "souls").mkdir(parents=True)
+    monkeypatch.setenv("PLOBI_HOME", str(plobi_home))
+    from plobi.agents.registry import shared_soul_path_for
+
+    for name in ("Aura", "电工电子学"):
+        shared_soul_path_for(name).write_text("# soul\n", encoding="utf-8")
     return tmp_path
 
 
@@ -61,7 +69,14 @@ def test_list_route_returns_every_agent(live):
     body = response if isinstance(response, dict) else json.loads(response.body)
     assert body["ok"] is True
     assert {row["id"] for row in body["data"]["agents"]} == {"Aura", "电工电子学"}
-    assert body["data"]["totals"] == {"agents": 2, "withHome": 1, "withoutHome": 1}
+    # 家目录只是可选位；健康度看 ready（身份文件在盘上）。
+    assert body["data"]["totals"] == {
+        "agents": 2,
+        "withHome": 1,
+        "withoutHome": 1,
+        "ready": 2,
+        "notReady": 0,
+    }
 
 
 def test_detail_route_returns_bodies(live):

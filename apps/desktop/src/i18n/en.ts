@@ -1509,7 +1509,7 @@ export const en: Translations = {
   },
   surface: {
     title: 'Knowledge',
-    subtitle: (agents, withHome) => `${agents} agents · ${withHome} with dossiers`,
+    subtitle: (agents, ready) => `${agents} agents · ${ready} ready`,
     searchPlaceholder: 'Search notes…',
     all: 'All',
     loading: 'Loading…',
@@ -1549,7 +1549,9 @@ export const en: Translations = {
     notBuilt: 'This dossier has not been created yet',
     notBuiltDesc: filename => `Expected file: ${filename}`,
     noHome: 'Not connected yet',
-    noHomeDesc: 'This agent has no dossier folder in the roster, so there is nothing to read here.',
+    noHomeDesc: 'This agent has no dossier folder (optional), so there is nothing to read here — it does not affect whether the agent works.',
+    notReady: 'Instance not ready',
+    notReadyDesc: 'No identity file for this agent in the shared layer, so it never landed.',
     categories: {
       projects: 'Projects',
       research: 'Research',

@@ -1697,7 +1697,7 @@ export const zh: Translations = {
   },
   surface: {
     title: '知识库',
-    subtitle: (agents, withHome) => `${agents} 个 Agent · ${withHome} 个已有目录`,
+    subtitle: (agents, ready) => `${agents} 个 Agent · ${ready} 个已就绪`,
     searchPlaceholder: '搜索笔记…',
     all: '全部',
     loading: '加载中…',
@@ -1735,7 +1735,9 @@ export const zh: Translations = {
     notBuilt: '该目录尚未创建',
     notBuiltDesc: filename => `应当是：${filename}`,
     noHome: '未接入',
-    noHomeDesc: '名册里这个 Agent 还没有工作目录，所以这里没有可读的内容。',
+    noHomeDesc: '这个 Agent 没有接上档案目录（可选项），所以这里没有可读的档案——不影响它本身能不能用。',
+    notReady: '实例未就绪',
+    notReadyDesc: '共享层里找不到这个 Agent 的身份文件，说明它没真正落地。',
     categories: { projects: '项目', research: '研究', courses: '课程', butler: '管家', events: '事件' },
     docs: {
       plan: '计划',
