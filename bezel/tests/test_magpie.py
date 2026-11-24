@@ -713,3 +713,53 @@ def test_a_loaded_plugin_offers_no_install_command():
     assert spec["installed"] is True
     assert spec["install_command"] is None
     assert spec["install"] is None
+
+
+def _gateway_answering_chat_with(body: bytes, content_type: str):
+    """聊天口回 200，body 却不是我们要的形状；其余照常。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json=_models_payload())
+        return httpx.Response(200, content=body, headers={"content-type": content_type})
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_a_200_that_is_not_json_says_come_back():
+    """200 而 body 是一手流（或半截）：网关没准备好，不是"坏网关"。
+
+    以前这里报 502，客户端读到的是"bad gateway"，于是把同一发 64k 的请求重烧四遍
+    ——desktop.log 里 2026-11-14 起那一簇 502 就是这么来的，而 magpie 自己的 usage
+    一条记录都没有：回合根本没走完。
+    """
+
+    handler = _gateway_answering_chat_with(
+        b'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', "text/event-stream"
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        prov = _with_gateway(_provider(http))
+        accounts = await prov.discover_accounts()
+        with pytest.raises(UpstreamError) as caught:
+            await prov.chat(accounts[0], _turn())
+
+    assert caught.value.status == 503, "a 200 we cannot parse is 'not ready', not 'bad gateway'"
+    assert caught.value.retryable is True
+    assert "not JSON" in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_a_200_that_is_not_an_object_says_come_back():
+    """JSON 但不对象（比如一张错误数组）：同样是未就绪，不该冒 502。"""
+
+    handler = _gateway_answering_chat_with(b'["not", "a", "completion"]', "application/json")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        prov = _with_gateway(_provider(http))
+        accounts = await prov.discover_accounts()
+        with pytest.raises(UpstreamError) as caught:
+            await prov.chat(accounts[0], _turn())
+
+    assert caught.value.status == 503
+    assert caught.value.retryable is True
+    assert "not an object" in str(caught.value)

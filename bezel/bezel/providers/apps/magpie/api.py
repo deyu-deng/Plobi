@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import time
 from collections.abc import AsyncIterator
@@ -41,6 +42,11 @@ import httpx
 
 from ...base import Account, Capabilities, Credential, Provider, UpstreamError
 from . import their_list
+
+#: 这条腿的故障没有别的证据可查（网关自己的 usage 只记走完的回合），所以每次
+#: "200 而 body 不成样子"都要在 desktop.log 里留下状态码、content-type 和前 400 字，
+#: 否则下次还是只能对着「Error code: 502」猜。
+_log = logging.getLogger(__name__)
 
 #: Where magpie keeps its settings; the port is in there. Their docs: the file is
 #: ``~/.config/magpie/settings.json`` — "the same path under the user's folder on
@@ -785,12 +791,39 @@ class MagpieProvider(Provider):
         try:
             out = res.json()
         except Exception as err:
+            # 200 而 body 不成 JSON：网关把一手流（`text/event-stream`）当成了非流式答复，
+            # 或者它重启插件主机时先回了 200 再断流。这是"未就绪"，不是"坏网关"——
+            # 报 502 只会让客户端以为要退避很久，于是把同一个请求重烧一遍预算。
+            _log.warning(
+                "magpie: %s answered 200 with a body that is not JSON "
+                "(model=%r, messages=%d, content-type=%r, first400=%r)",
+                CHAT_PATH,
+                oai_req.get("model"),
+                len(oai_req.get("messages") or ()),
+                res.headers.get("content-type"),
+                (res.text or "")[:400],
+            )
             raise UpstreamError(
-                502, "magpie: the gateway answered with a body that is not JSON", retryable=True
+                503,
+                "magpie: the gateway answered with a body that is not JSON "
+                f"({res.status_code}, {res.headers.get('content-type')!r}) — it is not ready; retry in a moment",
+                retryable=True,
+                cooldown=self.NOT_READY_COOLDOWN,
             ) from err
         if not isinstance(out, dict):
+            _log.warning(
+                "magpie: %s answered with a non-object body (model=%r, type=%s, first400=%r)",
+                CHAT_PATH,
+                oai_req.get("model"),
+                type(out).__name__,
+                repr(out)[:400],
+            )
             raise UpstreamError(
-                502, "magpie: the gateway answered with a body that is not an object", retryable=True
+                503,
+                "magpie: the gateway answered with a body that is not an object — "
+                "it is not ready; retry in a moment",
+                retryable=True,
+                cooldown=self.NOT_READY_COOLDOWN,
             )
         out["model"] = oai_req.get("model") or out.get("model")
         return out

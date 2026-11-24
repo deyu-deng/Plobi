@@ -695,6 +695,21 @@ async def chat_completions(request: Request, authorization: str = Header(None)):
         # 调用方拿到 200 + 空 content，只能猜——猜错就成了"这条腿活着但什么都排不出来"。
         # 有 tool_calls 的空 content 是合法形状（那一轮本来就不该有正文），所以不是一刀切看 content。
         if _is_no_goods(result):
+            # 这一条和 magpie 腿的 503 在客户端眼里都是「网关坏了」，日志里却只留一句
+            # 「Error code: 502」。把当时那一发的形状写下来，下一次才不用猜：
+            # finish_reason='stop' + 全空 = 上游真的吐了个空；'length' 已经被判成有货了。
+            _choice = _first_choice(result)
+            _msg = _choice.get("message") if isinstance(_choice.get("message"), dict) else {}
+            logger.warning(
+                "no-goods completion: model=%r provider=%r messages=%d finish_reason=%r "
+                "message_keys=%s reasoning_len=%d",
+                body.get("model"),
+                provider,
+                len(body.get("messages") or ()),
+                _finish_reason(result),
+                sorted(_msg),
+                len(str(_msg.get("reasoning_content") or _msg.get("reasoning") or "")),
+            )
             raise HTTPException(
                 502,
                 "upstream returned an empty completion (没货：200 而 content 为空、也没有 tool_calls) "
