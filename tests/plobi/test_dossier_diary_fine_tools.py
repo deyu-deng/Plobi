@@ -284,7 +284,15 @@ def test_dossier_stage_update_touches_one_stage_only(roots):
     stages = {row["id"]: row for row in raw["stages"]}
     assert stages["s1"]["title"] == "先跑通（改了）"
     # 其余那条一个字没动
-    assert stages["s2"] == {"id": "s2", "title": "再打磨", "detail": "", "done": False}
+    assert stages["s2"] == {
+        "id": "s2",
+        "title": "再打磨",
+        "detail": "",
+        "done": False,
+        # Stage 序列化总带这两格（可选字段、空值也写），旧断言漏了它们。
+        "kind": "",
+        "due": "",
+    }
     assert stages["s1"]["done"] is True
 
 

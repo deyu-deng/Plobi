@@ -146,7 +146,12 @@ def _read_limited(path: Path, limit: int) -> tuple[str, bool]:
 
 
 def _home_for(entry: Any) -> Path | None:
-    """名册那一格 ``mind_subtree`` 落到盘上的真实目录；没填或根不可用 = None。"""
+    """名册那一格 ``mind_subtree`` 落到盘上的真实目录；没填或根不可用 = None。
+
+    2026-11-24（用户「没有 profile 概念」）：这是**可选的家**，不是实例存在性。
+    11 门课天生没有 ``mind_subtree``（见模块头「缺领地不等于坏」），空家是常态，
+    判健康度请看 :func:`_instance_ready`。
+    """
     logical = (getattr(entry, "mind_subtree", "") or "").strip()
     if not logical:
         return None
@@ -154,6 +159,26 @@ def _home_for(entry: Any) -> Path | None:
         return real_target(logical)
     except MindUnavailable:
         return None
+
+
+def _instance_ready(entry: Any) -> bool:
+    """这一行**实例**立没立起来：名册行可解析 ＋ 共享层 ``souls/<name>.md`` 在盘上。
+
+    2026-11-24：``hasHome``／``profileExists`` 只说明「名册那一格指到的人读面目录
+    在不在」，那是可选的家。把它当健康度会让「家里没东西」被读成「实例没建起来」
+    ——两层被混成一层，L1 于是拿 ``withoutHome`` 推出「问不到实情、派不了活」。
+    实例的真判据是身份文件：建 Agent 时就落在共享层 ``souls/`` 里，与档案目录无关。
+    """
+    name = str(getattr(entry, "name", "") or "").strip()
+    if not name:
+        return False
+    try:
+        from plobi.agents.registry import shared_soul_path_for
+
+        return shared_soul_path_for(name).is_file()
+    except (OSError, ImportError, RuntimeError):
+        logger.debug("instance readiness unresolved for %s", name, exc_info=True)
+        return False
 
 
 def _doc_card(home: Path | None, key: str, label: str, filename: str) -> DocCard:
@@ -213,6 +238,8 @@ def _agent_payload(entry: Any, home: Path | None) -> dict[str, Any]:
         "homeLabel": (getattr(entry, "mind_subtree", "") or "").strip(),
         "homePath": str(home) if home is not None and home.is_dir() else "",
         "hasHome": bool(home is not None and home.is_dir()),
+        # 实例存在性：与「家目录在不在」是两件事（见 :func:`_instance_ready`）。
+        "instanceReady": _instance_ready(entry),
         "workPath": getattr(entry, "project_path", "") or "",
         "workPaths": list(getattr(entry, "project_paths", ()) or ()),
         "status": state,
@@ -302,18 +329,24 @@ def build_index(roster_path: Path | None = None) -> dict[str, Any]:
     target, entries = load_entries(roster_path)
     agents = []
     with_home = 0
+    ready = 0
     for entry in entries:
         home = _home_for(entry)
         payload = _agent_payload(entry, home)
         with_home += 1 if payload["hasHome"] else 0
+        ready += 1 if payload["instanceReady"] else 0
         agents.append(payload)
     return {
         "roster": str(target),
         "agents": agents,
         "totals": {
             "agents": len(agents),
+            # 家目录：**可选**（11 门课天生没有），不参与健康度。
             "withHome": with_home,
             "withoutHome": len(agents) - with_home,
+            # 实例：健康度看这两个（身份文件在盘上 ＝ 立起来了）。
+            "ready": ready,
+            "notReady": len(agents) - ready,
         },
     }
 

@@ -3591,9 +3591,17 @@ function isActiveRuntimeUsable() {
 function isBootstrapComplete() {
   const marker = readBootstrapMarker()
   // marker 缺失时不要白跑一次 canImportPlobiCli 探测（首启动是最常见的路径）。
-  const verdict = evaluateBootstrapMarker(marker, marker ? isActiveRuntimeUsable() : false)
+  const verdict = evaluateBootstrapMarker(
+    marker,
+    marker ? isActiveRuntimeUsable() : false,
+    app.getVersion()
+  )
 
-  if (verdict.needsRepair) {
+  if (verdict.needsRebuild) {
+    // 运行时副本属于别的桌面版本（升级后仍在跑旧副本）。补写 marker 治不了这个，
+    // 必须让 bootstrap 流程把 `~/Plobi/plobi-agent` 按当前版本重装一遍。
+    rememberLog(`[bootstrap] rebuild required: ${verdict.reason}`)
+  } else if (verdict.needsRepair) {
     // 0.3.0 / 0.3.1 的 bundled 装机写下的是 `pinnedCommit: null` —— 老校验从不放行
     // 这种 marker，于是这些机器每次启动都跳过「已装可用」这一档，转去 PATH 里找
     // `plobi`，找不到就重跑整段 bootstrap。「运行时可用」已经是安装能用的硬证据，

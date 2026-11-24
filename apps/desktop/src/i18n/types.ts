@@ -1308,7 +1308,7 @@ export interface Translations {
   }
   surface: {
     title: string
-    subtitle: (agents: number, withHome: number) => string
+    subtitle: (agents: number, ready: number) => string
     searchPlaceholder: string
     all: string
     loading: string
@@ -1349,6 +1349,8 @@ export interface Translations {
     notBuiltDesc: (filename: string) => string
     noHome: string
     noHomeDesc: string
+    notReady: string
+    notReadyDesc: string
     categories: Record<string, string>
     docs: Record<string, string>
     statuses: Record<string, string>

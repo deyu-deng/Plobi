@@ -338,7 +338,12 @@ def dossier_list(args: Dict[str, Any], **_kw: Any) -> str:
                 "stages": agent.get("stages", []),
                 "milestones": agent.get("milestones", {}),
                 "updated": agent.get("updated", ""),
+                # 主位换口径：实例立没立起来看这一格（身份文件在盘上）。
+                "instanceReady": agent.get("instanceReady", False),
                 "profileExists": agent.get("profileExists", False),
+                # 家目录是**可选**的：缺了只是「没接上人读面」，不是「没建」。
+                "homeOptional": True,
+                "hasHome": agent.get("hasHome", False),
                 "path": logical,
             }
         )

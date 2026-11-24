@@ -85,6 +85,14 @@ def roots(tmp_path, monkeypatch):
     (surface / "dossiers" / "butler").mkdir(parents=True)
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("HUMAN_ROOT", str(surface))
+    # 共享层也得关在 tmp 里：实例判据读 souls/<name>.md，不能让它摸到真 ~/Plobi。
+    plobi_home = tmp_path / "plobi"
+    (plobi_home / "souls").mkdir(parents=True)
+    monkeypatch.setenv("PLOBI_HOME", str(plobi_home))
+    from plobi.agents.registry import shared_soul_path_for
+
+    for name in ("Aura", "SRTP", "电工电子学"):
+        shared_soul_path_for(name).write_text("# soul\n", encoding="utf-8")
     roster = tmp_path / "projects.yaml"
     roster.write_text(ROSTER, encoding="utf-8")
     return tmp_path, surface, roster
@@ -99,7 +107,19 @@ def test_index_shape_and_categories(roots):
     by_name = {row["id"]: row for row in data["agents"]}
 
     assert set(by_name) == {"Aura", "SRTP", "电工电子学", "agenda"}
-    assert data["totals"] == {"agents": 4, "withHome": 3, "withoutHome": 1}
+    # 家目录是可选位（4 行里 3 行有，电工电子学没有）；实例健康度看 ready。
+    assert data["totals"] == {
+        "agents": 4,
+        "withHome": 3,
+        "withoutHome": 1,
+        "ready": 3,
+        "notReady": 1,
+    }
+    # 没有家 ≠ 没建：电工电子学没 mind_subtree，但身份文件在盘上，实例是就绪的。
+    assert by_name["电工电子学"]["hasHome"] is False
+    assert by_name["电工电子学"]["instanceReady"] is True
+    # agenda 是名册里那条没有身份文件的特殊行，才该判「没落地」。
+    assert by_name["agenda"]["instanceReady"] is False
 
     aura = by_name["Aura"]
     # md 那一对退役了：projects 只剩**研究笔记**那一份文档。
