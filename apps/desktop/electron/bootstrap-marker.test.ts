@@ -94,3 +94,35 @@ test('broken pinnedCommit over an unusable runtime is NOT repaired', () => {
   assert.equal(verdict.complete, false, 'must fall through to a real install')
   assert.equal(verdict.needsRepair, false, 'rewriting the marker here would hide a broken install')
 })
+
+test('runtime built by an older desktop version forces a rebuild', () => {
+  // 现场：安装包升到 0.3.4，`~/Plobi/plobi-agent` 还是 0.3.0 那份，
+  // 能 import plobi_cli 所以老判定一路放行，升级后照旧跑旧代码。
+  const verdict = evaluateBootstrapMarker(marker({ desktopVersion: '0.3.0' }), true, '0.3.4')
+
+  assert.equal(verdict.complete, false, 'a usable-but-stale runtime is still the wrong runtime')
+  assert.equal(verdict.needsRebuild, true)
+  assert.equal(verdict.needsRepair, false, 'patching the marker cannot fix a stale runtime')
+  assert.match(verdict.reason, /0\.3\.0/)
+})
+
+test('marker without desktopVersion cannot vouch for the current build', () => {
+  const verdict = evaluateBootstrapMarker(marker({ desktopVersion: undefined }), true, '0.3.4')
+
+  assert.equal(verdict.complete, false)
+  assert.equal(verdict.needsRebuild, true)
+})
+
+test('matching desktopVersion over a usable runtime is complete', () => {
+  const verdict = evaluateBootstrapMarker(marker({ desktopVersion: '0.3.4' }), true, '0.3.4')
+
+  assert.equal(verdict.complete, true)
+  assert.equal(verdict.needsRebuild, false)
+})
+
+test('desktopVersion is not compared when the caller does not supply one', () => {
+  const verdict = evaluateBootstrapMarker(marker({ desktopVersion: '0.3.0' }), true)
+
+  assert.equal(verdict.complete, true, 'no expected version = legacy behaviour')
+  assert.equal(verdict.needsRebuild, false)
+})
