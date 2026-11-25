@@ -37,9 +37,11 @@ export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace'
  * 形状家族——**同一族的挂载点，宿主管的规矩一样**。
  *
  * `entry-row`＝一排格子（侧边栏上面那排、下面那排、对话卡那三枚、工作区页签条）；
- * `panel`＝一整块面板（侧边栏中间那一大块）。
+ * `panel`＝一整块面板（侧边栏中间那一大块）；
+ * `action`＝**一个独立的行动按钮**——它不是导航行里的一格，**用不同的组件渲染**
+ * （DSH 那个「New Session」：透明底＋内描边的一枚整行按钮，与那些图标行一眼分得开）。
  */
-export type SlotKind = 'entry-row' | 'panel'
+export type SlotKind = 'action' | 'entry-row' | 'panel'
 
 /** 一格的形状约束——**宿主定，插件不能越界**。 */
 export interface SlotShape {
@@ -185,6 +187,17 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       providedBy: 'builtin',
       route: DIARY_ROUTE
     }
+  },
+
+  {
+    id: 'new-agent',
+    position: 'sidebar',
+    region: 'top',
+    kind: 'action',
+    order: 0,
+    shape: { icon: true, label: true },
+    props: { action: 'new-agent' },
+    default: { id: 'new-agent', icon: 'add', labelKey: 'sidebar.newAgentLabel', providedBy: 'builtin' }
   },
 
   // ── 侧边栏 · 中间那一大块（另一族：一整块面板；名单 ↔ 外包 两页）────────────

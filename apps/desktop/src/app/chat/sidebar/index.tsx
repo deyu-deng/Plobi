@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -17,6 +18,7 @@ import {
   SidebarMenuItem
 } from '@/components/ui/sidebar'
 import { useI18n } from '@/i18n'
+import { getPlobiSlots } from '@/plobi'
 import { cn } from '@/lib/utils'
 import { $panesFlipped, $sidebarOpen, pinSession } from '@/store/layout'
 import { pickProjectFolder } from '@/store/projects'
@@ -76,20 +78,23 @@ import { SidebarStrip } from './sidebar-strip'
  * 用户关掉哪一格（`slots.removed`），那一格就真的不在——不是藏起来。
  */
 export function sidebarNavItems(registry: SlotRegistry): SidebarNavItem[] {
-  return registry.slotsFor('sidebar', 'top').flatMap(slot => {
-    const content = registry.contentFor('sidebar', 'top', slot.id)
-    if (!content) {
-      return []
-    }
-    return [
-      {
-        id: content.id,
-        label: content.label ?? '',
-        icon: content.icon ?? 'symbol-misc',
-        route: content.route
+  return registry
+    .slotsFor('sidebar', 'top')
+    .filter(slot => slot.kind === 'entry-row')
+    .flatMap(slot => {
+      const content = registry.contentFor('sidebar', 'top', slot.id)
+      if (!content) {
+        return []
       }
-    ]
-  })
+      return [
+        {
+          id: content.id,
+          label: content.label ?? '',
+          icon: content.icon ?? 'symbol-misc',
+          route: content.route
+        }
+      ]
+    })
 }
 
 /** 出厂那一份声明下的左栏格子（没有用户配置时的样子）。 */
@@ -198,11 +203,27 @@ export function ChatSidebar({
   const l1Agent = useStore($consoleL1Agent)
   // 用户关掉了哪些 slot（`slots.removed`）——读共享的那份配置缓存（设置面改完这里立刻跟着变）。
   const { data: configRecord } = usePlobiConfigRecord()
+  // 插件填进挂载点的东西（裁定 239）——插件装上，这一格就在屏上。
+  const { data: slotData } = useQuery({
+    queryKey: ['plobi-slots'],
+    queryFn: getPlobiSlots,
+    staleTime: 5 * 60 * 1000,
+    // 插件那份清单取不到时**不重试**：左栏照常用出厂声明表渲染，别让一次失败拖慢整屏。
+    retry: false
+  })
+
+  const slotRegistry: SlotRegistry = useMemo(
+    () =>
+      createSlotRegistry({
+        removed: readRemovedSlots(configRecord),
+        contributions: slotData?.contributions
+      }),
+    [configRecord, slotData]
+  )
 
   const navItems = useMemo(() => {
     // 左栏那几格来自 slot 声明表；用户关掉哪一格（`slots.removed`），那一格就不在。
-    const registry: SlotRegistry = createSlotRegistry({ removed: readRemovedSlots(configRecord) })
-    const base = sidebarNavForLevel(sidebarNavItems(registry), { l1, l2Id })
+    const base = sidebarNavForLevel(sidebarNavItems(slotRegistry), { l1, l2Id })
 
     const scopedAgent =
       (l2Id ? secretaryAgents.find(agent => agent.id === l2Id) : null) ?? (l1 ? l1Agent : null) ?? null
@@ -212,7 +233,7 @@ export function ChatSidebar({
         ? { ...item, route: `${SKILLS_ROUTE}?agent=${encodeURIComponent(scopedAgent.id)}` }
         : item
     )
-  }, [l1, l1Agent, l2Id, secretaryAgents, configRecord])
+  }, [l1, l1Agent, l2Id, secretaryAgents, slotRegistry])
 
   const sidebarOpen = useStore($sidebarOpen)
   // 收起态不再归零：同一个栏换成 40px 图标条（用户 10-31）。
@@ -479,19 +500,21 @@ export function ChatSidebar({
         <SidebarContent className="min-h-0 gap-0 bg-transparent px-2.5">
           {/* 顶上这几行是导航，不参与滚动（用户 11-03：侧栏应该只有中间 Agent 那一段能上下滑）。 */}
           <div className="shrink-0">
+            {/* 「新建 Agent」**不是导航行里的一格**——它是一个独立的行动按钮
+                （裁定 239 的 `action` 家族）：**用不同的组件区分开来**（DSH 那个
+                「New Session」：透明底＋内描边的一枚整行按钮，与那些图标行一眼分得开）。 */}
+            <Button
+              aria-label={c.newAgent}
+              className="mb-1 w-full justify-start gap-2 px-2.5"
+              onClick={openCreateAgent}
+              type="button"
+              variant="outline"
+            >
+              <Codicon className={NAV_ICON} name="add" />
+              <span className="min-w-0 flex-1 truncate text-left">{c.newAgentLabel}</span>
+            </Button>
+
             <SidebarMenu className="gap-px pt-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  aria-label={c.newAgent}
-                  className={NAV_BUTTON}
-                  onClick={openCreateAgent}
-                  tooltip={c.newAgent}
-                  type="button"
-                >
-                  <Codicon className={NAV_ICON} name="add" />
-                  <span className="min-w-0 flex-1 truncate">{c.newAgentLabel}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
 
               {l2Id && (
                 <SidebarMenuItem>

@@ -19,6 +19,22 @@ export interface ConfigSchemaResponse {
   fields: Record<string, ConfigFieldSchema>
 }
 
+/** What a plugin puts into a UI slot (裁定 239 — the shallow, declarative step). */
+export interface SlotContribution {
+  /** 填哪个 slot（声明里的 id）。 */
+  slotId: string
+  /** 屏上/路由那一侧用的短名。 */
+  id: string
+  icon?: string
+  label?: string
+  route?: string
+  providedBy?: string
+}
+
+export interface SlotContributionsResponse {
+  contributions: SlotContribution[]
+}
+
 export interface AudioTranscriptionResponse {
   ok: boolean
   provider?: string

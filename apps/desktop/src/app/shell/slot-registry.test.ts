@@ -33,7 +33,7 @@ describe('slot 声明表', () => {
       expect(slot.id, 'slot 缺 id').toBeTruthy()
       expect(slot.position, `${slot.id} 缺 position`).toBeTruthy()
       expect(slot.region, `${slot.id} 缺 region`).toBeTruthy()
-      expect(['entry-row', 'panel'], `${slot.id} 的 kind 不认识`).toContain(slot.kind)
+      expect(['action', 'entry-row', 'panel'], `${slot.id} 的 kind 不认识`).toContain(slot.kind)
       expect(Number.isFinite(slot.order), `${slot.id} 缺 order`).toBe(true)
       expect(slot.shape, `${slot.id} 缺 shape`).toBeTruthy()
       expect(typeof slot.shape.icon, `${slot.id} 的 shape 缺 icon`).toBe('boolean')
@@ -59,6 +59,22 @@ describe('slot 声明表', () => {
     expect(kindOf('top')).toBe('entry-row')
     expect(kindOf('bottom')).toBe('entry-row')
     expect(kindOf('middle')).toBe('panel')
+  })
+
+  it('「新建 Agent」是 action 家族——与导航格子**不是同一种组件**', () => {
+    // 用户 11-25 19:4x：「新建 Agent 可以像 DSH 一样用不同的组件区分开来」。
+    const action = DEFAULT_SLOT_DECLARATION.find(
+      slot => slot.position === 'sidebar' && slot.region === 'top' && slot.kind === 'action'
+    )
+    const nav = DEFAULT_SLOT_DECLARATION.find(
+      slot => slot.position === 'sidebar' && slot.region === 'top' && slot.id === 'skills'
+    )
+
+    expect(action, '声明表里没有那个独立的行动按钮').toBeTruthy()
+    expect(action?.id).toBe('new-agent')
+    expect(nav?.kind).toBe('entry-row')
+    // 它排在导航那几格**之前**（DSH 那个「New Session」就在上面）
+    expect(action!.order).toBeLessThan(nav!.order)
   })
 
   it('每个区域的 slot 按 order 排', () => {

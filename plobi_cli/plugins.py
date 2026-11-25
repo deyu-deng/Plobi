@@ -312,6 +312,11 @@ class PluginManifest:
     requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
     provides_tools: List[str] = field(default_factory=list)
     provides_hooks: List[str] = field(default_factory=list)
+    # UI slots this plugin fills — what the plugin puts into the shell's
+    # mount points (裁定 239).  Declarative: the plugin says *which* slot and
+    # *what* goes in it (icon / label / route), never a component — the deep
+    # step (a plugin shipping a front-end bundle) is a different mechanism.
+    slots: List[Dict[str, Any]] = field(default_factory=list)
     # Toolset cards this plugin declares — what the capabilities screen
     # renders for a toolset the plugin brought: the key, a human label, one
     # line about what it is, and the credentials it needs.  A plugin that
@@ -1669,6 +1674,12 @@ class PluginManager:
                 for entry in raw_toolsets:
                     if isinstance(entry, dict) and str(entry.get("key") or "").strip():
                         declared_toolsets.append(entry)
+            raw_slots = data.get("slots")
+            declared_slots: List[Dict[str, Any]] = []
+            if isinstance(raw_slots, list):
+                for entry in raw_slots:
+                    if isinstance(entry, dict) and str(entry.get("slot") or "").strip():
+                        declared_slots.append(entry)
             return PluginManifest(
                 name=name,
                 version=str(data.get("version", "")),
@@ -1677,6 +1688,7 @@ class PluginManager:
                 requires_env=data.get("requires_env", []),
                 provides_tools=data.get("provides_tools", []),
                 provides_hooks=data.get("provides_hooks", []),
+                slots=declared_slots,
                 toolsets=declared_toolsets,
                 source=source,
                 path=str(plugin_dir),
@@ -2457,6 +2469,43 @@ def get_plugin_auxiliary_tasks() -> List[Dict[str, Any]]:
     """
     manager = _ensure_plugins_discovered()
     return [manager._aux_tasks[k] for k in sorted(manager._aux_tasks)]
+
+
+def get_plugin_slot_contributions() -> List[Dict[str, Any]]:
+    """What the installed plugins put into the shell's mount points (slots).
+
+    A plugin declares it in its ``plugin.yaml`` (``slots:``) — declarative, the
+    shallow step (裁定 239 §1.5): the plugin says **which** slot and **what**
+    goes in it (``icon`` / ``label`` / ``route``), never a component.
+
+    Each contribution looks like::
+
+        {"slotId": "sidebar/top/my-thing", "id": "my-thing",
+         "icon": "star", "label": "我的那一格", "route": "/my-thing",
+         "providedBy": "my-plugin"}
+
+    The screen merges these into its own slot table; a plugin that fills a
+    slot nobody declared is ignored (the host only mounts what it declared).
+    """
+    manager = get_plugin_manager()
+    contributions: List[Dict[str, Any]] = []
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        for entry in getattr(manifest, "slots", None) or []:
+            slot = str(entry.get("slot") or "").strip()
+            if not slot:
+                continue
+            item: Dict[str, Any] = {
+                "slotId": slot,
+                "id": str(entry.get("id") or slot).strip(),
+                "providedBy": getattr(manifest, "key", "") or getattr(manifest, "name", ""),
+            }
+            for field in ("icon", "label", "route"):
+                value = entry.get(field)
+                if isinstance(value, str) and value:
+                    item[field] = value
+            contributions.append(item)
+    return contributions
 
 
 def get_plugin_toolset_cards() -> Dict[str, Dict[str, Any]]:

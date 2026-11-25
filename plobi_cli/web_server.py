@@ -5774,6 +5774,28 @@ async def get_defaults():
     return DEFAULT_CONFIG
 
 
+@app.get("/api/slots")
+async def get_slot_contributions():
+    """What the installed plugins put into the shell's mount points (slots).
+
+    裁定 239: the plugin declares it in its ``plugin.yaml`` (``slots:``) — the
+    **shallow** step, declarative (no plugin code runs in the interface).  The
+    screen merges these into its own slot table; a plugin filling a slot the
+    host never declared is ignored.
+
+    A plugin that fails to load must not take the screen down with it, but it
+    must also not disappear quietly — the reason goes to the log.
+    """
+    from plobi_cli.plugins import get_plugin_slot_contributions
+
+    try:
+        contributions = get_plugin_slot_contributions()
+    except Exception as exc:
+        _log.warning("slot contributions unavailable: %s", exc)
+        contributions = []
+    return {"contributions": contributions}
+
+
 @app.get("/api/config/schema")
 async def get_schema():
     """The config schema, plus the **live** option list for provider keys.
