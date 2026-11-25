@@ -103,7 +103,8 @@ describe('对话卡那一列：清单由声明表说了算', () => {
   })
 
   it('用户关掉的那一枚**真的不在**（不是藏起来）', () => {
-    const faces = facesOf([], ['mind-pending'])
+    // 记的是 **slot 的身份**（位置＋区域＋短名），不是短名（用户 11-25 22:2x）。
+    const faces = facesOf([], ['chat-card/top-right/mind-pending'])
 
     expect(faces.map(face => face.id)).not.toContain('mind-pending')
     expect(faces.map(face => face.id)).toContain('pending')

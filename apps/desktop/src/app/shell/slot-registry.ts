@@ -41,12 +41,19 @@ const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace']
 /**
  * 形状家族——**同一族的挂载点，宿主管的规矩一样**。
  *
- * `entry-row`＝一排格子（侧边栏上面那排、下面那排、对话卡那三枚、工作区页签条）；
+ * `entry-row`＝一排格子（侧边栏上面那排、对话卡那三枚、工作区页签条）；
  * `panel`＝一整块面板（侧边栏中间那一大块）；
  * `action`＝**一个独立的行动按钮**——它不是导航行里的一格，**用不同的组件渲染**
  * （DSH 那个「New Session」：透明底＋内描边的一枚整行按钮，与那些图标行一眼分得开）。
+ * `status-item`＝**状态栏那一件**（用户 11-25 22:2x：「我们侧边栏底部的图标是**另一种
+ * slot**」）——左栏下面那排：图标、无文字标签、**内容来自状态栏管道**（宿主自己的状态）、
+ * 点开是**整屏**（`props.opens: 'overlay'`）或**一小张面板**（`'panel'`）。
+ *
+ * ⚠️ **形状像 ≠ 同一族**：左栏下面那排的**形状**与上面那排一样（一枚小图标按钮，
+ * 用户 11-25 12:2x「上面和下面其实差不多」），但**宿主管的东西不同**——上面那排是
+ * **导航**（点开去某个页面），下面那排是**状态栏那一件**（内容来自管道、反映一件状态）。
  */
-export type SlotKind = 'action' | 'entry-row' | 'panel'
+export type SlotKind = 'action' | 'entry-row' | 'panel' | 'status-item'
 
 /** 一格的形状约束——**宿主定，插件不能越界**。 */
 export interface SlotShape {
@@ -247,65 +254,79 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     default: { id: 'outsourced', icon: 'send', providedBy: 'builtin' }
   },
 
-  // ── 侧边栏 · 下面那排（与上面同一族；内容由状态栏那条管道给）──────────────
+  // ── 侧边栏 · 下面那排（**另一种 slot 家族**：状态栏那一件）─────────────────
+  // 内容来自**状态栏管道**（宿主自己的状态，`use-statusbar-items.tsx`）⇒ 插件在
+  // 「浅」的那一步带不了自己的一枚（它得带前端组件才画得出状态），但**可以替换
+  // 某一枚的图标与名字**。`props.opens` 说清点开是**整屏**还是**一小张面板**
+  // （用户 11-03 拍的顺序规矩：整屏的排前面，小面板的排后面）。
   {
     id: 'system:settings',
     position: 'sidebar',
     region: 'bottom',
-    kind: 'entry-row',
+    kind: 'status-item',
     order: 10,
     shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar' },
+    props: { pipeline: 'statusbar', opens: 'overlay' },
     default: { id: 'system:settings', icon: 'gear', providedBy: 'builtin' }
+  },
+  {
+    id: 'command-center',
+    position: 'sidebar',
+    region: 'bottom',
+    kind: 'status-item',
+    order: 15,
+    shape: { icon: true, label: false },
+    props: { pipeline: 'statusbar', opens: 'overlay' },
+    default: { id: 'command-center', icon: 'terminal', providedBy: 'builtin' }
   },
   {
     id: 'agents',
     position: 'sidebar',
     region: 'bottom',
-    kind: 'entry-row',
+    kind: 'status-item',
     order: 20,
     shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar' },
+    props: { pipeline: 'statusbar', opens: 'overlay' },
     default: { id: 'agents', icon: 'organization', providedBy: 'builtin' }
   },
   {
     id: 'cron',
     position: 'sidebar',
     region: 'bottom',
-    kind: 'entry-row',
+    kind: 'status-item',
     order: 30,
     shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar' },
+    props: { pipeline: 'statusbar', opens: 'overlay' },
     default: { id: 'cron', icon: 'clock', providedBy: 'builtin' }
   },
   {
     id: 'agenda',
     position: 'sidebar',
     region: 'bottom',
-    kind: 'entry-row',
+    kind: 'status-item',
     order: 40,
     shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar' },
+    props: { pipeline: 'statusbar', opens: 'overlay' },
     default: { id: 'agenda', icon: 'calendar', providedBy: 'builtin' }
   },
   {
     id: 'gateway-health',
     position: 'sidebar',
     region: 'bottom',
-    kind: 'entry-row',
+    kind: 'status-item',
     order: 50,
     shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar' },
+    props: { pipeline: 'statusbar', opens: 'panel' },
     default: { id: 'gateway-health', icon: 'pulse', providedBy: 'builtin' }
   },
   {
     id: 'egress',
     position: 'sidebar',
     region: 'bottom',
-    kind: 'entry-row',
+    kind: 'status-item',
     order: 60,
     shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar' },
+    props: { pipeline: 'statusbar', opens: 'panel' },
     default: { id: 'egress', icon: 'globe', providedBy: 'builtin' }
   },
 
@@ -453,6 +474,11 @@ export interface SlotRegistryOptions {
  * 1. **声明**决定有哪些位置、区域、顺序与形状——**用户整份替换过就用用户那份**；
  * 2. **填**：出厂默认先填，插件贡献按 slot 覆盖它（插件位＝插件说话）；
  * 3. **关**：用户关掉的那些**真的没有内容**（不是藏起来——屏上那一格消失）。
+ *
+ * ⚠️ **「关掉」按 slot 的身份记**（位置＋区域＋短名，如 `workspace/tabs/notes`），
+ * **不是按短名**——用户 11-25 22:2x：「**我们允许插件可以往多个地方插入内容**」⇒
+ * 同一个短名可以在几个 slot 里各有一个（`agenda`：工作区那个页签 ＋ 左栏下面那枚）⇒
+ * 关掉**一处**不许把**另一处**一起带走。
  */
 export function createSlotRegistry(options: SlotRegistryOptions = {}): SlotRegistry {
   const declaration = options.declaration ?? DEFAULT_SLOT_DECLARATION
@@ -460,8 +486,9 @@ export function createSlotRegistry(options: SlotRegistryOptions = {}): SlotRegis
 
   const contentBySlot = new Map<string, SlotContent>()
   for (const slot of declaration) {
-    if (slot.default && !removed.has(slot.id)) {
-      contentBySlot.set(slotKey(slot.position, slot.region, slot.id), { ...slot.default })
+    const key = slotKey(slot.position, slot.region, slot.id)
+    if (slot.default && !removed.has(key)) {
+      contentBySlot.set(key, { ...slot.default })
     }
   }
   const declaredKeys = new Set(declaration.map(slot => slotKey(slot.position, slot.region, slot.id)))
@@ -495,7 +522,7 @@ export function createSlotRegistry(options: SlotRegistryOptions = {}): SlotRegis
         declaredKeys.add(key)
       }
     }
-    if (!key || removed.has(key) || removed.has(contribution.slotId)) {
+    if (!key || removed.has(key)) {
       continue
     }
     const {
@@ -638,7 +665,14 @@ export function chatCardFaceDefsFor(registry: SlotRegistry, t: unknown): ChatCar
     })
 }
 
-/** 用户关掉了哪些 slot（配置 `slots.removed`）——出厂的默认插件与插件贡献都算。 */
+/**
+ * 用户关掉了哪些 slot（配置 `slots.removed`）——出厂的默认插件与插件贡献都算。
+ *
+ * **记的是 slot 的身份**（位置＋区域＋短名，如 `workspace/tabs/notes`／
+ * `sidebar/bottom/agenda`），**不是短名**——用户 11-25 22:2x：「**我们允许插件可以
+ * 往多个地方插入内容**」⇒ 同一个短名可以在几个 slot 里各有一个 ⇒ 关掉一处不许把
+ * 另一处一起带走。
+ */
 export function readRemovedSlots(config: unknown): string[] {
   if (!config || typeof config !== 'object') {
     return []

@@ -102,7 +102,9 @@ describe('工作区页签：从声明派生', () => {
   })
 
   it('用户关掉的页签真的不在了', () => {
-    const registry = createSlotRegistry({ removed: ['notes'] })
+    // 记的是 **slot 的身份**（位置＋区域＋短名），不是短名——同一个短名可以在
+    // 几个 slot 里各有一个（用户 11-25 22:2x：「允许插件往多个地方插入内容」）。
+    const registry = createSlotRegistry({ removed: ['workspace/tabs/notes'] })
 
     expect(workspaceTabDefsFor(registry, 'l2', LABELS).map(def => def.id)).not.toContain('notes')
   })

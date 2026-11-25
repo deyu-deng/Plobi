@@ -5,8 +5,9 @@
  *
  * 1. 声明表覆盖宿主留下的三个位置，每条 slot 的必填字段齐；
  * 2. **今天在屏上的那几段清单一条都不许漏**——声明表漏一条，就是那一格凭空消失；
- * 3. **上面那排与下面那排是同一族**（用户 11-25 12:2x：「上面和下面其实差不多」）：
- *    侧边栏中间那一大块才是另一族；
+ * 3. **左栏下面那排是另一种 slot 家族**（用户 11-25 22:2x：「我们侧边栏底部的图标是
+ *    另一种slot」——12:2x 那句「上面和下面其实差不多」说的是**形状**，不是同一族）；
+ *    中间那一大块又是另一族；
  * 4. **声明表可以被用户整份替换**（裁定 238 补记 1 的"整份 override"在界面上的落点）；
  * 5. **默认插件可以被用户关掉**，关掉后那一格**真的没有内容**（不是藏起来）；
  * 6. 插件填进来的东西按 slot 覆盖出厂那一份，且同样受用户那句"关掉"约束。
@@ -33,7 +34,7 @@ describe('slot 声明表', () => {
       expect(slot.id, 'slot 缺 id').toBeTruthy()
       expect(slot.position, `${slot.id} 缺 position`).toBeTruthy()
       expect(slot.region, `${slot.id} 缺 region`).toBeTruthy()
-      expect(['action', 'entry-row', 'panel'], `${slot.id} 的 kind 不认识`).toContain(slot.kind)
+      expect(['action', 'entry-row', 'panel', 'status-item'], `${slot.id} 的 kind 不认识`).toContain(slot.kind)
       expect(Number.isFinite(slot.order), `${slot.id} 缺 order`).toBe(true)
       expect(slot.shape, `${slot.id} 缺 shape`).toBeTruthy()
       expect(typeof slot.shape.icon, `${slot.id} 的 shape 缺 icon`).toBe('boolean')
@@ -52,12 +53,15 @@ describe('slot 声明表', () => {
     expect(idsOf('workspace', 'tabs')).toEqual(expect.arrayContaining(SCREEN_WORKSPACE))
   })
 
-  it('侧边栏上面那排与下面那排是同一族，中间那一大块是另一族', () => {
+  it('左栏**下面那排是另一种 slot 家族**，中间那一大块又是另一族（用户 11-25 22:2x）', () => {
+    // 11-25 12:2x 说「上面和下面其实差不多」——那说的是**形状**（都是一枚小图标按钮）。
+    // 11-25 22:2x 纠正：**「我们侧边栏底部的图标是另一种slot」**——宿主管的东西不同
+    // （上面是导航，下面是状态栏那一件）。
     const kindOf = (region: string) =>
       DEFAULT_SLOT_DECLARATION.find(slot => slot.position === 'sidebar' && slot.region === region)?.kind
 
     expect(kindOf('top')).toBe('entry-row')
-    expect(kindOf('bottom')).toBe('entry-row')
+    expect(kindOf('bottom')).toBe('status-item')
     expect(kindOf('middle')).toBe('panel')
   })
 
@@ -113,7 +117,7 @@ describe('声明表可以被用户整份替换', () => {
 
 describe('默认插件可以被用户关掉', () => {
   it('关掉之后那一格真的没有内容', () => {
-    const registry = createSlotRegistry({ removed: ['diary'] })
+    const registry = createSlotRegistry({ removed: ['sidebar/top/diary'] })
 
     expect(registry.contentFor('sidebar', 'top', 'diary')).toBeUndefined()
     // 别的格子不受影响
@@ -122,10 +126,19 @@ describe('默认插件可以被用户关掉', () => {
     expect(registry.slotsFor('sidebar', 'top').map(slot => slot.id)).toContain('diary')
   })
 
+  it('**关掉一处不影响另一处**：同一个短名在两块区域里各有一个（用户 11-25 22:2x：「两边都留着…允许插件往多个地方插入内容」）', () => {
+    const registry = createSlotRegistry({ removed: ['workspace/tabs/agenda'] })
+
+    // 关掉的是**工作区那个日程页签**
+    expect(registry.contentFor('workspace', 'tabs', 'agenda')).toBeUndefined()
+    // 左栏下面那枚日程**还在**（它是另一份 slot，身份不同）
+    expect(registry.contentFor('sidebar', 'bottom', 'agenda')).toBeTruthy()
+  })
+
   it('插件贡献的内容同样受用户那句"关掉"约束', () => {
     const registry = createSlotRegistry({
       contributions: [{ slotId: 'skills', id: 'skills', icon: 'star', label: '插件换的那一格' }],
-      removed: ['skills']
+      removed: ['sidebar/top/skills']
     })
 
     expect(registry.contentFor('sidebar', 'top', 'skills')).toBeUndefined()
