@@ -14618,6 +14618,17 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
     with _profile_scope(profile):
         config = load_config()
         cat = TOOL_CATEGORIES.get(name)
+        card = None
+        if cat is None:
+            # A toolset a plugin brought: its declared card **is** its row.
+            # The plugin is the only backend it has — there is no "which
+            # provider" to pick — so the card renders as one provider row.
+            try:
+                from plobi_cli.plugins import get_plugin_toolset_cards
+
+                card = get_plugin_toolset_cards().get(name)
+            except Exception:
+                card = None
         providers = []
         active_provider = None
         if cat:
@@ -14655,9 +14666,32 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
                         name, prov, config, force_fresh=True
                     ),
                 })
+        elif card:
+            env_vars = [
+                {
+                    "key": e["key"],
+                    "prompt": e.get("prompt", e["key"]),
+                    "url": e.get("url"),
+                    "default": e.get("default"),
+                    "is_set": bool(get_env_value(e["key"])),
+                }
+                for e in (card.get("env_vars") or [])
+                if isinstance(e, dict) and e.get("key")
+            ]
+            providers.append({
+                "name": str(card.get("label") or name),
+                "badge": str(card.get("badge") or ""),
+                "tag": str(card.get("description") or ""),
+                "env_vars": env_vars,
+                "post_setup": card.get("post_setup"),
+                "requires_nous_auth": bool(card.get("requires_nous_auth")),
+                # Nothing to highlight: a plugin's toolset has one backend and
+                # no "active provider" of its own.
+                "is_active": False,
+            })
     return {
         "name": name,
-        "has_category": cat is not None,
+        "has_category": cat is not None or bool(card),
         "providers": providers,
         "active_provider": active_provider,
     }

@@ -312,6 +312,13 @@ class PluginManifest:
     requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
     provides_tools: List[str] = field(default_factory=list)
     provides_hooks: List[str] = field(default_factory=list)
+    # Toolset cards this plugin declares — what the capabilities screen
+    # renders for a toolset the plugin brought: the key, a human label, one
+    # line about what it is, and the credentials it needs.  A plugin that
+    # declares nothing still works, but the screen can then only show an
+    # auto-generated name and an empty panel — which is how "installed, but
+    # invisible" happens.
+    toolsets: List[Dict[str, Any]] = field(default_factory=list)
     source: str = ""        # "user", "project", or "entrypoint"
     path: Optional[str] = None
     # Plugin kind — see plugins.py module docstring for semantics.
@@ -1656,6 +1663,12 @@ class PluginManager:
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",
                 key, name, kind, source, plugin_dir,
             )
+            raw_toolsets = data.get("toolsets")
+            declared_toolsets: List[Dict[str, Any]] = []
+            if isinstance(raw_toolsets, list):
+                for entry in raw_toolsets:
+                    if isinstance(entry, dict) and str(entry.get("key") or "").strip():
+                        declared_toolsets.append(entry)
             return PluginManifest(
                 name=name,
                 version=str(data.get("version", "")),
@@ -1664,6 +1677,7 @@ class PluginManager:
                 requires_env=data.get("requires_env", []),
                 provides_tools=data.get("provides_tools", []),
                 provides_hooks=data.get("provides_hooks", []),
+                toolsets=declared_toolsets,
                 source=source,
                 path=str(plugin_dir),
                 kind=kind,
@@ -2445,6 +2459,26 @@ def get_plugin_auxiliary_tasks() -> List[Dict[str, Any]]:
     return [manager._aux_tasks[k] for k in sorted(manager._aux_tasks)]
 
 
+def get_plugin_toolset_cards() -> Dict[str, Dict[str, Any]]:
+    """The toolset cards the installed plugins declare, keyed by toolset key.
+
+    A card is what the capabilities screen renders for a toolset a plugin
+    brought: its label, one line about it, and the credentials it needs.  It
+    comes from the plugin's ``plugin.yaml`` (``toolsets:``), so a plugin can
+    say what its toolset *is* instead of letting the screen invent a name for
+    it.  A plugin that declares nothing contributes no card — nothing breaks.
+    """
+    manager = get_plugin_manager()
+    cards: Dict[str, Dict[str, Any]] = {}
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        for card in getattr(manifest, "toolsets", None) or []:
+            key = str(card.get("key") or "").strip()
+            if key:
+                cards.setdefault(key, dict(card))
+    return cards
+
+
 def get_plugin_toolsets() -> List[tuple]:
     """Return plugin toolsets as ``(key, label, description)`` tuples.
 
@@ -2478,20 +2512,25 @@ def get_plugin_toolsets() -> List[tuple]:
                 toolset_plugin.setdefault(entry.toolset, loaded)
 
     result = []
+    cards = get_plugin_toolset_cards()
     for ts_key in sorted(toolset_tools):
         plugin = toolset_plugin.get(ts_key)
-        label = f"🔌 {ts_key.replace('_', ' ').title()}"
+        card = cards.get(ts_key) or {}
+        # 声明过的那一格用自己的名字与简介；没声明的照旧回落自动拼的名字
+        # （老插件不该因为这一刀变了形状）。
+        label = str(card.get("label") or "").strip() or f"🔌 {ts_key.replace('_', ' ').title()}"
         # 这一格的简介先问 ``toolsets.py`` 里这个 toolset 自己那句——插件清单的
         # 简介是**整包**的（plobi-core 一句 "runtime: Master helpers…"），
         # 拿它填每一格会让 ``channel`` / ``edge`` / ``ops`` 长成一模一样，面板上
         # 就再也读不出「这一格现在是什么」。清单只在 toolset 自己没有描述时兜底。
-        desc = ""
-        try:
-            from toolsets import TOOLSETS as _TOOLSETS
+        desc = str(card.get("description") or "").strip()
+        if not desc:
+            try:
+                from toolsets import TOOLSETS as _TOOLSETS
 
-            desc = str((_TOOLSETS.get(ts_key) or {}).get("description") or "").strip()
-        except Exception:
-            desc = ""
+                desc = str((_TOOLSETS.get(ts_key) or {}).get("description") or "").strip()
+            except Exception:
+                desc = ""
         if not desc and plugin and plugin.manifest.description:
             desc = plugin.manifest.description
         if not desc:
