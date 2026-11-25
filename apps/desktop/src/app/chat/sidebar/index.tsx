@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,7 +17,6 @@ import {
   SidebarMenuItem
 } from '@/components/ui/sidebar'
 import { useI18n } from '@/i18n'
-import { getPlobiSlots } from '@/plobi'
 import { cn } from '@/lib/utils'
 import { $panesFlipped, $sidebarOpen, pinSession } from '@/store/layout'
 import { pickProjectFolder } from '@/store/projects'
@@ -39,9 +37,8 @@ import {
   SKILLS_ROUTE
 } from '../../routes'
 import { createSlotRegistry, type SlotRegistry } from '../../shell/slot-registry'
+import { useSlotRegistry } from '../../shell/slot-registry-context'
 import type { SidebarNavItem } from '../../types'
-
-import { usePlobiConfigRecord } from '../../hooks/use-config-record'
 
 import { AgentCategoryGroup } from './agent-category-group'
 import {
@@ -99,16 +96,6 @@ export function sidebarNavItems(registry: SlotRegistry): SidebarNavItem[] {
 
 /** 出厂那一份声明下的左栏格子（没有用户配置时的样子）。 */
 export const SIDEBAR_NAV: SidebarNavItem[] = sidebarNavItems(createSlotRegistry())
-
-/** 用户关掉了哪些 slot（`slots.removed`）——出厂的默认插件与插件贡献都算。 */
-function readRemovedSlots(config: unknown): string[] {
-  if (!config || typeof config !== 'object') {
-    return []
-  }
-  const slots = (config as Record<string, unknown>).slots
-  const removed = slots && typeof slots === 'object' ? (slots as Record<string, unknown>).removed : null
-  return Array.isArray(removed) ? removed.filter((id): id is string => typeof id === 'string') : []
-}
 
 // NAV row chrome (the top icon rail): height/typography live here so the
 // secretary-specific rows (new-agent / back-to-secretary) match the base rows
@@ -201,25 +188,9 @@ export function ChatSidebar({
   // 那是 profile 概念的回魂路，随用户 11-05 的追问一起拆了：认不出就是认不出，
   // 宁可退回全局页，也不再从 profile 绕回来。
   const l1Agent = useStore($consoleL1Agent)
-  // 用户关掉了哪些 slot（`slots.removed`）——读共享的那份配置缓存（设置面改完这里立刻跟着变）。
-  const { data: configRecord } = usePlobiConfigRecord()
-  // 插件填进挂载点的东西（裁定 239）——插件装上，这一格就在屏上。
-  const { data: slotData } = useQuery({
-    queryKey: ['plobi-slots'],
-    queryFn: getPlobiSlots,
-    staleTime: 5 * 60 * 1000,
-    // 插件那份清单取不到时**不重试**：左栏照常用出厂声明表渲染，别让一次失败拖慢整屏。
-    retry: false
-  })
-
-  const slotRegistry: SlotRegistry = useMemo(
-    () =>
-      createSlotRegistry({
-        removed: readRemovedSlots(configRecord),
-        contributions: slotData?.contributions
-      }),
-    [configRecord, slotData]
-  )
+  // 左栏那几格从 **slot 声明表**派生（裁定 239）：**全应用一册**（`slot-registry-context.tsx`
+  // 拉那一次 `/api/slots` ＋ 配置里的 `slots.removed`）——用户关掉哪一格，那一格就不在。
+  const slotRegistry = useSlotRegistry()
 
   const navItems = useMemo(() => {
     // 左栏那几格来自 slot 声明表；用户关掉哪一格（`slots.removed`），那一格就不在。

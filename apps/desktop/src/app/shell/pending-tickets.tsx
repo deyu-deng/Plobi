@@ -18,8 +18,6 @@ import {
   type PendingInboxItem
 } from '@/store/pending-inbox'
 
-import { MonitorEntryButton } from './monitor-entry-button'
-import { useMonitorFace } from './monitor-faces'
 import { MonitorEmpty, MonitorRow } from './monitor-panel'
 
 /**
@@ -438,28 +436,26 @@ export function PendingTicketsFace() {
 }
 
 /**
- * 抬头右上角那一族里的「待放行」**入口**（用户 11-10：「和档案一个形态，复用一个组件」）。
+ * 轮询：角标上那个数要一直看得见，面板开不开都在刷。
  *
- * 形状与行为都在统一件 `monitor-entry-button.tsx` 里；这一档只管**角标上那个数**
- * —— 所以轮询住在这里：这一枚入口一直挂在抬头上面，面板关着时那个数也准。
+ * **住在这里，是因为这一格（`pending-inbox`）是「待放行」那一枚的角标来源**——
+ * 声明里说一声「这一格的数从哪儿来」，数与「让它一直准」都是宿主的事
+ * （**角标属于那一格，不属于谁填它**）。抬头那一列在的时候轮询就在
+ * （`chat-top-bar.tsx` 调它），面板关着也照刷。
  */
-export function PendingTicketsButton() {
-  usePendingInboxPolling()
-  const face = useMonitorFace('pending')
-
-  return <MonitorEntryButton face={face} />
-}
-
-/** 轮询：角标上那个数要一直看得见，面板开不开都在刷。 */
-function usePendingInboxPolling(): void {
+export function usePendingInboxPolling(enabled = true): void {
   const load = useCallback(loadInbox, [])
 
   useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
     void load()
     const timer = setInterval(() => { void load() }, 5000)
 
     return () => clearInterval(timer)
-  }, [load])
+  }, [enabled, load])
 }
 
 /** 拉一次清单，写进快照。 */

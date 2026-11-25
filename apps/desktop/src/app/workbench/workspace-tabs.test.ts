@@ -15,22 +15,31 @@ import { describe, expect, it } from 'vitest'
 import { createSlotRegistry, workspaceTabDefsFor } from '../shell/slot-registry'
 import { viewRenderer } from '../views'
 
+/**
+ * 宿主那棵 **i18n 树**。
+ *
+ * **11-25 更新（裁定 239 第四刀）**：声明里的 `labelKey` 是**点号路径**
+ * （`workbench.tabs.files`），对着这棵树走——**一处机制**（对话卡那几枚也走它），
+ * 不再是「只取最后一段」（`files` 既是 tab 的名字也是 action 的名字，只取一段会认错）。
+ */
 const LABELS = {
-  actions: {
-    agenda: '打开日程',
-    browser: '打开浏览器',
-    files: '打开文件',
-    notes: '打开笔记',
-    review: '打开审阅',
-    terminal: '打开终端'
-  },
-  tabs: {
-    agenda: '日程',
-    browser: '浏览器',
-    files: '文件',
-    notes: '笔记',
-    review: '审阅',
-    terminal: '终端'
+  workbench: {
+    actions: {
+      agenda: '打开日程',
+      browser: '打开浏览器',
+      files: '打开文件',
+      notes: '打开笔记',
+      review: '打开审阅',
+      terminal: '打开终端'
+    },
+    tabs: {
+      agenda: '日程',
+      browser: '浏览器',
+      files: '文件',
+      notes: '笔记',
+      review: '审阅',
+      terminal: '终端'
+    }
   }
 }
 
@@ -96,6 +105,14 @@ describe('工作区页签：从声明派生', () => {
     const registry = createSlotRegistry({ removed: ['notes'] })
 
     expect(workspaceTabDefsFor(registry, 'l2', LABELS).map(def => def.id)).not.toContain('notes')
+  })
+
+  it('页签的名字与说明走声明里的 labelKey（点号路径对着宿主那棵 i18n 树）', () => {
+    const registry = createSlotRegistry()
+    const files = workspaceTabDefsFor(registry, 'l2', LABELS).find(def => def.id === 'files')
+
+    expect(files?.title).toBe('文件')
+    expect(files?.description).toBe('打开文件')
   })
 })
 

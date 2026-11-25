@@ -30,6 +30,8 @@
 
 import { ARTIFACTS_ROUTE, DIARY_ROUTE, KNOWLEDGE_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../routes'
 
+import { resolveSlotLabel } from './slot-labels'
+
 /** 宿主留下的三个位置。 */
 export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace'
 
@@ -308,6 +310,8 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
   },
 
   // ── 对话卡右上角那三枚 ──────────────────────────────────────────────────
+  // 每一枚说清三件事：**显示应用的哪一页**（view）、**角标那个数从哪儿来**（badge）、
+  // **在哪些壳里出现**（shells）——档案那一枚只在 L2（指挥没有档案，用户 11-19 22:3x）。
   {
     id: 'dossier',
     position: 'chat-card',
@@ -315,8 +319,14 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     kind: 'entry-row',
     order: 10,
     shape: { icon: true, label: false },
-    props: { opens: 'dossier' },
-    default: { id: 'dossier', icon: 'book', labelKey: 'surface.agentDossier', providedBy: 'builtin' }
+    props: { opens: 'dossier', shells: ['l2'] },
+    default: {
+      id: 'dossier',
+      icon: 'book',
+      labelKey: 'surface.agentDossier',
+      view: 'dossier',
+      providedBy: 'builtin'
+    }
   },
   {
     id: 'pending',
@@ -325,8 +335,14 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     kind: 'entry-row',
     order: 20,
     shape: { icon: true, label: false },
-    props: { opens: 'pending-inbox' },
-    default: { id: 'pending', icon: 'inbox', labelKey: 'surface.pendingTickets', providedBy: 'builtin' }
+    props: { opens: 'pending-inbox', badge: 'pending-inbox' },
+    default: {
+      id: 'pending',
+      icon: 'inbox',
+      labelKey: 'surface.pendingTickets',
+      view: 'pending',
+      providedBy: 'builtin'
+    }
   },
   {
     id: 'mind-pending',
@@ -335,8 +351,14 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     kind: 'entry-row',
     order: 30,
     shape: { icon: true, label: false },
-    props: { opens: 'mind-pending' },
-    default: { id: 'mind-pending', icon: 'checklist', labelKey: 'mindPending.title', providedBy: 'builtin' }
+    props: { opens: 'mind-pending', badge: 'mind-pending' },
+    default: {
+      id: 'mind-pending',
+      icon: 'checklist',
+      labelKey: 'mindPending.title',
+      view: 'mind-pending',
+      providedBy: 'builtin'
+    }
   },
 
   // ── 工作区页签 ────────────────────────────────────────────────────────────
@@ -532,12 +554,11 @@ export interface WorkspaceTabDef {
  *
  * 插件的页签**自动出现**（用户 11-25 19:5x 拍定，与 DSH 的做法一致）：插件启用，
  * 它的页签就在工作区里；用户可以按 `slots.removed` 关掉。
+ *
+ * `t` 是宿主那棵 i18n 树——声明里的 `labelKey` 是**点号路径**（`workbench.tabs.files`），
+ * 由 `resolveSlotLabel` 走（**一处机制**：对话卡那几枚也走它）。
  */
-export function workspaceTabDefsFor(
-  registry: SlotRegistry,
-  shell: ShellLevel,
-  labels: { actions: Record<string, string>; tabs: Record<string, string> }
-): WorkspaceTabDef[] {
+export function workspaceTabDefsFor(registry: SlotRegistry, shell: ShellLevel, t: unknown): WorkspaceTabDef[] {
   return registry
     .slotsFor('workspace', 'tabs')
     .filter(slot => {
@@ -554,10 +575,64 @@ export function workspaceTabDefsFor(
         {
           id: content.id,
           icon: content.icon ?? 'symbol-misc',
-          title: (content.labelKey ? labels.tabs[content.labelKey.split('.').pop() ?? ''] : undefined) ?? content.label ?? content.id,
+          title: resolveSlotLabel(t, content.labelKey) ?? content.label ?? content.id,
           description:
-            (typeof descriptionKey === 'string' ? labels.actions[descriptionKey.split('.').pop() ?? ''] : undefined) ??
-            content.label
+            (typeof descriptionKey === 'string' ? resolveSlotLabel(t, descriptionKey) : undefined) ?? content.label
+        }
+      ]
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 对话卡右上角那几枚：从声明派生
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 对话卡右上角那一列的**一枚**（档案／待放行／写脑待批／插件带来的那些）。
+ *
+ * 与工作区那几页签同族：清单来自声明表，插件能替换其中一枚、也能自己加一枚。
+ */
+export interface ChatCardFaceDef {
+  /** 这一枚的身份（开放的：插件带来的 id 宿主不预先知道）。 */
+  id: string
+  icon: string
+  /** 屏上写的名字。 */
+  title: string
+  /** 这一枚显示应用的哪一页（`view`）——宿主按它把那一页真的渲染出来。 */
+  view?: string
+  /** 角标那个数来自哪个来源（宿主给数、也让它一直准）。 */
+  badge?: string
+  /** 在哪些壳里出现（`l1`／`l2`）；不给就是两个壳都有。 */
+  shells: string[]
+}
+
+/**
+ * 对话卡那一列该有哪些枚（按声明的顺序）。
+ *
+ * **不按壳过滤**（工作区那几页签才滤）：这一列的「在不在」由**抬头**那层决定
+ * （指挥那屏没有档案那一枚——用户 11-19 22:3x），那一层知道自己是哪个壳。
+ */
+export function chatCardFaceDefsFor(registry: SlotRegistry, t: unknown): ChatCardFaceDef[] {
+  return registry
+    .slotsFor('chat-card', 'top-right')
+    .filter(slot => slot.kind === 'entry-row')
+    .flatMap(slot => {
+      const content = registry.contentFor('chat-card', 'top-right', slot.id)
+      if (!content) {
+        return []
+      }
+      const declared = slot.props.shells
+      const shells = Array.isArray(declared)
+        ? declared.filter((shell): shell is string => typeof shell === 'string')
+        : []
+      return [
+        {
+          id: content.id,
+          icon: content.icon ?? 'symbol-misc',
+          title: resolveSlotLabel(t, content.labelKey) ?? content.label ?? content.id,
+          view: content.view ?? (typeof slot.props.view === 'string' ? slot.props.view : undefined),
+          badge: typeof slot.props.badge === 'string' ? slot.props.badge : undefined,
+          shells: shells.length > 0 ? shells : ['l1', 'l2']
         }
       ]
     })

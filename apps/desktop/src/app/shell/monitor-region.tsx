@@ -3,8 +3,7 @@ import { useLayoutEffect, useMemo, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 
-import { DossierFace } from '@/app/dossier/dossier-panel'
-import { MindPendingFace } from '@/app/mind-pending-overlay'
+import { viewRenderer } from '@/app/views'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
@@ -23,7 +22,6 @@ import {
   type MonitorPanelMode,
   MonitorTopBarRow
 } from './monitor-panel'
-import { PendingTicketsFace } from './pending-tickets'
 
 /**
  * **那一张卡**（用户 11-19 17:0x）。
@@ -202,14 +200,15 @@ export function MonitorRegion({
     />
   )
 
-  const content =
-    face?.id === 'pending' ? (
-      <PendingTicketsFace />
-    ) : face?.id === 'mind-pending' ? (
-      <MindPendingFace />
-    ) : (
-      <DossierFace agentId={agentId} />
-    )
+  /**
+   * 内容：**按那一面声明的 `view`** 去 `app/views.ts` 找渲染器（裁定 239 第四刀）。
+   *
+   * 原来这里是**按 id 写死的三分支**（pending／mind-pending／否则档案）⇒ 插件带来的
+   * 那一枚点开没有东西看。现在是**数据**：声明说一声「这一面显示应用的哪一页」，
+   * 宿主把那一页**真的渲染出来**（不是一个占位——知识库是那块样板）。
+   */
+  const FaceView = face?.view ? viewRenderer(face.view) : undefined
+  const content = FaceView ? <FaceView agentId={agentId} /> : null
 
   if (mode === 'float') {
     /**

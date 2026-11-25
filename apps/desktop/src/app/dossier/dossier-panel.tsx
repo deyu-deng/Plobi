@@ -4,8 +4,6 @@ import { useMemo, useState } from 'react'
 
 import { AgentNotesList } from '@/app/chat/right-rail/notes-list'
 import { PanelEmpty } from '@/app/overlays/panel'
-import { MonitorEntryButton } from '@/app/shell/monitor-entry-button'
-import { useMonitorFace } from '@/app/shell/monitor-faces'
 import { MonitorEmpty, MonitorIcon, MonitorRow, MonitorSection } from '@/app/shell/monitor-panel'
 import { fetchVaultAgent } from '@/app/surface/api'
 import { Codicon } from '@/components/ui/codicon'
@@ -257,15 +255,4 @@ export function DossierFace({ agentId }: { agentId: string }) {
       </MonitorSection>
     </>
   )
-}
-
-/**
- * 抬头右上角那一族里的「档案」**入口**。
- *
- * 形状与行为都在统一件 `monitor-entry-button.tsx` 里（跟待放行、写脑待批**同一个组件**）。
- */
-export function DossierButton() {
-  const face = useMonitorFace('dossier')
-
-  return <MonitorEntryButton face={face} />
 }

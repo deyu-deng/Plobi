@@ -17,6 +17,18 @@ vi.mock('@/i18n', () => ({
 
 import { chatTopBarRailEntries } from './chat-top-bar'
 import { DetailPeek, RailChip, RailEmpty, RailRow, RailSection } from './rail-kit'
+import { chatCardFaceDefsFor, createSlotRegistry } from './slot-registry'
+
+/**
+ * 那一列现在**从 slot 声明表派生**（裁定 239 第四刀）⇒ 调用点多一个 `faces` 参数。
+ * 这里喂的是**出厂那份声明**算出来的那几枚（别线的判据一个字没动）。
+ */
+const FACES = chatCardFaceDefsFor(createSlotRegistry(), {
+  common: { close: '关闭' },
+  console: { chiefSecretary: '总秘书' },
+  surface: { agentDossier: '档案', pendingTickets: '待放行' },
+  mindPending: { title: '写脑待批' }
+})
 
 afterEach(() => {
   cleanup()
@@ -118,13 +130,13 @@ describe('右上角那一列是注册表驱动的', () => {
     // 底部角标搬进对话卡，`WP-MIND-CONSENT-EVENTS`）／贴边那几枚。
     // 指挥（L1）那屏没有档案那一枚（用户 11-19 22:3x）⇒ 那一档在
     // `chat-top-bar.test.tsx` 里。
-    const entries = chatTopBarRailEntries({ edgeControls: {}, scope: { id: 'Aura', kind: 'agent' } })
+    const entries = chatTopBarRailEntries({ edgeControls: {}, scope: { id: 'Aura', kind: 'agent' }, faces: FACES })
 
     expect(entries.map(entry => entry.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
   })
 
   it('加一条记录就多一项 —— 不用改壳子', () => {
-    const entries = chatTopBarRailEntries({ edgeControls: {}, scope: { id: 'Aura', kind: 'agent' } })
+    const entries = chatTopBarRailEntries({ edgeControls: {}, scope: { id: 'Aura', kind: 'agent' }, faces: FACES })
 
     const withExtra = [...entries, { id: 'future', render: () => <button type="button">未来</button> }]
 

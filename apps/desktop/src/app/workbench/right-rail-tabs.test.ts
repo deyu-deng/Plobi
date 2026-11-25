@@ -68,7 +68,11 @@ describe('档案入口：对话界面右上角那一枚图标', () => {
     const topBar = read('shell/chat-top-bar.tsx')
     // 11-19 17:0x：三枚入口收成**同一个组件**（`shell/monitor-entry-button.tsx`），
     // 抬头只管挂那三枚，行为与形状都在那一个件里。
-    expect(topBar).toContain('DossierButton')
+    // 11-25（裁定 239 第四刀）：那一列**从 slot 声明表派生** ⇒ 抬头不再点名
+    // 「档案／待放行／写脑待批」三个各写各的壳（`DossierButton` 那一族删掉了），
+    // 它只按声明表**逐枚**渲染同一个入口组件。
+    expect(topBar).toContain('MonitorEntryButton')
+    expect(topBar).not.toContain('DossierButton')
     expect(read('shell/monitor-entry-button.tsx')).toContain('toggleMonitorFace')
     // 旧壳里不留第二份入口——两份形状迟早会漂。
     expect(read('chat/index.tsx')).not.toContain('toggleMonitorFace')

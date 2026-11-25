@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
@@ -154,8 +154,6 @@ import { useMessageErrorDismiss } from './session/hooks/use-message-error-dismis
 import { useMessageStream } from './session/hooks/use-message-stream'
 import { useModelControls } from './session/hooks/use-model-controls'
 import { usePlobiConfig } from './session/hooks/use-plobi-config'
-import { usePlobiConfigRecord } from './hooks/use-config-record'
-import { getPlobiSlots } from '@/plobi'
 import { usePreviewRouting } from './session/hooks/use-preview-routing'
 import { usePromptActions } from './session/hooks/use-prompt-actions'
 import { useRouteResume } from './session/hooks/use-route-resume'
@@ -186,12 +184,8 @@ import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
 import { requestGenOfficeClose } from './workbench/genoffice-sessions'
 import { isModelPath } from './workbench/model-paths'
 import { type RightRailTabDef, type RightRailTabId, RightRailWorkbench } from './workbench/right-rail'
-import {
-  createSlotRegistry,
-  readRemovedSlots,
-  type SlotRegistry,
-  workspaceTabDefsFor
-} from './shell/slot-registry'
+import { workspaceTabDefsFor } from './shell/slot-registry'
+import { useSlotRegistry } from './shell/slot-registry-context'
 import { viewRenderer } from './views'
 
 const AgendaView = lazy(async () => ({ default: (await import('./agenda')).AgendaView }))
@@ -472,32 +466,15 @@ export function DesktopController() {
   // 工作区页签：**从 slot 声明表派生**（裁定 239）——内置那几格是出厂预装的插件，
   // 插件带来的页签**自动出现**（用户 11-25 19:5x 拍定，与 DSH 的做法一致）。
   // 一张顺序 ＋ 按壳过滤：L1 那一排是 L2 的子序列，不必给每个壳各写一份清单。
-  const { data: configRecord } = usePlobiConfigRecord()
-  const { data: slotData } = useQuery({
-    queryKey: ['plobi-slots'],
-    queryFn: getPlobiSlots,
-    staleTime: 5 * 60 * 1000,
-    // 取不到就照常用出厂声明表渲染，别让一次失败拖慢整屏。
-    retry: false
-  })
-  const slotRegistry: SlotRegistry = useMemo(
-    () =>
-      createSlotRegistry({
-        removed: readRemovedSlots(configRecord),
-        contributions: slotData?.contributions
-      }),
-    [configRecord, slotData]
-  )
-  const workbenchLabels = {
-    actions: t.workbench.actions as Record<string, string>,
-    tabs: t.workbench.tabs as Record<string, string>
-  }
+  // **全应用一册**（`slot-registry-context.tsx` 拉那一次 `/api/slots` ＋ 配置里的
+  // `slots.removed`）——侧边栏与对话卡那一列读的是同一册。
+  const slotRegistry = useSlotRegistry()
   const l1TabDefs = useMemo(
-    () => workspaceTabDefsFor(slotRegistry, 'l1', workbenchLabels),
+    () => workspaceTabDefsFor(slotRegistry, 'l1', t),
     [slotRegistry, t]
   )
   const l2TabDefs = useMemo(
-    () => workspaceTabDefsFor(slotRegistry, 'l2', workbenchLabels),
+    () => workspaceTabDefsFor(slotRegistry, 'l2', t),
     [slotRegistry, t]
   )
   const workbenchTabDefsById = useMemo(

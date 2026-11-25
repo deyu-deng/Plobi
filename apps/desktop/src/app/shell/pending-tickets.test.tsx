@@ -1,8 +1,27 @@
 // @vitest-environment jsdom
+import { useStore } from '@nanostores/react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PendingTicketsButton, PendingTicketsFace } from './pending-tickets'
+import { $pendingInboxCount } from '@/store/pending-inbox'
+
+import { PendingTicketsFace, usePendingInboxPolling } from './pending-tickets'
+
+/**
+ * **11-25 更新（裁定 239 第四刀）**：那一枚入口不再是一个各写各的壳
+ * （`PendingTicketsButton` 删掉了——抬头那一列改成**从 slot 声明表派生**，
+ * 一枚 chat-card slot ⇒ 一枚 `MonitorEntryButton`）。
+ *
+ * **轮询住在哪里**：角标那个数要**面板关着的时候**也准 ⇒ 轮询跟着那一格走
+ * （`usePendingInboxPolling`）。这一档钉的还是同一件事：**两清单都拉了，
+ * 收件箱里几件，角标上就是几**——这里把「角标那个数」直接读出来。
+ */
+function PendingBadge() {
+  usePendingInboxPolling()
+  const count = useStore($pendingInboxCount)
+
+  return <span data-testid="pending-count">{count}</span>
+}
 
 const api = vi.fn()
 
@@ -100,7 +119,7 @@ describe('待放行那一族', () => {
 
   it('外部事件票与需人汇报都进收件箱，数量摆在图标角标上', async () => {
     mockBothLists([{ id: 'tkt_r1', goal: '改配色', leg: 'router', state: 'blocked', status: 'active', one_line: '「改配色」卡住了：缺一张图。要我继续，还是你来定？' }])
-    render(<PendingTicketsButton />)
+    render(<PendingBadge />)
 
     expect(await screen.findByText('2')).toBeTruthy()
     expect(api).toHaveBeenCalledWith(expect.objectContaining({

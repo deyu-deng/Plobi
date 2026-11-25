@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ChatScope } from '@/app/console/chat/scope'
+import { zh } from '@/i18n/zh'
 import {
   $monitorFace,
   $monitorPeekOpen,
@@ -13,6 +14,7 @@ import {
 } from '@/store/layout'
 
 import { ChatTopBar, chatTopBarRailEntries } from './chat-top-bar'
+import { chatCardFaceDefsFor, createSlotRegistry } from './slot-registry'
 
 /**
  * 对话卡右上角那一列：**三枚入口是同一个组件、同一个行为**。
@@ -20,11 +22,17 @@ import { ChatTopBar, chatTopBarRailEntries } from './chat-top-bar'
  * 用户 11-19 17:0x：「**三枚入口现在还是没有统一…UX也完全一致。要和现在档案的完全一致。**」
  * 「**完全复用同样的组件。不要写三套代码。只是容器内部的信息和UI细节不同而已。**」
  *
+ * **11-25 更新（裁定 239 第四刀）**：那一列**从 slot 声明表派生**了 ⇒ 这里喂进去的
+ * `faces` 是**从出厂那份声明算出来的**（不是手抄的三条）——插件带来的那一枚、
+ * 用户关掉的那一枚，都由那一册说话。
+ *
  * 这一档钉的是**行为**（点下去 store 变成什么样）与**形状**（三枚走同一件），
  * 不是源码文字。
  */
+const FACES = chatCardFaceDefsFor(createSlotRegistry(), zh)
+
 function entries(scope: ChatScope = { id: 'Aura', kind: 'agent' }) {
-  return chatTopBarRailEntries({ edgeControls: {}, scope })
+  return chatTopBarRailEntries({ edgeControls: {}, scope, faces: FACES })
 }
 
 function entry(id: string) {
@@ -58,7 +66,7 @@ afterEach(() => {
 })
 
 describe('对话卡右上角那一列', () => {
-  it('注册表还是那四条：档案 / 待放行 / 写脑待批 / 贴边那几枚', () => {
+  it('那一列是**出厂那份声明**算出来的：几枚都在，顺序也照声明', () => {
     expect(entries().map(item => item.id)).toEqual(['dossier', 'pending', 'mind-pending', 'edge'])
   })
 
