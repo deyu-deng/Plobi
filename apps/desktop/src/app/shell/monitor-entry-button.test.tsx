@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { zh } from '@/i18n/zh'
 import {
   $monitorFace,
   $monitorPeekOpen,
@@ -12,16 +13,25 @@ import {
 } from '@/store/layout'
 
 import { MonitorEntryButton } from './monitor-entry-button'
-import { useMonitorFace } from './monitor-faces'
+import { chatCardFaceDefsFor, createSlotRegistry } from './slot-registry'
 
 /**
  * 抬头右上角那三枚入口**共用的那一个组件**（用户 11-19 17:0x：
  * 「完全复用同样的组件。不要写三套代码。」）。
  *
  * 这一档钉的是**一件组件**的行为：形状一样、按下态一样、点下去那件事一样。
+ *
+ * **11-25 更新（裁定 239 第四刀）**：那一列从 **slot 声明表**派生 ⇒ 这里的「那一枚」
+ * 是**声明表算出来的**，不是手抄的 id。
  */
-function Entry({ id }: { id: 'dossier' | 'pending' | 'mind-pending' }) {
-  const face = useMonitorFace(id)
+const FACES = chatCardFaceDefsFor(createSlotRegistry(), zh)
+
+function Entry({ id }: { id: string }) {
+  const face = FACES.find(item => item.id === id)
+
+  if (!face) {
+    throw new Error(`声明表里没有 ${id} 那一枚`)
+  }
 
   return <MonitorEntryButton face={face} />
 }
