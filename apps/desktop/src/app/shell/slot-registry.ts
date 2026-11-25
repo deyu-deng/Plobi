@@ -233,15 +233,23 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
   },
 
   // ── 侧边栏 · 中间那一大块（另一族：一整块面板；名单 ↔ 外包 两页）────────────
+  // ⚠️ 这两格的内容是**宿主自己的面板**（名单要名册的数据、外包要这个 L2）⇒ 它们
+  // **没有 view**：屏上按 slot 的 id 给出自己那一块面板。插件带来的那一格**带 view**
+  // ⇒ 宿主按它把应用里那一页真的渲染出来。
   {
-    id: 'roster',
+    id: 'agents',
     position: 'sidebar',
     region: 'middle',
     kind: 'panel',
     order: 10,
     shape: { icon: true, label: true },
-    props: { opens: 'agent-roster', tab: 'agents' },
-    default: { id: 'roster', icon: 'organization', providedBy: 'builtin' }
+    props: { opens: 'agent-roster' },
+    default: {
+      id: 'agents',
+      icon: 'organization',
+      labelKey: 'console.tabAgents',
+      providedBy: 'builtin'
+    }
   },
   {
     id: 'outsourced',
@@ -250,8 +258,13 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     kind: 'panel',
     order: 20,
     shape: { icon: true, label: true },
-    props: { opens: 'agent-roster', tab: 'outsourced' },
-    default: { id: 'outsourced', icon: 'send', providedBy: 'builtin' }
+    props: { opens: 'agent-roster' },
+    default: {
+      id: 'outsourced',
+      icon: 'send',
+      labelKey: 'console.tabOutsourced',
+      providedBy: 'builtin'
+    }
   },
 
   // ── 侧边栏 · 下面那排（**另一种 slot 家族**：状态栏那一件）─────────────────
@@ -557,6 +570,48 @@ export function defaultSlotsFor(position: SlotPosition, region?: string): SlotDe
   ).sort((a, b) => a.order - b.order)
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 侧边栏中间那一大块：从声明派生
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 左栏中段那一块（**名单 ↔ 外包** 两页来回切）该有哪些页。
+ *
+ * 与左栏上面那排、工作区那几页签、对话卡那几枚**同一套口径**：清单、顺序、图标、
+ * 名字都来自声明表；插件往这一族里加一格 ⇒ **它自动出现**（用户 11-25 22:2x：
+ * 「我们允许插件可以往多个地方插入内容」）。
+ */
+export interface SidebarMiddleItem {
+  /** 这一页的身份（开放的：插件带来的 id 宿主不预先知道）。 */
+  id: string
+  icon: string
+  /** 屏上写的名字。 */
+  label: string
+  /** 这一页显示应用的哪一页（`view`）——宿主按它把那一页真的渲染出来。 */
+  view?: string
+}
+
+/** 中段那一块该有哪些页（按声明的顺序）。 */
+export function sidebarMiddleItems(registry: SlotRegistry, t: unknown): SidebarMiddleItem[] {
+  return registry
+    .slotsFor('sidebar', 'middle')
+    .filter(slot => slot.kind === 'panel')
+    .flatMap(slot => {
+      const content = registry.contentFor('sidebar', 'middle', slot.id)
+      if (!content) {
+        return []
+      }
+      return [
+        {
+          id: content.id,
+          icon: content.icon ?? 'symbol-misc',
+          label: resolveSlotLabel(t, content.labelKey) ?? content.label ?? content.id,
+          view: content.view ?? (typeof slot.props.view === 'string' ? slot.props.view : undefined)
+        }
+      ]
+    })
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 工作区页签：从声明派生

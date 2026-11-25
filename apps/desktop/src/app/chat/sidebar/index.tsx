@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { StatusbarControls, type StatusbarItem } from '@/app/shell/statusbar-controls'
+import { viewRenderer } from '@/app/views'
 import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -36,7 +37,7 @@ import {
   type ShellLevel,
   SKILLS_ROUTE
 } from '../../routes'
-import { createSlotRegistry, type SlotRegistry } from '../../shell/slot-registry'
+import { createSlotRegistry, sidebarMiddleItems, type SlotRegistry } from '../../shell/slot-registry'
 import { useSlotRegistry } from '../../shell/slot-registry-context'
 import type { SidebarNavItem } from '../../types'
 
@@ -119,8 +120,13 @@ const NAV_BUTTON_DISABLED = 'cursor-default hover:border-transparent hover:bg-tr
 // `[&_.codicon]:leading-none` and `codiconIcon()` bakes `leading-none` in.
 const NAV_ICON = 'size-4 shrink-0 leading-none text-[color-mix(in_srgb,currentColor_72%,transparent)]'
 
-/** 左栏中段的两种内容（用户 11-01）。 */
-type MiddleView = 'agents' | 'outsourced'
+/**
+ * 左栏中段的内容（用户 11-01）：**身份是开放的**（插件可以往这一族里加一格）。
+ *
+ * 出厂那两格是 `roster`（名单）与 `outsourced`（外包）——**来自 slot 声明表**，
+ * 不是这里写死的两个字符串。
+ */
+type MiddleView = string
 
 interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   /** 底部收敛区那一排（系统工具 + 状态图标）：10-31 起住在左栏底部。 */
@@ -421,13 +427,19 @@ export function ChatSidebar({
   const capabilitiesHref = navItems.find(item => item.id === 'skills')?.route ?? SKILLS_ROUTE
 
   // 中段那枚切换：选中那一格才展开成「图标 + 名词」（参照物是用户给的「终端 / 通用」）。
+  // **清单来自 slot 声明表**（裁定 239 路线第 6 刀；与左栏上面那排、工作区那几页签、
+  // 对话卡那几枚同一套口径）：出厂那两格 ＋ 插件带来的那些。
+  const middleItems = useMemo(() => sidebarMiddleItems(slotRegistry, t), [slotRegistry, t])
   const middleTabs = useMemo<SidebarSegmentItem<MiddleView>[]>(
-    () => [
-      { icon: 'organization', id: 'agents', label: c.tabAgents },
-      { icon: 'send', id: 'outsourced', label: c.tabOutsourced }
-    ],
-    [c.tabAgents, c.tabOutsourced]
+    () => middleItems.map(item => ({ icon: item.icon, id: item.id, label: item.label })),
+    [middleItems]
   )
+
+  // 中段那一格的内容：**出厂那两格是宿主自己的面板**（名单要名册的数据、外包要这个 L2）；
+  // **插件带来的那一格**按它声明的 `view` 渲染（宿主把应用里那一页真的渲染出来）。
+  const middleSlot = middleItems.find(item => item.id === middleView)
+  const MiddlePanel = middleSlot?.view ? viewRenderer(middleSlot.view) : undefined
+  const middleIsHostPanel = middleView === 'agents' || middleView === 'outsourced'
 
   // 底部这两枚是「本 Agent 的」入口，和上面那排图标同一个形状。
   //
@@ -528,7 +540,10 @@ export function ChatSidebar({
 
           {/* 只有中段（名单／外包）滚：导航那几行钉在顶上不动（用户 11-03）。 */}
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            {middleView === 'outsourced' && l2Id ? (
+            {!middleIsHostPanel ? (
+              // 插件带来的那一格：按它声明的 view 把应用里那一页真的渲染出来。
+              MiddlePanel ? <MiddlePanel /> : null
+            ) : middleView === 'outsourced' && l2Id ? (
               <AgentOffloadPanel agentId={l2Id} />
             ) : (
               <div className="flex min-h-full flex-col">
