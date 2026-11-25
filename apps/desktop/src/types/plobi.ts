@@ -1,7 +1,16 @@
 export interface ConfigFieldSchema {
   category?: string
   description?: string
+  option_labels?: Record<string, string>
   options?: unknown[]
+  /**
+   * Where `options` came from. `registry` means the backend computed the
+   * list from its provider registries (built-ins, plugins, command providers
+   * the user declared) — those are authoritative. Anything else means the
+   * list is the schema's own static one, which drifts, so the screen falls
+   * back to its local table for that key.
+   */
+  options_source?: string
   type?: 'boolean' | 'list' | 'number' | 'select' | 'string' | 'text'
 }
 

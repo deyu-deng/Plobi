@@ -5748,7 +5748,38 @@ async def get_defaults():
 
 @app.get("/api/config/schema")
 async def get_schema():
-    return {"fields": CONFIG_SCHEMA, "category_order": _CATEGORY_ORDER}
+    """The config schema, plus the **live** option list for provider keys.
+
+    A provider dropdown must offer the providers this backend actually has:
+    the built-ins, the plugin-registered ones, and the command providers the
+    user declared.  Those lists come from the registries, so they are
+    computed per request.
+
+    Only the registry-backed keys carry ``options_source`` — the schema's
+    own static ``options`` are not authoritative (``approvals.mode`` still
+    offers the retired ``ask``/``yolo``/``deny`` while the real default is
+    ``manual``), so the screen keeps its local table for every other key.
+    """
+    fields = dict(CONFIG_SCHEMA)
+    try:
+        from plobi_cli.tools_config import provider_config_options
+
+        for key, options in provider_config_options().items():
+            entry = fields.get(key)
+            if not entry:
+                continue
+            fields[key] = {
+                **entry,
+                "options": [o["value"] for o in options],
+                "option_labels": {
+                    o["value"]: o["label"] for o in options if o.get("label")
+                },
+                "options_source": "registry",
+            }
+    except Exception as exc:
+        # 失败要出声：静默退回静态表＝「插件装上了、屏上却选不到」那条老病复发。
+        _log.warning("provider options unavailable: %s", exc)
+    return {"fields": fields, "category_order": _CATEGORY_ORDER}
 
 
 _EMPTY_MODEL_INFO: dict = {

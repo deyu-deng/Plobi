@@ -480,10 +480,21 @@ export function ConfigSettings({
         enumOptions={
           key === 'tts.elevenlabs.voice_id'
             ? enumOptionsFor(key, getNested(config, key), config, elevenLabsVoiceOptions ?? undefined)
-            : enumOptionsFor(key, getNested(config, key), config)
+            : // 后端注册表算出来的那几格（tts/stt 的 provider）：后端说它有哪些，
+              // 桌面就渲染那些 —— 插件带来的 provider 自己出现在下拉里。没带
+              // options_source 的键照旧走本地表（后端那份静态清单会过期）。
+              field.options_source === 'registry'
+              ? enumOptionsFor(key, getNested(config, key), config, (field.options ?? []).map(String))
+              : enumOptionsFor(key, getNested(config, key), config)
         }
         onChange={value => updateConfig(setNested(config, key, value))}
-        optionLabels={key === 'tts.elevenlabs.voice_id' ? elevenLabsVoiceLabels : undefined}
+        optionLabels={
+          key === 'tts.elevenlabs.voice_id'
+            ? elevenLabsVoiceLabels
+            : field.options_source === 'registry'
+              ? field.option_labels
+              : undefined
+        }
         schema={field}
         schemaKey={key}
         value={getNested(config, key)}

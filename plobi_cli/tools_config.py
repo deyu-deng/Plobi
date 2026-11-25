@@ -2644,6 +2644,198 @@ def _plugin_tts_providers() -> list[dict]:
     return rows
 
 
+# ---------------------------------------------------------------------------
+# Live provider options for the settings screen
+# ---------------------------------------------------------------------------
+#
+# The settings screen picks "which provider" with a dropdown, and the options
+# it offers must be the providers this backend actually has: a provider that
+# is not registered cannot be selected, and a provider that IS registered —
+# built-in, plugin-registered, or a command provider the user declared — must
+# be.  This is the one place those lists are spelled out; the screen renders
+# them.  The desktop keeps its own table only as a fallback for config keys
+# that have no registry behind them (approval modes, code-execution modes…),
+# because the backend's *static* option lists are not authoritative — they
+# drift (``approvals.mode`` still offers the retired ``ask``/``yolo``/``deny``
+# while the real default is ``manual``).
+
+
+def _tts_picker_labels() -> dict:
+    """Human label per built-in TTS provider, borrowed from the picker table.
+
+    The picker table already spells the built-ins out ("Microsoft Edge TTS",
+    "OpenAI TTS", …); this file must not grow a second name table for the
+    same set.  A *managed* row (the Nous subscription, …) is a billing
+    variant of a provider rather than the provider itself, so it never
+    donates the name — otherwise ``openai`` would be called "Nous".
+    """
+    labels: dict = {}
+    fallback: dict = {}
+    for row in (TOOL_CATEGORIES.get("tts") or {}).get("providers") or []:
+        value = row.get("tts_provider")
+        name = row.get("name")
+        if not (isinstance(value, str) and value and isinstance(name, str) and name):
+            continue
+        if row.get("managed_nous_feature") or row.get("requires_nous_auth"):
+            fallback.setdefault(value, name)
+            continue
+        labels.setdefault(value, name)
+    for value, name in fallback.items():
+        labels.setdefault(value, name)
+    return labels
+
+
+def _collect_provider_options(builtins: list, plugins: list, commands: list) -> list:
+    """Assemble one config key's option list, in the order the screen shows it.
+
+    Built-ins first (the curated picker order), then plugin-registered ones,
+    then the command providers the user declared.  A name seen twice keeps
+    its first entry — built-ins always win over plugins, and the registries
+    enforce that too.
+
+    ``label`` is optional: an empty one means "the provider publishes no
+    human name", and the screen falls back to its own prettifier.
+    """
+    options: list = []
+    seen: set = set()
+
+    def add(value, label, source: str) -> None:
+        name = str(value or "").strip()
+        if not name or name in seen:
+            return
+        seen.add(name)
+        entry = {"value": name, "source": source}
+        text = str(label or "").strip()
+        if text:
+            entry["label"] = text
+        options.append(entry)
+
+    for value, label in builtins:
+        add(value, label, "builtin")
+    for value, label in plugins:
+        add(value, label, "plugin")
+    for value in commands:
+        add(value, "", "command")
+    return options
+
+
+def _tts_provider_options() -> list:
+    """Options for the ``tts.provider`` config key."""
+    labels = _tts_picker_labels()
+
+    builtins: list = []
+    for row in (TOOL_CATEGORIES.get("tts") or {}).get("providers") or []:
+        value = row.get("tts_provider")
+        if isinstance(value, str) and value:
+            builtins.append((value, labels.get(value, "")))
+    try:
+        from tools.tts_tool import BUILTIN_TTS_PROVIDERS
+
+        for name in sorted(BUILTIN_TTS_PROVIDERS):
+            builtins.append((name, labels.get(name, "")))
+    except Exception:
+        pass
+
+    plugins: list = []
+    try:
+        from agent.tts_registry import list_providers
+        from plobi_cli.plugins import _ensure_plugins_discovered
+
+        _ensure_plugins_discovered()
+        for provider in list_providers():
+            name = getattr(provider, "name", None)
+            if not name:
+                continue
+            plugins.append((name, getattr(provider, "display_name", "")))
+    except Exception:
+        pass
+
+    commands: list = []
+    try:
+        from tools.tts_tool import _get_named_provider_config, _is_command_provider_config
+        from plobi_cli.config import load_config_readonly
+
+        # 只读那份：``load_config()`` 会 deepcopy，而这里只读不写。
+        cfg = load_config_readonly() or {}
+        tts_cfg = cfg.get("tts") if isinstance(cfg, dict) else {}
+        tts_cfg = tts_cfg if isinstance(tts_cfg, dict) else {}
+        providers = tts_cfg.get("providers")
+        if isinstance(providers, dict):
+            for name in providers:
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                if _is_command_provider_config(_get_named_provider_config(tts_cfg, name)):
+                    commands.append(name)
+    except Exception:
+        pass
+
+    return _collect_provider_options(builtins, plugins, sorted(commands))
+
+
+def _stt_provider_options() -> list:
+    """Options for the ``stt.provider`` config key."""
+    builtins: list = []
+    try:
+        from tools.transcription_tools import BUILTIN_STT_PROVIDERS
+
+        for name in sorted(BUILTIN_STT_PROVIDERS):
+            builtins.append((name, ""))
+    except Exception:
+        pass
+
+    plugins: list = []
+    try:
+        from agent.transcription_registry import list_providers
+        from plobi_cli.plugins import _ensure_plugins_discovered
+
+        _ensure_plugins_discovered()
+        for provider in list_providers():
+            name = getattr(provider, "name", None)
+            if not name:
+                continue
+            plugins.append((name, getattr(provider, "display_name", "")))
+    except Exception:
+        pass
+
+    commands: list = []
+    try:
+        from tools.transcription_tools import _iter_command_stt_providers
+        from plobi_cli.config import load_config_readonly
+
+        cfg = load_config_readonly() or {}
+        stt_cfg = cfg.get("stt") if isinstance(cfg, dict) else {}
+        stt_cfg = stt_cfg if isinstance(stt_cfg, dict) else {}
+        for name, _cfg in _iter_command_stt_providers(stt_cfg):
+            commands.append(name)
+    except Exception:
+        pass
+
+    return _collect_provider_options(builtins, plugins, sorted(commands))
+
+
+def provider_config_options() -> dict:
+    """Live option lists for the config keys whose choices come from a registry.
+
+    Returned shape::
+
+        {"tts.provider": [{"value": "edge", "label": "Microsoft Edge TTS",
+                            "source": "builtin"}, ...]}
+
+    ``source`` says where an option came from (``builtin`` / ``plugin`` /
+    ``command``) so the screen can show it without a second list.  ``label``
+    is the human name the provider publishes; it is absent when the provider
+    publishes none, and the screen falls back to its own prettifier.
+
+    The user-declared command providers count: the dispatcher honours
+    ``<section>.providers.<name>: type: command``, so a provider the user
+    wired up is a provider that exists — and must be selectable.
+    """
+    return {
+        "tts.provider": _tts_provider_options(),
+        "stt.provider": _stt_provider_options(),
+    }
+
+
 def _visible_providers(
     cat: dict,
     config: dict,
