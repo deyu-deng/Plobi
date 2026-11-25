@@ -224,8 +224,8 @@ TICKETS_SCHEMA = {
             },
             "leg": {
                 "type": "string",
-                "enum": ["router", "expert", "offload", "trigger"],
-                "description": "按这一跳的类型过滤（可选）：router=Agent 之间、expert=专家腿、offload=外包、trigger=外部事件。",
+                "enum": ["router", "virtuoso", "offload", "trigger"],
+                "description": "按这一跳的类型过滤（可选）：router=Agent 之间、virtuoso=专家腿、offload=外包、trigger=外部事件。",
             },
             "limit": {
                 "type": "integer",
@@ -366,6 +366,89 @@ def live_names() -> list[str]:
     except Exception:  # noqa: BLE001
         return []
     return [row.name for row in registry.agents.values() if not getattr(row, "archived", False)]
+
+
+#: `to` 这一格上「当刻能派给谁」那段追加文字的标记。刷新是**就地**改写，
+#: 按它把上一段切掉——底稿永远只剩一层，不留标记就会一层层叠上去。
+_RECIPIENT_BLOCK_MARKER = "【当刻能派给谁】"
+
+#: 主人本人那几种写法（裁定 201）。``_USER_TARGETS`` 是集合（无序），
+#: 枚举值要**稳定有序** ⇒ 这里另存一份有序写法，并按 ``_USER_TARGETS`` 校准。
+_USER_TARGET_SPELLINGS = ("用户", "主人", "我", "user")
+
+
+def _user_target_spellings() -> list[str]:
+    """主人本人那几种写法——以 ``_USER_TARGETS`` 为准，顺序稳定。"""
+    ordered = [t for t in _USER_TARGET_SPELLINGS if t in _USER_TARGETS]
+    extra = sorted(t for t in _USER_TARGETS if t not in ordered)
+    return ordered + extra
+
+
+def _candidate_label(name: str, entry) -> str:
+    """名册那一行的可读标签：``slug（显示名 · 分类）``。缺哪一格就省哪一格。"""
+    display = str(getattr(entry, "display_name", "") or "").strip()
+    category = str(getattr(entry, "category", "") or "").strip()
+    if display and display != name:
+        if category:
+            return f"{name}（{display} · {category}）"
+        return f"{name}（{display}）"
+    if category:
+        return f"{name}（{category}）"
+    return name
+
+
+def refresh_recipient_enum(names: list[str] | None = None) -> list[str]:
+    """把「当刻能派给谁」就地写进 ``say``／``ask`` 的 ``to`` 参数 schema。
+
+    **为什么就地改写而不是重新造一份 dict**（裁定 237 §3.4b）：
+    ``tools/registry.py`` 的 ``get_definitions()`` 只做**顶层浅拷贝**
+    （``{**entry.schema, "name": entry.name}``），``parameters.properties.to``
+    仍是**同一个对象** ⇒ 这里改了就看得见。
+
+    - 枚举值 = 当刻 ``live_names()`` ＋ 主人本人那几种写法（裁定 201：
+      ``to=用户`` 收得到话，**不在名册里**，不许被 enum 说成非法）。
+    - 描述里带**显示名与分类**（用户原话要求），**枚举值本身仍是纯 slug**。
+    - **空名册不许写出 ``"enum": []``**：空了就原样不动（保留上一次的非空
+      枚举；一次都没刷过就干脆没有这个键）。空枚举会**主动误导模型**说
+      「没有能派给谁」——那比没有 enum 更坏。
+
+    ``names`` 给了就用给的（省一次名册读）；不给就当刻自己读。
+    """
+    if names is None:
+        names = list(live_names())
+    else:
+        names = list(names)
+    if not names:
+        # 空名册：不动 enum、也不动 description（留着上一份非空的那套）。
+        return []
+    try:
+        registry = _roster()
+    except Exception:  # noqa: BLE001 - 名册读不动也别把这条路堵死
+        registry = None
+    labels = []
+    for name in names:
+        entry = None
+        if registry is not None:
+            try:
+                entry = registry.get(name)
+            except Exception:  # noqa: BLE001
+                entry = None
+        labels.append(_candidate_label(name, entry))
+    enum_values = list(names) + _user_target_spellings()
+    body = (
+        f"{_RECIPIENT_BLOCK_MARKER}\n"
+        f"能派给谁（名册里没归档的）：{'、'.join(labels)}。\n"
+        "枚举值就是这些纯名字；主人本人另有四种写法「用户／主人／我／user」"
+        "（`say` 收得到；`ask` 只问 Agent，要交给主人请改用 `say`）。\n"
+        "这一格**只是给你看的清单**，不拦人：旧写法（别名）照旧找得到人。"
+    )
+    for schema in (SAY_SCHEMA, ASK_SCHEMA):
+        to = schema["parameters"]["properties"]["to"]
+        to["enum"] = list(enum_values)
+        current = str(to.get("description", "") or "")
+        base = current.split(_RECIPIENT_BLOCK_MARKER, 1)[0].rstrip()
+        to["description"] = f"{base}\n{body}"
+    return enum_values
 
 
 def resolve_recipient(name: str):
@@ -531,6 +614,37 @@ def _result(ok: bool, **fields: Any) -> str:
     return json.dumps({"ok": ok, **fields}, ensure_ascii=False)
 
 
+_ASK_WAIT_POLL_SECONDS = 0.5
+
+
+def _ask_wait_seconds() -> float:
+    """等回答的上限。一个旋钮，环境变量可拧；下限 30 秒，默认与旧 ask 预算同量级。"""
+    try:
+        return max(30.0, float(os.environ.get("PLOBI_ASK_WAIT_SECONDS", "600")))
+    except (TypeError, ValueError):
+        return 600.0
+
+
+def _wait_for_answer(entry, session_id: str, since_id: int) -> tuple[str, int]:
+    """盯着一屏等它写出**地板之后**的第一条回答，等到或超时就收手。
+
+    只认 ``id > since_id``：这一问之前就躺在那儿的最后一条 assistant 绝不能被
+    当成本次答复——「六问逐字相同」那段 11-24 长文正是这么来的。
+    """
+    deadline = time.time() + _ask_wait_seconds()
+    while True:
+        try:
+            answer, message_id = AA._session_answer(entry, session_id, since_id=since_id)
+        except Exception:  # noqa: BLE001 - 读一次读不到不算错，接着等
+            answer, message_id = "", 0
+        answer = (answer or "").strip()
+        if answer:
+            return answer, message_id
+        if time.time() >= deadline:
+            return "", 0
+        time.sleep(_ASK_WAIT_POLL_SECONDS)
+
+
 def _deliver_or_fail(to: str, parts: Any) -> tuple[Optional[object], Optional[str], Optional[str]]:
     """解析 → 组装 → 投递。返回 ``(entry, text, 错误负载)``，三者恰好一个为 ``None``。"""
     text, parts_error = _parts_to_text(parts)
@@ -673,6 +787,12 @@ def handle_ask(args: dict, **kwargs) -> str:
     `--resume` 到对方那一屏，问话与回答都写进那一屏。**叫不动**（构建失败 / 拒 /
     超时 / 非零退出，且那一屏一条消息都没多出来）才回退成一次投递，让人至少看得见
     这句话；已经落过就不补，那会把一段话说成两段。
+
+    2026-11-25 补两处：① 答案加了「本次提问」的地板（`since_id`，见
+    `agent_ask._session_max_message_id`）——子进程一条新消息都没写时不再拿上一轮
+    旧稿顶，宁可如实报没答；② 答上来之后发一条 `user.notice`，让它在你这一屏露个脸。
+    回执**不进 messages 表**：这一趟跑在 tool 调用当中，插进去会落在
+    assistant(tool_calls) 与 tool(result) 之间，下一次请求直接被 provider 判 400。
     """
     args = args if isinstance(args, dict) else {}
     sender = current_agent_name(kwargs.get("session_id") or "")
@@ -696,23 +816,23 @@ def handle_ask(args: dict, **kwargs) -> str:
         domain_error, domain_owners = _domain_gate(args, entry)
         if domain_error:
             return domain_error
-        db = _session_db()
-        session_id = db.latest_conversational_session_for_agent(entry.name) or ""
-        if not session_id:
-            # 那一屏还不存在：开一条空的，让子进程那一问成为它的第一条。先 _deliver
-            # 再 resume 会把同一句话落成两条。
-            session_id = "chan_" + uuid.uuid4().hex[:16]
-            db.create_session(session_id, source="agent_message", agent_id=entry.name)
-        before = db.message_count(session_id=session_id)
+        reply_to = str(args.get("reply_to") or "")
+        # 与 say 同一条投递通道（11-25 用户裁定）：真问话由 ``_deliver`` 落成**一条**
+        # ``role=user``、``asked_by``/``kind`` 齐全的消息。旧写法把落库交给子进程的
+        # ``-q``（唤醒提示词）外加一个「没落就补发」的兜底，同一句话于是落成两条
+        # （state.db 9106/8826 同内容重复实证）。
+        session_id, message_id = _deliver(
+            entry, text, sender=sender, reply_to=reply_to
+        )
+        # 地板在**叫醒之前**取：叫醒之后写进这一屏的都算这一问的产出。
+        since_id = AA._session_max_message_id(session_id)
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"ask 失败：{exc}")
 
-    # 裁定 216：ask 也是一跳，同样在起子进程之前开授权票。ask 是同步问答，
-    # 子进程才把问话写进那一屏，所以这里拿不到 message_id——Thread 续接以
-    # say 返回的 message_id 为准（见 SAY_SCHEMA.reply_to）。
-    reply_to = str(args.get("reply_to") or "")
+    # 裁定 216：ask 也是一跳。问话现在先落库，所以票上终于有真 message_id 了。
     ticket = _router_ticket(
-        sender, entry, "ask", text, session_id=session_id, reply_to=reply_to,
+        sender, entry, "ask", text,
+        session_id=session_id, message_id=message_id, reply_to=reply_to,
         domain=domain, domain_owners=domain_owners,
     )
     allowed, blocked_note = _round_allowed(ticket, "ask")
@@ -721,37 +841,60 @@ def handle_ask(args: dict, **kwargs) -> str:
                        session_id=session_id, **_ticket_fields(ticket))
 
     started = time.time()
-    answer, failure = "", None
-    try:
-        raw = AA.handle_agent_ask(
-            {"agent": entry.name, "question": text},
-            entry=entry,
-            resume_session=session_id,
-            asker=sender,
-        )
-        try:
-            parsed = json.loads(raw)
-        except (TypeError, ValueError):
-            parsed = None
-        if isinstance(parsed, dict):
-            answer = str(parsed.get("answer") or parsed.get("content") or "")
-            if parsed.get("ok") is False:
-                failure = {k: v for k, v in parsed.items() if k != "ok"}
+    # 叫醒走 say 那一份同一根唤醒手（内联优先、子进程兜底，四条护栏都在 wake.py），
+    # 不再自带一套 spawn：对方那一屏要是正开着，这一问直接进它活着的上下文，
+    # 不必冷启动 resume 一整段历史（长会话 502 的来路正是这条路）。
+    woke, wake_note = WK.wake_agent(
+        entry, session_id, sender=sender,
+        ticket_id=ticket.id if ticket is not None else "",
+        expect_answer=True,
+    )
+    answer, answer_message_id = "", 0
+    failure: Optional[dict] = None
+    if not woke:
+        failure = {
+            "error": f"「{entry.name}」没被叫醒：{wake_note}（问话已经送到它那一屏了）"
+        }
+    else:
+        answer, answer_message_id = _wait_for_answer(entry, session_id, since_id)
         if not answer:
-            answer = str(raw)
-    except Exception as exc:  # noqa: BLE001 - 问不到也要把「话已送到」说清楚
-        failure = {"error": f"「{entry.name}」这一轮没答上来：{exc}"}
+            # 地板之后一条新 assistant 都没有 ⇒ 它这一趟没产出，不许拿旧稿顶。
+            failure = {
+                "error": f"「{entry.name}」{int(_ask_wait_seconds())} 秒内没往那一屏写回答——"
+                         "问话已经送到了，但它这一趟没产出。"
+            }
 
-    delivered_id = ""
-    if failure is not None:
+    # 这里原来有个「数一数落没落，没落就补发一条」的兜底：数得准是补一条，
+    # 数不准（子进程还没 flush 完就返回）就是**同一句话第二条**。问话现在在
+    # 开头就已经落好了，兜底连存在的前提都没有——整段删掉，不再补发。
+
+    # 界面回执：ask 的问答原来只活在 tool result 里，坐在指挥屏前的人一个字也看不见
+    # （用户 11-25 点名要它出现）。这里走 `user.notice` 事件，**不动 messages 表**——
+    # 这一趟是在 tool 调用**当中**跑的，此刻往当前会话插一条消息会落在
+    # assistant(tool_calls) 与 tool(result) 之间，下一次请求会被严格的 provider 判成 400。
+    # 问答本身留在对方那一屏（子进程 --resume 写的），这里只负责让它在你这屏露个脸。
+    notified = False
+    asker_session = str(kwargs.get("session_id") or "").strip()
+    if failure is None and answer and asker_session:
         try:
-            landed = db.message_count(session_id=session_id) > before
-        except Exception:  # noqa: BLE001 - 数不清就当作已落，宁可少发一条也不要发两条
-            landed = True
-        if not landed:
-            _session, delivered_id = _deliver(entry, text, sender=sender)
+            # 就地导入：`notify_user` 眼下只活在 `_deliver_to_user` 的函数体内（`:638`），
+            # 模块级没有这个名字——这里不就地取就是 NameError。
+            from plobi_user_inbox import notify_user as _notify_user
 
+            notified = bool(
+                _notify_user(
+                    answer[:400],
+                    title=f"{entry.name} 答",
+                    session_id=asker_session,
+                )
+            )
+        except Exception:  # noqa: BLE001 - 通知是旁路，不许把答上来的话弄丢
+            logger.debug("ask: notice unavailable", exc_info=True)
     fields = _ticket_fields(ticket)
+    if answer_message_id:
+        fields["answer_message_id"] = answer_message_id
+    if notified:
+        fields["notified"] = True
     if domain:
         fields["domain"] = domain
         fields["domain_owners"] = domain_owners
@@ -777,16 +920,17 @@ def handle_ask(args: dict, **kwargs) -> str:
         "ts": datetime.now().replace(microsecond=0).isoformat(),
         "parts": text,
         "session_id": session_id,
-        "message_id": delivered_id,
+        "message_id": message_id,
         "waited_seconds": round(time.time() - started, 2),
         "answer": answer[:_PART_MAX_CHARS],
         **fields,
     })
     if failure is not None:
-        return _result(False, delivered=bool(delivered_id), to=entry.name,
-                       session_id=session_id, **fields, **failure)
+        return _result(False, delivered=bool(message_id), to=entry.name,
+                       session_id=session_id, message_id=message_id,
+                       **fields, **failure)
     return _result(True, mode="ask", to=entry.name, session_id=session_id,
-                   answer=answer, **fields)
+                   message_id=message_id, answer=answer, **fields)
 
 
 def handle_ticket_report(args: dict, **kwargs) -> str:
@@ -1274,5 +1418,15 @@ def handle_lesson_revoke(args: dict, **kwargs) -> str:
 
 
 def check_channel_available() -> bool:
-    """名册里一条可发的人都没有 ⇒ 零 schema 足迹（Footprint Ladder rung 3）。"""
-    return bool(live_names())
+    """名册里一条可发的人都没有 ⇒ 零 schema 足迹（Footprint Ladder rung 3）。
+
+    顺带把「当刻能派给谁」**就地**写进 ``say``／``ask`` 的 ``to``（裁定 237）：
+    派工的人得看得见自己能派给谁，不必另外查名册。
+
+    **已知滞后**（写清，不藏）：``tools/registry.py`` 的 ``_check_fn_cached``
+    把结果缓存 30 秒（``_CHECK_FN_TTL_SECONDS``）⇒ 缓存命中时本函数根本不执行
+    ⇒ **enum 最坏滞后 30 秒**。名册刚变的一瞬可能拿旧清单。
+    """
+    names = live_names()
+    refresh_recipient_enum(names)
+    return bool(names)

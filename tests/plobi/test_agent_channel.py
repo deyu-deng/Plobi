@@ -250,117 +250,152 @@ def test_say_delivery_failure_is_not_a_fake_success(CH, monkeypatch, db):
 # ─── ask：投递一次，等，超时不丢「已送到」 ──────────────────────────────────
 
 
-def test_ask_resumes_the_recipient_screen_and_answers_there(CH, monkeypatch, db):
-    """断点②「答落在另一屏」：子进程必须 --resume 到对方那一屏，且问话与答案都在那儿。"""
+def _stub_answer(monkeypatch, CH, *answers):
+    """把「叫醒成功 + 这一趟的答复」摆好，不真起子进程、不真等。
+
+    2026-11-25 起 ask 与 say 共用 ``_deliver`` 落库、再经 ``wake_agent`` 叫醒、
+    由 ``_wait_for_answer`` 轮询取答：替身只要盖住「地板」和「地板之后写出来的
+    那一条」，其余都走真代码。
+    """
+    monkeypatch.setattr(CH.WK, "wake_agent", lambda *a, **kw: (True, ""))
+    monkeypatch.setattr(CH.AA, "_session_max_message_id", lambda sid: 100)
+    monkeypatch.setattr(CH, "_ask_wait_seconds", lambda: 0.01)
+    queue = list(answers)
+
+    def _answer(entry, session_id, since_id=0):
+        return queue.pop(0) if queue else ("", 0)
+
+    monkeypatch.setattr(CH.AA, "_session_answer", _answer)
+
+
+def test_ask_delivers_into_the_recipients_own_screen(CH, monkeypatch, db):
+    """断点②「答落在另一屏」：问话与答复都要在对方那一屏，不另起一条新会话。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
     db.existing = [{"session_id": "chan_nymo_screen"}]
-    seen: dict = {}
-
-    def _fake_ask(payload, *, entry=None, resume_session="", asker=""):
-        seen.update(payload=payload, entry=getattr(entry, "name", None),
-                    resume_session=resume_session, asker=asker)
-        db.appended.append(("chan_nymo_screen", "user", "导出排期", "Aura"))
-        db.appended.append(("chan_nymo_screen", "assistant", "还剩测试没补。", ""))
-        return json.dumps({"ok": True, "answer": "还剩测试没补。", "session_id": "chan_nymo_screen"})
-
-    monkeypatch.setattr(CH.AA, "handle_agent_ask", _fake_ask)
-
+    _stub_answer(monkeypatch, CH, ("还剩测试没补。", 42))
+    woken: dict = {}
+    monkeypatch.setattr(
+        CH.WK, "wake_agent",
+        lambda entry, sid, **kw: woken.update(
+            entry=entry.name, session_id=sid, expect_answer=kw.get("expect_answer")
+        ) or (True, ""),
+    )
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["导出排期"]}))
-
     assert out["ok"] is True and out["session_id"] == "chan_nymo_screen"
     assert "还剩测试没补" in out["answer"]
-    assert seen["resume_session"] == "chan_nymo_screen", "答要落回那一屏，不是新开一条"
-    assert seen["entry"] == "Nymo", "收件人由 resolve_recipient 判一次，交给下层的应是那一行"
+    assert [row[0] for row in db.appended] == ["chan_nymo_screen"], "问话就落这一屏"
+    assert woken["entry"] == "Nymo", "收件人由 resolve_recipient 判一次，交给下层的应是那一行"
+    assert woken["session_id"] == "chan_nymo_screen", "叫醒的必须是它那一屏，不是新建的"
+    assert woken["expect_answer"] is True, "ask 叫醒时要说清「它在等答复」"
+
 
 
 def test_ask_does_not_post_the_question_twice(CH, monkeypatch, db):
-    """成功那一趟不许再 _deliver：问话是子进程自己那一轮，投第二次就是说两遍。"""
+    """问话只准落一条：旧的「没落就补发」已删，同一句不会被说成两遍。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
     db.existing = [{"session_id": "chan_nymo_screen"}]
-    monkeypatch.setattr(CH.AA, "handle_agent_ask",
-                        lambda payload, **kw: json.dumps({"ok": True, "answer": "好"}))
-
+    _stub_answer(monkeypatch, CH, ("好", 43))
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
-
     assert out["ok"] is True
-    assert db.appended == [], "投递只做一次——这一趟一次都不许由我们补发"
+    assert len(db.appended) == 1, "投递只做一次——这一趟一次都不许补发"
+    assert db.appended[0][0] == "chan_nymo_screen" and db.appended[0][1] == "user"
+    assert "在吗" in db.appended[0][2]
+
 
 
 def test_ask_opens_a_screen_when_the_recipient_has_none(CH, monkeypatch, db):
-    """对方还没有可对话会话：开一条空的再 resume 过去，不能让它落到分身自起的新会话。"""
+    """对方还没有可对话会话：先开一条，问话、叫醒、答复都落这一条。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
-    seen: list[str] = []
-    monkeypatch.setattr(CH.AA, "handle_agent_ask",
-                        lambda payload, **kw: seen.append(kw["resume_session"]) or json.dumps({"ok": True, "answer": "好"}))
-
+    _stub_answer(monkeypatch, CH, ("好", 44))
+    woken: dict = {}
+    monkeypatch.setattr(
+        CH.WK, "wake_agent",
+        lambda entry, sid, **kw: woken.update(sid=sid) or (True, ""),
+    )
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
-
     assert out["ok"] is True
     assert len(db.created) == 1 and db.created[0][2] == "Nymo"
-    assert seen[0] == db.created[0][0]
+    assert woken["sid"] == db.created[0][0]
+    assert out["session_id"] == db.created[0][0]
 
 
-def test_ask_failure_with_nothing_landed_delivers_once(CH, monkeypatch, db):
-    """问不到 ≠ 没送到：那一屏一条消息都没多出来时补投递一次，delivered=True 要说清。"""
+
+def test_ask_still_counts_as_delivered_when_it_cannot_be_woken(CH, monkeypatch, db):
+    """叫不醒 ≠ 没送到：问话在叫醒之前就落好了，delivered 必须为真。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
     db.existing = [{"session_id": "chan_nymo_screen"}]
-    monkeypatch.setattr(CH.AA, "handle_agent_ask",
-                        lambda payload, **kw: json.dumps({"ok": False, "error": "起不来"}))
-
+    monkeypatch.setattr(CH.AA, "_session_max_message_id", lambda sid: 100)
+    monkeypatch.setattr(CH.WK, "wake_agent", lambda *a, **kw: (False, "起手就退了"))
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
-
     assert out["ok"] is False and out["delivered"] is True, "话已经送到，这个事实不许被错误吞掉"
     assert len(db.appended) == 1 and db.appended[0][0] == "chan_nymo_screen"
+    assert "起手就退" in json.dumps(out, ensure_ascii=False)
+
 
 
 def test_ask_timeout_after_the_child_wrote_does_not_double_post(CH, monkeypatch, db):
-    """子进程已经落过话（超时/半句）时不再补投递——那一屏已经有这句问话了。"""
+    """叫醒了却没往那一屏写回答：如实报没答，且不许再补一条问话。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
     db.existing = [{"session_id": "chan_nymo_screen"}]
-
-    def _slow(payload, **kw):
-        db.appended.append(("chan_nymo_screen", "user", "在吗", "Aura"))
-        return json.dumps({"ok": False, "error": "63 秒内没答完", "partial_answer": "半句"})
-
-    monkeypatch.setattr(CH.AA, "handle_agent_ask", _slow)
-
+    _stub_answer(monkeypatch, CH)  # 空队列 ⇒ 地板之后没有新回答
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
+    assert out["ok"] is False and out["delivered"] is True
+    assert len(db.appended) == 1, "只许我们那一问，不许补第二遍"
+    assert "没往那一屏写回答" in json.dumps(out, ensure_ascii=False)
 
-    assert out["ok"] is False and out["delivered"] is False
-    assert len(db.appended) == 1, "只许有子进程那一条，不许我们补第二遍"
-    assert "没答完" in json.dumps(out, ensure_ascii=False)
 
 
 def test_ask_reaches_a_non_project_row_the_role_gate_refuses(CH, monkeypatch, db):
     """断点①的回归：一个普通 L2（role=principal）say 发得出，ask 也必须问得到。
-
-    现读旧形状：`say` 的名单 24 行、这一侧 23 行，差的正是 agenda ——0.06 秒就被
-    `plobi/agents/registry.py:1142` 那道角色闸拒掉。两枚工具对同一个人不许各判一次。
-    """
+    旧形状两侧各判一次、名单差一行（差的正是 agenda），0.06 秒就被角色闸拒掉。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("agenda", role="principal"))
     db.existing = [{"session_id": "chan_agenda_screen"}]
-    got: list = []
-    monkeypatch.setattr(CH.AA, "handle_agent_ask",
-                        lambda payload, *, entry=None, **kw: got.append(getattr(entry, "name", None)) or json.dumps({"ok": True, "answer": "收到"}))
-
+    _stub_answer(monkeypatch, CH, ("收到", 45))
+    woken: list = []
+    monkeypatch.setattr(
+        CH.WK, "wake_agent",
+        lambda entry, sid, **kw: woken.append(entry.name) or (True, ""),
+    )
     out = json.loads(CH.handle_ask({"to": "agenda", "parts": ["早报排一下"]}))
-
     assert out["ok"] is True, "不该再被角色闸拒"
-    assert got == ["agenda"]
+    assert woken == ["agenda"]
+
 
 
 def test_ask_trace_records_the_wait(CH, monkeypatch, db, trace):
     """ask 的痕比 say 多记等了多久与答案。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
     db.existing = [{"session_id": "chan_nymo_screen"}]
-    monkeypatch.setattr(CH.AA, "handle_agent_ask",
-                        lambda payload, **kw: json.dumps({"ok": True, "answer": "好"}))
-
+    _stub_answer(monkeypatch, CH, ("好", 46))
     CH.handle_ask({"to": "Nymo", "parts": ["在吗"]})
-
     rows = trace()
     assert len(rows) == 1 and rows[0]["kind"] == "ask"
     assert "waited_seconds" in rows[0] and rows[0]["answer"] == "好"
+
+
+def test_ask_never_replays_an_answer_from_before_the_question(CH, monkeypatch, db):
+    """地板（since_id）必须带到取答案那一刻：地板之后没有新回答就报没答。
+
+    「六问逐字相同」那串 11-24 长文就是拿上一轮的旧稿顶出来的——旧实现按
+    ``ORDER BY id DESC LIMIT 1`` 取最后一条 assistant，没有「本次提问之后」这个下界。
+    """
+    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
+    db.existing = [{"session_id": "chan_nymo_screen"}]
+    monkeypatch.setattr(CH.AA, "_session_max_message_id", lambda sid: 9106)
+    monkeypatch.setattr(CH.WK, "wake_agent", lambda *a, **kw: (True, ""))
+    monkeypatch.setattr(CH, "_ask_wait_seconds", lambda: 0.01)
+    seen: dict = {}
+
+    def _answer(entry, session_id, since_id=0):
+        seen["since_id"] = since_id
+        return ("", 0)  # 旧稿被地板挡住，一条新的都没有
+
+    monkeypatch.setattr(CH.AA, "_session_answer", _answer)
+    out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
+    assert seen["since_id"] == 9106, "取答案必须带本次提问的地板"
+    assert out["ok"] is False
+    assert "answer" not in out, "没有新回答就不许回放旧稿"
+
 
 
 # ─── 同一只手：--resume 与署名 ─────────────────────────────────────────────

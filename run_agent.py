@@ -276,6 +276,9 @@ _MAX_TOOL_WORKERS = 8
 #: 那是把猜测显示成事实（用户 10-13 拍的那格）。
 ASKED_BY_ENV = "PLOBI_ASKED_BY"
 KIND_ENV = "PLOBI_MESSAGE_KIND"
+# 唤醒轮的那句提示词只是启动信号，不是用户说的话：派生方置 1，落库时跳过
+# （真问话由发问方已经落好的那一条承载，见 channel._deliver）。
+EPHEMERAL_PROMPT_ENV = "PLOBI_EPHEMERAL_PROMPT"
 
 
 def resolve_asked_by(message: dict = None, env: dict = None) -> Optional[str]:
@@ -1916,6 +1919,18 @@ class AIAgent:
                     msg[_DB_PERSISTED_MARKER] = True
                     continue
                 role = msg.get("role", "unknown")
+                # 唤醒轮的提示词不落库（11-25）：它只是「去处理你那一屏最上面那条」
+                # 的启动信号，真正的问话已经由发问方落成 asked_by/kind 齐全的那一条。
+                # 落下去就是同一件事在库里躺两份，而且它还顶着一个用户气泡的形状。
+                # 只认本轮那一条 user（_persist_user_message_idx），索引拿不到就照旧落。
+                if (
+                    role == "user"
+                    and _ov_idx is not None
+                    and _msg_idx == _ov_idx
+                    and os.environ.get(EPHEMERAL_PROMPT_ENV) == "1"
+                ):
+                    msg[_DB_PERSISTED_MARKER] = True
+                    continue
                 content = msg.get("content")
                 _row_timestamp = msg.get("timestamp")
                 # Apply the persist override to THIS row's written values only
@@ -5784,10 +5799,10 @@ class AIAgent:
             tasks=_strip_model_hidden_task_fields(function_args.get("tasks")),
             max_iterations=function_args.get("max_iterations"),
             role=function_args.get("role"),
-            # 顶层 expert：单任务派工时也要落成职责 + 工具面。漏了这一行，
-            # 模型写 expert="software" 会被静默丢掉——子智能体照旧拿父的工具面，
+            # 顶层 virtuoso：单任务派工时也要落成职责 + 工具面。漏了这一行，
+            # 模型写 virtuoso="software" 会被静默丢掉——子智能体照旧拿父的工具面，
             # 既不是专家（没侧记、进不了左栏专家那一格），也没有 terminal。
-            expert=function_args.get("expert"),
+            virtuoso=function_args.get("virtuoso"),
             background=(not _is_subagent),
             parent_agent=self,
         )
