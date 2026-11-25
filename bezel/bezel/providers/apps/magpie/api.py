@@ -33,6 +33,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -279,6 +280,25 @@ class MagpieProvider(Provider):
         self.served_models = ()
         self._health = (True, "ok", time.time())
         return None
+
+    async def refresh_unclaimed(self, claimed: set[str]) -> None:
+        """Publish what the gateway serves but no vendor leg claims.
+
+        magpie's routing groups (`auto/glm-5.3`) belong to no provider card. They are
+        still served by the gateway, so they belong in our catalogue — under magpie's
+        own id, because that is the name the gateway answers to.
+        """
+        rows = await self.read_catalogue()
+        if not rows:
+            return
+        mine: dict[str, dict] = {}
+        for mid, row in rows.items():
+            head = mid.split("/", 1)[0]
+            if head in claimed:
+                continue
+            mine[mid] = row
+        self._model_rows = mine
+        self.served_models = tuple(mine)
 
     # --- the provider list -------------------------------------------------
     #: Their HTTP surface has no endpoint for the *roster* — it serves models and
@@ -738,17 +758,104 @@ class MagpieProvider(Provider):
     #: per consecutive failure, which is the right shape for a gap measured in seconds.
     NOT_READY_COOLDOWN = 2.0
 
-    def _classify_upstream(self, status: int, oai_req: dict) -> UpstreamError | None:
+    #: What a vendor means when it refuses *this model for this account*. Measured
+    #: wordings (2026-11-24): Devin "This model is no longer available for your
+    #: account ... (HTTP 502)", opencode "entitlement/forbidden" (403). None of these
+    #: change by waiting, so none of them may be dressed up as "retry in a moment".
+    _VENDOR_REFUSAL_HINT = re.compile(
+        r"no longer available|not available for your account|entitlement|forbidden|"
+        r"model_not_found|does not exist|not subscribed|no such model|"
+        r"未开通|无权限|不可用|不存在",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _upstream_detail(body: str | None, limit: int = 400) -> str:
+        """The upstream's own words, as short as they can be while still useful."""
+        if not body:
+            return ""
+        text = str(body).strip()
+        if not text:
+            return ""
+        payload = None
+        try:
+            payload = json.loads(text)
+        except Exception:  # noqa: BLE001 - not every error body is JSON
+            payload = None
+        if isinstance(payload, dict):
+            err = payload.get("error")
+            if isinstance(err, dict):
+                for key in ("message", "detail", "code"):
+                    msg = err.get(key)
+                    if isinstance(msg, str) and msg.strip():
+                        return msg.strip()[:limit]
+            elif isinstance(err, str) and err.strip():
+                return err.strip()[:limit]
+            detail = payload.get("detail")
+            if isinstance(detail, str) and detail.strip():
+                return detail.strip()[:limit]
+        return " ".join(text.split())[:limit]
+
+    def _vendor_refusal(
+        self, status: int, detail: str, oai_req: dict
+    ) -> UpstreamError | None:
+        """A vendor saying "this model is gone for this account" is not a bad gateway.
+
+        It is a *404*: the id is in the roster, the account may not use it, and no amount
+        of retrying will change that. Reporting it as 502/503 keeps the id selectable and
+        makes every turn pay the same failure — which is exactly how a picker ends up
+        offering models that cannot serve an agent turn.
+        """
+        if status == 200 or not detail:
+            return None
+        if not self._VENDOR_REFUSAL_HINT.search(detail):
+            return None
+        model = str(oai_req.get("model") or "")
+        return UpstreamError(
+            404,
+            f"magpie: the upstream refused {model or 'this model'} for the current "
+            f"account ({status}): {detail}",
+            retryable=False,
+        )
+
+    def _classify_upstream(
+        self, status: int, oai_req: dict, body: str | None = None
+    ) -> UpstreamError | None:
         """Map a gateway status to what it *means*, not just what it says."""
+        detail = self._upstream_detail(body)
         if status in self._NOT_READY_STATUSES:
+            # A 5xx here is *usually* the sidecar restarting its plugin host, but not
+            # always: when magpie forwards a vendor refusal it forwards the vendor's
+            # status too. Measured 2026-11-24: `devin/swe-2` answers 502 carrying "This
+            # model is no longer available for your account", and the old wording sent
+            # the client into a retry loop over a model that will never answer. When the
+            # body says something structured, believe the body over the status code.
+            refusal = self._vendor_refusal(status, detail, oai_req)
+            if refusal is not None:
+                return refusal
             return UpstreamError(
                 503,
                 f"magpie: the local gateway is not ready (it answered {status}) — it is "
-                "most likely restarting its plugin host; retry in a moment",
+                "most likely restarting its plugin host; retry in a moment"
+                + (f" [upstream body: {detail}]" if detail else ""),
                 retryable=True,
                 cooldown=self.NOT_READY_COOLDOWN,
             )
-        return self._classify_http(status) or self._not_served(status, oai_req)
+        known = self._classify_http(status) or self._not_served(status, oai_req)
+        refusal = self._vendor_refusal(status, detail, oai_req)
+        if known is not None:
+            if not detail or detail in str(known):
+                return known
+            # Keep the class of the failure, but stop throwing away the only sentence
+            # that explains it: the client quotes the message and a user can act on it.
+            return UpstreamError(
+                known.status,
+                f"{known} [upstream body: {detail}]",
+                retryable=known.retryable,
+                reauth=known.reauth,
+                cooldown=known.cooldown,
+            )
+        return refusal
 
     def _unreachable(self, err: Exception) -> UpstreamError:
         """Nothing on that port: not running yet, or the sidecar is being restarted."""
@@ -785,7 +892,7 @@ class MagpieProvider(Provider):
             )
         except httpx.HTTPError as err:
             raise self._unreachable(err) from err
-        err = self._classify_upstream(res.status_code, oai_req)
+        err = self._classify_upstream(res.status_code, oai_req, res.text)
         if err is not None:
             raise err
         try:
@@ -831,7 +938,15 @@ class MagpieProvider(Provider):
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         body = self._body(oai_req, stream=True)
         async with self._open_stream(body) as res:
-            err = self._classify_upstream(res.status_code, oai_req)
+            # Never read the body on a 200 here (that would swallow the event stream);
+            # on anything else reading it is the only way to carry the vendor's own
+            # words into the error the client finally shows.
+            detail: str | None = None
+            if res.status_code != 200:
+                with contextlib.suppress(Exception):
+                    await res.aread()
+                    detail = res.text
+            err = self._classify_upstream(res.status_code, oai_req, detail)
             if err is not None:
                 raise err
             async for line in res.aiter_lines():
@@ -1025,8 +1140,13 @@ class MagpieProviderLeg(MagpieProvider):
         return True, "ok"
 
     # --- the catalogue -----------------------------------------------------
-    async def refresh_models(self, acc: Account) -> list[str] | None:
+    async def refresh_models(self, acc: Account | None) -> list[str] | None:
         """This provider's models, read from magpie's own catalogue.
+
+        `acc` may be ``None``: the roster comes from magpie, not from our seat. A
+        vendor we hold no seat for still has models listed, and hiding them made the
+        picker disagree with the truth source (user, 11-24: 「我可不想下次在模型框里面
+        选择模型却干不了活」).
 
         Their rows carry **their** provider id; we publish **ours** in front of
         the model name, so a rename upstream never changes the ids the user's

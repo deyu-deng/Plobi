@@ -16,6 +16,7 @@ canonical model.
 
 from __future__ import annotations
 
+import contextlib
 import asyncio
 import fnmatch
 import logging
@@ -283,9 +284,34 @@ class Registry:
             acc = next((a for a in leg.accounts if a.schedulable()), None)
             if acc is not None:
                 await leg.refresh_models(acc)
+            else:
+                # No schedulable seat is not the same as "magpie does not serve this
+                # vendor": the catalogue still lists its rows (measured 2026-11-24:
+                # Devin lists 24 while we hold no seat for it). Publishing them keeps
+                # our `/v1/models` equal to magpie's roster instead of silently
+                # dropping a whole vendor; the leg's credential verdict then marks
+                # every one of them unselectable *with a reason*, so a picker never
+                # offers a model the account cannot turn.
+                with contextlib.suppress(Exception):
+                    await leg.refresh_models(None)
             self.providers[leg.name] = leg
             for m in leg.served_models:
                 self.model_to_provider[m] = leg.name
+
+        # Routing groups (`auto/...`) belong to no vendor card — they live on the
+        # gateway itself. Measured 2026-11-24: `auto/glm-5.3` answers a real turn in
+        # 2.9 s while we published nothing for it, so a working model was missing from
+        # every picker. Whatever magpie serves and no leg claims stays on the umbrella,
+        # under magpie's own id, so our catalogue is their roster — nothing more,
+        # nothing less.
+        try:
+            await umbrella.refresh_unclaimed(set(self.providers))
+        except Exception:  # noqa: BLE001 - a catalogue pass must not fail the build
+            import logging as _logging
+
+            _logging.getLogger("bezel").warning(
+                "magpie: unclaimed catalogue pass failed", exc_info=True
+            )
 
         # Providers magpie added that our cosmetics table does not name yet: they
         # still get a card, under the name their vendor reported, and they are
@@ -510,6 +536,40 @@ class Registry:
         if result is not None:
             self._rebuild_model_index()
 
+    def magpie_roster_probe(self) -> None:
+        """Prove the lamps in the background: a catalogue is not evidence.
+
+        magpie lists what its adapters know about, not what this account may turn. The
+        sweep runs after startup so a vendor call never delays the gateway becoming
+        healthy, and it writes into the same ledger ``list_models`` already consults —
+        so an id that cannot answer goes grey *with the upstream's own reason attached*
+        instead of wearing a green dot that lies.
+        """
+        umbrella = self.providers.get("magpie")
+        if umbrella is None:
+            return
+        cfg = dict(self.config.get("providers", {}).get("magpie") or {})
+        if cfg.get("probe", True) is False:
+            return
+        timeout = float(cfg.get("probe_timeout", 45.0))
+
+        async def _sweep() -> None:
+            from .providers.apps.magpie.probe import probe_roster
+
+            try:
+                await probe_roster(umbrella, timeout=timeout)
+            except Exception:  # noqa: BLE001 - a sweep never takes the gateway down
+                import logging as _logging
+
+                _logging.getLogger("bezel").warning(
+                    "magpie: roster probe failed", exc_info=True
+                )
+
+        try:
+            asyncio.get_running_loop().create_task(_sweep())
+        except RuntimeError:  # no loop (plain sync use): nothing to prove this way
+            return
+
     def _rebuild_model_index(self) -> None:
         """Rebuild model_to_provider from the (possibly updated) served_models."""
         self.model_to_provider = {}
@@ -587,6 +647,11 @@ class Registry:
             caps = prov.capabilities().as_dict() if prov else {}
             live, reason = self.credential_health(prov) if prov else (False, "unknown_provider")
             refused = model_health.quarantined(m)
+            # A lamp needs proof, not a listing. The roster claims a vendor serves these
+            # ids; the probe either confirmed it or could not (measured 2026-11-24: Devin
+            # listed 24 rows and every probe ran into a timeout). Unproven is not the same
+            # as refused — no cooling clock — but it is not green either.
+            unproven = model_health.unproven_reason(m)
             # A model is *selectable* only when it can actually serve an agent turn.
             # The owner ruled on 2026-10-12 that no surface needs a `tools=False` leg
             # (L1, L2 and cron all need tool calls to come back into our loop), so a
@@ -596,7 +661,7 @@ class Registry:
             # A third way an id is not pickable: the upstream itself refused it twice
             # (`model_rejected`) — the config says the leg serves it, the traffic says
             # it does not right now, and the traffic is the measurement.
-            usable = live and bool(caps.get("tools")) and not refused
+            usable = live and bool(caps.get("tools")) and not refused and not unproven
             # Filtering is a *view*, not the endpoint's default. `/v1/models` is the
             # OpenAI-compat catalog and `plobi.quota.gateway` derives the quota apps
             # from it; silently shrinking it would make those surfaces report "no
@@ -647,7 +712,15 @@ class Registry:
                     "unselectable_reason": (
                         ""
                         if usable
-                        else ("model_rejected" if refused else (reason if not live else "no_tools"))
+                        else (
+                            # Naming the class of refusal ("model_rejected") told a user
+                            # nothing about the model in front of them. The ledger keeps
+                            # the upstream's own sentence, so the picker can explain
+                            # itself instead of just going grey.
+                            (model_health.refusal_reason(m) or "model_rejected")
+                            if refused
+                            else (unproven or (reason if not live else "no_tools"))
+                        )
                     ),
                     # When does a cooling leg come back: seconds left plus a readable end
                     # time. The machine code stays in unselectable_reason ("quota_exhausted")
