@@ -159,37 +159,36 @@ describe('settings helpers', () => {
     })
   })
 
-  describe('enumOptionsFor — backend selector dropdowns', () => {
+  describe('enumOptionsFor — where a dropdown’s options come from', () => {
     const config: PlobiConfigRecord = {}
 
-    it('renders a dropdown for the TTS provider including xAI (Grok)', () => {
-      const opts = enumOptionsFor('tts.provider', 'edge', config)
-      expect(opts).toBeDefined()
-      expect(opts).toContain('xai')
-      expect(opts).toContain('edge')
-      expect(opts).toContain('elevenlabs')
-    })
-
-    it('renders a dropdown for the STT provider including xAI (Grok)', () => {
-      const opts = enumOptionsFor('stt.provider', 'local', config)
-      expect(opts).toEqual(['local', 'groq', 'openai', 'mistral', 'xai', 'elevenlabs'])
+    it('leaves the provider pickers and the product enumerations to the backend', () => {
+      // Those lists live in the backend schema now (one list per key).
+      // This helper must not answer for them: returning undefined lets the
+      // screen fall back to the schema's own options.
+      expect(enumOptionsFor('tts.provider', 'edge', config)).toBeUndefined()
+      expect(enumOptionsFor('stt.provider', 'local', config)).toBeUndefined()
+      expect(enumOptionsFor('terminal.backend', 'local', config)).toBeUndefined()
+      expect(enumOptionsFor('approvals.mode', 'manual', config)).toBeUndefined()
     })
 
     it('renders dropdowns for per-backend model/device sub-fields', () => {
+      // These are vendor catalogues — the provider's own ids, not the
+      // product's vocabulary.
       expect(enumOptionsFor('stt.openai.model', 'whisper-1', config)).toContain('gpt-4o-transcribe')
       expect(enumOptionsFor('tts.openai.model', 'gpt-4o-mini-tts', config)).toContain('tts-1-hd')
       expect(enumOptionsFor('tts.neutts.device', 'cpu', config)).toEqual(['cpu', 'cuda', 'mps'])
     })
 
-    it('renders a dropdown for the terminal execution backend', () => {
-      const opts = enumOptionsFor('terminal.backend', 'local', config)
-      expect(opts).toEqual(['local', 'docker', 'singularity', 'modal', 'daytona', 'ssh'])
+    it('appends a hand-typed value not in the known list so it stays selected', () => {
+      const opts = enumOptionsFor('tts.openai.model', 'my-own-model', config)
+      expect(opts).toContain('my-own-model')
+      expect(opts).toContain('tts-1-hd')
     })
 
-    it('appends a hand-typed value not in the known list so it stays selected', () => {
-      const opts = enumOptionsFor('tts.provider', 'my-custom-command-tts', config)
-      expect(opts).toContain('my-custom-command-tts')
-      expect(opts).toContain('xai')
+    it('answers with the caller’s list when one is passed (the backend’s live list)', () => {
+      const opts = enumOptionsFor('tts.provider', 'my-plugin-tts', config, ['edge', 'my-plugin-tts'])
+      expect(opts).toEqual(['edge', 'my-plugin-tts'])
     })
   })
 })

@@ -1,7 +1,7 @@
 import { asText } from '@/lib/text'
 import type { PlobiConfigRecord, ToolsetInfo } from '@/types/plobi'
 
-import { BUILTIN_PERSONALITIES, ENUM_OPTIONS, PROVIDER_GROUPS } from './constants'
+import { BUILTIN_PERSONALITIES, PROVIDER_CATALOG_OPTIONS, PROVIDER_GROUPS } from './constants'
 
 // Canonical implementations live in @/lib/text; re-exported here so the many
 // settings/capabilities call sites keep their import path.
@@ -132,13 +132,22 @@ function personalityOptions(config: PlobiConfigRecord): string[] {
   return [...new Set(['', ...BUILTIN_PERSONALITIES, ...customNames])]
 }
 
+/**
+ * The options a select offers for `key`.
+ *
+ * Precedence: an explicit list the caller already has (the backend's live
+ * provider list, the ElevenLabs voices) → the vendor catalogue in
+ * `constants.ts` → nothing (the screen then falls back to the backend
+ * schema's own `options`, which is where the product's enumerations live —
+ * one list per key, not two that drift).
+ */
 export function enumOptionsFor(
   key: string,
   value: unknown,
   config: PlobiConfigRecord,
   dynamicOptions?: string[]
 ): string[] | undefined {
-  const opts = dynamicOptions ?? (key === 'display.personality' ? personalityOptions(config) : ENUM_OPTIONS[key])
+  const opts = dynamicOptions ?? (key === 'display.personality' ? personalityOptions(config) : PROVIDER_CATALOG_OPTIONS[key])
 
   if (!opts) {
     return undefined

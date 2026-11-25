@@ -48,6 +48,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from plobi_constants import VALID_REASONING_EFFORTS
+
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -860,7 +862,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "terminal.modal_mode": {
         "type": "select",
         "description": "Modal sandbox mode",
-        "options": ["sandbox", "function"],
+        # ``tools/tool_backend_helpers.py``: auto | direct | managed.  The
+        # screen was offering ``sandbox``/``function`` — two values the code
+        # does not know, while the value it actually defaults to (``auto``)
+        # was not offered at all.
+        "options": ["auto", "direct", "managed"],
     },
     "tts.provider": {
         "type": "select",
@@ -902,12 +908,30 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "approvals.mode": {
         "type": "select",
         "description": "Dangerous command approval mode",
-        "options": ["ask", "yolo", "deny"],
+        # The real vocabulary is ``tools/approval.py::_VALID_MODES`` —
+        # ``ask``/``yolo``/``deny`` were retired, and shipping them here is
+        # how the screen ended up offering three modes that no longer exist
+        # (the desktop's own table had the right ones; two tables, two truths).
+        "options": ["manual", "smart", "off"],
+    },
+    "agent.image_input_mode": {
+        "type": "select",
+        "description": "How an image reaches the model",
+        # ``agent/image_routing.py``: auto | native | text.
+        "options": ["auto", "native", "text"],
+    },
+    "code_execution.mode": {
+        "type": "select",
+        "description": "Code execution mode",
+        "options": ["project", "strict"],
     },
     "context.engine": {
         "type": "select",
         "description": "Context management engine",
-        "options": ["default", "custom"],
+        # The built-in is ``compressor``; a plugin-registered engine is chosen
+        # by name, and the screen appends the current value when it is not in
+        # this list (a plugin engine is not this product's vocabulary).
+        "options": ["compressor"],
     },
     "human_delay.mode": {
         "type": "select",
@@ -927,7 +951,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "delegation.reasoning_effort": {
         "type": "select",
         "description": "Reasoning effort for delegated subagents",
-        "options": ["", "low", "medium", "high"],
+        # Derived from ``plobi_constants.VALID_REASONING_EFFORTS`` — the
+        # hand-written list here had drifted from it (``minimal``/``xhigh``/
+        # ``max`` were missing), and the desktop's own table had drifted the
+        # other way.
+        "options": ["", *VALID_REASONING_EFFORTS],
     },
     "updates.non_interactive_local_changes": {
         "type": "select",

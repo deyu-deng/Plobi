@@ -58,14 +58,16 @@ vi.mock('@/store/notifications', () => ({ notify: () => undefined, notifyError: 
 
 vi.mock('../overlays/panel', () => ({ PanelEmpty: () => null }))
 
-async function renderVoiceSection() {
+async function renderSection(sectionId: string) {
   const { ConfigSettings } = await import('./config-settings')
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ConfigSettings activeSectionId="voice" importInputRef={{ current: null }} />
+      <ConfigSettings activeSectionId={sectionId} importInputRef={{ current: null }} />
     </QueryClientProvider>
   )
 }
+
+const renderVoiceSection = () => renderSection('voice')
 
 function triggerFor(key: string): HTMLElement {
   const row = document.getElementById(`setting-field-${key}`)
@@ -100,11 +102,12 @@ describe('ConfigSettings · provider dropdown', () => {
     expect(triggerFor('tts.provider').textContent).toContain('Fake TTS')
   })
 
-  it('keeps the screen table for keys with no registry behind them', async () => {
+  it('keeps a value the backend’s list does not offer visible', async () => {
     backend.schema = {
       fields: {
-        // No ``options_source`` ⇒ this key has no registry behind it, and the
-        // backend's own static list is stale (it never had ``mistral``).
+        // The backend's own static list is not authoritative for this key
+        // (it never had ``mistral``), and the screen no longer keeps a
+        // second copy — so the value the user actually has must still show.
         'stt.provider': {
           type: 'select',
           description: '',
@@ -119,5 +122,29 @@ describe('ConfigSettings · provider dropdown', () => {
 
     await waitFor(() => expect(triggerFor('stt.provider')).toBeTruthy())
     expect(triggerFor('stt.provider').textContent).toContain('Mistral')
+  })
+
+  it('renders the product enumerations from the backend schema', async () => {
+    // The product's own enumerations used to live in a second table on this
+    // side; they come from the backend schema now.  ``max`` is the tell: the
+    // old local table never had it (it was missing from
+    // ``VALID_REASONING_EFFORTS``), so a screen still reading that table
+    // could not show the value it was set to.
+    backend.schema = {
+      fields: {
+        'delegation.reasoning_effort': {
+          type: 'select',
+          description: '',
+          options: ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+        }
+      },
+      category_order: ['general']
+    }
+    backend.config = { delegation: { reasoning_effort: 'max' } }
+
+    await renderSection('advanced')
+
+    await waitFor(() => expect(triggerFor('delegation.reasoning_effort')).toBeTruthy())
+    expect(triggerFor('delegation.reasoning_effort').textContent).toContain('Max')
   })
 })

@@ -229,54 +229,34 @@ export const BUILTIN_PERSONALITIES = [
   'hype'
 ]
 
-// Schema-side select overrides for desktop-relevant enum fields whose
-// backend schema only declares a string type.
-export const ENUM_OPTIONS: Record<string, string[]> = {
-  'agent.image_input_mode': ['auto', 'native', 'text'],
-  'approvals.mode': ['manual', 'smart', 'off'],
-  'code_execution.mode': ['project', 'strict'],
-  'context.engine': ['compressor', 'default', 'custom'],
-  'delegation.reasoning_effort': ['', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-  // `''` is the real off switch for the external brain (the built-in MEMORY.md layer
-  // stays); `mind` is what the backend ships as the official surface. There used to be a
-  // `builtin` entry here — it is not a provider plugin, and measured behaviour for it is
-  // byte-for-byte the `''` case, so it was a second label for one state.
-  // `mind` 也不在这里（`WP-MIND-COEXIST`）：它是这具身体自己的记忆面，不是「一家外部服务」，
-  // 所以在同一个屏上由自己那个开关（`memory.mind_enabled`）管，不再和八家第三方位于一列。
-  // 别把它加回来——那个列表的每一项都会在用户选中时**取代**别的东西，而 Mind 不会。
-  'memory.provider': ['', 'hindsight', 'honcho'],
-  // Terminal execution backends — kept in sync with the dispatch ladder in
-  // tools/terminal_tool.py::_create_environment (local/docker/singularity/
-  // modal/daytona/ssh). Remote backends need extra env (image, tokens, host).
-  'terminal.backend': ['local', 'docker', 'singularity', 'modal', 'daytona', 'ssh'],
+// Vendor catalogues: the ids a **provider** publishes, not the product's own
+// vocabulary.  These lists belong to the provider that offers them — the
+// right source is the provider's own catalogue, fetched when the provider is
+// selected (the ElevenLabs voice list already works that way).  They stay
+// here only until that fetch lands.
+//
+// What used to live here as well — the product's own enumerations
+// (`approvals.mode`, `code_execution.mode`, `agent.image_input_mode`,
+// `context.engine`, `delegation.reasoning_effort`, `terminal.backend`,
+// `updates.non_interactive_local_changes`) and the provider pickers
+// (`tts.provider`, `stt.provider`) — is **gone**: those come from the
+// backend schema now, so there is one list per key instead of two that
+// drift (`approvals.mode` was offering three retired modes here while the
+// backend offered a fourth set).
+export const PROVIDER_CATALOG_OPTIONS: Record<string, string[]> = {
   'stt.elevenlabs.model_id': ['scribe_v2', 'scribe_v1'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
-  // Speech-to-text backends — kept in sync with the stt block in
-  // plobi_cli/config.py (local/groq/openai/mistral/elevenlabs).
-  'stt.provider': ['local', 'groq', 'openai', 'mistral', 'xai', 'elevenlabs'],
-  'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
-  // Text-to-speech backends — kept in sync with the built-in source of truth
-  // (agent/tts_registry.py::_BUILTIN_NAMES / tools/tts_tool.py::
-  // BUILTIN_TTS_PROVIDERS). 'xai' is Grok TTS.
-  'tts.provider': [
-    'edge',
-    'elevenlabs',
-    'openai',
-    'xai',
-    'minimax',
-    'mistral',
-    'gemini',
-    'neutts',
-    'kittentts',
-    'piper'
-  ],
   'stt.openai.model': ['whisper-1', 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe'],
   'stt.mistral.model': ['voxtral-mini-latest', 'voxtral-mini-2602'],
   'tts.openai.model': ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'],
+  'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   'tts.elevenlabs.model_id': ['eleven_multilingual_v2', 'eleven_turbo_v2_5', 'eleven_flash_v2_5'],
-  // NeuTTS local inference device.
   'tts.neutts.device': ['cpu', 'cuda', 'mps'],
-  'updates.non_interactive_local_changes': ['stash', 'discard']
+  // The one remaining special case: the external-memory picker is not a
+  // schema field (it has its own editor and OAuth flow), so it cannot come
+  // from the backend schema yet.  Its real list lives in the backend's
+  // memory-provider discovery; this copy goes away with that screen.
+  'memory.provider': ['', 'hindsight', 'honcho']
 }
 
 /**

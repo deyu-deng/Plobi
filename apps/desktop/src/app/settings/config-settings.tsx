@@ -109,7 +109,19 @@ function ConfigField({
     )
   }
 
-  const selectOptions = enumOptions ?? (schema.type === 'select' ? (schema.options ?? []).map(String) : undefined)
+  // A value the product knows but the list does not — an option that was
+  // retired, a provider that is no longer installed, a hand-typed value —
+  // must stay visible and selectable.  Otherwise the dropdown shows nothing
+  // and the setting looks lost.
+  const schemaOptions = schema.type === 'select' ? (schema.options ?? []).map(String) : undefined
+  const currentValue = String(value ?? '')
+  const selectOptions =
+    enumOptions ??
+    (schemaOptions
+      ? currentValue && !schemaOptions.includes(currentValue)
+        ? [...schemaOptions, currentValue]
+        : schemaOptions
+      : undefined)
 
   if (selectOptions) {
     return row(
