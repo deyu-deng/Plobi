@@ -36,7 +36,10 @@ import {
   type ShellLevel,
   SKILLS_ROUTE
 } from '../../routes'
+import { createSlotRegistry, type SlotRegistry } from '../../shell/slot-registry'
 import type { SidebarNavItem } from '../../types'
+
+import { usePlobiConfigRecord } from '../../hooks/use-config-record'
 
 import { AgentCategoryGroup } from './agent-category-group'
 import {
@@ -66,18 +69,41 @@ import { ProjectDialog } from './project-dialog'
 import { SidebarSegment, type SidebarSegmentItem } from './sidebar-segment'
 import { SidebarStrip } from './sidebar-strip'
 
-export const SIDEBAR_NAV: SidebarNavItem[] = [
-  {
-    id: 'skills',
-    label: '',
-    icon: props => <Codicon name="symbol-misc" {...props} />,
-    route: SKILLS_ROUTE
-  },
-  { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
-  { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
-  { id: 'knowledge', label: '', icon: props => <Codicon name="book" {...props} />, route: KNOWLEDGE_ROUTE },
-  { id: 'diary', label: '', icon: props => <Codicon name="edit" {...props} />, route: DIARY_ROUTE }
-]
+/**
+ * 左栏那几格：**从 slot 声明表派生**（裁定 239）。
+ *
+ * 它们**不是产品常量，是出厂预装的那一批插件**（用户 11-25 12:0x：「内置的表也算插件」）：
+ * 用户关掉哪一格（`slots.removed`），那一格就真的不在——不是藏起来。
+ */
+export function sidebarNavItems(registry: SlotRegistry): SidebarNavItem[] {
+  return registry.slotsFor('sidebar', 'top').flatMap(slot => {
+    const content = registry.contentFor('sidebar', 'top', slot.id)
+    if (!content) {
+      return []
+    }
+    return [
+      {
+        id: content.id,
+        label: content.label ?? '',
+        icon: content.icon ?? 'symbol-misc',
+        route: content.route
+      }
+    ]
+  })
+}
+
+/** 出厂那一份声明下的左栏格子（没有用户配置时的样子）。 */
+export const SIDEBAR_NAV: SidebarNavItem[] = sidebarNavItems(createSlotRegistry())
+
+/** 用户关掉了哪些 slot（`slots.removed`）——出厂的默认插件与插件贡献都算。 */
+function readRemovedSlots(config: unknown): string[] {
+  if (!config || typeof config !== 'object') {
+    return []
+  }
+  const slots = (config as Record<string, unknown>).slots
+  const removed = slots && typeof slots === 'object' ? (slots as Record<string, unknown>).removed : null
+  return Array.isArray(removed) ? removed.filter((id): id is string => typeof id === 'string') : []
+}
 
 // NAV row chrome (the top icon rail): height/typography live here so the
 // secretary-specific rows (new-agent / back-to-secretary) match the base rows
@@ -170,9 +196,13 @@ export function ChatSidebar({
   // 那是 profile 概念的回魂路，随用户 11-05 的追问一起拆了：认不出就是认不出，
   // 宁可退回全局页，也不再从 profile 绕回来。
   const l1Agent = useStore($consoleL1Agent)
+  // 用户关掉了哪些 slot（`slots.removed`）——读共享的那份配置缓存（设置面改完这里立刻跟着变）。
+  const { data: configRecord } = usePlobiConfigRecord()
 
   const navItems = useMemo(() => {
-    const base = sidebarNavForLevel(SIDEBAR_NAV, { l1, l2Id })
+    // 左栏那几格来自 slot 声明表；用户关掉哪一格（`slots.removed`），那一格就不在。
+    const registry: SlotRegistry = createSlotRegistry({ removed: readRemovedSlots(configRecord) })
+    const base = sidebarNavForLevel(sidebarNavItems(registry), { l1, l2Id })
 
     const scopedAgent =
       (l2Id ? secretaryAgents.find(agent => agent.id === l2Id) : null) ?? (l1 ? l1Agent : null) ?? null
@@ -182,7 +212,7 @@ export function ChatSidebar({
         ? { ...item, route: `${SKILLS_ROUTE}?agent=${encodeURIComponent(scopedAgent.id)}` }
         : item
     )
-  }, [l1, l1Agent, l2Id, secretaryAgents])
+  }, [l1, l1Agent, l2Id, secretaryAgents, configRecord])
 
   const sidebarOpen = useStore($sidebarOpen)
   // 收起态不再归零：同一个栏换成 40px 图标条（用户 10-31）。
@@ -485,7 +515,7 @@ export function ChatSidebar({
                     tooltip={s.nav[item.id] ?? item.label}
                     type="button"
                   >
-                    <item.icon className={NAV_ICON} />
+                    <Codicon className={NAV_ICON} name={item.icon} />
                     <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

@@ -498,7 +498,7 @@ export function SidebarStrip({
 
         {sharedItems.map(item => (
           <StripButton
-            icon={<item.icon className="size-4 leading-none" />}
+            icon={<Codicon name={item.icon} className="size-4 leading-none" />}
             key={item.id}
             label={t.sidebar.nav[item.id] ?? item.label}
             onClick={() => onNavigate(item)}

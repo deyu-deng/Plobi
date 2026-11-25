@@ -1,3 +1,4 @@
+import { DEFAULT_SLOT_DECLARATION } from './slot-registry'
 import type { StatusbarItem } from './statusbar-controls'
 
 /**
@@ -23,19 +24,21 @@ import type { StatusbarItem } from './statusbar-controls'
  *
  * 挂在 `StatusbarControls` 的 `dock + inline` 那一支上（左栏底部专用），不挂在左栏调用方。
  */
-export const RAIL_FOOTER_IDS: readonly string[] = [
-  // 点开是一整屏的
-  'system:settings',
-  'agents',
-  'cron',
-  'agenda',
-  // 写脑待批那一枚**不在这一列**（`WP-MIND-CONSENT-EVENTS`）：用户 11-16 21:4x 拍定
-  // 「放在左侧栏底部的一个图标里面…我打算删掉这个图标」⇒ 入口搬进对话卡抬头
-  // （`app/shell/mind-pending-button.tsx`），与票面待批并排。要点头的东西在说话那张卡上。
-  // 点开是一小张面板的
-  'gateway-health',
-  'egress'
-]
+/**
+ * 这一列**从 slot 声明表派生**（`slot-registry.ts` 的 `sidebar`／`bottom` 区）——那里是唯一一份。
+ *
+ * **顺序是这一档的全部判据**（用户 11-03 拍：「Overlay 展示的组件放在前面，其他的放在后面，
+ * 这也算整齐了。设置放在最前面」）：点开就是一整屏的排前面，点开只有一小张面板（弹窗）的排后面。
+ *
+ * ⚠️ 写脑待批那一枚**不在这一列**（`WP-MIND-CONSENT-EVENTS`）：用户 11-16 21:4x 拍定「放在左侧栏底部的
+ * 一个图标里面…我打算删掉这个图标」⇒ 入口搬进对话卡抬头（`app/shell/mind-pending-button.tsx`），
+ * 与票面待批并排。要点头的东西在说话那张卡上。
+ */
+export const RAIL_FOOTER_IDS: readonly string[] = DEFAULT_SLOT_DECLARATION.filter(
+  slot => slot.position === 'sidebar' && slot.region === 'bottom'
+)
+  .sort((a, b) => a.order - b.order)
+  .map(slot => slot.id)
 
 /** 按上面那张单子取，顺序以单子为准；没在这一刻存在的（hidden／还没挂上）就不占一格。 */
 export function pickRailFooterItems(items: readonly StatusbarItem[]): StatusbarItem[] {
