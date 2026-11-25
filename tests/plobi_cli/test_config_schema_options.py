@@ -92,3 +92,50 @@ def test_the_retired_approval_modes_are_gone(schema):
     """A retired mode in the list is how the screen ended up offering ghosts."""
     options = schema["approvals.mode"]["options"]
     assert not ({"ask", "yolo", "deny"} & set(options))
+
+
+def test_the_memory_provider_row_exists(schema):
+    """外脑（官方外脑）那一行**必须在 schema 里**。
+
+    2026-11-25 现读（`WP-EXOCORTEX-ENTRY`）：``memory.provider`` 一直被
+    ``_build_schema_from_config`` 跳过（它当年是内部键）⇒ 桌面设置屏上
+    **根本没有「接哪个外部脑」这一行** ⇒ 连带的连接流程与各家字段编辑器都
+    够不着 ⇒ 后端那 8+ 家外脑在屏上一个都选不到。
+    """
+    entry = schema.get("memory.provider")
+
+    assert entry is not None, "屏上没有「接哪个外部脑」那一行"
+    assert entry.get("type") == "select"
+    assert entry.get("category") == "memory"
+
+
+def test_the_memory_provider_options_are_the_registered_providers():
+    """那一行的选项＝**后端真有的那几家**（不是手抄的三项）。
+
+    同一份机制：tts／stt 的 provider 也是每次请求现算的（`options_source`
+    = ``registry``）。官方脑**不在这一列里**（``WP-MIND-COEXIST``：它是内核
+    一等公民，有自己那个常驻开关 ``memory.mind_enabled``）。
+    """
+    import asyncio
+
+    from plobi_cli.web_server import get_schema
+    from plugins.memory import discover_memory_providers
+
+    payload = asyncio.run(get_schema())
+    entry = payload["fields"].get("memory.provider")
+
+    assert entry is not None
+    assert entry.get("options_source") == "registry"
+
+    options = [str(o) for o in entry.get("options") or []]
+    discovered = [name for name, _desc, _available in discover_memory_providers()]
+
+    # 屏上给的就是真有的那几家（插件装上／卸下都跟着变）。
+    assert set(discovered) <= set(options)
+    # 「关掉」那一行在最前（配置里的默认值就是空串）。
+    assert options[0] == ""
+    # 官方脑不挤在这一列里。
+    assert "mind" not in options
+    # 人话标签也由后端给（插件自己声明的 `label:`）。
+    labels = entry.get("option_labels") or {}
+    assert labels.get("hindsight") == "Hindsight"

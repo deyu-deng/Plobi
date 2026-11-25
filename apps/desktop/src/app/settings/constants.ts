@@ -251,26 +251,22 @@ export const PROVIDER_CATALOG_OPTIONS: Record<string, string[]> = {
   'tts.openai.model': ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'],
   'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   'tts.elevenlabs.model_id': ['eleven_multilingual_v2', 'eleven_turbo_v2_5', 'eleven_flash_v2_5'],
-  'tts.neutts.device': ['cpu', 'cuda', 'mps'],
-  // The one remaining special case: the external-memory picker is not a
-  // schema field (it has its own editor and OAuth flow), so it cannot come
-  // from the backend schema yet.  Its real list lives in the backend's
-  // memory-provider discovery; this copy goes away with that screen.
-  'memory.provider': ['', 'hindsight', 'honcho']
+  'tts.neutts.device': ['cpu', 'cuda', 'mps']
 }
 
 /**
- * Labels for the external-memory dropdown. It used to render `''` as a blank row and
- * `builtin` as though it were a provider; measured against the backend, both of those
- * mount nothing, so the blank row WAS the off switch and `builtin` was a second name for
- * it. `''` is now labelled as what it does, and the official brain is named without the
- * word "default" -- what a fresh install resolves to is `memory.provider` in
- * plobi_cli/config.py's DEFAULT_CONFIG, and this file must not re-declare it.
+ * 外脑（官方外脑）那一族的清单**不在这里**——它**走后端那一份注册表**
+ * （`/api/config/schema` 每次请求现算：插件装上／卸下都跟着变）。
+ *
+ * 2026-11-25 现读：这一族原来在这里**手抄了三项**（`''`／`hindsight`／`honcho`），
+ * 而后端真有 **8+ 家** ⇒ 另外 6 家在屏上一个都选不到；更糟的是 `memory.provider`
+ * 当年被后端 schema 跳过了 ⇒ 桌面设置屏上**连这一行都没有** ⇒ 这份手抄清单是
+ * **死代码**（零引用）。两份都删掉了：清单＝后端那一份（**唯一真源**）。
+ *
+ * 官方脑（Mind）**不在那一列里**（`WP-MIND-COEXIST`）：它是内核一等公民，有自己
+ * 那个常驻开关 `memory.mind_enabled`；那一列里每一项的语义都是「取代别的东西」，
+ * 而官方脑不取代任何东西。
  */
-export const MEMORY_PROVIDER_LABELS: Record<string, string> = {
-  '': 'Off - built-in memory only',
-  mind: 'Exocortex - the official brain',
-}
 
 export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
   model: 'Default Model',

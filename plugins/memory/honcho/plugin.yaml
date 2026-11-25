@@ -1,4 +1,6 @@
 name: honcho
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: Honcho
 version: 1.0.0
 description: "Honcho AI-native memory — cross-session user modeling with dialectic Q&A, semantic search, and persistent conclusions."
 pip_dependencies:

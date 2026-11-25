@@ -6,27 +6,16 @@ import { defineFieldCopy, fieldCopyForSchemaKey, schemaKeyToFieldCopyKey } from 
 import { enumOptionsFor, getNested, providerGroup, setNested, stripToolsetLabel, toolsetDisplayLabel } from './helpers'
 
 describe('settings helpers', () => {
-  it('lists Hindsight as a built-in desktop memory provider option', () => {
-    const options = enumOptionsFor('memory.provider', '', {})
-
-    expect(options).toContain('hindsight')
+  it('外脑那一族的选项**走后端那一份**（本地不再留手抄清单）', () => {
+    // 2026-11-25：桌面那份手抄的三项清单删掉了 ⇒ 本地表里**查无此键**
+    // （`enumOptionsFor` 返回 undefined ⇒ 屏上走后端给的那份动态选项）。
+    expect(enumOptionsFor('memory.provider', '', {})).toBeUndefined()
   })
 
-  // WP-MIND-OFFICIAL-BRAIN: the brain is the default external provider on the
-  // backend, so a dropdown that cannot name it is a UI that hides the truth.
-  // The empty entry is the explicit "off" state; mind is the shipped default and
-  // must be selectable right after it. `enumOptionsFor` returns undefined for a key
-  // with no enum, so assert the list exists before indexing it — otherwise this file
-  // type-checks red (TS18048) while vitest stays green: two different rulers.
-  it('offers only external services for the memory provider, never Mind', () => {
-    // `WP-MIND-COEXIST`：Mind 不再和八家第三方挤在同一列里，它有自己那个常驻开关
-    // （`memory.mind_enabled`）。这个下拉里每一项的语义都是「取代别的东西」，
-    // 而 Mind 不会取代任何东西——所以它不在这儿。
-    const options = enumOptionsFor('memory.provider', '', {}) ?? []
+  it('后端给了动态选项时，屏上就渲染那一份', () => {
+    const options = enumOptionsFor('memory.provider', '', {}, ['', 'hindsight', 'honcho'])
 
-    expect(options.length).toBeGreaterThan(1)
-    expect(options[0]).toBe('')
-    expect(options).not.toContain('mind')
+    expect(options).toContain('hindsight')
   })
 
   describe('defineFieldCopy', () => {

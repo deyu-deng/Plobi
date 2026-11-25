@@ -1094,11 +1094,23 @@ CONFIG_SCHEMA = _build_schema_from_config(DEFAULT_CONFIG)
 # by the normalize/denormalize cycle.  Insert model_context_length right after
 # the "model" key so it renders adjacent in the frontend.
 _mcl_entry = _SCHEMA_OVERRIDES["model_context_length"]
+# 「接哪个外部脑」那一行**不在 DEFAULT_CONFIG 里**（它有自己那份字段编辑器与连接
+# 流程），但它**必须**在 schema 里——否则屏上根本渲染不到这一行。
+# 2026-11-25 现读：`_build_schema_from_config` 一直把 `memory.provider` 跳过去
+# （它当年是内部键），于是桌面设置屏上**没有这一行**，后端那 8+ 家外脑**一个都选不到**
+# ⇒ 前端那份手抄的三项清单成了死代码。
+_memory_provider_entry: Dict[str, Any] = {
+    "type": "select",
+    "description": "External memory provider",
+    "category": "memory",
+}
 _ordered_schema: Dict[str, Dict[str, Any]] = {}
 for _k, _v in CONFIG_SCHEMA.items():
     _ordered_schema[_k] = _v
     if _k == "model":
         _ordered_schema["model_context_length"] = _mcl_entry
+    if _k == "memory.mind_enabled":
+        _ordered_schema["memory.provider"] = _memory_provider_entry
 CONFIG_SCHEMA = _ordered_schema
 
 
@@ -4938,6 +4950,50 @@ def _memory_provider_label(name: str) -> str:
     return name.replace("_", " ").replace("-", " ").title()
 
 
+# 「关掉」那一行的人话（**这一列里唯一不是一家外脑的选项**）。
+_MEMORY_PROVIDER_OFF_LABEL = "Off - built-in memory only"
+
+
+def _memory_provider_display_label(name: str) -> str:
+    """一家外脑在屏上叫什么。
+
+    **插件自己声明它叫什么**（``plugin.yaml`` 的 ``label:``）⇒ 品牌名不会被
+    「把下划线换成空格再首字母大写」那条兜底规则揉坏（``byterover`` → 「Byteroover」✗）。
+    声明里没有就退回那条兜底（老插件／用户自己装的那几家不受影响）。
+    """
+    manifest = _memory_provider_manifest(name)
+    label = manifest.get("label")
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+    return _memory_provider_label(name)
+
+
+def _memory_provider_picker_options() -> List[Dict[str, str]]:
+    """屏上「接哪个外部脑」那一行的清单（**只有第三方那几家**）。
+
+    官方脑**不在这一列里**（``WP-MIND-COEXIST``）：它是内核一等公民
+    （``plugins/memory/__init__.py`` 的 ``CORE_PROVIDERS``），有自己那个常驻开关
+    ``memory.mind_enabled``；这一列里每一项的语义都是「取代别的东西」，
+    而官方脑不取代任何东西。
+
+    第一行是「关掉」＝只用内置记忆（配置里的默认值就是空串）。
+    """
+    rows: List[Dict[str, str]] = [
+        {"value": "", "label": _MEMORY_PROVIDER_OFF_LABEL},
+    ]
+    try:
+        from plugins.memory import CORE_PROVIDERS
+    except Exception:
+        CORE_PROVIDERS = {"mind": ("plobi.mind.provider", "MindProvider")}
+
+    for row in _discover_memory_provider_statuses():
+        name = str(row.get("name") or "")
+        if not name or name in CORE_PROVIDERS:
+            continue
+        rows.append({"value": name, "label": _memory_provider_display_label(name)})
+    return rows
+
+
 def _normalize_memory_provider_name(name: Any) -> str:
     provider = str(name or "").strip()
     if provider.lower() in {"built-in", "builtin", "none"}:
@@ -5829,6 +5885,24 @@ async def get_schema():
     except Exception as exc:
         # 失败要出声：静默退回静态表＝「插件装上了、屏上却选不到」那条老病复发。
         _log.warning("provider options unavailable: %s", exc)
+
+    # 外脑（官方外脑）那一族：清单**每次请求现算**（插件装上／卸下都跟着变）——
+    # 与 tts／stt 的 provider 同一个机制。桌面那份手抄的清单（今天只有三项，
+    # 而后端真有 8+ 家）已经删掉了 ⇒ 这一份是**唯一真源**。
+    try:
+        memory_options = _memory_provider_picker_options()
+        entry = fields.get("memory.provider")
+        if entry:
+            fields["memory.provider"] = {
+                **entry,
+                "options": [o["value"] for o in memory_options],
+                "option_labels": {
+                    o["value"]: o["label"] for o in memory_options if o.get("label")
+                },
+                "options_source": "registry",
+            }
+    except Exception as exc:
+        _log.warning("memory provider options unavailable: %s", exc)
     return {"fields": fields, "category_order": _CATEGORY_ORDER}
 
 

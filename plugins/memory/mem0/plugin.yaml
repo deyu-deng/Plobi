@@ -1,4 +1,6 @@
 name: mem0
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: Mem0
 version: 1.3.0
 description: "Mem0 — server-side LLM fact extraction with semantic search, automatic deduplication, and opt-in reranking (platform mode)."
 pip_dependencies:

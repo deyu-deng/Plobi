@@ -1,4 +1,6 @@
 name: holographic
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: Holographic
 version: 0.1.0
 description: "Holographic memory — local SQLite fact store with FTS5 search, trust scoring, and HRR-based compositional retrieval."
 hooks:

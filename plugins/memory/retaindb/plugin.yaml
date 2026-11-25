@@ -1,4 +1,6 @@
 name: retaindb
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: RetainDB
 version: 1.0.0
 description: "RetainDB — cloud memory API with hybrid search and 7 memory types."
 pip_dependencies:

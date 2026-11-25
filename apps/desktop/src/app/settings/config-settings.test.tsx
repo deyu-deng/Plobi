@@ -58,6 +58,11 @@ vi.mock('@/store/notifications', () => ({ notify: () => undefined, notifyError: 
 
 vi.mock('../overlays/panel', () => ({ PanelEmpty: () => null }))
 
+// 外脑那一族的两块（连接流程与各家字段编辑器）各自要打后端；这一档只关心
+// **那一行渲染的是后端给的清单** ⇒ 那两块在这里被摘掉，免得它们把树掀了。
+vi.mock('./memory/connect', () => ({ MemoryConnect: () => null }))
+vi.mock('./provider-config-panel', () => ({ ProviderConfigPanel: () => null }))
+
 async function renderSection(sectionId: string) {
   const { ConfigSettings } = await import('./config-settings')
   return render(
@@ -146,5 +151,34 @@ describe('ConfigSettings · provider dropdown', () => {
 
     await waitFor(() => expect(triggerFor('delegation.reasoning_effort')).toBeTruthy())
     expect(triggerFor('delegation.reasoning_effort').textContent).toContain('Max')
+  })
+
+  it('renders the external-memory providers the backend lists', async () => {
+    // 2026-11-25（`WP-EXOCORTEX-ENTRY`）：`memory.provider` 当年被后端 schema 跳过了
+    // ⇒ 桌面屏上**根本没有这一行** ⇒ 后端那 8+ 家外脑一个都选不到（前端那份手抄
+    // 三项是死代码）。现在那一行存在，选项＝**后端给的那一份**。
+    backend.schema = {
+      fields: {
+        'memory.provider': {
+          type: 'select',
+          description: '',
+          options_source: 'registry',
+          options: ['', 'byterover', 'hindsight'],
+          option_labels: {
+            '': 'Off - built-in memory only',
+            byterover: 'ByteRover',
+            hindsight: 'Hindsight'
+          }
+        }
+      },
+      category_order: ['memory']
+    }
+    backend.config = { memory: { provider: 'byterover' } }
+
+    await renderSection('memory')
+
+    await waitFor(() => expect(triggerFor('memory.provider')).toBeTruthy())
+    // 品牌名用后端给的那份（插件自己声明的），不是从下划线猜出来的。
+    expect(triggerFor('memory.provider').textContent).toContain('ByteRover')
   })
 })
