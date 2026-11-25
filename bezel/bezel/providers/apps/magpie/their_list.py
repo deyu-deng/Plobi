@@ -50,6 +50,12 @@ LEGACY_FILE = "plugin-providers.json"
 #: which is exactly the line we need to draw between "remembered" and "here".
 PLUGINS_FILE = "plugins.json"
 
+#: The roster carried by the plugin set we ship (``resources/magpie-plugins``).
+#: Same name and same shape as ``LEGACY_FILE`` — the build copies their roster
+#: in — but a different question: this one answers for providers **nothing on
+#: this machine** has installed yet, which is what a card list needs.
+PACKAGED_ROSTER_FILE = "plugin-providers.json"
+
 #: Current CLI row: ``- <id>: key=value, key=value``. The vendor's ``methods``
 #: value is bracketed and holds commas of its own, so splitting has to respect
 #: bracket depth (see ``_split_fields``).
@@ -201,6 +207,22 @@ def read_installed_plugins(config_root: Path | str) -> set[str] | None:
         if isinstance(spec, str) and spec.strip():
             found.add(bare_spec(spec))
     return found
+
+
+def read_packaged_roster(root: Path | str) -> dict[str, dict] | None:
+    """The roster that ships **with us** — ``<plugin set>/plugin-providers.json``.
+
+    Same shape as ``LEGACY_FILE``, because it *is* that file: the build carries
+    magpie's roster into the app with the per-machine fields stripped (no
+    accounts, no ports, no paths). Which is the point — it names every provider
+    the bundled plugins can serve, including the ones this machine has never
+    installed a plugin for. ``None`` means the set has no readable roster.
+    """
+    try:
+        raw = json.loads((Path(root) / PACKAGED_ROSTER_FILE).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return _rows_from_payload(raw)
 
 
 def ids_from_table(table: dict[str, dict]) -> set[str]:

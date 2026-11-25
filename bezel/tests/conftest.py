@@ -22,6 +22,20 @@ def isolated_ledgers(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_shipped_plugin_set(monkeypatch):
+    """Do not let a built app on this machine decide the card list.
+
+    ``magpie-plugins/plugin-providers.json`` lives in the desktop's build
+    output; a developer who has built once would otherwise see 24 cards where a
+    test expects the two its own stub roster reports — green here, red there.
+    Tests that exercise the bundled roster point this at their own tmp dir.
+    """
+    from bezel.providers.apps.magpie import api as magpie_api
+
+    monkeypatch.setenv(magpie_api.PACKAGED_SET_ENV, magpie_api.PACKAGED_SET_OFF)
+
+
+@pytest.fixture(autouse=True)
 def no_external_tools(monkeypatch):
     """No test may drive another product's binary.
 
