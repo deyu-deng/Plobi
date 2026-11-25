@@ -6,7 +6,7 @@
  * 就是把它装回来，不该再让他按第二次（用户 11-21：「支持用户点击配置的按键，如果插件
  * 没下载会自动下载」）。装没装成由 catalog 复读说话，这半张卡片只负责把命令跑一次。
  */
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as i18nModule from '@/i18n'
@@ -105,5 +105,57 @@ describe('subscription setup — a card whose plugin is gone', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(install).not.toHaveBeenCalled()
+  })
+})
+
+describe('subscription setup — a plugin that offers more than one way in', () => {
+  /**
+   * 2026-11-25：22 家的插件各自报了自己的登录通道（浏览器 / 贴 key / 设备码）。
+   * 只给一个按钮等于替用户砍掉另一半 —— qoder-cn 报 4 条、zcode 报 5 条，而它们默认
+   * 那条常常要订阅，用户手上却只有一把 key。
+   */
+  const lanes = [
+    { label: 'Sign in with Qoder CN', type: 'oauth' },
+    { label: 'Qoder CN API key', placeholder: 'ak_…', type: 'api' }
+  ]
+
+  const signedOut = () =>
+    card({ appKind: 'cli', installCommand: null, installKind: null, methods: lanes, state: 'signed_out' })
+
+  function withAuth(auth = vi.fn().mockResolvedValue({ ok: true })) {
+    Object.defineProperty(window, 'plobiDesktop', {
+      configurable: true,
+      value: { plobiGateway: { install, auth } }
+    })
+
+    return auth
+  }
+
+  it('offers one button per lane, in their own words', () => {
+    withAuth()
+    mount(signedOut())
+
+    expect(screen.getByRole('button', { name: lanes[0].label })).toBeTruthy()
+    expect(screen.getByRole('button', { name: lanes[1].label })).toBeTruthy()
+  })
+
+  it('hands the picked lane to the hub, not the default one', async () => {
+    const auth = withAuth()
+    mount(signedOut())
+
+    fireEvent.click(screen.getByRole('button', { name: lanes[1].label }))
+
+    await waitFor(() => expect(auth).toHaveBeenCalledWith('qoder', lanes[1].label))
+  })
+
+  it('keeps the single button when the plugin only knows one way in', () => {
+    const auth = withAuth()
+    mount(card({ appKind: 'cli', installCommand: null, installKind: null, methods: [lanes[0]], state: 'signed_out' }))
+
+    expect(screen.queryByRole('button', { name: lanes[0].label })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /登录|Sign in/ }))
+
+    return waitFor(() => expect(auth).toHaveBeenCalledWith('qoder', undefined))
   })
 })

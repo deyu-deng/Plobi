@@ -552,14 +552,16 @@ function CardsStep({
             void refetchRoster()
           }}
           onClose={() => setSetupCard(null)}
-          onLogin={async (appId: string) => {
+          onLogin={async (appId: string, method?: string) => {
             const gw = window.plobiDesktop?.plobiGateway
 
             if (!gw) {
               return { ok: false }
             }
 
-            const res = await gw.auth(appId)
+            // 抽屉里选的那条通道要原样送到网关：丢了 method 就成了「按钮写着贴 key、
+            // 实际走浏览器」，跟不显示选择一样骗人。
+            const res = await gw.auth(appId, method)
 
             return { ok: Boolean(res?.ok) }
           }}

@@ -47,6 +47,15 @@ export interface AuthCatalogRow {
   download?: null | string
   install_kind?: null | string
   install_command?: null | string
+  /**
+   * Every way into this product the plugin itself reported (browser flow, key
+   * prompt, device code …), in their order, under their own labels. Present
+   * since 2026-11-25: 22 of them ship lanes, and one lane per vendor is a lie
+   * about the other half (qoder-cn reports 4, zcode 5).
+   */
+  login_methods?: null | { label: string; placeholder?: string; type?: string }[]
+  /** The lane the hub will use when the user does not pick one. */
+  login_method_default?: null | string
   intro_key?: string
 }
 
@@ -90,6 +99,8 @@ export interface LoginCard {
   reasonCode: string
   appKind: 'api' | 'cli' | 'desktop-app'
   loginMethod: string
+  /** The lanes to offer, default first. One lane ⇒ the card need not ask. */
+  methods?: { label: string; placeholder?: string; type?: string }[]
   /** Official page for the "I have installed it" round trip. */
   download: null | string
   installCommand: null | string
@@ -209,6 +220,36 @@ export function cardDetail(
   return [reason, unselectableReason, card.detail, error].filter(Boolean).join(' · ')
 }
 
+/**
+ * Their lanes, default first, duplicates dropped.
+ *
+ * The card only asks the user to choose when there is more than one; putting the
+ * hub's default at the top means the fallback click and the default lane agree,
+ * instead of the screen naming one lane and the request using another.
+ */
+export function orderedLanes(row: AuthCatalogRow): { label: string; placeholder?: string; type?: string }[] {
+  const seen = new Set<string>()
+  const lanes: { label: string; placeholder?: string; type?: string }[] = []
+  const preferred = row.login_method_default || row.login_method || ''
+
+  for (const lane of row.login_methods ?? []) {
+    if (!lane || typeof lane.label !== 'string' || !lane.label || seen.has(lane.label)) {
+      continue
+    }
+
+    seen.add(lane.label)
+    lanes.push(lane)
+  }
+
+  if (!preferred || !seen.has(preferred)) {
+    return lanes
+  }
+
+  const index = lanes.findIndex(lane => lane.label === preferred)
+
+  return index <= 0 ? lanes : [lanes[index], ...lanes.slice(0, index), ...lanes.slice(index + 1)]
+}
+
 export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
   return rows
     .filter(row => row.id)
@@ -255,6 +296,7 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
         reasonCode: row.reason_code ?? (row.live ? 'ok' : 'credential_missing'),
         appKind: row.app_kind ?? 'api',
         loginMethod: row.login_method ?? 'unknown',
+        methods: orderedLanes(row),
         download: row.download ?? null,
         installCommand: row.install_command ?? null,
         installKind: row.install_kind ?? null

@@ -76,7 +76,11 @@ interface SubscriptionSetupProps {
    * that called the bridge itself would skip the routing bookkeeping that turns the
    * row into a switch, so the caller owns this.
    */
-  onLogin?: (appId: string) => Promise<{ error?: string; ok: boolean }>
+  /**
+   * `method` = the lane the user picked on this card. Omitted ⇒ the hub's default
+   * lane, which is what every caller did before the lane lists reached the screen.
+   */
+  onLogin?: (appId: string, method?: string) => Promise<{ error?: string; ok: boolean }>
   /** Jump to Settings → Proxy. The only thing a network failure can ask of the user. */
   onOpenNetwork?: () => void
   open: boolean
@@ -204,7 +208,7 @@ export function SubscriptionSetupDialog({
     }, 1200)
   }, [card.name, onChanged, s])
 
-  const runLogin = useCallback(async () => {
+  const runLogin = useCallback(async (method?: string) => {
     const auth = onLogin ?? window.plobiDesktop?.plobiGateway?.auth
 
     if (!auth) {
@@ -217,7 +221,7 @@ export function SubscriptionSetupDialog({
     setError(null)
 
     try {
-      const res = await auth(card.id)
+      const res = await auth(card.id, method)
 
       if (res.ok) {
         setStarted(true)
@@ -232,9 +236,10 @@ export function SubscriptionSetupDialog({
     } finally {
       setBusy(null)
     }
-  }, [card.id, card.name, onChanged, s])
+  }, [card.id, card.name, onChanged, onLogin, s])
 
   const methodLabel = subs.setup.method as Record<string, string | undefined>
+  const lanes = card.methods ?? []
 
   return (
     <Dialog onOpenChange={next => (next ? undefined : onClose())} open={open}>
@@ -330,10 +335,33 @@ export function SubscriptionSetupDialog({
           ) : null}
 
           {phase === 'login' && !started ? (
-            <Button disabled={busy === 'login'} onClick={() => void runLogin()} size="sm" type="button">
-              {busy === 'login' ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              {s.loginAction}
-            </Button>
+            /* 一个插件报了几条路就给几个入口（浏览器 / 贴 key / 设备码）。
+               只留一条等于替用户砍掉另一半能力：qoder-cn 报了 4 条，zcode 5 条，
+               而它们的默认那条往往要订阅，用户手里却可能只有一把 key。 */
+            lanes.length > 1 ? (
+              <div className="flex flex-col items-stretch gap-1.5">
+                {lanes.map(lane => (
+                  <Button
+                    className="justify-start text-left"
+                    disabled={busy === 'login'}
+                    key={lane.label}
+                    onClick={() => void runLogin(lane.label)}
+                    size="sm"
+                    title={lane.placeholder || undefined}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {busy === 'login' ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                    {lane.label}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <Button disabled={busy === 'login'} onClick={() => void runLogin()} size="sm" type="button">
+                {busy === 'login' ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                {s.loginAction}
+              </Button>
+            )
           ) : null}
 
           {phase === 'network' ? (
