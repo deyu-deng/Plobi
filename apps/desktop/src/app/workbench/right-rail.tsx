@@ -5,14 +5,22 @@ import { CardEdgeControlButtons, type CardEdgeControls } from '@/app/shell/card-
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 
-export type RightRailTab =
-  | 'agenda'
-  | 'browser'
-  | 'files'
-  | 'notes'
-  | 'review'
-  | 'terminal'
-export type RightRailTabId = RightRailTab | `file:${string}`
+/**
+ * 右栏页签的身份——**开放的**（裁定 239）：工作区页签是插件位，插件带来的页签 id
+ * 宿主不预先知道。以前这里是六值的闭集联合类型，那正是"插件加不进页签"的病根
+ * （类型写死 ⇒ 新页签进不来）。
+ *
+ * 文件页签仍用 `file:` 前缀区分（约定，不是类型）。
+ */
+export type RightRailTabId = string
+
+/** 文件页签的 id 前缀（约定）。 */
+export const FILE_TAB_PREFIX = 'file:'
+
+/** 这一格是不是文件页签。 */
+export function isFileTabId(id: string): boolean {
+  return id.startsWith(FILE_TAB_PREFIX)
+}
 
 export interface RightRailTabDef {
   id: RightRailTabId

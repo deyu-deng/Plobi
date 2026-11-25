@@ -13,6 +13,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { DEFAULT_SLOT_DECLARATION } from '../shell/slot-registry'
+
 // `src/app` —— 下面那些相对路径都是相对它写的
 const APP = join(__dirname, '..')
 // `src` —— i18n 在这儿，不在 `src/app` 底下
@@ -31,16 +33,15 @@ function monitorPanel(): string {
 }
 
 describe('右栏页签：资料页签没了，换成笔记', () => {
-  it('RightRailTab 里没有 progress，有 notes', () => {
-    const src = read('workbench/right-rail.tsx')
+  it('页签清单里没有 progress，有 notes', () => {
+    // 11-25 更新（裁定 239）：页签身份放开了（`RightRailTabId` 是开放的——类型写死
+    // 正是"插件加不进页签"的病根），**清单的真源搬到了 slot 声明表** ⇒ 这一条改查声明表。
+    const ids = DEFAULT_SLOT_DECLARATION.filter(
+      slot => slot.position === 'workspace' && slot.region === 'tabs'
+    ).map(slot => slot.id)
 
-    const block = src.slice(
-      src.indexOf('export type RightRailTab ='),
-      src.indexOf('export type RightRailTabId')
-    )
-
-    expect(block).toContain("'notes'")
-    expect(block).not.toContain("'progress'")
+    expect(ids).toContain('notes')
+    expect(ids).not.toContain('progress')
   })
 
   it('右栏页签的标签与说明在四语里都叫「笔记」这一族', () => {

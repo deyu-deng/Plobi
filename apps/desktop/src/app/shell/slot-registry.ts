@@ -33,6 +33,9 @@ import { ARTIFACTS_ROUTE, DIARY_ROUTE, KNOWLEDGE_ROUTE, MESSAGING_ROUTE, SKILLS_
 /** 宿主留下的三个位置。 */
 export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace'
 
+/** 宿主声明过的位置（插件自己声明 slot 时，位置只能从这里挑）。 */
+const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace']
+
 /**
  * 形状家族——**同一族的挂载点，宿主管的规矩一样**。
  *
@@ -68,14 +71,34 @@ export interface SlotContent {
   labelKey?: string
   /** 点开去哪儿。 */
   route?: string
+  /**
+   * 这一格显示应用的哪一页（`AppView` 的 id）。
+   *
+   * **插件的页签靠它拿到真内容**：浅的那一步插件不能在界面上执行代码，所以那一格
+   * 由**宿主**按这个 view 找到应用里的那一页并渲染（不是一个占位）——见 `app/views.ts`。
+   */
+  view?: string
   /** 谁提供的（出厂那一份是 `builtin`）。 */
   providedBy?: string
 }
 
 /** 插件填进来的一格：填哪个 slot ＋ 填什么。 */
 export interface SlotContribution extends SlotContent {
-  /** 填哪个 slot（声明里的 id）。 */
+  /** 填哪个 slot（`位置/区域/短名`，如 `workspace/tabs/my-tab`）。 */
   slotId: string
+  /**
+   * 插件**自己声明**一个新 slot 时给的那几样（位置／区域／顺序／形状）。
+   *
+   * 没有它们时，这一格只能**填**宿主声明过的 slot；有了它们，插件就能**新增**一个
+   * slot（比如工作区多一个页签）——但位置仍得是宿主声明过的那几个。
+   */
+  position?: SlotPosition
+  region?: string
+  kind?: SlotKind
+  order?: number
+  shape?: SlotShape
+  /** 在哪些壳里出现（`l1`／`l2`）；不给就是两个壳都有。 */
+  shells?: string[]
 }
 
 /** 一个挂载点的声明。 */
@@ -318,64 +341,64 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
 
   // ── 工作区页签 ────────────────────────────────────────────────────────────
   {
-    id: 'agenda',
+    id: 'files',
     position: 'workspace',
     region: 'tabs',
     kind: 'entry-row',
     order: 10,
     shape: { icon: true, label: true },
-    props: { opens: 'agenda' },
-    default: { id: 'agenda', icon: 'calendar', providedBy: 'builtin' }
+    props: { opens: 'files', shells: ['l2'], descriptionKey: 'workbench.actions.files' },
+    default: { id: 'files', icon: 'folder-opened', labelKey: 'workbench.tabs.files', providedBy: 'builtin' }
   },
   {
-    id: 'browser',
+    id: 'agenda',
     position: 'workspace',
     region: 'tabs',
     kind: 'entry-row',
     order: 20,
     shape: { icon: true, label: true },
-    props: { opens: 'browser' },
-    default: { id: 'browser', icon: 'globe', providedBy: 'builtin' }
-  },
-  {
-    id: 'files',
-    position: 'workspace',
-    region: 'tabs',
-    kind: 'entry-row',
-    order: 30,
-    shape: { icon: true, label: true },
-    props: { opens: 'files' },
-    default: { id: 'files', icon: 'files', providedBy: 'builtin' }
-  },
-  {
-    id: 'notes',
-    position: 'workspace',
-    region: 'tabs',
-    kind: 'entry-row',
-    order: 40,
-    shape: { icon: true, label: true },
-    props: { opens: 'notes' },
-    default: { id: 'notes', icon: 'note', providedBy: 'builtin' }
+    props: { opens: 'agenda', shells: ['l1', 'l2'], descriptionKey: 'workbench.actions.agenda' },
+    default: { id: 'agenda', icon: 'calendar', labelKey: 'workbench.tabs.agenda', providedBy: 'builtin' }
   },
   {
     id: 'review',
     position: 'workspace',
     region: 'tabs',
     kind: 'entry-row',
-    order: 50,
+    order: 30,
     shape: { icon: true, label: true },
-    props: { opens: 'review' },
-    default: { id: 'review', icon: 'checklist', providedBy: 'builtin' }
+    props: { opens: 'review', shells: ['l2'], descriptionKey: 'workbench.actions.review' },
+    default: { id: 'review', icon: 'git-pull-request', labelKey: 'workbench.tabs.review', providedBy: 'builtin' }
+  },
+  {
+    id: 'browser',
+    position: 'workspace',
+    region: 'tabs',
+    kind: 'entry-row',
+    order: 40,
+    shape: { icon: true, label: true },
+    props: { opens: 'browser', shells: ['l1', 'l2'], descriptionKey: 'workbench.actions.browser' },
+    default: { id: 'browser', icon: 'globe', labelKey: 'workbench.tabs.browser', providedBy: 'builtin' }
   },
   {
     id: 'terminal',
     position: 'workspace',
     region: 'tabs',
     kind: 'entry-row',
+    order: 50,
+    shape: { icon: true, label: true },
+    props: { opens: 'terminal', shells: ['l1', 'l2'], descriptionKey: 'workbench.actions.terminal' },
+    default: { id: 'terminal', icon: 'terminal', labelKey: 'workbench.tabs.terminal', providedBy: 'builtin' }
+  },
+  {
+    id: 'notes',
+    position: 'workspace',
+    region: 'tabs',
+    kind: 'entry-row',
     order: 60,
     shape: { icon: true, label: true },
-    props: { opens: 'terminal' },
-    default: { id: 'terminal', icon: 'terminal', providedBy: 'builtin' }
+    props: { opens: 'notes', shells: ['l2'], descriptionKey: 'workbench.actions.notes' },
+    default: { id: 'notes', icon: 'notebook', labelKey: 'workbench.tabs.notes', providedBy: 'builtin' }
   }
 ]
 
@@ -420,24 +443,55 @@ export function createSlotRegistry(options: SlotRegistryOptions = {}): SlotRegis
     }
   }
   const declaredKeys = new Set(declaration.map(slot => slotKey(slot.position, slot.region, slot.id)))
+  const slots = [...declaration]
   for (const contribution of options.contributions ?? []) {
     if (!contribution?.slotId) {
       continue
     }
     // 填到一个**没有声明**的 slot 上不算数：宿主只认自己声明过的位置。
-    const key = declaredKeys.has(contribution.slotId)
+    let key = declaredKeys.has(contribution.slotId)
       ? contribution.slotId
       : [...declaredKeys].find(k => k.endsWith(`/${contribution.slotId}`))
+    if (!key && contribution.position && contribution.region) {
+      // 插件**自己声明**一个新 slot（"我要在工作区多一个页签"）：宿主收下它的形状与顺序，
+      // 但位置仍得是宿主声明过的那几个。
+      if (!POSITIONS.includes(contribution.position)) {
+        continue
+      }
+      const shortId = contribution.slotId.split('/').pop() ?? contribution.slotId
+      key = slotKey(contribution.position, contribution.region, shortId)
+      if (!declaredKeys.has(key)) {
+        slots.push({
+          id: shortId,
+          position: contribution.position,
+          region: contribution.region,
+          kind: contribution.kind ?? 'entry-row',
+          order: contribution.order ?? 1000,
+          shape: contribution.shape ?? { icon: true, label: true },
+          props: { shells: contribution.shells ?? ['l1', 'l2'] }
+        })
+        declaredKeys.add(key)
+      }
+    }
     if (!key || removed.has(key) || removed.has(contribution.slotId)) {
       continue
     }
-    const { slotId: _slotId, ...content } = contribution
+    const {
+      slotId: _slotId,
+      position: _p,
+      region: _r,
+      kind: _k,
+      order: _o,
+      shape: _s,
+      shells: _sh,
+      ...content
+    } = contribution
     contentBySlot.set(key, { ...content })
   }
 
   return {
     slotsFor(position: SlotPosition, region?: string): SlotDeclaration[] {
-      return declaration
+      return slots
         .filter(slot => slot.position === position && (region === undefined || slot.region === region))
         .sort((a, b) => a.order - b.order)
     },
@@ -452,4 +506,69 @@ export function defaultSlotsFor(position: SlotPosition, region?: string): SlotDe
   return DEFAULT_SLOT_DECLARATION.filter(
     slot => slot.position === position && (region === undefined || slot.region === region)
   ).sort((a, b) => a.order - b.order)
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 工作区页签：从声明派生
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 一个壳（l1／l2）。 */
+export type ShellLevel = 'l1' | 'l2'
+
+export interface WorkspaceTabDef {
+  /** 页签身份——**开放的**：插件带来的页签 id 宿主不预先知道。 */
+  id: string
+  icon: string
+  title: string
+  description?: string
+}
+
+/**
+ * 某个壳里工作区该有哪些页签（按声明的顺序）。
+ *
+ * **一张顺序 ＋ 按壳过滤**：L1 那一排是 L2 的子序列（今天就是如此），所以不必
+ * 给每个壳各写一份清单——那份清单才是"产品替用户枚举"。
+ *
+ * 插件的页签**自动出现**（用户 11-25 19:5x 拍定，与 DSH 的做法一致）：插件启用，
+ * 它的页签就在工作区里；用户可以按 `slots.removed` 关掉。
+ */
+export function workspaceTabDefsFor(
+  registry: SlotRegistry,
+  shell: ShellLevel,
+  labels: { actions: Record<string, string>; tabs: Record<string, string> }
+): WorkspaceTabDef[] {
+  return registry
+    .slotsFor('workspace', 'tabs')
+    .filter(slot => {
+      const shells = slot.props.shells
+      return Array.isArray(shells) && shells.includes(shell)
+    })
+    .flatMap(slot => {
+      const content = registry.contentFor('workspace', 'tabs', slot.id)
+      if (!content) {
+        return []
+      }
+      const descriptionKey = slot.props.descriptionKey
+      return [
+        {
+          id: content.id,
+          icon: content.icon ?? 'symbol-misc',
+          title: (content.labelKey ? labels.tabs[content.labelKey.split('.').pop() ?? ''] : undefined) ?? content.label ?? content.id,
+          description:
+            (typeof descriptionKey === 'string' ? labels.actions[descriptionKey.split('.').pop() ?? ''] : undefined) ??
+            content.label
+        }
+      ]
+    })
+}
+
+/** 用户关掉了哪些 slot（配置 `slots.removed`）——出厂的默认插件与插件贡献都算。 */
+export function readRemovedSlots(config: unknown): string[] {
+  if (!config || typeof config !== 'object') {
+    return []
+  }
+  const slots = (config as Record<string, unknown>).slots
+  const removed = slots && typeof slots === 'object' ? (slots as Record<string, unknown>).removed : null
+  return Array.isArray(removed) ? removed.filter((id): id is string => typeof id === 'string') : []
 }

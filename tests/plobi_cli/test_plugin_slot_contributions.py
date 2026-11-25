@@ -62,6 +62,40 @@ def test_contributions_carry_what_the_plugin_declared(monkeypatch):
     assert row["providedBy"] == "my-thing"
 
 
+def test_a_contribution_carries_the_slot_shape_it_declares(monkeypatch):
+    """插件**自己声明**一个新 slot 时（"我要在工作区多一个页签"），那几样也得带出来：
+    位置、区域、顺序、形状——宿主只认自己声明过的位置，但形状由插件给。"""
+    from plobi_cli import plugins
+
+    manifest = _manifest(
+        slots=[
+            {
+                "slot": "workspace/tabs/my-tab",
+                "position": "workspace",
+                "region": "tabs",
+                "order": 70,
+                "id": "my-tab",
+                "icon": "star",
+                "label": "我的那一格",
+                "view": "knowledge",
+            }
+        ]
+    )
+    fake = types.SimpleNamespace(
+        _plugins={"my-thing": types.SimpleNamespace(manifest=manifest)},
+        _plugin_tool_names=set(),
+    )
+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: fake)
+
+    row = plugins.get_plugin_slot_contributions()[0]
+
+    assert row["slotId"] == "workspace/tabs/my-tab"
+    assert row["position"] == "workspace"
+    assert row["region"] == "tabs"
+    assert row["order"] == 70
+    assert row["view"] == "knowledge"
+
+
 def test_a_declaration_without_a_target_is_ignored(monkeypatch):
     """没写填哪个 slot 的那一条不算数——宿主不认没指定位置的贡献。"""
     from plobi_cli import plugins

@@ -2500,10 +2500,19 @@ def get_plugin_slot_contributions() -> List[Dict[str, Any]]:
                 "id": str(entry.get("id") or slot).strip(),
                 "providedBy": getattr(manifest, "key", "") or getattr(manifest, "name", ""),
             }
-            for field in ("icon", "label", "route"):
+            for field in ("icon", "label", "route", "view", "position", "region", "kind"):
                 value = entry.get(field)
                 if isinstance(value, str) and value:
                     item[field] = value
+            order = entry.get("order")
+            if isinstance(order, int) and not isinstance(order, bool):
+                item["order"] = order
+            shape = entry.get("shape")
+            if isinstance(shape, dict):
+                item["shape"] = shape
+            shells = entry.get("shells")
+            if isinstance(shells, list):
+                item["shells"] = [s for s in shells if isinstance(s, str)]
             contributions.append(item)
     return contributions
 

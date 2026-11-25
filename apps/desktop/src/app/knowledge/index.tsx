@@ -193,7 +193,16 @@ function NoteRow({
   )
 }
 
-export function KnowledgeView() {
+/**
+ * 知识库的**面板**（页面连它自己的搜索壳）。
+ *
+ * 为什么这样分（裁定 239）：工作区的页签是**插件位**——插件声明「我要开知识库那一页」时，
+ * 宿主按 view 找到**面板**并把它渲染进页签。**不是一个占位，是真的一页**。
+ *
+ * 页面与面板**共用这一份实现**（浮层页就是 `<KnowledgePanel />`）⇒ 两处永远不漂。
+ * 知识库是这一层的**样板**（用户 11-25 21:3x 拍定）：其余页面照这个形状各拆一次。
+ */
+export function KnowledgePanel() {
   const { t } = useI18n()
   const v = t.surface
   const [query, setQuery] = useState('')
@@ -962,4 +971,14 @@ export function KnowledgeView() {
       )}
     </PageSearchShell>
   )
+}
+
+
+/**
+ * 知识库那一面（浮层页）—— 就是面板本身。
+ *
+ * 屏上那一面与工作区页签里那一格**是同一个组件**（`KnowledgePanel`）⇒ 内容永远一致。
+ */
+export function KnowledgeView() {
+  return <KnowledgePanel />
 }
