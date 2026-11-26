@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from plobi.delegation import expert_roles, experts
+from plobi.delegation import virtuoso_roles, virtuosos
 from plobi.delegation.tickets import (
     ACTIVE, DONE, OBSERVED, REVOKED, TicketLedger,
 )
@@ -23,19 +23,19 @@ from tools import delegate_tool
 def env(tmp_path, monkeypatch):
     db = tmp_path / "delegation_tickets.db"
     monkeypatch.setenv("PLOBI_TICKET_DB", str(db))
-    monkeypatch.setenv("PLOBI_EXPERTS_DIR", str(tmp_path / "experts"))
+    monkeypatch.setenv("PLOBI_VIRTUOSOS_DIR", str(tmp_path / "virtuosos"))
     return tmp_path, db
 
 
-def test_expert_ticket_opens_active_with_fixed_scope(env):
-    ids = delegate_tool._open_expert_tickets(
-        [{"goal": "整理会议纪要", "expert": "file", "role": "orchestrator"}],
+def test_virtuoso_ticket_opens_active_with_fixed_scope(env):
+    ids = delegate_tool._open_virtuoso_tickets(
+        [{"goal": "整理会议纪要", "virtuoso": "file", "role": "orchestrator"}],
         object(), "orchestrator",
     )
     assert len(ids) == 1 and ids[0].startswith("tkt_")
     ticket = TicketLedger().get(ids[0])
     assert ticket.status == ACTIVE
-    assert ticket.leg == "expert"
+    assert ticket.leg == "virtuoso"
     assert ticket.allows("delegate")
     assert not ticket.allows("terminal")
     # 授权范围连内存里那份也改不动：后续消息改不了这一跳的权限。
@@ -49,19 +49,19 @@ def test_ticket_ledger_failure_never_blocks_delegation(env, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(TicketLedger, "open_ticket", _boom)
-    assert delegate_tool._open_expert_tickets(
+    assert delegate_tool._open_virtuoso_tickets(
         [{"goal": "照常干活"}], object(), ""
     ) == []
 
 
 def test_record_role_carries_ticket_id(env):
-    expert_roles.record_role("sess-1", "file", "整理纪要", model="m", ticket_id="tkt_abc")
-    payload = json.loads((env[0] / "experts" / "sess-1.json").read_text(encoding="utf-8"))
+    virtuoso_roles.record_role("sess-1", "file", "整理纪要", model="m", ticket_id="tkt_abc")
+    payload = json.loads((env[0] / "virtuosos" / "sess-1.json").read_text(encoding="utf-8"))
     assert payload["ticket_id"] == "tkt_abc"
     assert payload["role"] == "file"
 
 
-def test_expert_rows_carry_ticket_status(env, monkeypatch):
+def test_virtuoso_rows_carry_ticket_status(env, monkeypatch):
     db = env[0] / "state.db"
     con = sqlite3.connect(str(db))
     con.execute(
@@ -73,14 +73,14 @@ def test_expert_rows_carry_ticket_status(env, monkeypatch):
     con.execute("insert into sessions values ('child1','','subagent','p1',2,2,3,4,'m')")
     con.commit()
     con.close()
-    monkeypatch.setattr(experts, "state_db_path", lambda: db)
+    monkeypatch.setattr(virtuosos, "state_db_path", lambda: db)
 
     ticket = TicketLedger().open_ticket(
-        parent_agent="agenda", leg="expert", goal="整理纪要", status=ACTIVE
+        parent_agent="agenda", leg="virtuoso", goal="整理纪要", status=ACTIVE
     )
-    expert_roles.record_role("child1", "file", "整理纪要", ticket_id=ticket.id)
+    virtuoso_roles.record_role("child1", "file", "整理纪要", ticket_id=ticket.id)
 
-    rows = experts.experts_for_agent("agenda")["experts"]
+    rows = virtuosos.virtuosos_for_agent("agenda")["virtuosos"]
     assert len(rows) == 1
     assert rows[0]["ticket_id"] == ticket.id
     assert rows[0]["ticket_status"] == ACTIVE
@@ -105,7 +105,7 @@ def test_ticket_routes_approve_delivers_before_activation(env, monkeypatch):
     listed = asyncio.run(console_router.dispatch_tickets_route())
     assert [t["id"] for t in listed["data"]["tickets"]] == [tid]
     assert listed["data"]["tickets"][0]["refs"]["prompt"] == "顺手把测试补一下"
-    assert asyncio.run(console_router.dispatch_tickets_route(leg="expert"))["data"]["tickets"] == []
+    assert asyncio.run(console_router.dispatch_tickets_route(leg="virtuoso"))["data"]["tickets"] == []
 
     approved = asyncio.run(console_router.dispatch_ticket_activate_route(tid))
     assert approved["data"]["ticket"]["status"] == ACTIVE
@@ -149,7 +149,7 @@ def test_revoke_closes_pending_ticket(env):
 def test_terminal_ticket_never_reactivated(env):
     """终态票不会被 open_ticket 之外的路径悄悄复活。"""
     tid = TicketLedger().open_ticket(
-        parent_agent="agenda", leg="expert", goal="done", status=ACTIVE
+        parent_agent="agenda", leg="virtuoso", goal="done", status=ACTIVE
     ).id
     assert TicketLedger().finish(tid, ok=True) is True
     assert TicketLedger().get(tid).status == DONE

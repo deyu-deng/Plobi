@@ -85,10 +85,10 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   // running in a background session must still be visible here, or the two
   // desync ("Agents N running" vs an empty tree).
   //
-  // 「专家」（带 expert 角色的那几趟）**不在这棵树里**：它们的日志归左栏
+  // 「专家」（带 virtuoso 角色的那几趟）**不在这棵树里**：它们的日志归左栏
   // 「专家」抽屉，点一下就在主区打开（用户 11-04）。这里只留普通子智能体。
   const tree = useMemo(
-    () => buildSubagentTree(allSubagents(subagentsBySession).filter(item => !item.expert)),
+    () => buildSubagentTree(allSubagents(subagentsBySession).filter(item => !item.virtuoso)),
     [subagentsBySession]
   )
 

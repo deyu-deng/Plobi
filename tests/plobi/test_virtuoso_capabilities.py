@@ -24,11 +24,11 @@ import pytest
 @pytest.fixture()
 def roles_home(tmp_path, monkeypatch):
     """把名手那份角色级设置挪到临时目录（不碰这台机器的真档）。"""
-    monkeypatch.setenv("PLOBI_EXPERTS_DIR", str(tmp_path / "experts"))
-    from plobi.delegation import expert_roles
+    monkeypatch.setenv("PLOBI_VIRTUOSOS_DIR", str(tmp_path / "virtuosos"))
+    from plobi.delegation import virtuoso_roles
 
-    expert_roles._EXPERTS_CACHE.clear() if hasattr(expert_roles, "_EXPERTS_CACHE") else None
-    return expert_roles
+    virtuoso_roles._VIRTUOSOS_CACHE.clear() if hasattr(virtuoso_roles, "_VIRTUOSOS_CACHE") else None
+    return virtuoso_roles
 
 
 # ── 1 · 默认工具面逐字不变 ─────────────────────────────────────────────────
@@ -60,7 +60,7 @@ def test_the_capability_pool_is_a_closed_list(roles_home):
 # ── 2 · 名手不继承 principal ────────────────────────────────────────────────
 
 
-def test_an_expert_does_not_inherit_the_parents_toolsets(roles_home):
+def test_an_virtuoso_does_not_inherit_the_parents_toolsets(roles_home):
     """**不继承 principal 的工具设置**：父只有 file 时，software 名手照样有 terminal。"""
     from tools.delegate_tool import _child_toolset_selection
 
@@ -81,7 +81,7 @@ def test_a_plain_subagent_still_inherits_the_parent(roles_home):
 # ── 3 · 名手自己的黑名单 ───────────────────────────────────────────────────
 
 
-def test_the_expert_own_blacklist_subtracts(roles_home):
+def test_the_virtuoso_own_blacklist_subtracts(roles_home):
     """名手自己关掉的能力 ⇒ 不在它的能力里，也不在它的门类里。"""
     roles_home.save_role_disabled_capabilities("software", ["run_commands"])
 
@@ -125,7 +125,7 @@ def test_an_unknown_capability_is_refused(roles_home):
 # ── 4 · 派之前说人话 ───────────────────────────────────────────────────────
 
 
-def test_the_dispatch_reports_what_the_expert_can_do(roles_home, monkeypatch):
+def test_the_dispatch_reports_what_the_virtuoso_can_do(roles_home, monkeypatch):
     """派出去的那一趟要带着「它现在有什么、缺什么」。"""
     import tools.delegate_tool as dt
 
@@ -139,9 +139,9 @@ def test_the_dispatch_reports_what_the_expert_can_do(roles_home, monkeypatch):
 
     monkeypatch.setattr(dt, "delegate_task", fake_delegate_task)
 
-    out = json.loads(dt.delegate_expert(role="software", goal="跑一遍构建脚本"))
+    out = json.loads(dt.delegate_virtuoso(role="software", goal="跑一遍构建脚本"))
 
-    note = out["expert_capabilities"]
+    note = out["virtuoso_capabilities"]
     assert note["role"] == "software"
     assert "跑命令" in note["missing"]
     assert "terminal" not in note["toolsets"]

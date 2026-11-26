@@ -52,7 +52,7 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
     if role_raw not in KNOWN_ROLES:
         print(
             f"Error: --role 只能是 {' / '.join(KNOWN_ROLES)}，收到 {role_raw!r}。"
-            "（名手/客席不是这里的值：名手见 delegation/expert_roles.py，客席见 external_offload.py）",
+            "（名手/客席不是这里的值：名手见 delegation/virtuoso_roles.py，客席见 external_offload.py）",
             file=sys.stderr,
         )
         sys.exit(2)

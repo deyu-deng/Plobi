@@ -132,7 +132,7 @@ def test_every_non_progress_state_escalates_but_progress_does_not(gate):
 
 
 def test_category_is_structural_not_guessed(gate):
-    assert gate.decision_category(_view(leg="expert", domain="browser")) == "expert:browser"
+    assert gate.decision_category(_view(leg="virtuoso", domain="browser")) == "virtuoso:browser"
     assert gate.decision_category(_view(domain="")) == "router:general"
 
 

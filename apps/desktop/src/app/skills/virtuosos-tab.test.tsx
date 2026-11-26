@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { queryClient } from '@/lib/query-client'
 
-import { ExpertsTab } from './experts-tab'
+import { VirtuososTab } from './virtuosos-tab'
 
 /**
  * 「名手」那一格（Capabilities 屏的第五个子 tab）。
@@ -107,7 +107,7 @@ afterEach(() => {
 function renderTab() {
   return render(
     <QueryClientProvider client={queryClient}>
-      <ExpertsTab />
+      <VirtuososTab />
     </QueryClientProvider>
   )
 }
@@ -146,7 +146,7 @@ describe('名手那一格', () => {
         expect.objectContaining({
           body: { disabled_capabilities: ['run_commands'] },
           method: 'PUT',
-          path: '/api/experts/roles/software'
+          path: '/api/virtuosos/roles/software'
         })
       )
     )
@@ -242,7 +242,7 @@ describe('名手那一格', () => {
         expect.objectContaining({
           body: { model: 'workbuddy/auto' },
           method: 'PUT',
-          path: '/api/experts/roles/software'
+          path: '/api/virtuosos/roles/software'
         })
       )
     )

@@ -1176,7 +1176,7 @@ export interface Translations {
     tabToolsets: string
     tabMcp: string
     tabHub: string
-    tabExperts: string
+    tabVirtuosos: string
     all: string
     searchSkills: string
     searchToolsets: string
@@ -1265,7 +1265,7 @@ export interface Translations {
       searchFailed: string
     }
     /** 名手（临时专家）那一格：四类角色各自的能力开关与默认模型。 */
-    experts: {
+    virtuosos: {
       bulkUpdated: (count: number) => string
       emptyTitle: string
       loadFailed: string
@@ -1932,26 +1932,26 @@ export interface Translations {
     externalSessionsReadOnly: string
     externalSessionsRelated: string
     externalSessionsArchived: string
-    expertsTitle: string
-    expertsRunning: string
-    expertsEmpty: string
+    virtuososTitle: string
+    virtuososRunning: string
+    virtuososEmpty: string
     /** 名册上点了但这一类角色还没被派过活（卡片里那句说明）。 */
-    expertsIdleHint: string
-    /** 同一处空态的标题行；说明仍用 `expertsIdleHint`。 */
-    expertsIdleTitle: string
+    virtuososIdleHint: string
+    /** 同一处空态的标题行；说明仍用 `virtuososIdleHint`。 */
+    virtuososIdleTitle: string
     /** 专家卡片底部那条：这个专家派出去时用哪个模型。 */
-    expertModelHint: string
+    virtuosoModelHint: string
     /** 模型清单没取到 / 一个模型都没有时，那颗胶囊的说明。 */
-    expertModelEmpty: string
+    virtuosoModelEmpty: string
     /** 没给这个角色单独配模型时显示的那一颗（＝继承父 Agent）。 */
-    expertModelFollow: string
-    expertsLoading: string
-    expertsLoadFailed: string
-    expertsLog: string
-    expertRoleFile: string
-    expertRoleBrowser: string
-    expertRoleSoftware: string
-    expertRoleComputer: string
+    virtuosoModelFollow: string
+    virtuososLoading: string
+    virtuososLoadFailed: string
+    virtuososLog: string
+    virtuosoRoleFile: string
+    virtuosoRoleBrowser: string
+    virtuosoRoleSoftware: string
+    virtuosoRoleComputer: string
     externalSessionsRename: string
     externalSessionsSave: string
     externalSessionsCancel: string

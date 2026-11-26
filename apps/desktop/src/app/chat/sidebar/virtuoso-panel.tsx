@@ -4,9 +4,9 @@ import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-import type { ExpertRoleSpec } from './expert-roles'
-import { elapsedText, getAgentExperts } from './expert-runs'
-import type { ExpertRun, ExpertRunsData } from './expert-runs'
+import type { VirtuosoRoleSpec } from './virtuoso-roles'
+import { elapsedText, getAgentVirtuosos } from './virtuoso-runs'
+import type { VirtuosoRun, VirtuosoRunsData } from './virtuoso-runs'
 import { TicketBadge } from './ticket-badge'
 
 /**
@@ -22,8 +22,8 @@ import { TicketBadge } from './ticket-badge'
 /** 名单自读间隔：正在干的那一行会自己冒出状态点、自己收尾。 */
 const REFRESH_MS = 3500
 
-export function useAgentExperts(agentId: string): ExpertRun[] {
-  const [data, setData] = useState<null | ExpertRunsData>(null)
+export function useAgentVirtuosos(agentId: string): VirtuosoRun[] {
+  const [data, setData] = useState<null | VirtuosoRunsData>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -33,15 +33,15 @@ export function useAgentExperts(agentId: string): ExpertRun[] {
         setData(null)
       }
 
-      getAgentExperts(agentId)
+      getAgentVirtuosos(agentId)
         .then(body => {
           if (!cancelled) {
-            setData(body?.data ?? { experts: [] })
+            setData(body?.data ?? { virtuosos: [] })
           }
         })
         .catch(() => {
           if (!cancelled && first) {
-            setData({ experts: [] })
+            setData({ virtuosos: [] })
           }
         })
     }
@@ -55,7 +55,7 @@ export function useAgentExperts(agentId: string): ExpertRun[] {
     }
   }, [agentId])
 
-  return data?.experts ?? []
+  return data?.virtuosos ?? []
 }
 
 /**
@@ -68,14 +68,14 @@ export function useAgentExperts(agentId: string): ExpertRun[] {
  * 没派过活时也打开一张卡，写清这个角色是什么、能干什么、怎么让它出场。
  * 灰着但点不动是最糟的一种——用户以为是坏了。
  */
-export function ExpertRoleRow({
+export function VirtuosoRoleRow({
   onOpen,
   role,
   runs
 }: {
   onOpen: () => void
-  role: ExpertRoleSpec
-  runs: ExpertRun[]
+  role: VirtuosoRoleSpec
+  runs: VirtuosoRun[]
 }) {
   const { t } = useI18n()
   const running = runs.find(run => run.status === 'running')
@@ -106,7 +106,7 @@ export function ExpertRoleRow({
       ) : null}
       {running ? (
         <span
-          aria-label={t.console.expertsRunning}
+          aria-label={t.console.virtuososRunning}
           className="size-1.5 shrink-0 animate-pulse rounded-full bg-(--ui-accent)"
         />
       ) : null}

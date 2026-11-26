@@ -61,12 +61,12 @@ import { asText, includesQuery, prettyName, toolNames, toolsetDisplayLabel } fro
 import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
-import { ExpertsTab } from './experts-tab'
+import { VirtuososTab } from './virtuosos-tab'
 import { SkillsHub } from './hub'
 import { McpTab } from './mcp-tab'
 import { $skillsSortDesc, $toolsetsSortDesc } from './store'
 
-export const SKILLS_MODES = ['skills', 'toolsets', 'mcp', 'hub', 'experts'] as const
+export const SKILLS_MODES = ['skills', 'toolsets', 'mcp', 'hub', 'virtuosos'] as const
 export type SkillsMode = (typeof SKILLS_MODES)[number]
 /** 顶部那排 Tab 行末的两个数。嵌进设置时由宿主导航画，所以这一屏要把它们报上去。 */
 export interface SkillsCounts {
@@ -695,7 +695,7 @@ export function SkillsView({
       onTabChange={id => setMode(id as (typeof SKILLS_MODES)[number])}
       // MCP manages a handful of entries with the editor right there —
       // searching it is noise. 名手那一格只有四行，搜它也是噪声。
-      searchHidden={mode === 'mcp' || mode === 'experts'}
+      searchHidden={mode === 'mcp' || mode === 'virtuosos'}
       searchHints={searchHints}
       searchPlaceholder={
         mode === 'skills'
@@ -715,7 +715,7 @@ export function SkillsView({
               { id: 'toolsets', label: t.skills.tabToolsets, meta: toolsetCount },
               { id: 'mcp', label: t.skills.tabMcp },
               { id: 'hub', label: t.skills.tabHub },
-              { id: 'experts', label: t.skills.tabExperts }
+              { id: 'virtuosos', label: t.skills.tabVirtuosos }
             ]
       }
     >
@@ -727,9 +727,9 @@ export function SkillsView({
         ) : (
           <McpTab gateway={gateway} />
         )
-      ) : mode === 'experts' ? (
+      ) : mode === 'virtuosos' ? (
         // 名手是**角色级**的设置（不跟 scope 走），所以这一格自己读后端那一份。
-        <ExpertsTab />
+        <VirtuososTab />
       ) : (skillsFailed || toolsetsFailed) && (!skills || !toolsets) ? (
         <PanelEmpty
           action={

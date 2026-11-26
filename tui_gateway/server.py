@@ -3984,6 +3984,13 @@ def _on_tool_progress(
             payload["depth"] = int(_kwargs["depth"])
         if _kwargs.get("model"):
             payload["model"] = str(_kwargs["model"])
+        # 这一趟是不是「名手」（file/browser/software/computer）。空 = 普通子智能体。
+        #
+        # 必须原样透传：前端按它分栏（名手进左栏抽屉、普通子智能体进底栏那一格）。
+        # 10-25 之前这里漏了它，前端拿到的 virtuoso 恒 undefined，
+        # 于是两处 `filter(item => !item.virtuoso)` 全都白写——名手的日志照样混进底栏。
+        if _kwargs.get("virtuoso"):
+            payload["virtuoso"] = str(_kwargs["virtuoso"])
         if _kwargs.get("tool_count") is not None:
             payload["tool_count"] = int(_kwargs["tool_count"])
         if _kwargs.get("toolsets"):

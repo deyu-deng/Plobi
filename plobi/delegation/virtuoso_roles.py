@@ -6,7 +6,7 @@
 
 11-04 用户补的三条（这一版落在这里）：
 - **专家是 L3，不是普通子代理**：它们能自己再派普通子代理，所以角色一律 `orchestrator`；
-- **每类角色可以有自己的模型**，跟 L2 不一样也行（存在 `experts/roles.json`，
+- **每类角色可以有自己的模型**，跟 L2 不一样也行（存在 `virtuosos/roles.json`，
   没配就继承父 Agent——与普通子代理同一条默认）；
 - 普通子代理（不管谁派的）进底栏 overlay，L3 自己的工作日志进主区卡片。
   区分靠侧记：带角色侧记的是 L3，不带的才是普通子代理。
@@ -25,11 +25,11 @@ from typing import Any, Optional
 #: 名手的分类只有这一处真源：**键与顺序**（2026-11-15 收口）。
 #:
 #: 以前「键、中文名、职责、工具面」四件事挤在一个 ``ROLES`` 字典里，前端另抄一份
-#: ``EXPERT_ROLES`` 和一份 ``ExpertRoleKey`` 联合类型：加一类要改三处，漏一处就得到
+#: ``VIRTUOSO_ROLES`` 和一份 ``VirtuosoRoleKey`` 联合类型：加一类要改三处，漏一处就得到
 #: 一行永远点不开的空行。现在拆成四张同键的平表——``TRADES`` 定键与序、``LABELS`` 定
 #: 中文名、``DUTIES`` 定职责、``TOOLSETS`` 定工具面；``ROLES`` 只是它们的派生视图，
-#: **别在 ``ROLES`` 里写内容**。前端那份镜像在 ``apps/desktop/src/shared/expert-trades.ts``，
-#: 键集合与顺序由 ``expert-trades.test.ts`` 与这张表锁死。
+#: **别在 ``ROLES`` 里写内容**。前端那份镜像在 ``apps/desktop/src/shared/virtuoso-trades.ts``，
+#: 键集合与顺序由 ``virtuoso-trades.test.ts`` 与这张表锁死。
 TRADES: tuple[str, ...] = ("file", "browser", "software", "computer")
 
 #: 中文名（左栏那一格的字在 ``MARKS``）。只给人看，不上模型。
@@ -143,7 +143,7 @@ def role_spec(key: str) -> Optional[dict[str, Any]]:
 def role_rows() -> list[dict[str, Any]]:
     """给人看的名册（设置/说明用）：键、名字、职责、工具面、能力。
 
-    顺序只读 ``TRADES``——前端把它当唯一真相（``expert-trades.test.ts`` 对表）。
+    顺序只读 ``TRADES``——前端把它当唯一真相（``virtuoso-trades.test.ts`` 对表）。
     """
     return [
         {
@@ -184,18 +184,34 @@ def body_of(key: str, text: str) -> str:
     return body[len(prefix):].strip() if body.startswith(prefix) else body.strip()
 
 
-def experts_dir() -> Path:
-    """角色侧记的落点：`$PLOBI_HOME/experts/<子会话>.json`（左栏那一格读它）。"""
-    override = os.environ.get("PLOBI_EXPERTS_DIR", "").strip()
+def _migrate_legacy_dir(home: Path) -> Path:
+    """旧名目录 ``experts/`` 就地改名成 ``virtuosos/``（11-25 改名那一刀）。
+
+    只做到这一件事：**老目录里有 ``*.json`` 就整体搬过去**，搬不动（占用/权限）就让
+    读侧自己落到空目录，不抛错——侧记丢了最多是那一格显示「没配」。
+    """
+    target = home / "virtuosos"
+    legacy = home / "experts"
+    try:
+        if legacy.is_dir() and not target.exists():
+            legacy.rename(target)
+    except OSError:
+        pass
+    return target
+
+
+def virtuosos_dir() -> Path:
+    """角色侧记的落点：`$PLOBI_HOME/virtuosos/<子会话>.json`（左栏那一格读它）。"""
+    override = os.environ.get("PLOBI_VIRTUOSOS_DIR", "").strip()
     if override:
         return Path(os.path.expanduser(override))
     from plobi_constants import get_plobi_home
 
-    return get_plobi_home() / "experts"
+    return _migrate_legacy_dir(get_plobi_home())
 
 
 def roles_config_path() -> Path:
-    """四类角色各自的设置：`$PLOBI_HOME/experts/roles.json`。
+    """四类角色各自的设置：`$PLOBI_HOME/virtuosos/roles.json`。
 
     形状：`{"software": {"model": "provider/model", "disabled_capabilities": [...]}}`。
 
@@ -205,7 +221,7 @@ def roles_config_path() -> Path:
     ⚠ **能力的底永远是设置面那一份全局真源**（技能目录／工具门类／MCP 全局表）；
     这一份只是**角色级的减项**（名手自己的黑名单）——它**不继承 principal 的工具设置**。
     """
-    return experts_dir() / "roles.json"
+    return virtuosos_dir() / "roles.json"
 
 
 def load_role_settings() -> dict[str, dict]:
@@ -412,7 +428,7 @@ def record_role(child_session_id: str, role: str, goal: str, model: Optional[str
     sid = str(child_session_id or "").strip()
     if not sid or role not in ROLES:
         return
-    path = experts_dir() / f"{sid}.json"
+    path = virtuosos_dir() / f"{sid}.json"
     payload: dict[str, Any] = {
         "role": role,
         "goal": goal,

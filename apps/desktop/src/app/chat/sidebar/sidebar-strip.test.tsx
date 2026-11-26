@@ -29,11 +29,11 @@ vi.mock('@/i18n', () => ({
         agentCategories: { projects: '项目', research: '研究' },
         agentsEmptyDesc: '还没有 Agent',
         backToSecretary: '回到秘书',
-        expertRoleBrowser: '浏览器',
-        expertRoleComputer: '电脑',
-        expertRoleFile: '文件',
-        expertRoleSoftware: '软件',
-        expertsTitle: '专家',
+        virtuosoRoleBrowser: '浏览器',
+        virtuosoRoleComputer: '电脑',
+        virtuosoRoleFile: '文件',
+        virtuosoRoleSoftware: '软件',
+        virtuososTitle: '专家',
         externalSessionsEmpty: '还没有会话',
         newAgent: '新建 Agent',
         offloadsTitle: '外包',
@@ -108,7 +108,7 @@ beforeEach(() => {
     configurable: true,
     value: {
       ...(window.plobiDesktop || {}),
-      api: vi.fn().mockResolvedValue({ data: { experts: [], projects: [], reason: '', sessions: [] }, ok: true })
+      api: vi.fn().mockResolvedValue({ data: { virtuosos: [], projects: [], reason: '', sessions: [] }, ok: true })
     }
   })
 })
@@ -230,17 +230,17 @@ describe('收起态：中段开关与外包两枚浮窗（用户 11-01）', () =
     const api = window.plobiDesktop.api as unknown as ReturnType<typeof vi.fn>
 
     api.mockImplementation(({ path }: { path: string }) =>
-      path.endsWith('/experts')
+      path.endsWith('/virtuosos')
         ? Promise.resolve({
           data: {
-            experts: [{
+            virtuosos: [{
               goal: '整理三份资料', id: 'kid-1', messages: 2, model: 'glm', parent_session_id: 'p',
               role: 'file', started_at: 1, status: 'running', tool_calls: 1
             }]
           },
           ok: true
         })
-        : Promise.resolve({ data: { experts: [], projects: [], reason: '', sessions: [] }, ok: true })
+        : Promise.resolve({ data: { virtuosos: [], projects: [], reason: '', sessions: [] }, ok: true })
     )
 
     renderStrip(undefined, { activeAgentId: 'l2-a', middleView: 'outsourced', onChangeMiddleView: vi.fn() })
@@ -256,7 +256,7 @@ describe('收起态：中段开关与外包两枚浮窗（用户 11-01）', () =
     fireEvent.click(await screen.findByRole('menuitem', { name: /文件/ }))
 
     await waitFor(() =>
-      expect($openConversation.get()).toEqual(expect.objectContaining({ kind: 'expert', sessionId: 'kid-1' }))
+      expect($openConversation.get()).toEqual(expect.objectContaining({ kind: 'virtuoso', sessionId: 'kid-1' }))
     )
   })
 
@@ -276,7 +276,7 @@ describe('收起态：中段开关与外包两枚浮窗（用户 11-01）', () =
           },
           ok: true
         })
-        : Promise.resolve({ data: { experts: [], projects: [], reason: '', sessions: [] }, ok: true })
+        : Promise.resolve({ data: { virtuosos: [], projects: [], reason: '', sessions: [] }, ok: true })
     )
 
     renderStrip(undefined, { activeAgentId: 'l2-a', middleView: 'outsourced', onChangeMiddleView: vi.fn() })

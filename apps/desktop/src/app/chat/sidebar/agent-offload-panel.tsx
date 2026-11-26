@@ -18,8 +18,8 @@ import {
 } from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarDrawerRow } from './chrome'
-import { ExpertRoleRow, useAgentExperts } from './expert-panel'
-import { EXPERT_ROLES, latestRun, runsOfRole } from './expert-roles'
+import { VirtuosoRoleRow, useAgentVirtuosos } from './virtuoso-panel'
+import { VIRTUOSO_ROLES, latestRun, runsOfRole } from './virtuoso-roles'
 import { unreadableSources, vendorLabel } from './external-sessions'
 import { ExternalSessionRow, useExternalSessions } from './external-sessions-panel'
 import { VendorBrandBlock } from './offload-vendor-icon'
@@ -51,14 +51,14 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
   // 这一格那一摊的四个读数（派过几轮／几轮没出错／几轮失败／今天花了多少）：
   // **后端给的那一句原话**，屏上不另写、也不拿数字自己拼一句。
   const [summary, setSummary] = useState('')
-  const [expertsOpen, setExpertsOpen] = useState(true)
+  const [virtuososOpen, setVirtuososOpen] = useState(true)
   const [outsourcedOpen, setOutsourcedOpen] = useState(true)
   const [openVendor, setOpenVendor] = useState<null | string>(null)
   // 「待判断」那批**默认展开**（用户 11-09）：Marvis 那 11 条里只有两条自动判成有关，
   // 藏在一枚裸数字后面 ⇒ 别的 Agent 打开这一格几乎看不见东西。那枚眼睛还在，可收起来。
   const [showUnknown, setShowUnknown] = useState(true)
   const [showArchived, setShowArchived] = useState(false)
-  const experts = useAgentExperts(agentId)
+  const virtuosos = useAgentVirtuosos(agentId)
   const { data, reload: reloadExternal } = useExternalSessions(agentId)
 
   useEffect(() => {
@@ -123,25 +123,25 @@ export function AgentOffloadPanel({ agentId }: { agentId: string }) {
       {/* 专家：四类角色的名册。**不放会话**——会话是点开这一行之后主区里的事。
           一个都没派过时不印「0」：名册照样在，只是四行都灰着。 */}
       <SidebarDrawerRow
-        count={experts.length || undefined}
+        count={virtuosos.length || undefined}
         icon="person"
-        label={c.expertsTitle}
-        onToggle={() => setExpertsOpen(value => !value)}
-        open={expertsOpen}
+        label={c.virtuososTitle}
+        onToggle={() => setVirtuososOpen(value => !value)}
+        open={virtuososOpen}
       >
         <div className="flex flex-col gap-px pl-4">
-          {EXPERT_ROLES.map(role => {
-            const runs = runsOfRole(experts, role.key)
+          {VIRTUOSO_ROLES.map(role => {
+            const runs = runsOfRole(virtuosos, role.key)
             const latest = latestRun(runs)
 
             return (
-              <ExpertRoleRow
+              <VirtuosoRoleRow
                 key={role.key}
                 // 没跑过也照开：主区那张卡会写清这个角色是什么、怎么让它出场。
                 onOpen={() =>
                   openConversation({
                     agentId,
-                    kind: 'expert',
+                    kind: 'virtuoso',
                     role: role.key,
                     running: latest?.status === 'running',
                     sessionId: latest?.id ?? null,

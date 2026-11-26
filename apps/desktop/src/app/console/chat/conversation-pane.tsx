@@ -1,7 +1,7 @@
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { getExpertLog, logLine } from '@/app/chat/sidebar/expert-runs'
+import { getVirtuosoLog, logLine } from '@/app/chat/sidebar/virtuoso-runs'
 import {
   deleteExternalSession,
   getExternalTranscript,
@@ -26,7 +26,7 @@ import type { ChatMessage } from '@/lib/chat-messages'
 import { useChatMessageRuntime } from '@/lib/chat-runtime'
 import { closeConversation, type OpenConversation, openConversation } from '@/store/conversation-view'
 
-import { ExpertModelBar } from './expert-model-bar'
+import { VirtuosoModelBar } from './virtuoso-model-bar'
 
 /**
  * 主区那张对话卡片，显示**不在这个 Agent 自己会话里**的一段对话（用户 11-01）。
@@ -58,12 +58,12 @@ export function ConversationPane({
 
   const { agentId, kind, sessionId } = conversation
   const vendor = conversation.kind === 'external' ? conversation.vendor : ''
-  const running = conversation.kind === 'expert' ? conversation.running === true : false
+  const running = conversation.kind === 'virtuoso' ? conversation.running === true : false
 
   const load = useCallback(
     async (cancelled: () => boolean) => {
       // 名册上那四行永远点得开，但没派过活时没有会话号——不必去读一个不存在的日志。
-      if (kind === 'expert' && !sessionId) {
+      if (kind === 'virtuoso' && !sessionId) {
         setLines([])
         setError('')
 
@@ -88,7 +88,7 @@ export function ConversationPane({
           return
         }
 
-        const body = await getExpertLog(sessionId)
+        const body = await getVirtuosoLog(sessionId)
 
         if (cancelled()) {
           return
@@ -107,12 +107,12 @@ export function ConversationPane({
           setLines([])
           // 后端那句话要跟着出来：只说「读不出来」等于把判据藏了（同发送失败那条）。
           setError(
-            `${kind === 'external' ? c.externalSessionsLoadFailed : c.expertsLoadFailed}${failureText(reason)}`
+            `${kind === 'external' ? c.externalSessionsLoadFailed : c.virtuososLoadFailed}${failureText(reason)}`
           )
         }
       }
     },
-    [agentId, c.expertsLoadFailed, c.externalSessionsLoadFailed, kind, sessionId, vendor]
+    [agentId, c.virtuososLoadFailed, c.externalSessionsLoadFailed, kind, sessionId, vendor]
   )
 
   useEffect(() => {
@@ -196,11 +196,11 @@ export function ConversationPane({
             {kind === 'external' ? (
               <p className="text-xs text-(--ui-text-tertiary)">{c.externalSessionsNoMessages}</p>
             ) : sessionId ? (
-              <p className="text-xs text-(--ui-text-tertiary)">{c.expertsEmpty}</p>
+              <p className="text-xs text-(--ui-text-tertiary)">{c.virtuososEmpty}</p>
             ) : (
               // 这一类名手还没被派过活。原来只有一句挤在一起的长句，读起来像报错；
               // 这里统一走 EmptyState：一行短标题 + 一句说明，与别处空态同一形状。
-              <EmptyState className="min-h-0" description={c.expertsIdleHint} title={c.expertsIdleTitle} />
+              <EmptyState className="min-h-0" description={c.virtuososIdleHint} title={c.virtuososIdleTitle} />
             )}
           </div>
         )}
@@ -216,13 +216,13 @@ export function ConversationPane({
         ) : (
           <ReadOnlyNotice />
         )
-      ) : conversation.kind === 'expert' && conversation.role ? (
+      ) : conversation.kind === 'virtuoso' && conversation.role ? (
         // 专家卡片底部那条：位置与高度照主对话的 composer，里面只放模型选择。
         // 选完存到这个角色上，下次派它就用这个模型（用户 11-04）。
         <div className="shrink-0 px-4 pb-[var(--composer-shell-pad-block-end,0.75rem)] pt-2">
           <div className="mx-auto flex w-full max-w-[var(--composer-width,46rem)] items-center justify-between gap-2 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-3 py-2">
-            <span className="min-w-0 truncate text-[0.72rem] text-(--ui-text-quaternary)">{c.expertModelHint}</span>
-            <ExpertModelBar role={conversation.role} />
+            <span className="min-w-0 truncate text-[0.72rem] text-(--ui-text-quaternary)">{c.virtuosoModelHint}</span>
+            <VirtuosoModelBar role={conversation.role} />
           </div>
         </div>
       ) : null}

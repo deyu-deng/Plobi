@@ -9,11 +9,11 @@ into something the code can enforce:
   model is doing clerical work).
 - **L2** runs cheap models or aggregated quota and does the per-message
   classification, extraction and tool loops.
-- **L3** is *not* a role in this table. Temporary experts and offloaded
+- **L3** is *not* a role in this table. Temporary virtuosos and offloaded
   external AI software are full agents with their own models, tool loops and
   the ability to spawn ordinary sub-agents (11-04 ruling; see
-  ``plobi/delegation/expert_roles.py`` and ``agent/external_offload.py``).
-  Their models are chosen per expert role / per external software, never here.
+  ``plobi/delegation/virtuoso_roles.py`` and ``agent/external_offload.py``).
+  Their models are chosen per virtuoso role / per external software, never here.
   Pico HID / ``computer_use`` are input channels, not a definition of L3.
 
 Config: ``$PLOBI_HOME/plobi/models.json`` (ids only; API keys stay in env,
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 CONDUCTOR = "conductor"   # 指挥
 PRINCIPAL = "principal"   # 首席（五类 category 一律挂这一档）
 
-#: 名册里认得出的角色只有这两个。名手的四类（``plobi/delegation/expert_roles.py``
+#: 名册里认得出的角色只有这两个。名手的四类（``plobi/delegation/virtuoso_roles.py``
 #: 的 ``TRADES``）与客席（``agent/external_offload.py``）都不是本表的值。
 KNOWN_ROLES = (CONDUCTOR, PRINCIPAL)
 

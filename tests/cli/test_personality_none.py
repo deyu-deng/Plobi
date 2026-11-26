@@ -172,20 +172,20 @@ class TestPersonalityDictFormat:
     def test_dict_personality_uses_system_prompt(self):
         cli = self._make_cli({
             "coder": {
-                "description": "Expert programmer",
-                "system_prompt": "You are an expert programmer.",
+                "description": "Virtuoso programmer",
+                "system_prompt": "You are an virtuoso programmer.",
                 "tone": "technical",
                 "style": "concise",
             }
         })
         with patch("cli.save_config_value", return_value=True):
             cli._handle_personality_command("/personality coder")
-        assert "You are an expert programmer." in cli.system_prompt
+        assert "You are an virtuoso programmer." in cli.system_prompt
 
     def test_dict_personality_includes_tone(self):
         cli = self._make_cli({
             "coder": {
-                "system_prompt": "You are an expert programmer.",
+                "system_prompt": "You are an virtuoso programmer.",
                 "tone": "technical and precise",
             }
         })
@@ -196,7 +196,7 @@ class TestPersonalityDictFormat:
     def test_dict_personality_includes_style(self):
         cli = self._make_cli({
             "coder": {
-                "system_prompt": "You are an expert programmer.",
+                "system_prompt": "You are an virtuoso programmer.",
                 "style": "use code examples",
             }
         })

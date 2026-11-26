@@ -31,7 +31,7 @@ _LEGACY_TEMPLATE_SOULS = (
         "\n"
         "Examples:\n"
         '  - "You are a warm, playful assistant who uses kaomoji occasionally."\n'
-        '  - "You are a concise technical expert. No fluff, just facts."\n'
+        '  - "You are a concise technical virtuoso. No fluff, just facts."\n'
         '  - "You speak like a friendly coworker who happens to know everything."\n'
         "\n"
         "This file is loaded fresh each message -- no restart needed.\n"
