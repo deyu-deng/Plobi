@@ -261,20 +261,17 @@ class TestResolveToolsetIncludeRegistry:
 
     def test_include_registry_false_excludes_registry_tools(self):
         from tools.registry import discover_builtin_tools
-        discover_builtin_tools()  # registers delegate_expert into 'delegation'
+        discover_builtin_tools()
 
         merged = set(resolve_toolset("delegation"))
         static = set(resolve_toolset("delegation", include_registry=False))
 
         assert static == {"delegate_task"}, static
-        # delegate_expert is registered into 'delegation' but is not part of the
-        # static definition — it must only appear in the merged view.
-        #
-        # （这一条原先拿 `read_terminal` 当例子：它注册在 `terminal` 门类里。
-        # 11-14 那一刀把它搬进了 `desktop_ui`（表面门类，门类才是面闸），
-        # 于是它进了**静态**清单 ⇒ 例子换成 `delegate_expert`。）
-        assert "delegate_expert" in merged
-        assert "delegate_expert" not in static
+        # 11-25 一刀切开：名手派发不再挂在 delegation 上，它有自己的 virtuoso 组。
+        # （此前这里拿 `delegate_virtuoso` 当「注册了但静态表没列」的例子；
+        # 现在它进了静态表、也换了组，所以顺手改成断言这件事本身。）
+        assert "delegate_virtuoso" not in merged
+        assert "delegate_virtuoso" in set(resolve_toolset("virtuoso"))
 
     def test_get_toolset_include_registry_false_is_static(self):
         ts = get_toolset("delegation", include_registry=False)

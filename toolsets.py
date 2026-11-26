@@ -427,6 +427,19 @@ TOOLSETS = {
         "includes": []
     },
 
+    # 名手（进程内专家）派发，与上面的普通子代理派发**分组分开**（用户 11-25：
+    # 「名手的派发我希望也能做一个专属的工具集，而不是直接用普通子代理的工具」）。
+    # 两条路的产物也不同：名手只带本行当的工具面、进左栏专家抽屉、
+    # 点开日志进对话卡片；普通子代理进底栏那棵树。
+    "virtuoso": {
+        "description": (
+            "Hand one piece of work to an in-process Virtuoso (名手: file / browser / "
+            "software / computer) that carries only its trade's toolset"
+        ),
+        "tools": ["delegate_virtuoso"],
+        "includes": []
+    },
+
     # "honcho" toolset removed — Honcho is now a memory provider plugin.
     # Tools are injected via MemoryManager, not the toolset system.
 

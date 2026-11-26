@@ -2260,6 +2260,7 @@ CONDUCTOR_MID_TOOLSETS: tuple[str, ...] = (
     "todo",
     "clarify",
     "delegation",
+    "virtuoso",
     MASTER_TOOLSET_NAME,
 )
 
@@ -2390,7 +2391,12 @@ def mid_narrow_toolset_names(names: list[str] | None, keep=()) -> list[str]:
         kept = [n for n in raw if n in keep_names and n in CONDUCTOR_DROP_TOOLSETS]
         return list(CONDUCTOR_MID_TOOLSETS) + extras + kept
     result = [n for n in raw if n not in CONDUCTOR_DROP_TOOLSETS]
-    for required in (MASTER_TOOLSET_NAME, "clarify"):
+    # ``virtuoso``（名手派发）和 ``clarify`` 同级：这是默认劳动力，不该被任何一档
+    # 收窄顺手抹掉。11-25 把 ``delegate_virtuoso`` 从 ``delegation`` 拆成独立工具集
+    # 之后，profile 里那行显式列表走的是「只做减法」这条分支，不补这一行 cli 面
+    # 就没有 ``delegate_virtuoso``——SOUL 上写着「名手默认干」，工具面却拿不到，
+    # 正是 prompt 与 toolset 互相打脸的老坑。
+    for required in (MASTER_TOOLSET_NAME, "virtuoso", "clarify"):
         if required not in result:
             result.append(required)
     return result
@@ -2878,6 +2884,24 @@ def build_principal_identity_soul_block(
         " 的 virtuoso 填 file / browser / software / computer）。你自己做的是判断、拆解、验收、"
         "把结果收成一句人话。工具没给或专家起不来，就如实说一句「这个我现在做不了」，"
         "再自己扛。"
+    )
+    # 11-25：名手和客席原先在提示里是「两条都优先」，两边的工具描述里也各自
+    # 自称默认（专家那边写着四类活 HARD RULE 派我、客席那边写着默认先想到它），
+    # 触发条件完全重叠 ⇒ 模型读到两条互斥的强指令，只能随机挑一条，最坏是两条
+    # 都不用、自己上手。这里给一条**定序**的判据：不问「谁更好」，只问
+    # 「名手够不够得着」。名手是默认劳动力，客席是够不着时的特例。
+    lines.append(
+        "- **名手是默认，客席是特例**——这两条不是并列的两个「优先」：\n"
+        "  1. 先问一句**这活要不要动文件、跑命令、开浏览器、动系统**：要，就派名手，"
+        "四类里挑一类。这是默认答案，不是例外。\n"
+        "  2. 只有**名手够不着**才换客席，够不着只有三种：① 活要用那家软件里的登录态或账号"
+        "（名手没有登录态）；② 要用那家模型独有的判断力或独家能力（名手就是你自己的模型"
+        "开出来的，换不出第二个脑子）；③ 上次就是那家干的、这次要接着那条会话往下说"
+        "（名手没有记忆，接不上）。三条一条都不成立，就别开客席。\n"
+        "  3. 两边都能干，**派名手**：它在本进程里、日志在左栏、败了能改参数重来；"
+        "客席派出去就飞了，我们只能等。\n"
+        "  4. 客席不接的活：破坏性动作、中途多半要改主意、需要来回追问的。客席一趟失败"
+        "**别派第二趟**——名手可以重试，客席重派通常只是再烧一次钱。"
     )
     # 11-02：上一版只写了「能派的就派」——那是一句品德，不是一个判据，模型照样
     # 自己上手。用户这一轮点名要的是**界线**，所以这里给一条它每件事都能自问的：
