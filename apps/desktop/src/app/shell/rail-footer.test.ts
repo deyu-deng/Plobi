@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { pickRailFooterItems, RAIL_FOOTER_IDS } from './rail-footer'
+import { pickRailFooterItems, RAIL_FOOTER_IDS, railFooterSlots } from './rail-footer'
 import type { StatusbarItem } from './statusbar-controls'
 
 /**
@@ -8,8 +8,12 @@ import type { StatusbarItem } from './statusbar-controls'
  * ① 单子就是单子——顺序照 `RAIL_FOOTER_IDS`，状态栏那边怎么排的不算；
  * ② 点开是一整屏的排前面（设置打头），点开只有一小张面板的排后面，不许再交错；
  * ③ 掉出去的那几枚是**不再在这条上重复入口**，不是被谁顺手藏了：读数（会话/回合时长、
- *    版本号）与已经另有入口的（命令面板、快捷键、触感）都不许自己又挤回来。
+ *    版本号）与已经另有入口的（快捷键、触感）都不许自己又挤回来。
  *    Cron 11-03 明确要回来，所以它不再是"掉出去的那一枚"。
+ *
+ * **11-25 更新（用户 22:2x）**：① 这一族是**另一种 slot**（`status-item`：内容来自状态栏
+ * 管道、点开是整屏或一小张面板）；② **命令中心进了这一族**（屏上多一枚图标）；
+ * ③ 「整屏在前」这条顺序规矩**从这份写死的清单挪进了声明**（`props.opens`）⇒ 判据是数据。
  */
 
 const item = (id: string, extra: Partial<StatusbarItem> = {}): StatusbarItem => ({ id, ...extra })
@@ -31,13 +35,16 @@ const EVERY_TODAY = [
   item('version-backend')
 ]
 
-/** 点开就是一整屏的那几枚（其余在栏里只开一小张面板）。 */
-const OVERLAY_IDS = ['system:settings', 'agents', 'cron', 'agenda']
+/** 点开就是一整屏的那几枚（其余在栏里只开一小张面板）——**由声明里的 `props.opens` 说了算**。 */
+const OVERLAY_IDS = railFooterSlots()
+  .filter(slot => slot.props.opens === 'overlay')
+  .map(slot => slot.id)
 
 describe('左栏底部那一组', () => {
   it('顺序照单子：设置打头，整屏的在前、面板的在后', () => {
     expect(RAIL_FOOTER_IDS).toEqual([
       'system:settings',
+      'command-center',
       'agents',
       'cron',
       'agenda',
@@ -49,11 +56,24 @@ describe('左栏底部那一组', () => {
     expect(RAIL_FOOTER_IDS.filter(id => OVERLAY_IDS.includes(id))).toEqual(OVERLAY_IDS)
   })
 
+  it('**命令中心在這一族里**（用户 11-25 22:2x：命令中心属于底部那个地方的东西）', () => {
+    expect(RAIL_FOOTER_IDS).toContain('command-center')
+    expect(pickRailFooterItems(EVERY_TODAY).map(i => i.id)).toContain('command-center')
+  })
+
+  it('这一族是**另一种 slot**（`status-item`），不是上面那排导航格子那一族', () => {
+    for (const slot of railFooterSlots()) {
+      expect(slot.kind, `${slot.id} 不是状态栏那一件？`).toBe('status-item')
+      // 内容来自状态栏管道，点开是整屏或一小张面板
+      expect(slot.props.pipeline, `${slot.id} 不来自状态栏管道？`).toBe('statusbar')
+      expect(['overlay', 'panel'], `${slot.id} 没说清点开是什么`).toContain(slot.props.opens)
+    }
+  })
+
   it('读数与另有入口的那几枚不许自己挤回来', () => {
     const ids = pickRailFooterItems(EVERY_TODAY).map(i => i.id)
 
     for (const dropped of [
-      'command-center',
       'haptics',
       'keybinds',
       'running-timer',
@@ -73,6 +93,7 @@ describe('左栏底部那一组', () => {
 
     expect(pickRailFooterItems(withoutEgress).map(i => i.id)).toEqual([
       'system:settings',
+      'command-center',
       'agents',
       'cron',
       'agenda',

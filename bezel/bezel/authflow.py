@@ -509,12 +509,37 @@ def _trim_url(url: str) -> str:
 MANAGER = LoginManager()
 
 
-def login_plan_for(registry, app_id: str) -> dict:
-    """The plan for one leg: provider-declared first, then the login-only table."""
+def _call_login_plan(prov, method: str | None) -> dict:
+    """``login_plan``, with the user's lane when that leg knows how to take one.
+
+    Most legs have exactly one way in and no menu to pick from; a magpie leg
+    behind a multi-lane plugin has one. Asking by signature keeps this side from
+    growing yet another table of which legs offer what.
+    """
+    if not method:
+        return prov.login_plan()
+    try:
+        params = inspect.signature(prov.login_plan).parameters
+    except (TypeError, ValueError):
+        return prov.login_plan()
+    if "method" in params:
+        return prov.login_plan(method)
+    return prov.login_plan()
+
+
+def login_plan_for(registry, app_id: str, method: str | None = None) -> dict:
+    """The plan for one leg: provider-declared first, then the login-only table.
+
+    ``method`` is the lane the user picked off the card's menu — most of the 22
+    vendors offer two (a browser round trip and a pasted key), and which one is
+    meant changes both the argv and whether a terminal is needed. It is carried
+    through untouched: the leg owns what a lane means, this file only carries
+    the choice.
+    """
     key = (app_id or "").strip().lower()
     prov = registry.providers.get(key) if registry is not None else None
     if prov is not None:
-        plan = prov.login_plan()
+        plan = _call_login_plan(prov, method)
         plan.setdefault("name", getattr(prov, "display_name", "") or key)
         # A leg that answers its own sign-in question (the ACP legs: their handshake is
         # the verdict) also supplies the verdict for the console window — because that
@@ -580,6 +605,7 @@ def _catalog_row(app_id: str, spec: dict, prov, registry) -> dict:
     reason = ""
     kind = "none"
     login_reason = ""
+    plan: dict = {}
 
     if prov is not None:
         plan = prov.login_plan()
@@ -649,6 +675,14 @@ def _catalog_row(app_id: str, spec: dict, prov, registry) -> dict:
         # 静态清单那一份优先，没有就问腿。
         "install_command": install.get("command") or spec.get("install_command"),
         "intro_key": spec.get("intro_key") or app_id,
+        # 这一家能怎么登录（oauth 走浏览器 / api 贴 key），通道本身是厂商的答案，
+        # 我们只负责把每条都摆出来 —— 一个插件两条通道，卡片却只给一条，
+        # 那等于替用户砍掉了它一半的能力（用户 11-25）。
+        "login_methods": spec.get("methods") or (plan.get("methods") if prov is not None else None) or [],
+        "login_method_default": plan.get("method") if prov is not None else None,
+        # 插件还没装：卡片的加号先把它装回来，再接着登录。
+        "plugin": spec.get("plugin"),
+        "from_set": bool(spec.get("from_set")),
     }
 
 

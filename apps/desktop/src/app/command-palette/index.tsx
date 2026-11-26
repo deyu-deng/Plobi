@@ -79,9 +79,10 @@ import {
   SKILLS_ROUTE,
   STARMAP_ROUTE
 } from '../routes'
-import { FIELD_LABELS, SECTIONS } from '../settings/constants'
+import { FIELD_LABELS } from '../settings/constants'
 import { fieldCopyForSchemaKey } from '../settings/field-copy'
 import { prettyName } from '../settings/helpers'
+import { useSettingsSections, type SettingsSection } from '../settings/use-settings-sections'
 
 import { MarketplaceThemePage } from './marketplace-theme-page'
 import { PetInlineToggle, PetPalettePage } from './pet-palette-page'
@@ -361,8 +362,12 @@ export function CommandPalette() {
     setPage(prev => (prev ? (PAGE_PARENTS[prev] ?? null) : null))
   }, [])
 
+  // 设置屏那几段**从 slot 声明表派生**（用户 11-25 23:3x）⇒ 插件加的那一段
+  // 在这一份命令清单里也**自动出现**（用户关掉的那一段**真的不在**）。
+  const sections = useSettingsSections()
+
   const settingsSectionLabel = useCallback(
-    (section: (typeof SECTIONS)[number]) => t.settings.sections[section.id] ?? section.label,
+    (section: SettingsSection) => t.settings.sections[section.id] ?? section.label,
     [t.settings.sections]
   )
 
@@ -554,7 +559,7 @@ export function CommandPalette() {
       {
         heading: cc.settings,
         items: [
-          ...SECTIONS.map(section => ({
+          ...sections.map(section => ({
             icon: section.icon,
             id: `set-config-${section.id}`,
             keywords: ['settings', section.label, settingsSectionLabel(section)],
@@ -681,7 +686,7 @@ export function CommandPalette() {
       })
     }
 
-    const fieldItems = SECTIONS.flatMap(section =>
+    const fieldItems = sections.flatMap(section =>
       section.keys.map(key => ({
         icon: section.icon,
         id: `field-${key}`,

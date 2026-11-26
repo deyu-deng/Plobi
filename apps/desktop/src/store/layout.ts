@@ -306,10 +306,13 @@ export function setCardFocus(next: CardFocus): void {
 // 显隐口径照旧（用户 11-08 21:1x）：`auto` 跟着对话卡全屏走（默认那档），
 // `open`／`closed` 是用户点过的结果。
 
-/** 这一族有三面：档案、待放行、写脑待批（顺序＝抬头右上角那三枚的顺序）。 */
-export type MonitorFaceId = 'dossier' | 'pending' | 'mind-pending'
-
-export const MONITOR_FACE_IDS: readonly MonitorFaceId[] = ['dossier', 'pending', 'mind-pending']
+/**
+ * 这一族有几面：档案、待放行、写脑待批（顺序＝抬头右上角那几枚的顺序）。
+ *
+ * **身份是开放的**（`string`）：那一列从 **slot 声明表**派生（裁定 239 第四刀），
+ * 插件可以带来它自己的一枚 ⇒ 宿主不预先知道有哪些 id。
+ */
+export type MonitorFaceId = string
 
 /**
  * 显隐口径。**不是容器形态** —— 形态是 `'column'／'float'`，在 `app/shell/monitor-panel.tsx`。

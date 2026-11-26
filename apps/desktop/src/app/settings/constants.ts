@@ -14,7 +14,6 @@ import {
 import type { ThemeMode } from '@/themes/context'
 
 import { defineFieldCopy } from './field-copy'
-import type { DesktopConfigGroup, DesktopConfigSection } from './types'
 
 // Provider group definitions used to fold raw env-var names like
 // ``XAI_API_KEY`` into a single "xAI" card with a friendly label, short
@@ -229,68 +228,44 @@ export const BUILTIN_PERSONALITIES = [
   'hype'
 ]
 
-// Schema-side select overrides for desktop-relevant enum fields whose
-// backend schema only declares a string type.
-export const ENUM_OPTIONS: Record<string, string[]> = {
-  'agent.image_input_mode': ['auto', 'native', 'text'],
-  'approvals.mode': ['manual', 'smart', 'off'],
-  'code_execution.mode': ['project', 'strict'],
-  'context.engine': ['compressor', 'default', 'custom'],
-  'delegation.reasoning_effort': ['', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-  // `''` is the real off switch for the external brain (the built-in MEMORY.md layer
-  // stays); `mind` is what the backend ships as the official surface. There used to be a
-  // `builtin` entry here — it is not a provider plugin, and measured behaviour for it is
-  // byte-for-byte the `''` case, so it was a second label for one state.
-  // `mind` 也不在这里（`WP-MIND-COEXIST`）：它是这具身体自己的记忆面，不是「一家外部服务」，
-  // 所以在同一个屏上由自己那个开关（`memory.mind_enabled`）管，不再和八家第三方位于一列。
-  // 别把它加回来——那个列表的每一项都会在用户选中时**取代**别的东西，而 Mind 不会。
-  'memory.provider': ['', 'hindsight', 'honcho'],
-  // Terminal execution backends — kept in sync with the dispatch ladder in
-  // tools/terminal_tool.py::_create_environment (local/docker/singularity/
-  // modal/daytona/ssh). Remote backends need extra env (image, tokens, host).
-  'terminal.backend': ['local', 'docker', 'singularity', 'modal', 'daytona', 'ssh'],
+// Vendor catalogues: the ids a **provider** publishes, not the product's own
+// vocabulary.  These lists belong to the provider that offers them — the
+// right source is the provider's own catalogue, fetched when the provider is
+// selected (the ElevenLabs voice list already works that way).  They stay
+// here only until that fetch lands.
+//
+// What used to live here as well — the product's own enumerations
+// (`approvals.mode`, `code_execution.mode`, `agent.image_input_mode`,
+// `context.engine`, `delegation.reasoning_effort`, `terminal.backend`,
+// `updates.non_interactive_local_changes`) and the provider pickers
+// (`tts.provider`, `stt.provider`) — is **gone**: those come from the
+// backend schema now, so there is one list per key instead of two that
+// drift (`approvals.mode` was offering three retired modes here while the
+// backend offered a fourth set).
+export const PROVIDER_CATALOG_OPTIONS: Record<string, string[]> = {
   'stt.elevenlabs.model_id': ['scribe_v2', 'scribe_v1'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
-  // Speech-to-text backends — kept in sync with the stt block in
-  // plobi_cli/config.py (local/groq/openai/mistral/elevenlabs).
-  'stt.provider': ['local', 'groq', 'openai', 'mistral', 'xai', 'elevenlabs'],
-  'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
-  // Text-to-speech backends — kept in sync with the built-in source of truth
-  // (agent/tts_registry.py::_BUILTIN_NAMES / tools/tts_tool.py::
-  // BUILTIN_TTS_PROVIDERS). 'xai' is Grok TTS.
-  'tts.provider': [
-    'edge',
-    'elevenlabs',
-    'openai',
-    'xai',
-    'minimax',
-    'mistral',
-    'gemini',
-    'neutts',
-    'kittentts',
-    'piper'
-  ],
   'stt.openai.model': ['whisper-1', 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe'],
   'stt.mistral.model': ['voxtral-mini-latest', 'voxtral-mini-2602'],
   'tts.openai.model': ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd'],
+  'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   'tts.elevenlabs.model_id': ['eleven_multilingual_v2', 'eleven_turbo_v2_5', 'eleven_flash_v2_5'],
-  // NeuTTS local inference device.
-  'tts.neutts.device': ['cpu', 'cuda', 'mps'],
-  'updates.non_interactive_local_changes': ['stash', 'discard']
+  'tts.neutts.device': ['cpu', 'cuda', 'mps']
 }
 
 /**
- * Labels for the external-memory dropdown. It used to render `''` as a blank row and
- * `builtin` as though it were a provider; measured against the backend, both of those
- * mount nothing, so the blank row WAS the off switch and `builtin` was a second name for
- * it. `''` is now labelled as what it does, and the official brain is named without the
- * word "default" -- what a fresh install resolves to is `memory.provider` in
- * plobi_cli/config.py's DEFAULT_CONFIG, and this file must not re-declare it.
+ * 外脑（官方外脑）那一族的清单**不在这里**——它**走后端那一份注册表**
+ * （`/api/config/schema` 每次请求现算：插件装上／卸下都跟着变）。
+ *
+ * 2026-11-25 现读：这一族原来在这里**手抄了三项**（`''`／`hindsight`／`honcho`），
+ * 而后端真有 **8+ 家** ⇒ 另外 6 家在屏上一个都选不到；更糟的是 `memory.provider`
+ * 当年被后端 schema 跳过了 ⇒ 桌面设置屏上**连这一行都没有** ⇒ 这份手抄清单是
+ * **死代码**（零引用）。两份都删掉了：清单＝后端那一份（**唯一真源**）。
+ *
+ * 官方脑（Mind）**不在那一列里**（`WP-MIND-COEXIST`）：它是内核一等公民，有自己
+ * 那个常驻开关 `memory.mind_enabled`；那一列里每一项的语义都是「取代别的东西」，
+ * 而官方脑不取代任何东西。
  */
-export const MEMORY_PROVIDER_LABELS: Record<string, string> = {
-  '': 'Off - built-in memory only',
-  mind: 'Exocortex - the official brain',
-}
 
 export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
   model: 'Default Model',
@@ -532,181 +507,25 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
 })
 
 /**
- * 「记忆与上下文」那一屏按记忆分层排（用户 2026-11-17 15:4x 给的定义）。
+ * 设置屏那几段的**图标**（宿主自己的）。
  *
- * 四组从上到下就是那个模型的后四层：**工作记忆**（这一轮真正在用的上下文）／
- * **长时记忆**（三份记忆文件与各种上限）／**Mind**（官方脑，越出长时：会召回、
- * 也能被主动查）／**外部记忆提供商**（最底，可选叠加）。
+ * ⚠️ **图标不进 slot 声明表**（用户 11-25 23:3x）：声明里只有**数据**，没有组件——
+ * 那八段的图标是 **Lucide 组件** ⇒ 宿主留这张表；插件加的那一段没有宿主图标 ⇒
+ * 用它自己声明的 **codicon 名字**（声明表里那条 `icon`）。
  *
- * 两处刻意不在这一屏：
- * - 感觉记忆（这一轮新进来的输入，含工具结果）：它是会话级的东西，而这一屏是全局
- *   设置；占用详情该放在对话框右下角那条上下文长条的点击浮窗里（另一刀）。
- * - 性格（`SOUL.md`）：是文件不是开关，本刀不给入口。
- *
- * `keys` 由 `groups` 拼出来、不另写一遍——两处各写一次就一定会漂。
+ * 那一段**清单**（顺序／名字／显示哪几个配置字段）在 `app/shell/slot-registry.ts` 的
+ * `settings`／`sections` 区 ⇒ 屏上从注册表读（`use-settings-sections.ts`）。
  */
-const MEMORY_GROUPS: DesktopConfigGroup[] = [
-  {
-    titleKey: 'settings.groups.memory.working',
-    keys: [
-      'context.engine',
-      'compression.enabled',
-      'compression.threshold',
-      'compression.target_ratio',
-      'compression.protect_last_n'
-    ]
-  },
-  {
-    titleKey: 'settings.groups.memory.longTerm',
-    keys: [
-      'memory.memory_enabled',
-      'memory.user_profile_enabled',
-      'memory.write_approval',
-      'memory.global_char_limit',
-      'memory.agent_char_limit',
-      'memory.user_char_limit',
-      'memory.status_char_limit',
-      'memory.conductor_status_char_limit',
-      'memory.squeeze_pressure',
-      'memory.nudge_interval'
-    ]
-  },
-  {
-    titleKey: 'settings.groups.memory.mind',
-    keys: ['memory.mind_enabled', 'memory.mind_write_approval', 'memory.mind_write_auto_approve']
-  },
-  {
-    titleKey: 'settings.groups.memory.external',
-    keys: ['memory.provider']
-  }
-]
-
-// Curated desktop config surface: only fields a user might tune from the app.
-export const SECTIONS: DesktopConfigSection[] = [
-  {
-    id: 'model',
-    label: 'Model',
-    icon: Box,
-    keys: ['model_context_length', 'fallback_providers']
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-    icon: MessageCircle,
-    keys: ['display.personality', 'timezone', 'display.show_reasoning', 'agent.image_input_mode']
-  },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-    icon: Palette,
-    keys: []
-  },
-  {
-    id: 'workspace',
-    label: 'Workspace',
-    icon: Monitor,
-    keys: [
-      'terminal.cwd',
-      'code_execution.mode',
-      'terminal.persistent_shell',
-      'terminal.env_passthrough',
-      'file_read_max_chars'
-    ]
-  },
-  {
-    id: 'safety',
-    label: 'Safety',
-    icon: Lock,
-    keys: [
-      'approvals.mode',
-      'approvals.timeout',
-      'approvals.mcp_reload_confirm',
-      'command_allowlist',
-      'security.redact_secrets',
-      'security.allow_private_urls',
-      'browser.allow_private_urls',
-      'browser.auto_local_for_private_urls',
-      'checkpoints.enabled'
-    ]
-  },
-  {
-    id: 'memory',
-    label: 'Memory & Context',
-    icon: Brain,
-    keys: MEMORY_GROUPS.flatMap(group => group.keys),
-    groups: MEMORY_GROUPS
-  },
-  {
-    id: 'voice',
-    label: 'Voice',
-    icon: Mic,
-    keys: [
-      'tts.provider',
-      'stt.enabled',
-      'stt.echo_transcripts',
-      'stt.provider',
-      'voice.auto_tts',
-      'tts.edge.voice',
-      'tts.openai.model',
-      'tts.openai.voice',
-      'tts.elevenlabs.voice_id',
-      'tts.elevenlabs.model_id',
-      'tts.xai.voice_id',
-      'tts.xai.language',
-      'tts.minimax.model',
-      'tts.minimax.voice_id',
-      'tts.mistral.model',
-      'tts.mistral.voice_id',
-      'tts.gemini.model',
-      'tts.gemini.voice',
-      'tts.neutts.model',
-      'tts.neutts.device',
-      'tts.kittentts.model',
-      'tts.kittentts.voice',
-      'tts.piper.voice',
-      'stt.local.model',
-      'stt.local.language',
-      'stt.openai.model',
-      'stt.groq.model',
-      'stt.mistral.model',
-      'stt.elevenlabs.model_id',
-      'stt.elevenlabs.language_code',
-      'stt.elevenlabs.tag_audio_events',
-      'stt.elevenlabs.diarize',
-      'voice.record_key',
-      'voice.max_recording_seconds'
-    ]
-  },
-  {
-    id: 'advanced',
-    label: 'Advanced',
-    icon: Wrench,
-    keys: [
-      'toolsets',
-      'terminal.backend',
-      'terminal.timeout',
-      'terminal.docker_image',
-      'terminal.singularity_image',
-      'terminal.modal_image',
-      'terminal.daytona_image',
-      'tool_output.max_bytes',
-      'tool_output.max_lines',
-      'tool_output.max_line_length',
-      'checkpoints.max_snapshots',
-      'agent.max_turns',
-      'agent.api_max_retries',
-      'agent.service_tier',
-      'agent.tool_use_enforcement',
-      'delegation.model',
-      'delegation.provider',
-      'delegation.max_iterations',
-      'delegation.max_concurrent_children',
-      'delegation.child_timeout_seconds',
-      'delegation.reasoning_effort',
-      'updates.non_interactive_local_changes'
-    ]
-  }
-]
+export const SECTION_ICONS: Record<string, IconComponent> = {
+  advanced: Wrench,
+  appearance: Palette,
+  chat: MessageCircle,
+  memory: Brain,
+  model: Box,
+  safety: Lock,
+  voice: Mic,
+  workspace: Monitor
+}
 
 export interface ModeOption {
   id: ThemeMode

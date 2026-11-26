@@ -327,6 +327,9 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
     // First-run guidance: install one CLI leg. The renderer names the app only —
     // the command itself lives in the hub's own manifest, never in a payload.
     install: (appId: string) => ipcRenderer.invoke('plobi-gateway:install', appId),
-    auth: (appId: string) => ipcRenderer.invoke('plobi-gateway:auth', appId)
+    // `method` = the lane the user picked (the plugin's own label). Omitted ⇒ the
+    // hub's default lane.
+    auth: (appId: string, method?: string) =>
+      ipcRenderer.invoke('plobi-gateway:auth', appId, method)
   }
 })

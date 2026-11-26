@@ -582,21 +582,57 @@ def _new_session_id(entry, *, not_before: float) -> str:
     return str(rows[0][0] or "") if rows else ""
 
 
-def _session_answer(entry, session_id: str) -> str:
-    """The child's final answer text, from its own session record."""
+def _session_max_message_id(session_id: str) -> int:
+    """那一屏在「这一问」之前已经写到哪一条——ask 的地板。
+
+    必须在子进程起来**之前**读：跑完再读就把它自己刚写的新消息也算进了地板，
+    又退化成「一条都捞不到」。读不到就当 0（整屏都算这一问的），这一步只划起点，
+    本身不是判据。
+    """
     if not session_id:
-        return ""
+        return 0
     db_path = _child_state_db()
     if db_path is None:
-        return ""
+        return 0
     rows = _query_rows(
         db_path,
-        "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' "
-        "AND content IS NOT NULL AND content != '' AND active = 1 "
-        "ORDER BY id DESC LIMIT 1",
+        "SELECT COALESCE(MAX(id), 0) FROM messages WHERE session_id = ?",
         (session_id,),
     )
-    return str(rows[0][0] or "") if rows else ""
+    try:
+        return int(rows[0][0] or 0) if rows else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _session_answer(entry, session_id: str, *, since_id: int = 0) -> tuple[str, int]:
+    """The child's answer **from this question onward**, with the row id it came from.
+
+    2026-11-25 现核：这里原来只取「这一屏最后一条 assistant」，没有本次提问的地板。
+    子进程秒退（provider 502 / resume 一个近千条消息的大屏）时它一条新消息都没写，
+    于是每一问都把上一轮的旧稿原样端回来——外面看到的是 `ok=true`、票 `done`、
+    `waited_seconds` 三四秒，六问逐字相同。地板之后 `id > since_id` 才算这一问的
+    答案；拿不到就交回空串，让调用方如实说「这一趟没答」，不再拿旧稿顶。
+    """
+    if not session_id:
+        return "", 0
+    db_path = _child_state_db()
+    if db_path is None:
+        return "", 0
+    rows = _query_rows(
+        db_path,
+        "SELECT id, content FROM messages WHERE session_id = ? AND role = 'assistant' "
+        "AND content IS NOT NULL AND content != '' AND active = 1 AND id > ? "
+        "ORDER BY id DESC LIMIT 1",
+        (session_id, int(since_id or 0)),
+    )
+    if not rows:
+        return "", 0
+    row = rows[0]
+    try:
+        return str(row[1] or ""), int(row[0] or 0)
+    except (TypeError, ValueError):
+        return "", 0
 
 
 def _fallback_answer(stdout: str) -> str:
@@ -757,6 +793,9 @@ def handle_agent_ask(args: dict, *, entry=None, resume_session: str = "", asker:
         logger.warning("plobi_agent_ask: command build failed: %s", exc)
         return tool_error(f"问不了「{_label(entry)}」：{exc}", ok=False, agent=entry.name)
 
+    # 地板：这一屏在**这一问之前**已经写到哪一条。必须在起子进程之前取——跑完再取
+    # 就把子进程自己刚写的新消息也算进了地板，又会退化成「一条都捞不到」。
+    since_id = _session_max_message_id((resume_session or "").strip())
     started = time.time()
     try:
         result = _run_child(argv, env, cwd, limit)
@@ -812,11 +851,19 @@ def handle_agent_ask(args: dict, *, entry=None, resume_session: str = "", asker:
     # 同一屏叫醒时那一屏的号是调用方给的，不必再去猜「最新那一条」——_new_session_id 那套
     # 时间地板 + agent_id 的猜测只在没有指定会话时用（旧嘴 `plobi_agent_ask` 那条路）。
     session_id = (resume_session or "").strip() or _new_session_id(entry, not_before=started)
-    answer = _session_answer(entry, session_id) or _fallback_answer(result["stdout"])
+    answer, answer_message_id = _session_answer(entry, session_id, since_id=since_id)
     answer = answer.strip()
     if not answer:
+        # 地板之后一条都没有 ⇒ 它不是「答了但读不到」，是这一趟根本没产出。旧稿不能
+        # 顶（六问逐字相同的那段 11-24 长文就是这么来的）。唯一还算数的证据是子进程
+        # 自己这一趟新吐在 stdout 里的东西。
+        answer = _fallback_answer(result["stdout"]).strip()
+        answer_message_id = 0
+    if not answer:
+        stdout_tail = _tail(result["stdout"])
         return tool_error(
-            f"「{_label(entry)}」这一回什么也没说。",
+            f"「{_label(entry)}」这一趟一条新消息都没写进它那一屏，等于没答。"
+            + (f"它临了只吐了这些：{stdout_tail}" if stdout_tail else ""),
             ok=False,
             agent=entry.name,
             session_id=session_id,
@@ -829,6 +876,7 @@ def handle_agent_ask(args: dict, *, entry=None, resume_session: str = "", asker:
             "ok": True,
             "agent": entry.name,
             "answer": answer,
+            "answer_message_id": answer_message_id,
             "session_id": session_id,
             "duration_seconds": round(result["duration"], 1),
         },

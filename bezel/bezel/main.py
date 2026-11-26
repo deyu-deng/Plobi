@@ -19,9 +19,10 @@ import hashlib
 import json
 import logging
 import os
+import time
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import Body, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import __version__
@@ -203,6 +204,12 @@ async def _startup():
     # non-blocking; /v1/models also waits on it, but only briefly (see
     # MODEL_CATALOG_WAIT).
     reg.models_refresh_task()
+    # Prove the lamps once the gateway is already healthy. magpie will happily list a
+    # model that can no longer serve a turn (measured 2026-11-24: Devin listed 24 rows
+    # and every one answered 502 "no longer available for your account"), so a green
+    # dot has to be earned by a real call, not inherited from a catalogue. Delegated to
+    # a task so no vendor round-trip sits between the desktop and a healthy gateway.
+    reg.magpie_roster_probe()
     quota_task = asyncio.create_task(
         _quota_refresh_loop(reg, float(cfg.get("quota_refresh_seconds", QUOTA_REFRESH_SECONDS)))
     )
@@ -286,7 +293,16 @@ async def _shutdown():
 def _auth(authorization: str | None):
     expected = STATE["api_key"]
     if not authorization or authorization.removeprefix("Bearer ").strip() != expected:
-        raise HTTPException(401, "invalid api key")
+        # A bare "invalid api key" sent people off to re-check their *upstream* keys,
+        # which were fine; the thing actually wrong was this machine's own gate token.
+        # Name the layer, and say what did not happen.
+        raise HTTPException(
+            401,
+            "bezel's own gate refused this request — this is not an upstream key "
+            "problem and no upstream quota was spent. Send `Authorization: Bearer "
+            "<api_key from bezel's config>`. The value is in the desktop's gateway "
+            "settings; an empty config falls back to the value shown on first launch.",
+        )
 
 
 async def _json_body(request: Request) -> dict:
@@ -540,7 +556,11 @@ async def _recheck_after_login(app_id: str) -> None:
 
 
 @app.post("/plobi/auth/{app_id}")
-async def plobi_auth_start(app_id: str, authorization: str = Header(None)):
+async def plobi_auth_start(
+    app_id: str,
+    payload: dict | None = Body(None),
+    authorization: str = Header(None),
+):
     _auth(authorization)
     reg = STATE.get("reg")
     # 2026-11-07（用户）：屏幕上的 + 号对每一条已适配的腿都成立，包括 config.yaml
@@ -548,7 +568,31 @@ async def plobi_auth_start(app_id: str, authorization: str = Header(None)):
     # 否则「有卡片、点不动」就是死路。
     if reg is not None and app_id not in reg.providers:
         await reg.enable_leg(app_id)
-    plan = authflow.login_plan_for(reg, app_id)
+    # 用户从卡片菜单里挑的那条通道（oauth 走浏览器 / api 贴 key）。没给就由那条腿
+    # 定默认 —— 22 家里不少两条都能走，替用户选一条等于砍掉它一半的能力。
+    method = ""
+    if isinstance(payload, dict):
+        method = str(payload.get("method") or "").strip()
+    # 「点配置 = 装回来 + 接着登录」（用户 11-21）：插件被 `plugin rm` 卸掉后卡片
+    # 还在，加号打开的面板头一件事就是把它装回来。装不上时把它自己的话原样交回，
+    # 不编「安装失败」—— 这与 P0 的 502 透传是同一条规矩。
+    prov = reg.providers.get(app_id) if reg is not None else None
+    ensure = getattr(prov, "ensure_plugin", None)
+    if callable(ensure):
+        ok, detail = await ensure()
+        if not ok:
+            return {
+                "app": app_id,
+                "name": app_id,
+                "kind": "cli_login",
+                "state": "failed",
+                "url": None,
+                "detail": detail,
+                "started_at": int(time.time()),
+                "finished_at": int(time.time()),
+                "reason": "插件没装回来，所以还没开始登录",
+            }
+    plan = authflow.login_plan_for(reg, app_id, method or None)
     plan["on_success"] = lambda: _recheck_after_login(app_id)
     session = await authflow.MANAGER.start(app_id, plan, settle=2.0)
     return session.as_dict()

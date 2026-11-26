@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 
 import App from './app'
+import { SlotRegistryProvider } from './app/shell/slot-registry-context'
 import { ErrorBoundary } from './components/error-boundary'
 import { HapticsProvider } from './components/haptics-provider'
 import { I18nProvider } from './i18n'
@@ -36,7 +37,14 @@ export function mountApp(): void {
             <ThemeProvider>
               <HapticsProvider>
                 <HashRouter>
-                  <App />
+                  {/*
+                   * **一册 slot**（界面外壳的挂载点——裁定 239）：插件填进来的那些 ＋
+                   * 用户关掉的那些，应用根部拉一次就够 ⇒ 侧边栏、工作区那几页签、
+                   * 对话卡那一列读的是**同一册**（三处各拉一遍时它们可能不同步）。
+                   */}
+                  <SlotRegistryProvider>
+                    <App />
+                  </SlotRegistryProvider>
                 </HashRouter>
               </HapticsProvider>
             </ThemeProvider>

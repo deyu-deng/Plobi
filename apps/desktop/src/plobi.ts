@@ -18,6 +18,7 @@ import type {
   CronJobCreatePayload,
   CronJobUpdates,
   CuratorStatusResponse,
+  SlotContributionsResponse,
   DebugShareResponse,
   ElevenLabsVoicesResponse,
   EnvProbeResponse,
@@ -112,6 +113,7 @@ export type {
   CronJobSchedule,
   CronJobUpdates,
   CuratorStatusResponse,
+  SlotContributionsResponse,
   DebugShareResponse,
   ElevenLabsVoice,
   ElevenLabsVoicesResponse,
@@ -465,6 +467,19 @@ export function getPlobiConfigSchema(): Promise<ConfigSchemaResponse> {
   return window.plobiDesktop.api<ConfigSchemaResponse>({
     ...profileScoped(),
     path: '/api/config/schema'
+  })
+}
+
+/**
+ * What the installed plugins put into the shell's mount points (裁定 239).
+ *
+ * The plugin declares it in its ``plugin.yaml`` (``slots:``) — declarative, the
+ * shallow step: no plugin code runs in the interface.
+ */
+export function getPlobiSlots(): Promise<SlotContributionsResponse> {
+  return window.plobiDesktop.api<SlotContributionsResponse>({
+    ...profileScoped(),
+    path: '/api/slots'
   })
 }
 

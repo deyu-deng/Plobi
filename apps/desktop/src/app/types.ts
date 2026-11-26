@@ -122,20 +122,19 @@ export type CommandDispatchResponse =
   | SendCommandDispatchResponse
   | PrefillCommandDispatchResponse
 
-export type SidebarNavId =
-  | 'artifacts'
-  | 'command-center'
-  | 'messaging'
-  | 'new-session'
-  | 'settings'
-  | 'diary'
-  | 'knowledge'
-  | 'skills'
+/**
+ * 出厂那几格的标识（`SidebarNavId` 那一串）。
+ *
+ * ⚠️ **左栏那一格的 id 是开放的**（`string`）：插件填进来的格子 id 宿主不预先知道
+ * （裁定 239）——宿主只认自己声明过的位置，不替插件预先想好名字。
+ */
+export type SidebarNavId = string
 
 export interface SidebarNavItem {
   id: SidebarNavId
   label: string
-  icon: React.ComponentType<{ className?: string }>
+  /** 图标名（codicon）——**不是组件**：这一格的内容是数据，插件也能填（裁定 239）。 */
+  icon: string
   route?: string
   action?: 'new-session'
 }

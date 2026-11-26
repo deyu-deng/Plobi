@@ -19,14 +19,19 @@ import type { SidebarNavItem } from '../../types'
 
 import { type AgentCategoryGroup, isNavigableAgent } from './agent-groups'
 import { categoryIcon } from './category-icons'
-import { useAgentExperts } from './expert-panel'
-import { EXPERT_ROLES, latestRun, runsOfRole } from './expert-roles'
+import { useAgentVirtuosos } from './virtuoso-panel'
+import { VIRTUOSO_ROLES, latestRun, runsOfRole } from './virtuoso-roles'
 import { titleOf, whenText } from './external-sessions'
 import { useExternalSessions } from './external-sessions-panel'
 import { OffloadVendorIcon } from './offload-vendor-icon'
 
-/** 左栏中段的两种内容（用户 11-01）：名单 / 外包。与 `index.tsx` 的 `MiddleView` 同义。 */
-export type StripMiddleView = 'agents' | 'outsourced'
+/**
+ * 左栏中段的内容（用户 11-01）：名单 / 外包。与 `index.tsx` 的 `MiddleView` 同义。
+ *
+ * **身份是开放的**（`string`）：那一列从 **slot 声明表**派生 ⇒ 插件可以往这一族里
+ * 加一格（收起态那个开关是两态的，只拨得出前两格——40px 宽放不下更多）。
+ */
+export type StripMiddleView = string
 
 interface SidebarStripProps {
   activeAgentId: null | string
@@ -357,7 +362,7 @@ function OutsourcedStripMiddle({
 }) {
   const { t } = useI18n()
   const c = t.console
-  const experts = useAgentExperts(agentId)
+  const virtuosos = useAgentVirtuosos(agentId)
   const { data } = useExternalSessions(agentId)
 
   // 收在浮窗里的会话：只看活着的、L2 没判过无关的；新的在上面。
@@ -369,18 +374,18 @@ function OutsourcedStripMiddle({
   return (
     <>
       <StripHoverMenu
-        active={experts.some(run => run.status === 'running')}
+        active={virtuosos.some(run => run.status === 'running')}
         icon={<Codicon name="person" size="1rem" />}
-        label={c.expertsTitle}
-        menuKey="experts"
-        open={openKey === 'experts'}
+        label={c.virtuososTitle}
+        menuKey="virtuosos"
+        open={openKey === 'virtuosos'}
         setOpenKey={setOpenKey}
       >
         <div className="px-2 pb-1 pt-1.5 text-[0.68rem] font-medium text-(--ui-text-quaternary)">
-          {c.expertsTitle}
+          {c.virtuososTitle}
         </div>
-        {EXPERT_ROLES.map(role => {
-          const latest = latestRun(runsOfRole(experts, role.key))
+        {VIRTUOSO_ROLES.map(role => {
+          const latest = latestRun(runsOfRole(virtuosos, role.key))
 
           return (
             <DropdownMenuItem
@@ -391,7 +396,7 @@ function OutsourcedStripMiddle({
                 latest &&
                 openConversation({
                   agentId,
-                  kind: 'expert',
+                  kind: 'virtuoso',
                   running: latest.status === 'running',
                   sessionId: latest.id,
                   title: latest.goal || latest.id
@@ -498,7 +503,7 @@ export function SidebarStrip({
 
         {sharedItems.map(item => (
           <StripButton
-            icon={<item.icon className="size-4 leading-none" />}
+            icon={<Codicon name={item.icon} className="size-4 leading-none" />}
             key={item.id}
             label={t.sidebar.nav[item.id] ?? item.label}
             onClick={() => onNavigate(item)}

@@ -1,4 +1,6 @@
 name: supermemory
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: Supermemory
 version: 1.0.1
 description: "Supermemory semantic long-term memory with profile recall, semantic search, explicit memory tools, and session ingest."
 pip_dependencies:

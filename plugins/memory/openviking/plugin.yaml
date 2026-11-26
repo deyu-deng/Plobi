@@ -1,4 +1,6 @@
 name: openviking
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: OpenViking
 version: 2.0.0
 description: "OpenViking context database — session-managed memory with automatic extraction, tiered retrieval, and filesystem-style knowledge browsing."
 pip_dependencies:

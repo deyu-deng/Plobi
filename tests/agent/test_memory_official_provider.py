@@ -122,12 +122,15 @@ def test_desktop_dropdown_does_not_offer_the_official_provider():
     这条测试的前身钉的是「下拉框里必须有 mind」——那是旧 schema 把 Mind 塞进
     九选一里、于是「选中它」等于「把别的挤掉」的产物。现在 Mind 有自己的开关，
     两条一起钉：下拉里没有 mind、而 Mind 组第一行就是那个开关。免得下次又塞回去。
+
+    2026-11-25（`WP-EXOCORTEX-ENTRY`）：那个下拉的清单**搬走后端了**——桌面那份
+    手抄三项是**死代码**（后端真有 8+ 家，屏上一个都选不到，而 `memory.provider`
+    当年被后端 schema 跳过 ⇒ 屏上连这一行都没有）⇒ 这一条改成钉「桌面不再留
+    那份手抄清单」，而下拉里没有 mind 这件事由**后端那一份**说了算
+    （`tests/plobi_cli/test_config_schema_options.py`）。
     """
     text = io.open(DESKTOP_CONSTANTS, encoding="utf-8").read()
-    line = next(l for l in text.splitlines() if "'memory.provider':" in l)
-    values = [v.strip().strip("'") for v in line.split("[", 1)[1].split("]")[0].split(",")]
-    assert OFFICIAL_MEMORY_PROVIDER not in values, line.strip()
-    assert values[0] == "", line.strip()         # 缺省＝不接外部服务
+    assert "'memory.provider':" not in text, "桌面又留了一份手抄的外脑清单"
 
     at = text.index("titleKey: 'settings.groups.memory.mind'")
     assert "memory.mind_enabled" in text[at:at + 400], "Mind 组里没有那个常驻开关"

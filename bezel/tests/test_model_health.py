@@ -139,7 +139,12 @@ def test_traffic_alone_moves_a_dead_id_out_of_the_pickable_view():
             strict = {row["id"] for row in reg.list_models(selectable_only=True)}
 
         assert "refusing/gone" in full
-        assert full["refusing/gone"]["unselectable_reason"] == "model_rejected"
+        # The reason has to carry the upstream's own words. "model_rejected" on its own
+        # told the person staring at a grey model nothing about *why* it was grey.
+        reason = full["refusing/gone"]["unselectable_reason"]
+        assert reason.startswith("upstream refused this model (404)")
+        assert "not served by this account" in reason
+        assert "back in" in reason
         assert "refusing/gone" not in strict
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))

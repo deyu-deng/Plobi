@@ -10997,7 +10997,10 @@ async function installViaHub(appId: string): Promise<{
 
 ipcMain.handle('plobi-gateway:install', async (_event, appId: string) => installViaHub(appId))
 
-ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
+// `method` is the lane the user picked on the card (their plugin's own label: a
+// browser flow, a key prompt, …). Omitted ⇒ the hub's default lane, which is what
+// every caller did before 22 vendors' lane lists reached the screen.
+ipcMain.handle('plobi-gateway:auth', async (_event, appId: string, method?: string) => {
   const bezelDir = resolveBezelDir()
 
   if (appId === 'workbuddy') {
@@ -11007,7 +11010,7 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
     // "do you already serve a WorkBuddy channel?" first was a dead end — the
     // channel is what the sign-in *creates*, so demanding it up front made
     // this button fail for every provider that was not signed in yet.
-    return authViaHub(appId)
+    return authViaHub(appId, method)
   }
   if (appId === 'cursor') {
     if (!bezelDir) {
@@ -11028,7 +11031,7 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   // printed to the browser — the user never types a command (his ruling 2026-10-26).
   // A leg whose login we have not wired says so in its own words; it must not read as
   // a credential failure, because it is not one.
-  return authViaHub(appId)
+  return authViaHub(appId, method)
 })
 
 /**
@@ -11040,13 +11043,23 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
  * things — handing the key over and telling the caller what the hub said — so a new
  * leg never means editing this file again.
  */
-async function authViaHub(appId: string): Promise<{ ok: boolean; code?: string; error?: string; url?: string }> {
+async function authViaHub(
+  appId: string,
+  method?: string
+): Promise<{ ok: boolean; code?: string; error?: string; url?: string }> {
   const base = PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')
 
   try {
     const res = await fetch(`${base}/plobi/auth/${encodeURIComponent(appId)}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
+      headers: {
+        Authorization: `Bearer ${productQuotaApiKey()}`,
+        'Content-Type': 'application/json'
+      },
+      // The lane by its own name. The hub matches it against what the plugin
+      // reported; an unknown name falls back to its default instead of reaching
+      // a CLI as garbage.
+      body: JSON.stringify({ method: method ?? null }),
       signal: AbortSignal.timeout(15000)
     })
 

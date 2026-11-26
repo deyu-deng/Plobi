@@ -2,7 +2,6 @@ import { useStore } from '@nanostores/react'
 import { Fragment, type ReactNode } from 'react'
 
 import { $consoleAgents } from '@/app/console/store/agents'
-import { DossierButton } from '@/app/dossier/dossier-panel'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
@@ -11,22 +10,24 @@ import { secretaryShellLabel } from '../desktop-controller-utils'
 
 import { cardDragProps } from './card-drag'
 import { CardEdgeControlButtons, type CardEdgeControls } from './card-edge-controls'
-import { MindPendingButton } from './mind-pending-button'
-import { PendingTicketsButton } from './pending-tickets'
+import { MonitorEntryButton } from './monitor-entry-button'
+import { useMonitorFaceMetas, type MonitorFaceMeta } from './monitor-faces'
+import { usePendingInboxPolling } from './pending-tickets'
 
 /**
  * 对话卡自己的抬头（用户 10-31：对话界面太空，顶栏像 Qoder 一样显示当前 Agent 名）。
  * 左边是当前这摊的名字，右边是右栏开关——收起来的按钮住在卡里，不再跳回顶栏。
  * 名字那一块同时是这张卡的拖动把手：拖到右栏卡上两张互换（开关本身不参与拖动）。
  *
- * 右上角那三枚（档案／待放行／写脑待批）**走同一个组件**
- * （`monitor-entry-button.tsx`：同形状、同角标、同按下态、同一点击行为）——
- * 用户 11-19 17:0x：「**完全复用同样的组件。不要写三套代码。只是容器内部的信息和UI细节不同而已。**」
+ * 右上角那三枚（档案／待放行／写脑待批）**从 slot 声明表派生**（裁定 239 第四刀）：
+ * 一枚 chat-card slot ⇒ 一枚 `MonitorEntryButton`（**同一个组件**：同形状、同角标、
+ * 同按下态、同一点击行为——用户 11-19 17:0x：「**完全复用同样的组件。不要写三套代码。**」）。
  *
  * **那一列是注册表驱动的**（WP-DOSSIER-RAIL-UNIFY，用户 11-14 09:4x
  * 「我希望以后在这个地方添加的东西除了子内容的差异性，UI/UX 共用的是同一套组件」）：
  * 每一项的**形状**统一走 `monitor-entry-button.tsx`，点开后的**内容**各写各的
- * （那一张卡里换的是内容）。**以后在这里加一个东西 = 加一条记录**，壳子不动。
+ * （那一张卡里换的是内容）。**以后在这里加一个东西 = 往声明表里加一条**，
+ * 壳子不动——插件带来的那一枚也是这样来的（用户 11-25 19:5x 拍定）。
  */
 
 /** 那一列的一项。`render` 给出这一项自己的内容；外壳由渲染器统一。 */
@@ -47,22 +48,22 @@ export interface ChatTopBarRailEntry {
  * **档案那一枚只在首席（L2）那屏出现**（用户 11-19 22:3x：「**指挥那一栏也不要出现
  * 当个档案图标了**」）：指挥没有档案——五种档案只归首席（名册里 `role=conductor`
  * 那一行是指挥，`role=principal` 那些是首席）。给指挥一枚档案入口，就是指着一份
- * 不存在的档案。
+ * 不存在的档案。**这一条现在是声明里的一句 `shells: ['l2']`**，不是代码里的 if。
  */
 export function chatTopBarRailEntries(deps: {
   edgeControls: CardEdgeControls
   /** 当前这一屏是**谁**：L1 ＝ 指挥，L2 ＝ 某个首席。 */
   scope: ChatScope
+  /** 那一列有哪些面（**从 slot 声明表派生**）。 */
+  faces: MonitorFaceMeta[]
 }): ChatTopBarRailEntry[] {
-  const dossierEntry: ChatTopBarRailEntry[] =
-    deps.scope.kind === 'agent' ? [{ id: 'dossier', render: () => <DossierButton /> }] : []
+  const shell = deps.scope.kind === 'agent' ? 'l2' : 'l1'
+  const faceEntries = deps.faces
+    .filter(face => face.shells.includes(shell))
+    .map(face => ({ id: face.id, render: () => <MonitorEntryButton face={face} /> }))
 
   return [
-    ...dossierEntry,
-    { id: 'pending', render: () => <PendingTicketsButton /> },
-    // 写脑待批那一条（`WP-MIND-CONSENT-EVENTS`）：原来只在左栏底部角标与设置页里，
-    // 用户 11-16 21:4x 拍定搬到对话卡（规格 §8 第 2 条）。只加这一条记录，壳子不动。
-    { id: 'mind-pending', render: () => <MindPendingButton /> },
+    ...faceEntries,
     { id: 'edge', render: () => <CardEdgeControlButtons controls={deps.edgeControls} /> }
   ]
 }
@@ -80,7 +81,13 @@ export function ChatTopBar({
   const level = scope.kind === 'agent' ? { l2: scope.id } : 'l1'
   const name = secretaryShellLabel(level, t.console.chiefSecretary, agents)
 
-  const entries = chatTopBarRailEntries({ edgeControls: edgeControls ?? {}, scope })
+  // 那一列从 slot 声明表派生（插件带来的那一枚会自动出现——用户 11-25 19:5x 拍定）。
+  const faces = useMonitorFaceMetas()
+
+  // 角标上那个数要**面板关着的时候**也准 ⇒ 那一格在的时候，轮询住在这里。
+  usePendingInboxPolling(faces.some(face => face.badge === 'pending-inbox'))
+
+  const entries = chatTopBarRailEntries({ edgeControls: edgeControls ?? {}, scope, faces })
 
   return (
     <>

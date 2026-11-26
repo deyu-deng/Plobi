@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { SKILLS_MODES, type SkillsCounts, type SkillsMode, SkillsView } from '@/app/skills'
@@ -40,7 +40,6 @@ import { SKILLS_ROUTE } from '../routes'
 import { AboutSettings } from './about-settings'
 import { AppearanceSettings } from './appearance-settings'
 import { ConfigSettings } from './config-settings'
-import { SECTIONS } from './constants'
 import { GatewaySettings } from './gateway-settings'
 import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
 import { NetworkSettings } from './network-settings'
@@ -50,9 +49,15 @@ import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './provider
 import { SessionsSettings } from './sessions-settings'
 import { SourcesSettings } from './sources-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
+import { useSettingsSections } from './use-settings-sections'
 
-const SETTINGS_VIEWS: readonly SettingsViewId[] = [
-  ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
+/**
+ * 设置屏那一堆**页签**（寻址用 `tab=`）。
+ *
+ * `config:<id>` 那一族是**从 slot 声明表派生**的（设置屏＝第四个位置，一段＝一组
+ * 配置字段）⇒ 插件加的那一段**自动出现**（用户关掉的那一段**真的不在**）。
+ */
+const HOST_SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'providers',
   'gateway',
   'network',
@@ -106,7 +111,14 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
     }
   }, [navigate, search])
 
-  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'config:model' as SettingsViewId)
+  // 设置屏那几段**从 slot 声明表派生**（用户 11-25 23:3x）⇒ 插件加的那一段自动出现。
+  const sections = useSettingsSections()
+  const settingsViews = useMemo<readonly SettingsViewId[]>(
+    () => [...sections.map(s => `config:${s.id}` as SettingsViewId), ...HOST_SETTINGS_VIEWS],
+    [sections]
+  )
+
+  const [activeView, setActiveView] = useRouteEnumParam('tab', settingsViews, 'config:model' as SettingsViewId)
   // Providers subnav (Accounts vs API keys) lives in its own param so each
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
@@ -171,7 +183,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   }
 
   const navGroups: OverlayNavGroup[] = [
-    ...SECTIONS.map(s => {
+    ...sections.map(s => {
       const view = `config:${s.id}` as SettingsViewId
 
       return {
@@ -228,11 +240,11 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
           // 名手（专家）那一格（WP-EXPERT-CAPABILITIES-UI，11-16）：四类名手的能力
           // 开关与默认模型。放在**能力**这一族里（它本来就是能力面），
           // 不另开一屏 ⇒ 导航与主界面那一屏同一套。
-          active: activeView === 'capabilities' && capabilitiesView === 'experts',
+          active: activeView === 'capabilities' && capabilitiesView === 'virtuosos',
           icon: Users,
-          id: 'cview:experts',
-          label: t.skills.tabExperts,
-          onSelect: () => openCapabilitiesView('experts')
+          id: 'cview:virtuosos',
+          label: t.skills.tabVirtuosos,
+          onSelect: () => openCapabilitiesView('virtuosos')
         }
       ],
       active: activeView === 'capabilities',

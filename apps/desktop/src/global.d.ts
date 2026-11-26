@@ -336,7 +336,7 @@ declare global {
           tail?: string
           exitCode?: number | null
         }>
-        auth: (appId: string) => Promise<{
+        auth: (appId: string, method?: string) => Promise<{
           ok: boolean
           token?: string
           baseUrl?: string

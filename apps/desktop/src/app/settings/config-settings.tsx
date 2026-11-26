@@ -18,9 +18,10 @@ import { setPlobiConfigCache, usePlobiConfigRecord } from '../hooks/use-config-r
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
 import { PanelEmpty } from '../overlays/panel'
 
-import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS, SECTIONS } from './constants'
+import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS } from './constants'
 import { fieldCopyForSchemaKey } from './field-copy'
 import { enumOptionsFor, getNested, prettyName, setNested } from './helpers'
+import { useSettingsSections } from './use-settings-sections'
 import { MemoryConnect } from './memory/connect'
 import { MemoryBoundary, MemoryLedgers } from './memory/ledgers'
 import { ModelSettings, ModelSettingsSkeleton } from './model-settings'
@@ -70,6 +71,7 @@ function ConfigField({
   const label =
     fieldCopyForSchemaKey(t.settings.fieldLabels, schemaKey) ??
     fieldCopyForSchemaKey(FIELD_LABELS, schemaKey) ??
+    schema.label ??
     prettyName(schemaKey.split('.').pop() ?? schemaKey)
 
   const normalize = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '')
@@ -109,7 +111,19 @@ function ConfigField({
     )
   }
 
-  const selectOptions = enumOptions ?? (schema.type === 'select' ? (schema.options ?? []).map(String) : undefined)
+  // A value the product knows but the list does not — an option that was
+  // retired, a provider that is no longer installed, a hand-typed value —
+  // must stay visible and selectable.  Otherwise the dropdown shows nothing
+  // and the setting looks lost.
+  const schemaOptions = schema.type === 'select' ? (schema.options ?? []).map(String) : undefined
+  const currentValue = String(value ?? '')
+  const selectOptions =
+    enumOptions ??
+    (schemaOptions
+      ? currentValue && !schemaOptions.includes(currentValue)
+        ? [...schemaOptions, currentValue]
+        : schemaOptions
+      : undefined)
 
   if (selectOptions) {
     return row(
@@ -349,19 +363,23 @@ export function ConfigSettings({
     setSaveVersion(saveVersionRef.current)
   }
 
+  // 设置屏那几段**从 slot 声明表派生**（用户 11-25 23:3x：设置屏＝第四个位置，
+  // 一段＝一组配置字段）⇒ 插件加的那一段**自动出现**，用户关掉的那一段**真的不在**。
+  const sections = useSettingsSections()
+
   const sectionFields = useMemo(() => {
     if (!schema) {
       return new Map<string, [string, ConfigFieldSchema][]>()
     }
 
     return new Map(
-      SECTIONS.map(s => [s.id, s.keys.flatMap(k => (schema[k] ? [[k, schema[k]] as [string, ConfigFieldSchema]] : []))])
+      sections.map(s => [s.id, s.keys.flatMap(k => (schema[k] ? [[k, schema[k]] as [string, ConfigFieldSchema]] : []))])
     )
-  }, [schema])
+  }, [schema, sections])
 
   const fields = sectionFields.get(activeSectionId) ?? []
-  // 只有「记忆与上下文」这一屏带分组（`MEMORY_GROUPS`）。其余六节仍是整屏一张卡。
-  const sectionGroups = SECTIONS.find(s => s.id === activeSectionId)?.groups
+  // 只有「记忆与上下文」这一屏带分组（分组写在 slot 声明表的那一段里——宿主管它怎么分块）。
+  const sectionGroups = sections.find(s => s.id === activeSectionId)?.groups
 
   // Deep-link target from the command palette (?field=<key>): scroll the row
   // into view and flash it, then drop the param so it doesn't re-fire.
@@ -480,10 +498,21 @@ export function ConfigSettings({
         enumOptions={
           key === 'tts.elevenlabs.voice_id'
             ? enumOptionsFor(key, getNested(config, key), config, elevenLabsVoiceOptions ?? undefined)
-            : enumOptionsFor(key, getNested(config, key), config)
+            : // 后端注册表算出来的那几格（tts/stt 的 provider）：后端说它有哪些，
+              // 桌面就渲染那些 —— 插件带来的 provider 自己出现在下拉里。没带
+              // options_source 的键照旧走本地表（后端那份静态清单会过期）。
+              field.options_source === 'registry'
+              ? enumOptionsFor(key, getNested(config, key), config, (field.options ?? []).map(String))
+              : enumOptionsFor(key, getNested(config, key), config)
         }
         onChange={value => updateConfig(setNested(config, key, value))}
-        optionLabels={key === 'tts.elevenlabs.voice_id' ? elevenLabsVoiceLabels : undefined}
+        optionLabels={
+          key === 'tts.elevenlabs.voice_id'
+            ? elevenLabsVoiceLabels
+            : field.options_source === 'registry'
+              ? field.option_labels
+              : undefined
+        }
         schema={field}
         schemaKey={key}
         value={getNested(config, key)}

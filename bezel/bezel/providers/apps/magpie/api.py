@@ -29,10 +29,12 @@ still keep stay as the fallback for the vendors they serve.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -74,6 +76,31 @@ PROVIDERS_FILE = Path(__file__).with_name("providers.yaml")
 #: asks once per model row, so without this a catalogue of a hundred models
 #: would probe the gateway a hundred times.
 HEALTH_TTL_SECONDS = 5.0
+#: The plugin set that ships **with the app**: ``resources/magpie-plugins`` in a
+#: packaged build, ``build/magpie-plugins`` in a dev tree, ``third_party/
+#: magpie-plugins`` in the repo. It carries magpie's own *packaged roster* —
+#: every provider the bundled plugins can serve, without a byte of per-machine
+#: state (no accounts, no ports, no local paths).
+#:
+#: It exists because the two other sources are both machine-shaped: the CLI and
+#: ``providers-state.json`` only name the providers **this** machine has already
+#: installed a plugin for. Reading only those, a fresh install showed 11 cards
+#: out of 22 — the other eleven were absent from the screen entirely, so the
+#: user had no card to click and no way to ever add them. The set is the missing
+#: third source: their vendor's own roster, answered before anything is installed.
+PACKAGED_SET_ENV = "PLOBI_MAGPIE_PLUGINS"
+#: Set ``PLOBI_MAGPIE_PLUGINS=off`` to say 「别读随包名册」. The suite needs it:
+#: a test machine that happens to have the app built would otherwise decide the
+#: card list by what is on disk, and the assertions would pass or fail by desk.
+PACKAGED_SET_OFF = "off"
+PACKAGED_SET_DIRNAME = "magpie-plugins"
+PACKAGED_ROSTER_FILE = their_list.PACKAGED_ROSTER_FILE
+#: A plugin set does not change under a running app; re-read at most this often
+#: (a dev tree can be rebuilt while the gateway is up).
+PACKAGED_ROSTER_TTL_SECONDS = 300.0
+#: A plugin install is one npm fetch behind their CLI. Generous, but bounded:
+#: the card's 「配置」 must come back with either a plugin or their own words.
+PLUGIN_INSTALL_TIMEOUT_SECONDS = 180.0
 
 
 class MagpieProvider(Provider):
@@ -280,6 +307,25 @@ class MagpieProvider(Provider):
         self._health = (True, "ok", time.time())
         return None
 
+    async def refresh_unclaimed(self, claimed: set[str]) -> None:
+        """Publish what the gateway serves but no vendor leg claims.
+
+        magpie's routing groups (`auto/glm-5.3`) belong to no provider card. They are
+        still served by the gateway, so they belong in our catalogue — under magpie's
+        own id, because that is the name the gateway answers to.
+        """
+        rows = await self.read_catalogue()
+        if not rows:
+            return
+        mine: dict[str, dict] = {}
+        for mid, row in rows.items():
+            head = mid.split("/", 1)[0]
+            if head in claimed:
+                continue
+            mine[mid] = row
+        self._model_rows = mine
+        self.served_models = tuple(mine)
+
     # --- the provider list -------------------------------------------------
     #: Their HTTP surface has no endpoint for the *roster* — it serves models and
     #: turns. Which providers exist therefore has to be assembled from three
@@ -311,6 +357,74 @@ class MagpieProvider(Provider):
             return explicit
         return None
 
+    # --- the plugin set that ships with the app ----------------------------
+    def _packaged_set_candidates(self) -> list[Path]:
+        """Where a bundled plugin set may be, most authoritative first.
+
+        The desktop already tells us where magpie itself is (``PLOBI_MAGPIE_BINARY``
+        — the copy inside the app), and the set is that binary's sibling. The
+        rest are the three places a tree keeps it: the packaged resources, the
+        desktop's own build output, and the repo's copy at ``third_party``.
+        """
+        out: list[Path] = []
+        env_dir = str(os.environ.get(PACKAGED_SET_ENV) or "").strip()
+        if env_dir.lower() in {PACKAGED_SET_OFF, "none", "-", "0"}:
+            return []
+        if env_dir:
+            path = Path(env_dir)
+            out.append(path if path.is_dir() else path.parent)
+        binary = str(os.environ.get("PLOBI_MAGPIE_BINARY") or "").strip()
+        if not binary:
+            binary = str(self.config.get("binary") or "").strip()
+        if binary:
+            for parent in Path(binary).parents[:4]:
+                out.append(parent / PACKAGED_SET_DIRNAME)
+                out.append(parent / "resources" / PACKAGED_SET_DIRNAME)
+        for parent in Path(__file__).resolve().parents[:6]:
+            out.append(parent / PACKAGED_SET_DIRNAME)
+            out.append(parent / "build" / PACKAGED_SET_DIRNAME)
+            # 桌面端把插件集打进自己的构建产物：`Code/apps/desktop/build/`，
+            # 发布版是 `release/win-unpacked/resources/`。源树里跑 bezel 时名册
+            # 只在这两处，漏了它们卡片清单就退回「本机装了谁」（9 家，正是
+            # 用户 11-24 看到的缺口）。
+            out.append(parent / "apps" / "desktop" / "build" / PACKAGED_SET_DIRNAME)
+            out.append(
+                parent / "apps" / "desktop" / "release" / "win-unpacked" / "resources" / PACKAGED_SET_DIRNAME
+            )
+            out.append(parent / "third_party" / PACKAGED_SET_DIRNAME)
+        seen: set[str] = set()
+        unique: list[Path] = []
+        for path in out:
+            key = str(path).lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(path)
+        return unique
+
+    def _packaged_set_root(self) -> Path | None:
+        """The bundled set that actually has a roster in it, or None."""
+        for path in self._packaged_set_candidates():
+            if (path / PACKAGED_ROSTER_FILE).is_file():
+                return path
+        return None
+
+    def _packaged_roster(self) -> dict[str, dict] | None:
+        """The **packaged** roster: every provider the plugins we ship can serve.
+
+        This is the source that knows about providers before anything is
+        installed, so it is what a card list must be built from — the CLI and
+        ``providers-state.json`` only ever name what this machine already has.
+        ``None`` means we ship no set; the roster then stays what magpie reports.
+        """
+        cached = getattr(self, "_packaged_roster_cache", None)
+        now = time.time()
+        if cached is not None and now - cached[1] < PACKAGED_ROSTER_TTL_SECONDS:
+            return cached[0]
+        root = self._packaged_set_root()
+        rows = their_list.read_packaged_roster(root) if root is not None else None
+        self._packaged_roster_cache = (rows, now)
+        return rows
+
     async def provider_specs(self) -> list[dict]:
         """One card per provider magpie actually has — **their** roster decides.
 
@@ -335,8 +449,16 @@ class MagpieProvider(Provider):
         serving = await self._serving_prefixes()
         theirs = self._their_providers(serving)
         table = self._our_table()
+        # The two machine-shaped sources answer only for the plugins this machine
+        # has installed. A list built from them alone is a list of what already
+        # works — on a new machine that is nothing, and the user has no card to
+        # click to change it. The bundled set answers for what we **ship**, so
+        # it is merged in first and this machine's truth overlays it.
+        packaged = self._packaged_roster() or {}
+        combined: dict[str, dict] = dict(packaged)
+        combined.update(theirs or {})
 
-        if not theirs:
+        if not combined:
             return [self._card_spec(pid, row, present=None) for pid, row in table.items()]
 
         claimed = {str(row.get("upstream") or pid): pid for pid, row in table.items()}
@@ -348,7 +470,7 @@ class MagpieProvider(Provider):
         # (accounts are kept), so this is the only way to tell a provider that is
         # merely listed from one whose plugin is actually here.
         loaded = self._installed_plugins()
-        for upstream_id, row in theirs.items():
+        for upstream_id, row in combined.items():
             ours = claimed.get(upstream_id)
             plugin = str(row.get("spec") or row.get("plugin") or "").strip() or None
             installed = None
@@ -362,6 +484,7 @@ class MagpieProvider(Provider):
                 reported=row,
                 installed=installed,
                 plugin=plugin,
+                from_set=upstream_id not in (theirs or {}),
             )
             if ours:
                 named.append((order.get(ours, len(order)), spec))
@@ -407,6 +530,7 @@ class MagpieProvider(Provider):
         reported: dict | None = None,
         installed: bool | None = None,
         plugin: str | None = None,
+        from_set: bool = False,
     ) -> dict:
         """One row of ``provider_specs``: their identity, our label.
 
@@ -437,6 +561,13 @@ class MagpieProvider(Provider):
             "installed": installed,
             # The plugin spec, so the card can offer to put it back.
             "plugin": plugin,
+            # Their sign-in menu, as they report it. Which lanes a vendor offers
+            # is the vendor's answer, so the card offers what is in here rather
+            # than one lane we picked on their behalf.
+            "methods": [m for m in (reported.get("methods") or []) if isinstance(m, dict)],
+            # Named by the plugin set we **ship**, not by anything on this
+            # machine: the card exists so the user can install it.
+            "from_set": from_set,
             "install_command": (
                 f"magpie plugin add {plugin}" if plugin and installed is False else None
             ),
@@ -738,17 +869,104 @@ class MagpieProvider(Provider):
     #: per consecutive failure, which is the right shape for a gap measured in seconds.
     NOT_READY_COOLDOWN = 2.0
 
-    def _classify_upstream(self, status: int, oai_req: dict) -> UpstreamError | None:
+    #: What a vendor means when it refuses *this model for this account*. Measured
+    #: wordings (2026-11-24): Devin "This model is no longer available for your
+    #: account ... (HTTP 502)", opencode "entitlement/forbidden" (403). None of these
+    #: change by waiting, so none of them may be dressed up as "retry in a moment".
+    _VENDOR_REFUSAL_HINT = re.compile(
+        r"no longer available|not available for your account|entitlement|forbidden|"
+        r"model_not_found|does not exist|not subscribed|no such model|"
+        r"未开通|无权限|不可用|不存在",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _upstream_detail(body: str | None, limit: int = 400) -> str:
+        """The upstream's own words, as short as they can be while still useful."""
+        if not body:
+            return ""
+        text = str(body).strip()
+        if not text:
+            return ""
+        payload = None
+        try:
+            payload = json.loads(text)
+        except Exception:  # noqa: BLE001 - not every error body is JSON
+            payload = None
+        if isinstance(payload, dict):
+            err = payload.get("error")
+            if isinstance(err, dict):
+                for key in ("message", "detail", "code"):
+                    msg = err.get(key)
+                    if isinstance(msg, str) and msg.strip():
+                        return msg.strip()[:limit]
+            elif isinstance(err, str) and err.strip():
+                return err.strip()[:limit]
+            detail = payload.get("detail")
+            if isinstance(detail, str) and detail.strip():
+                return detail.strip()[:limit]
+        return " ".join(text.split())[:limit]
+
+    def _vendor_refusal(
+        self, status: int, detail: str, oai_req: dict
+    ) -> UpstreamError | None:
+        """A vendor saying "this model is gone for this account" is not a bad gateway.
+
+        It is a *404*: the id is in the roster, the account may not use it, and no amount
+        of retrying will change that. Reporting it as 502/503 keeps the id selectable and
+        makes every turn pay the same failure — which is exactly how a picker ends up
+        offering models that cannot serve an agent turn.
+        """
+        if status == 200 or not detail:
+            return None
+        if not self._VENDOR_REFUSAL_HINT.search(detail):
+            return None
+        model = str(oai_req.get("model") or "")
+        return UpstreamError(
+            404,
+            f"magpie: the upstream refused {model or 'this model'} for the current "
+            f"account ({status}): {detail}",
+            retryable=False,
+        )
+
+    def _classify_upstream(
+        self, status: int, oai_req: dict, body: str | None = None
+    ) -> UpstreamError | None:
         """Map a gateway status to what it *means*, not just what it says."""
+        detail = self._upstream_detail(body)
         if status in self._NOT_READY_STATUSES:
+            # A 5xx here is *usually* the sidecar restarting its plugin host, but not
+            # always: when magpie forwards a vendor refusal it forwards the vendor's
+            # status too. Measured 2026-11-24: `devin/swe-2` answers 502 carrying "This
+            # model is no longer available for your account", and the old wording sent
+            # the client into a retry loop over a model that will never answer. When the
+            # body says something structured, believe the body over the status code.
+            refusal = self._vendor_refusal(status, detail, oai_req)
+            if refusal is not None:
+                return refusal
             return UpstreamError(
                 503,
                 f"magpie: the local gateway is not ready (it answered {status}) — it is "
-                "most likely restarting its plugin host; retry in a moment",
+                "most likely restarting its plugin host; retry in a moment"
+                + (f" [upstream body: {detail}]" if detail else ""),
                 retryable=True,
                 cooldown=self.NOT_READY_COOLDOWN,
             )
-        return self._classify_http(status) or self._not_served(status, oai_req)
+        known = self._classify_http(status) or self._not_served(status, oai_req)
+        refusal = self._vendor_refusal(status, detail, oai_req)
+        if known is not None:
+            if not detail or detail in str(known):
+                return known
+            # Keep the class of the failure, but stop throwing away the only sentence
+            # that explains it: the client quotes the message and a user can act on it.
+            return UpstreamError(
+                known.status,
+                f"{known} [upstream body: {detail}]",
+                retryable=known.retryable,
+                reauth=known.reauth,
+                cooldown=known.cooldown,
+            )
+        return refusal
 
     def _unreachable(self, err: Exception) -> UpstreamError:
         """Nothing on that port: not running yet, or the sidecar is being restarted."""
@@ -785,7 +1003,7 @@ class MagpieProvider(Provider):
             )
         except httpx.HTTPError as err:
             raise self._unreachable(err) from err
-        err = self._classify_upstream(res.status_code, oai_req)
+        err = self._classify_upstream(res.status_code, oai_req, res.text)
         if err is not None:
             raise err
         try:
@@ -831,7 +1049,15 @@ class MagpieProvider(Provider):
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         body = self._body(oai_req, stream=True)
         async with self._open_stream(body) as res:
-            err = self._classify_upstream(res.status_code, oai_req)
+            # Never read the body on a 200 here (that would swallow the event stream);
+            # on anything else reading it is the only way to carry the vendor's own
+            # words into the error the client finally shows.
+            detail: str | None = None
+            if res.status_code != 200:
+                with contextlib.suppress(Exception):
+                    await res.aread()
+                    detail = res.text
+            err = self._classify_upstream(res.status_code, oai_req, detail)
             if err is not None:
                 raise err
             async for line in res.aiter_lines():
@@ -932,35 +1158,124 @@ class MagpieProviderLeg(MagpieProvider):
             "plugin": plugin,
             "install_command": command,
             "install": {"kind": "plugin", "command": command} if command else None,
+            # Their sign-in menu, normalised once here so the card, the
+            # catalogue row and the flow all speak one shape.
+            "methods": self._login_methods(),
         }
 
-    def _login_method(self) -> str:
-        """Which of magpie's own sign-in methods we take, named by us.
+    def _login_methods(self) -> list[dict]:
+        """Their sign-in menu for this provider, in one shape.
 
-        `magpie plugin login <provider>` **without** a method asks: it prints
-        a menu on the terminal. Read as a pipe — which is how the gateway runs
-        it — that menu is never drawn and the command waits forever (measured
+        Every lane they offer is kept. A vendor whose plugin can be entered
+        either through the browser or with a pasted key is a vendor with two
+        lanes, and a card that only ever offers the first one cannot do half of
+        what its plugin can (user, 11-25: 「按 22 家的 methods 生成 oauth/api
+        登录入口」).
+
+        Read off the merged roster row, which is what magpie itself reports —
+        carried in the plugin set we ship, so a provider nothing has installed
+        yet still answers with its full menu.
+        """
+        rows: list[dict] = [m for m in (self.spec.get("methods") or []) if isinstance(m, dict)]
+        if not rows:
+            source = self.umbrella if self.umbrella is not None else self
+            with contextlib.suppress(Exception):
+                row = (source._their_providers() or {}).get(self.upstream_id) or {}
+                rows = [m for m in (row.get("methods") or []) if isinstance(m, dict)]
+        out: list[dict] = []
+        for method in rows:
+            kind = str(method.get("type") or "").strip().lower() or "oauth"
+            label = str(method.get("label") or "").strip() or kind
+            out.append(
+                {
+                    "type": kind,
+                    "label": label,
+                    "placeholder": str(method.get("placeholder") or ""),
+                }
+            )
+        return out
+
+    def _login_method(self, choice: str | None = None) -> str:
+        """Which lane of their menu to name — ours to name, never theirs to ask.
+
+        `magpie plugin login <provider>` **without** a method asks: it prints a
+        menu on the terminal. Read as a pipe — which is how the gateway runs it —
+        that menu is never drawn and the command waits forever (measured
         2026-11-10: the card spun and the session came back `failed` with the
         menu's tail as its detail, 「3. WorkBuddy API key；>」).
 
-        Their command takes the method as its 1-based number, its label or its
-        type (`oauth`/`api`) ⇒ we name the browser one ourselves, out of the
-        merged roster — the method labels only ever arrive on the CLI's stream,
-        magpie's on-disk roster does not carry them.
+        So a lane is always named. ``choice`` is the user's, when the card puts
+        the menu up; otherwise the browser lane wins, because that is the one
+        whose credential is the account the vendor's own app holds. A key-only
+        provider gets the type word (``api``), which their command accepts.
         """
-        source = self.umbrella if self.umbrella is not None else self
-        row = (source._their_providers() or {}).get(self.upstream_id) or {}
-        methods = [m for m in (row.get("methods") or []) if isinstance(m, dict)]
-        oauth = [m for m in methods if str(m.get("type") or "") == "oauth"]
+        methods = self._login_methods()
+        if choice:
+            wanted = str(choice).strip().lower()
+            for method in methods:
+                if wanted in {method["label"].lower(), method["type"].lower()}:
+                    return method["label"]
+            # A word we do not know is not a menu their CLI can answer. Fall
+            # through to the default lane rather than hand it a word it rejects.
+        oauth = [m for m in methods if m["type"] == "oauth"]
         for method in oauth:
-            label = str(method.get("label") or "")
+            label = method["label"]
             if "browser" in label.lower() or "浏览器" in label:
                 return label
         if oauth:
-            return str(oauth[0].get("label") or "oauth")
+            return oauth[0]["label"]
+        if any(m["type"] == "api" for m in methods):
+            return "api"
         return ""
 
-    def login_plan(self) -> dict:
+    async def ensure_plugin(self) -> tuple[bool, str]:
+        """Is the plugin behind this provider here? Put it back if it is not.
+
+        The card's own rule (user, 11-21): 「点配置 = 自动装回来 + 接着登录」 —
+        one gesture, no second button. Returns ``(ok, detail)``; a failure
+        carries **their** words, never a generic 「安装失败」.
+        """
+        spec = str(self.spec.get("plugin") or "").strip()
+        if not spec:
+            return True, ""
+        source = self.umbrella if self.umbrella is not None else self
+        loaded: set[str] | None = None
+        with contextlib.suppress(Exception):
+            loaded = source._installed_plugins()
+        if loaded is not None and their_list.bare_spec(spec) in loaded:
+            return True, ""
+        binary = ""
+        if self.umbrella is not None:
+            binary = self.umbrella._binary() or ""
+        if not binary:
+            return False, "找不到 magpie 本体，装不了它的插件"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                binary,
+                "plugin",
+                "add",
+                spec,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return False, f"{type(exc).__name__}: {exc}"
+        try:
+            out, _ = await asyncio.wait_for(
+                proc.communicate(), timeout=PLUGIN_INSTALL_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            with contextlib.suppress(Exception):
+                proc.kill()
+            return False, f"装 {spec} 超过 {int(PLUGIN_INSTALL_TIMEOUT_SECONDS)} 秒还没结束"
+        text = (out or b"").decode("utf-8", "replace").strip()
+        if proc.returncode != 0:
+            return False, text or f"magpie 拒绝了 {spec}（退出码 {proc.returncode}）"
+        # The cache answered 「没装」 a second ago and is wrong now.
+        source._installed_plugins_cache = None
+        return True, text
+
+    def login_plan(self, method: str | None = None) -> dict:
         """Signing in happens behind magpie: we run **its** login command.
 
         The drawer's shape and wording are ours and do not change — the button
@@ -969,28 +1284,49 @@ class MagpieProviderLeg(MagpieProvider):
         the browser itself (that is where the account is signed in — the same
         credential the provider's own app would hold).
 
-        **The method is named by us**: without it their command asks on the
-        terminal, and a pipe never sees the menu ⇒ it waits forever (measured
-        2026-11-10). With it, no menu, no console window, and the browser
-        opens by itself.
+        **The lane is named by us** (`method`, or the default in
+        `_login_method`): without it their command asks on the terminal, and a
+        pipe never sees the menu ⇒ it waits forever (measured 2026-11-10). With
+        it there is no menu, no console window, and the browser opens by itself.
 
-        `tty` is only for the one case a terminal is really needed: a provider
-        whose only sign-in is a key (zen-free's), which the user has to type.
+        ``tty`` is only for the lanes that really need a terminal: a provider
+        whose only way in is a key (zen-free's, and the ``api`` lane of every
+        vendor that also offers one), which the user has to paste.
         """
         binary = ""
         umbrella = self.umbrella
         if umbrella is not None:
             binary = umbrella._binary() or ""
-        method = self._login_method()
+        methods = self._login_methods()
+        chosen = self._login_method(method)
+        # 只有一条路的纯 key 家不点名：他们的命令本来就只问一样东西，塞个 type 词
+        # 进去是替它猜；凡是有 oauth 通道的（哪怕只有一条）都必须点名，否则它会
+        # 打印菜单等一个永远敲不到的答案。
+        names_lane = bool(chosen) and (
+            len(methods) > 1 or any(m["type"] == "oauth" for m in methods)
+        )
         argv = ["plugin", "login", self.upstream_id]
-        if method:
-            argv.append(method)
+        if names_lane and chosen:
+            argv.append(chosen)
+        key_lane = (
+            not chosen
+            or chosen == "api"
+            or any(m["label"] == chosen and m["type"] == "api" for m in methods)
+        )
+        plugin = str(self.spec.get("plugin") or "").strip() or None
+        installed = self.spec.get("installed")
         return {
             "kind": "cli_login",
             "name": self.display_name,
             "binary": binary,
             "argv": argv,
-            "tty": not method,
+            "tty": key_lane,
+            "method": chosen,
+            "methods": methods,
+            "plugin": plugin,
+            "install_command": (
+                f"magpie plugin add {plugin}" if plugin and installed is False else None
+            ),
             "reason": f"它的登录在 Magpie 那边 {self.display_name}",
         }
 
@@ -1025,8 +1361,13 @@ class MagpieProviderLeg(MagpieProvider):
         return True, "ok"
 
     # --- the catalogue -----------------------------------------------------
-    async def refresh_models(self, acc: Account) -> list[str] | None:
+    async def refresh_models(self, acc: Account | None) -> list[str] | None:
         """This provider's models, read from magpie's own catalogue.
+
+        `acc` may be ``None``: the roster comes from magpie, not from our seat. A
+        vendor we hold no seat for still has models listed, and hiding them made the
+        picker disagree with the truth source (user, 11-24: 「我可不想下次在模型框里面
+        选择模型却干不了活」).
 
         Their rows carry **their** provider id; we publish **ours** in front of
         the model name, so a rename upstream never changes the ids the user's

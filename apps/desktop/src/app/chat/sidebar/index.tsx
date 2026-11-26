@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { StatusbarControls, type StatusbarItem } from '@/app/shell/statusbar-controls'
+import { viewRenderer } from '@/app/views'
 import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -36,6 +37,8 @@ import {
   type ShellLevel,
   SKILLS_ROUTE
 } from '../../routes'
+import { createSlotRegistry, sidebarMiddleItems, type SlotRegistry } from '../../shell/slot-registry'
+import { useSlotRegistry } from '../../shell/slot-registry-context'
 import type { SidebarNavItem } from '../../types'
 
 import { AgentCategoryGroup } from './agent-category-group'
@@ -66,18 +69,34 @@ import { ProjectDialog } from './project-dialog'
 import { SidebarSegment, type SidebarSegmentItem } from './sidebar-segment'
 import { SidebarStrip } from './sidebar-strip'
 
-export const SIDEBAR_NAV: SidebarNavItem[] = [
-  {
-    id: 'skills',
-    label: '',
-    icon: props => <Codicon name="symbol-misc" {...props} />,
-    route: SKILLS_ROUTE
-  },
-  { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
-  { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
-  { id: 'knowledge', label: '', icon: props => <Codicon name="book" {...props} />, route: KNOWLEDGE_ROUTE },
-  { id: 'diary', label: '', icon: props => <Codicon name="edit" {...props} />, route: DIARY_ROUTE }
-]
+/**
+ * 左栏那几格：**从 slot 声明表派生**（裁定 239）。
+ *
+ * 它们**不是产品常量，是出厂预装的那一批插件**（用户 11-25 12:0x：「内置的表也算插件」）：
+ * 用户关掉哪一格（`slots.removed`），那一格就真的不在——不是藏起来。
+ */
+export function sidebarNavItems(registry: SlotRegistry): SidebarNavItem[] {
+  return registry
+    .slotsFor('sidebar', 'top')
+    .filter(slot => slot.kind === 'entry-row')
+    .flatMap(slot => {
+      const content = registry.contentFor('sidebar', 'top', slot.id)
+      if (!content) {
+        return []
+      }
+      return [
+        {
+          id: content.id,
+          label: content.label ?? '',
+          icon: content.icon ?? 'symbol-misc',
+          route: content.route
+        }
+      ]
+    })
+}
+
+/** 出厂那一份声明下的左栏格子（没有用户配置时的样子）。 */
+export const SIDEBAR_NAV: SidebarNavItem[] = sidebarNavItems(createSlotRegistry())
 
 // NAV row chrome (the top icon rail): height/typography live here so the
 // secretary-specific rows (new-agent / back-to-secretary) match the base rows
@@ -101,8 +120,13 @@ const NAV_BUTTON_DISABLED = 'cursor-default hover:border-transparent hover:bg-tr
 // `[&_.codicon]:leading-none` and `codiconIcon()` bakes `leading-none` in.
 const NAV_ICON = 'size-4 shrink-0 leading-none text-[color-mix(in_srgb,currentColor_72%,transparent)]'
 
-/** 左栏中段的两种内容（用户 11-01）。 */
-type MiddleView = 'agents' | 'outsourced'
+/**
+ * 左栏中段的内容（用户 11-01）：**身份是开放的**（插件可以往这一族里加一格）。
+ *
+ * 出厂那两格是 `roster`（名单）与 `outsourced`（外包）——**来自 slot 声明表**，
+ * 不是这里写死的两个字符串。
+ */
+type MiddleView = string
 
 interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   /** 底部收敛区那一排（系统工具 + 状态图标）：10-31 起住在左栏底部。 */
@@ -170,9 +194,13 @@ export function ChatSidebar({
   // 那是 profile 概念的回魂路，随用户 11-05 的追问一起拆了：认不出就是认不出，
   // 宁可退回全局页，也不再从 profile 绕回来。
   const l1Agent = useStore($consoleL1Agent)
+  // 左栏那几格从 **slot 声明表**派生（裁定 239）：**全应用一册**（`slot-registry-context.tsx`
+  // 拉那一次 `/api/slots` ＋ 配置里的 `slots.removed`）——用户关掉哪一格，那一格就不在。
+  const slotRegistry = useSlotRegistry()
 
   const navItems = useMemo(() => {
-    const base = sidebarNavForLevel(SIDEBAR_NAV, { l1, l2Id })
+    // 左栏那几格来自 slot 声明表；用户关掉哪一格（`slots.removed`），那一格就不在。
+    const base = sidebarNavForLevel(sidebarNavItems(slotRegistry), { l1, l2Id })
 
     const scopedAgent =
       (l2Id ? secretaryAgents.find(agent => agent.id === l2Id) : null) ?? (l1 ? l1Agent : null) ?? null
@@ -182,7 +210,7 @@ export function ChatSidebar({
         ? { ...item, route: `${SKILLS_ROUTE}?agent=${encodeURIComponent(scopedAgent.id)}` }
         : item
     )
-  }, [l1, l1Agent, l2Id, secretaryAgents])
+  }, [l1, l1Agent, l2Id, secretaryAgents, slotRegistry])
 
   const sidebarOpen = useStore($sidebarOpen)
   // 收起态不再归零：同一个栏换成 40px 图标条（用户 10-31）。
@@ -399,13 +427,19 @@ export function ChatSidebar({
   const capabilitiesHref = navItems.find(item => item.id === 'skills')?.route ?? SKILLS_ROUTE
 
   // 中段那枚切换：选中那一格才展开成「图标 + 名词」（参照物是用户给的「终端 / 通用」）。
+  // **清单来自 slot 声明表**（裁定 239 路线第 6 刀；与左栏上面那排、工作区那几页签、
+  // 对话卡那几枚同一套口径）：出厂那两格 ＋ 插件带来的那些。
+  const middleItems = useMemo(() => sidebarMiddleItems(slotRegistry, t), [slotRegistry, t])
   const middleTabs = useMemo<SidebarSegmentItem<MiddleView>[]>(
-    () => [
-      { icon: 'organization', id: 'agents', label: c.tabAgents },
-      { icon: 'send', id: 'outsourced', label: c.tabOutsourced }
-    ],
-    [c.tabAgents, c.tabOutsourced]
+    () => middleItems.map(item => ({ icon: item.icon, id: item.id, label: item.label })),
+    [middleItems]
   )
+
+  // 中段那一格的内容：**出厂那两格是宿主自己的面板**（名单要名册的数据、外包要这个 L2）；
+  // **插件带来的那一格**按它声明的 `view` 渲染（宿主把应用里那一页真的渲染出来）。
+  const middleSlot = middleItems.find(item => item.id === middleView)
+  const MiddlePanel = middleSlot?.view ? viewRenderer(middleSlot.view) : undefined
+  const middleIsHostPanel = middleView === 'agents' || middleView === 'outsourced'
 
   // 底部这两枚是「本 Agent 的」入口，和上面那排图标同一个形状。
   //
@@ -449,19 +483,21 @@ export function ChatSidebar({
         <SidebarContent className="min-h-0 gap-0 bg-transparent px-2.5">
           {/* 顶上这几行是导航，不参与滚动（用户 11-03：侧栏应该只有中间 Agent 那一段能上下滑）。 */}
           <div className="shrink-0">
+            {/* 「新建 Agent」**不是导航行里的一格**——它是一个独立的行动按钮
+                （裁定 239 的 `action` 家族）：**用不同的组件区分开来**（DSH 那个
+                「New Session」：透明底＋内描边的一枚整行按钮，与那些图标行一眼分得开）。 */}
+            <Button
+              aria-label={c.newAgent}
+              className="mb-1 w-full justify-start gap-2 px-2.5"
+              onClick={openCreateAgent}
+              type="button"
+              variant="outline"
+            >
+              <Codicon className={NAV_ICON} name="add" />
+              <span className="min-w-0 flex-1 truncate text-left">{c.newAgentLabel}</span>
+            </Button>
+
             <SidebarMenu className="gap-px pt-2">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  aria-label={c.newAgent}
-                  className={NAV_BUTTON}
-                  onClick={openCreateAgent}
-                  tooltip={c.newAgent}
-                  type="button"
-                >
-                  <Codicon className={NAV_ICON} name="add" />
-                  <span className="min-w-0 flex-1 truncate">{c.newAgentLabel}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
 
               {l2Id && (
                 <SidebarMenuItem>
@@ -485,7 +521,7 @@ export function ChatSidebar({
                     tooltip={s.nav[item.id] ?? item.label}
                     type="button"
                   >
-                    <item.icon className={NAV_ICON} />
+                    <Codicon className={NAV_ICON} name={item.icon} />
                     <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -504,7 +540,10 @@ export function ChatSidebar({
 
           {/* 只有中段（名单／外包）滚：导航那几行钉在顶上不动（用户 11-03）。 */}
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            {middleView === 'outsourced' && l2Id ? (
+            {!middleIsHostPanel ? (
+              // 插件带来的那一格：按它声明的 view 把应用里那一页真的渲染出来。
+              MiddlePanel ? <MiddlePanel /> : null
+            ) : middleView === 'outsourced' && l2Id ? (
               <AgentOffloadPanel agentId={l2Id} />
             ) : (
               <div className="flex min-h-full flex-col">

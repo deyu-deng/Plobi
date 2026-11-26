@@ -15,8 +15,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 afterEach(() => cleanup())
 
 /**
- * 这一屏的全部字段，顺序就是设计上的分层顺序（`constants.ts` 的 `MEMORY_GROUPS`）：
- * 工作记忆 → 长时记忆 → 外脑（Exocortex） → 外部记忆提供商。
+ * 这一屏的全部字段，顺序就是设计上的分层顺序（**slot 声明表**里那一段的 `keys`：
+ * 工作记忆 → 长时记忆 → 外脑（Exocortex） → 外部记忆提供商）。
+ *
+ * **11-26 更新（用户 11-25 23:3x）**：设置屏那几段从 slot 声明表派生 ⇒ 字段清单与
+ * 分组都在 `app/shell/slot-registry.ts` 里（不在 `settings/constants.ts`）。
+ * 这一份列表是**顺序契约**（钉住分层顺序不漂），故意留在测试里当期望值。
  *
  * 用 `vi.hoisted` 是因为下面的 `vi.mock` 工厂会被提升到文件顶部，普通 const 那时还没赋值。
  */

@@ -1,4 +1,6 @@
 name: hindsight
+# 屏上叫什么（这一行是给**人**看的名字；品牌大小写别由代码猜）。
+label: Hindsight
 version: 1.0.0
 description: "Hindsight — long-term memory with knowledge graph, entity resolution, and multi-strategy retrieval."
 pip_dependencies:

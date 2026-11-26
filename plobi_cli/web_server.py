@@ -48,6 +48,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from plobi_constants import VALID_REASONING_EFFORTS
+
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -860,7 +862,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "terminal.modal_mode": {
         "type": "select",
         "description": "Modal sandbox mode",
-        "options": ["sandbox", "function"],
+        # ``tools/tool_backend_helpers.py``: auto | direct | managed.  The
+        # screen was offering ``sandbox``/``function`` — two values the code
+        # does not know, while the value it actually defaults to (``auto``)
+        # was not offered at all.
+        "options": ["auto", "direct", "managed"],
     },
     "tts.provider": {
         "type": "select",
@@ -902,12 +908,30 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "approvals.mode": {
         "type": "select",
         "description": "Dangerous command approval mode",
-        "options": ["ask", "yolo", "deny"],
+        # The real vocabulary is ``tools/approval.py::_VALID_MODES`` —
+        # ``ask``/``yolo``/``deny`` were retired, and shipping them here is
+        # how the screen ended up offering three modes that no longer exist
+        # (the desktop's own table had the right ones; two tables, two truths).
+        "options": ["manual", "smart", "off"],
+    },
+    "agent.image_input_mode": {
+        "type": "select",
+        "description": "How an image reaches the model",
+        # ``agent/image_routing.py``: auto | native | text.
+        "options": ["auto", "native", "text"],
+    },
+    "code_execution.mode": {
+        "type": "select",
+        "description": "Code execution mode",
+        "options": ["project", "strict"],
     },
     "context.engine": {
         "type": "select",
         "description": "Context management engine",
-        "options": ["default", "custom"],
+        # The built-in is ``compressor``; a plugin-registered engine is chosen
+        # by name, and the screen appends the current value when it is not in
+        # this list (a plugin engine is not this product's vocabulary).
+        "options": ["compressor"],
     },
     "human_delay.mode": {
         "type": "select",
@@ -927,7 +951,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     "delegation.reasoning_effort": {
         "type": "select",
         "description": "Reasoning effort for delegated subagents",
-        "options": ["", "low", "medium", "high"],
+        # Derived from ``plobi_constants.VALID_REASONING_EFFORTS`` — the
+        # hand-written list here had drifted from it (``minimal``/``xhigh``/
+        # ``max`` were missing), and the desktop's own table had drifted the
+        # other way.
+        "options": ["", *VALID_REASONING_EFFORTS],
     },
     "updates.non_interactive_local_changes": {
         "type": "select",
@@ -1066,11 +1094,23 @@ CONFIG_SCHEMA = _build_schema_from_config(DEFAULT_CONFIG)
 # by the normalize/denormalize cycle.  Insert model_context_length right after
 # the "model" key so it renders adjacent in the frontend.
 _mcl_entry = _SCHEMA_OVERRIDES["model_context_length"]
+# 「接哪个外部脑」那一行**不在 DEFAULT_CONFIG 里**（它有自己那份字段编辑器与连接
+# 流程），但它**必须**在 schema 里——否则屏上根本渲染不到这一行。
+# 2026-11-25 现读：`_build_schema_from_config` 一直把 `memory.provider` 跳过去
+# （它当年是内部键），于是桌面设置屏上**没有这一行**，后端那 8+ 家外脑**一个都选不到**
+# ⇒ 前端那份手抄的三项清单成了死代码。
+_memory_provider_entry: Dict[str, Any] = {
+    "type": "select",
+    "description": "External memory provider",
+    "category": "memory",
+}
 _ordered_schema: Dict[str, Dict[str, Any]] = {}
 for _k, _v in CONFIG_SCHEMA.items():
     _ordered_schema[_k] = _v
     if _k == "model":
         _ordered_schema["model_context_length"] = _mcl_entry
+    if _k == "memory.mind_enabled":
+        _ordered_schema["memory.provider"] = _memory_provider_entry
 CONFIG_SCHEMA = _ordered_schema
 
 
@@ -4910,6 +4950,50 @@ def _memory_provider_label(name: str) -> str:
     return name.replace("_", " ").replace("-", " ").title()
 
 
+# 「关掉」那一行的人话（**这一列里唯一不是一家外脑的选项**）。
+_MEMORY_PROVIDER_OFF_LABEL = "Off - built-in memory only"
+
+
+def _memory_provider_display_label(name: str) -> str:
+    """一家外脑在屏上叫什么。
+
+    **插件自己声明它叫什么**（``plugin.yaml`` 的 ``label:``）⇒ 品牌名不会被
+    「把下划线换成空格再首字母大写」那条兜底规则揉坏（``byterover`` → 「Byteroover」✗）。
+    声明里没有就退回那条兜底（老插件／用户自己装的那几家不受影响）。
+    """
+    manifest = _memory_provider_manifest(name)
+    label = manifest.get("label")
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+    return _memory_provider_label(name)
+
+
+def _memory_provider_picker_options() -> List[Dict[str, str]]:
+    """屏上「接哪个外部脑」那一行的清单（**只有第三方那几家**）。
+
+    官方脑**不在这一列里**（``WP-MIND-COEXIST``）：它是内核一等公民
+    （``plugins/memory/__init__.py`` 的 ``CORE_PROVIDERS``），有自己那个常驻开关
+    ``memory.mind_enabled``；这一列里每一项的语义都是「取代别的东西」，
+    而官方脑不取代任何东西。
+
+    第一行是「关掉」＝只用内置记忆（配置里的默认值就是空串）。
+    """
+    rows: List[Dict[str, str]] = [
+        {"value": "", "label": _MEMORY_PROVIDER_OFF_LABEL},
+    ]
+    try:
+        from plugins.memory import CORE_PROVIDERS
+    except Exception:
+        CORE_PROVIDERS = {"mind": ("plobi.mind.provider", "MindProvider")}
+
+    for row in _discover_memory_provider_statuses():
+        name = str(row.get("name") or "")
+        if not name or name in CORE_PROVIDERS:
+            continue
+        rows.append({"value": name, "label": _memory_provider_display_label(name)})
+    return rows
+
+
 def _normalize_memory_provider_name(name: Any) -> str:
     provider = str(name or "").strip()
     if provider.lower() in {"built-in", "builtin", "none"}:
@@ -5746,9 +5830,91 @@ async def get_defaults():
     return DEFAULT_CONFIG
 
 
+@app.get("/api/slots")
+async def get_slot_contributions():
+    """What the installed plugins put into the shell's mount points (slots).
+
+    裁定 239: the plugin declares it in its ``plugin.yaml`` (``slots:``) — the
+    **shallow** step, declarative (no plugin code runs in the interface).  The
+    screen merges these into its own slot table; a plugin filling a slot the
+    host never declared is ignored.
+
+    A plugin that fails to load must not take the screen down with it, but it
+    must also not disappear quietly — the reason goes to the log.
+    """
+    from plobi_cli.plugins import get_plugin_slot_contributions
+
+    try:
+        contributions = get_plugin_slot_contributions()
+    except Exception as exc:
+        _log.warning("slot contributions unavailable: %s", exc)
+        contributions = []
+    return {"contributions": contributions}
+
+
 @app.get("/api/config/schema")
 async def get_schema():
-    return {"fields": CONFIG_SCHEMA, "category_order": _CATEGORY_ORDER}
+    """The config schema, plus the **live** option list for provider keys.
+
+    A provider dropdown must offer the providers this backend actually has:
+    the built-ins, the plugin-registered ones, and the command providers the
+    user declared.  Those lists come from the registries, so they are
+    computed per request.
+
+    Only the registry-backed keys carry ``options_source`` — the schema's
+    own static ``options`` are not authoritative (``approvals.mode`` still
+    offers the retired ``ask``/``yolo``/``deny`` while the real default is
+    ``manual``), so the screen keeps its local table for every other key.
+    """
+    fields = dict(CONFIG_SCHEMA)
+    try:
+        from plobi_cli.tools_config import provider_config_options
+
+        for key, options in provider_config_options().items():
+            entry = fields.get(key)
+            if not entry:
+                continue
+            fields[key] = {
+                **entry,
+                "options": [o["value"] for o in options],
+                "option_labels": {
+                    o["value"]: o["label"] for o in options if o.get("label")
+                },
+                "options_source": "registry",
+            }
+    except Exception as exc:
+        # 失败要出声：静默退回静态表＝「插件装上了、屏上却选不到」那条老病复发。
+        _log.warning("provider options unavailable: %s", exc)
+
+    # 外脑（官方外脑）那一族：清单**每次请求现算**（插件装上／卸下都跟着变）——
+    # 与 tts／stt 的 provider 同一个机制。桌面那份手抄的清单（今天只有三项，
+    # 而后端真有 8+ 家）已经删掉了 ⇒ 这一份是**唯一真源**。
+    try:
+        memory_options = _memory_provider_picker_options()
+        entry = fields.get("memory.provider")
+        if entry:
+            fields["memory.provider"] = {
+                **entry,
+                "options": [o["value"] for o in memory_options],
+                "option_labels": {
+                    o["value"]: o["label"] for o in memory_options if o.get("label")
+                },
+                "options_source": "registry",
+            }
+    except Exception as exc:
+        _log.warning("memory provider options unavailable: %s", exc)
+
+    # 插件自己声明的配置字段（设置屏那一族：用户 11-25 23:3x「一段＝一组配置字段」）
+    # ⇒ 并进 schema，屏上那一份通用表单直接渲染（键在 `plugins.entries.<plugin_key>.*`
+    # ——与插件自己读配置的那一处同一处 ⇒ 用户改的值，插件读得到）。
+    try:
+        from plobi_cli.plugins import get_plugin_config_fields
+
+        for key, entry in get_plugin_config_fields().items():
+            fields.setdefault(key, entry)
+    except Exception as exc:
+        _log.warning("plugin config fields unavailable: %s", exc)
+    return {"fields": fields, "category_order": _CATEGORY_ORDER}
 
 
 _EMPTY_MODEL_INFO: dict = {
@@ -14559,6 +14725,17 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
     with _profile_scope(profile):
         config = load_config()
         cat = TOOL_CATEGORIES.get(name)
+        card = None
+        if cat is None:
+            # A toolset a plugin brought: its declared card **is** its row.
+            # The plugin is the only backend it has — there is no "which
+            # provider" to pick — so the card renders as one provider row.
+            try:
+                from plobi_cli.plugins import get_plugin_toolset_cards
+
+                card = get_plugin_toolset_cards().get(name)
+            except Exception:
+                card = None
         providers = []
         active_provider = None
         if cat:
@@ -14596,9 +14773,32 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
                         name, prov, config, force_fresh=True
                     ),
                 })
+        elif card:
+            env_vars = [
+                {
+                    "key": e["key"],
+                    "prompt": e.get("prompt", e["key"]),
+                    "url": e.get("url"),
+                    "default": e.get("default"),
+                    "is_set": bool(get_env_value(e["key"])),
+                }
+                for e in (card.get("env_vars") or [])
+                if isinstance(e, dict) and e.get("key")
+            ]
+            providers.append({
+                "name": str(card.get("label") or name),
+                "badge": str(card.get("badge") or ""),
+                "tag": str(card.get("description") or ""),
+                "env_vars": env_vars,
+                "post_setup": card.get("post_setup"),
+                "requires_nous_auth": bool(card.get("requires_nous_auth")),
+                # Nothing to highlight: a plugin's toolset has one backend and
+                # no "active provider" of its own.
+                "is_active": False,
+            })
     return {
         "name": name,
-        "has_category": cat is not None,
+        "has_category": cat is not None or bool(card),
         "providers": providers,
         "active_provider": active_provider,
     }

@@ -312,6 +312,24 @@ class PluginManifest:
     requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
     provides_tools: List[str] = field(default_factory=list)
     provides_hooks: List[str] = field(default_factory=list)
+    # UI slots this plugin fills — what the plugin puts into the shell's
+    # mount points (裁定 239).  Declarative: the plugin says *which* slot and
+    # *what* goes in it (icon / label / route), never a component — the deep
+    # step (a plugin shipping a front-end bundle) is a different mechanism.
+    slots: List[Dict[str, Any]] = field(default_factory=list)
+    # Toolset cards this plugin declares — what the capabilities screen
+    # renders for a toolset the plugin brought: the key, a human label, one
+    # line about what it is, and the credentials it needs.  A plugin that
+    # declares nothing still works, but the screen can then only show an
+    # auto-generated name and an empty panel — which is how "installed, but
+    # invisible" happens.
+    toolsets: List[Dict[str, Any]] = field(default_factory=list)
+    # Config fields this plugin wants the **settings screen** to show for it
+    # (用户 11-25 23:3x：设置屏那几段是一族 slot，一段＝一组配置字段).
+    # Declarative: key / label / type / description / options.  The values land
+    # in ``plugins.entries.<plugin_key>.<key>`` — the same place the plugin reads
+    # its own config from (``PluginContext``) ⇒ 用户在屏上改的值，插件读得到。
+    config: List[Dict[str, Any]] = field(default_factory=list)
     source: str = ""        # "user", "project", or "entrypoint"
     path: Optional[str] = None
     # Plugin kind — see plugins.py module docstring for semantics.
@@ -1656,6 +1674,24 @@ class PluginManager:
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",
                 key, name, kind, source, plugin_dir,
             )
+            raw_toolsets = data.get("toolsets")
+            declared_toolsets: List[Dict[str, Any]] = []
+            if isinstance(raw_toolsets, list):
+                for entry in raw_toolsets:
+                    if isinstance(entry, dict) and str(entry.get("key") or "").strip():
+                        declared_toolsets.append(entry)
+            raw_slots = data.get("slots")
+            declared_slots: List[Dict[str, Any]] = []
+            if isinstance(raw_slots, list):
+                for entry in raw_slots:
+                    if isinstance(entry, dict) and str(entry.get("slot") or "").strip():
+                        declared_slots.append(entry)
+            raw_config = data.get("config")
+            declared_config: List[Dict[str, Any]] = []
+            if isinstance(raw_config, list):
+                for entry in raw_config:
+                    if isinstance(entry, dict) and str(entry.get("key") or "").strip():
+                        declared_config.append(entry)
             return PluginManifest(
                 name=name,
                 version=str(data.get("version", "")),
@@ -1664,6 +1700,9 @@ class PluginManager:
                 requires_env=data.get("requires_env", []),
                 provides_tools=data.get("provides_tools", []),
                 provides_hooks=data.get("provides_hooks", []),
+                slots=declared_slots,
+                toolsets=declared_toolsets,
+                config=declared_config,
                 source=source,
                 path=str(plugin_dir),
                 kind=kind,
@@ -2445,6 +2484,125 @@ def get_plugin_auxiliary_tasks() -> List[Dict[str, Any]]:
     return [manager._aux_tasks[k] for k in sorted(manager._aux_tasks)]
 
 
+def get_plugin_slot_contributions() -> List[Dict[str, Any]]:
+    """What the installed plugins put into the shell's mount points (slots).
+
+    A plugin declares it in its ``plugin.yaml`` (``slots:``) — declarative, the
+    shallow step (裁定 239 §1.5): the plugin says **which** slot and **what**
+    goes in it (``icon`` / ``label`` / ``route``), never a component.
+
+    Each contribution looks like::
+
+        {"slotId": "sidebar/top/my-thing", "id": "my-thing",
+         "icon": "star", "label": "我的那一格", "route": "/my-thing",
+         "providedBy": "my-plugin"}
+
+    The screen merges these into its own slot table; a plugin that fills a
+    slot nobody declared is ignored (the host only mounts what it declared).
+    """
+    manager = get_plugin_manager()
+    contributions: List[Dict[str, Any]] = []
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        for entry in getattr(manifest, "slots", None) or []:
+            slot = str(entry.get("slot") or "").strip()
+            if not slot:
+                continue
+            item: Dict[str, Any] = {
+                "slotId": slot,
+                "id": str(entry.get("id") or slot).strip(),
+                "providedBy": getattr(manifest, "key", "") or getattr(manifest, "name", ""),
+            }
+            for field in ("icon", "label", "route", "view", "position", "region", "kind"):
+                value = entry.get(field)
+                if isinstance(value, str) and value:
+                    item[field] = value
+            order = entry.get("order")
+            if isinstance(order, int) and not isinstance(order, bool):
+                item["order"] = order
+            shape = entry.get("shape")
+            if isinstance(shape, dict):
+                item["shape"] = shape
+            shells = entry.get("shells")
+            if isinstance(shells, list):
+                item["shells"] = [s for s in shells if isinstance(s, str)]
+            # 设置屏那一族（用户 11-25 23:3x：一段＝一组配置字段）⇒ 那一段显示哪几个
+            # 字段 = 这个插件自己声明的那几个（键是完整的配置键，屏上按它去 schema 取）。
+            if str(entry.get("position") or "") == "settings" or slot.startswith("settings/"):
+                config_keys = _plugin_config_keys(manifest)
+                if config_keys:
+                    item["keys"] = config_keys
+            contributions.append(item)
+    return contributions
+
+
+def _plugin_config_keys(manifest: Any) -> List[str]:
+    """这个插件声明的那几个配置字段的**完整键**（`plugins.entries.<key>.<field>`）。"""
+    key = getattr(manifest, "key", "") or getattr(manifest, "name", "")
+    if not key:
+        return []
+    out: List[str] = []
+    for entry in getattr(manifest, "config", None) or []:
+        field_key = str(entry.get("key") or "").strip()
+        if field_key:
+            out.append(f"plugins.entries.{key}.{field_key}")
+    return out
+
+
+def get_plugin_config_fields() -> Dict[str, Dict[str, Any]]:
+    """插件自己声明的配置字段（设置屏那一族里的一格）。
+
+    键在 ``plugins.entries.<plugin_key>.<field>``——与插件自己读配置的那一处**同一处**
+    （``PluginContext``）⇒ 用户在屏上改的值，插件读得到。
+
+    返回的是**配置 schema 的条目**（``type`` / ``label`` / ``description`` /
+    ``options``）⇒ 屏上那一份通用表单直接渲染它，不用为插件另做一套。
+    """
+    manager = get_plugin_manager()
+    fields: Dict[str, Dict[str, Any]] = {}
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        key = getattr(manifest, "key", "") or getattr(manifest, "name", "")
+        if not key:
+            continue
+        for entry in getattr(manifest, "config", None) or []:
+            field_key = str(entry.get("key") or "").strip()
+            if not field_key:
+                continue
+            schema: Dict[str, Any] = {
+                "type": str(entry.get("type") or "string"),
+                "label": str(entry.get("label") or field_key),
+                "description": str(entry.get("description") or ""),
+                "category": f"plugins.{key}",
+            }
+            options = entry.get("options")
+            if isinstance(options, list):
+                schema["options"] = [str(o) for o in options if isinstance(o, (str, int, float))]
+                schema["type"] = "select"
+            fields[f"plugins.entries.{key}.{field_key}"] = schema
+    return fields
+
+
+def get_plugin_toolset_cards() -> Dict[str, Dict[str, Any]]:
+    """The toolset cards the installed plugins declare, keyed by toolset key.
+
+    A card is what the capabilities screen renders for a toolset a plugin
+    brought: its label, one line about it, and the credentials it needs.  It
+    comes from the plugin's ``plugin.yaml`` (``toolsets:``), so a plugin can
+    say what its toolset *is* instead of letting the screen invent a name for
+    it.  A plugin that declares nothing contributes no card — nothing breaks.
+    """
+    manager = get_plugin_manager()
+    cards: Dict[str, Dict[str, Any]] = {}
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        for card in getattr(manifest, "toolsets", None) or []:
+            key = str(card.get("key") or "").strip()
+            if key:
+                cards.setdefault(key, dict(card))
+    return cards
+
+
 def get_plugin_toolsets() -> List[tuple]:
     """Return plugin toolsets as ``(key, label, description)`` tuples.
 
@@ -2478,20 +2636,25 @@ def get_plugin_toolsets() -> List[tuple]:
                 toolset_plugin.setdefault(entry.toolset, loaded)
 
     result = []
+    cards = get_plugin_toolset_cards()
     for ts_key in sorted(toolset_tools):
         plugin = toolset_plugin.get(ts_key)
-        label = f"🔌 {ts_key.replace('_', ' ').title()}"
+        card = cards.get(ts_key) or {}
+        # 声明过的那一格用自己的名字与简介；没声明的照旧回落自动拼的名字
+        # （老插件不该因为这一刀变了形状）。
+        label = str(card.get("label") or "").strip() or f"🔌 {ts_key.replace('_', ' ').title()}"
         # 这一格的简介先问 ``toolsets.py`` 里这个 toolset 自己那句——插件清单的
         # 简介是**整包**的（plobi-core 一句 "runtime: Master helpers…"），
         # 拿它填每一格会让 ``channel`` / ``edge`` / ``ops`` 长成一模一样，面板上
         # 就再也读不出「这一格现在是什么」。清单只在 toolset 自己没有描述时兜底。
-        desc = ""
-        try:
-            from toolsets import TOOLSETS as _TOOLSETS
+        desc = str(card.get("description") or "").strip()
+        if not desc:
+            try:
+                from toolsets import TOOLSETS as _TOOLSETS
 
-            desc = str((_TOOLSETS.get(ts_key) or {}).get("description") or "").strip()
-        except Exception:
-            desc = ""
+                desc = str((_TOOLSETS.get(ts_key) or {}).get("description") or "").strip()
+            except Exception:
+                desc = ""
         if not desc and plugin and plugin.manifest.description:
             desc = plugin.manifest.description
         if not desc:
