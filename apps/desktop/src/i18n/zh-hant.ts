@@ -3714,6 +3714,7 @@ export const zhHant = defineLocale({
       marksSaved: '已寫入檔案',
       notePlaceholder: '批註內容',
       truncated: (rows, cols) => `只顯示前 ${rows} 行 × ${cols} 列`,
+      tooLarge: (mb) => `超過 ${mb} MB，不做解析預覽`,
       sheet: '工作表',
       legacyNote: '舊 .xls 唯讀值；另存為 .xlsx 可保留顏色與合併儲存格。',
       save: '儲存',

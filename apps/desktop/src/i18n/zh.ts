@@ -4055,6 +4055,7 @@ export const zh: Translations = {
       marksSaved: '已写入文件',
       notePlaceholder: '批注内容',
       truncated: (rows, cols) => `只显示前 ${rows} 行 × ${cols} 列`,
+      tooLarge: (mb) => `超过 ${mb} MB，不做解析预览`,
       sheet: '工作表',
       legacyNote: '老 .xls 只读值；另存为 .xlsx 可保留颜色和合并单元格。',
       save: '保存',
