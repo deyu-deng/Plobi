@@ -5903,6 +5903,17 @@ async def get_schema():
             }
     except Exception as exc:
         _log.warning("memory provider options unavailable: %s", exc)
+
+    # 插件自己声明的配置字段（设置屏那一族：用户 11-25 23:3x「一段＝一组配置字段」）
+    # ⇒ 并进 schema，屏上那一份通用表单直接渲染（键在 `plugins.entries.<plugin_key>.*`
+    # ——与插件自己读配置的那一处同一处 ⇒ 用户改的值，插件读得到）。
+    try:
+        from plobi_cli.plugins import get_plugin_config_fields
+
+        for key, entry in get_plugin_config_fields().items():
+            fields.setdefault(key, entry)
+    except Exception as exc:
+        _log.warning("plugin config fields unavailable: %s", exc)
     return {"fields": fields, "category_order": _CATEGORY_ORDER}
 
 

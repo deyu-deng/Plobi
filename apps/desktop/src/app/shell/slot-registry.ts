@@ -33,10 +33,10 @@ import { ARTIFACTS_ROUTE, DIARY_ROUTE, KNOWLEDGE_ROUTE, MESSAGING_ROUTE, SKILLS_
 import { resolveSlotLabel } from './slot-labels'
 
 /** 宿主留下的三个位置。 */
-export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace'
+export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace' | 'settings'
 
 /** 宿主声明过的位置（插件自己声明 slot 时，位置只能从这里挑）。 */
-const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace']
+const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace', 'settings']
 
 /**
  * 形状家族——**同一族的挂载点，宿主管的规矩一样**。
@@ -53,7 +53,7 @@ const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace']
  * 用户 11-25 12:2x「上面和下面其实差不多」），但**宿主管的东西不同**——上面那排是
  * **导航**（点开去某个页面），下面那排是**状态栏那一件**（内容来自管道、反映一件状态）。
  */
-export type SlotKind = 'action' | 'entry-row' | 'panel' | 'status-item'
+export type SlotKind = 'action' | 'entry-row' | 'panel' | 'status-item' | 'settings-section'
 
 /** 一格的形状约束——**宿主定，插件不能越界**。 */
 export interface SlotShape {
@@ -87,6 +87,13 @@ export interface SlotContent {
    * 由**宿主**按这个 view 找到应用里的那一页并渲染（不是一个占位）——见 `app/views.ts`。
    */
   view?: string
+  /**
+   * 这一格显示**哪几个配置字段**（设置屏那一族：一段＝一组配置字段）。
+   *
+   * 字段本身来自后端 schema ⇒ 通用表单渲染；插件自己声明的那几个字段由后端并进
+   * schema（键在 `plugins.entries.<plugin_id>.*`）⇒ 插件自己读得到。
+   */
+  keys?: string[]
   /** 谁提供的（出厂那一份是 `builtin`）。 */
   providedBy?: string
 }
@@ -108,6 +115,11 @@ export interface SlotContribution extends SlotContent {
   shape?: SlotShape
   /** 在哪些壳里出现（`l1`／`l2`）；不给就是两个壳都有。 */
   shells?: string[]
+  /**
+   * 设置屏那一族：一段＝一组配置字段（用户 11-25 23:3x）⇒ 这里是那几个字段的
+   * **完整配置键**（如 `plugins.entries.my-plugin.api_key`）。
+   */
+  keys?: string[]
 }
 
 /** 一个挂载点的声明。 */
@@ -455,6 +467,261 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     shape: { icon: true, label: true },
     props: { opens: 'notes', shells: ['l2'], descriptionKey: 'workbench.actions.notes' },
     default: { id: 'notes', icon: 'notebook', labelKey: 'workbench.tabs.notes', providedBy: 'builtin' }
+  },
+
+  // ── 设置屏 · 那一段一段（**第四个位置**，用户 11-25 23:3x 拍定）────────────
+  // 设置屏是**盖在外壳上的整屏卡**（`OVERLAY_VIEWS` 里有 `settings`）⇒ 它自己一族：
+  // **一段＝一组配置字段**（`default.keys`）—— 字段本身来自后端 schema，通用表单渲染。
+  //
+  // ⚠️ **图标仍归宿主**：那八段的图标是 **Lucide 组件**（声明里只有数据、没有组件）
+  // ⇒ 宿主留一张「段 id → 图标」的表（`app/settings/constants.ts`）；插件那一段没有
+  // 宿主图标 ⇒ 用它自己声明的 codicon 名字。
+  {
+    id: 'model',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 10,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'model',
+      label: 'Model',
+      keys: ['model_context_length', 'fallback_providers'],
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'chat',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 20,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'chat',
+      label: 'Chat',
+      keys: ['display.personality', 'timezone', 'display.show_reasoning', 'agent.image_input_mode'],
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'appearance',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 30,
+    shape: { icon: true, label: true },
+    props: {},
+    default: { id: 'appearance', label: 'Appearance', keys: [], providedBy: 'builtin' }
+  },
+  {
+    id: 'workspace',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 40,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'workspace',
+      label: 'Workspace',
+      keys: [
+        'terminal.cwd',
+        'code_execution.mode',
+        'terminal.persistent_shell',
+        'terminal.env_passthrough',
+        'file_read_max_chars'
+      ],
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'safety',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 50,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'safety',
+      label: 'Safety',
+      keys: [
+        'approvals.mode',
+        'approvals.timeout',
+        'approvals.mcp_reload_confirm',
+        'command_allowlist',
+        'security.redact_secrets',
+        'security.allow_private_urls',
+        'browser.allow_private_urls',
+        'browser.auto_local_for_private_urls',
+        'checkpoints.enabled'
+      ],
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'memory',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 60,
+    shape: { icon: true, label: true },
+    // 记忆那一段带**分组**（工作记忆／长期记忆／Mind／外部记忆四组）——分组是**宿主的
+    // 形状契约**（这一段怎么分块由宿主说了算），字段清单在 `default.keys`。
+    props: {
+      groups: [
+        {
+          titleKey: 'settings.groups.memory.working',
+          keys: [
+            'context.engine',
+            'compression.enabled',
+            'compression.threshold',
+            'compression.target_ratio',
+            'compression.protect_last_n'
+          ]
+        },
+        {
+          titleKey: 'settings.groups.memory.longTerm',
+          keys: [
+            'memory.memory_enabled',
+            'memory.user_profile_enabled',
+            'memory.write_approval',
+            'memory.global_char_limit',
+            'memory.agent_char_limit',
+            'memory.user_char_limit',
+            'memory.status_char_limit',
+            'memory.conductor_status_char_limit',
+            'memory.squeeze_pressure',
+            'memory.nudge_interval'
+          ]
+        },
+        {
+          titleKey: 'settings.groups.memory.mind',
+          keys: ['memory.mind_enabled', 'memory.mind_write_approval', 'memory.mind_write_auto_approve']
+        },
+        {
+          titleKey: 'settings.groups.memory.external',
+          keys: ['memory.provider']
+        }
+      ]
+    },
+    default: {
+      id: 'memory',
+      label: 'Memory & Context',
+      keys: [
+        'context.engine',
+        'compression.enabled',
+        'compression.threshold',
+        'compression.target_ratio',
+        'compression.protect_last_n',
+        'memory.memory_enabled',
+        'memory.user_profile_enabled',
+        'memory.write_approval',
+        'memory.global_char_limit',
+        'memory.agent_char_limit',
+        'memory.user_char_limit',
+        'memory.status_char_limit',
+        'memory.conductor_status_char_limit',
+        'memory.squeeze_pressure',
+        'memory.nudge_interval',
+        'memory.mind_enabled',
+        'memory.mind_write_approval',
+        'memory.mind_write_auto_approve',
+        'memory.provider'
+      ],
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'voice',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 70,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'voice',
+      label: 'Voice',
+      keys: [
+        'tts.provider',
+        'stt.enabled',
+        'stt.echo_transcripts',
+        'stt.provider',
+        'voice.auto_tts',
+        'tts.edge.voice',
+        'tts.openai.model',
+        'tts.openai.voice',
+        'tts.elevenlabs.voice_id',
+        'tts.elevenlabs.model_id',
+        'tts.xai.voice_id',
+        'tts.xai.language',
+        'tts.minimax.model',
+        'tts.minimax.voice_id',
+        'tts.mistral.model',
+        'tts.mistral.voice_id',
+        'tts.gemini.model',
+        'tts.gemini.voice',
+        'tts.neutts.model',
+        'tts.neutts.device',
+        'tts.kittentts.model',
+        'tts.kittentts.voice',
+        'tts.piper.voice',
+        'stt.local.model',
+        'stt.local.language',
+        'stt.openai.model',
+        'stt.groq.model',
+        'stt.mistral.model',
+        'stt.elevenlabs.model_id',
+        'stt.elevenlabs.language_code',
+        'stt.elevenlabs.tag_audio_events',
+        'stt.elevenlabs.diarize',
+        'voice.record_key',
+        'voice.max_recording_seconds'
+      ],
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'advanced',
+    position: 'settings',
+    region: 'sections',
+    kind: 'settings-section',
+    order: 80,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'advanced',
+      label: 'Advanced',
+      keys: [
+        'toolsets',
+        'terminal.backend',
+        'terminal.timeout',
+        'terminal.docker_image',
+        'terminal.singularity_image',
+        'terminal.modal_image',
+        'terminal.daytona_image',
+        'tool_output.max_bytes',
+        'tool_output.max_lines',
+        'tool_output.max_line_length',
+        'checkpoints.max_snapshots',
+        'agent.max_turns',
+        'agent.api_max_retries',
+        'agent.service_tier',
+        'agent.tool_use_enforcement',
+        'delegation.model',
+        'delegation.provider',
+        'delegation.max_iterations',
+        'delegation.max_concurrent_children',
+        'delegation.child_timeout_seconds',
+        'delegation.reasoning_effort',
+        'updates.non_interactive_local_changes'
+      ],
+      providedBy: 'builtin'
+    }
   }
 ]
 
@@ -608,6 +875,46 @@ export function sidebarMiddleItems(registry: SlotRegistry, t: unknown): SidebarM
           icon: content.icon ?? 'symbol-misc',
           label: resolveSlotLabel(t, content.labelKey) ?? content.label ?? content.id,
           view: content.view ?? (typeof slot.props.view === 'string' ? slot.props.view : undefined)
+        }
+      ]
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 设置屏那几段：从声明派生
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 设置屏的**一段**（用户 11-25 23:3x：一段＝一组配置字段）。 */
+export interface SettingsSectionDef {
+  /** 这一段的 id（`config:<id>` 那个寻址用它）。 */
+  id: string
+  /** 屏上写的名字（出厂那几段是英文；插件那一段用自己声明的）。 */
+  label: string
+  /** 这一段显示哪几个配置字段。 */
+  keys: string[]
+  /** 这一段的**分组**（宿主的形状契约：这一段怎么分块）。 */
+  groups?: { titleKey: string; keys: string[] }[]
+}
+
+/** 设置屏该有哪些段（按声明的顺序；插件加的那段自动出现）。 */
+export function settingsSectionsFor(registry: SlotRegistry): SettingsSectionDef[] {
+  return registry
+    .slotsFor('settings', 'sections')
+    .filter(slot => slot.kind === 'settings-section')
+    .flatMap(slot => {
+      const content = registry.contentFor('settings', 'sections', slot.id)
+      if (!content) {
+        return []
+      }
+      const groups = Array.isArray(slot.props.groups)
+        ? (slot.props.groups as { titleKey: string; keys: string[] }[])
+        : undefined
+      return [
+        {
+          id: content.id,
+          label: content.label ?? content.id,
+          keys: Array.isArray(content.keys) ? content.keys : [],
+          groups
         }
       ]
     })

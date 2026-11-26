@@ -1,6 +1,15 @@
 export interface ConfigFieldSchema {
   category?: string
   description?: string
+  /**
+   * The field's own name — the backend's wording for it.
+   *
+   * The screen's own copy (`t.settings.fieldLabels` / `FIELD_LABELS`) wins when it
+   * knows the key; this is the fallback for fields **the screen doesn't know** —
+   * e.g. the ones a plugin declares for its own settings section (裁定 239,
+   * 用户 11-25 23:3x) ⇒ 那一段里插件自己的字段也有一句人话，不是一串键名。
+   */
+  label?: string
   option_labels?: Record<string, string>
   options?: unknown[]
   /**
@@ -29,6 +38,11 @@ export interface SlotContribution {
   label?: string
   route?: string
   providedBy?: string
+  /**
+   * 设置屏那一族（用户 11-25 23:3x：一段＝一组配置字段）：这一段显示哪几个
+   * 配置字段（完整的配置键，如 `plugins.entries.my-plugin.api_key`）。
+   */
+  keys?: string[]
 }
 
 export interface SlotContributionsResponse {

@@ -139,3 +139,35 @@ def test_the_memory_provider_options_are_the_registered_providers():
     # 人话标签也由后端给（插件自己声明的 `label:`）。
     labels = entry.get("option_labels") or {}
     assert labels.get("hindsight") == "Hindsight"
+
+
+def test_plugin_declared_config_fields_reach_the_schema(monkeypatch):
+    """插件声明的那几个配置字段**并进 schema** ⇒ 屏上那一份通用表单直接渲染它。
+
+    用户 11-25 23:3x：设置屏那几段是一族 slot，一段＝一组配置字段 ⇒ 插件加的那一段
+    里**是它自己的字段**，不是一张空页。
+    """
+    import asyncio
+    import types
+
+    from plobi_cli import plugins
+    from plobi_cli.plugins import PluginManifest
+
+    manifest = PluginManifest(
+        name="my-thing",
+        key="my-thing",
+        config=[{"key": "api_key", "label": "API key", "type": "string"}],
+    )
+    fake = types.SimpleNamespace(
+        _plugins={"my-thing": types.SimpleNamespace(manifest=manifest)},
+        _plugin_tool_names=set(),
+    )
+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: fake)
+
+    from plobi_cli.web_server import get_schema
+
+    payload = asyncio.run(get_schema())
+    entry = payload["fields"].get("plugins.entries.my-thing.api_key")
+
+    assert entry is not None, "插件声明的字段没进 schema ⇒ 那一段里是空的"
+    assert entry.get("label") == "API key"

@@ -324,6 +324,12 @@ class PluginManifest:
     # auto-generated name and an empty panel — which is how "installed, but
     # invisible" happens.
     toolsets: List[Dict[str, Any]] = field(default_factory=list)
+    # Config fields this plugin wants the **settings screen** to show for it
+    # (用户 11-25 23:3x：设置屏那几段是一族 slot，一段＝一组配置字段).
+    # Declarative: key / label / type / description / options.  The values land
+    # in ``plugins.entries.<plugin_key>.<key>`` — the same place the plugin reads
+    # its own config from (``PluginContext``) ⇒ 用户在屏上改的值，插件读得到。
+    config: List[Dict[str, Any]] = field(default_factory=list)
     source: str = ""        # "user", "project", or "entrypoint"
     path: Optional[str] = None
     # Plugin kind — see plugins.py module docstring for semantics.
@@ -1680,6 +1686,12 @@ class PluginManager:
                 for entry in raw_slots:
                     if isinstance(entry, dict) and str(entry.get("slot") or "").strip():
                         declared_slots.append(entry)
+            raw_config = data.get("config")
+            declared_config: List[Dict[str, Any]] = []
+            if isinstance(raw_config, list):
+                for entry in raw_config:
+                    if isinstance(entry, dict) and str(entry.get("key") or "").strip():
+                        declared_config.append(entry)
             return PluginManifest(
                 name=name,
                 version=str(data.get("version", "")),
@@ -1690,6 +1702,7 @@ class PluginManager:
                 provides_hooks=data.get("provides_hooks", []),
                 slots=declared_slots,
                 toolsets=declared_toolsets,
+                config=declared_config,
                 source=source,
                 path=str(plugin_dir),
                 kind=kind,
@@ -2513,8 +2526,61 @@ def get_plugin_slot_contributions() -> List[Dict[str, Any]]:
             shells = entry.get("shells")
             if isinstance(shells, list):
                 item["shells"] = [s for s in shells if isinstance(s, str)]
+            # 设置屏那一族（用户 11-25 23:3x：一段＝一组配置字段）⇒ 那一段显示哪几个
+            # 字段 = 这个插件自己声明的那几个（键是完整的配置键，屏上按它去 schema 取）。
+            if str(entry.get("position") or "") == "settings" or slot.startswith("settings/"):
+                config_keys = _plugin_config_keys(manifest)
+                if config_keys:
+                    item["keys"] = config_keys
             contributions.append(item)
     return contributions
+
+
+def _plugin_config_keys(manifest: Any) -> List[str]:
+    """这个插件声明的那几个配置字段的**完整键**（`plugins.entries.<key>.<field>`）。"""
+    key = getattr(manifest, "key", "") or getattr(manifest, "name", "")
+    if not key:
+        return []
+    out: List[str] = []
+    for entry in getattr(manifest, "config", None) or []:
+        field_key = str(entry.get("key") or "").strip()
+        if field_key:
+            out.append(f"plugins.entries.{key}.{field_key}")
+    return out
+
+
+def get_plugin_config_fields() -> Dict[str, Dict[str, Any]]:
+    """插件自己声明的配置字段（设置屏那一族里的一格）。
+
+    键在 ``plugins.entries.<plugin_key>.<field>``——与插件自己读配置的那一处**同一处**
+    （``PluginContext``）⇒ 用户在屏上改的值，插件读得到。
+
+    返回的是**配置 schema 的条目**（``type`` / ``label`` / ``description`` /
+    ``options``）⇒ 屏上那一份通用表单直接渲染它，不用为插件另做一套。
+    """
+    manager = get_plugin_manager()
+    fields: Dict[str, Dict[str, Any]] = {}
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        key = getattr(manifest, "key", "") or getattr(manifest, "name", "")
+        if not key:
+            continue
+        for entry in getattr(manifest, "config", None) or []:
+            field_key = str(entry.get("key") or "").strip()
+            if not field_key:
+                continue
+            schema: Dict[str, Any] = {
+                "type": str(entry.get("type") or "string"),
+                "label": str(entry.get("label") or field_key),
+                "description": str(entry.get("description") or ""),
+                "category": f"plugins.{key}",
+            }
+            options = entry.get("options")
+            if isinstance(options, list):
+                schema["options"] = [str(o) for o in options if isinstance(o, (str, int, float))]
+                schema["type"] = "select"
+            fields[f"plugins.entries.{key}.{field_key}"] = schema
+    return fields
 
 
 def get_plugin_toolset_cards() -> Dict[str, Dict[str, Any]]:

@@ -110,6 +110,93 @@ def test_a_declaration_without_a_target_is_ignored(monkeypatch):
     assert plugins.get_plugin_slot_contributions() == []
 
 
+def test_the_manifest_keeps_the_declared_config_fields(tmp_path):
+    """插件声明自己那几个配置字段（设置屏那一族：一段＝一组配置字段）。"""
+    from plobi_cli.plugins import get_plugin_manager
+
+    plugin_dir = tmp_path / "my-thing"
+    plugin_dir.mkdir()
+    (plugin_dir / "plugin.yaml").write_text(
+        "name: my-thing\n"
+        "kind: standalone\n"
+        "config:\n"
+        "  - key: api_key\n"
+        "    label: API key\n"
+        "    type: string\n"
+        "    description: 用来连我的服务\n",
+        encoding="utf-8",
+    )
+
+    manifest = get_plugin_manager()._parse_manifest(plugin_dir / "plugin.yaml", plugin_dir, "user", "")
+
+    assert manifest is not None
+    assert manifest.config, "the manifest dropped the declared config fields"
+    assert manifest.config[0]["key"] == "api_key"
+
+
+def test_a_settings_section_carries_the_fields_the_plugin_declared(monkeypatch):
+    """设置屏那一段＝一组配置字段 ⇒ 那一段带的是**插件自己声明的那几个字段**。
+
+    键是**完整的配置键**（`plugins.entries.<plugin_key>.<field>`）——与插件自己读配置的
+    那一处同一处 ⇒ 用户在屏上改的值，插件读得到。
+    """
+    from plobi_cli import plugins
+
+    manifest = _manifest(
+        slots=[
+            {
+                "slot": "settings/sections/my-section",
+                "position": "settings",
+                "region": "sections",
+                "kind": "settings-section",
+                "id": "my-section",
+                "label": "我的一段",
+            }
+        ],
+        config=[{"key": "api_key", "label": "API key", "type": "string"}],
+    )
+    fake = types.SimpleNamespace(
+        _plugins={"my-thing": types.SimpleNamespace(manifest=manifest)},
+        _plugin_tool_names=set(),
+    )
+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: fake)
+
+    row = plugins.get_plugin_slot_contributions()[0]
+
+    assert row["position"] == "settings"
+    assert row["region"] == "sections"
+    assert row["keys"] == ["plugins.entries.my-thing.api_key"]
+
+
+def test_the_declared_config_fields_become_schema_entries(monkeypatch):
+    """插件声明的字段**并进配置 schema** ⇒ 屏上那一份通用表单直接渲染它。"""
+    from plobi_cli import plugins
+
+    manifest = _manifest(
+        config=[
+            {"key": "api_key", "label": "API key", "type": "string", "description": "连我的服务"},
+            {"key": "mode", "label": "Mode", "type": "select", "options": ["a", "b"]},
+        ]
+    )
+    fake = types.SimpleNamespace(
+        _plugins={"my-thing": types.SimpleNamespace(manifest=manifest)},
+        _plugin_tool_names=set(),
+    )
+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: fake)
+
+    fields = plugins.get_plugin_config_fields()
+
+    key = "plugins.entries.my-thing.api_key"
+    assert key in fields
+    assert fields[key]["label"] == "API key"
+    assert fields[key]["description"] == "连我的服务"
+    assert fields[key]["type"] == "string"
+    # 给了选项的那一条就是下拉。
+    mode = fields["plugins.entries.my-thing.mode"]
+    assert mode["type"] == "select"
+    assert mode["options"] == ["a", "b"]
+
+
 class TestSlotsEndpoint:
     """``GET /api/slots`` 把插件的声明交给前端。"""
 

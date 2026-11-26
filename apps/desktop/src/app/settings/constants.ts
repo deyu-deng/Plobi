@@ -14,7 +14,6 @@ import {
 import type { ThemeMode } from '@/themes/context'
 
 import { defineFieldCopy } from './field-copy'
-import type { DesktopConfigGroup, DesktopConfigSection } from './types'
 
 // Provider group definitions used to fold raw env-var names like
 // ``XAI_API_KEY`` into a single "xAI" card with a friendly label, short
@@ -508,181 +507,25 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
 })
 
 /**
- * 「记忆与上下文」那一屏按记忆分层排（用户 2026-11-17 15:4x 给的定义）。
+ * 设置屏那几段的**图标**（宿主自己的）。
  *
- * 四组从上到下就是那个模型的后四层：**工作记忆**（这一轮真正在用的上下文）／
- * **长时记忆**（三份记忆文件与各种上限）／**Mind**（官方脑，越出长时：会召回、
- * 也能被主动查）／**外部记忆提供商**（最底，可选叠加）。
+ * ⚠️ **图标不进 slot 声明表**（用户 11-25 23:3x）：声明里只有**数据**，没有组件——
+ * 那八段的图标是 **Lucide 组件** ⇒ 宿主留这张表；插件加的那一段没有宿主图标 ⇒
+ * 用它自己声明的 **codicon 名字**（声明表里那条 `icon`）。
  *
- * 两处刻意不在这一屏：
- * - 感觉记忆（这一轮新进来的输入，含工具结果）：它是会话级的东西，而这一屏是全局
- *   设置；占用详情该放在对话框右下角那条上下文长条的点击浮窗里（另一刀）。
- * - 性格（`SOUL.md`）：是文件不是开关，本刀不给入口。
- *
- * `keys` 由 `groups` 拼出来、不另写一遍——两处各写一次就一定会漂。
+ * 那一段**清单**（顺序／名字／显示哪几个配置字段）在 `app/shell/slot-registry.ts` 的
+ * `settings`／`sections` 区 ⇒ 屏上从注册表读（`use-settings-sections.ts`）。
  */
-const MEMORY_GROUPS: DesktopConfigGroup[] = [
-  {
-    titleKey: 'settings.groups.memory.working',
-    keys: [
-      'context.engine',
-      'compression.enabled',
-      'compression.threshold',
-      'compression.target_ratio',
-      'compression.protect_last_n'
-    ]
-  },
-  {
-    titleKey: 'settings.groups.memory.longTerm',
-    keys: [
-      'memory.memory_enabled',
-      'memory.user_profile_enabled',
-      'memory.write_approval',
-      'memory.global_char_limit',
-      'memory.agent_char_limit',
-      'memory.user_char_limit',
-      'memory.status_char_limit',
-      'memory.conductor_status_char_limit',
-      'memory.squeeze_pressure',
-      'memory.nudge_interval'
-    ]
-  },
-  {
-    titleKey: 'settings.groups.memory.mind',
-    keys: ['memory.mind_enabled', 'memory.mind_write_approval', 'memory.mind_write_auto_approve']
-  },
-  {
-    titleKey: 'settings.groups.memory.external',
-    keys: ['memory.provider']
-  }
-]
-
-// Curated desktop config surface: only fields a user might tune from the app.
-export const SECTIONS: DesktopConfigSection[] = [
-  {
-    id: 'model',
-    label: 'Model',
-    icon: Box,
-    keys: ['model_context_length', 'fallback_providers']
-  },
-  {
-    id: 'chat',
-    label: 'Chat',
-    icon: MessageCircle,
-    keys: ['display.personality', 'timezone', 'display.show_reasoning', 'agent.image_input_mode']
-  },
-  {
-    id: 'appearance',
-    label: 'Appearance',
-    icon: Palette,
-    keys: []
-  },
-  {
-    id: 'workspace',
-    label: 'Workspace',
-    icon: Monitor,
-    keys: [
-      'terminal.cwd',
-      'code_execution.mode',
-      'terminal.persistent_shell',
-      'terminal.env_passthrough',
-      'file_read_max_chars'
-    ]
-  },
-  {
-    id: 'safety',
-    label: 'Safety',
-    icon: Lock,
-    keys: [
-      'approvals.mode',
-      'approvals.timeout',
-      'approvals.mcp_reload_confirm',
-      'command_allowlist',
-      'security.redact_secrets',
-      'security.allow_private_urls',
-      'browser.allow_private_urls',
-      'browser.auto_local_for_private_urls',
-      'checkpoints.enabled'
-    ]
-  },
-  {
-    id: 'memory',
-    label: 'Memory & Context',
-    icon: Brain,
-    keys: MEMORY_GROUPS.flatMap(group => group.keys),
-    groups: MEMORY_GROUPS
-  },
-  {
-    id: 'voice',
-    label: 'Voice',
-    icon: Mic,
-    keys: [
-      'tts.provider',
-      'stt.enabled',
-      'stt.echo_transcripts',
-      'stt.provider',
-      'voice.auto_tts',
-      'tts.edge.voice',
-      'tts.openai.model',
-      'tts.openai.voice',
-      'tts.elevenlabs.voice_id',
-      'tts.elevenlabs.model_id',
-      'tts.xai.voice_id',
-      'tts.xai.language',
-      'tts.minimax.model',
-      'tts.minimax.voice_id',
-      'tts.mistral.model',
-      'tts.mistral.voice_id',
-      'tts.gemini.model',
-      'tts.gemini.voice',
-      'tts.neutts.model',
-      'tts.neutts.device',
-      'tts.kittentts.model',
-      'tts.kittentts.voice',
-      'tts.piper.voice',
-      'stt.local.model',
-      'stt.local.language',
-      'stt.openai.model',
-      'stt.groq.model',
-      'stt.mistral.model',
-      'stt.elevenlabs.model_id',
-      'stt.elevenlabs.language_code',
-      'stt.elevenlabs.tag_audio_events',
-      'stt.elevenlabs.diarize',
-      'voice.record_key',
-      'voice.max_recording_seconds'
-    ]
-  },
-  {
-    id: 'advanced',
-    label: 'Advanced',
-    icon: Wrench,
-    keys: [
-      'toolsets',
-      'terminal.backend',
-      'terminal.timeout',
-      'terminal.docker_image',
-      'terminal.singularity_image',
-      'terminal.modal_image',
-      'terminal.daytona_image',
-      'tool_output.max_bytes',
-      'tool_output.max_lines',
-      'tool_output.max_line_length',
-      'checkpoints.max_snapshots',
-      'agent.max_turns',
-      'agent.api_max_retries',
-      'agent.service_tier',
-      'agent.tool_use_enforcement',
-      'delegation.model',
-      'delegation.provider',
-      'delegation.max_iterations',
-      'delegation.max_concurrent_children',
-      'delegation.child_timeout_seconds',
-      'delegation.reasoning_effort',
-      'updates.non_interactive_local_changes'
-    ]
-  }
-]
+export const SECTION_ICONS: Record<string, IconComponent> = {
+  advanced: Wrench,
+  appearance: Palette,
+  chat: MessageCircle,
+  memory: Brain,
+  model: Box,
+  safety: Lock,
+  voice: Mic,
+  workspace: Monitor
+}
 
 export interface ModeOption {
   id: ThemeMode

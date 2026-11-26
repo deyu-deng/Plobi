@@ -14,19 +14,36 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { createSlotRegistry, DEFAULT_SLOT_DECLARATION, type SlotDeclaration } from './slot-registry'
+import {
+  createSlotRegistry,
+  DEFAULT_SLOT_DECLARATION,
+  settingsSectionsFor,
+  type SlotContribution,
+  type SlotDeclaration
+} from './slot-registry'
 
 /** 今天屏上那几段清单（这是契约，不是快照：少一条就是少一格）。 */
 const SCREEN_SIDEBAR_TOP = ['skills', 'messaging', 'artifacts', 'knowledge', 'diary']
 const SCREEN_SIDEBAR_BOTTOM = ['system:settings', 'agents', 'cron', 'agenda', 'gateway-health', 'egress']
 const SCREEN_CHAT_CARD = ['dossier', 'pending', 'mind-pending']
 const SCREEN_WORKSPACE = ['agenda', 'browser', 'files', 'notes', 'review', 'terminal']
+/** 设置屏那八段（用户 11-25 23:3x：设置屏＝第四个位置，一段＝一组配置字段）。 */
+const SCREEN_SETTINGS_SECTIONS = [
+  'model',
+  'chat',
+  'appearance',
+  'workspace',
+  'safety',
+  'memory',
+  'voice',
+  'advanced'
+]
 
 describe('slot 声明表', () => {
-  it('覆盖宿主留下的三个位置', () => {
+  it('覆盖宿主留下的三个位置 ＋ 设置屏那一个（**外壳仍是三个**）', () => {
     const positions = new Set(DEFAULT_SLOT_DECLARATION.map(slot => slot.position))
 
-    expect([...positions].sort()).toEqual(['chat-card', 'sidebar', 'workspace'])
+    expect([...positions].sort()).toEqual(['chat-card', 'settings', 'sidebar', 'workspace'])
   })
 
   it('每条 slot 的必填字段齐', () => {
@@ -34,7 +51,9 @@ describe('slot 声明表', () => {
       expect(slot.id, 'slot 缺 id').toBeTruthy()
       expect(slot.position, `${slot.id} 缺 position`).toBeTruthy()
       expect(slot.region, `${slot.id} 缺 region`).toBeTruthy()
-      expect(['action', 'entry-row', 'panel', 'status-item'], `${slot.id} 的 kind 不认识`).toContain(slot.kind)
+      expect(['action', 'entry-row', 'panel', 'status-item', 'settings-section'], `${slot.id} 的 kind 不认识`).toContain(
+        slot.kind
+      )
       expect(Number.isFinite(slot.order), `${slot.id} 缺 order`).toBe(true)
       expect(slot.shape, `${slot.id} 缺 shape`).toBeTruthy()
       expect(typeof slot.shape.icon, `${slot.id} 的 shape 缺 icon`).toBe('boolean')
@@ -51,6 +70,7 @@ describe('slot 声明表', () => {
     expect(idsOf('sidebar', 'bottom')).toEqual(expect.arrayContaining(SCREEN_SIDEBAR_BOTTOM))
     expect(idsOf('chat-card', 'top-right')).toEqual(expect.arrayContaining(SCREEN_CHAT_CARD))
     expect(idsOf('workspace', 'tabs')).toEqual(expect.arrayContaining(SCREEN_WORKSPACE))
+    expect(idsOf('settings', 'sections')).toEqual(expect.arrayContaining(SCREEN_SETTINGS_SECTIONS))
   })
 
   it('左栏**下面那排是另一种 slot 家族**，中间那一大块又是另一族（用户 11-25 22:2x）', () => {
@@ -161,5 +181,57 @@ describe('插件填进来的东西', () => {
     })
 
     expect(registry.contentFor('sidebar', 'top', 'not-declared')).toBeUndefined()
+  })
+
+  it('设置屏那一族：插件加的一段**自动出现**，里面是它声明的那几个字段', () => {
+    // 用户 11-25 23:3x：设置屏＝第四个位置，一段＝一组配置字段。
+    const contribution: SlotContribution = {
+      slotId: 'settings/sections/my-section',
+      position: 'settings',
+      region: 'sections',
+      kind: 'settings-section',
+      id: 'my-section',
+      label: '我的一段',
+      keys: ['plugins.entries.my-thing.api_key']
+    }
+    const registry = createSlotRegistry({ contributions: [contribution] })
+
+    const sections = settingsSectionsFor(registry)
+
+    expect(sections.map(section => section.id)).toContain('my-section')
+    const mine = sections.find(section => section.id === 'my-section')
+    expect(mine?.label).toBe('我的一段')
+    expect(mine?.keys).toEqual(['plugins.entries.my-thing.api_key'])
+  })
+
+  it('设置屏那一族：出厂那八段**由声明表说了算**（顺序、名字、字段清单）', () => {
+    const sections = settingsSectionsFor(createSlotRegistry())
+
+    expect(sections.map(section => section.id)).toEqual([
+      'model',
+      'chat',
+      'appearance',
+      'workspace',
+      'safety',
+      'memory',
+      'voice',
+      'advanced'
+    ])
+    // 一段＝一组配置字段（记忆那一段带四组分组）。
+    const memory = sections.find(section => section.id === 'memory')
+    expect(memory?.keys).toContain('memory.provider')
+    expect(memory?.groups?.map(group => group.titleKey)).toEqual([
+      'settings.groups.memory.working',
+      'settings.groups.memory.longTerm',
+      'settings.groups.memory.mind',
+      'settings.groups.memory.external'
+    ])
+  })
+
+  it('设置屏那一族：用户关掉的那一段**真的不在**', () => {
+    const sections = settingsSectionsFor(createSlotRegistry({ removed: ['settings/sections/voice'] }))
+
+    expect(sections.map(section => section.id)).not.toContain('voice')
+    expect(sections.map(section => section.id)).toContain('model')
   })
 })
