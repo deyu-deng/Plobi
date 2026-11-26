@@ -32,8 +32,8 @@
   },
   "homepage": "https://github.com/deyu-deng/Plobi#readme",
   "dependencies": {
-    "@streamdown/math": "^1.0.3",
-    "agent-browser": "^0.38.2"
+    "@streamdown/math": "^1.0.4",
+    "agent-browser": "^0.43.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0"
