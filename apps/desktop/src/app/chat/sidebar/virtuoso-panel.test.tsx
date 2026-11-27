@@ -2,9 +2,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ExpertRoleRow, useAgentExperts } from './expert-panel'
-import { EXPERT_ROLES, latestRun, runsOfRole } from './expert-roles'
-import type { ExpertRun } from './expert-runs'
+import { VirtuosoRoleRow, useAgentVirtuosos } from './virtuoso-panel'
+import { VIRTUOSO_ROLES, latestRun, runsOfRole } from './virtuoso-roles'
+import type { VirtuosoRun } from './virtuoso-runs'
 
 /**
  * 11-01 起专家不再是「一整格面板 + 点开弹窗」，也不再是「一行一条会话流水」：
@@ -19,7 +19,7 @@ const api = vi.fn()
 const DATA = {
   ok: true,
   data: {
-    experts: [
+    virtuosos: [
       { goal: '把三份资料折成一份汇总', id: 'kid-1', messages: 4, model: 'glm', parent_session_id: 'p1', role: 'file', started_at: Date.now() / 1000 - 30, status: 'running', tool_calls: 2 },
       { goal: '查一下这门课的作业', id: 'kid-2', messages: 6, model: 'glm', parent_session_id: 'p1', role: 'browser', started_at: Date.now() / 1000 - 600, status: 'done', tool_calls: 5 }
     ],
@@ -42,25 +42,25 @@ afterEach(() => {
 
 /** 钩子本身没有 DOM，挂一个最小宿主把它的返回值摆到屏上。 */
 function Roster({ agentId }: { agentId: string }) {
-  const experts = useAgentExperts(agentId)
+  const virtuosos = useAgentVirtuosos(agentId)
 
   return (
     <ul>
-      {experts.map(expert => (
-        <li key={expert.id}>{expert.id}</li>
+      {virtuosos.map(virtuoso => (
+        <li key={virtuoso.id}>{virtuoso.id}</li>
       ))}
     </ul>
   )
 }
 
-describe('useAgentExperts', () => {
-  it('读 /api/agents/:id/experts，名单原样交出来', async () => {
+describe('useAgentVirtuosos', () => {
+  it('读 /api/agents/:id/virtuosos，名单原样交出来', async () => {
     api.mockResolvedValue(DATA)
     render(<Roster agentId="Sindri" />)
 
     expect(await screen.findByText('kid-1')).toBeTruthy()
     expect(screen.getByText('kid-2')).toBeTruthy()
-    expect(api).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/agents/Sindri/experts' }))
+    expect(api).toHaveBeenCalledWith(expect.objectContaining({ path: '/api/agents/Sindri/virtuosos' }))
   })
 
   it('每 3.5 秒重读一次：L2 刚派出去的那一条会自己冒出来', async () => {
@@ -82,7 +82,7 @@ describe('useAgentExperts', () => {
   })
 
   it('没派过就是空名单——不抛，也不留一句解释句', async () => {
-    api.mockResolvedValue({ ok: true, data: { experts: [], reason: '名册里 Sindri 还没有会话' } })
+    api.mockResolvedValue({ ok: true, data: { virtuosos: [], reason: '名册里 Sindri 还没有会话' } })
     const { container } = render(<Roster agentId="Sindri" />)
 
     await waitFor(() => expect(api).toHaveBeenCalled())
@@ -99,7 +99,7 @@ describe('useAgentExperts', () => {
 })
 
 describe('专家角色名册', () => {
-  const run = (over: Partial<ExpertRun>): ExpertRun => ({
+  const run = (over: Partial<VirtuosoRun>): VirtuosoRun => ({
     goal: '干点活',
     id: 'kid-x',
     messages: 2,
@@ -113,7 +113,7 @@ describe('专家角色名册', () => {
   })
 
   it('四类角色，顺序与后端 ORDER 一致（文件 / 浏览器 / 软件 / 电脑）', () => {
-    expect(EXPERT_ROLES.map(role => role.key)).toEqual(['file', 'browser', 'software', 'computer'])
+    expect(VIRTUOSO_ROLES.map(role => role.key)).toEqual(['file', 'browser', 'software', 'computer'])
   })
 
   it('按角色挑会话，大小写与空白都不影响', () => {
@@ -132,8 +132,8 @@ describe('专家角色名册', () => {
   })
 })
 
-describe('ExpertRoleRow', () => {
-  const running: ExpertRun = {
+describe('VirtuosoRoleRow', () => {
+  const running: VirtuosoRun = {
     goal: '把三份资料折成一份汇总',
     id: 'kid-1',
     messages: 4,
@@ -145,11 +145,11 @@ describe('ExpertRoleRow', () => {
     tool_calls: 2
   }
 
-  const fileRole = EXPERT_ROLES[0]
+  const fileRole = VIRTUOSO_ROLES[0]
 
   it('一行就是图标 + 名词；没派过也点得开（灰着点不动会被当成坏了）', () => {
     let opened = 0
-    render(<ExpertRoleRow onOpen={() => { opened += 1 }} role={fileRole} runs={[]} />)
+    render(<VirtuosoRoleRow onOpen={() => { opened += 1 }} role={fileRole} runs={[]} />)
 
     const row = screen.getByRole('button', { name: /File/ })
 
@@ -162,7 +162,7 @@ describe('ExpertRoleRow', () => {
   })
 
   it('派过就能点，正在干的有状态点与时长', () => {
-    render(<ExpertRoleRow onOpen={() => {}} role={fileRole} runs={[running]} />)
+    render(<VirtuosoRoleRow onOpen={() => {}} role={fileRole} runs={[running]} />)
 
     const row = screen.getByRole('button', { name: /File/ })
 
@@ -173,17 +173,17 @@ describe('ExpertRoleRow', () => {
   })
 
   it('同一个角色派过多次才显示次数——一次是常态，不该多一个数', () => {
-    const { rerender } = render(<ExpertRoleRow onOpen={() => {}} role={fileRole} runs={[running]} />)
+    const { rerender } = render(<VirtuosoRoleRow onOpen={() => {}} role={fileRole} runs={[running]} />)
 
     expect(screen.getByRole('button', { name: /File/ }).textContent?.trim()).toBe('File')
 
-    rerender(<ExpertRoleRow onOpen={() => {}} role={fileRole} runs={[running, { ...running, id: 'kid-9', status: 'done' }]} />)
+    rerender(<VirtuosoRoleRow onOpen={() => {}} role={fileRole} runs={[running, { ...running, id: 'kid-9', status: 'done' }]} />)
     expect(screen.getByRole('button', { name: /File/ }).textContent).toContain('2')
   })
 
   it('点一行 = 打开它那张嘴（用户：「一个专家一张嘴」）', () => {
     const onOpen = vi.fn()
-    render(<ExpertRoleRow onOpen={onOpen} role={fileRole} runs={[running]} />)
+    render(<VirtuosoRoleRow onOpen={onOpen} role={fileRole} runs={[running]} />)
 
     fireEvent.click(screen.getByRole('button', { name: /File/ }))
 

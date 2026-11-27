@@ -27,7 +27,7 @@ def db_path(tmp_path, monkeypatch):
 
 def _new(ledger, **kwargs):
     kwargs.setdefault("parent_agent", "agenda")
-    kwargs.setdefault("leg", "expert")
+    kwargs.setdefault("leg", "virtuoso")
     kwargs.setdefault("goal", "整理本周资料")
     return ledger.open_ticket(**kwargs)
 

@@ -2286,19 +2286,19 @@ async def agent_external_session_restore_route(agent_id: str, vendor: str, sessi
     return {"ok": True, "data": result.get("data") or {}}
 
 
-@router.get("/agents/{agent_id}/experts", name="agent_experts")
-async def agent_experts_route(agent_id: str):
-    """GET /api/agents/:id/experts — 这个 Agent 派出去过的**临时专家**（子会话，非名册 Agent）。"""
-    from plobi.delegation.experts import experts_for_agent
+@router.get("/agents/{agent_id}/virtuosos", name="agent_virtuosos")
+async def agent_virtuosos_route(agent_id: str):
+    """GET /api/agents/:id/virtuosos — 这个 Agent 派出去过的**临时专家**（子会话，非名册 Agent）。"""
+    from plobi.delegation.virtuosos import virtuosos_for_agent
 
-    payload = await run_in_threadpool(experts_for_agent, agent_id)
+    payload = await run_in_threadpool(virtuosos_for_agent, agent_id)
 
     return {"ok": True, "data": payload}
 
 
-@router.get("/experts/roles", name="expert_roles")
-async def expert_roles_route():
-    """GET /api/experts/roles — 四类名手各自的模型 ＋ 能力。
+@router.get("/virtuosos/roles", name="virtuoso_roles")
+async def virtuoso_roles_route():
+    """GET /api/virtuosos/roles — 四类名手各自的模型 ＋ 能力。
 
     `model` 为 null ＝ 这一类还没配，派工时继承父 Agent（与普通子代理同一条默认）。
     顺带把职责与工具面一起交出去：主区那张专家卡片要能说清「它是什么」。
@@ -2308,7 +2308,7 @@ async def expert_roles_route():
     全局硬压制），`missing_capabilities` 是默认有、现在没有的（派出去的与承诺的不符，
     要让人看见），`disabled_capabilities` 是它自己的黑名单。
     """
-    from plobi.delegation.expert_roles import (
+    from plobi.delegation.virtuoso_roles import (
         CAPABILITIES,
         load_role_models,
         role_rows,
@@ -2330,9 +2330,9 @@ async def expert_roles_route():
     }
 
 
-@router.put("/experts/roles/{role}", name="expert_role_model")
-async def expert_role_model_route(role: str, request: Request):
-    """PUT /api/experts/roles/:role — 改这一类名手的**模型**与/或**它自己的黑名单**。
+@router.put("/virtuosos/roles/{role}", name="virtuoso_role_model")
+async def virtuoso_role_model_route(role: str, request: Request):
+    """PUT /api/virtuosos/roles/:role — 改这一类名手的**模型**与/或**它自己的黑名单**。
 
     - `{"model": "provider/model"}` 写模型覆盖；`{"model": ""}` 或 `null` 清掉覆盖，
       回到「继承父 Agent」。
@@ -2342,7 +2342,7 @@ async def expert_role_model_route(role: str, request: Request):
     ⚠ **只动这次带过来的那一格**：带 `model` 不碰黑名单，带 `disabled_capabilities`
     不碰模型（两者都带就都写）。
     """
-    from plobi.delegation.expert_roles import (
+    from plobi.delegation.virtuoso_roles import (
         load_role_models,
         load_role_settings,
         save_role_disabled_capabilities,

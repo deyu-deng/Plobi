@@ -2,7 +2,7 @@
 
 钉五件事：
 
-1. `GET /api/experts/roles` 把**默认能力**、**现在有的能力**、**缺哪样**、**它自己的
+1. `GET /api/virtuosos/roles` 把**默认能力**、**现在有的能力**、**缺哪样**、**它自己的
    黑名单**一起交出去（屏上那一格靠这几格画）；
 2. `PUT` 带 `disabled_capabilities` ⇒ 写它自己的黑名单，**且不碰模型**；
 3. `PUT` 带 `model` ⇒ 写模型，**且不碰黑名单**；
@@ -22,14 +22,14 @@ from plobi.console.router import router as console_router
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """隔离的名手角色级设置（不碰这台机器的真档）。"""
-    monkeypatch.setenv("PLOBI_EXPERTS_DIR", str(tmp_path / "experts"))
+    monkeypatch.setenv("PLOBI_VIRTUOSOS_DIR", str(tmp_path / "virtuosos"))
     app = FastAPI()
     app.include_router(console_router, prefix="/api")
     return TestClient(app)
 
 
 def _roles(client) -> dict:
-    body = client.get("/api/experts/roles").json()
+    body = client.get("/api/virtuosos/roles").json()
     assert body["ok"] is True
     return {row["key"]: row for row in body["data"]["roles"]}
 
@@ -49,9 +49,9 @@ def test_the_list_carries_capabilities_and_the_blacklist(client):
 
 
 def test_writing_the_blacklist_does_not_touch_the_model(client):
-    client.put("/api/experts/roles/software", json={"model": "prov/model-x"})
+    client.put("/api/virtuosos/roles/software", json={"model": "prov/model-x"})
     body = client.put(
-        "/api/experts/roles/software", json={"disabled_capabilities": ["run_commands"]}
+        "/api/virtuosos/roles/software", json={"disabled_capabilities": ["run_commands"]}
     ).json()
 
     assert body["ok"] is True
@@ -68,8 +68,8 @@ def test_writing_the_blacklist_does_not_touch_the_model(client):
 
 
 def test_writing_the_model_does_not_touch_the_blacklist(client):
-    client.put("/api/experts/roles/software", json={"disabled_capabilities": ["run_commands"]})
-    body = client.put("/api/experts/roles/software", json={"model": "prov/model-y"}).json()
+    client.put("/api/virtuosos/roles/software", json={"disabled_capabilities": ["run_commands"]})
+    body = client.put("/api/virtuosos/roles/software", json={"model": "prov/model-y"}).json()
 
     assert body["ok"] is True
     assert body["data"]["model"] == "prov/model-y"
@@ -77,8 +77,8 @@ def test_writing_the_model_does_not_touch_the_blacklist(client):
 
 
 def test_clearing_the_blacklist_goes_back_to_the_default(client):
-    client.put("/api/experts/roles/software", json={"disabled_capabilities": ["run_commands"]})
-    body = client.put("/api/experts/roles/software", json={"disabled_capabilities": []}).json()
+    client.put("/api/virtuosos/roles/software", json={"disabled_capabilities": ["run_commands"]})
+    body = client.put("/api/virtuosos/roles/software", json={"disabled_capabilities": []}).json()
 
     assert body["ok"] is True
     assert body["data"]["disabled_capabilities"] == []
@@ -87,7 +87,7 @@ def test_clearing_the_blacklist_goes_back_to_the_default(client):
 
 def test_an_unknown_capability_is_refused(client):
     body = client.put(
-        "/api/experts/roles/software", json={"disabled_capabilities": ["fly_to_the_moon"]}
+        "/api/virtuosos/roles/software", json={"disabled_capabilities": ["fly_to_the_moon"]}
     ).json()
 
     assert body["ok"] is False
@@ -95,6 +95,6 @@ def test_an_unknown_capability_is_refused(client):
 
 
 def test_an_empty_body_changes_nothing(client):
-    body = client.put("/api/experts/roles/software", json={}).json()
+    body = client.put("/api/virtuosos/roles/software", json={}).json()
 
     assert body["ok"] is False

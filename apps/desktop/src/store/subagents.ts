@@ -40,7 +40,7 @@ export interface SubagentProgress {
    * 用户 11-04：专家的工作日志归左栏「专家」抽屉，普通子智能体才进底栏那一格——
    * 两条腿不能混在同一张列表里。
    */
-  expert?: string
+  virtuoso?: string
 }
 
 export interface SubagentNode extends SubagentProgress {
@@ -181,7 +181,7 @@ function toProgress(payload: SubagentPayload, prev: SubagentProgress | undefined
     stream,
     summary: str(payload.summary) || prev?.summary,
     currentTool: TERMINAL.has(status) ? undefined : tool || prev?.currentTool,
-    expert: str(payload.expert) || prev?.expert
+    virtuoso: str(payload.virtuoso) || prev?.virtuoso
   }
 }
 

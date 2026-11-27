@@ -17,7 +17,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from plobi.agents.registry import CONDUCTOR_SOUL_BLOCK, build_principal_identity_soul_block
-from plobi.delegation.expert_roles import DUTIES
+from plobi.delegation.virtuoso_roles import DUTIES
 
 ROLES = ("指挥", "首席", "名手", "客席")
 

@@ -133,6 +133,11 @@ export type SidebarNavId = string
 export interface SidebarNavItem {
   id: SidebarNavId
   label: string
+  /**
+   * 屏上那个名字的 i18n **点号路径**（声明里的 `labelKey`）——插件来的那一格没有这个键
+   * ⇒ 它用自己的 `label`。
+   */
+  labelKey?: string
   /** 图标名（codicon）——**不是组件**：这一格的内容是数据，插件也能填（裁定 239）。 */
   icon: string
   route?: string

@@ -18,7 +18,7 @@ const DETAIL = {
   created_at: 0,
   goal: '整理纪要',
   id: 'tkt_a1b2c3',
-  leg: 'expert',
+  leg: 'virtuoso',
   parent_agent: 'agenda',
   policy_version: '2026-11-08.1',
   refs: {},

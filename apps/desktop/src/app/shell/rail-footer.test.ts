@@ -4,16 +4,18 @@ import { pickRailFooterItems, RAIL_FOOTER_IDS, railFooterSlots } from './rail-fo
 import type { StatusbarItem } from './statusbar-controls'
 
 /**
- * 左栏底部那一组（用户 11-03 拍顺序）。这一档钉三件事：
- * ① 单子就是单子——顺序照 `RAIL_FOOTER_IDS`，状态栏那边怎么排的不算；
- * ② 点开是一整屏的排前面（设置打头），点开只有一小张面板的排后面，不许再交错；
- * ③ 掉出去的那几枚是**不再在这条上重复入口**，不是被谁顺手藏了：读数（会话/回合时长、
- *    版本号）与已经另有入口的（快捷键、触感）都不许自己又挤回来。
- *    Cron 11-03 明确要回来，所以它不再是"掉出去的那一枚"。
+ * 左栏底部那一组（用户 11-03 拍顺序；**11-27 13:0x 又分了一次家**）。
  *
- * **11-25 更新（用户 22:2x）**：① 这一族是**另一种 slot**（`status-item`：内容来自状态栏
- * 管道、点开是整屏或一小张面板）；② **命令中心进了这一族**（屏上多一枚图标）；
- * ③ 「整屏在前」这条顺序规矩**从这份写死的清单挪进了声明**（`props.opens`）⇒ 判据是数据。
+ * **用户 11-25 22:4x 起的口径**：「**下面的**一般是**控制目前显示的这个 Agent 的组件**」、
+ * 「**上面的消息平台和知识库是一般是全局的**」⇒ 那一排＝**这一摊的（代理）＋
+ * 整机的（网关／出口）**；**全局的那几条**（设置·命令中心·排程·日程）**上到上面那排**了。
+ * 整机的两条**不挪到窗口那条状态栏**：窗口那条状态栏**在卡片布局里根本不渲染**
+ * （`app-shell.tsx` 的 `!shellCards &&`）⇒ 挪过去就够不着了。
+ *
+ * 这一档钉三件事：
+ * ① 单子就是单子——顺序照 `RAIL_FOOTER_IDS`，状态栏那边怎么排的不算；
+ * ② 每一格都带着**作用域**（这一摊的／整机的）；
+ * ③ 没挂上或该藏的那一格不占位。
  */
 
 const item = (id: string, extra: Partial<StatusbarItem> = {}): StatusbarItem => ({ id, ...extra })
@@ -35,70 +37,34 @@ const EVERY_TODAY = [
   item('version-backend')
 ]
 
-/** 点开就是一整屏的那几枚（其余在栏里只开一小张面板）——**由声明里的 `props.opens` 说了算**。 */
-const OVERLAY_IDS = railFooterSlots()
-  .filter(slot => slot.props.opens === 'overlay')
-  .map(slot => slot.id)
-
 describe('左栏底部那一组', () => {
-  it('顺序照单子：设置打头，整屏的在前、面板的在后', () => {
-    expect(RAIL_FOOTER_IDS).toEqual([
-      'system:settings',
-      'command-center',
-      'agents',
-      'cron',
-      'agenda',
-      'gateway-health',
-      'egress'
-    ])
+  it('那一排＝**这一摊的 ＋ 整机的**（全局的那几条上到上面那排去了）', () => {
+    expect(RAIL_FOOTER_IDS).toEqual(['agents', 'gateway-health', 'egress'])
     expect(pickRailFooterItems(EVERY_TODAY).map(i => i.id)).toEqual(RAIL_FOOTER_IDS)
-    // 那一类确实各成一段，而不是恰好这一份单子排对了
-    expect(RAIL_FOOTER_IDS.filter(id => OVERLAY_IDS.includes(id))).toEqual(OVERLAY_IDS)
   })
 
-  it('**命令中心在這一族里**（用户 11-25 22:2x：命令中心属于底部那个地方的东西）', () => {
-    expect(RAIL_FOOTER_IDS).toContain('command-center')
-    expect(pickRailFooterItems(EVERY_TODAY).map(i => i.id)).toContain('command-center')
+  it('每一格都带着**作用域**（用户 11-25 22:4x：下面的是控制当前这个 Agent 的组件）', () => {
+    const scopes = new Map(railFooterSlots().map(slot => [slot.id, slot.scope]))
+
+    // 这一摊的
+    expect(scopes.get('agents')).toBe('agent')
+    // 整机的（默认 global ⇒ 不标也成）
+    expect(scopes.get('gateway-health')).toBeUndefined()
+    expect(scopes.get('egress')).toBeUndefined()
   })
 
-  it('这一族是**另一种 slot**（`status-item`），不是上面那排导航格子那一族', () => {
-    for (const slot of railFooterSlots()) {
-      expect(slot.kind, `${slot.id} 不是状态栏那一件？`).toBe('status-item')
-      // 内容来自状态栏管道，点开是整屏或一小张面板
-      expect(slot.props.pipeline, `${slot.id} 不来自状态栏管道？`).toBe('statusbar')
-      expect(['overlay', 'panel'], `${slot.id} 没说清点开是什么`).toContain(slot.props.opens)
-    }
-  })
-
-  it('读数与另有入口的那几枚不许自己挤回来', () => {
+  it('全局的那几条**不在这一排**了（它们在上面那排）', () => {
     const ids = pickRailFooterItems(EVERY_TODAY).map(i => i.id)
 
-    for (const dropped of [
-      'haptics',
-      'keybinds',
-      'running-timer',
-      'session-timer',
-      'version-backend',
-      'version-client',
-      // 写脑待批那一枚 11-16 搬进对话卡抬头了（`WP-MIND-CONSENT-EVENTS`）：
-      // 它要是自己又挤回底部这一组，入口就有两处、计数对不上。
-      'mind-pending'
-    ]) {
-      expect(ids, `${dropped} 又回到底部这一组了`).not.toContain(dropped)
+    for (const moved of ['system:settings', 'command-center', 'cron', 'agenda']) {
+      expect(ids, `${moved} 还留在左栏这一排`).not.toContain(moved)
     }
   })
 
   it('没挂上或该藏的那一格不占位', () => {
     const withoutEgress = EVERY_TODAY.filter(i => i.id !== 'egress')
 
-    expect(pickRailFooterItems(withoutEgress).map(i => i.id)).toEqual([
-      'system:settings',
-      'command-center',
-      'agents',
-      'cron',
-      'agenda',
-      'gateway-health'
-    ])
+    expect(pickRailFooterItems(withoutEgress).map(i => i.id)).toEqual(['agents', 'gateway-health'])
 
     const gatewayHidden = EVERY_TODAY.map(i => (i.id === 'gateway-health' ? item(i.id, { hidden: true }) : i))
 

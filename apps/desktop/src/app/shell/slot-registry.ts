@@ -28,7 +28,17 @@
  * 注册表、同一个 slot、同一套开关——**用户可以把它关掉**。
  */
 
-import { ARTIFACTS_ROUTE, DIARY_ROUTE, KNOWLEDGE_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../routes'
+import {
+  AGENDA_ROUTE,
+  ARTIFACTS_ROUTE,
+  COMMAND_CENTER_ROUTE,
+  CRON_ROUTE,
+  DIARY_ROUTE,
+  KNOWLEDGE_ROUTE,
+  MESSAGING_ROUTE,
+  SETTINGS_ROUTE,
+  SKILLS_ROUTE
+} from '../routes'
 
 import { resolveSlotLabel } from './slot-labels'
 
@@ -132,6 +142,16 @@ export interface SlotDeclaration {
   region: string
   /** 哪种形状家族。 */
   kind: SlotKind
+  /**
+   * **作用域**：这一格反映的是**当前这个 Agent** 的状态，还是**全局／整机**的。
+   *
+   * 用户 11-25 22:4x 定的：「**上面的消息平台和知识库是一般是全局的**」、
+   * 「**下面的**一般是**控制目前显示的这个 Agent 的组件**」——
+   * **同一族形状、两样作用域**（左栏上面那排与展开态底部那两枚就是这一对）。
+   *
+   * 默认 `global`（反映全局／整机的那几格）。
+   */
+  scope?: 'agent' | 'global'
   /** 在那块区域里的顺序。 */
   order: number
   /** 形状约束。 */
@@ -232,6 +252,71 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       route: DIARY_ROUTE
     }
   },
+  // 全局的那几条**也上到这一排**（用户 11-27 13:0x 拍的分法）：这一排＝**全局的页**。
+  {
+    id: 'agenda',
+    position: 'sidebar',
+    region: 'top',
+    kind: 'entry-row',
+    order: 60,
+    shape: { icon: true, label: true },
+    props: { opens: 'agenda' },
+    default: {
+      id: 'agenda',
+      icon: 'calendar',
+      labelKey: 'sidebar.nav.agenda',
+      providedBy: 'builtin',
+      route: AGENDA_ROUTE
+    }
+  },
+  {
+    id: 'cron',
+    position: 'sidebar',
+    region: 'top',
+    kind: 'entry-row',
+    order: 70,
+    shape: { icon: true, label: true },
+    props: { opens: 'cron' },
+    default: {
+      id: 'cron',
+      icon: 'clock',
+      labelKey: 'sidebar.nav.cron',
+      providedBy: 'builtin',
+      route: CRON_ROUTE
+    }
+  },
+  {
+    id: 'command-center',
+    position: 'sidebar',
+    region: 'top',
+    kind: 'entry-row',
+    order: 80,
+    shape: { icon: true, label: true },
+    props: { opens: 'command-center' },
+    default: {
+      id: 'command-center',
+      icon: 'terminal',
+      labelKey: 'sidebar.nav.command-center',
+      providedBy: 'builtin',
+      route: COMMAND_CENTER_ROUTE
+    }
+  },
+  {
+    id: 'settings',
+    position: 'sidebar',
+    region: 'top',
+    kind: 'entry-row',
+    order: 90,
+    shape: { icon: true, label: true },
+    props: { opens: 'settings' },
+    default: {
+      id: 'settings',
+      icon: 'gear',
+      labelKey: 'sidebar.nav.settings',
+      providedBy: 'builtin',
+      route: SETTINGS_ROUTE
+    }
+  },
 
   {
     id: 'new-agent',
@@ -279,67 +364,72 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     }
   },
 
-  // ── 侧边栏 · 下面那排（**另一种 slot 家族**：状态栏那一件）─────────────────
+  // ── 侧边栏 · 展开态底部那两枚（**与上面那排同形状**，但作用域＝当前这个 Agent）────
+  // 用户 11-25 22:4x：「**下面的**一般是**控制目前显示的这个 Agent 的组件**」——
+  // 所以它们与上面那排**同一种形状**（一格图标＋文字），**差别在作用域**（这一族＝
+  // 当前这一摊，那一排＝全局的页）。
+  {
+    id: 'capabilities',
+    position: 'sidebar',
+    region: 'bottom-nav',
+    kind: 'entry-row',
+    order: 10,
+    shape: { icon: true, label: true },
+    scope: 'agent',
+    props: { opens: 'capabilities' },
+    default: {
+      id: 'capabilities',
+      icon: 'extensions',
+      labelKey: 'sidebar.nav.skills',
+      providedBy: 'builtin',
+      route: SKILLS_ROUTE
+    }
+  },
+  {
+    id: 'agent-artifacts',
+    position: 'sidebar',
+    region: 'bottom-nav',
+    kind: 'entry-row',
+    order: 20,
+    shape: { icon: true, label: true },
+    scope: 'agent',
+    props: { opens: 'artifacts' },
+    default: {
+      id: 'agent-artifacts',
+      icon: 'archive',
+      labelKey: 'sidebar.nav.artifacts',
+      providedBy: 'builtin',
+      route: ARTIFACTS_ROUTE
+    }
+  },
+
+  // ── 侧边栏 · 最下面那排小图标（**另一种 slot 家族**：状态栏那一件）────────────
   // 内容来自**状态栏管道**（宿主自己的状态，`use-statusbar-items.tsx`）⇒ 插件在
   // 「浅」的那一步带不了自己的一枚（它得带前端组件才画得出状态），但**可以替换
   // 某一枚的图标与名字**。`props.opens` 说清点开是**整屏**还是**一小张面板**
   // （用户 11-03 拍的顺序规矩：整屏的排前面，小面板的排后面）。
-  {
-    id: 'system:settings',
-    position: 'sidebar',
-    region: 'bottom',
-    kind: 'status-item',
-    order: 10,
-    shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar', opens: 'overlay' },
-    default: { id: 'system:settings', icon: 'gear', providedBy: 'builtin' }
-  },
-  {
-    id: 'command-center',
-    position: 'sidebar',
-    region: 'bottom',
-    kind: 'status-item',
-    order: 15,
-    shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar', opens: 'overlay' },
-    default: { id: 'command-center', icon: 'terminal', providedBy: 'builtin' }
-  },
+  //
+  // ⚠️ 用户 11-27 13:0x 拍的分法：这一排＝**这一摊的 ＋ 整机的**（代理是这一摊的，
+  // 网关／出口是这台机器的）⇒ 整机的两条**不挪走**（窗口那条状态栏在卡片布局里
+  // 根本不渲染，挪过去就够不着了）；全局的那几条（设置·命令中心·排程·日程）
+  // **上到上面那排**了。
   {
     id: 'agents',
     position: 'sidebar',
     region: 'bottom',
     kind: 'status-item',
-    order: 20,
+    order: 10,
     shape: { icon: true, label: false },
+    scope: 'agent',
     props: { pipeline: 'statusbar', opens: 'overlay' },
     default: { id: 'agents', icon: 'organization', providedBy: 'builtin' }
-  },
-  {
-    id: 'cron',
-    position: 'sidebar',
-    region: 'bottom',
-    kind: 'status-item',
-    order: 30,
-    shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar', opens: 'overlay' },
-    default: { id: 'cron', icon: 'clock', providedBy: 'builtin' }
-  },
-  {
-    id: 'agenda',
-    position: 'sidebar',
-    region: 'bottom',
-    kind: 'status-item',
-    order: 40,
-    shape: { icon: true, label: false },
-    props: { pipeline: 'statusbar', opens: 'overlay' },
-    default: { id: 'agenda', icon: 'calendar', providedBy: 'builtin' }
   },
   {
     id: 'gateway-health',
     position: 'sidebar',
     region: 'bottom',
     kind: 'status-item',
-    order: 50,
+    order: 20,
     shape: { icon: true, label: false },
     props: { pipeline: 'statusbar', opens: 'panel' },
     default: { id: 'gateway-health', icon: 'pulse', providedBy: 'builtin' }
@@ -349,7 +439,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     position: 'sidebar',
     region: 'bottom',
     kind: 'status-item',
-    order: 60,
+    order: 30,
     shape: { icon: true, label: false },
     props: { pipeline: 'statusbar', opens: 'panel' },
     default: { id: 'egress', icon: 'globe', providedBy: 'builtin' }

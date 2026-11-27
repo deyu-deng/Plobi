@@ -83,7 +83,7 @@ describe('四语目录里不许留着已退役的称呼', () => {
       appearance: { note: (name: string) => `${name} 配置文件保留各自的主题` },
       console: { line: '这个分身不归你管' },
       roster: { hint: 'L2 派工时指定这个角色' },
-      expert: { tag: 'Follow the L1' },
+      virtuoso: { tag: 'Follow the L1' },
       retired: { follow: '跟随主管', title: 'Steward Console', hand: 'the Foreman hands out work' },
       // 繁体里的「檔案總管」是文件管理器那只真的窗口，不是角色名 ⇒ 必须不被抓到。
       explorer: { open: '在檔案總管中顯示' },
@@ -98,7 +98,7 @@ describe('四语目录里不许留着已退役的称呼', () => {
       'appearance.note',
       'console.line',
       'roster.hint',
-      'expert.tag',
+      'virtuoso.tag',
       'retired.follow',
       'retired.title',
       'retired.hand',

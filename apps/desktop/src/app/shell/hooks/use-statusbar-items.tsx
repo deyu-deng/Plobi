@@ -164,7 +164,7 @@ export function useStatusbarItems({
   const { subagentsFailed, subagentsRunning } = useMemo(() => {
     // 「专家」不算在这里：它们归左栏「专家」抽屉（用户 11-04）。底栏这一格
     // 说的是普通子智能体，点开的那棵树也按同一口径过滤（agents/index.tsx）。
-    const lists = Object.values(subagentsBySession).map(items => items.filter(item => !item.expert))
+    const lists = Object.values(subagentsBySession).map(items => items.filter(item => !item.virtuoso))
 
     return {
       subagentsFailed: lists.reduce((sum, items) => sum + failedSubagentCount(items), 0),

@@ -1,6 +1,6 @@
 """临时专家（WP-L3-EXPERTS）：不进名册，只留一条 job 记录（子会话）。
 
-11-04 起多一条判据：**只有带角色侧记的才算专家**。没带 `expert` 的普通子智能体
+11-04 起多一条判据：**只有带角色侧记的才算专家**。没带 `virtuoso` 的普通子智能体
 不进这一格——它们的工作日志归底栏那枚子智能体面板（用户 11-04：两条腿分开）。
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from plobi.delegation import experts as ex  # noqa: E402
+from plobi.delegation import virtuosos as ex  # noqa: E402
 
 
 def make_db(tmp_path: Path) -> Path:
@@ -39,39 +39,39 @@ def make_db(tmp_path: Path) -> Path:
 
 
 def write_sidecars(tmp_path: Path, monkeypatch, roles: dict[str, str]) -> None:
-    """按 delegate_task 的落盘形状写角色侧记（`PLOBI_EXPERTS_DIR` 指到临时目录）。"""
-    folder = tmp_path / "experts"
+    """按 delegate_task 的落盘形状写角色侧记（`PLOBI_VIRTUOSOS_DIR` 指到临时目录）。"""
+    folder = tmp_path / "virtuosos"
     folder.mkdir(exist_ok=True)
     for sid, role in roles.items():
         (folder / f"{sid}.json").write_text(
             json.dumps({"role": role, "goal": ""}, ensure_ascii=False), encoding="utf-8"
         )
-    monkeypatch.setenv("PLOBI_EXPERTS_DIR", str(folder))
+    monkeypatch.setenv("PLOBI_VIRTUOSOS_DIR", str(folder))
 
 
-def test_experts_come_from_child_sessions_of_this_agent_only(tmp_path, monkeypatch):
+def test_virtuosos_come_from_child_sessions_of_this_agent_only(tmp_path, monkeypatch):
     db = make_db(tmp_path)
     monkeypatch.setattr(ex, "state_db_path", lambda: db)
     write_sidecars(tmp_path, monkeypatch, {"kid-1": "file", "kid-2": "browser"})
 
-    payload = ex.experts_for_agent("Sindri")
+    payload = ex.virtuosos_for_agent("Sindri")
 
-    rows = {item["id"]: item for item in payload["experts"]}
+    rows = {item["id"]: item for item in payload["virtuosos"]}
     assert set(rows) == {"kid-1", "kid-2"}, "只列这个 Agent 的、带角色的子会话"
     assert rows["kid-1"]["goal"] == "把三份资料折成一份汇总"
     assert rows["kid-2"]["goal"] == "查一下这门课的作业"
 
 
-def test_plain_subagents_are_not_experts(tmp_path, monkeypatch):
-    """没带 expert 的普通子智能体不进「专家」——它属于底栏那枚面板。"""
+def test_plain_subagents_are_not_virtuosos(tmp_path, monkeypatch):
+    """没带 virtuoso 的普通子智能体不进「专家」——它属于底栏那枚面板。"""
     db = make_db(tmp_path)
     monkeypatch.setattr(ex, "state_db_path", lambda: db)
     write_sidecars(tmp_path, monkeypatch, {"kid-1": "file"})
 
-    payload = ex.experts_for_agent("Sindri")
+    payload = ex.virtuosos_for_agent("Sindri")
 
-    assert [item["id"] for item in payload["experts"]] == ["kid-1"]
-    assert payload["experts"][0]["role"] == "file"
+    assert [item["id"] for item in payload["virtuosos"]] == ["kid-1"]
+    assert payload["virtuosos"][0]["role"] == "file"
 
 
 def test_a_live_subagent_marks_its_row_as_running(tmp_path, monkeypatch):
@@ -86,9 +86,9 @@ def test_a_live_subagent_marks_its_row_as_running(tmp_path, monkeypatch):
         lambda: [{"subagent_id": "s1", "child_session_id": "kid-2", "tool_count": 7, "status": "running"}],
     )
 
-    payload = ex.experts_for_agent("Sindri")
+    payload = ex.virtuosos_for_agent("Sindri")
 
-    rows = {item["id"]: item for item in payload["experts"]}
+    rows = {item["id"]: item for item in payload["virtuosos"]}
     assert rows["kid-1"]["status"] == "done"
     assert rows["kid-2"]["status"] == "running"
     assert rows["kid-2"]["tool_calls"] == 7
@@ -99,6 +99,6 @@ def test_an_agent_without_sessions_says_why(tmp_path, monkeypatch):
     db = make_db(tmp_path)
     monkeypatch.setattr(ex, "state_db_path", lambda: db)
 
-    payload = ex.experts_for_agent("Nobody")
+    payload = ex.virtuosos_for_agent("Nobody")
 
-    assert payload["experts"] == [] and payload["reason"]
+    assert payload["virtuosos"] == [] and payload["reason"]

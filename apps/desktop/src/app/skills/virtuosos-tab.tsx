@@ -2,13 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
 import {
-  type ExpertCapability,
-  type ExpertRoleInfo,
-  type ExpertRolesResponse,
-  getExpertRoles,
-  setExpertRoleDisabledCapabilities,
-  setExpertRoleModel
-} from '@/app/chat/sidebar/expert-runs'
+  type VirtuosoCapability,
+  type VirtuosoRoleInfo,
+  type VirtuosoRolesResponse,
+  getVirtuosoRoles,
+  setVirtuosoRoleDisabledCapabilities,
+  setVirtuosoRoleModel
+} from '@/app/chat/sidebar/virtuoso-runs'
 import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -46,9 +46,9 @@ import { PanelEmpty } from '../overlays/panel'
  * 默认就有的能力项**，开关＝「默认开着」还是「进了它自己的黑名单」。
  */
 
-const EXPERTS_ROLES_KEY = ['experts-roles'] as const
+const VIRTUOSOS_ROLES_KEY = ['virtuosos-roles'] as const
 
-const setRoles = writeCache<ExpertRolesResponse>(EXPERTS_ROLES_KEY)
+const setRoles = writeCache<VirtuosoRolesResponse>(VIRTUOSOS_ROLES_KEY)
 
 /** 后端把「不认得的能力项」那句放在 body 的 `error` 里，桥把它塞进 Error 的 message。
  *  这里把那一句掏出来给人看——别把整段 JSON 端上屏。 */
@@ -64,7 +64,7 @@ function backendErrorText(err: unknown): string {
  * 键从能力池反查（池子里是键 ＋ 标签，角色那几行只给标签）。反查不到的那一项
  * 画不出来——没有键就写不回去。
  */
-function defaultCapabilities(role: ExpertRoleInfo, pool: ExpertCapability[]): ExpertCapability[] {
+function defaultCapabilities(role: VirtuosoRoleInfo, pool: VirtuosoCapability[]): VirtuosoCapability[] {
   const keyOf = new Map(pool.map(item => [item.label, item.key]))
 
   return role.capabilities
@@ -73,16 +73,16 @@ function defaultCapabilities(role: ExpertRoleInfo, pool: ExpertCapability[]): Ex
 
       return key ? { key, label } : null
     })
-    .filter((item): item is ExpertCapability => item !== null)
+    .filter((item): item is VirtuosoCapability => item !== null)
 }
 
-export function ExpertsTab() {
+export function VirtuososTab() {
   const { t } = useI18n()
-  const e = t.skills.experts
+  const e = t.skills.virtuosos
 
   const { data, error, isError, isLoading, refetch } = useQuery({
-    queryKey: EXPERTS_ROLES_KEY,
-    queryFn: getExpertRoles,
+    queryKey: VIRTUOSOS_ROLES_KEY,
+    queryFn: getVirtuosoRoles,
     staleTime: 0
   })
 
@@ -92,7 +92,7 @@ export function ExpertsTab() {
   const [busy, setBusy] = useState(false)
 
   /** 乐观写穿：先把这一行改掉，回头后端读数再把它对回去。 */
-  const patchRole = (roleKey: string, patch: Partial<ExpertRoleInfo>) => {
+  const patchRole = (roleKey: string, patch: Partial<VirtuosoRoleInfo>) => {
     setRoles(current => {
       if (!current) {
         return current
@@ -108,7 +108,7 @@ export function ExpertsTab() {
     })
   }
 
-  const toggleCapability = async (role: ExpertRoleInfo, capability: ExpertCapability, enabled: boolean) => {
+  const toggleCapability = async (role: VirtuosoRoleInfo, capability: VirtuosoCapability, enabled: boolean) => {
     if (busy) {
       return
     }
@@ -128,7 +128,7 @@ export function ExpertsTab() {
     setBusy(true)
 
     try {
-      await setExpertRoleDisabledCapabilities(role.key, disabled)
+      await setVirtuosoRoleDisabledCapabilities(role.key, disabled)
     } catch (err) {
       patchRole(role.key, { disabled_capabilities: before })
       notifyError(new Error(backendErrorText(err)), t.skills.failedToUpdate(role.label))
@@ -138,7 +138,7 @@ export function ExpertsTab() {
   }
 
   /** 这一类名手自己的默认模型。空串＝回到继承父 Agent（与普通子代理同一条默认）。 */
-  const pickModel = async (role: ExpertRoleInfo, value: string) => {
+  const pickModel = async (role: VirtuosoRoleInfo, value: string) => {
     if (busy) {
       return false
     }
@@ -150,7 +150,7 @@ export function ExpertsTab() {
     setBusy(true)
 
     try {
-      await setExpertRoleModel(role.key, value)
+      await setVirtuosoRoleModel(role.key, value)
 
       return true
     } catch (err) {
@@ -176,14 +176,14 @@ export function ExpertsTab() {
       for (const role of roles) {
         const disabled = enabled ? [] : defaultCapabilities(role, pool).map(capability => capability.key)
 
-        await setExpertRoleDisabledCapabilities(role.key, disabled)
+        await setVirtuosoRoleDisabledCapabilities(role.key, disabled)
         patchRole(role.key, { disabled_capabilities: disabled })
         done += 1
       }
 
       notify({ kind: 'success', title: e.bulkUpdated(done), message: '' })
     } catch (err) {
-      notifyError(new Error(backendErrorText(err)), t.skills.failedToUpdate(t.skills.tabExperts))
+      notifyError(new Error(backendErrorText(err)), t.skills.failedToUpdate(t.skills.tabVirtuosos))
     } finally {
       setBusy(false)
     }
@@ -220,7 +220,7 @@ export function ExpertsTab() {
         <ListStrip
           right={
             <ListStripMenu
-              label={t.skills.tabExperts}
+              label={t.skills.tabVirtuosos}
               toggle={{
                 checked: allOn,
                 disabled: busy,
@@ -231,7 +231,7 @@ export function ExpertsTab() {
           }
         />
         {roles.map(role => (
-          <ExpertRow
+          <VirtuosoRow
             busy={busy}
             key={role.key}
             onModel={value => pickModel(role, value)}
@@ -245,7 +245,7 @@ export function ExpertsTab() {
   )
 }
 
-function ExpertRow({
+function VirtuosoRow({
   busy,
   onModel,
   onToggle,
@@ -254,12 +254,12 @@ function ExpertRow({
 }: {
   busy: boolean
   onModel: (value: string) => Promise<boolean>
-  onToggle: (capability: ExpertCapability, enabled: boolean) => void
-  pool: ExpertCapability[]
-  role: ExpertRoleInfo
+  onToggle: (capability: VirtuosoCapability, enabled: boolean) => void
+  pool: VirtuosoCapability[]
+  role: VirtuosoRoleInfo
 }) {
   const { t } = useI18n()
-  const e = t.skills.experts
+  const e = t.skills.virtuosos
   const capabilities = useMemo(() => defaultCapabilities(role, pool), [pool, role])
   const disabled = useMemo(() => new Set(role.disabled_capabilities), [role.disabled_capabilities])
   const on = capabilities.filter(capability => !disabled.has(capability.key)).length
@@ -310,7 +310,7 @@ function ExpertRow({
 /**
  * 这一类名手自己的默认模型（那颗下拉胶囊）。
  *
- * 形状照 `app/console/chat/expert-model-bar.tsx`：同一套高度、字号与下拉交互。
+ * 形状照 `app/console/chat/virtuoso-model-bar.tsx`：同一套高度、字号与下拉交互。
  * 差别只有一处——**状态从这一格自己的名单读**，而不是自己再读一遍后端（那样两处会各说各话），
  * 写失败也会把后端那句原话报出来。
  */
@@ -361,12 +361,12 @@ function RoleModelPicker({
   // id — `displayModelName` strips the provider prefix and prettifies the rest, which
   // is what the composer already does. Before this, `workbuddy/auto` leaked onto the
   // pill as-is and read as a machine path.
-  const label = model ? displayModelName(model) : c.expertModelFollow
-  const title = model ? `${c.expertModelHint} · ${displayModelName(model)}` : c.expertModelHint
+  const label = model ? displayModelName(model) : c.virtuosoModelFollow
+  const title = model ? `${c.virtuosoModelHint} · ${displayModelName(model)}` : c.virtuosoModelHint
 
   if (rows.length === 0) {
     return (
-      <Button className={PILL} disabled title={c.expertModelEmpty} type="button" variant="ghost">
+      <Button className={PILL} disabled title={c.virtuosoModelEmpty} type="button" variant="ghost">
         <span className="truncate">{label}</span>
       </Button>
     )
@@ -382,7 +382,7 @@ function RoleModelPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-80 w-64 overflow-y-auto p-1" side="top" sideOffset={8}>
         <DropdownMenuItem className="text-xs" onSelect={() => void pick('')}>
-          <span className="flex-1 truncate">{c.expertModelFollow}</span>
+          <span className="flex-1 truncate">{c.virtuosoModelFollow}</span>
           {model ? null : <Codicon name="check" size="0.75rem" />}
         </DropdownMenuItem>
         {rows.map(provider => {

@@ -7,7 +7,7 @@
 ``source='subagent'`` 的子会话（``parent_session_id`` 指回发起它的那条会话）。所以：
 
 - 名单 = 这个 Agent 名下会话的**子会话**（父子链），**只留带角色侧记的**（真专家），
-  新的在前。没带 `expert` 的普通子智能体不进这一格——那是底栏子智能体面板的事
+  新的在前。没带 `virtuoso` 的普通子智能体不进这一格——那是底栏子智能体面板的事
   （用户 11-04：两条腿分开）；
 - 状态 = 进程内 ``list_active_subagents()`` 里还挂着的就是「正在干」，否则「干完了」；
 - 工作日志 = 子会话自己的 messages（复用现成的 ``/api/sessions/:id/messages`` 路由）。
@@ -53,11 +53,11 @@ def _first_user_text(con: sqlite3.Connection, session_id: str) -> str:
 def _sidecar_of(session_id: str) -> dict[str, Any]:
     """这一趟派的是哪类专家（`delegate_task` 派完时写下的侧记）。"""
     try:
-        from plobi.delegation.expert_roles import experts_dir
+        from plobi.delegation.virtuoso_roles import virtuosos_dir
     except Exception:  # noqa: BLE001
         return {}
     try:
-        payload = json.loads((experts_dir() / f"{session_id}.json").read_text(encoding="utf-8"))
+        payload = json.loads((virtuosos_dir() / f"{session_id}.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -76,13 +76,13 @@ def _live_by_child_session() -> dict[str, dict[str, Any]]:
     return live
 
 
-def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
+def virtuosos_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
     """这个 Agent 派出去过的临时专家（子会话），正在干的排最前。"""
     name = str(agent_name or "").strip()
     path = state_db_path()
     con = _connect_readonly(path)
     if con is None:
-        return {"experts": [], "reason": f"读不到状态库（{path}）"}
+        return {"virtuosos": [], "reason": f"读不到状态库（{path}）"}
     try:
         try:
             parent_ids = [
@@ -92,7 +92,7 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
         except sqlite3.Error:
             parent_ids = []
         if not parent_ids:
-            return {"experts": [], "reason": f"名册里 {name} 还没有会话"}
+            return {"virtuosos": [], "reason": f"名册里 {name} 还没有会话"}
 
         marks = ",".join("?" for _ in parent_ids)
         try:
@@ -103,7 +103,7 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
                 (*parent_ids, limit),
             ).fetchall()
         except sqlite3.Error:
-            return {"experts": [], "reason": "状态库里没有会话表"}
+            return {"virtuosos": [], "reason": "状态库里没有会话表"}
 
         live = _live_by_child_session()
         # 派工票状态只读一次（独立 sqlite，不碰共享总账）：左栏那枚徽标要能
@@ -117,18 +117,18 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
             }
         except Exception:
             pass
-        experts: list[dict[str, Any]] = []
+        virtuosos: list[dict[str, Any]] = []
         for sid, parent, started, ended, messages, tools, model in rows:
             sid = str(sid)
             sidecar = _sidecar_of(sid)
             role = str(sidecar.get("role") or "").strip()
-            # 只认**真专家**：带角色侧记的那些。没带 `expert` 的普通子智能体不进这一格
+            # 只认**真专家**：带角色侧记的那些。没带 `virtuoso` 的普通子智能体不进这一格
             # ——它们的工作日志归底栏那枚子智能体面板（用户 11-04：两条腿要分开）。
             if not role:
                 continue
             record = live.get(sid) or {}
             ticket_id = str(sidecar.get("ticket_id") or "").strip()
-            experts.append({
+            virtuosos.append({
                 "goal": str(sidecar.get("goal") or "").strip() or _first_user_text(con, sid),
                 "id": sid,
                 "messages": int(messages or 0),
@@ -144,6 +144,6 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
     finally:
         con.close()
 
-    experts.sort(key=lambda item: (0 if item["status"] == "running" else 1, -item["started_at"]))
+    virtuosos.sort(key=lambda item: (0 if item["status"] == "running" else 1, -item["started_at"]))
 
-    return {"experts": experts, "live": sum(1 for item in experts if item["status"] == "running")}
+    return {"virtuosos": virtuosos, "live": sum(1 for item in virtuosos if item["status"] == "running")}

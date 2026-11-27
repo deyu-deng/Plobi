@@ -432,7 +432,7 @@ def load_cli_config() -> Dict[str, Any]:
             "personalities": {
                 "helpful": "You are a helpful, friendly AI assistant.",
                 "concise": "You are a concise assistant. Keep responses brief and to the point.",
-                "technical": "You are a technical expert. Provide detailed, accurate technical information.",
+                "technical": "You are a technical virtuoso. Provide detailed, accurate technical information.",
                 "creative": "You are a creative assistant. Think outside the box and offer innovative solutions.",
                 "teacher": "You are a patient teacher. Explain concepts clearly with examples.",
                 "kawaii": "You are a kawaii assistant! Use cute expressions like (◕‿◕), ★, ♪, and ~! Add sparkles and be super enthusiastic about everything! Every response should feel warm and adorable desu~! ヽ(>∀<☆)ノ",

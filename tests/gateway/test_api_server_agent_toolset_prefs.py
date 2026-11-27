@@ -124,10 +124,10 @@ def test_registry_failure_passes_through(monkeypatch):
     ) == given
 
 
-def test_experts_do_not_inherit_the_parent_cut():
+def test_virtuosos_do_not_inherit_the_parent_cut():
     """L2 关掉 terminal 之后，「电脑」专家还得能跑命令。
 
-    ``delegate_tool`` 给子智能体的是 ``expert_roles`` 里那一层工具面，从不把父的
+    ``delegate_tool`` 给子智能体的是 ``virtuoso_roles`` 里那一层工具面，从不把父的
     ``disabled_toolsets`` 递下去——这条钉住那个契约，免得以后有人"顺手"让它继承。
     """
     import inspect

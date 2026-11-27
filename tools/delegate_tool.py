@@ -788,7 +788,7 @@ def _strip_blocked_tools(toolsets: List[str]) -> List[str]:
     """
     # Composite toolsets that should never pass through to children, even
     # though their individual tools aren't all in DELEGATE_BLOCKED_TOOLS.
-    _COMPOSITE_BLOCKED_TOOLSETS = frozenset({"delegation", "code_execution"})
+    _COMPOSITE_BLOCKED_TOOLSETS = frozenset({"delegation", "virtuoso", "code_execution"})
     blocked_toolset_names = {
         name
         for name, defn in TOOLSETS.items()
@@ -828,7 +828,7 @@ def _build_child_progress_callback(
     model: Optional[str] = None,
     toolsets: Optional[List[str]] = None,
     session_ref: Optional[Dict[str, Any]] = None,
-    expert: Optional[str] = None,
+    virtuoso: Optional[str] = None,
 ) -> Optional[callable]:
     """Build a callback that relays child agent tool calls to the parent display.
 
@@ -877,8 +877,8 @@ def _build_child_progress_callback(
         if toolsets is not None:
             kw["toolsets"] = list(toolsets)
         # 「这一趟是专家还是普通子智能体」：前端据此分栏（专家→抽屉，普通→底栏）。
-        if expert:
-            kw["expert"] = expert
+        if virtuoso:
+            kw["virtuoso"] = virtuoso
         # The child's own session id — filled into the shared ref once the
         # child agent exists (the callback is built first), so every relayed
         # event lets UIs open/inspect the subagent's session directly.
@@ -1085,7 +1085,7 @@ def _build_child_agent(
     role: str = "leaf",
     # 「专家」那一族（file/browser/software/computer）。事件与活动记录都带出去：
     # 前端靠它把专家归到左栏「专家」抽屉、把**普通**子智能体留在底栏那一格。
-    expert: Optional[str] = None,
+    virtuoso: Optional[str] = None,
 ):
     """
     Build a child AIAgent on the main thread (thread-safe construction).
@@ -1140,7 +1140,7 @@ def _build_child_agent(
     else:
         parent_toolsets = set(DEFAULT_TOOLSETS)
 
-    selected = _child_toolset_selection(parent_toolsets, toolsets, expert)
+    selected = _child_toolset_selection(parent_toolsets, toolsets, virtuoso)
     if selected is not None:
         child_toolsets = selected
     elif parent_agent and parent_enabled is not None:
@@ -1189,7 +1189,7 @@ def _build_child_agent(
         model=effective_model_for_cb,
         toolsets=child_toolsets,
         session_ref=child_session_ref,
-        expert=expert,
+        virtuoso=virtuoso,
     )
 
     # Each subagent gets its own iteration budget capped at max_iterations
@@ -1786,7 +1786,7 @@ def _apply_summary_budget(results: List[Dict[str, Any]], parent_agent) -> None:
 def _child_toolset_selection(
     parent_toolsets: set,
     toolsets: Optional[List[str]],
-    expert: Optional[str],
+    virtuoso: Optional[str],
 ) -> Optional[List[str]]:
     """这一跳拿哪些门类——**两族两套规则**：
 
@@ -1796,10 +1796,10 @@ def _child_toolset_selection(
 
     回 ``None``＝这一支不适用（调用方走「继承父的整套」那条路）。
     """
-    if expert:
-        from plobi.delegation.expert_roles import effective_toolsets as _expert_toolsets
+    if virtuoso:
+        from plobi.delegation.virtuoso_roles import effective_toolsets as _virtuoso_toolsets
 
-        return _expert_toolsets(expert)
+        return _virtuoso_toolsets(virtuoso)
     if not toolsets:
         return None
     # Intersect with parent — subagent must not gain tools the parent lacks.
@@ -1817,7 +1817,7 @@ def _run_single_child(
     goal: str,
     child=None,
     parent_agent=None,
-    expert: Optional[str] = None,
+    virtuoso: Optional[str] = None,
     **_kwargs,
 ) -> Dict[str, Any]:
     """
@@ -1964,7 +1964,7 @@ def _run_single_child(
                 "tool_count": 0,
                 # 这一趟是不是「专家」（file/browser/software/computer）。空 = 普通子智能体。
                 # 前端按它分栏：专家进左栏「专家」抽屉，普通子智能体进底栏那一格。
-                "expert": expert or None,
+                "virtuoso": virtuoso or None,
                 "agent": child,
             }
         )
@@ -2445,26 +2445,26 @@ def _recover_tasks_from_json_string(
     return parsed, None
 
 
-def _apply_expert_presets(task_list: List[Dict[str, Any]]) -> str:
-    """把 `tasks[].expert`（file/browser/software/computer）落成职责与工具面。
+def _apply_virtuoso_presets(task_list: List[Dict[str, Any]]) -> str:
+    """把 `tasks[].virtuoso`（file/browser/software/computer）落成职责与工具面。
 
     返回空串表示没问题；非空是一句给人看的错（未知角色）。
-    没有 expert 的任务原样不动——这一支不影响普通派工。
+    没有 virtuoso 的任务原样不动——这一支不影响普通派工。
 
     11-04 起专家是 **L3**（用户：「L3 也可以自己调用普通子代理」）：
     - `role` 给 `orchestrator`，`_build_child_agent` 会把 `delegation` 工具集加回来，
-      所以专家能再派**普通**子代理（那些不带 expert，按普通子代理进底栏 overlay）；
-    - 模型：任务自己指定 > 该类角色的默认（`experts/roles.json`）> 继承父 Agent。
+      所以专家能再派**普通**子代理（那些不带 virtuoso，按普通子代理进底栏 overlay）；
+    - 模型：任务自己指定 > 该类角色的默认（`virtuosos/roles.json`）> 继承父 Agent。
       不配就是继承——和普通子代理同一条默认。
     """
-    from plobi.delegation.expert_roles import model_for_role, role_spec, stamp_goal
+    from plobi.delegation.virtuoso_roles import model_for_role, role_spec, stamp_goal
 
     for task in task_list:
         # 非 dict 的条目留给后面那条「Task N must be an object」去报，
         # 这里不能抢先把 AttributeError 抛出去。
         if not isinstance(task, dict):
             continue
-        key = str(task.get("expert") or "").strip().lower()
+        key = str(task.get("virtuoso") or "").strip().lower()
         if not key:
             continue
         spec = role_spec(key)
@@ -2481,16 +2481,16 @@ def _apply_expert_presets(task_list: List[Dict[str, Any]]) -> str:
     return ""
 
 
-def _expert_body(task: Dict[str, Any]) -> str:
+def _virtuoso_body(task: Dict[str, Any]) -> str:
     """任务书里人写的那一段（专家预设在前面盖了职责章，标签/侧记不要它）。"""
-    from plobi.delegation.expert_roles import body_of
+    from plobi.delegation.virtuoso_roles import body_of
 
-    key = str(task.get("expert") or "").strip().lower()
+    key = str(task.get("virtuoso") or "").strip().lower()
     goal = str(task.get("goal") or "")
     return body_of(key, goal) if key else goal
 
 
-def _open_expert_tickets(task_list, parent_agent, top_role) -> list[str]:
+def _open_virtuoso_tickets(task_list, parent_agent, top_role) -> list[str]:
     """L2→L3 专家腿的**派发前**预授权票（裁定 215；用户 11-10 拍板直接 active）。
 
     一任务一票，与外包腿 ``tools/offload_tools.py:390-409`` 同形。授权层只存
@@ -2512,11 +2512,11 @@ def _open_expert_tickets(task_list, parent_agent, top_role) -> list[str]:
             ticket_ids.append(
                 ledger.open_ticket(
                     parent_agent=parent,
-                    leg="expert",
+                    leg="virtuoso",
                     goal=str(task.get("goal") or "")[:120],
                     scope={
                         "allowed_capabilities": ["delegate"],
-                        "expert": str(task.get("expert") or "").strip().lower(),
+                        "virtuoso": str(task.get("virtuoso") or "").strip().lower(),
                         "role": str(task.get("role") or top_role or ""),
                     },
                     triggered_by="delegate_task",
@@ -2538,23 +2538,24 @@ def delegate_task(
     background: Optional[bool] = None,
     parent_agent=None,
     toolsets: Optional[List[str]] = None,
-    expert: Optional[str] = None,
+    virtuoso: Optional[str] = None,
 ) -> str:
     """
     Spawn one or more child agents to handle delegated tasks.
 
     Supports two modes:
-      - Single: provide goal (+ optional context, toolsets, role, expert)
-      - Batch:  provide tasks array [{goal, context, toolsets, role, expert}, ...]
+      - Single: provide goal (+ optional context, toolsets, role)
+      - Batch:  provide tasks array [{goal, context, toolsets, role}, ...]
 
     The 'role' parameter controls whether a child can further delegate:
     'leaf' (default) cannot; 'orchestrator' retains the delegation
     toolset and can spawn its own workers, bounded by
     delegation.max_spawn_depth.  Per-task role beats the top-level one.
 
-    The 'expert' parameter (file/browser/software/computer) dispatches a
-    preset specialist: its duty is stamped onto the goal and the child gets
-    only that role's toolset layer.  Per-task expert beats the top-level one.
+    The 'virtuoso' parameter still exists as an INTERNAL compatibility hook
+    (delegate_virtuoso funnels through it), but it is deliberately absent from
+    the model-facing schema since 11-25: 名手 has its own toolset and its own
+    entry point. Do not re-advertise it here.
 
     Returns JSON with results array, one entry per task.
     """
@@ -2642,22 +2643,22 @@ def delegate_task(
             )
         task_list = tasks
     elif goal and isinstance(goal, str) and goal.strip():
-        # 单任务也要带上 expert：不然 _apply_expert_presets 拿不到角色，
+        # 单任务也要带上 virtuoso：不然 _apply_virtuoso_presets 拿不到角色，
         # 职责不盖章、工具面不落层、侧记不写——派出去的就不是专家了。
-        task_list = [{"goal": goal, "context": context, "role": top_role, "expert": expert}]
+        task_list = [{"goal": goal, "context": context, "role": top_role, "virtuoso": virtuoso}]
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
 
-    # 专家预设（tasks[].expert）在这里展开：职责写在任务书最前面、只给它那一层工具面。
-    _expert_error = _apply_expert_presets(task_list)
-    if _expert_error:
-        return tool_error(_expert_error)
+    # 专家预设（tasks[].virtuoso）在这里展开：职责写在任务书最前面、只给它那一层工具面。
+    _virtuoso_error = _apply_virtuoso_presets(task_list)
+    if _virtuoso_error:
+        return tool_error(_virtuoso_error)
 
     if not task_list:
         return tool_error("No tasks provided.")
 
     # 派发前预授权票（校验全过才开；早返回的那些失败不留垃圾终态票）。
-    _ticket_ids = _open_expert_tickets(task_list, parent_agent, top_role)
+    _ticket_ids = _open_virtuoso_tickets(task_list, parent_agent, top_role)
 
     # Validate each task has a goal
     for i, task in enumerate(task_list):
@@ -2673,7 +2674,7 @@ def delegate_task(
 
     n_tasks = len(task_list)
     # Track goal labels for progress display (truncated for readability)
-    task_labels = [_expert_body(t)[:40] for t in task_list]
+    task_labels = [_virtuoso_body(t)[:40] for t in task_list]
 
     # Save parent tool names BEFORE any child construction mutates the global.
     # _build_child_agent() calls AIAgent() which calls get_tool_definitions(),
@@ -2714,7 +2715,7 @@ def delegate_task(
                 override_acp_command=task_creds.get("command"),
                 override_acp_args=task_creds.get("args"),
                 role=effective_role,
-                expert=str(t.get("expert") or "").strip().lower() or None,
+                virtuoso=str(t.get("virtuoso") or "").strip().lower() or None,
             )
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
@@ -2741,7 +2742,7 @@ def delegate_task(
                 _t["goal"],
                 child,
                 parent_agent,
-                expert=str(_t.get("expert") or "").strip().lower() or None,
+                virtuoso=str(_t.get("virtuoso") or "").strip().lower() or None,
             )
             results.append(result)
         else:
@@ -2762,7 +2763,7 @@ def delegate_task(
                         goal=t["goal"],
                         child=child,
                         parent_agent=parent_agent,
-                        expert=str(t.get("expert") or "").strip().lower() or None,
+                        virtuoso=str(t.get("virtuoso") or "").strip().lower() or None,
                     )
                     futures[future] = i
 
@@ -2987,7 +2988,7 @@ def delegate_task(
         # 给每条结果带上它自己的子会话号：左栏「专家」那一格/角色侧记都靠它。
         # 同时把派发前那张预授权票落终态、把票号挂进结果与角色侧记，
         # 这样左栏徽标点开能回查到**这一跳**的固化授权。
-        from plobi.delegation.expert_roles import record_role
+        from plobi.delegation.virtuoso_roles import record_role
 
         _finish_ledger = None
         if _ticket_ids:
@@ -3025,12 +3026,12 @@ def delegate_task(
                         logger.debug("delegate_task: could not finish ticket", exc_info=True)
 
             task = task_list[index] if index < len(task_list) else {}
-            role = str(task.get("expert") or "").strip().lower()
+            role = str(task.get("virtuoso") or "").strip().lower()
             if role and child_session_id:
                 # 侧记里写**实际用的模型**：左栏要能看出这个专家跟 L2 不是同一个脑子。
                 child = children[index][2]
                 used_model = str(getattr(child, "model", "") or "").strip() or str(task.get("model") or "").strip()
-                record_role(child_session_id, role, _expert_body(task),
+                record_role(child_session_id, role, _virtuoso_body(task),
                             model=used_model or None, ticket_id=ticket_id)
 
         return {
@@ -3569,28 +3570,39 @@ def _build_top_level_description() -> str:
         "Only the final summary is returned -- intermediate tool results "
         "never enter your context window.\n\n"
         "TWO MODES (one of 'goal' or 'tasks' is required):\n"
-        "1. Single task: provide 'goal' (+ optional context, expert).\n"
+        "1. Single task: provide 'goal' (+ optional context).\n"
         f"2. Batch (parallel): provide 'tasks' array with up to {max_children} "
         f"items concurrently for this user (configured via "
         f"delegation.max_concurrent_children in config.yaml). {nesting_clause}\n\n"
-        "EXPERTS (specialised workers; PREFER the dedicated `delegate_expert` tool — "
-        "it takes role/goal/model directly and is harder to get wrong. Here "
-        "'expert' works on BOTH modes: top-level for a single task, per-item "
-        "for a batch): set 'expert' to dispatch a "
-        "preset specialist instead of a general worker. Available presets: "
+        "VIRTUOSOS (名手, in-process specialists) are NOT dispatched by this tool — "
+        "its schema has no 'virtuoso' field, and there is no per-task 'virtuoso' "
+        "either. Their dedicated entry point is `delegate_virtuoso` "
+        "(role/goal/context/model), which lives in its own 'virtuoso' toolset. "
+        "Use it to dispatch a "
+        "preset specialist instead of a general worker. Available roles: "
         "'file' (文件：read/write/organise files, no shell), 'browser' (网页："
         "browse/fetch/extract, no shell), 'software' (软件与脚本：terminal + file "
         "— 装、跑、修脚本与命令，这是唯一能跑 bash 的那一类), 'computer' "
-        "(电脑：terminal + computer_use — 系统设置、进程、窗口操作). The preset "
-        "fixes that child's toolset and prefixes its goal with its duty; your "
+        "(电脑：terminal + computer_use — 系统设置、进程、窗口操作). The role "
+        "fixes that virtuoso's toolset and prefixes its goal with its duty; your "
         "'goal' text is appended after it. HARD RULE: when a task is a "
         "self-contained piece of file, browser, software, or computer work, "
-        "dispatch the matching expert instead of doing it yourself — the "
+        "call `delegate_virtuoso` with the matching role instead of doing it "
+        "yourself — the "
         "'single tool call -> do it directly' shortcut below does NOT apply to "
-        "these four kinds. A plain subagent has NO terminal: if the work needs "
-        "to run a command, it MUST carry expert='software' or 'computer'. "
-        "Experts are subagents, not new agents: they appear in the left "
-        "sidebar with their own work log.\n\n"
+        "these four kinds. The four kinds are also the DEFAULT owner of that "
+        "work: the external offload path (other AI apps on this machine) is the "
+        "exception, used only when an virtuoso cannot reach it — the work needs "
+        "that app's signed-in account, needs that vendor's own model or unique "
+        "capability, or must continue an existing conversation over there. If "
+        "both could do it, use an virtuoso: in-process, its log is visible, and a "
+        "failed run can be retried with different parameters. A plain subagent "
+        "spawned here has NO terminal: if the work needs "
+        "to run a command, it MUST go through `delegate_virtuoso` with "
+        "role='software' or 'computer'. "
+        "Virtuosos appear in the left sidebar with their own work log "
+        "(click the row: the log opens as a card in the conversation); a plain "
+        "subagent shows up in the spawn tree at the bottom instead.\n\n"
         "BOTH MODES RUN IN THE BACKGROUND. delegate_task returns immediately — "
         "you and the user keep working, and each subagent's full result "
         "re-enters the conversation as its own new message when it finishes. A "
@@ -3610,8 +3622,8 @@ def _build_top_level_description() -> str:
         "- Tasks that would flood your context with intermediate data\n"
         "- Parallel independent workstreams (research A and B simultaneously)\n\n"
         "WHEN NOT TO USE (use these instead):\n"
-        "- Mechanical multi-step work that is NOT one of the four expert kinds -> use execute_code\n"
-        "- A single one-off lookup with no work product -> just call the tool directly. If it is a self-contained piece of file/browser/software/computer work, dispatch the expert per the HARD RULE above.\n"
+        "- Mechanical multi-step work that is NOT one of the four virtuoso kinds -> use execute_code\n"
+        "- A single one-off lookup with no work product -> just call the tool directly. If it is a self-contained piece of file/browser/software/computer work, dispatch the virtuoso per the HARD RULE above.\n"
         "- Tasks needing user interaction -> subagents cannot use clarify\n"
         "- Durable long-running work that must outlive the current turn -> "
         "use cronjob (action='create') or terminal(background=True, "
@@ -3658,9 +3670,8 @@ def _build_tasks_param_description() -> str:
         f"Batch mode: tasks to run in parallel (up to {max_children} for this "
         f"user, set via delegation.max_concurrent_children). Each gets "
         "its own subagent with isolated context. "
-        "Each item may set 'expert' (file/browser/software/computer) to "
-        "dispatch a preset specialist instead of a general worker — same "
-        "meaning as the top-level 'expert'. "
+        "Items here are always PLAIN subagents — no 'virtuoso' key (名手 goes "
+        "through `delegate_virtuoso`, one call per role). "
         "When provided, top-level goal/context/toolsets are ignored."
     )
 
@@ -3774,15 +3785,9 @@ DELEGATE_TASK_SCHEMA = {
                             "enum": ["leaf", "orchestrator"],
                             "description": "Per-task role override. See top-level 'role' for semantics.",
                         },
-                        "expert": {
-                            "type": "string",
-                            "enum": ["file", "browser", "software", "computer"],
-                            "description": (
-                                "把这条活交给哪一类**临时专家**：file=文件资料、browser=网页抄录、"
-                                "software=装跑修软件、computer=系统与窗口。给了它就只带那一类工具面，"
-                                "任务书前面自动加上它的职责；它不进团队名单、用完即丢。"
-                            ),
-                        },
+                        # 名手（file/browser/software/computer）**不在这条路上派**：
+                        # 那是 delegate_virtuoso 的活，工具集也单独一组（用户 11-25）。
+                        # 这里留空，普通子智能体才不会被顺手当成名手。
                     },
                     "required": ["goal"],
                 },
@@ -3808,17 +3813,9 @@ DELEGATE_TASK_SCHEMA = {
                     "compatibility."
                 ),
             },
-            "expert": {
-                "type": "string",
-                "enum": ["file", "browser", "software", "computer"],
-                "description": (
-                    "单任务派工时把这条活交给哪一类**临时专家**（与 tasks[].expert 同义）："
-                    "file=文件资料、browser=网页抄录、software=装跑修软件、computer=系统与窗口。"
-                    "给了它，子智能体只带那一类工具面，任务书前面自动加上它的职责，"
-                    "并会在左栏「专家」那一格出现、可点开看日志。"
-                    "要跑命令/脚本一律 software 或 computer——普通子智能体不带 terminal。"
-                ),
-            },
+            # 顶层 virtuoso 已移除（用户 11-25：「名手的派发做一个专属的工具集，而不是
+            # 直接用普通子代理的工具」）。派名手一律走 delegate_virtuoso，
+            # 它的 schema 与工具集都在 virtuoso 那一组里。
         },
         "required": [],
     },
@@ -3877,7 +3874,7 @@ registry.register(
         tasks=_strip_model_hidden_task_fields(args.get("tasks")),
         max_iterations=args.get("max_iterations"),
         role=args.get("role"),
-        expert=args.get("expert"),
+        virtuoso=args.get("virtuoso"),
         background=_model_background_value(args, kw.get("parent_agent")),
         parent_agent=kw.get("parent_agent"),
     ),
@@ -3888,11 +3885,11 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
-# delegate_expert —— 专家是 L3，不是普通子代理（用户 11-04 拍板）
+# delegate_virtuoso —— 专家是 L3，不是普通子代理（用户 11-04 拍板）
 # ---------------------------------------------------------------------------
 
-DELEGATE_EXPERT_SCHEMA = {
-    "name": "delegate_expert",
+DELEGATE_VIRTUOSO_SCHEMA = {
+    "name": "delegate_virtuoso",
     "description": (
         "派一个**临时专家**（L3）去干一类活。专家不是普通子代理：\n"
         "- 它有自己的工具箱（文件 / 浏览器 / 软件 / 电脑四类），只看该看的工具；\n"
@@ -3903,7 +3900,9 @@ DELEGATE_EXPERT_SCHEMA = {
         "文件读写也在里面）；要动系统设置、进程、窗口 → computer；只读整理文件 → file；"
         "只上网抄东西 → browser。\n"
         "**普通子代理没有 terminal**：凡是需要执行命令的活，必须走 software 或 computer，"
-        "不要用 delegate_task 派一个「普通」子代理去跑 bash——它跑不了。"
+        "不要用 delegate_task 派一个「普通」子代理去跑 bash——它跑不了。\n"
+        "**这是派名手的唯一入口**（专属工具集 virtuoso）：delegate_task 的 schema 里"
+        "已经没有 virtuoso 参数，别再往那儿塞。"
     ),
     "parameters": {
         "type": "object",
@@ -3941,27 +3940,27 @@ DELEGATE_EXPERT_SCHEMA = {
 }
 
 
-def delegate_expert(
+def delegate_virtuoso(
     role: Optional[str] = None,
     goal: Optional[str] = None,
     context: Optional[str] = None,
     model: Optional[str] = None,
     parent_agent=None,
 ) -> str:
-    """派一个临时专家（L3）。实质是把一条带 `expert` 的任务交给 `delegate_task`。
+    """派一个临时专家（L3）。实质是把一条带 `virtuoso` 的任务交给 `delegate_task`。
 
     不另造一条派工链路：构建、后台派发、事件、侧记、成本归集全复用同一套，
     这里只负责**把角色与模型说清楚**，并在参数不对时给人一句能看懂的话。
     """
-    from plobi.delegation.expert_roles import role_spec
+    from plobi.delegation.virtuoso_roles import role_spec
 
     key = str(role or "").strip().lower()
     if role_spec(key) is None:
         return tool_error(f"未知专家角色 {role!r}：只有 file / browser / software / computer 四种")
     if not str(goal or "").strip():
-        return tool_error("delegate_expert 需要 goal：要这个专家干什么。")
+        return tool_error("delegate_virtuoso 需要 goal：要这个专家干什么。")
 
-    task: Dict[str, Any] = {"goal": str(goal), "expert": key}
+    task: Dict[str, Any] = {"goal": str(goal), "virtuoso": key}
     if str(context or "").strip():
         task["context"] = str(context)
     if str(model or "").strip():
@@ -3979,7 +3978,7 @@ def delegate_expert(
     # 照实说：这个名手**现在**到底有什么能力（默认 − 它自己的黑名单 − 全局硬压制）。
     # 少了哪样写出来——「派出去的与承诺的不符」是最容易被忽略的一种坑。
     try:
-        from plobi.delegation.expert_roles import (
+        from plobi.delegation.virtuoso_roles import (
             effective_capabilities,
             effective_toolsets,
             missing_capabilities,
@@ -3988,7 +3987,7 @@ def delegate_expert(
         payload = json.loads(result) if isinstance(result, str) else result
         if isinstance(payload, dict):
             spec = role_spec(key) or {}
-            payload["expert_capabilities"] = {
+            payload["virtuoso_capabilities"] = {
                 "role": key,
                 "label": spec.get("label", key),
                 "effective": effective_capabilities(key),
@@ -3997,15 +3996,18 @@ def delegate_expert(
             }
             result = json.dumps(payload, ensure_ascii=False)
     except Exception as exc:  # noqa: BLE001 - 附注失败不许把派工带崩
-        logger.debug("delegate_expert: cannot attach the capability note: %s", exc)
+        logger.debug("delegate_virtuoso: cannot attach the capability note: %s", exc)
     return result
 
 
 registry.register(
-    name="delegate_expert",
-    toolset="delegation",
-    schema=DELEGATE_EXPERT_SCHEMA,
-    handler=lambda args, **kw: delegate_expert(
+    name="delegate_virtuoso",
+    # 名手派发是**独立工具集**，不跟普通子代理挤在 delegation 里（用户 11-25）：
+    # 模型面按组看得见"派普通子代理"和"派名手"是两件事，不会拿 delegate_task
+    # 顺手把名手塞出去。
+    toolset="virtuoso",
+    schema=DELEGATE_VIRTUOSO_SCHEMA,
+    handler=lambda args, **kw: delegate_virtuoso(
         role=args.get("role"),
         goal=args.get("goal"),
         context=args.get("context"),

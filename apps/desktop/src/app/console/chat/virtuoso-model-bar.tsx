@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { getExpertRoles, setExpertRoleModel } from '@/app/chat/sidebar/expert-runs'
+import { getVirtuosoRoles, setVirtuosoRoleModel } from '@/app/chat/sidebar/virtuoso-runs'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -13,7 +13,7 @@ import type { ModelOptionProvider } from '@/types/plobi'
  * 专家卡片底部那条模型选择（用户 11-04）。
  *
  * 「专家的也应该有模型选择框。可以使用和 L2 Agent 不同的模型」——所以这条挂在
- * **角色**上，不是挂在某一次会话上：选完存进 `experts/roles.json`，这个角色以后
+ * **角色**上，不是挂在某一次会话上：选完存进 `virtuosos/roles.json`，这个角色以后
  * 每次出场都用它。清空就是回到继承父 Agent（与普通子代理同一条默认）。
  *
  * 位置与样式照主对话底部那颗胶囊（同一套 `--composer-control-size` 高度与字号），
@@ -25,7 +25,7 @@ const PILL = cn(
   'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
 )
 
-export function ExpertModelBar({ role }: { role: string }) {
+export function VirtuosoModelBar({ role }: { role: string }) {
   const { t } = useI18n()
   const c = t.console
   const [model, setModel] = useState<null | string>(null)
@@ -35,7 +35,7 @@ export function ExpertModelBar({ role }: { role: string }) {
 
   const load = useCallback(async () => {
     try {
-      const body = await getExpertRoles()
+      const body = await getVirtuosoRoles()
       const row = (body?.data?.roles ?? []).find(item => item.key === role)
 
       setModel(row?.model ?? null)
@@ -63,7 +63,7 @@ export function ExpertModelBar({ role }: { role: string }) {
     setSaving(true)
 
     try {
-      const body = await setExpertRoleModel(role, value)
+      const body = await setVirtuosoRoleModel(role, value)
 
       setModel(body?.data?.model ?? null)
       setOpen(false)
@@ -80,8 +80,8 @@ export function ExpertModelBar({ role }: { role: string }) {
     [providers]
   )
 
-  const label = model ? model.split('/').pop() || model : c.expertModelFollow
-  const title = model ? `${c.expertModelHint} · ${model}` : c.expertModelHint
+  const label = model ? model.split('/').pop() || model : c.virtuosoModelFollow
+  const title = model ? `${c.virtuosoModelHint} · ${model}` : c.virtuosoModelHint
 
   if (rows.length === 0) {
     return (
@@ -101,7 +101,7 @@ export function ExpertModelBar({ role }: { role: string }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-80 w-64 overflow-y-auto p-1" side="top" sideOffset={8}>
         <DropdownMenuItem className="text-xs" onSelect={() => void pick('')}>
-          <span className="flex-1 truncate">{c.expertModelFollow}</span>
+          <span className="flex-1 truncate">{c.virtuosoModelFollow}</span>
           {model ? null : <Codicon name="check" size="0.75rem" />}
         </DropdownMenuItem>
         {rows.map(provider => (

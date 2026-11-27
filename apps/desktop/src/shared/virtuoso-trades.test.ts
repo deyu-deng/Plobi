@@ -3,23 +3,23 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { EXPERT_TRADES } from './expert-trades'
+import { VIRTUOSO_TRADES } from './virtuoso-trades'
 
 /**
  * 名手（L3 专家）的分类表只该有一份内容，两处镜像必须逐字对齐。
  *
  * 2026-11-15 之前这段是散的：后端 `ROLES` 写一份键、`ORDER` 再写一份顺序；前端
- * `expert-roles.ts` 手抄一份 `EXPERT_ROLES`、`store/conversation-view.ts` 又手写一份
- * `ExpertRoleKey` 联合类型。加一类要改三处，漏一处不会报错——只会多出一行永远点不开的
+ * `virtuoso-roles.ts` 手抄一份 `VIRTUOSO_ROLES`、`store/conversation-view.ts` 又手写一份
+ * `VirtuosoRoleKey` 联合类型。加一类要改三处，漏一处不会报错——只会多出一行永远点不开的
  * 空行（用户 11-04：「根本点击不了」）。现在后端拆成 `TRADES` / `LABELS` / `DUTIES` /
- * `TOOLSETS` 四张同键平表，前端键只在 `shared/expert-trades.ts` 出现一次，由这条测试对表。
+ * `TOOLSETS` 四张同键平表，前端键只在 `shared/virtuoso-trades.ts` 出现一次，由这条测试对表。
  *
  * 全是静态读文件，不启后端——它盯的是"两边写的是不是同一套词"，不是运行时行为。
  */
 const here = import.meta.dirname ?? ''
 const repoRoot = resolve(here, '../../../..')
-const pyPath = resolve(repoRoot, 'plobi/delegation/expert_roles.py')
-const sidebarPath = resolve(here, '../app/chat/sidebar/expert-roles.ts')
+const pyPath = resolve(repoRoot, 'plobi/delegation/virtuoso_roles.py')
+const sidebarPath = resolve(here, '../app/chat/sidebar/virtuoso-roles.ts')
 
 const py = readFileSync(pyPath, 'utf-8')
 const sidebar = readFileSync(sidebarPath, 'utf-8')
@@ -62,8 +62,8 @@ describe('名手分类表：后端与前端是同一套词', () => {
     expect(backend).toEqual(['file', 'browser', 'software', 'computer'])
   })
 
-  it('前端 EXPERT_TRADES 与后端 TRADES 的键与顺序逐字相同', () => {
-    expect([...EXPERT_TRADES]).toEqual(backend)
+  it('前端 VIRTUOSO_TRADES 与后端 TRADES 的键与顺序逐字相同', () => {
+    expect([...VIRTUOSO_TRADES]).toEqual(backend)
   })
 
   it('后端四张平表键集合完全一致，缺一格就是运行时 KeyError', () => {
@@ -105,7 +105,7 @@ describe('名手分类表：后端与前端是同一套词', () => {
   })
 
   it('前端不再自持第二份键字面量联合（那是第三个真源）', () => {
-    expect(sidebar).not.toMatch(/export type ExpertRoleKey = '/)
-    expect(sidebar).toContain("from '@/shared/expert-trades'")
+    expect(sidebar).not.toMatch(/export type VirtuosoRoleKey = '/)
+    expect(sidebar).toContain("from '@/shared/virtuoso-trades'")
   })
 })

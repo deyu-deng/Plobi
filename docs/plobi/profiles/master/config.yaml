@@ -53,6 +53,7 @@ platform_toolsets:
     - todo
     - clarify
     - delegation
+    - virtuoso
     - plobi_core
   gateway:
     - web
@@ -62,6 +63,7 @@ platform_toolsets:
     - todo
     - clarify
     - delegation
+    - virtuoso
     - plobi_core
 
 plugins:

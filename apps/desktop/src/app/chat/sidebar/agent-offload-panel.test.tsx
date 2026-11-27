@@ -77,7 +77,7 @@ async function renderPanel(rounds: OffloadRoundWithReply[], unattributedReason =
 
   // 台账没读完时整格是 null（连「专家」抽屉都没有），等它上桌再断言——
   // 之前等的是加载句，而加载句早就不画了，于是等了个空。
-  await screen.findByText('Experts')
+  await screen.findByText('Virtuosos')
 
   return view
 }

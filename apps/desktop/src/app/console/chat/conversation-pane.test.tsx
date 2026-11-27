@@ -46,9 +46,9 @@ const EXTERNAL: OpenConversation = {
   vendor: 'qoder'
 }
 
-const EXPERT: OpenConversation = {
+const VIRTUOSO: OpenConversation = {
   agentId: 'Sindri',
-  kind: 'expert',
+  kind: 'virtuoso',
   sessionId: 'kid-1',
   title: '整理三份资料'
 }
@@ -201,7 +201,7 @@ describe('对话卡片：外部软件那条会话', () => {
 describe('对话卡片：一个专家那张嘴', () => {
   it('读它自己的工作日志；第一条任务书已经在抬头里，不在正文重复', async () => {
     api.mockResolvedValue(LOG)
-    renderPane(EXPERT)
+    renderPane(VIRTUOSO)
 
     expect(await screen.findByText('我先读这三份资料。')).toBeTruthy()
     expect(screen.getByText('⚙ read_file')).toBeTruthy()
@@ -212,7 +212,7 @@ describe('对话卡片：一个专家那张嘴', () => {
 
   it('专家只读：没有输入框', async () => {
     api.mockResolvedValue(LOG)
-    renderPane(EXPERT)
+    renderPane(VIRTUOSO)
 
     await screen.findByText('我先读这三份资料。')
 
