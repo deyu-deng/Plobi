@@ -23,6 +23,7 @@ import {
   Trash2,
   Wrench
 } from '@/lib/icons'
+import type { IconComponent } from '@/lib/icons'
 import { exportSession } from '@/lib/session-export'
 import { fmtDateTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -34,12 +35,29 @@ import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { OverlayMain, OverlayNav, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'
+import { sectionsFor } from '../shell/slot-registry'
+import { resolveSlotLabel } from '../shell/slot-labels'
+import { useSlotRegistry } from '../shell/slot-registry-context'
+import { viewRenderer } from '../views'
 
 import { MaintenancePanel } from './maintenance'
 
-export type CommandCenterSection = 'maintenance' | 'sessions' | 'system' | 'usage'
+export type CommandCenterSection = string
 
 const SECTIONS = ['sessions', 'system', 'usage', 'maintenance'] as const satisfies readonly CommandCenterSection[]
+
+/**
+ * 那四段的**图标**（宿主自己的 Lucide 组件）。
+ *
+ * ⚠️ **图标不进 slot 声明表**：声明里只有**数据**，没有组件——那四枚图标是宿主那一族
+ * 自带的（插件加的那一段没有 ⇒ 用宿主给的那枚通用图标）。
+ */
+const SECTION_ICONS: Record<string, IconComponent> = {
+  maintenance: Wrench,
+  sessions: MessageCircle,
+  system: Activity,
+  usage: BarChart3
+}
 
 const LOG_FILES = ['agent', 'errors', 'gateway', 'desktop'] as const
 const LOG_LEVELS = ['ALL', 'INFO', 'WARNING', 'ERROR'] as const
@@ -131,6 +149,17 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
   const pinnedSessionIds = useStore($pinnedSessionIds)
 
   const [section, setSection] = useRouteEnumParam('section', SECTIONS, initialSection ?? 'sessions')
+
+  // 那几段**从 slot 声明表派生**（裁定 239 路线第 11 刀）：出厂那四段 ＋ 插件加的那些
+  // ⇒ 插件加的一段**自动出现**（用户 11-27 12:5x 点的下一块）。
+  const registry = useSlotRegistry()
+  const sections = useMemo(() => sectionsFor(registry, 'command-center'), [registry])
+  const current = sections.find(item => item.id === section)
+  const SectionView = current?.view ? viewRenderer(current.view) : undefined
+  const sectionLabel = resolveSlotLabel(t, current?.labelKey) ?? current?.label ?? section
+  const sectionDescription = current
+    ? cc.sectionDescriptions[current.id as keyof typeof cc.sectionDescriptions]
+    : undefined
 
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<StatusResponse | null>(null)
@@ -296,19 +325,12 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
     <OverlayView closeLabel={cc.close} onClose={onClose}>
       <OverlaySplitLayout>
         <OverlayNav
-          groups={SECTIONS.map(value => ({
-            active: section === value,
-            icon:
-              value === 'sessions'
-                ? MessageCircle
-                : value === 'system'
-                  ? Activity
-                  : value === 'maintenance'
-                    ? Wrench
-                    : BarChart3,
-            id: value,
-            label: cc.sections[value],
-            onSelect: () => setSection(value)
+          groups={sections.map(item => ({
+            active: section === item.id,
+            icon: SECTION_ICONS[item.id] ?? MessageCircle,
+            id: item.id,
+            label: resolveSlotLabel(t, item.labelKey) ?? item.label,
+            onSelect: () => setSection(item.id)
           }))}
         />
 
@@ -317,11 +339,13 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
             {/* Redundant on narrow — the nav dropdown already names the section. */}
             <div className="min-w-0 max-[47.5rem]:hidden">
               <h2 className="text-[length:var(--conversation-text-font-size)] font-semibold text-foreground">
-                {cc.sections[section]}
+                {sectionLabel}
               </h2>
-              <p className="mt-0.5 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-                {cc.sectionDescriptions[section]}
-              </p>
+              {sectionDescription && (
+                <p className="mt-0.5 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+                  {sectionDescription}
+                </p>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {section === 'sessions' && (
@@ -403,7 +427,7 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
             />
           ) : section === 'maintenance' ? (
             <MaintenancePanel />
-          ) : (
+          ) : section === 'system' ? (
             <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
               <div>
                 {status ? (
@@ -492,7 +516,10 @@ export function CommandCenterView({ initialSection, onClose, onDeleteSession, on
                 />
               </div>
             </div>
-          )}
+          ) : SectionView ? (
+            // 插件加的那一段：按它声明的 `view` 把应用里那一页真的渲染出来。
+            <SectionView />
+          ) : null}
         </OverlayMain>
       </OverlaySplitLayout>
     </OverlayView>
