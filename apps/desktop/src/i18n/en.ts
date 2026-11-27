@@ -2633,7 +2633,11 @@ export const en: Translations = {
       skills: 'Capabilities',
       messaging: 'Messaging',
       artifacts: 'Artifacts',
-      console: 'Conductor Console'
+      console: 'Conductor Console',
+      agenda: 'Agenda',
+      cron: 'Cron',
+      'command-center': 'Command Center',
+      settings: 'Settings',
     },
     searchAria: 'Search sessions',
     searchPlaceholder: 'Search sessions…',

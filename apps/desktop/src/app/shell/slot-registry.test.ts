@@ -24,7 +24,7 @@ import {
 
 /** 今天屏上那几段清单（这是契约，不是快照：少一条就是少一格）。 */
 const SCREEN_SIDEBAR_TOP = ['skills', 'messaging', 'artifacts', 'knowledge', 'diary']
-const SCREEN_SIDEBAR_BOTTOM = ['system:settings', 'agents', 'cron', 'agenda', 'gateway-health', 'egress']
+const SCREEN_SIDEBAR_BOTTOM = ['agents', 'gateway-health', 'egress']
 const SCREEN_CHAT_CARD = ['dossier', 'pending', 'mind-pending']
 const SCREEN_WORKSPACE = ['agenda', 'browser', 'files', 'notes', 'review', 'terminal']
 /** 设置屏那八段（用户 11-25 23:3x：设置屏＝第四个位置，一段＝一组配置字段）。 */
@@ -151,8 +151,8 @@ describe('默认插件可以被用户关掉', () => {
 
     // 关掉的是**工作区那个日程页签**
     expect(registry.contentFor('workspace', 'tabs', 'agenda')).toBeUndefined()
-    // 左栏下面那枚日程**还在**（它是另一份 slot，身份不同）
-    expect(registry.contentFor('sidebar', 'bottom', 'agenda')).toBeTruthy()
+    // 左栏**上面那排**那个日程**还在**（它是另一份 slot，身份不同）
+    expect(registry.contentFor('sidebar', 'top', 'agenda')).toBeTruthy()
   })
 
   it('插件贡献的内容同样受用户那句"关掉"约束', () => {
@@ -233,5 +233,36 @@ describe('插件填进来的东西', () => {
 
     expect(sections.map(section => section.id)).not.toContain('voice')
     expect(sections.map(section => section.id)).toContain('model')
+  })
+})
+
+describe('左栏分层（用户 11-25 22:4x 起的口径）', () => {
+  it('**上面那排＝全局的页**：全局的那四条也在里面', () => {
+    const ids = DEFAULT_SLOT_DECLARATION.filter(
+      slot => slot.position === 'sidebar' && slot.region === 'top'
+    ).map(slot => slot.id)
+
+    expect(ids).toEqual(expect.arrayContaining(['agenda', 'cron', 'command-center', 'settings']))
+  })
+
+  it('**展开态底部那两枚＝同形状、作用域是当前这个 Agent**', () => {
+    const bottomNav = DEFAULT_SLOT_DECLARATION.filter(
+      slot => slot.position === 'sidebar' && slot.region === 'bottom-nav'
+    )
+
+    expect(bottomNav.map(slot => slot.id)).toEqual(['capabilities', 'agent-artifacts'])
+    for (const slot of bottomNav) {
+      expect(slot.kind, `${slot.id} 该与上面那排同一种形状`).toBe('entry-row')
+      expect(slot.scope, `${slot.id} 该标着「当前这个 Agent 的」`).toBe('agent')
+    }
+  })
+
+  it('**最下面那排小图标＝这一摊的 ＋ 整机的**（全局的那几条上去了）', () => {
+    const strip = DEFAULT_SLOT_DECLARATION.filter(
+      slot => slot.position === 'sidebar' && slot.region === 'bottom'
+    )
+
+    expect(strip.map(slot => slot.id)).toEqual(['agents', 'gateway-health', 'egress'])
+    expect(strip.find(slot => slot.id === 'agents')?.scope).toBe('agent')
   })
 })

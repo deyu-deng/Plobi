@@ -35,17 +35,17 @@ vi.mock('@/i18n', () => ({
 }))
 
 const ITEMS: readonly StatusbarItem[] = [
-  // 「写脑待批」那一枚 11-16 21:4x 拍定搬进对话卡抬头（`WP-MIND-CONSENT-EVENTS`），
-  // 不再是左栏这一列的成员（`rail-footer.ts::RAIL_FOOTER_IDS` 里没有它了）⇒
-  // 这一列的样例数据改拿「分身」来占第三格。
+  // **11-27 更新（用户 22:4x 的分层口径）**：左栏这一排＝**这一摊的（代理）＋
+  // 整机的（网关／出口）**——全局的那几条（设置·命令中心·排程·日程）上到上面那排了，
+  // 写脑待批 11-16 早搬进对话卡抬头 ⇒ 这一列现在只剩这三枚。
   { icon: <Codicon name="account" size="0.75rem" />, id: 'agents', label: '分身', variant: 'action' },
   { detail: '3 项', icon: <Codicon name="hubot" size="0.75rem" />, id: 'gateway-health', label: '网关', variant: 'menu' },
   // 没有图标、只带读数的那一格：既要有列，也要把数带出来。
-  { detail: '00:12:34', id: 'agenda', label: '日程', variant: 'text' }
+  { detail: '00:12:34', id: 'egress', label: '出口', variant: 'text' }
 ]
 
 /**
- * 带面板的那一格（出口／网关）：面板自己带宽度（`w-auto` 跟着面板走，或 `w-72` 那种定宽）。
+ * 带面板的那一格（出口）：面板自己带宽度（`w-auto` 跟着面板走，或 `w-72` 那种定宽）。
  * 这一格进「⋯」之后，**那张卡片不许再压一个自己的宽度**——11-07 用户截图：出口那一屏
  * 右边被裁掉一块（选中的那颗只剩一块蓝底、「System proxy」整颗不见了），就是这里
  * 写死的 `w-56`（224px）把面板自己的 384px 裁了。
@@ -75,7 +75,7 @@ function openOverflow(items: readonly StatusbarItem[] = ITEMS) {
 
 /** 面板那一格点开：清单换成面板本身，菜单不关。 */
 async function openPanel() {
-  const menu = await openOverflow([...ITEMS, PANEL_ITEM])
+  const menu = await openOverflow([ITEMS[0], ITEMS[1], PANEL_ITEM])
   const row = within(menu).getAllByRole('menuitem').find(item => /出口/.test(item.textContent ?? ''))
 
   fireEvent.click(row as HTMLElement)
@@ -106,7 +106,7 @@ describe('左栏「⋯」里的那些行', () => {
 
   it('读数那一行把数也带出来，不留一个孤零零的词', async () => {
     const menu = await openOverflow()
-    const row = within(menu).getAllByRole('menuitem').find(item => /日程/.test(item.textContent ?? ''))
+    const row = within(menu).getAllByRole('menuitem').find(item => /出口/.test(item.textContent ?? ''))
 
     expect(row?.textContent).toContain('00:12:34')
   })

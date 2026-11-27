@@ -2451,7 +2451,11 @@ export const zhHant = defineLocale({
       skills: '技能與工具',
       messaging: '訊息平台',
       artifacts: '成品',
-      console: '指揮台'
+      console: '指揮台',
+      agenda: '行程',
+      cron: '排程',
+      'command-center': '命令中心',
+      settings: '設定',
     },
     searchAria: '搜尋工作階段',
     searchPlaceholder: '搜尋工作階段…',

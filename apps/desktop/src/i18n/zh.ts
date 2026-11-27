@@ -2773,7 +2773,11 @@ export const zh: Translations = {
       skills: '技能与工具',
       messaging: '消息平台',
       artifacts: '产物',
-      console: '指挥台'
+      console: '指挥台',
+      agenda: '日程',
+      cron: '排程',
+      'command-center': '命令中心',
+      settings: '设置',
     },
     searchAria: '搜索会话',
     searchPlaceholder: '搜索会话…',

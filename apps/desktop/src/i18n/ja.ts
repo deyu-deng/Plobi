@@ -2514,7 +2514,11 @@ export const ja = defineLocale({
       skills: 'スキルとツール',
       messaging: 'メッセージング',
       artifacts: 'アーティファクト',
-      console: '指揮者コンソール'
+      console: '指揮者コンソール',
+      agenda: '予定',
+      cron: 'Cron',
+      'command-center': 'コマンドセンター',
+      settings: '設定',
     },
     searchAria: 'セッションを検索',
     searchPlaceholder: 'セッションを検索…',

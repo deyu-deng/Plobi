@@ -38,6 +38,7 @@ import {
   SKILLS_ROUTE
 } from '../../routes'
 import { createSlotRegistry, sidebarMiddleItems, type SlotRegistry } from '../../shell/slot-registry'
+import { resolveSlotLabel } from '../../shell/slot-labels'
 import { useSlotRegistry } from '../../shell/slot-registry-context'
 import type { SidebarNavItem } from '../../types'
 
@@ -70,7 +71,7 @@ import { SidebarSegment, type SidebarSegmentItem } from './sidebar-segment'
 import { SidebarStrip } from './sidebar-strip'
 
 /**
- * 左栏那几格：**从 slot 声明表派生**（裁定 239）。
+ * 左栏**上面那排**（全局的页）：**从 slot 声明表派生**（裁定 239）。
  *
  * 它们**不是产品常量，是出厂预装的那一批插件**（用户 11-25 12:0x：「内置的表也算插件」）：
  * 用户关掉哪一格（`slots.removed`），那一格就真的不在——不是藏起来。
@@ -88,6 +89,35 @@ export function sidebarNavItems(registry: SlotRegistry): SidebarNavItem[] {
         {
           id: content.id,
           label: content.label ?? '',
+          labelKey: content.labelKey,
+          icon: content.icon ?? 'symbol-misc',
+          route: content.route
+        }
+      ]
+    })
+}
+
+/**
+ * 左栏**展开态底部那两枚**（技能与工具／产物）：**从 slot 声明表派生**。
+ *
+ * 用户 11-25 22:4x：「**下面的**一般是**控制目前显示的这个 Agent 的组件**」——
+ * 它们与上面那排**同一种形状**（一格图标＋文字），**差别在作用域**（这一族＝当前
+ * 这一摊，那一排＝全局的页）⇒ 声明里给每一格标了 `scope`。
+ */
+export function sidebarBottomNavItems(registry: SlotRegistry): SidebarNavItem[] {
+  return registry
+    .slotsFor('sidebar', 'bottom-nav')
+    .filter(slot => slot.kind === 'entry-row')
+    .flatMap(slot => {
+      const content = registry.contentFor('sidebar', 'bottom-nav', slot.id)
+      if (!content) {
+        return []
+      }
+      return [
+        {
+          id: content.id,
+          label: content.label ?? '',
+          labelKey: content.labelKey,
           icon: content.icon ?? 'symbol-misc',
           route: content.route
         }
@@ -441,26 +471,21 @@ export function ChatSidebar({
   const MiddlePanel = middleSlot?.view ? viewRenderer(middleSlot.view) : undefined
   const middleIsHostPanel = middleView === 'agents' || middleView === 'outsourced'
 
-  // 底部这两枚是「本 Agent 的」入口，和上面那排图标同一个形状。
+  // 展开态底部这两枚是「本 Agent 的」入口，**和上面那排同一种形状**（一格图标＋文字）——
+  // 差别在**作用域**（这一族＝当前这一摊，那一排＝全局的页）⇒ 清单来自 slot 声明表。
   //
   // 这里曾经还有第三枚「外包」（send）——11-01 把外包做进中段那枚分段控件之后
   // 它就只剩一个重复的入口，用户点名去掉（「这下面这个外包图标可以去掉了」）。
+  const bottomNavItems = useMemo(() => sidebarBottomNavItems(slotRegistry), [slotRegistry])
   const agentActions = useMemo(
-    () => [
-      {
-        icon: 'extensions',
-        id: 'capabilities',
-        label: s.nav.skills,
-        onClick: () => navigate(capabilitiesHref)
-      },
-      {
-        icon: 'archive',
-        id: 'artifacts',
-        label: s.nav.artifacts,
-        onClick: () => navigate(ARTIFACTS_ROUTE)
-      }
-    ],
-    [capabilitiesHref, navigate, s.nav.artifacts, s.nav.skills]
+    () =>
+      bottomNavItems.map(item => ({
+        icon: item.icon,
+        id: item.id,
+        label: resolveSlotLabel(t, item.labelKey) ?? item.label ?? item.id,
+        onClick: () => navigate(item.id === 'capabilities' ? capabilitiesHref : (item.route ?? ARTIFACTS_ROUTE))
+      })),
+    [bottomNavItems, capabilitiesHref, navigate, t]
   )
 
   const sharedActive = (id: string) =>
@@ -518,11 +543,13 @@ export function ChatSidebar({
                   <SidebarMenuButton
                     className={cn(NAV_BUTTON, sharedActive(item.id) && NAV_BUTTON_ACTIVE)}
                     onClick={() => onNavigate(item)}
-                    tooltip={s.nav[item.id] ?? item.label}
+                    tooltip={resolveSlotLabel(t, item.labelKey) ?? s.nav[item.id] ?? item.label}
                     type="button"
                   >
                     <Codicon className={NAV_ICON} name={item.icon} />
-                    <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {resolveSlotLabel(t, item.labelKey) ?? s.nav[item.id] ?? item.label}
+                    </span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
