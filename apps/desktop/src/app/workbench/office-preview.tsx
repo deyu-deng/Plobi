@@ -20,7 +20,7 @@ import { bakePdfMarks, markColor, markId, type PdfMark, type PdfMarkRect } from 
 import { GenOfficeFileEditor } from './genoffice-editor'
 import { useFileBytes } from './file-bytes'
 import { useFileRevision } from './use-file-revision'
-import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
+import { readSheetModel, SHEET_MAX_BYTES, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
 import { useOfficeScrollMemory } from './use-office-scroll-memory'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -42,6 +42,7 @@ export interface OfficePreviewLabels {
   marksSaved: string
   notePlaceholder: string
   truncated: (rows: number, cols: number) => string
+  tooLarge: (mb: number) => string
   sheet: string
   legacyNote: string
   save: string
@@ -202,6 +203,13 @@ function SheetPreview({
         </span>
       </div>
 
+      {model?.tooLarge ? (
+        <div className="min-h-0 flex-1 overflow-auto bg-white">
+          <p className="px-2 py-1 text-[0.62rem] text-[#666]">
+            {labels.tooLarge(Math.round(SHEET_MAX_BYTES / (1024 * 1024)))}
+          </p>
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto bg-white" ref={sheetScrollRef}>
         <table className="border-collapse text-[0.68rem]">
           <thead>
@@ -240,6 +248,8 @@ function SheetPreview({
         ) : null}
         {legacy ? <p className="px-2 py-1 text-[0.62rem] text-[#666]">{labels.legacyNote}</p> : null}
       </div>
+
+      )}
 
       <PreviewStatus error={error} labels={labels} loading={loading} neutral />
     </div>
