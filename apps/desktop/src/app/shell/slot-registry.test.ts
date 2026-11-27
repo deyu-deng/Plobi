@@ -40,10 +40,10 @@ const SCREEN_SETTINGS_SECTIONS = [
 ]
 
 describe('slot 声明表', () => {
-  it('覆盖宿主留下的三个位置 ＋ 设置屏那一个（**外壳仍是三个**）', () => {
+  it('覆盖宿主留下的三个位置 ＋ 设置屏与命令中心那两块（**外壳仍是三个**）', () => {
     const positions = new Set(DEFAULT_SLOT_DECLARATION.map(slot => slot.position))
 
-    expect([...positions].sort()).toEqual(['chat-card', 'settings', 'sidebar', 'workspace'])
+    expect([...positions].sort()).toEqual(['chat-card', 'command-center', 'settings', 'sidebar', 'workspace'])
   })
 
   it('每条 slot 的必填字段齐', () => {
@@ -51,7 +51,7 @@ describe('slot 声明表', () => {
       expect(slot.id, 'slot 缺 id').toBeTruthy()
       expect(slot.position, `${slot.id} 缺 position`).toBeTruthy()
       expect(slot.region, `${slot.id} 缺 region`).toBeTruthy()
-      expect(['action', 'entry-row', 'panel', 'status-item', 'settings-section'], `${slot.id} 的 kind 不认识`).toContain(
+      expect(['action', 'entry-row', 'panel', 'status-item', 'section'], `${slot.id} 的 kind 不认识`).toContain(
         slot.kind
       )
       expect(Number.isFinite(slot.order), `${slot.id} 缺 order`).toBe(true)
@@ -189,7 +189,7 @@ describe('插件填进来的东西', () => {
       slotId: 'settings/sections/my-section',
       position: 'settings',
       region: 'sections',
-      kind: 'settings-section',
+      kind: 'section',
       id: 'my-section',
       label: '我的一段',
       keys: ['plugins.entries.my-thing.api_key']

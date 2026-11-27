@@ -687,7 +687,7 @@ export function CommandPalette() {
     }
 
     const fieldItems = sections.flatMap(section =>
-      section.keys.map(key => ({
+      (section.keys ?? []).map(key => ({
         icon: section.icon,
         id: `field-${key}`,
         keywords: ['settings', key, section.label, settingsSectionLabel(section)],

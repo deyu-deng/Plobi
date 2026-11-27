@@ -24,7 +24,9 @@ export interface SettingsSection {
   /** 屏上写的名字（出厂那几段走 i18n；插件那一段用自己声明的）。 */
   label: string
   /** 这一段显示哪几个配置字段。 */
-  keys: string[]
+  keys?: string[]
+  /** 这一段显示应用的哪一页（插件加的那一段走它）。 */
+  view?: string
   /** 这一段的分组（宿主的形状契约：这一段怎么分块）。 */
   groups?: { titleKey: string; keys: string[] }[]
   /** 这一段的图标（宿主的：那八段各自的，插件那一段是通用的）。 */

@@ -373,7 +373,7 @@ export function ConfigSettings({
     }
 
     return new Map(
-      sections.map(s => [s.id, s.keys.flatMap(k => (schema[k] ? [[k, schema[k]] as [string, ConfigFieldSchema]] : []))])
+      sections.map(s => [s.id, (s.keys ?? []).flatMap(k => (schema[k] ? [[k, schema[k]] as [string, ConfigFieldSchema]] : []))])
     )
   }, [schema, sections])
 

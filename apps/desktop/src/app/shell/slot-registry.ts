@@ -43,10 +43,10 @@ import {
 import { resolveSlotLabel } from './slot-labels'
 
 /** 宿主留下的三个位置。 */
-export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace' | 'settings'
+export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace' | 'settings' | 'command-center'
 
 /** 宿主声明过的位置（插件自己声明 slot 时，位置只能从这里挑）。 */
-const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace', 'settings']
+const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace', 'settings', 'command-center']
 
 /**
  * 形状家族——**同一族的挂载点，宿主管的规矩一样**。
@@ -63,7 +63,7 @@ const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace',
  * 用户 11-25 12:2x「上面和下面其实差不多」），但**宿主管的东西不同**——上面那排是
  * **导航**（点开去某个页面），下面那排是**状态栏那一件**（内容来自管道、反映一件状态）。
  */
-export type SlotKind = 'action' | 'entry-row' | 'panel' | 'status-item' | 'settings-section'
+export type SlotKind = 'action' | 'entry-row' | 'panel' | 'status-item' | 'section'
 
 /** 一格的形状约束——**宿主定，插件不能越界**。 */
 export interface SlotShape {
@@ -570,7 +570,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'model',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 10,
     shape: { icon: true, label: true },
     props: {},
@@ -585,7 +585,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'chat',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 20,
     shape: { icon: true, label: true },
     props: {},
@@ -600,7 +600,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'appearance',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 30,
     shape: { icon: true, label: true },
     props: {},
@@ -610,7 +610,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'workspace',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 40,
     shape: { icon: true, label: true },
     props: {},
@@ -631,7 +631,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'safety',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 50,
     shape: { icon: true, label: true },
     props: {},
@@ -656,7 +656,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'memory',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 60,
     shape: { icon: true, label: true },
     // 记忆那一段带**分组**（工作记忆／长期记忆／Mind／外部记忆四组）——分组是**宿主的
@@ -729,7 +729,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'voice',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 70,
     shape: { icon: true, label: true },
     props: {},
@@ -779,7 +779,7 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     id: 'advanced',
     position: 'settings',
     region: 'sections',
-    kind: 'settings-section',
+    kind: 'section',
     order: 80,
     shape: { icon: true, label: true },
     props: {},
@@ -810,6 +810,68 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
         'delegation.reasoning_effort',
         'updates.non_interactive_local_changes'
       ],
+      providedBy: 'builtin'
+    }
+  },
+
+  // ── 命令中心 · 那四段（**同一种形状**：一枚导航项＋一块内容）──────────────
+  // 用户 11-27 12:5x 点的下一块 ⇒ 与设置屏那一段**同一族**（`section`），
+  // **不为这一屏另立家族**。出厂那四段的内容是**宿主自己的面板**（会话列表／
+  // 用量／系统／维护）⇒ 它们**没有 view**；插件加的那一段带 `view`
+  // ⇒ 宿主把应用里那一页真的渲染出来。
+  {
+    id: 'sessions',
+    position: 'command-center',
+    region: 'sections',
+    kind: 'section',
+    order: 10,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'sessions',
+      labelKey: 'commandCenter.sections.sessions',
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'system',
+    position: 'command-center',
+    region: 'sections',
+    kind: 'section',
+    order: 20,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'system',
+      labelKey: 'commandCenter.sections.system',
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'usage',
+    position: 'command-center',
+    region: 'sections',
+    kind: 'section',
+    order: 30,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'usage',
+      labelKey: 'commandCenter.sections.usage',
+      providedBy: 'builtin'
+    }
+  },
+  {
+    id: 'maintenance',
+    position: 'command-center',
+    region: 'sections',
+    kind: 'section',
+    order: 40,
+    shape: { icon: true, label: true },
+    props: {},
+    default: {
+      id: 'maintenance',
+      labelKey: 'commandCenter.sections.maintenance',
       providedBy: 'builtin'
     }
   }
@@ -974,25 +1036,34 @@ export function sidebarMiddleItems(registry: SlotRegistry, t: unknown): SidebarM
 // 设置屏那几段：从声明派生
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 设置屏的**一段**（用户 11-25 23:3x：一段＝一组配置字段）。 */
-export interface SettingsSectionDef {
-  /** 这一段的 id（`config:<id>` 那个寻址用它）。 */
+/** 一段（一枚导航项＋一块内容）的声明解析结果。 */
+export interface SectionDef {
+  /** 这一段的 id（`config:<id>`／`?section=<id>` 那个寻址用它）。 */
   id: string
-  /** 屏上写的名字（出厂那几段是英文；插件那一段用自己声明的）。 */
+  /** 屏上写的名字。 */
   label: string
-  /** 这一段显示哪几个配置字段。 */
-  keys: string[]
-  /** 这一段的**分组**（宿主的形状契约：这一段怎么分块）。 */
+  /** 那个名字的 i18n **点号路径**（声明里的 `labelKey`）——插件来的那一段没有 ⇒ 用它自己的 `label`。 */
+  labelKey?: string
+  /** 这一段显示哪几个配置字段（设置屏那一族）。 */
+  keys?: string[]
+  /** 这一段显示应用的哪一页（命令中心那一族；插件加的那一段也走它）。 */
+  view?: string
+  /** 这一段的分组（宿主的形状契约：这一段怎么分块）。 */
   groups?: { titleKey: string; keys: string[] }[]
 }
 
-/** 设置屏该有哪些段（按声明的顺序；插件加的那段自动出现）。 */
-export function settingsSectionsFor(registry: SlotRegistry): SettingsSectionDef[] {
+/**
+ * 某一屏的**那几段**（按声明的顺序；插件加的那段自动出现）。
+ *
+ * 「一段」是一族（`section`）：**一枚导航项＋一块内容**——设置屏那一族与命令中心
+ * 那一族**同一种形状**（用户 11-27 12:5x：不为每一段另立家族）。
+ */
+export function sectionsFor(registry: SlotRegistry, position: SlotPosition, region = 'sections'): SectionDef[] {
   return registry
-    .slotsFor('settings', 'sections')
-    .filter(slot => slot.kind === 'settings-section')
+    .slotsFor(position, region)
+    .filter(slot => slot.kind === 'section')
     .flatMap(slot => {
-      const content = registry.contentFor('settings', 'sections', slot.id)
+      const content = registry.contentFor(position, region, slot.id)
       if (!content) {
         return []
       }
@@ -1003,11 +1074,18 @@ export function settingsSectionsFor(registry: SlotRegistry): SettingsSectionDef[
         {
           id: content.id,
           label: content.label ?? content.id,
-          keys: Array.isArray(content.keys) ? content.keys : [],
+          labelKey: content.labelKey,
+          keys: Array.isArray(content.keys) ? content.keys : undefined,
+          view: content.view ?? (typeof slot.props.view === 'string' ? slot.props.view : undefined),
           groups
         }
       ]
     })
+}
+
+/** 设置屏那几段（用户 11-25 23:3x：一段＝一组配置字段）。 */
+export function settingsSectionsFor(registry: SlotRegistry): SectionDef[] {
+  return sectionsFor(registry, 'settings')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
