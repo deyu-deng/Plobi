@@ -1,3 +1,5 @@
+import { useNavigate } from 'react-router-dom'
+
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { KbdCombo } from '@/components/ui/kbd'
@@ -8,6 +10,8 @@ import { AudioLines, iconSize, Layers3, Loader2, Square, SteeringWheel, Volume2,
 import { formatCombo } from '@/lib/keybinds/combo'
 import { cn } from '@/lib/utils'
 
+import { composerControlsFor } from '../../shell/slot-registry'
+import { useSlotRegistry } from '../../shell/slot-registry-context'
 import type { ConversationStatus } from './hooks/use-voice-conversation'
 import { ModelPill } from './model-pill'
 import type { ChatBarState, VoiceStatus } from './types'
@@ -75,6 +79,8 @@ export function ComposerControls({
 }) {
   const { t } = useI18n()
   const c = t.composer
+  const navigate = useNavigate()
+  const registry = useSlotRegistry()
   const steerCombo = formatCombo('mod+enter')
   const steerLabel = `${c.steer} (${steerCombo})`
 
@@ -119,57 +125,95 @@ export function ComposerControls({
 
   return (
     <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-      <ModelPill compact={compactModelPill} disabled={disabled} model={state.model} />
-      {/* While the agent runs and the user is typing, steer takes over the mic's
-          slot rather than crowding the row with an extra button. In `steer`
-          mode the primary button IS the steer button — two wheels on one row
-          would be noise, so the ghost one stands down. */}
-      {canSteer && busyAction !== 'steer' ? (
-        <Tip label={steerTip}>
-          <Button
-            aria-label={steerLabel}
-            className={GHOST_ICON_BTN}
-            disabled={disabled}
-            onClick={onSteer}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <SteeringWheel className={iconSize.sm} />
-          </Button>
-        </Tip>
-      ) : (
-        <DictationButton disabled={disabled} onToggle={onDictate} state={state.voice} status={voiceStatus} />
-      )}
-      <AutoSpeakButton active={autoSpeak} disabled={disabled} onToggle={onToggleAutoSpeak} />
-      {showVoicePrimary ? (
-        <Tip label={c.startVoice}>
-          <Button
-            aria-label={c.startVoice}
-            className={PRIMARY_ICON_BTN}
-            disabled={disabled}
-            onClick={() => {
-              triggerHaptic('open')
-              conversation.onStart()
-            }}
-            size="icon"
-            type="button"
-          >
-            <AudioLines className={iconSize.sm} />
-          </Button>
-        </Tip>
-      ) : (
-        <Tip label={busyButton.label}>
-          <Button
-            aria-label={busyButton.label}
-            className={PRIMARY_ICON_BTN}
-            disabled={disabled || !canSubmit}
-            type="submit"
-          >
-            {busyButton.icon}
-          </Button>
-        </Tip>
-      )}
+      {/* 那一排**从 slot 声明表派生**（用户 11-27 22:0x 点的第②块）：宿主自己的控件由
+          宿主按 id 渲染（悬停文案照旧跟着状态变）；插件加的那一格＝**图标＋名字＋去哪**，
+          点它跳过去 ⇒ 与左栏那排同一种形状。 */}
+      {composerControlsFor(registry).map(item => {
+        if (item.control === 'model-pill') {
+          return <ModelPill compact={compactModelPill} disabled={disabled} key={item.id} model={state.model} />
+        }
+
+        if (item.control === 'dictation') {
+          // While the agent runs and the user is typing, steer takes over the mic's
+          // slot rather than crowding the row with an extra button. In `steer`
+          // mode the primary button IS the steer button — two wheels on one row
+          // would be noise, so the ghost one stands down.
+          if (canSteer && busyAction !== 'steer') {
+            return (
+              <Tip key={item.id} label={steerTip}>
+                <Button
+                  aria-label={steerLabel}
+                  className={GHOST_ICON_BTN}
+                  disabled={disabled}
+                  onClick={onSteer}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <SteeringWheel className={iconSize.sm} />
+                </Button>
+              </Tip>
+            )
+          }
+
+          return <DictationButton disabled={disabled} key={item.id} onToggle={onDictate} state={state.voice} status={voiceStatus} />
+        }
+
+        if (item.control === 'auto-speak') {
+          return <AutoSpeakButton active={autoSpeak} disabled={disabled} key={item.id} onToggle={onToggleAutoSpeak} />
+        }
+
+        if (item.control === 'primary') {
+          return showVoicePrimary ? (
+            <Tip key={item.id} label={c.startVoice}>
+              <Button
+                aria-label={c.startVoice}
+                className={PRIMARY_ICON_BTN}
+                disabled={disabled}
+                onClick={() => {
+                  triggerHaptic('open')
+                  conversation.onStart()
+                }}
+                size="icon"
+                type="button"
+              >
+                <AudioLines className={iconSize.sm} />
+              </Button>
+            </Tip>
+          ) : (
+            <Tip key={item.id} label={busyButton.label}>
+              <Button
+                aria-label={busyButton.label}
+                className={PRIMARY_ICON_BTN}
+                disabled={disabled || !canSubmit}
+                type="submit"
+              >
+                {busyButton.icon}
+              </Button>
+            </Tip>
+          )
+        }
+
+        // 插件加的那一格：图标＋名字 ⇒ 点它跳过去（它自己的动作是「深」的那一步）。
+        if (!item.route) {
+          return null
+        }
+
+        return (
+          <Tip key={item.id} label={item.label ?? item.id}>
+            <Button
+              aria-label={item.label ?? item.id}
+              className={GHOST_ICON_BTN}
+              onClick={() => navigate(item.route as string)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Codicon name={item.icon ?? 'symbol-misc'} size="0.875rem" />
+            </Button>
+          </Tip>
+        )
+      })}
     </div>
   )
 }

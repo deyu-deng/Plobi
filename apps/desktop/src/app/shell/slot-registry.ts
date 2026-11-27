@@ -43,10 +43,17 @@ import {
 import { resolveSlotLabel } from './slot-labels'
 
 /** 宿主留下的三个位置。 */
-export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace' | 'settings' | 'command-center'
+export type SlotPosition = 'sidebar' | 'chat-card' | 'workspace' | 'settings' | 'command-center' | 'composer'
 
 /** 宿主声明过的位置（插件自己声明 slot 时，位置只能从这里挑）。 */
-const POSITIONS: readonly SlotPosition[] = ['sidebar', 'chat-card', 'workspace', 'settings', 'command-center']
+const POSITIONS: readonly SlotPosition[] = [
+  'sidebar',
+  'chat-card',
+  'workspace',
+  'settings',
+  'command-center',
+  'composer'
+]
 
 /**
  * 形状家族——**同一族的挂载点，宿主管的规矩一样**。
@@ -874,6 +881,55 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       labelKey: 'commandCenter.sections.maintenance',
       providedBy: 'builtin'
     }
+  },
+
+  // ── 输入框 · 右下角那一排（**一格＝一个控件位**）────────────────────────
+  // 用户 11-27 22:0x 问「UI 上的表现是什么」时点名的第②块。出厂那几格各带一个
+  // `props.control`（宿主自己的控件 id）——**声明里只有数据、没有组件**；宿主按 id
+  // 渲染那一格，那几枚的**悬停文案照旧跟着状态变**（那是控件自己的事，不进声明）。
+  //
+  // 插件加的那一格 = **图标＋名字＋去哪**（`route`）⇒ 点它跳过去 ⇒ 与左栏那排
+  // **同一种形状**（`entry-row`）。它自己的动作（要能执行自己的代码）是「深」的那一步。
+  {
+    id: 'model',
+    position: 'composer',
+    region: 'controls',
+    kind: 'entry-row',
+    order: 10,
+    shape: { icon: true, label: true },
+    props: { control: 'model-pill' },
+    default: { id: 'model', providedBy: 'builtin' }
+  },
+  {
+    id: 'dictation',
+    position: 'composer',
+    region: 'controls',
+    kind: 'entry-row',
+    order: 20,
+    shape: { icon: true, label: false },
+    props: { control: 'dictation' },
+    default: { id: 'dictation', providedBy: 'builtin' }
+  },
+  {
+    id: 'auto-speak',
+    position: 'composer',
+    region: 'controls',
+    kind: 'entry-row',
+    order: 30,
+    shape: { icon: true, label: false },
+    props: { control: 'auto-speak' },
+    default: { id: 'auto-speak', providedBy: 'builtin' }
+  },
+  {
+    // 主按钮排最后（它是「发送」那一枚）⇒ 插件加的那几格落在它**前面**。
+    id: 'primary',
+    position: 'composer',
+    region: 'controls',
+    kind: 'entry-row',
+    order: 100,
+    shape: { icon: true, label: false },
+    props: { control: 'primary' },
+    default: { id: 'primary', providedBy: 'builtin' }
   }
 ]
 
@@ -1086,6 +1142,47 @@ export function sectionsFor(registry: SlotRegistry, position: SlotPosition, regi
 /** 设置屏那几段（用户 11-25 23:3x：一段＝一组配置字段）。 */
 export function settingsSectionsFor(registry: SlotRegistry): SectionDef[] {
   return sectionsFor(registry, 'settings')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 输入框右下角那一排：从声明派生
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 输入框右下角**那一格**（一格＝一个控件位）。 */
+export interface ComposerControlDef {
+  /** 这一格的 id。 */
+  id: string
+  /** 宿主自己的控件 id（`model-pill`／`dictation`／`auto-speak`／`primary`）；插件那一格没有。 */
+  control?: string
+  /** 图标名（codicon）——插件那一格用它。 */
+  icon?: string
+  /** 屏上写的名字（插件那一格用它；宿主那几枚的悬停文案跟着状态变 ⇒ 不进声明）。 */
+  label?: string
+  /** 点它去哪儿（插件那一格）。 */
+  route?: string
+}
+
+/** 输入框右下角该有哪些格（按声明的顺序；插件加的那几格自动出现）。 */
+export function composerControlsFor(registry: SlotRegistry): ComposerControlDef[] {
+  return registry
+    .slotsFor('composer', 'controls')
+    .filter(slot => slot.kind === 'entry-row')
+    .flatMap(slot => {
+      const content = registry.contentFor('composer', 'controls', slot.id)
+      if (!content) {
+        return []
+      }
+      const control = typeof slot.props.control === 'string' ? slot.props.control : undefined
+      return [
+        {
+          id: content.id,
+          control,
+          icon: content.icon,
+          label: content.label,
+          route: content.route
+        }
+      ]
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

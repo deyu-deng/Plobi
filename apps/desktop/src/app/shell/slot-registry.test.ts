@@ -40,10 +40,17 @@ const SCREEN_SETTINGS_SECTIONS = [
 ]
 
 describe('slot 声明表', () => {
-  it('覆盖宿主留下的三个位置 ＋ 设置屏与命令中心那两块（**外壳仍是三个**）', () => {
+  it('覆盖宿主留下的三个位置 ＋ 设置屏、命令中心、输入框那一排那几块（**外壳仍是三个**）', () => {
     const positions = new Set(DEFAULT_SLOT_DECLARATION.map(slot => slot.position))
 
-    expect([...positions].sort()).toEqual(['chat-card', 'command-center', 'settings', 'sidebar', 'workspace'])
+    expect([...positions].sort()).toEqual([
+      'chat-card',
+      'command-center',
+      'composer',
+      'settings',
+      'sidebar',
+      'workspace'
+    ])
   })
 
   it('每条 slot 的必填字段齐', () => {
