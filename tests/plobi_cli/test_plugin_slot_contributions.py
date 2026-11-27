@@ -96,6 +96,40 @@ def test_a_contribution_carries_the_slot_shape_it_declares(monkeypatch):
     assert row["view"] == "knowledge"
 
 
+def test_a_contribution_carries_the_search_words_it_declared(monkeypatch):
+    """插件加的那一格**在命令面板里搜得到** ⇒ 它声明的那几个搜索词得带出来。
+
+    那一列（命令面板「跳到某一处」）是从声明表派生的：插件自己声明的搜索词与快捷键
+    action id 一并带过去，宿主不替它猜。
+    """
+    from plobi_cli import plugins
+
+    manifest = _manifest(
+        slots=[
+            {
+                "slot": "sidebar/top/my-thing",
+                "id": "my-thing",
+                "icon": "star",
+                "label": "我的那一格",
+                "route": "/my-thing",
+                "keywords": ["my thing", "my-words", "  ", 42],
+                "action": "nav.my-thing",
+            }
+        ]
+    )
+    fake = types.SimpleNamespace(
+        _plugins={"my-thing": types.SimpleNamespace(manifest=manifest)},
+        _plugin_tool_names=set(),
+    )
+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: fake)
+
+    row = plugins.get_plugin_slot_contributions()[0]
+
+    # 非字符串的与空的那些**不许**带过去（前端那一列搜的是词，不是杂货）。
+    assert row["keywords"] == ["my thing", "my-words"]
+    assert row["action"] == "nav.my-thing"
+
+
 def test_a_declaration_without_a_target_is_ignored(monkeypatch):
     """没写填哪个 slot 的那一条不算数——宿主不认没指定位置的贡献。"""
     from plobi_cli import plugins

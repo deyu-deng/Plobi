@@ -2638,6 +2638,7 @@ export const en: Translations = {
       cron: 'Cron',
       'command-center': 'Command Center',
       settings: 'Settings',
+      starmap: 'Memory Graph',
     },
     searchAria: 'Search sessions',
     searchPlaceholder: 'Search sessions…',

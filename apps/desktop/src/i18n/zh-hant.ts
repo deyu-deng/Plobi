@@ -2456,6 +2456,7 @@ export const zhHant = defineLocale({
       cron: '排程',
       'command-center': '命令中心',
       settings: '設定',
+      starmap: '記憶圖譜',
     },
     searchAria: '搜尋工作階段',
     searchPlaceholder: '搜尋工作階段…',

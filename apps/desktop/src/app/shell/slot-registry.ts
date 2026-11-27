@@ -30,6 +30,7 @@
 
 import {
   AGENDA_ROUTE,
+  AGENTS_ROUTE,
   APP_ROUTES,
   ARTIFACTS_ROUTE,
   COMMAND_CENTER_ROUTE,
@@ -38,7 +39,8 @@ import {
   KNOWLEDGE_ROUTE,
   MESSAGING_ROUTE,
   SETTINGS_ROUTE,
-  SKILLS_ROUTE
+  SKILLS_ROUTE,
+  STARMAP_ROUTE
 } from '../routes'
 
 import { resolveSlotLabel } from './slot-labels'
@@ -112,6 +114,20 @@ export interface SlotContent {
    * schema（键在 `plugins.entries.<plugin_id>.*`）⇒ 插件自己读得到。
    */
   keys?: string[]
+  /**
+   * **搜索词**（命令面板那一列用）：打这几个词能跳到这一格。
+   *
+   * 插件也能声明自己那几个词 ⇒ **插件加的那一格在命令面板里搜得到**
+   * （不写这一项就只能靠名字本身搜）。
+   */
+  keywords?: string[]
+  /**
+   * 这一格对应哪个**快捷键**（`lib/keybinds/actions.ts` 里的 action id）。
+   *
+   * 宿主那几个页用它自己那几个 action id ⇒ 命令面板那一行**自己带出快捷键提示**；
+   * 插件可以填自己注册过的 action id（没注册过就当没有——不报错）。
+   */
+  action?: string
   /** 谁提供的（出厂那一份是 `builtin`）。 */
   providedBy?: string
 }
@@ -193,7 +209,9 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       icon: 'symbol-misc',
       labelKey: 'sidebar.nav.skills',
       providedBy: 'builtin',
-      route: SKILLS_ROUTE
+      route: SKILLS_ROUTE,
+      action: 'nav.skills',
+      keywords: ['skills', 'tools', 'toolsets', 'mcp', 'capabilities']
     }
   },
   {
@@ -209,7 +227,8 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       icon: 'comment',
       labelKey: 'sidebar.nav.messaging',
       providedBy: 'builtin',
-      route: MESSAGING_ROUTE
+      route: MESSAGING_ROUTE,
+      action: 'nav.messaging'
     }
   },
   {
@@ -225,7 +244,8 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       icon: 'files',
       labelKey: 'sidebar.nav.artifacts',
       providedBy: 'builtin',
-      route: ARTIFACTS_ROUTE
+      route: ARTIFACTS_ROUTE,
+      action: 'nav.artifacts'
     }
   },
   {
@@ -241,7 +261,8 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       icon: 'book',
       labelKey: 'sidebar.nav.knowledge',
       providedBy: 'builtin',
-      route: KNOWLEDGE_ROUTE
+      route: KNOWLEDGE_ROUTE,
+      action: 'nav.knowledge'
     }
   },
   {
@@ -257,7 +278,8 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       icon: 'edit',
       labelKey: 'sidebar.nav.diary',
       providedBy: 'builtin',
-      route: DIARY_ROUTE
+      route: DIARY_ROUTE,
+      action: 'nav.diary'
     }
   },
   // 全局的那几条**也上到这一排**（用户 11-27 13:0x 拍的分法）：这一排＝**全局的页**。
@@ -322,7 +344,28 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
       icon: 'gear',
       labelKey: 'sidebar.nav.settings',
       providedBy: 'builtin',
-      route: SETTINGS_ROUTE
+      route: SETTINGS_ROUTE,
+      action: 'nav.settings'
+    }
+  },
+  // 记忆图谱（用户 11-27 22:5x 拍板：「**给一格，放左栏上面那排**」）——
+  // 那一排＝**全局的页**，它是其中一页 ⇒ 与知识库／日记／消息平台同族。
+  // ⚠️ 它今天**只在命令面板与快捷键里**，没有常驻入口；这一格补上。
+  {
+    id: 'starmap',
+    position: 'sidebar',
+    region: 'top',
+    kind: 'entry-row',
+    order: 100,
+    shape: { icon: true, label: true },
+    props: { opens: 'starmap' },
+    default: {
+      id: 'starmap',
+      icon: 'star-full',
+      labelKey: 'sidebar.nav.starmap',
+      providedBy: 'builtin',
+      route: STARMAP_ROUTE,
+      keywords: ['star map', 'memory', 'memories', 'graph', 'learning', 'constellation']
     }
   },
 
@@ -430,7 +473,14 @@ export const DEFAULT_SLOT_DECLARATION: readonly SlotDeclaration[] = [
     shape: { icon: true, label: false },
     scope: 'agent',
     props: { pipeline: 'statusbar', opens: 'overlay' },
-    default: { id: 'agents', icon: 'organization', providedBy: 'builtin' }
+    default: {
+      id: 'agents',
+      icon: 'organization',
+      labelKey: 'agents.title',
+      providedBy: 'builtin',
+      route: AGENTS_ROUTE,
+      action: 'nav.agents'
+    }
   },
   {
     id: 'gateway-health',
@@ -943,6 +993,14 @@ export function slotKey(position: SlotPosition, region: string, id: string): str
 export interface SlotRegistry {
   /** 某个位置上（某块区域里）的 slot，按顺序。 */
   slotsFor(position: SlotPosition, region?: string): SlotDeclaration[]
+  /**
+   * **全部的 slot**，按**声明顺序**（插件自己声明的那几个在后面）。
+   *
+   * 为什么要有这一条：`slotsFor(position)` 按 order 排 ⇒ **跨位置时会把不同区域的
+   * 混在一起**（左栏 top 的 order 10 与 bottom 的 order 10 挨着）。而「按声明的
+   * 顺序」这件事只有**整份声明**说得清（声明表里谁写在前面，谁就排在前面）。
+   */
+  allSlots(): SlotDeclaration[]
   /** 某一格现在有什么（没有就是没有——被关掉了，或还没有人填）。 */
   contentFor(position: SlotPosition, region: string, id: string): SlotContent | undefined
 }
@@ -1032,6 +1090,9 @@ export function createSlotRegistry(options: SlotRegistryOptions = {}): SlotRegis
       return slots
         .filter(slot => slot.position === position && (region === undefined || slot.region === region))
         .sort((a, b) => a.order - b.order)
+    },
+    allSlots(): SlotDeclaration[] {
+      return [...slots]
     },
     contentFor(position: SlotPosition, region: string, id: string): SlotContent | undefined {
       return contentBySlot.get(slotKey(position, region, id))
@@ -1203,6 +1264,74 @@ export function composerControlTarget(control: ComposerControlDef): string | und
     return undefined
   }
   return APP_ROUTES.find(route => route.view === control.view)?.path
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 「跳到某一处」：命令面板那一列的来源
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 「跳到某一处」那一列里的一项。 */
+export interface JumpTarget {
+  /** 这一格的 id。 */
+  id: string
+  /** 屏上写的名字（插件那一格用它自己声明的）。 */
+  label?: string
+  /** 那个名字的 i18n **点号路径**（宿主那几格用它）。 */
+  labelKey?: string
+  /** 图标名（codicon；命令面板那一列的图标另由宿主给，见 `command-palette/nav-extras.ts`）。 */
+  icon?: string
+  /** 去哪儿（这一列的每一项都得有一个落点）。 */
+  route: string
+  /** 这一格对应哪个快捷键（命令面板那一行自己带出提示）。 */
+  action?: string
+  /** 搜索词（打这几个词能跳到这一格）。 */
+  keywords?: string[]
+}
+
+/**
+ * 「跳到某一处」那份清单：**声明表里带落点的那几格**。
+ *
+ * 规矩三条：
+ * 1. **顺序＝声明顺序**（不是代码里另排一份）；
+ * 2. **落点去重**：同一个落点只留一条（技能与工具那一格与「当前这个 Agent 的技能」那一格
+ *    指向同一页 ⇒ 只留前一条）；
+ * 3. **没有落点的不要**：工作区那几页签、对话卡那三枚（它们是**面板**，不是页）不在这一列里。
+ *
+ * ⇒ **插件加的那一格（带 `route` 或 `view`）自动出现在这一列里**，命令面板不再是一份
+ * 手写的清单。
+ */
+export function jumpTargetsFor(registry: SlotRegistry): JumpTarget[] {
+  const seen = new Set<string>()
+  const out: JumpTarget[] = []
+
+  for (const slot of registry.allSlots()) {
+    const content = registry.contentFor(slot.position, slot.region, slot.id)
+
+    if (!content) {
+      continue
+    }
+
+    const route =
+      content.route ?? (content.view ? APP_ROUTES.find(entry => entry.view === content.view)?.path : undefined)
+
+    if (!route || seen.has(route)) {
+      continue
+    }
+
+    seen.add(route)
+
+    out.push({
+      id: content.id,
+      label: content.label,
+      labelKey: content.labelKey,
+      icon: content.icon,
+      route,
+      action: content.action,
+      keywords: content.keywords
+    })
+  }
+
+  return out
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -2778,6 +2778,7 @@ export const zh: Translations = {
       cron: '排程',
       'command-center': '命令中心',
       settings: '设置',
+      starmap: '记忆图谱',
     },
     searchAria: '搜索会话',
     searchPlaceholder: '搜索会话…',

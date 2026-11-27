@@ -2513,10 +2513,16 @@ def get_plugin_slot_contributions() -> List[Dict[str, Any]]:
                 "id": str(entry.get("id") or slot).strip(),
                 "providedBy": getattr(manifest, "key", "") or getattr(manifest, "name", ""),
             }
-            for field in ("icon", "label", "route", "view", "position", "region", "kind"):
+            for field in ("icon", "label", "route", "view", "position", "region", "kind", "action"):
                 value = entry.get(field)
                 if isinstance(value, str) and value:
                     item[field] = value
+            # 搜索词（命令面板那一列用）：插件自己声明的那几个词 ⇒ 它加的那一格**搜得到**。
+            keywords = entry.get("keywords")
+            if isinstance(keywords, list):
+                words = [w.strip() for w in keywords if isinstance(w, str) and w.strip()]
+                if words:
+                    item["keywords"] = words
             order = entry.get("order")
             if isinstance(order, int) and not isinstance(order, bool):
                 item["order"] = order

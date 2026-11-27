@@ -6,6 +6,9 @@ import { useNavigate } from 'react-router-dom'
 
 import { HUD_HEADING, HUD_ITEM, HUD_POSITION, HUD_SURFACE, HUD_TEXT } from '@/app/floating-hud'
 import { setTerminalTakeover } from '@/app/right-sidebar/store'
+import { resolveSlotLabel } from '@/app/shell/slot-labels'
+import { jumpTargetsFor } from '@/app/shell/slot-registry'
+import { useSlotRegistry } from '@/app/shell/slot-registry-context'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { KbdCombo } from '@/components/ui/kbd'
 import { getPlobiConfigRecord, listAllProfileSessions } from '@/plobi'
@@ -17,8 +20,6 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  Cpu,
   Download,
   Egg,
   GitBranch,
@@ -30,18 +31,13 @@ import {
   MessageCircle,
   Monitor,
   Moon,
-  NotebookTabs,
-  Package,
   Palette,
   PawPrint,
-  Pencil,
   Plus,
   RefreshCw,
   Send,
-  Settings,
   Settings2,
   SlidersHorizontal,
-  Starmap,
   Sun,
   Terminal,
   Wrench,
@@ -67,17 +63,10 @@ import { type ThemeMode, useTheme } from '@/themes/context'
 import { isUserTheme, resolveTheme } from '@/themes/user-themes'
 
 import {
-  AGENTS_ROUTE,
-  ARTIFACTS_ROUTE,
   COMMAND_CENTER_ROUTE,
-  CRON_ROUTE,
-  MESSAGING_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
-  DIARY_ROUTE,
-  KNOWLEDGE_ROUTE,
-  SKILLS_ROUTE,
-  STARMAP_ROUTE
+  SKILLS_ROUTE
 } from '../routes'
 import { FIELD_LABELS } from '../settings/constants'
 import { fieldCopyForSchemaKey } from '../settings/field-copy'
@@ -85,6 +74,7 @@ import { prettyName } from '../settings/helpers'
 import { useSettingsSections, type SettingsSection } from '../settings/use-settings-sections'
 
 import { MarketplaceThemePage } from './marketplace-theme-page'
+import { NAV_FALLBACK_ICON, NAV_ICONS } from './nav-extras'
 import { PetInlineToggle, PetPalettePage } from './pet-palette-page'
 
 interface PaletteItem {
@@ -355,6 +345,12 @@ export function CommandPalette() {
 
   const go = useCallback((path: string) => () => navigate(path), [navigate])
 
+  // 「跳到某一处」那份清单**从 slot 声明表派生**（用户 11-27 22:5x）：声明表里**带落点**
+  // 的那几格，按声明顺序、落点去重 ⇒ **插件加的那一格自动出现在这一列里**，
+  // 用户关掉的那一格**真的不在**。
+  const slotRegistry = useSlotRegistry()
+  const jumpTargets = useMemo(() => jumpTargetsFor(slotRegistry), [slotRegistry])
+
   // Step up one nested page (or back to the root list), clearing the filter so
   // the parent page doesn't reopen mid-search.
   const goBack = useCallback(() => {
@@ -430,53 +426,16 @@ export function CommandPalette() {
             label: t.keybinds.actions['view.showTerminal'],
             run: () => setTerminalTakeover(true)
           },
-          {
-            action: 'nav.settings',
-            icon: Settings,
-            id: 'nav-settings',
-            label: cc.nav.settings.title,
-            run: go(SETTINGS_ROUTE)
-          },
-          {
-            action: 'nav.skills',
-            icon: Wrench,
-            id: 'nav-skills',
-            keywords: ['skills', 'tools', 'toolsets', 'mcp', 'capabilities'],
-            label: cc.nav.skills.title,
-            run: go(SKILLS_ROUTE)
-          },
-          {
-            action: 'nav.messaging',
-            icon: MessageCircle,
-            id: 'nav-messaging',
-            label: cc.nav.messaging.title,
-            run: go(MESSAGING_ROUTE)
-          },
-          {
-            action: 'nav.artifacts',
-            icon: Package,
-            id: 'nav-artifacts',
-            label: cc.nav.artifacts.title,
-            run: go(ARTIFACTS_ROUTE)
-          },
-          {
-            action: 'nav.cron',
-            icon: Clock,
-            id: 'nav-cron',
-            keywords: ['schedule', 'jobs'],
-            label: t.shell.statusbar.cron,
-            run: go(CRON_ROUTE)
-          },
-          { action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) },
-          { action: 'nav.knowledge', icon: NotebookTabs, id: 'nav-knowledge', label: t.surface.title, run: go(KNOWLEDGE_ROUTE) },
-          { action: 'nav.diary', icon: Pencil, id: 'nav-diary', label: t.diary.title, run: go(DIARY_ROUTE) },
-          {
-            icon: Starmap,
-            id: 'nav-starmap',
-            keywords: ['star map', 'memory', 'memories', 'skills', 'graph', 'learning', 'constellation'],
-            label: t.starmap.title,
-            run: go(STARMAP_ROUTE)
-          }
+          // 下面那一段**从 slot 声明表派生**（不是另一份手写清单）：声明表里**带落点**
+          // 的那几格 ⇒ 插件加的那一格自动出现在这一列里；用户关掉的那一格**真的不在**。
+          ...jumpTargets.map(target => ({
+            action: target.action,
+            icon: NAV_ICONS[target.id] ?? NAV_FALLBACK_ICON,
+            id: `nav-${target.id}`,
+            keywords: target.keywords,
+            label: resolveSlotLabel(t, target.labelKey) ?? target.label ?? target.id,
+            run: go(target.route)
+          }))
         ]
       },
       ...branchGroup,
@@ -576,7 +535,7 @@ export function CommandPalette() {
         ]
       }
     ]
-  }, [go, settingsSectionLabel, t, worktrees])
+  }, [go, jumpTargets, settingsSectionLabel, t, worktrees])
 
   // The long, granular lists (settings fields, API keys, MCP servers, archived
   // chats) only surface once the user types — otherwise they'd bury the

@@ -2519,6 +2519,7 @@ export const ja = defineLocale({
       cron: 'Cron',
       'command-center': 'コマンドセンター',
       settings: '設定',
+      starmap: 'メモリグラフ',
     },
     searchAria: 'セッションを検索',
     searchPlaceholder: 'セッションを検索…',
