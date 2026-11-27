@@ -10,7 +10,7 @@ import { AudioLines, iconSize, Layers3, Loader2, Square, SteeringWheel, Volume2,
 import { formatCombo } from '@/lib/keybinds/combo'
 import { cn } from '@/lib/utils'
 
-import { composerControlsFor } from '../../shell/slot-registry'
+import { composerControlTarget, composerControlsFor } from '../../shell/slot-registry'
 import { useSlotRegistry } from '../../shell/slot-registry-context'
 import type { ConversationStatus } from './hooks/use-voice-conversation'
 import { ModelPill } from './model-pill'
@@ -194,8 +194,10 @@ export function ComposerControls({
           )
         }
 
-        // 插件加的那一格：图标＋名字 ⇒ 点它跳过去（它自己的动作是「深」的那一步）。
-        if (!item.route) {
+        // 插件加的那一格：图标＋名字 ⇒ 点它去**它声明的那一页**（`route` 直接给路；
+        // `view` ⇒ 应用里那一页的路）。它自己的动作是「深」的那一步。
+        const target = composerControlTarget(item)
+        if (!target) {
           return null
         }
 
@@ -204,7 +206,7 @@ export function ComposerControls({
             <Button
               aria-label={item.label ?? item.id}
               className={GHOST_ICON_BTN}
-              onClick={() => navigate(item.route as string)}
+              onClick={() => navigate(target)}
               size="icon"
               type="button"
               variant="ghost"

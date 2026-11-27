@@ -8,7 +8,12 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { composerControlsFor, createSlotRegistry, type SlotContribution } from '../../shell/slot-registry'
+import {
+  composerControlTarget,
+  composerControlsFor,
+  createSlotRegistry,
+  type SlotContribution
+} from '../../shell/slot-registry'
 
 /** 插件加的那一格（声明式：插件**不在界面上执行代码**）。 */
 const PLUGIN_CONTROL: SlotContribution = {
@@ -58,5 +63,61 @@ describe('输入框右下角那一排', () => {
 
     expect(items.map(item => item.id)).not.toContain('auto-speak')
     expect(items.map(item => item.id)).toContain('primary')
+  })
+})
+
+describe('插件加的那一格点开去哪儿', () => {
+  /** 声明了 `view`（应用里那一页）的那一格。 */
+  const VIEW_CONTROL: SlotContribution = {
+    slotId: 'composer/controls/my-view',
+    position: 'composer',
+    region: 'controls',
+    kind: 'entry-row',
+    id: 'my-view',
+    icon: 'star',
+    label: '我的一页',
+    view: 'knowledge'
+  }
+
+  /** 从那一排里**按 id**取一格（出厂那几格排在前面，不能取第一个）。 */
+  const pick = (contributions: SlotContribution[], id: string) =>
+    controls(contributions).find(item => item.id === id)
+
+  it('声明 `view` ⇒ 落在**应用里那一页**（页名 → 那页的路）', () => {
+    const item = pick([VIEW_CONTROL], 'my-view')
+
+    expect(item?.view).toBe('knowledge')
+    expect(composerControlTarget(item!)).toBe('/knowledge')
+  })
+
+  it('给了 `route` 就走它（**左栏那排也是这条路**）', () => {
+    const item = pick([{ ...VIEW_CONTROL, route: '/my-own-page' }], 'my-view')
+
+    expect(composerControlTarget(item!)).toBe('/my-own-page')
+  })
+
+  it('**没有落点的那一格不画**（不留一个点了没反应的死按钮）', () => {
+    const item = pick(
+      [
+        {
+          slotId: 'composer/controls/my-nothing',
+          position: 'composer',
+          region: 'controls',
+          kind: 'entry-row',
+          id: 'my-nothing',
+          icon: 'star',
+          label: '没落点'
+        }
+      ],
+      'my-nothing'
+    )
+
+    expect(composerControlTarget(item!)).toBeUndefined()
+  })
+
+  it('宿主自己那几格**没有落点**（它们是控件，不是入口）', () => {
+    for (const item of controls()) {
+      expect(composerControlTarget(item), `${item.id} 不该有落点`).toBeUndefined()
+    }
   })
 })

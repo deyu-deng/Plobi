@@ -30,6 +30,7 @@
 
 import {
   AGENDA_ROUTE,
+  APP_ROUTES,
   ARTIFACTS_ROUTE,
   COMMAND_CENTER_ROUTE,
   CRON_ROUTE,
@@ -1158,8 +1159,10 @@ export interface ComposerControlDef {
   icon?: string
   /** 屏上写的名字（插件那一格用它；宿主那几枚的悬停文案跟着状态变 ⇒ 不进声明）。 */
   label?: string
-  /** 点它去哪儿（插件那一格）。 */
+  /** 点它去哪儿（插件那一格直接给路）。 */
   route?: string
+  /** 点它打开**应用里那一页**（插件那一格给页名）——与工作区页签、对话卡那几枚同一个词。 */
+  view?: string
 }
 
 /** 输入框右下角该有哪些格（按声明的顺序；插件加的那几格自动出现）。 */
@@ -1179,10 +1182,27 @@ export function composerControlsFor(registry: SlotRegistry): ComposerControlDef[
           control,
           icon: content.icon,
           label: content.label,
-          route: content.route
+          route: content.route,
+          view: content.view ?? (typeof slot.props.view === 'string' ? slot.props.view : undefined)
         }
       ]
     })
+}
+
+/**
+ * 那一格点开去哪儿（插件那一格）：
+ * - 给了 `route` 就走它（**左栏那排也是这条路**）；
+ * - 给了 `view` ⇒ 走**应用里那一页**（页名 → 那页的路，应用自己那份路由表说了算）；
+ * - 两样都没有 ⇒ **没有落点** ⇒ 那一格不画（不留一个点了没反应的死按钮）。
+ */
+export function composerControlTarget(control: ComposerControlDef): string | undefined {
+  if (control.route) {
+    return control.route
+  }
+  if (!control.view) {
+    return undefined
+  }
+  return APP_ROUTES.find(route => route.view === control.view)?.path
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
