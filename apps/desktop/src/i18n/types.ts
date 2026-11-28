@@ -3441,6 +3441,7 @@ export interface Translations {
       marksSaved: string
       notePlaceholder: string
       truncated: (rows: number, cols: number) => string
+      tooLarge: (mb: number) => string
       sheet: string
       legacyNote: string
       save: string

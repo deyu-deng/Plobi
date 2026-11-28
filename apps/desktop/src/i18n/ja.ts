@@ -3835,6 +3835,7 @@ export const ja = defineLocale({
       marksSaved: 'ファイルに書き込みました',
       notePlaceholder: 'メモの内容',
       truncated: (rows, cols) => `先頭 ${rows} 行 × ${cols} 列のみ表示`,
+      tooLarge: (mb) => `${mb} MB を超えるため解析しません`,
       sheet: 'シート',
       legacyNote: '旧 .xls は値のみのプレビューです。色と結合を保つには .xlsx で保存してください。',
       save: '保存',
