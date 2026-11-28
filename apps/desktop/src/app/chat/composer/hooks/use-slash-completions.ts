@@ -4,11 +4,9 @@ import { useCallback } from 'react'
 import { useI18n } from '@/i18n/context'
 import { sessionTitle } from '@/lib/chat-runtime'
 import {
-  type CommandsCatalogLike,
   desktopSkinSlashCompletions,
   desktopSlashDescription,
   type DesktopThemeCommandOption,
-  filterDesktopCommandsCatalog,
   isDesktopSlashExtensionCommand,
   isDesktopSlashSuggestion
 } from '@/lib/desktop-slash-commands'
@@ -50,6 +48,12 @@ function commandText(value: string): string {
 
 /** How many recent sessions to surface inline before the "Browse all…" entry. */
 const SESSION_INLINE_LIMIT = 7
+
+/** Entries requested per keystroke. The gateway defaults to 30 (the Ink TUI and
+ *  the web popover render the list unclipped), but this popover scrolls, so a
+ *  bare "/" can afford to list every built-in command plus every installed
+ *  skill instead of cutting the skill library off the end. */
+const SLASH_COMPLETION_LIMIT = 200
 
 /** Live `/` completions backed by the gateway's `complete.slash` RPC. */
 export function useSlashCompletions(options: {
@@ -134,29 +138,16 @@ export function useSlashCompletions(options: {
         return { items, query }
       }
 
+      // One completion path for every query, the bare "/" case included: the
+      // backend already expands that to every built-in command plus every
+      // installed skill, and the grouping below separates them. The old
+      // empty-query branch went through `commands.catalog`, which puts skills in
+      // a flat list and never in `categories` — so "/" listed built-ins only and
+      // the skill library stayed invisible until you typed a letter.
       try {
-        if (!query) {
-          const catalog = filterDesktopCommandsCatalog(await gateway.request<CommandsCatalogLike>('commands.catalog'))
-
-          // Prefer the categorized layout so the popover renders section headers
-          // (Session, Tools & Skills, ...). Fall back to the flat list when the
-          // backend didn't categorize.
-          const sections = catalog.categories?.length ? catalog.categories : [{ name: '', pairs: catalog.pairs ?? [] }]
-
-          const items = sections.flatMap(section =>
-            section.pairs.map(([command, meta]) => ({
-              text: command,
-              display: command,
-              group: section.name || undefined,
-              meta
-            }))
-          )
-
-          return { items, query }
-        }
-
         const result = await gateway.request<{ items?: CompletionEntry[]; replace_from?: number }>('complete.slash', {
-          text
+          text,
+          limit: SLASH_COMPLETION_LIMIT
         })
 
         // Arg-completion items (replace_from > 1) carry just the arg stub —
@@ -199,7 +190,12 @@ export function useSlashCompletions(options: {
           : [...decorated].sort((a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group))
 
         return { items, query }
-      } catch {
+      } catch (error) {
+        // Swallowing this used to make a dead `complete.slash` look like "no
+        // matches" in the popover, which is exactly how the empty-query bug was
+        // misdiagnosed. Keep the fallback, but leave a trace.
+        console.warn('[slash] complete.slash failed', error)
+
         return { items: [], query }
       }
     },

@@ -153,6 +153,14 @@ except (ValueError, TypeError):
     _slash_timeout = 45.0
 _SLASH_WORKER_TIMEOUT_S = max(5.0, _slash_timeout)
 
+# complete.slash caps. The default stays at the historical 30 because the Ink
+# TUI and the web slash popover both render `items` unclipped, so a bigger list
+# wrecks their popovers. A bare "/" expands to every built-in command plus every
+# installed skill (~190 entries today), so clients that can host a long list —
+# the desktop app — pass an explicit "limit".
+SLASH_COMPLETION_DEFAULT_LIMIT = 30
+SLASH_COMPLETION_MAX_LIMIT = 500
+
 # When a WebSocket client (the dashboard's embedded-chat tab / desktop app)
 # disconnects, ``tui_gateway.ws`` detaches the transport but intentionally
 # leaves the session parked so a quick reconnect can reattach it (see ws.py).
@@ -13319,6 +13327,17 @@ def _(rid, params: dict) -> dict:
     if not text.startswith("/"):
         return _ok(rid, {"items": []})
 
+    # Cap per request, not per client. A bare "/" legitimately expands to
+    # every built-in command plus every installed skill (~190 entries), so
+    # the old hard [:30] cut skills off the empty-query list entirely — the
+    # desktop popover then showed built-ins only. Clients that want a
+    # shorter list pass an explicit limit.
+    try:
+        limit = int(params.get("limit", SLASH_COMPLETION_DEFAULT_LIMIT))
+    except (TypeError, ValueError):
+        limit = SLASH_COMPLETION_DEFAULT_LIMIT
+    limit = max(1, min(limit, SLASH_COMPLETION_MAX_LIMIT))
+
     try:
         from plobi_cli.commands import SlashCommandCompleter
         from prompt_toolkit.document import Document
@@ -13344,7 +13363,7 @@ def _(rid, params: dict) -> dict:
                 "meta": to_plain_text(c.display_meta) if c.display_meta else "",
             }
             for c in completer.get_completions(doc, None)
-        ][:30]
+        ][:limit]
         text_lower = text.lower()
         extras = [
             {
