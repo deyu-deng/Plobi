@@ -175,6 +175,10 @@ def test_boot_refresh_rewrites_old_fences_without_touching_the_persona(
     assert persona in text
     assert "旧版身份段" not in text
     assert "统筹者" in text
+    # 11-25：名手与客席原先在提示里是「两条都优先」，两边的工具描述又各自自称
+    # 默认，触发条件完全重叠 ⇒ 模型读到两条互斥的强指令。判据改成定序，这条断言
+    # 防它被改回并列的「优先」。
+    assert "名手是默认，客席是特例" in text
     assert refresh_principal_identity_souls() == 0
 
 

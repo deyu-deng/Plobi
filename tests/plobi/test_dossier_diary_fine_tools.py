@@ -289,10 +289,11 @@ def test_dossier_stage_update_touches_one_stage_only(roots):
         "title": "再打磨",
         "detail": "",
         "done": False,
-        # Stage 序列化总带这两格（可选字段、空值也写），旧断言漏了它们。
-        "kind": "",
-        "due": "",
     }
+    # 空着的可选字段**不落盘**：`Stage.to_dict` 有意只写「真有的东西」，免得把用户
+    # 从没写过的 due/kind 塞进档案、下次 diff 变成「谁改了这个阶段」的假信号。
+    # 所以这里断言的是「不存在」，不是「等值空串」。
+    assert "due" not in stages["s2"] and "kind" not in stages["s2"]
     assert stages["s1"]["done"] is True
 
 
