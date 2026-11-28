@@ -20,6 +20,7 @@ const labels: OfficePreviewLabels = {
   marksSaved: 'Written to file',
   notePlaceholder: 'Note text',
   truncated: (rows, cols) => `${rows} × ${cols}`,
+  tooLarge: (mb) => `over ${mb} MB`,
   sheet: 'Sheet',
   legacyNote: '',
   save: 'Save',
