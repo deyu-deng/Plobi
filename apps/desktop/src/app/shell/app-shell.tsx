@@ -13,7 +13,6 @@ import {
   $cardFocusAnimating,
   $fileBrowserOpen,
   $panesFlipped,
-  $shellCards,
   $sidebarAnimating,
   $sidebarOpen,
   FILE_BROWSER_DEFAULT_WIDTH,
@@ -28,24 +27,18 @@ import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from '../layout-constants'
 
 import { useWindowControlsOverlayWidth } from './hooks/use-window-controls-overlay-width'
 import { KeybindPanel } from './keybind-panel'
-import { StatusbarControls, type StatusbarItem } from './statusbar-controls'
 import { TITLEBAR_HEIGHT, titlebarControlsPosition } from './titlebar'
 import { TitlebarControls, type TitlebarTool } from './titlebar-controls'
 
 interface AppShellProps {
   children: ReactNode
-  leftStatusbarItems?: readonly StatusbarItem[]
   leftTitlebarTools?: readonly TitlebarTool[]
   // Fixed-position overlays that must share <main>'s stacking context so pane
   // resize handles (z-20) paint above them. The persistent terminal lives here:
   // hoisting it to the root `overlays` layer (sibling of <main>, z above z-3)
   // would cover every pane's drag handle.
   mainOverlays?: ReactNode
-  onOpenSettings: () => void
   overlays?: ReactNode
-  /** L1: titlebar right-rail button toggles the agenda pane, not the file tree. */
-  rightRail?: { open: boolean; toggle: () => void }
-  statusbarItems?: readonly StatusbarItem[]
   titlebarTools?: readonly TitlebarTool[]
 }
 
@@ -66,13 +59,9 @@ const viewportIsFullscreen = () =>
 
 export function AppShell({
   children,
-  leftStatusbarItems,
   leftTitlebarTools,
   mainOverlays,
-  onOpenSettings,
   overlays,
-  rightRail,
-  statusbarItems,
   titlebarTools
 }: AppShellProps) {
   const sidebarOpen = useStore($sidebarOpen)
@@ -83,7 +72,6 @@ export function AppShell({
   const cardFocusAnimating = useStore($cardFocusAnimating)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const panesFlipped = useStore($panesFlipped)
-  const shellCards = useStore($shellCards)
   const narrowViewport = useMediaQuery(SIDEBAR_COLLAPSE_MEDIA_QUERY)
   const fileBrowserWidthOverride = useStore($paneWidthOverride(FILE_BROWSER_PANE_ID))
   const connection = useStore($connection)
@@ -141,9 +129,9 @@ export function AppShell({
   // between the pane-tool cluster and the system cluster so they don't sit
   // flush against each other. Modeled as N gaps (N - 1 inner + 1 trailing)
   // to keep the formula generic for any pane-tool count.
-  // 卡片模式里顶栏右簇整个不在（设置/快捷键/触感反馈在左下图标条，右栏开关在对话卡抬头）；
-  // 非卡片模式仍是四枚静态系统工具。
-  const systemToolCount = shellCards ? 0 : 4
+  // 顶栏右簇那四枚静态系统工具**整个不在**（设置/快捷键/触感反馈在左下图标条，右栏开关在
+  // 对话卡抬头）——**只有卡片这一副布局了**（用户 11-28 00:1x 把没有卡的那副删了）。
+  const systemToolCount = 0
   const paneToolCount = titlebarTools?.filter(tool => !tool.hidden).length ?? 0
   const systemToolsWidth = `calc(${systemToolCount} * (var(--titlebar-control-size) + 0.25rem))`
 
@@ -195,12 +183,7 @@ export function AppShell({
       }
     >
       {!hideTitlebarControls && (
-        <TitlebarControls
-          leftTools={leftTitlebarTools}
-          onOpenSettings={onOpenSettings}
-          rightRail={rightRail}
-          tools={titlebarTools}
-        />
+        <TitlebarControls leftTools={leftTitlebarTools} tools={titlebarTools} />
       )}
 
       {nativeOverlayWidth > 0 && (
@@ -214,7 +197,7 @@ export function AppShell({
       <main
         className={cn(
           'relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none',
-          shellCards && 'shell-cards',
+          'shell-cards',
           sidebarAnimating && 'shell-sidebar-animating'
         )}
       >
@@ -242,12 +225,6 @@ export function AppShell({
             after PaneShell so it paints over pane content, but its z stays under
             the panes' z-20 resize handles, keeping every pane resizable. */}
         {mainOverlays}
-
-        {/* The compact pop-out drops the statusbar — it's a scratch window, not
-            the full shell. */}
-        {!isSecondaryWindow() && !shellCards && (
-          <StatusbarControls items={statusbarItems} leftItems={leftStatusbarItems} />
-        )}
       </main>
 
 

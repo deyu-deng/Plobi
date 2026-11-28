@@ -789,8 +789,6 @@ export const zh: Translations = {
       system: { label: '跟随系统', description: '跟随系统外观' }
     },
     appearance: {
-    shellCards: '卡片式主界面',
-    shellCardsHint: '对话与右栏浮在渐变底上的两张白卡上；左栏仍直接坐在底上（和 Qoder 一样）。',
       title: '外观',
       intro: '这些是仅桌面端的显示偏好。模式控制明暗；主题控制强调色与对话界面样式。',
       colorMode: '颜色模式',
@@ -2903,7 +2901,7 @@ export const zh: Translations = {
       fullDetail: '不再询问，可自由访问你的文件、终端和网络',
       failed: '权限档位没切过去'
     },
-    footer: { local: '本地', remote: '远程', context: '上下文' },
+    footer: { local: '本地', remote: '远程', context: '上下文', openFolder: '打开这个目录', remoteFolder: '这是远端的目录' },
     placeholderStarting: '正在启动 Plobi…',
     placeholderReconnecting: '正在重新连接 Plobi…',
     placeholderFollowUp: '发送后续消息',

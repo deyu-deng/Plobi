@@ -721,8 +721,6 @@ export const zhHant = defineLocale({
       system: { label: '跟隨系統', description: '跟隨作業系統外觀' }
     },
     appearance: {
-    shellCards: '卡片式主介面',
-    shellCardsHint: '對話與右欄浮在漸變底上的兩張白卡上；左欄仍直接坐在底上（和 Qoder 一樣）。',
       title: '外觀',
       intro: '這些是僅限桌面端的顯示偏好。模式控制亮度；主題控制強調色與聊天介面樣式。',
       colorMode: '色彩模式',
@@ -2578,7 +2576,7 @@ export const zhHant = defineLocale({
       fullDetail: '不再詢問，可自由存取你的檔案、終端與網路',
       failed: '權限層級沒有切換成功'
     },
-    footer: { local: '本機', remote: '遠端', context: '上下文' },
+    footer: { local: '本機', remote: '遠端', context: '上下文', openFolder: '開啟這個資料夾', remoteFolder: '這是遠端的資料夾' },
     placeholderStarting: '正在啟動 Plobi...',
     placeholderReconnecting: '正在重新連線至 Plobi…',
     placeholderFollowUp: '傳送後續訊息',

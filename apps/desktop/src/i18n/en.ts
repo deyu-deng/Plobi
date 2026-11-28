@@ -810,8 +810,6 @@ export const en: Translations = {
       system: { label: 'System', description: 'Follow OS appearance' }
     },
     appearance: {
-    shellCards: 'Card layout',
-    shellCardsHint: 'Put the chat and the right panel on two floating cards over a gradient canvas. The left rail stays on the background, like Qoder.',
       title: 'Appearance',
       intro:
         'These are desktop-only display preferences. Mode controls brightness; theme controls the accent palette and chat surface styling.',
@@ -2765,7 +2763,7 @@ export const en: Translations = {
       fullDetail: 'Never ask — free access to your files, terminal and network',
       failed: 'Could not change the permission level'
     },
-    footer: { local: 'Local', remote: 'Remote', context: 'Context' },
+    footer: { local: 'Local', remote: 'Remote', context: 'Context', openFolder: 'Open this folder', remoteFolder: 'This folder is on the remote machine' },
     placeholderStarting: 'Starting Plobi...',
     placeholderReconnecting: 'Reconnecting to Plobi…',
     placeholderFollowUp: 'Send follow-up',

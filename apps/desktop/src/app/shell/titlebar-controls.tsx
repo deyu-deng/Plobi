@@ -9,18 +9,14 @@ import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
 import {
-  $fileBrowserOpen,
   $panesFlipped,
-  $shellCards,
   $sidebarOpen,
-  toggleFileBrowserOpen,
   togglePanesFlipped,
   toggleSidebarOpen
 } from '@/store/layout'
 
 import { appViewForPath, isOverlayView } from '../routes'
 
-import { useSystemTools } from './system-tools'
 import { titlebarButtonClass } from './titlebar'
 
 export interface TitlebarTool {
@@ -43,53 +39,32 @@ export type SetTitlebarToolGroup = (id: string, tools: readonly TitlebarTool[], 
 interface TitlebarControlsProps extends ComponentProps<'div'> {
   leftTools?: readonly TitlebarTool[]
   tools?: readonly TitlebarTool[]
-  onOpenSettings: () => void
-  /**
-   * When set (L1 secretary shell), the right-rail titlebar button toggles this
-   * pane instead of the file browser — on L1 the file tree is disabled and the
-   * agenda timeline owns the right column.
-   */
-  rightRail?: { open: boolean; toggle: () => void }
 }
 
-export function TitlebarControls({
-  leftTools = [],
-  tools = [],
-  onOpenSettings,
-  rightRail
-}: TitlebarControlsProps) {
+export function TitlebarControls({ leftTools = [], tools = [] }: TitlebarControlsProps) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const systemTools = useSystemTools(onOpenSettings)
-  const fileBrowserOpen = useStore($fileBrowserOpen)
   const sidebarOpen = useStore($sidebarOpen)
   const panesFlipped = useStore($panesFlipped)
-  const shellCards = useStore($shellCards)
 
-  // Each titlebar button controls the pane physically on its side, so a flip
-  // swaps which pane each one toggles. Default: sessions left, file browser
-  // right. Flipped: file browser left, sessions right. On L1 the right column
-  // is the agenda timeline (file browser is disabled), so `rightRail` steers
-  // that button at the agenda pane instead.
-  const fileBrowserEdge = { open: fileBrowserOpen, toggle: toggleFileBrowserOpen }
+  // 顶栏这一枚管的是**带图标的那条侧边栏**（会话栏）：换边换的是整条布局，「收起左栏」
+  // 永远收它，并且跟着它挪到窗口控件那一侧、图标镜像。
   const sessionsEdge = { open: sidebarOpen, toggle: toggleSidebarOpen }
-  const agendaEdge = rightRail ?? fileBrowserEdge
-  const leftEdge = panesFlipped ? agendaEdge : sessionsEdge
-  const rightEdge = panesFlipped ? sessionsEdge : agendaEdge
 
   // 卡片模式（10-31 用户）：换边换的是整条布局，「收起左栏」永远收那个带图标的侧边栏，
   // 并且跟着它挪到窗口控件那一侧、图标镜像；换边按钮留在左上角。
   const sidebarTool: TitlebarTool = {
-    icon: <Codicon name={shellCards && panesFlipped ? 'layout-sidebar-right' : 'layout-sidebar-left'} />,
+    icon: <Codicon name={panesFlipped ? 'layout-sidebar-right' : 'layout-sidebar-left'} />,
     id: 'sidebar',
-    label: (shellCards ? sessionsEdge : leftEdge).open ? t.titlebar.hideSidebar : t.titlebar.showSidebar,
+    label: sessionsEdge.open ? t.titlebar.hideSidebar : t.titlebar.showSidebar,
     onSelect: () => {
       triggerHaptic('tap')
-      ;(shellCards ? sessionsEdge : leftEdge).toggle()
+      sessionsEdge.toggle()
     }
   }
-  const sidebarOnRight = shellCards && panesFlipped
+
+  const sidebarOnRight = panesFlipped
 
   const leftToolbarTools: TitlebarTool[] = [
     ...(sidebarOnRight ? [] : [sidebarTool]),
@@ -106,20 +81,10 @@ export function TitlebarControls({
     ...leftTools
   ]
 
-  const rightSidebarTool: TitlebarTool = {
-    icon: <Codicon name="layout-sidebar-right" />,
-    id: 'right-sidebar',
-    label: rightEdge.open ? t.titlebar.hideRightSidebar : t.titlebar.showRightSidebar,
-    onSelect: () => {
-      triggerHaptic('tap')
-      rightEdge.toggle()
-    }
-  }
-
-  // 卡片模式里这三枚在左下图标条（用户 10-30），顶栏只剩左栏开关与换边。
+  // 这三枚在左下图标条（用户 10-30），顶栏只剩左栏开关与换边。
   // 右栏开关整套住进对话卡抬头（10-31 用户：「点了之后图标又回到顶栏」），顶栏不再留重开。
-  const showSystemTools = !shellCards
-  const showRightRailTool = !shellCards
+  // ⚠️ **只有卡片这一副布局了**（用户 11-28 00:1x）⇒ 顶栏那两支（系统工具＋右栏开关）
+  // **整条退役**。
 
   // While a full-screen overlay (settings, command center, …) is open it should
   // visually own the window. These control clusters are `fixed` at a higher
@@ -129,9 +94,6 @@ export function TitlebarControls({
     return null
   }
 
-  const visibleSystemTools = systemTools.filter(tool => !tool.hidden)
-  const settingsTool = visibleSystemTools.find(tool => tool.id === 'settings')
-  const visibleSystemToolsBeforeSettings = visibleSystemTools.filter(tool => tool.id !== 'settings')
   const visiblePaneTools = tools.filter(tool => !tool.hidden)
 
   return (
@@ -166,18 +128,12 @@ export function TitlebarControls({
         </div>
       )}
 
-      {(showSystemTools || showRightRailTool || sidebarOnRight) && (
+      {sidebarOnRight && (
         <div
           aria-label={t.shell.appControls}
           className="fixed right-(--titlebar-tools-right) top-(--titlebar-controls-top) z-70 flex flex-row items-center justify-end gap-x-1 pointer-events-auto select-none [-webkit-app-region:no-drag]"
         >
-          {showSystemTools &&
-            visibleSystemToolsBeforeSettings.map(tool => (
-              <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
-            ))}
-          {showSystemTools && settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
-          {showRightRailTool && <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />}
-          {sidebarOnRight && <TitlebarToolButton navigate={navigate} tool={sidebarTool} />}
+          <TitlebarToolButton navigate={navigate} tool={sidebarTool} />
         </div>
       )}
     </>

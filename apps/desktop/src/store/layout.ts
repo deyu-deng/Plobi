@@ -10,13 +10,10 @@ import { setMindPendingOpen } from './mind-pending'
 import { $paneStates, ensurePaneRegistered, setPaneOpen, setPaneWidthOverride, togglePane } from './panes'
 
 // 主界面「卡片壳」：渐变底 + 对话/右栏两张白卡，左栏不上卡（用户 10-30 定）。
-// 存成偏好而不是写死：他不喜欢时能关回铺满的旧样子。
-export const SHELL_CARDS_STORAGE_KEY = 'plobi.desktop.shellCards'
-export const $shellCards = persistentAtom(SHELL_CARDS_STORAGE_KEY, true, Codecs.bool)
-
-export function setShellCards(value: boolean): void {
-  $shellCards.set(Boolean(value))
-}
+//
+// ⚠️ **只有这一副了**（用户 11-28 00:1x：「我们不要之前没有卡的布局了。删除了。就用现在的
+// 实现。」）⇒ 曾经那枚「卡片式主界面」开关与 `$shellCards` 偏好**一并退役**：留着一枚
+// 没人能再关的开关＝留着一段没有出口的代码。
 
 // 对话卡 ↔ 右栏卡互换（用户 10-31：拖一张卡到另一张上即换位）。持久化，
 // 因为这是"你把工作台摆在哪边"的决定，不该重开一次就忘掉。

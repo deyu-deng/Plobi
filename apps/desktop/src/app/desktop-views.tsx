@@ -2,9 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 
-import { cn } from '@/lib/utils'
 import { $openConversation, closeConversation } from '@/store/conversation-view'
-import { $shellCards } from '@/store/layout'
 
 import { ChatSurface, type ChatSurfaceProps } from './console/chat/chat-surface'
 import { ConversationPane } from './console/chat/conversation-pane'
@@ -33,7 +31,6 @@ export function SecretaryCenterPane({
   edgeControls?: CardEdgeControls
   submit?: ChatSurfaceProps['submit']
 }) {
-  const shellCards = useStore($shellCards)
   const conversation = useStore($openConversation)
   const scopeId = chatScope?.kind === 'agent' ? chatScope.id : null
 
@@ -54,15 +51,20 @@ export function SecretaryCenterPane({
 
   if (active) {
     return (
-      <div className={cn('flex h-full min-h-0 flex-col', !shellCards && 'pt-[var(--titlebar-height)]')}>
-        <ConversationPane conversation={active} showHeader={shellCards} />
+      <div className="flex h-full min-h-0 flex-col">
+        <ConversationPane conversation={active} showHeader />
       </div>
     )
   }
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col', !shellCards && 'pt-[var(--titlebar-height)]')}>
-      {shellCards ? <ChatTopBar edgeControls={edgeControls} scope={chatScope} /> : null}
+    <div className="flex h-full min-h-0 flex-col">
+      {/* 对话卡自己的抬头（**只有卡片这一副布局了**——用户 11-28 00:1x 把没有卡的那副删了）。
+
+          ⚠️ **这里不再自己让顶栏那一条**：卡片布局里画布已经让过（`styles.css:2028`
+          `padding-top: calc(var(--titlebar-height) + 6px)`）⇒ 这一层再让一次，卡面顶部
+          就多出一条空带（正是 11-10 那个「顶栏的高度还会变化」的病根）。 */}
+      <ChatTopBar edgeControls={edgeControls} scope={chatScope} />
       <div className="flex min-h-0 flex-1 flex-col">
         <ChatSurface
           cancel={cancel}
