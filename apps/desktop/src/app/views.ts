@@ -12,12 +12,13 @@
  * ⚠️ 壳里那几份懒加载 import 指向的是**同一个模块**（同一份组件只有一处实现），
  * 这里只是多一张「view → 组件」的对应表。
  */
-import { lazy } from 'react'
+import { createElement, lazy } from 'react'
 import type { ComponentType } from 'react'
 
 import { DossierFace } from './dossier/dossier-panel'
 import { MindPendingFace } from './mind-pending-overlay'
 import { PendingTicketsFace } from './shell/pending-tickets'
+import { PluginFrame } from './shell/plugin-frame'
 
 /**
  * 一个 view 的渲染器。
@@ -29,6 +30,9 @@ import { PendingTicketsFace } from './shell/pending-tickets'
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ViewRenderer = ComponentType<any>
+
+/** 插件自己的界面那个 view 的前缀（``plugin:<插件目录名>``）。 */
+export const PLUGIN_VIEW_PREFIX = 'plugin:'
 
 /**
  * 这里放**不带 props 就能渲染**的那些。
@@ -50,5 +54,17 @@ const VIEW_RENDERERS: Record<string, ViewRenderer> = {
 
 /** 一个 view 的渲染器（没有就是没有——插件声明了一个宿主没有的 view ⇒ 那一格不渲染）。 */
 export function viewRenderer(view: string): ViewRenderer | undefined {
+  // 插件自己的界面（深档机制第三刀）：`plugin:<插件目录名>` ⇒ 那个插件的 `ui/` 产物
+  // 跑在**独立 origin** 的 iframe 里（`plobi-plugin://`）⇒ 碰不到宿主 DOM 与内存。
+  if (view.startsWith(PLUGIN_VIEW_PREFIX)) {
+    const dir = view.slice(PLUGIN_VIEW_PREFIX.length).trim()
+
+    if (!dir || dir.includes('/') || dir.includes('\\')) {
+      return undefined
+    }
+
+    return () => createElement(PluginFrame, { dir, title: dir })
+  }
+
   return VIEW_RENDERERS[view]
 }

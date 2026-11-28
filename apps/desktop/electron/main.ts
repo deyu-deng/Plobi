@@ -154,6 +154,7 @@ import { convertLegacyOffice } from './office-convert'
 import { readDirForIpc } from './fs-read-dir'
 import { statFileForIpc } from './fs-stat'
 import { listWorkspaceApplications, openWorkspaceWithApplication } from './workspace-open'
+import { registerPluginProtocol, registerPluginScheme } from './plugin-protocol-wiring'
 import { probeGatewayWebSocket } from './gateway-ws-probe'
 import { scanGitRepos } from './git-repo-scan'
 import {
@@ -970,6 +971,9 @@ protocol.registerSchemesAsPrivileged([
     }
   }
 ])
+
+// 插件界面的独立 origin（深档机制第三刀）——**必须在 app ready 之前**注册特权。
+registerPluginScheme()
 
 function registerMediaProtocol() {
   protocol.handle(MEDIA_PROTOCOL, async request => {
@@ -13356,6 +13360,17 @@ app.whenReady().then(() => {
 
   installMediaPermissions()
   registerMediaProtocol()
+  // 插件界面的**独立 origin**（深档机制第三刀 · 规格 specs/plugin-sandbox.md §2.3）：
+  // 插件的 `ui/` 产物从 `plobi-plugin://<插件目录名>/` 发出去（独立 origin ＋ 不可放宽的
+  // CSP ＋ 路径不许跑出 `ui/` 那一格）⇒ 插件的界面碰不到宿主 DOM 与内存。
+  // 插件目录在两处：用户那份（`$PLOBI_HOME/plugins`）与随包那份（开发态＝仓里的
+  // `plugins/`，装机态＝resources 里的 `plugins/`）。
+  registerPluginProtocol([
+    path.join(PLOBI_HOME, 'plugins'),
+    IS_PACKAGED && process.resourcesPath
+      ? path.join(process.resourcesPath, 'plugins')
+      : path.resolve(APP_ROOT, '..', '..', 'plugins')
+  ])
   installEmbedReferer()
   registerDeepLinkProtocol()
   ensureWslWindowsFonts()
