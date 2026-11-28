@@ -50,6 +50,11 @@ from plobi_constants import get_plobi_home
 from utils import env_var_enabled, fast_safe_load
 from plobi_cli.config import cfg_get
 from plobi_cli.middleware import OBSERVER_SCHEMA_VERSION, VALID_MIDDLEWARE
+from plobi_cli.plugin_capabilities import (
+    PLUGIN_CAPABILITIES,
+    build_plugin_capabilities,
+    capability_grantable,
+)
 
 
 def get_bundled_plugins_dir() -> Path:
@@ -306,44 +311,8 @@ _VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform
 # 用户 11-28 14:1x 拍板：深档（带代码的）插件**声明它要什么**，宿主**逐项注入**
 # ——「权限＝宿主注入哪几个接口」（Extism 的形状：插件的 import 集合就是它的权限集合）。
 #
-# **能力名是闭集**：宿主认得下面这几个；**别的名字一律不认** ⇒ 那个插件
-# **装不上并把原因说清**（不是静默忽略——裁定 239 补记 1「失败可见」）。
-PLUGIN_CAPABILITIES: frozenset[str] = frozenset(
-    {
-        "fs.read",
-        "fs.write",
-        "net.fetch",
-        "config.read",
-        "config.write",
-        "model.invoke",
-        "tools.register",
-        "ui.render",
-    }
-)
-
-# 哪几项能力**必须有边界**才可放行（**缺边界 ⇒ 默认拒绝**，不是「不设限」）。
-# 抄 Extism 的 `allowed_hosts`／`allowed_paths`：那两项缺省＝**不给**。
-_CAPABILITY_REQUIRES_LIMIT: Dict[str, Tuple[str, str]] = {
-    "net.fetch": ("net", "hosts"),
-    "fs.read": ("fs", "paths"),
-    "fs.write": ("fs", "paths"),
-}
-
-
-def capability_grantable(capability: str, limits: Dict[str, Any]) -> bool:
-    """这项能力**能不能放行**（缺边界 ⇒ 默认拒绝；规格 §2.1）。"""
-    need = _CAPABILITY_REQUIRES_LIMIT.get(capability)
-    if need is None:
-        return True
-
-    group, key = need
-    values = limits.get(group)
-    if not isinstance(values, dict):
-        return False
-
-    listed = values.get(key)
-
-    return isinstance(listed, list) and bool(listed)
+# 闭集与「放行判定」住在 `plobi_cli/plugin_capabilities.py`（单向依赖：这里引它），
+# 窄接口的实现也在那儿。
 
 
 @dataclass
@@ -435,6 +404,11 @@ class PluginContext:
         self._manager = manager
         # Lazy-built host-owned LLM facade — see ctx.llm property below.
         self._llm: Any = None
+        # **宿主注入的窄接口**（深档机制第二步 · 规格 specs/plugin-sandbox.md §2.2）：
+        # 插件拿到的是**窄对象**，不是环境 —— 没被放行的能力**连属性都没有**。
+        # ⚠️ 这是**形状**不是牢笼：进程内的 Python 插件仍能自己 import os ⇒
+        # 「只能碰它声明的」要等**进程隔离**那一步才真正成立（照实说，见规格 §2.2）。
+        self.capabilities = build_plugin_capabilities(manifest)
 
     # -- host-owned LLM access ----------------------------------------------
 
