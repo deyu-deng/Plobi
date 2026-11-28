@@ -471,14 +471,17 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
     # 派活四要素（`WP-OFFLOAD-BRIEF`，11-22）：目标/产出/可用/边界。
     # 给了哪几样就拼进正文——缺的不留空标题，免得它照着空标题自己编边界出来；
     # 缺哪样也不拒，只是当场说出来（缺边界的活十有八九会停下来等一句授权）。
-    from plobi.delegation.brief import check_brief, compose_brief, gaps_hint
+    from plobi.delegation.brief import check_brief, compose_brief, gaps_hint, rationale_hint
 
     deliverable = str(args.get("deliverable") or "").strip()
     tools_hint = str(args.get("tools") or "").strip()
     bounds = str(args.get("bounds") or "").strip()
+    # 第五段是软项（`WP-DISPATCH-VERDICT`，11-25）：写清"为什么拆成这样、替它定死了哪几条"。
+    # 只传结论不传决策，回来就是两份互相打架的成品；但缺了不拦，只把代价说一句。
+    rationale = str(args.get("rationale") or "").strip()
     brief_gaps = check_brief(task, deliverable, tools_hint, bounds)
-    if deliverable or tools_hint or bounds:
-        task = compose_brief(task, deliverable, tools_hint, bounds)
+    if deliverable or tools_hint or bounds or rationale:
+        task = compose_brief(task, deliverable, tools_hint, bounds, rationale)
 
     # 裁定 215：外包改成**派发前**预授权票，不再是事后补的追溯票。
     # 这一发是人（或域 Router）主动调用工具，等于已放行 ⇒ 直接 active；
@@ -580,6 +583,10 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
         # 缺项不是错误，是这一趟的**已知风险**：读的人知道它为什么可能半路停下来。
         payload["brief_gaps"] = brief_gaps
         payload["brief_hint"] = gaps_hint(brief_gaps)
+    why_gap = rationale_hint(rationale)
+    if why_gap:
+        # 软项，和 brief_gaps 分开放：它不拦派活，也不该被读成"这趟要出问题"。
+        payload["rationale_hint"] = why_gap
     if ledger_row.waiting_on:
         payload["waiting_on"] = ledger_row.waiting_on
     if ledger_row.external_session:
@@ -638,9 +645,12 @@ RUN_SCHEMA = {
     "description": (
         "把**一整段能独立验收**的活交给本机的外部 AI 软件，"
         "你自己只负责拆活、验收、把结果拼回用户的话。"
-        "**默认先想到它**：用户点名某台软件，或这段活是一整块（写文件、跑脚本、查资料出成品）"
-        "且不需要本会话的上下文时，先 external_offload_status 看谁可用，再交出去——"
-        "不要自己从头吭哧吭哧做完。"
+        "**它不是默认选项**：动文件、跑命令、开网页、动系统这四类活默认给名手"
+        "（`delegate_virtuoso` 派出的名手），只有**名手够不着**才交客席，够不着只有三种："
+        "① 要用这家软件里的登录态或账号；② 要用这家模型独有的判断力或独家能力；"
+        "③ 上次就是这家干的、这次要接着那条会话往下说。三条一条都不成立就别开客席——"
+        "它派出去就飞了，我们只能等，且它一趟失败别派第二趟。（用户点名了某台软件时例外："
+        "点了就交给点名那家。）"
         "别外包：一句话能答的、必须用本会话上下文的（继续上一轮、引用我们刚说的话）、"
         "以及目的地在 Plobi 自己那几个代码仓里的（会被拒）。"
         "交完必须回报：哪一段是它干的、产出落在哪个路径 + sha256、耗时、用量或『未知』。"
@@ -663,6 +673,11 @@ RUN_SCHEMA = {
             "bounds": {"type": "string", "description":
                 "四要素之四：不许做什么（改别的文件、装东西、动远端、花钱）。"
                 "**这一项最省事也最值钱**：写清边界，它就不会半路停下来等你授权。"},
+            "rationale": {"type": "string", "description":
+                "为什么拆成这样、把哪几条替它定死了（如「只取 2025 之后的数据，因为旧的那批口径改过」）。"
+                "**动作本身带着一串你没说出口的决定**：为什么切两半、先做哪半、哪儿不许自己发挥。"
+                "只传结论不传这些，两个手下各自按不同假设动手，回来是两份互相打架的成品，还得你去合。"
+                "不写不拦，只是这一趟回来你可能得从成品里反推它当初怎么想的。"},
             "cwd": {"type": "string", "description": "它干活的项目目录（产出就落这里）。"},
             "agent": {"type": "string", "description":
                 "交给谁；名字只认 external_offload_status 返回的那份本机清单，别照下面任何一句示例猜。"
