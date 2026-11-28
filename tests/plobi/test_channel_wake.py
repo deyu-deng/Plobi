@@ -54,6 +54,10 @@ def CH(PKG):
 class _FakeProc:
     pid = 4321
 
+    def poll(self):
+        """还活着——`Popen` 之后 `_verify_spawn` 要问这一句。"""
+        return None
+
 
 def _entry(name: str = "agenda"):
     from plobi.agents.registry import AgentEntry
@@ -77,6 +81,11 @@ def spawn(WK, tmp_path, monkeypatch):
         return _FakeProc()
 
     monkeypatch.setattr(WK.subprocess, "Popen", _fake_popen)
+    # 观察窗在真机上要 6 秒，测试里缩到可以忽略——判据本身不变。
+    monkeypatch.setattr(WK, "WAKE_VERIFY_SECONDS", 0.05)
+    # 命令行可跑性（`plobi_cli.plobi_bin.plobi_argv_runnable`）在真机上靠 PATH，
+    # 测试机不一定有 `plobi`。这里默认放行，专门那一枚用例自己改成 False。
+    monkeypatch.setattr(WK, "_argv_runnable", lambda argv: True)
     monkeypatch.setattr(
         WK.AA,
         "build_child_command",
@@ -139,6 +148,88 @@ def test_a_failed_spawn_is_reported_not_raised(WK, tmp_path, monkeypatch):
 
     assert ok is False
     assert "叫不醒" in note
+
+
+def test_a_host_exe_argv_is_refused_before_spawn(WK, spawn, monkeypatch, tmp_path):
+    """宿主 exe + `-m` 这种形状没有解释器去读——不许起进程，更不许报成已叫醒。
+
+    11-23 那五个假 `woke=true` 就是这么来的：argv[0] 是 Electron 壳，
+    `CreateProcess` 照样成功，孩子几秒后带着 GPU cache 报错死掉。
+    """
+    monkeypatch.setattr(WK, "_argv_runnable", lambda argv: False)
+
+    ok, note = WK.wake_agent(_entry(), "sess-9", sender="L1")
+
+    assert ok is False, "起不来的命令不许报成「已叫醒」"
+    assert "叫不醒" in note and "待重放" in note
+    assert spawn == [], "判定不成立就不该起进程"
+    pending = list((tmp_path / "pending" / "wake").glob("*.json"))
+    assert len(pending) == 1, "叫不醒的这一条必须留待重放"
+    payload = json.loads(pending[0].read_text(encoding="utf-8"))
+    assert payload["agent"] == "agenda" and payload["session"] == "sess-9"
+    assert payload["reason"], "待重放必须带上为什么没叫醒"
+
+
+def test_a_child_that_dies_at_once_is_not_reported_as_woken(WK, spawn, monkeypatch, tmp_path):
+    """`Popen` 返回 ≠ 活着。立刻退出的孩子必须报失败，并带上日志尾巴。
+
+    这一枚是 11-23 假唤醒的正面回归：壳进程起来了、几秒内死，旧实现照样
+    `return True, "已叫醒它"`，还把死 pid 写进 marker，让下一次唤醒判「过期」再假一遍。
+    """
+
+    class _DiesAtOnce:
+        pid = 5150
+
+        def poll(self):
+            return 1
+
+    def _fake_popen(argv, **kwargs):
+        (tmp_path / "wake.log").write_text(
+            "Unable to move the cache: 拒绝访问 (0x5)\nGpu Cache Creation failed: -2",
+            encoding="utf-8",
+        )
+        return _DiesAtOnce()
+
+    monkeypatch.setattr(WK.subprocess, "Popen", _fake_popen)
+
+    ok, note = WK.wake_agent(_entry(), "sess-10", sender="L1")
+
+    assert ok is False
+    assert "退出码 1" in note and "拒绝访问" in note, "死因要能直接看出是什么把进程带走的"
+    marker = tmp_path / "wake" / f"{WK._safe_slug('agenda')}.json"
+    assert not marker.exists(), "没起来就不许留「它在跑」的标记"
+    assert list((tmp_path / "pending" / "wake").glob("*.json")), "叫不醒的要留待重放"
+
+
+def test_a_queued_wake_rides_along_and_is_cleared_once_it_starts(
+    WK, spawn, monkeypatch, tmp_path
+):
+    """攒下的那条不许躺在磁盘上装死：这一趟要说给它听，真起来了才销账。"""
+    monkeypatch.setattr(WK, "_argv_runnable", lambda argv: False)
+    first_ok, _ = WK.wake_agent(_entry(), "sess-11", sender="L1")
+    assert first_ok is False
+    assert len(list((tmp_path / "pending" / "wake").glob("*.json"))) == 1
+
+    monkeypatch.setattr(WK, "_argv_runnable", lambda argv: True)
+    ok, _ = WK.wake_agent(_entry(), "sess-12", sender="L1")
+
+    assert ok is True
+    prompt = spawn[-1]["argv"][-1]
+    assert "没被叫醒" in prompt, "待重放的那几条必须交代给被叫醒的这一轮"
+    assert not list((tmp_path / "pending" / "wake").glob("*.json")), "真起来了就该销账"
+
+
+def test_another_agents_queue_is_not_touched(WK, spawn, monkeypatch, tmp_path):
+    """欠账是按人记的：叫醒乙不许把甲的那条销掉，也不许塞进乙的提示词。"""
+    monkeypatch.setattr(WK, "_argv_runnable", lambda argv: False)
+    WK.wake_agent(_entry("agenda"), "sess-13", sender="L1")
+
+    monkeypatch.setattr(WK, "_argv_runnable", lambda argv: True)
+    ok, _ = WK.wake_agent(_entry("namer"), "sess-14", sender="L1")
+
+    assert ok is True
+    assert len(list((tmp_path / "pending" / "wake").glob("*.json"))) == 1, "别人的账不许销"
+    assert "没被叫醒" not in spawn[-1]["argv"][-1], "别人的欠账不关它的事"
 
 
 class _FakeDB:
@@ -295,3 +386,74 @@ def test_say_carries_a_reply_to_that_exists(CH, monkeypatch):
 
     assert out["ok"] is True
     assert seen and seen[-1]["reply_to"] == "4091"
+
+
+def _live_screen(tmp_path, reply: dict):
+    """摆一个「那一屏还开着」的现场：回环端口 + 一份 pid/port/token 登记。
+
+    不 mock `_inline_ask` 而是真开一个 socket——这一条要验的正是
+    「说不说得上话」，把那一层 mock 掉就等于什么都没验。
+    """
+    import socket as _socket
+    import threading
+
+    srv = _socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    heard: list[dict] = []
+
+    def _serve() -> None:
+        try:
+            conn, _ = srv.accept()
+            with conn:
+                buf = b""
+                while b"\n" not in buf:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                heard.append(json.loads(buf.split(b"\n", 1)[0].decode("utf-8")))
+                conn.sendall((json.dumps(reply, ensure_ascii=False) + "\n").encode("utf-8"))
+        finally:
+            srv.close()
+
+    thread = threading.Thread(target=_serve, daemon=True)
+    thread.start()
+    folder = tmp_path / "wake" / "live-acp"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{os.getpid()}.json").write_text(
+        json.dumps({"pid": os.getpid(), "port": port, "token": "tok-inline", "agent": "agenda"}),
+        encoding="utf-8",
+    )
+    return heard, thread
+
+
+def test_a_live_screen_takes_the_turn_instead_of_a_second_process(WK, spawn, tmp_path):
+    """那一屏开着就让它自己跑——这话不能变成第二个进程，更不能变成两份钱。"""
+    heard, thread = _live_screen(tmp_path, {"ok": True, "mode": "inline"})
+
+    ok, note = WK.wake_agent(_entry(), "sess-42", sender="L1")
+    thread.join(timeout=3)
+
+    assert ok is True
+    assert "原地接着干" in note
+    assert spawn == [], "活着的屏接着跑，就不许再起一个进程"
+    assert heard and heard[0]["session_id"] == "sess-42"
+    assert heard[0]["token"] == "tok-inline"
+    assert heard[0]["prompt"].startswith(
+        WK.wake_prompt("L1", None)
+    ), "内联与起进程两条腿的提示词必须同源"
+
+
+def test_a_screen_that_does_not_own_the_session_still_gets_a_real_process(WK, spawn, tmp_path):
+    """开着的屏不认这一屏（不是它的会话）⇒ 老实回话，照旧起进程，别硬塞。"""
+    heard, thread = _live_screen(tmp_path, {"ok": False, "reason": "no_session"})
+
+    ok, note = WK.wake_agent(_entry(), "sess-42", sender="L1")
+    thread.join(timeout=3)
+
+    assert heard, "先得问过那一屏"
+    assert ok is True and "4321" in note
+    argv = spawn[0]["argv"]
+    assert argv[argv.index("--resume") + 1] == "sess-42"

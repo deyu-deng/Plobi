@@ -27,9 +27,113 @@ from __future__ import annotations
 import os
 import re
 import sys
+from pathlib import Path
 from typing import Optional
 
 _IS_WINDOWS = sys.platform == "win32"
+
+
+#: 一个 `sys.executable` 得长成什么样才配当 `-m` 的载体：python / python3 /
+#: python3.11 / python.exe。`Plobi.exe`、`electron.exe` 一个都不匹配。
+_PYTHON_EXE_RE = re.compile(r"^python(\d+(\.\d+)*)?(\.exe)?$", re.IGNORECASE)
+
+#: 安装树里 venv 的相对位置：先找 console script（最不容易变的一条），
+#: 找不到再退回解释器 + `-m`。
+_VENV_CLI_RELPATHS = (
+    ("plobi-agent", "venv", "Scripts", "plobi.exe"),
+    ("plobi-agent", "venv", "bin", "plobi"),
+)
+_VENV_PY_RELPATHS = (
+    ("plobi-agent", "venv", "Scripts", "python.exe"),
+    ("plobi-agent", "venv", "bin", "python"),
+)
+
+
+def _host_is_python_interpreter() -> bool:
+    """`sys.executable` 到底是不是一个 Python 解释器？
+
+    这条判定是 11-23 那单假唤醒的根：桌面端（Electron 壳）里
+    `sys.executable` 指向 GUI 本体，`[sys.executable, "-m", "plobi_cli.main"]`
+    没有任何解释器去看那个 `-m`，子进程一起来就是壳自己，几秒内带着
+    `Unable to move the cache: 拒绝访问` / `Gpu Cache Creation failed` 退掉。
+    `wake_agent` 当时只看 `Popen` 返不返回，于是 `woke=true` 一路写进
+    `agent_channel.jsonl`——话说送到了，人没醒。
+
+    `frozen` 一定要单独挡：PyInstaller 打包后 basename 可能被改成
+    `python.exe` 这种形状，靠名字判会漏。
+    """
+    if getattr(sys, "frozen", False):
+        return False
+    return bool(_PYTHON_EXE_RE.match(os.path.basename(sys.executable or "")))
+
+
+def _home_from_this_module() -> Optional[Path]:
+    """从本文件位置反推「我正在被哪套安装跑」。
+
+    这条候选比什么都可信：`plobi_cli` 是 pip 装进 venv 的，所以
+    `<home>\\plobi-agent\\venv\\Lib\\site-packages\\plobi_cli\\plobi_bin.py`
+    往上的 `venv` 一撞，`<home>` 就出来了。11-23 现场两套门牌同时在跑
+    （`Plobi` 生产 + `Plobi-Dev` 开发），光看环境变量会指到隔壁去，
+    只有自身位置不会撒谎。
+    """
+    try:
+        here = Path(__file__).resolve()
+    except OSError:
+        return None
+    for parent in here.parents:
+        if parent.name == "venv":
+            return parent.parent.parent
+    for parent in here.parents:
+        if parent.name == "plobi-agent":
+            return parent.parent
+    return None
+
+
+def _candidate_plobi_homes() -> list[Path]:
+    """`PLOBI_HOME` 的候选值，按可信度排。
+
+    自身位置 > `plobi_constants` 的权威值 > 环境变量 > `~/.plobi`。
+    `plobi_constants` 是权威，但它不在（纯 CLI 冷启动、测试里）的时候也不能
+    让这条路径直接断。
+    """
+    homes: list[Path] = []
+    from_module = _home_from_this_module()
+    if from_module is not None:
+        homes.append(from_module)
+    try:
+        from plobi_constants import get_plobi_home
+
+        homes.append(Path(get_plobi_home()))
+    except Exception:  # noqa: BLE001 - 常量层缺席不等于没得救
+        pass
+    env_home = (os.environ.get("PLOBI_HOME") or "").strip()
+    if env_home:
+        expanded = Path(os.path.expanduser(env_home))
+        if expanded not in homes:
+            homes.append(expanded)
+    fallback = Path.home() / ".plobi"
+    if fallback not in homes:
+        homes.append(fallback)
+    return homes
+
+
+def _venv_plobi_argv() -> Optional[list[str]]:
+    """安装树 venv 里的命令行——GUI 宿主下唯一还站得住的那条。
+
+    桌面端跑起来时，机器上这套 Plobi 是装好的（`$PLOBI_HOME/plobi-agent/venv`），
+    它的 `plobi.exe` / `python.exe` 是货真价实的命令行入口。宿主 exe 不能当
+    解释器，但这条能。
+    """
+    for home in _candidate_plobi_homes():
+        for relpath in _VENV_CLI_RELPATHS:
+            candidate = home.joinpath(*relpath)
+            if candidate.is_file():
+                return [str(candidate)]
+        for relpath in _VENV_PY_RELPATHS:
+            candidate = home.joinpath(*relpath)
+            if candidate.is_file():
+                return [str(candidate), "-m", "plobi_cli.main"]
+    return None
 
 
 def module_plobi_argv() -> list[str]:
@@ -37,7 +141,51 @@ def module_plobi_argv() -> list[str]:
     # ``plobi_cli.main`` is the console-script target declared in
     # pyproject.toml, NOT a top-level ``plobi`` package — there is no
     # ``plobi`` package to import.
+    if _host_is_python_interpreter():
+        return [sys.executable, "-m", "plobi_cli.main"]
+    # 宿主不是解释器（Electron / PyInstaller）：先认显式指定，再认安装树 venv，
+    # 最后才退回宿主 exe——那一条注定跑不起来，但调用方至少能靠
+    # `plobi_argv_runnable` 判定出来并如实报失败，而不是假成功。
+    for env_name in ("PLOBI_PYTHON", "PLOBI_PY"):
+        explicit = (os.environ.get(env_name) or "").strip()
+        if not explicit:
+            continue
+        expanded = os.path.expanduser(explicit)
+        if os.path.isfile(expanded):
+            return [expanded, "-m", "plobi_cli.main"]
+    venv_argv = _venv_plobi_argv()
+    if venv_argv:
+        return venv_argv
     return [sys.executable, "-m", "plobi_cli.main"]
+
+
+def plobi_argv_runnable(argv: list[str]) -> bool:
+    """这串 argv 现在真的能当命令行跑起来吗？
+
+    给唤醒链（`wake.py`）用：拼得出命令 ≠ 起得来。`argv[0]` 是宿主 exe
+    加 `-m` 这种形状，`CreateProcess` 会成功返回，孩子几秒后自己死——
+    只看 `Popen` 就是 11-23 那次假成功的第二次机会。
+    """
+    if not argv:
+        return False
+    head = (argv[0] or "").strip()
+    if not head:
+        return False
+    looks_like_path = (
+        os.path.isabs(head)
+        or bool(os.path.dirname(head))
+        or "/" in head
+        or os.sep in head
+    )
+    if looks_like_path:
+        if not os.path.isfile(os.path.expanduser(head)):
+            return False
+    elif _safe_which_no_cwd(head) is None:
+        return False
+    # `-m` 前面必须是解释器本身。
+    if "-m" in argv[1:2] or (len(argv) > 2 and argv[1] == "-m"):
+        return bool(_PYTHON_EXE_RE.match(os.path.basename(head)))
+    return True
 
 
 def _absolute_plobi_path(path: str) -> str:
