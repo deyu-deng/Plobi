@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 from datetime import datetime, timezone
 import base64
 import contextvars
@@ -447,6 +448,30 @@ def _content_blocks_to_openai_user_content(
     return parts
 
 
+def _inline_root() -> Path:
+    """登记目录与跑道锁的根——必须与 ``plugins/plobi-core/wake.py::_plobi_root`` 同一个。
+
+    两边要是各算各的，锁就成了两把（同一屏并发两轮＝两份钱），
+    这一条比代码好看难看得多重要。
+    """
+    try:
+        from plobi_constants import get_plobi_home
+
+        return Path(get_plobi_home())
+    except Exception:  # noqa: BLE001
+        return Path.home() / ".plobi"
+
+
+def _inline_agent_name() -> str:
+    """这一屏在名册里叫什么——`say` 那边的锁也是按这个名字抢的。"""
+    try:
+        from plobi.agents.registry import _active_agent_profile_name
+
+        return (_active_agent_profile_name() or "").strip()
+    except Exception:  # noqa: BLE001 - 身份口不在就不参与锁（不倒退到更差）
+        return ""
+
+
 class PlobiACPAgent(acp.Agent):
     """ACP Agent implementation wrapping Plobi AIAgent."""
 
@@ -522,6 +547,8 @@ class PlobiACPAgent(acp.Agent):
         super().__init__()
         self.session_manager = session_manager or SessionManager()
         self._conn: Optional[acp.Client] = None
+        self._inline_server: Optional[asyncio.AbstractServer] = None
+        self._inline_token: str = ""
 
     # ---- Connection lifecycle -----------------------------------------------
 
@@ -529,6 +556,151 @@ class PlobiACPAgent(acp.Agent):
         """Store the client connection for sending session updates."""
         self._conn = conn
         logger.info("ACP client connected")
+
+    # ---- 内联唤醒（P0-2 通道一）--------------------------------------------
+
+    #: 活着的屏把「端口 + 令牌」登记在这儿，`say` 的唤醒先来这里问一句。
+    #: 与 `plugins/plobi-core/wake.py` 的 `_wake_dir()` 是同一层目录。
+    _INLINE_DIRNAME = "live-acp"
+
+    async def _start_inline_wake_host(self) -> None:
+        """开门登记：告诉外面「这一屏还活着，话可以直接投到这儿」。
+
+        为什么要有这一枚：唤醒原来只有一条腿——起一个新进程。可那一屏往往本来
+        就开着（桌面端把 ACP 会话跑在原地），再起一个 = 两份钱 + 两条打架的历史。
+        活着的屏自己接着跑，走的是用户亲手打字的同一条 `prompt()`：消息、UI、
+        落库全都不用第二套语义。这里开不出来也只少这一条腿，起进程那条老路还在。
+        """
+        if self._inline_server is not None:
+            return
+        try:
+            self._inline_server = await asyncio.start_server(
+                self._handle_inline_wake, host="127.0.0.1", port=0
+            )
+        except OSError:
+            logger.warning("内联唤醒没开张（只少了「不起新进程」这一条腿）", exc_info=True)
+            self._inline_server = None
+            return
+        sockets = list(self._inline_server.sockets or [])
+        port = int(sockets[0].getsockname()[1]) if sockets else 0
+        if not port:
+            logger.warning("内联唤醒拿不到端口，跳过登记")
+            return
+        # 令牌只防「本机别的程序顺手投一句」，不是对外服务，只绑 127.0.0.1。
+        self._inline_token = os.urandom(16).hex()
+        self._register_inline_host(port)
+        logger.info("内联唤醒已开张（127.0.0.1:%s）", port)
+
+    @staticmethod
+    def _inline_dir() -> Path:
+        folder = _inline_root() / "plobi" / "channel-wake" / PlobiACPAgent._INLINE_DIRNAME
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def _inline_live_path(self) -> Path:
+        return self._inline_dir() / f"{os.getpid()}.json"
+
+    def _register_inline_host(self, port: int) -> None:
+        payload = {
+            "pid": os.getpid(),
+            "port": int(port),
+            "token": self._inline_token,
+            "agent": _inline_agent_name(),
+            "started": datetime.now().replace(microsecond=0).isoformat(),
+        }
+        try:
+            self._inline_live_path().write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+            )
+        except OSError:
+            logger.warning("内联唤醒登记没写成", exc_info=True)
+            return
+        # 进程怎么死的都别留下一个「假装还活着」的登记。
+        atexit.register(self._drop_inline_host)
+
+    def _drop_inline_host(self) -> None:
+        try:
+            self._inline_live_path().unlink(missing_ok=True)
+        except OSError:
+            logger.debug("内联唤醒登记没删掉", exc_info=True)
+
+    async def _handle_inline_wake(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        """一问一答：收一句提示词，回一句「收了没收、怎么收的」。"""
+        reply: dict[str, Any] = {"ok": False, "reason": "bad_request"}
+        try:
+            raw = await asyncio.wait_for(reader.readline(), timeout=10)
+            payload = json.loads(raw.decode("utf-8") or "{}")
+            if not isinstance(payload, dict) or payload.get("token") != self._inline_token:
+                reply = {"ok": False, "reason": "token"}
+            else:
+                reply = await self._serve_inline_wake(
+                    str(payload.get("session_id") or ""),
+                    str(payload.get("prompt") or ""),
+                )
+        except (asyncio.TimeoutError, ValueError, UnicodeDecodeError):
+            reply = {"ok": False, "reason": "bad_request"}
+        except Exception:  # noqa: BLE001 - 收话这一侧不许炸掉整个宿主
+            logger.exception("内联唤醒处理出错")
+            reply = {"ok": False, "reason": "error"}
+        try:
+            writer.write((json.dumps(reply, ensure_ascii=False) + "\n").encode("utf-8"))
+            await writer.drain()
+        except (OSError, ConnectionError):
+            pass
+        finally:
+            try:
+                writer.close()
+            except OSError:
+                pass
+
+    async def _serve_inline_wake(self, session_id: str, prompt_text: str) -> dict[str, Any]:
+        """这一屏在我这儿吗？在就接着跑；不在就老实说没有，让它去起进程。
+
+        三条出口，一条都不能含糊——`say` 那边是按回话决定下一步的：
+        * `ok`：起好了（或在别人那一轮后面排着），这话不会丢；
+        * `no_session`：这一屏不归我，你去起进程；
+        * `locked`：这一屏另有进程在跑一轮，你去了也会被锁挡住。
+        """
+        if not session_id or not prompt_text:
+            return {"ok": False, "reason": "bad_request"}
+        state = self.session_manager.get_session(session_id)
+        if state is None:
+            return {"ok": False, "reason": "no_session"}
+
+        agent_name = _inline_agent_name()
+        marker = None
+        if agent_name:
+            try:
+                import plobi_round_lock as RL
+
+                marker = RL.acquire(agent_name, _inline_root(), holder=f"inline:{session_id}")
+            except Exception:  # noqa: BLE001 - 锁坏了不等于这一轮不能跑
+                marker = None
+            # 抢不到锁：如果本来就是我在跑（上一轮还没收尾），这句该排进那一轮，
+            # 不该拒。真拒的只有「别的进程正在跑这一屏」。
+            if marker is None and not state.is_running:
+                return {"ok": False, "reason": "locked"}
+
+        queued = bool(state.is_running)
+        asyncio.create_task(self._run_inline_wake_turn(session_id, prompt_text, marker))
+        return {"ok": True, "mode": "queued" if queued else "inline"}
+
+    async def _run_inline_wake_turn(self, session_id: str, prompt_text: str, marker) -> None:
+        """替 `say` 把那一条跑掉——走的就是用户打字那条 `prompt()`。"""
+        try:
+            await self.prompt(prompt_text, session_id)
+        except Exception:  # noqa: BLE001 - 这一轮跑挂了不许连累宿主
+            logger.exception("内联唤醒那一轮跑挂了（%s）", session_id)
+        finally:
+            if marker is not None:
+                try:
+                    import plobi_round_lock as RL
+
+                    RL.release(marker)
+                except Exception:  # noqa: BLE001
+                    logger.debug("内联唤醒的跑道没放掉", exc_info=True)
 
 
     def _session_modes(self, state: SessionState) -> SessionModeState:
@@ -880,6 +1052,10 @@ class PlobiACPAgent(acp.Agent):
             client_name,
             resolved_protocol_version,
         )
+
+        # 客户端第一次搭上话就开张登记：从这一刻起，`say` 叫醒这一屏不用再起进程。
+        # 幂等——重连、重复 initialize 都只是一句 return。
+        await self._start_inline_wake_host()
 
         return InitializeResponse(
             protocol_version=acp.PROTOCOL_VERSION,
