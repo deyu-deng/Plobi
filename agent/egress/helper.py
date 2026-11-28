@@ -37,8 +37,10 @@ from agent.egress import tun as _tun
 
 _LOG = logging.getLogger("plobi.egress.helper")
 
-#: 退出码：正常退出 / 已经有一个在岗 / 这个平台没有这条线。
+#: 退出码：正常退出 / 自检没过 / 已经有一个在岗 / 这个平台没有这条线。
 EXIT_OK = 0
+#: ``--self-check`` 没过：这份安装看得见的世界不足以启动引擎，等于装了不能用。
+EXIT_FAIL = 1
 EXIT_ALREADY_SERVING = 2
 EXIT_UNSUPPORTED = 3
 
@@ -103,14 +105,83 @@ def _report_dict(report: Any) -> dict[str, Any]:
     }
 
 
+def _load_root_env_plain(home: str | Path | None) -> None:
+    """loader 不可用时的兜底：只读 ``$PLOBI_HOME/.env`` 本身。
+
+    这条分支存在的理由只有一个：loader 的 import 链（``plobi_cli``）在打包/裁剪过的
+    环境里可能缺失，而「凭据读不到」不该因此变成「侧车起不来」。兜底只做最笨的那件事，
+    不模拟 override 顺序，也不碰 ``.op.env`` / managed scope——那些是 loader 的活。
+    """
+    env_file = helper_client.home_dir(home) / ".env"
+    if not env_file.exists():
+        _LOG.warning("no root .env at %s — credentials will be missing", env_file)
+        return
+    try:
+        from dotenv import load_dotenv
+    except Exception as exc:  # noqa: BLE001 - 读不到 .env 也不许打断侧车
+        _LOG.warning("python-dotenv unavailable (%s: %s); credentials will be missing", type(exc).__name__, exc)
+        return
+    try:
+        load_dotenv(env_file, override=True)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning("reading %s raised %s: %s", env_file, type(exc).__name__, exc)
+        return
+    _LOG.info("root .env: loaded via plain-dotenv fallback (%s)", env_file)
+
+
+def _load_root_env(home: str | Path | None) -> None:
+    """把根 ``.env`` 灌进本进程的 ``os.environ``。
+
+    侧车是计划任务拉起的**独立进程**：没有登录 shell，没有 systemd ``EnvironmentFile``，
+    也没有主进程那套「模块 import 期顺手加载」的运气。于是 ``$PLOBI_HOME/.env`` 里的凭据
+    在这个进程里根本不存在——``engine.ensure`` 读表时按名字取 ``password_env``，取到空串，
+    就在 ``mihomo_config`` 撞出「变量没设置」。那条报错指着配置，指的却是错地方。
+
+    和主进程共用 ``load_plobi_dotenv`` 是有意的：让「.env 里有什么」在主进程和侧车眼里
+    是同一份事实。侧车自己手搓一套解析，迟早要在 override 语义、``.op.env`` 顺序、
+    managed scope 这几处跟主进程分叉——而分叉的表现形式就是「界面上好好的，一点启动引擎
+    就报凭据缺失」。
+
+    fail-open：loader 自己炸了，侧车也得活着——``ping`` / ``status`` 还要能答人。
+    """
+    try:
+        from plobi_cli.env_loader import load_plobi_dotenv
+    except Exception as exc:  # noqa: BLE001 - 侧车不许因为读 .env 起不来
+        _LOG.warning(
+            "env loader unavailable (%s: %s); falling back to a plain dotenv read",
+            type(exc).__name__,
+            exc,
+        )
+        _load_root_env_plain(home)
+        return
+    try:
+        loaded = load_plobi_dotenv(plobi_home=home)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.warning(
+            "loading the root .env raised %s: %s — credentials may be missing",
+            type(exc).__name__,
+            exc,
+        )
+        return
+    _LOG.info(
+        "root .env: %d file(s) loaded (%s)",
+        len(loaded),
+        ", ".join(str(p) for p in loaded) or "none",
+    )
+
+
 def _table(home: str | Path | None):
-    """侧车自己读表。表是唯一事实来源（裁定 94），侧车不接「你按我说的干」这种指令。"""
+    """侧车自己读表。表是唯一事实来源（裁定 94），侧车不接「你按我说的干」这种指令。
+
+    ``load_table()`` 没有 ``home`` 参数：读哪一份表由 ``PLOBI_HOME`` 指向的
+    ``config.yaml`` 决定，那是**环境**，不是实参。这里原先写 ``load_table(home=home)``
+    再用 ``except TypeError`` 兜底，实际效果是每次都抛错再落兜底分支——``home`` 白传，
+    而报错被吞掉，看起来像在传参，其实没人接。假参数比不传更糟：它把「读哪一份表由
+    ``PLOBI_HOME`` 决定」这件事在代码里遮掉了。
+    """
     from agent.egress.rules import load_table
 
-    try:
-        return load_table(home=home)
-    except TypeError:
-        return load_table()
+    return load_table()
 
 
 def _cmd_ping(args: dict[str, Any], home: str | Path | None) -> dict[str, Any]:
@@ -319,6 +390,90 @@ def serve(
         _LOG.info("sidecar down after %d connection(s)", handled)
 
 
+def _self_check(home: str | Path | None = None) -> int:
+    """装完就地验一次：这个进程看得见的世界，够不够启动引擎。
+
+    侧车的环境是「计划任务 + 提权 + 没有登录 shell + 没有 environment 继承」，开发机上
+    永远复现不出来——所以「装了到底能不能用」只能由装出来的那份代码在它自己的进程里自证。
+    0.3.4 的事故就是这里漏了一句 :func:`_load_root_env`：主进程读到了根 ``.env``，侧车没
+    读到，单测全绿，用户一点引擎就「变量未设置」。
+
+    只读判定：不起引擎、不碰 TUN、不改路由。退出码 :data:`EXIT_FAIL` 即「这份安装不可用」，
+    安装器与 CI 都拿它当闸门。
+    """
+    failures = 0
+    report: list[str] = []
+
+    def _say(ok: Optional[bool], item: str, detail: str) -> None:
+        nonlocal failures
+        tag = "SKIP" if ok is None else ("PASS" if ok else "FAIL")
+        if ok is False:
+            failures += 1
+        report.append(f"[{tag}] {item}: {detail}")
+
+    root = helper_client.home_dir(home)
+    env_file = root / ".env"
+    _say(env_file.exists(), "env-file",
+         str(env_file) if env_file.exists() else f"{env_file} 不存在 —— 凭据无处可取")
+
+    table = None
+    try:
+        from agent.egress.rules import load_table
+        table = load_table(force_reload=True)
+    except Exception as exc:  # noqa: BLE001 - 自检要报告失败，不是变成失败
+        _say(False, "table", f"{type(exc).__name__}: {exc}")
+
+    usable = table is not None and not table.unreadable
+    if table is None:
+        pass
+    elif table.unreadable:
+        _say(False, "table", f"读不出来：{table.unreadable}")
+    else:
+        _say(True, "table",
+             f"nodes={len(table.nodes)} groups={len(table.groups)} rules={len(table.rules)}")
+
+    if usable:
+        missing: list[str] = []
+        total = 0
+        for node in table.nodes.values():
+            for field_name, var in getattr(node, "secret_env", {}).items():
+                total += 1
+                if not os.environ.get(var):
+                    missing.append(f"{node.name}.{field_name}={var}")
+        _say(not missing, "credentials",
+             f"os.environ 里 {total - len(missing)}/{total} 个 *_env 引用有值"
+             + ("" if not missing else "；缺 " + ", ".join(missing[:5])))
+
+        try:
+            from agent.egress.mihomo_config import compile_config
+            rendered = compile_config(table)
+            _say(True, "compile", f"引擎配置 {len(rendered)} 字节")
+        except Exception as exc:  # noqa: BLE001
+            _say(False, "compile", f"{type(exc).__name__}: {exc}")
+    else:
+        _say(None, "credentials", "表没读到，无从判断")
+        _say(None, "compile", "表没读到，无从判断")
+
+    info: dict[str, Any] = {}
+    if usable:
+        try:
+            info = _tun.preflight(table) or {}
+        except Exception as exc:  # noqa: BLE001
+            _say(None, "tun", f"预检不可用：{type(exc).__name__}: {exc}")
+    if usable:
+        try:
+            _say(None, "tun", "; ".join(_tun.status_lines(info)) or "预检无输出")
+        except Exception as exc:  # noqa: BLE001
+            _say(None, "tun", f"{type(exc).__name__}: {exc}")
+    else:
+        _say(None, "tun", "表没读到，未预检")
+
+    for line in report:
+        print(line)
+    print(f"SELF-CHECK: {'ok' if failures == 0 else f'failed ({failures})'}")
+    return EXIT_OK if failures == 0 else EXIT_FAIL
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="plobi-egress-helper",
                                      description="Plobi 提权侧车：替主进程动引擎与 TUN")
@@ -328,6 +483,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="空闲多少秒自己退（0 = 常驻，计划任务用 0）")
     parser.add_argument("--max-requests", type=int, default=None, help="处理满 N 条就退（测试用）")
     parser.add_argument("--list-commands", action="store_true", help="列出认的命令后退出")
+    parser.add_argument("--self-check", dest="self_check", action="store_true",
+                        help="自检后退出：读根 .env / 建表 / 解凭据 / 编译引擎配置（装机与 CI 的闸门）")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -337,6 +494,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     home = args.home or None
     _setup_logging(home, verbose=args.verbose)
+    # 在收第一条命令之前把根 .env 读进来：engine.* / tun.preflight 都要靠里面的凭据。
+    _load_root_env(home)
+    if args.self_check:
+        return _self_check(home)
     return serve(home, pipe=args.pipe, idle_s=args.idle_exit, max_requests=args.max_requests)
 
 

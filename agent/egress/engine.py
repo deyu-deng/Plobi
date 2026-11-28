@@ -758,15 +758,32 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
                    "workdir": str(snap.workdir), "mixed_port": snap.port,
                    "config_sha": _sha(data), "source": snap.source,
                    "started_by": "plobi", "started_at": time.time()}, home=home)
-    ok, detail = probe_engine(snap.port)
+    #: 端口 listen 不等于首包已经能出去：11-24 这台经美国节点探 gstatic 首包 2.4s，刚 bind 就探
+    #: 会拿到一次 refused/超时，然后被当成「起来了但不承运」把 TUN 撤掉。给它三次机会，任一次 UP 即算。
+    ok, detail = False, ""
+    for _attempt in range(3):
+        ok, detail = probe_engine(snap.port)
+        if ok:
+            break
+        if _attempt < 2:
+            time.sleep(1.5)
     if ok:
         _arm_supervisor(table, home=home)
     #: 「网卡建出来了」不等于「流量进来了」。mihomo 自己会看见默认路由还在别人那里
     #: （11-02：WLAN 2 metric 0 压过我们），那种 TUN 对用户就是「开了但 Antigravity 还是不通」，
     #: 比直接失败更难查——所以当场验一次，没抢到就把我们这块网卡撤掉、照实说。
     if ok and table.engine_tun.get("enabled"):
+        tun_name = str(table.engine_tun.get("name") or "")
         time.sleep(_tun_module().ROUTE_SETTLE_SECONDS)
-        taken, said, _holders = _tun_module().route_taken(str(table.engine_tun.get("name") or ""))
+        #: 「默认路由还在别人那里」多半不是别人更强，而是我们自己这块 wintun 网卡被 Windows
+        #: 按链路速度自动分了个更高的接口 metric（11-24：WLAN 2 im=45，strict-route 写了也照样
+        #: 抢不到）。strict-route 删的是**别人的**默认路由，解决不了这件事；把我们自己这块网卡的
+        #: metric 压到 1 只动我们造的东西，撤 TUN 时网卡消失、无残留。失败不拦路：照旧去查路由。
+        preferred, said_preferred = _tun_module().prefer_own_adapter(tun_name)
+        if preferred:
+            tun_notes = (*tun_notes, f"tun: {said_preferred}")
+            time.sleep(1.0)
+        taken, said, _holders = _tun_module().route_taken(tun_name)
         if not taken:
             stopped = stop_ours(table, home=home)
             notes_extra = (*snap.notes, *seed_notes, *render_notes, *acl_notes, *tun_notes,

@@ -65,12 +65,17 @@ def default_block(*, allow_foreign: Optional[bool] = None, keep: dict[str, Any] 
         block["allow-foreign"] = bool(allow_foreign)
     return block
 
+#: 排序口径 = 路由 metric + 接口 metric。Windows 挑默认路由用的是两者之和；只按路由 metric 排，
+#: 两条都是 0 的时候就退化成「谁先返回谁赢」，于是 TUN 明明压到了 im=1 还被判成没抢到（11-24）。
 _PS_DEFAULT_ROUTE = (
     "$ErrorActionPreference='SilentlyContinue';"
-    "$r=Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 4;"
-    "foreach($x in $r){$a=Get-NetAdapter -IncludeHidden -InterfaceIndex $x.ifIndex;"
-    "[pscustomobject]@{ifIndex=$x.ifIndex;name=$a.Name;description=$a.InterfaceDescription;"
-    "status=[string]$a.Status;metric=$x.RouteMetric}|ConvertTo-Json -Compress}"
+    "$all=Get-NetRoute -DestinationPrefix '0.0.0.0/0' | ForEach-Object{"
+    "$a=Get-NetAdapter -IncludeHidden -InterfaceIndex $_.ifIndex;"
+    "$i=Get-NetIPInterface -InterfaceIndex $_.ifIndex -AddressFamily IPv4 | Select-Object -First 1;"
+    "$im=0; if($i -and $i.InterfaceMetric){$im=[int]$i.InterfaceMetric};"
+    "[pscustomobject]@{ifIndex=$_.ifIndex;name=$a.Name;description=$a.InterfaceDescription;"
+    "status=[string]$a.Status;metric=$_.RouteMetric;im=$im;effective=([int]$_.RouteMetric+$im)}};"
+    "$all | Sort-Object effective | Select-Object -First 4 | ForEach-Object{$_|ConvertTo-Json -Compress}"
 )
 
 _PS_TUN_ADAPTERS = (
@@ -158,6 +163,42 @@ WINTUN_BYTES = 427_552
 #: WLAN 2 的 route metric 是 0，我们那块网卡建出来了却抢不过它。
 #: 所以起完之后必须回头看一眼路由在谁手上，而不是信 `enable: true` 那句话。
 ROUTE_SETTLE_SECONDS = 3.0
+
+#: 把**我们自己造的**那块网卡的接口 metric 压到最低。11-24 这台量到的是 WLAN 2 im=45，
+#: 而 wintun 网卡由 Windows 按链路速度自动分配 metric，往往比物理网卡更高 —— 于是
+#: `enable: true`、`auto-route: true`、`strict-route: true` 全写了，默认路由仍然留在 WLAN 2。
+#: 这条只改我们自己造的那块网卡（名字必须是表里的 tun.name），撤 TUN 时网卡随之消失、无残留，
+#: 与「改别人的 metric」是两件事。
+#: 用占位符而不是 str.format：脚本里有 powershell 的 `@{...}`，format 会把那个花括号当字段名。
+_PS_PREFER_OWN = (
+    "$ErrorActionPreference='Stop';"
+    "$a=Get-NetAdapter -IncludeHidden -Name '__NAME__' | Select-Object -First 1;"
+    "if(-not $a){throw 'no adapter named __NAME__'};"
+    "Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -InterfaceMetric __METRIC__ | Out-Null;"
+    "$i=Get-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 | Select-Object -First 1;"
+    "[pscustomobject]@{name=$a.Name;metric=$i.InterfaceMetric}|ConvertTo-Json -Compress"
+)
+
+
+def prefer_own_adapter(name: str, metric: int = 1) -> tuple[bool, str]:
+    """让**我们的** TUN 网卡在默认路由竞争里赢：把它的接口 metric 压到 ``metric``。
+
+    ``(ok, said)``。只动 ``name`` 这块网卡——不是别人的隧道、不是物理网卡，也不需要
+    ``strict-route`` 那种「删掉别人默认路由」的明示接管。失败不抛：调用方照旧去查路由，
+    查不到就把 TUN 撤掉，口径与 :func:`route_taken` 一致。
+    """
+    if not supported():
+        return False, f"这一格只实现 Windows（这台是 {sys.platform}）"
+    if not name:
+        return False, "表里没写 tun.name，不知道哪块网卡是我们的"
+    script = (_PS_PREFER_OWN
+              .replace("__NAME__", name.replace("'", "''"))
+              .replace("__METRIC__", str(int(metric))))
+    items, err = _ps_objects(script)
+    if not items:
+        return False, err or "设了 metric 但读不回来"
+    got = items[0].get("metric")
+    return True, f"{items[0].get('name') or name} 的接口 metric 压到 {got}"
 
 
 def route_taken(name: str) -> tuple[bool, str, list[dict[str, Any]]]:

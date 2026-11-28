@@ -284,7 +284,10 @@ def _node_entry(node: "Node") -> dict[str, Any]:
         if not value:
             raise EgressConfigError(
                 f"network.egress.nodes.{node.name}.{field}_env names '{env_name}' but that variable "
-                f"is not set — the credential belongs in the root .env"
+                f"is not set — the credential belongs in the root .env. If it IS in that .env, then "
+                f"this process never loaded it: anything that builds the engine outside the main "
+                f"process (the egress sidecar, cron jobs, scripts) must call "
+                f"plobi_cli.env_loader.load_plobi_dotenv() before it asks for a table."
             )
         entry[field] = value
     return entry
