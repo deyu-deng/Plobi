@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
 
-import { readSheetModel, SHEET_MAX_ROWS } from './sheet-model'
+import { readSheetModel, SHEET_MAX_BYTES, SHEET_MAX_ROWS } from './sheet-model'
 
 function workbookBytes(rows: unknown[][]): Uint8Array {
   const workbook = XLSX.utils.book_new()
@@ -27,5 +27,14 @@ describe('readSheetModel', () => {
 
     expect(model.rows).toHaveLength(SHEET_MAX_ROWS)
     expect(model.truncated).toBe(true)
+  })
+
+  it('refuses to parse a file over the size cap', () => {
+    const oversized = { byteLength: SHEET_MAX_BYTES + 1 } as unknown as Uint8Array
+    const model = readSheetModel(oversized)
+
+    expect(model.tooLarge).toBe(true)
+    expect(model.rows).toEqual([])
+    expect(model.names).toEqual([])
   })
 })

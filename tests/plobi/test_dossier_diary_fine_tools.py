@@ -289,9 +289,7 @@ def test_dossier_stage_update_touches_one_stage_only(roots):
         "title": "再打磨",
         "detail": "",
         "done": False,
-        # Stage 序列化总带这两格（可选字段、空值也写），旧断言漏了它们。
-        "kind": "",
-        "due": "",
+        # 落盘只写真有的东西：kind／due 空着就不出现，别补成空串污染档案。
     }
     assert stages["s1"]["done"] is True
 
