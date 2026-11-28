@@ -44,7 +44,7 @@ import threading
 import types
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from plobi_constants import get_plobi_home
 from utils import env_var_enabled, fast_safe_load
@@ -301,10 +301,54 @@ def _get_enabled_plugins() -> Optional[set]:
 _VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform", "model-provider"}
 
 
+# ── 深档插件的**能力清单**（闭集 · 规格 specs/plugin-sandbox.md §2.1）──────────
+#
+# 用户 11-28 14:1x 拍板：深档（带代码的）插件**声明它要什么**，宿主**逐项注入**
+# ——「权限＝宿主注入哪几个接口」（Extism 的形状：插件的 import 集合就是它的权限集合）。
+#
+# **能力名是闭集**：宿主认得下面这几个；**别的名字一律不认** ⇒ 那个插件
+# **装不上并把原因说清**（不是静默忽略——裁定 239 补记 1「失败可见」）。
+PLUGIN_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        "fs.read",
+        "fs.write",
+        "net.fetch",
+        "config.read",
+        "config.write",
+        "model.invoke",
+        "tools.register",
+        "ui.render",
+    }
+)
+
+# 哪几项能力**必须有边界**才可放行（**缺边界 ⇒ 默认拒绝**，不是「不设限」）。
+# 抄 Extism 的 `allowed_hosts`／`allowed_paths`：那两项缺省＝**不给**。
+_CAPABILITY_REQUIRES_LIMIT: Dict[str, Tuple[str, str]] = {
+    "net.fetch": ("net", "hosts"),
+    "fs.read": ("fs", "paths"),
+    "fs.write": ("fs", "paths"),
+}
+
+
+def capability_grantable(capability: str, limits: Dict[str, Any]) -> bool:
+    """这项能力**能不能放行**（缺边界 ⇒ 默认拒绝；规格 §2.1）。"""
+    need = _CAPABILITY_REQUIRES_LIMIT.get(capability)
+    if need is None:
+        return True
+
+    group, key = need
+    values = limits.get(group)
+    if not isinstance(values, dict):
+        return False
+
+    listed = values.get(key)
+
+    return isinstance(listed, list) and bool(listed)
+
+
 @dataclass
 class PluginManifest:
     """Parsed representation of a plugin.yaml manifest."""
-
     name: str
     version: str = ""
     description: str = ""
@@ -330,6 +374,11 @@ class PluginManifest:
     # in ``plugins.entries.<plugin_key>.<key>`` — the same place the plugin reads
     # its own config from (``PluginContext``) ⇒ 用户在屏上改的值，插件读得到。
     config: List[Dict[str, Any]] = field(default_factory=list)
+    # 深档插件**要什么能力**（**闭集**，specs/plugin-sandbox.md §2.1）与它们的边界
+    # （`limits:`：`net.hosts`／`fs.paths` 那种）。**没有这两节 ⇒ 浅档插件**
+    # （今天全部）⇒ 不进这套机制（浅档零代码执行，本来就没有权限面）。
+    permissions: List[str] = field(default_factory=list)
+    limits: Dict[str, Any] = field(default_factory=dict)
     source: str = ""        # "user", "project", or "entrypoint"
     path: Optional[str] = None
     # Plugin kind — see plugins.py module docstring for semantics.
@@ -1692,6 +1741,30 @@ class PluginManager:
                 for entry in raw_config:
                     if isinstance(entry, dict) and str(entry.get("key") or "").strip():
                         declared_config.append(entry)
+            # 深档能力清单（规格 §2.1）：**能力名是闭集** —— 不认识的名字 ⇒ 这个插件
+            # **装不上**，且日志说清是哪个名字（失败可见，不静默忽略）。
+            raw_permissions = data.get("permissions")
+            declared_permissions: List[str] = []
+            if isinstance(raw_permissions, list):
+                for entry in raw_permissions:
+                    name = str(entry or "").strip()
+                    if not name:
+                        continue
+                    if name not in PLUGIN_CAPABILITIES:
+                        logger.warning(
+                            "Plugin %s: unknown capability %r (host knows: %s) — "
+                            "not loading this plugin",
+                            key,
+                            name,
+                            ", ".join(sorted(PLUGIN_CAPABILITIES)),
+                        )
+                        return None
+                    if name not in declared_permissions:
+                        declared_permissions.append(name)
+            raw_limits = data.get("limits")
+            declared_limits: Dict[str, Any] = {}
+            if isinstance(raw_limits, dict):
+                declared_limits = raw_limits
             return PluginManifest(
                 name=name,
                 version=str(data.get("version", "")),
@@ -1703,6 +1776,8 @@ class PluginManager:
                 slots=declared_slots,
                 toolsets=declared_toolsets,
                 config=declared_config,
+                permissions=declared_permissions,
+                limits=declared_limits,
                 source=source,
                 path=str(plugin_dir),
                 kind=kind,
@@ -2482,6 +2557,42 @@ def get_plugin_auxiliary_tasks() -> List[Dict[str, Any]]:
     """
     manager = _ensure_plugins_discovered()
     return [manager._aux_tasks[k] for k in sorted(manager._aux_tasks)]
+
+
+def get_plugin_capabilities() -> List[Dict[str, Any]]:
+    """每个已装插件**要什么**（规格 ``specs/plugin-sandbox.md`` §2.1）。
+
+    这是深档机制的第一件：**声明与读出**（窄接口是下一刀）。每一项给：
+
+    - ``key`` / ``name`` / ``version``：是谁；
+    - ``permissions``：它声明的能力（**闭集**）；
+    - ``limits``：它的边界（``net.hosts``／``fs.paths`` 那种）；
+    - ``ungrantable``：**哪几项现在不可放行**（缺边界 ⇒ 默认拒绝，不是「不设限」）。
+
+    **没有 ``permissions:`` 的插件**（浅档，今天全部）⇒ 清单为空 ⇒ 不进这套机制
+    （浅档零代码执行，本来就没有权限面）。
+    """
+    manager = get_plugin_manager()
+    out: List[Dict[str, Any]] = []
+
+    for loaded in getattr(manager, "_plugins", {}).values():
+        manifest = getattr(loaded, "manifest", None)
+        permissions = list(getattr(manifest, "permissions", []) or [])
+        limits = dict(getattr(manifest, "limits", {}) or {})
+        out.append(
+            {
+                "key": getattr(manifest, "key", "") or getattr(manifest, "name", ""),
+                "name": getattr(manifest, "name", ""),
+                "version": getattr(manifest, "version", ""),
+                "permissions": permissions,
+                "limits": limits,
+                "ungrantable": [
+                    name for name in permissions if not capability_grantable(name, limits)
+                ],
+            }
+        )
+
+    return out
 
 
 def get_plugin_slot_contributions() -> List[Dict[str, Any]]:

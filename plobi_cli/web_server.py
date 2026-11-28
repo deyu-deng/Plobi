@@ -5852,6 +5852,26 @@ async def get_slot_contributions():
     return {"contributions": contributions}
 
 
+@app.get("/api/plugin-capabilities")
+async def get_plugin_capabilities_endpoint():
+    """每个已装插件**要什么能力**（深档机制第一步：规格 ``specs/plugin-sandbox.md`` §2.1）。
+
+    能力名是**闭集**：不认识的名字 ⇒ 那个插件装不上（并说清是哪个名字）。**缺边界**
+    ⇒ 那项能力**不可放行**（默认拒绝，不是不设限）。
+
+    读不出来时**不许把整屏带下去**（与 ``/api/slots`` 同一条纪律）：空清单 ＋ 日志出声。
+    """
+    from plobi_cli.plugins import get_plugin_capabilities
+
+    try:
+        plugins = get_plugin_capabilities()
+    except Exception as exc:
+        _log.warning("plugin capabilities unavailable: %s", exc)
+        plugins = []
+
+    return {"plugins": plugins}
+
+
 @app.get("/api/config/schema")
 async def get_schema():
     """The config schema, plus the **live** option list for provider keys.
