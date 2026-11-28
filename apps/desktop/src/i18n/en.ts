@@ -3951,6 +3951,7 @@ export const en: Translations = {
       marksSaved: 'Written to file',
       notePlaceholder: 'Note text',
       truncated: (rows, cols) => `Showing the first ${rows} rows × ${cols} columns`,
+      tooLarge: (mb) => `Over ${mb} MB — not parsed for preview`,
       sheet: 'Sheet',
       legacyNote: 'Old .xls previews values only; save as .xlsx to keep colors and merged cells.',
       save: 'Save',
