@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import { Switch } from '@/components/ui/switch'
 import type { DesktopMarketplaceSearchItem } from '@/global'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
@@ -14,7 +13,6 @@ import { selectableCardClass } from '@/lib/selectable-card'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
 import { $embedAllowed, $embedMode, clearEmbedAllowed, type EmbedMode, setEmbedMode } from '@/store/embed-consent'
-import { $shellCards, setShellCards } from '@/store/layout'
 import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
 import { $translucency, setTranslucency } from '@/store/translucency'
 import { $zoomPercent, setZoomPercent } from '@/store/zoom'
@@ -250,7 +248,6 @@ export function AppearanceSettings() {
   const embedMode = useStore($embedMode)
   const embedAllowed = useStore($embedAllowed)
   const translucency = useStore($translucency)
-  const shellCards = useStore($shellCards)
   const installs = useStore($marketplaceInstalls)
   const a = t.settings.appearance
 
@@ -295,11 +292,8 @@ export function AppearanceSettings() {
           卡里行与行之间虚线分隔。原来这里是「图标 + 中黑体标题 + 一句说明 + 平铺的行」。 */}
       <SettingsGroup description={a.intro} title={a.title}>
         <div>
-          <ListRow
-            action={<Switch checked={shellCards} onCheckedChange={setShellCards} />}
-            description={a.shellCardsHint}
-            title={a.shellCards}
-          />
+          {/* ⚠️ 「卡片式主界面」那枚开关**退役了**（用户 11-28 00:1x：「我们不要之前没有卡的
+              布局了。删除了。就用现在的实现。」）⇒ 主界面**只有卡片这一副**。 */}
 
           {/* 快捷键那一格从左上角的图标条搬来（用户 11-02 拍「底部只留六枚」）；
               组件与判据在 keybinds-row.tsx，这一屏只负责挂。 */}

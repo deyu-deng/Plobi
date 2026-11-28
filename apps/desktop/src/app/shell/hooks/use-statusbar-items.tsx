@@ -12,17 +12,10 @@ import { type Translations, useI18n } from '@/i18n'
 import { deferredRowLabel, readDeferredLedgerView } from '@/lib/desktop-deferred-sidecars'
 import { Activity, AlertCircle, Clock, Command, Hash, Loader2 } from '@/lib/icons'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
-import { LiveDuration } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { $agendaPendingCount } from '@/store/agenda'
 import { $desktopBoot } from '@/store/boot'
-import {
-  $busy,
-  $connection,
-  $sessionStartedAt,
-  $turnStartedAt,
-  setYoloActive
-} from '@/store/session'
+import { $connection, setYoloActive } from '@/store/session'
 import { $subagentsBySession, activeSubagentCount, failedSubagentCount } from '@/store/subagents'
 import { $gatewayRestarting } from '@/store/system-actions'
 import {
@@ -103,10 +96,7 @@ export function useStatusbarItems({
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
   const copy = t.shell.statusbar
-  const busy = useStore($busy)
   const gatewayRestarting = useStore($gatewayRestarting)
-  const sessionStartedAt = useStore($sessionStartedAt)
-  const turnStartedAt = useStore($turnStartedAt)
   const subagentsBySession = useStore($subagentsBySession)
   const agendaPendingCount = useStore($agendaPendingCount)
   const updateStatus = useStore($updateStatus)
@@ -400,29 +390,15 @@ export function useStatusbarItems({
 
   const coreRightStatusbarItems = useMemo<readonly StatusbarItem[]>(
     () => [
-      {
-        detail: <LiveDuration since={turnStartedAt} />,
-        hidden: !busy || !turnStartedAt,
-        icon: <Loader2 className="size-3 animate-spin" />,
-        id: 'running-timer',
-        label: copy.turnRunning,
-        title: copy.currentTurnElapsed,
-        variant: 'text'
-      },
-      {
-        detail: <LiveDuration since={sessionStartedAt} />,
-        hidden: !sessionStartedAt,
-        id: 'session-timer',
-        label: copy.session,
-        title: copy.runtimeSessionElapsed,
-        variant: 'text'
-      },
+      // ⚠️ **那两枚计时搬走了**（用户 11-28 00:1x：「这个时长我希望放到对话框下面的上下文条的
+      // 左边」）⇒ 它们住在**输入框下面那一行**的左边（`composer/context-footer.tsx`），
+      // 不再是状态栏的项——窗口那条状态栏**本身也退役了**（只有卡片这一副布局了）。
       // 上下文容量与权限档都搬进输入框了（用户 10-31 照 Qoder）：容量在框下方那一行，
-      // 权限是框里的三档下拉。底栏只留计时与版本。
+      // 权限是框里的三档下拉。
       clientVersionItem,
       ...(backendVersionItem ? [backendVersionItem] : [])
     ],
-    [backendVersionItem, busy, clientVersionItem, copy, sessionStartedAt, turnStartedAt]
+    [backendVersionItem, clientVersionItem]
   )
 
   const leftStatusbarItems = useMemo(

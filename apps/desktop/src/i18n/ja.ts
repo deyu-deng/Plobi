@@ -737,8 +737,6 @@ export const ja = defineLocale({
       system: { label: 'システム', description: 'OS の外観に合わせる' }
     },
     appearance: {
-    shellCards: 'カード型メイン画面',
-    shellCardsHint: 'チャットと右パネルをグラデーション上の 2 枚のカードに載せる。左レールは Qoder と同じく背景の上。',
       title: '外観',
       intro:
         'デスクトップ専用の表示設定です。モードは明るさ、テーマはアクセントカラーとチャット面のスタイルを制御します。',
@@ -2644,7 +2642,7 @@ export const ja = defineLocale({
       fullDetail: '確認せず、ファイル・ターミナル・ネットワークに自由にアクセスします',
       failed: '権限レベルを変更できませんでした'
     },
-    footer: { local: 'ローカル', remote: 'リモート', context: 'コンテキスト' },
+    footer: { local: 'ローカル', remote: 'リモート', context: 'コンテキスト', openFolder: 'このフォルダを開く', remoteFolder: 'リモート元のフォルダです' },
     placeholderStarting: 'Plobi を起動中...',
     placeholderReconnecting: 'Plobi に再接続中…',
     placeholderFollowUp: 'フォローアップを送信',

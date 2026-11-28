@@ -40,7 +40,6 @@ import {
   $monitorPinned,
   $monitorSlotVisible,
   $panesFlipped,
-  $shellCards,
   $shellSwapped,
   $sidebarOpen,
   FILE_BROWSER_DEFAULT_WIDTH,
@@ -318,7 +317,6 @@ export function DesktopController() {
   const dirtyPreviewUrls = useStore($dirtyPreviewUrls)
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
   const panesFlipped = useStore($panesFlipped)
-  const shellCards = useStore($shellCards)
   const sidebarOpen = useStore($sidebarOpen)
   // 对话卡 ↔ 右栏卡互换（用户 10-31 选的换法）：交换后右栏当主区、对话进右侧窄卡。
   const swapped = useStore($shellSwapped)
@@ -1997,7 +1995,7 @@ export function DesktopController() {
   // 否则工作面卡被最大化进主区后，卡面顶部就多出一条 34px 的空带。
   // 口径与判据在 `shell/workbench-aside-class.ts`。
   const workbenchAsideClasses = cn(
-    resolveWorkbenchAsideClass({ panesFlipped, shellCards, swapped }),
+    resolveWorkbenchAsideClass({ panesFlipped, swapped }),
     // 换面（工作面卡被提升进主区、还原回右栏）时淡入一下——复用仓里现成的关键帧，
     // 不碰样式表（那边在派别线手里）。
     cardFocusAnimating && 'animate-[sidebar-swap-in_180ms_ease-out]'
@@ -2165,7 +2163,7 @@ export function DesktopController() {
           ...pluginTabContents,
           ...fileTabContents
         }}
-        dragHandleProps={shellCards && !focusWorkbench ? cardDragProps('rail') : undefined}
+        dragHandleProps={!focusWorkbench ? cardDragProps('rail') : undefined}
         edgeControls={workbenchIsEdge ? workbenchEdgeControls : undefined}
         labels={t.workbench}
         onTabChange={handleWorkbenchTabChange}
@@ -2185,7 +2183,6 @@ export function DesktopController() {
       // （`disabled`：track→0、aria-hidden，不写 store）—— 列数不变，列宽才能过渡。
       disabled={!isL2 || railFocused}
       forceCollapsed={narrowViewport}
-      hoverReveal={!shellCards}
       id="file-browser"
       key="file-browser"
       minWidth={FILE_BROWSER_MIN_WIDTH}
@@ -2229,7 +2226,7 @@ export function DesktopController() {
           // 文件页签（日程附件点开的那种）。内容和 L2 那份是同一张 `fileTabContents`。
           ...fileTabContents
         }}
-        dragHandleProps={shellCards && !focusWorkbench ? cardDragProps('rail') : undefined}
+        dragHandleProps={!focusWorkbench ? cardDragProps('rail') : undefined}
         edgeControls={workbenchIsEdge ? workbenchEdgeControls : undefined}
         labels={t.workbench}
         onTabChange={handleWorkbenchTabChange}
@@ -2247,7 +2244,6 @@ export function DesktopController() {
       disabled={level !== 'l1' || railFocused}
       divider
       forceCollapsed={narrowViewport}
-      hoverReveal={!shellCards}
       id="agenda-timeline"
       key="agenda-timeline"
       minWidth={FILE_BROWSER_MIN_WIDTH}
@@ -2455,13 +2451,9 @@ export function DesktopController() {
 
   return (
     <AppShell
-      leftStatusbarItems={leftStatusbarItems}
       leftTitlebarTools={titlebarToolGroups.flat.left}
       mainOverlays={mainOverlays}
-      onOpenSettings={openSettings}
       overlays={overlays}
-      rightRail={swapped ? undefined : shellRightRail}
-      statusbarItems={statusbarItems}
       titlebarTools={titlebarToolGroups.flat.right}
     >
       {/* 顺序即列序：正常态 sidebar | main | 右栏卡；换边后整条镜像，侧边栏排同侧最后 */}

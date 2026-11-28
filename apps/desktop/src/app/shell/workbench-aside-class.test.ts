@@ -14,24 +14,20 @@ import { resolveWorkbenchAsideClass } from './workbench-aside-class'
  * 可**主区**不在那三条规则里 ⇒ 工作面卡被最大化进主区后没人兜 ⇒
  * 卡面顶部多出一条 34px 的空带 ⇒ 顶栏（抬头那条）看着变高了。
  *
- * 这组判据钉的是**规则**（哪一形态让哪一形态），不是源码文字。
+ * ⚠️ **现在只有卡片这一副布局了**（用户 11-28 00:1x：「我们不要之前没有卡的布局了。
+ * 删除了。就用现在的实现。」）⇒ 让位那一支**整条退役** ⇒ 这一族判据只剩一条：
+ * **永不让位**。
  */
 describe('工作面卡的外框：顶栏让位', () => {
-  it('卡片模式：画布自己让过顶栏，卡再让一次就多出一条空带 ⇒ 不让', () => {
-    const cls = resolveWorkbenchAsideClass({ panesFlipped: false, shellCards: true, swapped: false })
+  it('卡片模式（**唯一那一副**）：画布自己让过顶栏，卡再让一次就多出一条空带 ⇒ 不让', () => {
+    const cls = resolveWorkbenchAsideClass({ panesFlipped: false, swapped: false })
 
     expect(cls).not.toContain('pt-(--titlebar-height)')
     expect(cls).toContain('border-l')
   })
 
-  it('非卡片模式：顶栏是浮层、轨道顶边在 y=0 ⇒ 卡要自己把顶栏那一条让出来', () => {
-    const cls = resolveWorkbenchAsideClass({ panesFlipped: false, shellCards: false, swapped: false })
-
-    expect(cls).toContain('pt-(--titlebar-height)')
-  })
-
   it('互换态：工作面卡也在主区，本来就不带描边与让位', () => {
-    const cls = resolveWorkbenchAsideClass({ panesFlipped: false, shellCards: true, swapped: true })
+    const cls = resolveWorkbenchAsideClass({ panesFlipped: false, swapped: true })
 
     expect(cls).not.toContain('pt-(--titlebar-height)')
     expect(cls).not.toContain('border-l')
@@ -39,7 +35,7 @@ describe('工作面卡的外框：顶栏让位', () => {
   })
 
   it('换了边：描边与内高光换到另一侧，让位口径不变', () => {
-    const flipped = resolveWorkbenchAsideClass({ panesFlipped: true, shellCards: true, swapped: false })
+    const flipped = resolveWorkbenchAsideClass({ panesFlipped: true, swapped: false })
 
     expect(flipped).toContain('border-r')
     expect(flipped).not.toContain('pt-(--titlebar-height)')

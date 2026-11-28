@@ -113,6 +113,6 @@ describe('控制器的焦点接线', () => {
     const source = readFileSync(join(findSrcDir(), 'app', 'desktop-controller.tsx'), 'utf8')
 
     expect(source).not.toContain('pt-(--titlebar-height)')
-    expect(source).toContain('resolveWorkbenchAsideClass({ panesFlipped, shellCards, swapped })')
+    expect(source).toContain('resolveWorkbenchAsideClass({ panesFlipped, swapped })')
   })
 })
